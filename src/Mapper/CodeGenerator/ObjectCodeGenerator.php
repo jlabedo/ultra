@@ -36,7 +36,7 @@ class ObjectCodeGenerator implements CodeGenerator
             }
         }
 
-        $internalDataVar = $hasNonPromotedProperties ? '$data' : $dataVar;
+        $internalDataVar = $hasNonPromotedProperties ? '$value' : $dataVar;
 
         $code = "new \\{$this->refClass->getName()}(";
         $constructorArgs = [];
