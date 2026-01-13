@@ -12,6 +12,9 @@
     "require": {
         "php": ">=8.4"
     },
+    "suggest": {
+        "ultra/mapper-compiler": "Compiler for the mapper"
+    },
     "autoload": {
         "psr-4": {
             "Ultra\\Mapper\\": ""

@@ -1,27 +1,40 @@
 {
     "name": "ultra/ultra",
     "description": "Ultra Framework - A modern PHP framework",
-    "type": "project",
     "license": "MIT",
-    "minimum-stability": "dev",
-    "prefer-stable": true,
+    "type": "project",
+    "authors": [
+        {
+            "name": "Jean de La Bédoyère",
+            "email": "1191198+jlabedo@users.noreply.github.com"
+        }
+    ],
     "require": {
-        "php": "^8.4",
-        "laminas/laminas-code": "^4.17",
-        "symfony/type-info": "^8.0"
+        "php": ">=8.4",
+        "laminas/laminas-code": "^4.5",
+        "symfony/type-info": "7.*|8.*"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.0",
         "monorepo-php/monorepo": "^12.4",
         "pestphp/pest": "^4"
     },
+    "replace": {
+        "ultra/mapper": "self.version",
+        "ultra/mapper-compiler": "self.version"
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true,
     "autoload": {
         "psr-4": {
-            "Ultra\\": "src"
+            "Ultra\\": "src",
+            "Ultra\\Mapper\\": "src/Mapper/"
         },
         "exclude-from-classmap": [
             "**/Tests/",
-            "**/bin/"
+            "**/bin/",
+            "src/Mapper/Tests/",
+            "src/Mapper_Compiler/Tests/"
         ]
     },
     "config": {
