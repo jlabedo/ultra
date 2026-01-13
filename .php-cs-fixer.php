@@ -1,14 +1,17 @@
 <?php
 
 declare(strict_types=1);
+use PhpCsFixer\Config;
+use PhpCsFixer\Finder;
 
-$finder = PhpCsFixer\Finder::create()
-    ->in(__DIR__ . '/src')
+$finder = Finder::create()
+    ->in(__DIR__.'/src')
     ->name('*.php')
     ->ignoreDotFiles(true)
-    ->ignoreVCS(true);
+    ->ignoreVCS(true)
+;
 
-return (new PhpCsFixer\Config())
+return new Config()
     ->setRules([
         '@PHP84Migration' => true,
         '@PhpCsFixer' => true,
@@ -17,7 +20,6 @@ return (new PhpCsFixer\Config())
         'ordered_imports' => ['sort_algorithm' => 'alpha'],
         'no_unused_imports' => true,
         'not_operator_with_successor_space' => true,
-        'trailing_comma_in_multiline' => true,
         'phpdoc_scalar' => true,
         'unary_operator_spaces' => true,
         'binary_operator_spaces' => true,
@@ -39,4 +41,6 @@ return (new PhpCsFixer\Config())
     ])
     ->setFinder($finder)
     ->setRiskyAllowed(true)
-    ->setUsingCache(true);
+    ->setUsingCache(true)
+    ->setCacheFile(__DIR__.'/var/.php-cs-fixer.cache')
+;

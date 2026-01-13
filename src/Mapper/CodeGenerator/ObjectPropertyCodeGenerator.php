@@ -19,9 +19,10 @@ class ObjectPropertyCodeGenerator implements CodeGenerator
         if ($this->context->typeCheck) {
             $denormalizationException = DenormalizationException::class;
             $bodyBuilder->addStatement(<<<PHP
-                    if (! \\array_key_exists('{$this->name}', {$dataVar})) {
-                        throw new \\{$denormalizationException}("Missing required property '{$this->name}' at path {{$this->context->path->generateRuntimeContextCall(["'{$this->name}'"])}}");
-                    }
+                // ObjectPropertyCodeGenerator for {$this->name} (\$dataVar = {$dataVar})
+                if (! \\array_key_exists('{$this->name}', {$dataVar})) {
+                    throw new \\{$denormalizationException}("Missing required property '{$this->name}' at path {{$this->context->path->generateRuntimeContextCall(["'{$this->name}'"])}}");
+                }
                 PHP);
         }
 

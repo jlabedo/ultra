@@ -7,7 +7,7 @@ namespace Ultra\Mapper\Tests\Fixtures;
 readonly class ArrayOfArrayOfObject
 {
     /**
-     * @param Address[][] $matrix
+     * @param list<list<Address>> $matrix
      */
     public function __construct(
         public array $matrix,
