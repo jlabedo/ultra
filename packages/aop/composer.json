@@ -1,0 +1,30 @@
+{
+    "name": "ultra/aop",
+    "description": "Ultra AOP - Aspect Oriented Programming component",
+    "license": "MIT",
+    "type": "library",
+    "require": {
+        "php": "^8.4"
+    },
+    "require-dev": {
+        "pestphp/pest": "^4"
+    },
+    "autoload": {
+        "psr-4": {
+            "Ultra\\Aop\\": "src"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Ultra\\Aop\\Tests\\": "tests"
+        }
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
