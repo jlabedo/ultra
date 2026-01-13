@@ -16,7 +16,7 @@ class CodeGeneratorBuilderRegistry
     private array $builders = [];
 
     /**
-     * @param array<class-string, RuntimeNormalizerInterface> $runtimeNormalizers
+     * @param array<class-string, true> $runtimeNormalizers
      */
     public function __construct(array $runtimeNormalizers = [])
     {

@@ -2,10 +2,7 @@
 
 namespace Ultra\Mapper;
 
-use Symfony\Component\TypeInfo\Type;
 use Ultra\Mapper\Exception\CircularReferenceException;
-use Ultra\Mapper_Compiler\CodeGeneratorBuilderRegistry;
-use Ultra\Mapper_Compiler\CodeGeneratorContext;
 use Ultra\Mapper_Compiler\NormalizerGenerator;
 
 class UltraNormalizer
@@ -30,7 +27,7 @@ class UltraNormalizer
     public function __construct(string $cacheDir = __DIR__.'/../../var/normalizer_cache')
     {
         $this->cacheDir = $cacheDir;
-        if (! is_dir($this->cacheDir)) {
+        if (!is_dir($this->cacheDir)) {
             mkdir($this->cacheDir, 0o777, true);
         }
         $this->defaultDenormalizationContext = new DenormalizationContext();
@@ -78,18 +75,16 @@ class UltraNormalizer
 
     private function createNormalizer(string $className): NormalizerInterface
     {
-        $normalizerClass = self::NAMESPACE.'\__Normalizer_'.str_replace('\\', '_', ltrim($className, '\\'));
+        $normalizerClassBaseName = '__Normalizer_'.str_replace('\\', '_', ltrim($className, '\\'));
+        $normalizerClass = self::NAMESPACE.'\\'.$normalizerClassBaseName;
 
-        if (! class_exists($normalizerClass, false)) {
-            $classBaseName = str_starts_with($normalizerClass, self::NAMESPACE.'\\')
-                ? substr($normalizerClass, strlen(self::NAMESPACE) + 1)
-                : $normalizerClass;
-            $cacheFile = $this->cacheDir.'/'.$classBaseName.'.php';
-            if (! file_exists($cacheFile)) {
-                $codeGen = new CodeGeneratorBuilderRegistry($this->runtimeNormalizers)
-                    ->getCodeGenerator(Type::object($className), CodeGeneratorContext::new(true, true))
-                ;
-                $fileGen = NormalizerGenerator::generate($codeGen, $normalizerClass);
+        if (!class_exists($normalizerClass, false)) {
+            $cacheFile = $this->cacheDir.'/'.$normalizerClassBaseName.'.php';
+            if (!file_exists($cacheFile)) {
+                if (!class_exists(NormalizerGenerator::class)) {
+                    throw new \RuntimeException("Cannot generate normalizer for class '{$className}' on the fly because the ultra/mapper-compiler package is not installed. Try running \"composer require ultra/mapper-compiler\".");
+                }
+                $fileGen = NormalizerGenerator::for($className, $normalizerClass, $this->runtimeNormalizers);
                 file_put_contents($cacheFile, $fileGen->generate());
             }
             require_once $cacheFile;

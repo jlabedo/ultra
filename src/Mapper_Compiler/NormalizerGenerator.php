@@ -5,6 +5,7 @@ namespace Ultra\Mapper_Compiler;
 use Laminas\Code\Generator\ClassGenerator;
 use Laminas\Code\Generator\FileGenerator;
 use Laminas\Code\Generator\MethodGenerator;
+use Symfony\Component\TypeInfo\Type;
 use Ultra\Mapper\DenormalizationContext;
 use Ultra\Mapper\NormalizerInterface;
 use Ultra\Mapper\Path;
@@ -15,7 +16,17 @@ use Ultra\Mapper\UltraNormalizer;
  */
 class NormalizerGenerator
 {
-    private const string GENERATED_NAMESPACE = 'Ultra\Normalizer\Generated';
+    /**
+     * @param array<class-string, mixed> $availableRuntimeNormalizer
+     */
+    public static function for(string $originClassname, string $normalizerClass, array $availableRuntimeNormalizer): FileGenerator
+    {
+        $codeGen = new CodeGeneratorBuilderRegistry($availableRuntimeNormalizer)
+            ->getCodeGenerator(Type::object($originClassname), CodeGeneratorContext::new(inline: true, typeCheck: true))
+        ;
+
+        return self::generate($codeGen, $normalizerClass);
+    }
 
     /**
      * Generate a normalizer class for the given target class.
@@ -70,7 +81,7 @@ class NormalizerGenerator
 
         return new ClassGenerator(
             $normalizerClass,
-            self::GENERATED_NAMESPACE,
+            null,
             null,
             null,
             [NormalizerInterface::class],

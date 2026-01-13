@@ -5,8 +5,11 @@ namespace Ultra\Mapper_Compiler;
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\Type\ObjectType;
 
-class RuntimeNormalizerCallCodeGeneratorBuilder implements CodeGeneratorBuilder
+readonly class RuntimeNormalizerCallCodeGeneratorBuilder implements CodeGeneratorBuilder
 {
+    /**
+     * @param array<class-string, mixed> $runtimeNormalizers
+     */
     public function __construct(private array $runtimeNormalizers) {}
 
     public function supports(Type $type, CodeGeneratorContext $context): bool
