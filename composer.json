@@ -10,22 +10,16 @@
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.0",
-        "monorepo-php/monorepo": "^12.4",
         "pestphp/pest": "^4"
     },
     "autoload": {
         "psr-4": {
-            "Ultra\\Aop\\": "packages/aop/src",
-            "Ultra\\Serializer\\": "packages/serializer/src",
-            "Ultra\\Orm\\": "packages/orm/src"
-        }
-    },
-    "autoload-dev": {
-        "psr-4": {
-            "Ultra\\Aop\\Tests\\": "packages/aop/tests",
-            "Ultra\\Serializer\\Tests\\": "packages/serializer/tests",
-            "Ultra\\Orm\\Tests\\": "packages/orm/tests"
-        }
+            "Ultra\\": "src"
+        },
+        "exclude-from-classmap": [
+            "**/Tests/",
+            "**/bin/"
+        ]
     },
     "config": {
         "sort-packages": true,
