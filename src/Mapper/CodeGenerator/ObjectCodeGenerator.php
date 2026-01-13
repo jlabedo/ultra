@@ -3,6 +3,7 @@
 namespace Ultra\Mapper\CodeGenerator;
 
 use Symfony\Component\TypeInfo\Type;
+use Ultra\Mapper\Path;
 
 class ObjectCodeGenerator implements CodeGenerator
 {
@@ -23,7 +24,7 @@ class ObjectCodeGenerator implements CodeGenerator
         return "[\n".implode(",\n", $lines)."\n]";
     }
 
-    public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder): string
+    public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
     {
         $constructor = $this->refClass->getConstructor();
 
@@ -44,7 +45,7 @@ class ObjectCodeGenerator implements CodeGenerator
             foreach ($constructor->getParameters() as $param) {
                 $name = $param->getName();
                 if (isset($this->properties[$name])) {
-                    $constructorArgs[$name] = $this->properties[$name]->generateDenormalization($internalDataVar, $bodyBuilder);
+                    $constructorArgs[$name] = $this->properties[$name]->generateDenormalization($internalDataVar, $bodyBuilder, $path);
                 } elseif ($param->allowsNull()) {
                     $constructorArgs[] = 'null';
                 } else {
@@ -66,7 +67,7 @@ class ObjectCodeGenerator implements CodeGenerator
                     continue;
                 }
 
-                $code .= "\$obj->{$name} = ".$generator->generateDenormalization($internalDataVar, $bodyBuilder).";\n";
+                $code .= "\$obj->{$name} = ".$generator->generateDenormalization($internalDataVar, $bodyBuilder, $path).";\n";
             }
 
             return <<<PHP

@@ -4,14 +4,16 @@ namespace Ultra\Mapper\CodeGenerator;
 
 class MethodBodyBuilder
 {
-    private int $variableCount = 0;
-
     /**
      * @var string[]
      */
     private array $statements = [];
 
     private ?string $returnExpr = null;
+
+    public function __construct(
+        private VariableScope $scope = new VariableScope(),
+    ) {}
 
     /**
      * Add a statement to the method body (without a trailing semicolon).
@@ -23,7 +25,7 @@ class MethodBodyBuilder
 
     public function newVariable(): string
     {
-        return '$v'.$this->variableCount++;
+        return $this->scope->newVariable();
     }
 
     /**
@@ -64,5 +66,10 @@ class MethodBodyBuilder
         }
 
         return implode("\n", $lines);
+    }
+
+    public function newScope(): self
+    {
+        return new self($this->scope);
     }
 }

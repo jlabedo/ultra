@@ -5,19 +5,20 @@ namespace Ultra\Mapper\CodeGenerator;
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\Type\BuiltinType;
 use Ultra\Mapper\Exception\DenormalizationException;
+use Ultra\Mapper\Path;
 
-class IdentityCodeGenerator implements CodeGenerator
+readonly class IdentityCodeGenerator implements CodeGenerator
 {
-    public function __construct(private Type $type, private CodeGeneratorContext $context) {}
+    public function __construct(private Type $type, private bool $typeCheck) {}
 
     public function generateNormalization(string $objectVar): string
     {
         return $objectVar;
     }
 
-    public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder): string
+    public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
     {
-        if ($this->context->typeCheck && $this->type instanceof BuiltinType) {
+        if ($this->typeCheck && $this->type instanceof BuiltinType) {
             $typeName = $this->type->getTypeIdentifier()->value;
             $typeCheck = '';
             $expected = '';
@@ -40,7 +41,7 @@ class IdentityCodeGenerator implements CodeGenerator
                     ({$typeCheck}
                         ? {$dataVar}
                         : throw new \\{$denormalizationException}(
-                            "Type mismatch at path {{$this->context->path->generateRuntimeContextCall()}}: expected {$expected}, got " . gettype({$dataVar})
+                            "Type mismatch at path {{$path->generateRuntimeContextCall()}}: expected {$expected}, got " . gettype({$dataVar})
                         )
                     )
                     PHP;

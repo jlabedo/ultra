@@ -14,6 +14,6 @@ class IdentityCodeGeneratorBuilder implements CodeGeneratorBuilder
 
     public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
     {
-        return new IdentityCodeGenerator($type, $context);
+        return new IdentityCodeGenerator($type, $context->typeCheck);
     }
 }

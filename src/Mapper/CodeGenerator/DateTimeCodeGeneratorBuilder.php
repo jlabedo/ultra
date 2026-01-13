@@ -5,6 +5,7 @@ namespace Ultra\Mapper\CodeGenerator;
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\Type\ObjectType;
 use Ultra\Mapper\CodeGeneratorBuilderRegistry;
+use Ultra\Mapper\Path;
 
 class DateTimeCodeGeneratorBuilder implements CodeGeneratorBuilder
 {
@@ -43,7 +44,7 @@ class DateTimeCodeGeneratorBuilder implements CodeGeneratorBuilder
 
             }
 
-            public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder): string
+            public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
             {
                 if ($this->isNullable) {
                     return "{$dataVar} !== null ? new \\{$this->class}({$dataVar}) : null";

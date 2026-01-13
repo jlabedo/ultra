@@ -1,5 +1,7 @@
 <?php
 
+use PHPUnit\Framework\TestCase;
+
 /*
 |--------------------------------------------------------------------------
 | Test Case
@@ -11,7 +13,10 @@
 |
 */
 
-pest()->extend(PHPUnit\Framework\TestCase::class)->in('Feature');
+pest()->extend(TestCase::class)->in('Feature');
+beforeAll(function () {
+    rmdir(__DIR__.'/../var/normalizer_cache');
+});
 
 /*
 |--------------------------------------------------------------------------

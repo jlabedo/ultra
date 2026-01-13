@@ -32,7 +32,7 @@ class ObjectCodeGeneratorBuilder implements CodeGeneratorBuilder
         $properties = $ref->getProperties(\ReflectionProperty::IS_PUBLIC);
         $propertyGenerators = [];
         foreach ($properties as $property) {
-            $propertyGenerators[$property->getName()] = new ObjectPropertyCodeGenerator($property->getName(), $registry->getCodeGenerator($property, $context->withAddedPathSegment($property->getName())), $context);
+            $propertyGenerators[$property->getName()] = new ObjectPropertyCodeGenerator($property->getName(), $registry->getCodeGenerator($property, $context), $context->typeCheck);
         }
 
         return new ObjectCodeGenerator($propertyGenerators, $ref);

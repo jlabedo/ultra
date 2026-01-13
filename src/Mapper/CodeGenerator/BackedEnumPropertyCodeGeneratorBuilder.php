@@ -7,6 +7,7 @@ use Symfony\Component\TypeInfo\Type\EnumType;
 use Symfony\Component\TypeInfo\Type\NullableType;
 use Symfony\Component\TypeInfo\Type\ObjectType;
 use Ultra\Mapper\CodeGeneratorBuilderRegistry;
+use Ultra\Mapper\Path;
 
 class BackedEnumPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
 {
@@ -59,7 +60,7 @@ class BackedEnumPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
 
             }
 
-            public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder): string
+            public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
             {
                 if ($this->isNullable) {
                     return "{$dataVar} !== null ? \\{$this->enumClass}::from({$dataVar}) : null";

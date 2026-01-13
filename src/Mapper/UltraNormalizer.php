@@ -78,7 +78,7 @@ class UltraNormalizer
     {
         $normalizerClass = self::NAMESPACE.'\__Normalizer_'.str_replace('\\', '_', ltrim($className, '\\'));
 
-        if (! class_exists($normalizerClass)) {
+        if (! class_exists($normalizerClass, false)) {
             $classBaseName = str_starts_with($normalizerClass, self::NAMESPACE.'\\')
                 ? substr($normalizerClass, strlen(self::NAMESPACE) + 1)
                 : $normalizerClass;

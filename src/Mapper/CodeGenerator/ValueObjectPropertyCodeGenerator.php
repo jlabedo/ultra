@@ -3,6 +3,7 @@
 namespace Ultra\Mapper\CodeGenerator;
 
 use Symfony\Component\TypeInfo\Type;
+use Ultra\Mapper\Path;
 
 class ValueObjectPropertyCodeGenerator implements CodeGenerator
 {
@@ -20,9 +21,9 @@ class ValueObjectPropertyCodeGenerator implements CodeGenerator
         return $this->next->generateNormalization("{$objectVar}->{$this->valueProperty}");
     }
 
-    public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder): string
+    public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
     {
-        $value = $this->next->generateDenormalization($dataVar, $bodyBuilder);
+        $value = $this->next->generateDenormalization($dataVar, $bodyBuilder, $path);
 
         return "new \\{$this->className}({$value})";
     }

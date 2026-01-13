@@ -10,6 +10,7 @@ use Symfony\Component\TypeInfo\Type\ObjectType;
 use Symfony\Component\TypeInfo\Type\UnionType;
 use Ultra\Mapper\CodeGeneratorBuilderRegistry;
 use Ultra\Mapper\Exception\DenormalizationException;
+use Ultra\Mapper\Path;
 
 class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
 {
@@ -32,11 +33,11 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
             ];
         }
 
-        return new class ($typeCodeGens, $context) implements CodeGenerator {
+        return new class ($typeCodeGens) implements CodeGenerator {
             /** @var array<array{type: Type, codegen: CodeGenerator}> */
             private array $typeCodeGens;
 
-            public function __construct(array $typeCodeGens, private CodeGeneratorContext $context)
+            public function __construct(array $typeCodeGens)
             {
                 $this->typeCodeGens = $typeCodeGens;
             }
@@ -66,7 +67,7 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
                 return "match (true) {\n".implode(",\n", $cases)."\n}";
             }
 
-            public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder): string
+            public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
             {
                 $denormalizationException = DenormalizationException::class;
                 $cases = [];
@@ -76,7 +77,7 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
                     $cond = $this->getDiscriminatorCondition($dataVar, $type);
                     $cases[] = [
                         'cond' => $cond,
-                        'code' => $codegen->generateDenormalization($dataVar, $bodyBuilder),
+                        'code' => $codegen->generateDenormalization($dataVar, $bodyBuilder, $path),
                     ];
                 }
                 $lines = [];
@@ -84,7 +85,7 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
                 foreach ($cases as $case) {
                     $lines[] = "    {$case['cond']} => {$case['code']},";
                 }
-                $lines[] = "    default => throw new \\{$denormalizationException}('Data does not match any type in union at path ' . {$this->context->path->generateRuntimeContextCall()}),";
+                $lines[] = "    default => throw new \\{$denormalizationException}('Data does not match any type in union at path ' . {$path->generateRuntimeContextCall()}),";
                 $lines[] = '}';
 
                 return implode("\n", $lines);

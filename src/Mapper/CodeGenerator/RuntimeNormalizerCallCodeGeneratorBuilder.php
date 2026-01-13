@@ -21,6 +21,6 @@ class RuntimeNormalizerCallCodeGeneratorBuilder implements CodeGeneratorBuilder
             throw new \InvalidArgumentException('Type must be ObjectType');
         }
 
-        return new NormalizerCallCodeGenerator($type->getClassName(), $context);
+        return new NormalizerCallCodeGenerator($type->getClassName());
     }
 }

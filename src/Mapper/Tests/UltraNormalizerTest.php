@@ -226,7 +226,7 @@ test('array of array of object', function () {
     ]);
     $restored = $normalizer->fromScalar($array, ArrayOfArrayOfObject::class);
     expect($restored)->toEqual($obj);
-})->todo();
+});
 
 test('nested value object as value', function () {
     $obj = new OuterValue(new InnerValue(42));

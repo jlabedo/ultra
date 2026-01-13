@@ -25,7 +25,7 @@ class CollectionCodeGeneratorBuilder implements CodeGeneratorBuilder
             throw new \InvalidArgumentException('Type must be CollectionType');
         }
         $valueType = $type->getCollectionValueType();
-        $next = $registry->getCodeGenerator($valueType, $context->with(path: $context->path->addVariable('k')));
+        $next = $registry->getCodeGenerator($valueType, $context);
 
         return new CollectionCodeGenerator($next);
     }

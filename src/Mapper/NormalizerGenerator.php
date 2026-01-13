@@ -13,7 +13,7 @@ use Ultra\Mapper\CodeGenerator\MethodBodyBuilder;
  */
 class NormalizerGenerator
 {
-    private const GENERATED_NAMESPACE = 'Ultra\Normalizer\Generated';
+    private const string GENERATED_NAMESPACE = 'Ultra\Normalizer\Generated';
 
     /**
      * Generate a normalizer class for the given target class.
@@ -23,7 +23,7 @@ class NormalizerGenerator
     public static function generate(CodeGenerator $codeGen, string $normalizerClass): FileGenerator
     {
         $toScalarBody = self::encloseInReturnStatement($codeGen->generateNormalization('$value'));
-        $fromScalarBody = $codeGen->generateDenormalization('$value', $bodyBuilder = new MethodBodyBuilder());
+        $fromScalarBody = $codeGen->generateDenormalization('$value', $bodyBuilder = new MethodBodyBuilder(), Path::new());
         $bodyBuilder->setReturn($fromScalarBody);
         $classGen = self::createNormalizerClass(
             $normalizerClass,
