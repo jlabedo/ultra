@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd"
+         bootstrap="vendor/autoload.php"
+         colors="true"
+>
+    <testsuites>
+        <testsuite name="Ultra Test Suite">
+            <directory suffix="Test.php">./src/Ultra/*/Tests</directory>
+        </testsuite>
+    </testsuites>
+    <source>
+        <include>
+            <directory>./src/Ultra/*</directory>
+        </include>
+        <exclude>
+            <directory>./src/Ultra/*/Tests</directory>
+            <directory>./src/Ultra/*/vendor</directory>
+        </exclude>
+    </source>
+</phpunit>
