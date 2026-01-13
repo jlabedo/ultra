@@ -6,7 +6,9 @@
     "minimum-stability": "dev",
     "prefer-stable": true,
     "require": {
-        "php": "^8.4"
+        "php": "^8.4",
+        "laminas/laminas-code": "^4.17",
+        "symfony/type-info": "^8.0"
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.0",
