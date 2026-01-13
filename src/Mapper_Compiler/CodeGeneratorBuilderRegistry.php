@@ -1,21 +1,10 @@
 <?php
 
-namespace Ultra\Mapper;
+namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\TypeResolver\TypeResolver;
-use Ultra\Mapper\CodeGenerator\BackedEnumPropertyCodeGeneratorBuilder;
-use Ultra\Mapper\CodeGenerator\CodeGenerator;
-use Ultra\Mapper\CodeGenerator\CodeGeneratorBuilder;
-use Ultra\Mapper\CodeGenerator\CodeGeneratorContext;
-use Ultra\Mapper\CodeGenerator\CollectionCodeGeneratorBuilder;
-use Ultra\Mapper\CodeGenerator\DateTimeCodeGeneratorBuilder;
-use Ultra\Mapper\CodeGenerator\IdentityCodeGeneratorBuilder;
-use Ultra\Mapper\CodeGenerator\NormalizerCallCodeGeneratorBuilder;
-use Ultra\Mapper\CodeGenerator\ObjectCodeGeneratorBuilder;
-use Ultra\Mapper\CodeGenerator\RuntimeNormalizerCallCodeGeneratorBuilder;
-use Ultra\Mapper\CodeGenerator\UnionPropertyCodeGeneratorBuilder;
-use Ultra\Mapper\CodeGenerator\ValueObjectPropertyCodeGeneratorBuilder;
+use Ultra\Mapper\RuntimeNormalizerInterface;
 
 /**
  * Generates high-performance normalizer classes for objects and value objects.

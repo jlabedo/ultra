@@ -1,6 +1,6 @@
 <?php
 
-namespace Ultra\Mapper\CodeGenerator;
+namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\Type\ArrayShapeType;
@@ -8,7 +8,6 @@ use Symfony\Component\TypeInfo\Type\BuiltinType;
 use Symfony\Component\TypeInfo\Type\CollectionType;
 use Symfony\Component\TypeInfo\Type\ObjectType;
 use Symfony\Component\TypeInfo\Type\UnionType;
-use Ultra\Mapper\CodeGeneratorBuilderRegistry;
 use Ultra\Mapper\Exception\DenormalizationException;
 use Ultra\Mapper\Path;
 

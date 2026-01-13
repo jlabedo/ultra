@@ -1,6 +1,6 @@
 <?php
 
-namespace Ultra\Mapper\CodeGenerator;
+namespace Ultra\Mapper_Compiler;
 
 readonly class CodeGeneratorContext
 {

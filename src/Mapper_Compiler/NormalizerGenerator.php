@@ -1,12 +1,14 @@
 <?php
 
-namespace Ultra\Mapper;
+namespace Ultra\Mapper_Compiler;
 
 use Laminas\Code\Generator\ClassGenerator;
 use Laminas\Code\Generator\FileGenerator;
 use Laminas\Code\Generator\MethodGenerator;
-use Ultra\Mapper\CodeGenerator\CodeGenerator;
-use Ultra\Mapper\CodeGenerator\MethodBodyBuilder;
+use Ultra\Mapper\DenormalizationContext;
+use Ultra\Mapper\NormalizerInterface;
+use Ultra\Mapper\Path;
+use Ultra\Mapper\UltraNormalizer;
 
 /**
  * Generates high-performance normalizer classes for objects and value objects.

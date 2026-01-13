@@ -1,6 +1,6 @@
 <?php
 
-namespace Ultra\Mapper\CodeGenerator;
+namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\Type\BuiltinType;

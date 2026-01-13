@@ -1,15 +1,14 @@
 <?php
 
-namespace Ultra\Mapper\CodeGenerator;
+namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\Type\ObjectType;
-use Ultra\Mapper\CodeGeneratorBuilderRegistry;
 use Ultra\Mapper\Path;
 
 class DateTimeCodeGeneratorBuilder implements CodeGeneratorBuilder
 {
-    private const SUPPORTED_CLASSES = [
+    private const array SUPPORTED_CLASSES = [
         \DateTime::class,
         \DateTimeImmutable::class,
         \DateTimeInterface::class,

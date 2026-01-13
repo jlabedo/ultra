@@ -1,11 +1,10 @@
 <?php
 
-namespace Ultra\Mapper\CodeGenerator;
+namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\Type\BuiltinType;
 use Symfony\Component\TypeInfo\Type\CollectionType;
-use Ultra\Mapper\CodeGeneratorBuilderRegistry;
 
 class CollectionCodeGeneratorBuilder implements CodeGeneratorBuilder
 {

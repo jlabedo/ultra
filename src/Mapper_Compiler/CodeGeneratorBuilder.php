@@ -1,9 +1,8 @@
 <?php
 
-namespace Ultra\Mapper\CodeGenerator;
+namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
-use Ultra\Mapper\CodeGeneratorBuilderRegistry;
 
 interface CodeGeneratorBuilder
 {

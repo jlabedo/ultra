@@ -3,12 +3,14 @@
 namespace Ultra\Mapper;
 
 use Symfony\Component\TypeInfo\Type;
-use Ultra\Mapper\CodeGenerator\CodeGeneratorContext;
 use Ultra\Mapper\Exception\CircularReferenceException;
+use Ultra\Mapper_Compiler\CodeGeneratorBuilderRegistry;
+use Ultra\Mapper_Compiler\CodeGeneratorContext;
+use Ultra\Mapper_Compiler\NormalizerGenerator;
 
 class UltraNormalizer
 {
-    private const NAMESPACE = 'Ultra\Normalizer\Generated';
+    private const string NAMESPACE = 'Ultra\Normalizer\Generated';
 
     private string $cacheDir;
 
@@ -18,7 +20,7 @@ class UltraNormalizer
     /** @var array<class-string, NormalizerInterface> */
     private array $generatedNormalizers = [];
 
-    private DenormalizationContext $defautDenormalizationContext;
+    private DenormalizationContext $defaultDenormalizationContext;
 
     /**
      * @var array<int, true>
@@ -31,7 +33,7 @@ class UltraNormalizer
         if (! is_dir($this->cacheDir)) {
             mkdir($this->cacheDir, 0o777, true);
         }
-        $this->defautDenormalizationContext = new DenormalizationContext();
+        $this->defaultDenormalizationContext = new DenormalizationContext();
     }
 
     /**
@@ -64,7 +66,7 @@ class UltraNormalizer
     {
         $normalizer = $this->generatedNormalizers[$className] ?? $this->runtimeNormalizers[$className] ?? $this->createNormalizer($className);
 
-        return $normalizer->fromScalar($data, $className, $this, $context ?? $this->defautDenormalizationContext);
+        return $normalizer->fromScalar($data, $className, $this, $context ?? $this->defaultDenormalizationContext);
     }
 
     public function registerRuntimeNormalizer(RuntimeNormalizerInterface $normalizer): void

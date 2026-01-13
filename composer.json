@@ -12,6 +12,7 @@
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.0",
+        "monorepo-php/monorepo": "^12.4",
         "pestphp/pest": "^4"
     },
     "autoload": {

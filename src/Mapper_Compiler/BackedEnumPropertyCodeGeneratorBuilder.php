@@ -1,12 +1,11 @@
 <?php
 
-namespace Ultra\Mapper\CodeGenerator;
+namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\Type\EnumType;
 use Symfony\Component\TypeInfo\Type\NullableType;
 use Symfony\Component\TypeInfo\Type\ObjectType;
-use Ultra\Mapper\CodeGeneratorBuilderRegistry;
 use Ultra\Mapper\Path;
 
 class BackedEnumPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
