@@ -12,7 +12,7 @@ class DenormalizationContext
     }
 
     public function with(
-        ?Path $path = null
+        ?Path $path = null,
     ): self {
         return new self(
             path: $path ?? $this->path,

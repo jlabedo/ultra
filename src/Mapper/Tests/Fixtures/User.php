@@ -8,6 +8,6 @@ readonly class User
 {
     public function __construct(
         public string $username,
-        public Address $address
+        public Address $address,
     ) {}
 }

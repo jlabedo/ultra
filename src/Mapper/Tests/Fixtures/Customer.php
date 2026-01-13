@@ -11,5 +11,4 @@ readonly class Customer
         public Email $email,
         public string $phone,
     ) {}
-
 }

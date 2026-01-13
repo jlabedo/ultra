@@ -56,7 +56,6 @@ class BackedEnumPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
                 }
 
                 return "{$objectVar}->value";
-
             }
 
             public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
@@ -66,7 +65,6 @@ class BackedEnumPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
                 }
 
                 return "\\{$this->enumClass}::from({$dataVar})";
-
             }
 
             public function getExpectedDenormalizedType(): Type

@@ -66,7 +66,7 @@ test('UltraNormalizer round trip', function () {
         'email' => 'jdoe@octorenov.com',
         'phone' => '+1234567890',
     ])
-        ->and(is_string($array['email']) || $array['email'] instanceof Email)->toBeTrue()
+        ->and(\is_string($array['email']) || $array['email'] instanceof Email)->toBeTrue()
     ;
     // For now, just check that the email is an object or string
 
@@ -163,7 +163,7 @@ test('UltraNormalizer handles DateTimeImmutable', function () {
 
     $denormalized = $normalizer->fromScalar($normalized, Complex::class);
     expect($denormalized->createdAt)->toBeInstanceOf(\DateTimeImmutable::class);
-    expect($denormalized->createdAt->format(DATE_ATOM))->toBe($date->format(DATE_ATOM));
+    expect($denormalized->createdAt->format(\DATE_ATOM))->toBe($date->format(\DATE_ATOM));
 });
 
 test('deeply nested structure', function () {

@@ -7,6 +7,6 @@ namespace Ultra\Mapper\Tests\Fixtures;
 readonly class MaybeEmail
 {
     public function __construct(
-        public ?Email $email
+        public ?Email $email,
     ) {}
 }

@@ -79,7 +79,7 @@ readonly class Path
      */
     private function toCodeSegments(): array
     {
-        return array_map(fn ($s) => (is_int($s) || $s instanceof Variable) ? $s : "'{$s}'", $this->segments);
+        return array_map(fn ($s) => (\is_int($s) || $s instanceof Variable) ? $s : "'{$s}'", $this->segments);
     }
 }
 
@@ -92,9 +92,10 @@ readonly class Variable
 
     public function __toString(): string
     {
-        if (\str_starts_with($this->name, '$')) {
+        if (str_starts_with($this->name, '$')) {
             return $this->name;
         }
+
         return '$'.$this->name;
     }
 }

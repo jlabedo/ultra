@@ -84,7 +84,6 @@ class ObjectCodeGenerator implements CodeGenerator
         }
 
         return $code;
-
     }
 
     public function getExpectedDenormalizedType(): Type

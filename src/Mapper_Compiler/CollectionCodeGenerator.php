@@ -28,6 +28,7 @@ class CollectionCodeGenerator implements CodeGenerator
                 {$collectorVar}[{$keyVar}] = {$next};
             }
             PHP);
+
         return $collectorVar;
     }
 

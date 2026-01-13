@@ -13,6 +13,6 @@ readonly class EmailList
      * @param Email[] $emails
      */
     public function __construct(
-        public array $emails
+        public array $emails,
     ) {}
 }

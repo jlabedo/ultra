@@ -10,7 +10,7 @@ use Ultra\Mapper\Attribute\AsValue;
 readonly class Email implements \Stringable
 {
     public function __construct(
-        public string $value
+        public string $value,
     ) {}
 
     public function __toString(): string

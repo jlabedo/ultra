@@ -4,7 +4,6 @@ namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\TypeResolver\TypeResolver;
-use Ultra\Mapper\RuntimeNormalizerInterface;
 
 /**
  * Generates high-performance normalizer classes for objects and value objects.
@@ -49,6 +48,6 @@ class CodeGeneratorBuilderRegistry
             }
         }
 
-        throw new \LogicException('No builder found for type '.get_class($type));
+        throw new \LogicException('No builder found for type '.$type::class);
     }
 }

@@ -27,7 +27,7 @@ class UltraNormalizer
     public function __construct(string $cacheDir = __DIR__.'/../../var/normalizer_cache')
     {
         $this->cacheDir = $cacheDir;
-        if (!is_dir($this->cacheDir)) {
+        if (! is_dir($this->cacheDir)) {
             mkdir($this->cacheDir, 0o777, true);
         }
         $this->defaultDenormalizationContext = new DenormalizationContext();
@@ -78,10 +78,10 @@ class UltraNormalizer
         $normalizerClassBaseName = '__Normalizer_'.str_replace('\\', '_', ltrim($className, '\\'));
         $normalizerClass = self::NAMESPACE.'\\'.$normalizerClassBaseName;
 
-        if (!class_exists($normalizerClass, false)) {
+        if (! class_exists($normalizerClass, false)) {
             $cacheFile = $this->cacheDir.'/'.$normalizerClassBaseName.'.php';
-            if (!file_exists($cacheFile)) {
-                if (!class_exists(NormalizerGenerator::class)) {
+            if (! file_exists($cacheFile)) {
+                if (! class_exists(NormalizerGenerator::class)) {
                     throw new \RuntimeException("Cannot generate normalizer for class '{$className}' on the fly because the ultra/mapper-compiler package is not installed. Try running \"composer require ultra/mapper-compiler\".");
                 }
                 $fileGen = NormalizerGenerator::for($className, $normalizerClass, $this->runtimeNormalizers);

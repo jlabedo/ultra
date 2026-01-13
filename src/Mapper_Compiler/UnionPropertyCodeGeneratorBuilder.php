@@ -122,7 +122,6 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
                     }
 
                     return "is_array({$var})";
-
                 }
                 // Array (collection)
                 if ($type instanceof CollectionType) {

@@ -21,7 +21,7 @@ class DateTimeCodeGeneratorBuilder implements CodeGeneratorBuilder
         }
         $class = $type->getClassName();
 
-        return in_array($class, self::SUPPORTED_CLASSES, true);
+        return \in_array($class, self::SUPPORTED_CLASSES, true);
     }
 
     public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
@@ -40,7 +40,6 @@ class DateTimeCodeGeneratorBuilder implements CodeGeneratorBuilder
                 }
 
                 return "{$objectVar}->format('c')";
-
             }
 
             public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
@@ -50,7 +49,6 @@ class DateTimeCodeGeneratorBuilder implements CodeGeneratorBuilder
                 }
 
                 return "new \\{$this->class}({$dataVar})";
-
             }
 
             public function getExpectedDenormalizedType(): Type

@@ -22,9 +22,9 @@ class RuntimeEmailNormalizer implements RuntimeNormalizerInterface
 
     public function fromScalar(array|bool|float|int|string|null $value, string $type, UltraNormalizer $normalizer, DenormalizationContext $context): mixed
     {
-        $val = is_array($value) ? ($value['value'] ?? '') : (string) $value;
+        $val = \is_array($value) ? ($value['value'] ?? '') : (string) $value;
         if (str_starts_with($val, 'runtime-email:')) {
-            $val = substr($val, strlen('runtime-email:'));
+            $val = substr($val, \strlen('runtime-email:'));
         }
 
         return new RuntimeEmail($val);
