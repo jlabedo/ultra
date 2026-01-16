@@ -79,6 +79,11 @@ class InterceptorCompiler
         // Generate optimized call method
         $code .= $this->generateCallMethod($metadata);
 
+        // Generate helper method for around chain if needed
+        if ($metadata['aroundCount'] > 0) {
+            $code .= $this->generateAroundHelperMethod($metadata['aroundCount']);
+        }
+
         $code .= "}\n";
 
         return $code;
@@ -104,30 +109,12 @@ class InterceptorCompiler
             $code .= "\n";
         }
 
-        // Build core execution
-        if ($hasAround) {
-            $code .= "        // Build around pipeline\n";
-            $code .= "        \$pipeline = function () use (\$args) {\n";
-            $code .= "            return (\$this->callable)(...\$args);\n";
-            $code .= "        };\n\n";
-
-            for ($i = $metadata['aroundCount'] - 1; $i >= 0; $i--) {
-                $code .= "        \$next{$i} = \$pipeline;\n";
-                $code .= "        \$pipeline = function () use (\$next{$i}, \$args) {\n";
-                $code .= "            return (\$this->aroundAdvices[{$i}])(\$next{$i}, ...\$args);\n";
-                $code .= "        };\n";
-                if ($i > 0) {
-                    $code .= "\n";
-                }
-            }
-            $code .= "\n";
-        }
-
         // Execute with or without try-catch
         if ($hasTryCatch) {
             $code .= "        try {\n";
             if ($hasAround) {
-                $code .= "            \$returnValue = \$pipeline();\n";
+                // Use helper method to reduce stack depth in main call method
+                $code .= "            \$returnValue = \$this->executeAroundChain(\$args);\n";
             } else {
                 $code .= "            \$returnValue = (\$this->callable)(...\$args);\n";
             }
@@ -168,7 +155,8 @@ class InterceptorCompiler
         } else {
             // No try-catch needed
             if ($hasAround) {
-                $code .= "        return \$pipeline();\n";
+                // Use helper method to reduce stack depth in main call method
+                $code .= "        return \$this->executeAroundChain(\$args);\n";
             } else {
                 $code .= "        return (\$this->callable)(...\$args);\n";
             }
@@ -176,6 +164,49 @@ class InterceptorCompiler
 
         $code .= "    }\n";
 
+        return $code;
+    }
+
+    /**
+     * Generate helper method for around chain execution
+     * This reduces stack depth in the main call() method by moving
+     * the around chain logic to a separate method.
+     * Builds the chain using an array to avoid closure variable capture issues.
+     */
+    private function generateAroundHelperMethod(int $aroundCount): string
+    {
+        $code = "\n";
+        $code .= "    private function executeAroundChain(array \$args)\n";
+        $code .= "    {\n";
+        
+        // Build the chain from innermost (callable) to outermost (last around advice)
+        // around advices are applied in reverse order, so around[count-1] is outermost
+        // Use an array to store closures to avoid variable capture issues
+        
+        $code .= "        \$chain = [];\n";
+        $code .= "        \$chain[0] = function () use (\$args) {\n";
+        $code .= "            return (\$this->callable)(...\$args);\n";
+        $code .= "        };\n\n";
+        
+        // Wrap with each around advice from last to first (reverse order)
+        for ($i = $aroundCount - 1; $i >= 0; $i--) {
+            $prevIndex = $aroundCount - $i - 1;
+            $currentIndex = $aroundCount - $i;
+            
+            $code .= "        \$prev{$currentIndex} = \$chain[{$prevIndex}];\n";
+            $code .= "        \$chain[{$currentIndex}] = function () use (\$prev{$currentIndex}, \$args) {\n";
+            $code .= "            return (\$this->aroundAdvices[{$i}])(\$prev{$currentIndex}, ...\$args);\n";
+            $code .= "        };\n";
+            if ($i > 0) {
+                $code .= "\n";
+            }
+        }
+        
+        $finalIndex = $aroundCount;
+        $code .= "\n";
+        $code .= "        return \$chain[{$finalIndex}]();\n";
+        $code .= "    }\n";
+        
         return $code;
     }
 }
