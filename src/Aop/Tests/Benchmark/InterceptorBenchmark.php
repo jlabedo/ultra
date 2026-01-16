@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ultra\Aop\Tests\Benchmark;
 
+use Ultra\Aop\CallableReference;
 use Ultra\Aop\Interceptor;
+use Ultra\Aop\Tests\ClosureCallable;
+use Ultra\Aop\Tests\TestContainer;
 
 class InterceptorBenchmark
 {
@@ -90,8 +93,14 @@ class InterceptorBenchmark
 
     private function benchmarkRuntimeNoAdvices(): array
     {
+        $container = new TestContainer();
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
+        $container->set('target', new ClosureCallable($callable));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
 
         // Warmup
         for ($i = 0; $i < self::WARMUP; $i++) {
@@ -112,8 +121,14 @@ class InterceptorBenchmark
 
     private function benchmarkCompiledNoAdvices(): array
     {
+        $container = new TestContainer();
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
+        $container->set('target', new ClosureCallable($callable));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
         $interceptor->compile();
 
         // Warmup
@@ -135,10 +150,17 @@ class InterceptorBenchmark
 
     private function benchmarkRuntimeBefore(): array
     {
+        $container = new TestContainer();
         $counter = 0;
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
-        $interceptor->before(fn() => $counter++);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('before', new ClosureCallable(fn() => $counter++));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
+        $interceptor->before(CallableReference::fromContainer('before', ClosureCallable::class, 'invoke'));
 
         // Warmup
         for ($i = 0; $i < self::WARMUP; $i++) {
@@ -159,10 +181,17 @@ class InterceptorBenchmark
 
     private function benchmarkCompiledBefore(): array
     {
+        $container = new TestContainer();
         $counter = 0;
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
-        $interceptor->before(fn() => $counter++);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('before', new ClosureCallable(fn() => $counter++));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
+        $interceptor->before(CallableReference::fromContainer('before', ClosureCallable::class, 'invoke'));
         $interceptor->compile();
 
         // Warmup
@@ -184,9 +213,16 @@ class InterceptorBenchmark
 
     private function benchmarkRuntimeAround(): array
     {
+        $container = new TestContainer();
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
-        $interceptor->around(fn(callable $proceed, int $x) => $proceed($x) + 1);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('around', new ClosureCallable(fn(callable $proceed, int $x) => $proceed($x) + 1));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
+        $interceptor->around(CallableReference::fromContainer('around', ClosureCallable::class, 'invoke'));
 
         // Warmup
         for ($i = 0; $i < self::WARMUP; $i++) {
@@ -207,9 +243,16 @@ class InterceptorBenchmark
 
     private function benchmarkCompiledAround(): array
     {
+        $container = new TestContainer();
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
-        $interceptor->around(fn(callable $proceed, int $x) => $proceed($x) + 1);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('around', new ClosureCallable(fn(callable $proceed, int $x) => $proceed($x) + 1));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
+        $interceptor->around(CallableReference::fromContainer('around', ClosureCallable::class, 'invoke'));
         $interceptor->compile();
 
         // Warmup
@@ -231,10 +274,17 @@ class InterceptorBenchmark
 
     private function benchmarkRuntimeAfterReturning(): array
     {
+        $container = new TestContainer();
         $counter = 0;
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
-        $interceptor->afterReturning(fn($result) => $counter += $result);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('afterReturning', new ClosureCallable(fn($result) => $counter += $result));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
+        $interceptor->afterReturning(CallableReference::fromContainer('afterReturning', ClosureCallable::class, 'invoke'));
 
         // Warmup
         for ($i = 0; $i < self::WARMUP; $i++) {
@@ -255,10 +305,17 @@ class InterceptorBenchmark
 
     private function benchmarkCompiledAfterReturning(): array
     {
+        $container = new TestContainer();
         $counter = 0;
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
-        $interceptor->afterReturning(fn($result) => $counter += $result);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('afterReturning', new ClosureCallable(fn($result) => $counter += $result));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
+        $interceptor->afterReturning(CallableReference::fromContainer('afterReturning', ClosureCallable::class, 'invoke'));
         $interceptor->compile();
 
         // Warmup
@@ -280,10 +337,17 @@ class InterceptorBenchmark
 
     private function benchmarkRuntimeAfter(): array
     {
+        $container = new TestContainer();
         $counter = 0;
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
-        $interceptor->after(fn() => $counter++);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('after', new ClosureCallable(fn() => $counter++));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
+        $interceptor->after(CallableReference::fromContainer('after', ClosureCallable::class, 'invoke'));
 
         // Warmup
         for ($i = 0; $i < self::WARMUP; $i++) {
@@ -304,10 +368,17 @@ class InterceptorBenchmark
 
     private function benchmarkCompiledAfter(): array
     {
+        $container = new TestContainer();
         $counter = 0;
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
-        $interceptor->after(fn() => $counter++);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('after', new ClosureCallable(fn() => $counter++));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
+        $interceptor->after(CallableReference::fromContainer('after', ClosureCallable::class, 'invoke'));
         $interceptor->compile();
 
         // Warmup
@@ -329,13 +400,22 @@ class InterceptorBenchmark
 
     private function benchmarkRuntimeMultipleBefore(): array
     {
+        $container = new TestContainer();
         $counter = 0;
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('before1', new ClosureCallable(fn() => $counter++));
+        $container->set('before2', new ClosureCallable(fn() => $counter++));
+        $container->set('before3', new ClosureCallable(fn() => $counter++));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
         $interceptor
-            ->before(fn() => $counter++)
-            ->before(fn() => $counter++)
-            ->before(fn() => $counter++);
+            ->before(CallableReference::fromContainer('before1', ClosureCallable::class, 'invoke'))
+            ->before(CallableReference::fromContainer('before2', ClosureCallable::class, 'invoke'))
+            ->before(CallableReference::fromContainer('before3', ClosureCallable::class, 'invoke'));
 
         // Warmup
         for ($i = 0; $i < self::WARMUP; $i++) {
@@ -356,13 +436,22 @@ class InterceptorBenchmark
 
     private function benchmarkCompiledMultipleBefore(): array
     {
+        $container = new TestContainer();
         $counter = 0;
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('before1', new ClosureCallable(fn() => $counter++));
+        $container->set('before2', new ClosureCallable(fn() => $counter++));
+        $container->set('before3', new ClosureCallable(fn() => $counter++));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
         $interceptor
-            ->before(fn() => $counter++)
-            ->before(fn() => $counter++)
-            ->before(fn() => $counter++);
+            ->before(CallableReference::fromContainer('before1', ClosureCallable::class, 'invoke'))
+            ->before(CallableReference::fromContainer('before2', ClosureCallable::class, 'invoke'))
+            ->before(CallableReference::fromContainer('before3', ClosureCallable::class, 'invoke'));
         $interceptor->compile();
 
         // Warmup
@@ -384,14 +473,24 @@ class InterceptorBenchmark
 
     private function benchmarkRuntimeAll(): array
     {
+        $container = new TestContainer();
         $counter = 0;
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('before', new ClosureCallable(fn() => $counter++));
+        $container->set('around', new ClosureCallable(fn(callable $proceed, int $x) => $proceed($x) + 1));
+        $container->set('afterReturning', new ClosureCallable(fn($result) => $counter++));
+        $container->set('after', new ClosureCallable(fn() => $counter++));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
         $interceptor
-            ->before(fn() => $counter++)
-            ->around(fn(callable $proceed, int $x) => $proceed($x) + 1)
-            ->afterReturning(fn($result) => $counter++)
-            ->after(fn() => $counter++);
+            ->before(CallableReference::fromContainer('before', ClosureCallable::class, 'invoke'))
+            ->around(CallableReference::fromContainer('around', ClosureCallable::class, 'invoke'))
+            ->afterReturning(CallableReference::fromContainer('afterReturning', ClosureCallable::class, 'invoke'))
+            ->after(CallableReference::fromContainer('after', ClosureCallable::class, 'invoke'));
 
         // Warmup
         for ($i = 0; $i < self::WARMUP; $i++) {
@@ -412,14 +511,24 @@ class InterceptorBenchmark
 
     private function benchmarkCompiledAll(): array
     {
+        $container = new TestContainer();
         $counter = 0;
         $callable = fn(int $x) => $x * 2;
-        $interceptor = new Interceptor($callable);
+        $container->set('target', new ClosureCallable($callable));
+        $container->set('before', new ClosureCallable(fn() => $counter++));
+        $container->set('around', new ClosureCallable(fn(callable $proceed, int $x) => $proceed($x) + 1));
+        $container->set('afterReturning', new ClosureCallable(fn($result) => $counter++));
+        $container->set('after', new ClosureCallable(fn() => $counter++));
+        
+        $interceptor = new Interceptor(
+            CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+            $container
+        );
         $interceptor
-            ->before(fn() => $counter++)
-            ->around(fn(callable $proceed, int $x) => $proceed($x) + 1)
-            ->afterReturning(fn($result) => $counter++)
-            ->after(fn() => $counter++);
+            ->before(CallableReference::fromContainer('before', ClosureCallable::class, 'invoke'))
+            ->around(CallableReference::fromContainer('around', ClosureCallable::class, 'invoke'))
+            ->afterReturning(CallableReference::fromContainer('afterReturning', ClosureCallable::class, 'invoke'))
+            ->after(CallableReference::fromContainer('after', ClosureCallable::class, 'invoke'));
         $interceptor->compile();
 
         // Warmup
