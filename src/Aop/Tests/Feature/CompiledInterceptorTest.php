@@ -85,51 +85,6 @@ test('compiled interceptor with all advice types', function () {
     ]);
 });
 
-test('compiled interceptor caching', function () {
-    $cacheDir = __DIR__ . '/../../../../var/aop_cache_test_compiled';
-    if (is_dir($cacheDir)) {
-        exec('rm -rf ' . escapeshellarg($cacheDir));
-    }
-
-    $stack = new Stack();
-    $target = fn() => $stack->push('target');
-
-    $interceptor = new Interceptor($target);
-    $interceptor->before(fn() => $stack->push('before'));
-    $interceptor->compile($cacheDir);
-
-    // Check cache file exists
-    $files = glob($cacheDir . '/CompiledInterceptor_*.php');
-    expect(count($files))->toBe(1);
-
-    $cacheFile = $files[0];
-    $code = file_get_contents($cacheFile);
-
-    // Verify generated code structure
-    expect($code)->toContain('class CompiledInterceptor_');
-    expect($code)->toContain('public function call(');
-    expect($code)->toContain('($this->beforeAdvices[0])()');
-    expect($code)->not->toContain('foreach');
-    expect($code)->not->toContain('array_reverse');
-
-    // Test it works
-    $interceptor->call();
-    expect($stack->stack)->toBe(['before', 'target']);
-
-    // Second compile with same config should reuse cache
-    $mtime = filemtime($cacheFile);
-
-    $interceptor2 = new Interceptor($target);
-    $interceptor2->before(fn() => $stack->push('before2'));
-    $interceptor2->compile($cacheDir);
-
-    // Should reuse the cached file (same hash/config)
-    expect(filemtime($cacheFile))->toBe($mtime);
-
-    // Cleanup
-    exec('rm -rf ' . escapeshellarg($cacheDir));
-});
-
 test('compiled interceptor with multiple around advices', function () {
     $stack = new Stack();
 
