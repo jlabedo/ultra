@@ -33,7 +33,7 @@ class NormalizerGenerator
      *
      * @param string $normalizerClass The FQCN of the generated normalizer
      */
-    public static function generate(CodeGenerator $codeGen, string $normalizerClass): FileGenerator
+    private static function generate(CodeGenerator $codeGen, string $normalizerClass): FileGenerator
     {
         $toScalarBody = self::encloseInReturnStatement($codeGen->generateNormalization('$value'));
         $fromScalarBody = $codeGen->generateDenormalization('$value', $bodyBuilder = new MethodBodyBuilder(), Path::new());
