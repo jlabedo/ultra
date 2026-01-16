@@ -12,6 +12,8 @@ class Interceptor
     private array $afterThrowingAdvices = [];
     private array $aroundAdvices = [];
 
+    private ?object $compiled = null;
+
     public function __construct(
         private readonly mixed $callable
     ) {
@@ -49,6 +51,11 @@ class Interceptor
 
     public function call(mixed ...$args): mixed
     {
+        // Use compiled version if available
+        if ($this->compiled !== null) {
+            return $this->compiled->call(...$args);
+        }
+
         // Execute before advices
         foreach ($this->beforeAdvices as $advice) {
             $advice();
@@ -88,5 +95,48 @@ class Interceptor
         } else {
             return $pipeline();
         }
+    }
+
+    /**
+     * Compile this interceptor to optimized code for minimal runtime overhead
+     */
+    public function compile(?string $cacheDir = null): self
+    {
+        $compiler = new InterceptorCompiler($cacheDir);
+        $className = $compiler->compile($this);
+
+        $this->compiled = new $className(
+            $this->callable,
+            $this->beforeAdvices,
+            $this->afterAdvices,
+            $this->afterReturningAdvices,
+            $this->afterThrowingAdvices,
+            $this->aroundAdvices
+        );
+
+        return $this;
+    }
+
+    /**
+     * Get a unique hash for this interceptor configuration
+     */
+    public function getHash(): string
+    {
+        $metadata = $this->getMetadata();
+        return md5(json_encode($metadata));
+    }
+
+    /**
+     * Get metadata about this interceptor for code generation
+     */
+    public function getMetadata(): array
+    {
+        return [
+            'beforeCount' => count($this->beforeAdvices),
+            'afterCount' => count($this->afterAdvices),
+            'afterReturningCount' => count($this->afterReturningAdvices),
+            'afterThrowingCount' => count($this->afterThrowingAdvices),
+            'aroundCount' => count($this->aroundAdvices),
+        ];
     }
 }
