@@ -1,19 +1,29 @@
 <?php
 
+use Ultra\Aop\CallableReference;
 use Ultra\Aop\Interceptor;
+use Ultra\Aop\Tests\ClosureCallable;
+use Ultra\Aop\Tests\TestContainer;
 
 require_once __DIR__ . '/../Stack.php';
 
 test('intercept function call with before advice', function () {
     $stack = new Stack();
+    $container = new TestContainer();
 
     $target = function (string $value) use ($stack) {
         $stack->push($value);
         return 'result';
     };
 
-    $interceptor = new Interceptor($target);
-    $interceptor->before(fn() => $stack->push('before'));
+    $container->set('target', new ClosureCallable($target));
+    $container->set('before', new ClosureCallable(fn() => $stack->push('before')));
+
+    $interceptor = new Interceptor(
+        CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+        $container
+    );
+    $interceptor->before(CallableReference::fromContainer('before', ClosureCallable::class, 'invoke'));
 
     $result = $interceptor->call('target');
 
@@ -23,6 +33,7 @@ test('intercept function call with before advice', function () {
 
 test('intercept method call with before advice', function () {
     $stack = new Stack();
+    $container = new TestContainer();
 
     $object = new class($stack) {
         public function __construct(private Stack $stack) {}
@@ -33,8 +44,14 @@ test('intercept method call with before advice', function () {
         }
     };
 
-    $interceptor = new Interceptor([$object, 'execute']);
-    $interceptor->before(fn() => $stack->push('before'));
+    $container->set('target', $object);
+    $container->set('before', new ClosureCallable(fn() => $stack->push('before')));
+
+    $interceptor = new Interceptor(
+        CallableReference::fromContainer('target', get_class($object), 'execute'),
+        $container
+    );
+    $interceptor->before(CallableReference::fromContainer('before', ClosureCallable::class, 'invoke'));
 
     $result = $interceptor->call('target');
 
@@ -44,19 +61,28 @@ test('intercept method call with before advice', function () {
 
 test('around advice', function () {
     $stack = new Stack();
+    $container = new TestContainer();
 
     $target = function () use ($stack) {
         $stack->push('target');
         return 'result';
     };
 
-    $interceptor = new Interceptor($target);
-    $interceptor->around(function (callable $proceed) use ($stack) {
+    $around = function (callable $proceed) use ($stack) {
         $stack->push('before');
         $result = $proceed();
         $stack->push('after');
         return $result . '_modified';
-    });
+    };
+
+    $container->set('target', new ClosureCallable($target));
+    $container->set('around', new ClosureCallable($around));
+
+    $interceptor = new Interceptor(
+        CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+        $container
+    );
+    $interceptor->around(CallableReference::fromContainer('around', ClosureCallable::class, 'invoke'));
 
     $result = $interceptor->call();
 
@@ -66,16 +92,23 @@ test('around advice', function () {
 
 test('after returning advice', function () {
     $stack = new Stack();
+    $container = new TestContainer();
 
     $target = function () use ($stack) {
         $stack->push('target');
         return 'result';
     };
 
-    $interceptor = new Interceptor($target);
-    $interceptor->afterReturning(function (string $result) use ($stack) {
+    $container->set('target', new ClosureCallable($target));
+    $container->set('afterReturning', new ClosureCallable(function (string $result) use ($stack) {
         $stack->push('afterReturning:' . $result);
-    });
+    }));
+
+    $interceptor = new Interceptor(
+        CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+        $container
+    );
+    $interceptor->afterReturning(CallableReference::fromContainer('afterReturning', ClosureCallable::class, 'invoke'));
 
     $interceptor->call();
 
@@ -84,16 +117,23 @@ test('after returning advice', function () {
 
 test('after throwing advice', function () {
     $stack = new Stack();
+    $container = new TestContainer();
 
     $target = function () use ($stack) {
         $stack->push('target');
         throw new \Exception('error');
     };
 
-    $interceptor = new Interceptor($target);
-    $interceptor->afterThrowing(function (\Throwable $e) use ($stack) {
+    $container->set('target', new ClosureCallable($target));
+    $container->set('afterThrowing', new ClosureCallable(function (\Throwable $e) use ($stack) {
         $stack->push('afterThrowing:' . $e->getMessage());
-    });
+    }));
+
+    $interceptor = new Interceptor(
+        CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+        $container
+    );
+    $interceptor->afterThrowing(CallableReference::fromContainer('afterThrowing', ClosureCallable::class, 'invoke'));
 
     try {
         $interceptor->call();
@@ -106,6 +146,7 @@ test('after throwing advice', function () {
 
 test('after advice (finally)', function () {
     $stack = new Stack();
+    $container = new TestContainer();
 
     $target = function (bool $throw) use ($stack) {
         $stack->push('target');
@@ -115,8 +156,14 @@ test('after advice (finally)', function () {
         return 'result';
     };
 
-    $interceptor = new Interceptor($target);
-    $interceptor->after(fn() => $stack->push('after'));
+    $container->set('target', new ClosureCallable($target));
+    $container->set('after', new ClosureCallable(fn() => $stack->push('after')));
+
+    $interceptor = new Interceptor(
+        CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+        $container
+    );
+    $interceptor->after(CallableReference::fromContainer('after', ClosureCallable::class, 'invoke'));
 
     // Success case
     $interceptor->call(false);
@@ -134,6 +181,7 @@ test('after advice (finally)', function () {
 
 test('all advice types combined', function () {
     $stack = new Stack();
+    $container = new TestContainer();
 
     $target = function (bool $throw) use ($stack) {
         $stack->push('target');
@@ -143,25 +191,37 @@ test('all advice types combined', function () {
         return 'result';
     };
 
-    $interceptor = new Interceptor($target);
+    $around = function (callable $proceed, bool $throw) use ($stack) {
+        $stack->push('around_before');
+        try {
+            $result = $proceed($throw);
+            $stack->push('around_after');
+            return $result . '_around';
+        } catch (\Throwable $e) {
+            $stack->push('around_catch');
+            throw $e;
+        } finally {
+            $stack->push('around_finally');
+        }
+    };
+
+    $container->set('target', new ClosureCallable($target));
+    $container->set('before', new ClosureCallable(fn() => $stack->push('before')));
+    $container->set('around', new ClosureCallable($around));
+    $container->set('afterReturning', new ClosureCallable(fn($result) => $stack->push('afterReturning:' . $result)));
+    $container->set('afterThrowing', new ClosureCallable(fn($e) => $stack->push('afterThrowing:' . $e->getMessage())));
+    $container->set('after', new ClosureCallable(fn() => $stack->push('after')));
+
+    $interceptor = new Interceptor(
+        CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+        $container
+    );
     $interceptor
-        ->before(fn() => $stack->push('before'))
-        ->around(function (callable $proceed, bool $throw) use ($stack) {
-            $stack->push('around_before');
-            try {
-                $result = $proceed($throw);
-                $stack->push('around_after');
-                return $result . '_around';
-            } catch (\Throwable $e) {
-                $stack->push('around_catch');
-                throw $e;
-            } finally {
-                $stack->push('around_finally');
-            }
-        })
-        ->afterReturning(fn($result) => $stack->push('afterReturning:' . $result))
-        ->afterThrowing(fn($e) => $stack->push('afterThrowing:' . $e->getMessage()))
-        ->after(fn() => $stack->push('after'));
+        ->before(CallableReference::fromContainer('before', ClosureCallable::class, 'invoke'))
+        ->around(CallableReference::fromContainer('around', ClosureCallable::class, 'invoke'))
+        ->afterReturning(CallableReference::fromContainer('afterReturning', ClosureCallable::class, 'invoke'))
+        ->afterThrowing(CallableReference::fromContainer('afterThrowing', ClosureCallable::class, 'invoke'))
+        ->after(CallableReference::fromContainer('after', ClosureCallable::class, 'invoke'));
 
     // Success case
     $result = $interceptor->call(false);
@@ -196,14 +256,23 @@ test('all advice types combined', function () {
 
 test('multiple before advices execute in order', function () {
     $stack = new Stack();
+    $container = new TestContainer();
 
     $target = fn() => $stack->push('target');
 
-    $interceptor = new Interceptor($target);
+    $container->set('target', new ClosureCallable($target));
+    $container->set('before1', new ClosureCallable(fn() => $stack->push('before1')));
+    $container->set('before2', new ClosureCallable(fn() => $stack->push('before2')));
+    $container->set('before3', new ClosureCallable(fn() => $stack->push('before3')));
+
+    $interceptor = new Interceptor(
+        CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+        $container
+    );
     $interceptor
-        ->before(fn() => $stack->push('before1'))
-        ->before(fn() => $stack->push('before2'))
-        ->before(fn() => $stack->push('before3'));
+        ->before(CallableReference::fromContainer('before1', ClosureCallable::class, 'invoke'))
+        ->before(CallableReference::fromContainer('before2', ClosureCallable::class, 'invoke'))
+        ->before(CallableReference::fromContainer('before3', ClosureCallable::class, 'invoke'));
 
     $interceptor->call();
 
@@ -212,26 +281,38 @@ test('multiple before advices execute in order', function () {
 
 test('multiple around advices wrap correctly', function () {
     $stack = new Stack();
+    $container = new TestContainer();
 
     $target = function () use ($stack) {
         $stack->push('target');
         return 'result';
     };
 
-    $interceptor = new Interceptor($target);
+    $around1 = function (callable $proceed) use ($stack) {
+        $stack->push('around1_before');
+        $result = $proceed();
+        $stack->push('around1_after');
+        return $result . '_1';
+    };
+
+    $around2 = function (callable $proceed) use ($stack) {
+        $stack->push('around2_before');
+        $result = $proceed();
+        $stack->push('around2_after');
+        return $result . '_2';
+    };
+
+    $container->set('target', new ClosureCallable($target));
+    $container->set('around1', new ClosureCallable($around1));
+    $container->set('around2', new ClosureCallable($around2));
+
+    $interceptor = new Interceptor(
+        CallableReference::fromContainer('target', ClosureCallable::class, 'invoke'),
+        $container
+    );
     $interceptor
-        ->around(function (callable $proceed) use ($stack) {
-            $stack->push('around1_before');
-            $result = $proceed();
-            $stack->push('around1_after');
-            return $result . '_1';
-        })
-        ->around(function (callable $proceed) use ($stack) {
-            $stack->push('around2_before');
-            $result = $proceed();
-            $stack->push('around2_after');
-            return $result . '_2';
-        });
+        ->around(CallableReference::fromContainer('around1', ClosureCallable::class, 'invoke'))
+        ->around(CallableReference::fromContainer('around2', ClosureCallable::class, 'invoke'));
 
     $result = $interceptor->call();
 

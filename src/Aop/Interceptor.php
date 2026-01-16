@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\Aop;
 
+use Psr\Container\ContainerInterface;
+
 class Interceptor
 {
     private array $beforeAdvices = [];
@@ -15,35 +17,36 @@ class Interceptor
     private ?object $compiled = null;
 
     public function __construct(
-        private readonly mixed $callable
+        private readonly CallableReference $callable,
+        private readonly ?ContainerInterface $container = null
     ) {
     }
 
-    public function before(callable $advice): self
+    public function before(CallableReference $advice): self
     {
         $this->beforeAdvices[] = $advice;
         return $this;
     }
 
-    public function after(callable $advice): self
+    public function after(CallableReference $advice): self
     {
         $this->afterAdvices[] = $advice;
         return $this;
     }
 
-    public function afterReturning(callable $advice): self
+    public function afterReturning(CallableReference $advice): self
     {
         $this->afterReturningAdvices[] = $advice;
         return $this;
     }
 
-    public function afterThrowing(callable $advice): self
+    public function afterThrowing(CallableReference $advice): self
     {
         $this->afterThrowingAdvices[] = $advice;
         return $this;
     }
 
-    public function around(callable $advice): self
+    public function around(CallableReference $advice): self
     {
         $this->aroundAdvices[] = $advice;
         return $this;
@@ -51,6 +54,10 @@ class Interceptor
 
     public function call(mixed ...$args): mixed
     {
+        if ($this->container === null) {
+            throw new \RuntimeException('Container is required for runtime execution');
+        }
+
         // Use compiled version if available
         if ($this->compiled !== null) {
             return $this->compiled->call(...$args);
@@ -58,19 +65,19 @@ class Interceptor
 
         // Execute before advices
         foreach ($this->beforeAdvices as $advice) {
-            $advice();
+            $advice->call($this->container);
         }
 
         // Build the core execution
         $pipeline = function () use ($args) {
-            return ($this->callable)(...$args);
+            return $this->callable->call($this->container, ...$args);
         };
 
         // Wrap with around advices (in reverse order)
         foreach (array_reverse($this->aroundAdvices) as $advice) {
             $next = $pipeline;
             $pipeline = function () use ($advice, $next, $args) {
-                return $advice($next, ...$args);
+                return $advice->call($this->container, $next, ...$args);
             };
         }
 
@@ -79,16 +86,16 @@ class Interceptor
             try {
                 $returnValue = $pipeline();
                 foreach ($this->afterReturningAdvices as $advice) {
-                    $advice($returnValue);
+                    $advice->call($this->container, $returnValue);
                 }
             } catch (\Throwable $e) {
                 foreach ($this->afterThrowingAdvices as $advice) {
-                    $advice($e);
+                    $advice->call($this->container, $e);
                 }
                 throw $e;
             } finally {
                 foreach ($this->afterAdvices as $advice) {
-                    $advice();
+                    $advice->call($this->container);
                 }
             }
             return $returnValue;
@@ -102,10 +109,15 @@ class Interceptor
      */
     public function compile(?string $cacheDir = null): self
     {
+        if ($this->container === null) {
+            throw new \RuntimeException('Container is required for compilation');
+        }
+
         $compiler = new InterceptorCompiler($cacheDir);
         $className = $compiler->compile($this);
 
         $this->compiled = new $className(
+            $this->container,
             $this->callable,
             $this->beforeAdvices,
             $this->afterAdvices,
@@ -132,11 +144,17 @@ class Interceptor
     public function getMetadata(): array
     {
         return [
+            'callable' => $this->callable->getMetadata(),
             'beforeCount' => count($this->beforeAdvices),
             'afterCount' => count($this->afterAdvices),
             'afterReturningCount' => count($this->afterReturningAdvices),
             'afterThrowingCount' => count($this->afterThrowingAdvices),
             'aroundCount' => count($this->aroundAdvices),
+            'beforeAdvices' => array_map(fn($a) => $a->getMetadata(), $this->beforeAdvices),
+            'afterAdvices' => array_map(fn($a) => $a->getMetadata(), $this->afterAdvices),
+            'afterReturningAdvices' => array_map(fn($a) => $a->getMetadata(), $this->afterReturningAdvices),
+            'afterThrowingAdvices' => array_map(fn($a) => $a->getMetadata(), $this->afterThrowingAdvices),
+            'aroundAdvices' => array_map(fn($a) => $a->getMetadata(), $this->aroundAdvices),
         ];
     }
 }

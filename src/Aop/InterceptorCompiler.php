@@ -6,7 +6,7 @@ namespace Ultra\Aop;
 
 class InterceptorCompiler
 {
-    private const string VERSION_ID = '1';
+    private const string VERSION_ID = '2';
 
     public function __construct(
         private readonly ?string $cacheDir = null
@@ -50,32 +50,57 @@ class InterceptorCompiler
         $metadata = $interceptor->getMetadata();
 
         $code = "<?php\n\n";
+        $code .= "use Psr\\Container\\ContainerInterface;\n\n";
         $code .= "class {$className}\n";
         $code .= "{\n";
 
-        // Add properties for callable and advices
-        $code .= "    private \$callable;\n";
-        $code .= "    private array \$beforeAdvices = [];\n";
-        $code .= "    private array \$afterAdvices = [];\n";
-        $code .= "    private array \$afterReturningAdvices = [];\n";
-        $code .= "    private array \$afterThrowingAdvices = [];\n";
-        $code .= "    private array \$aroundAdvices = [];\n\n";
+        // Add properties for container and object references
+        $code .= "    private ContainerInterface \$container;\n";
+        
+        // Store object references for container-based callables
+        $callableMeta = $metadata['callable'];
+        if ($callableMeta['type'] === CallableReference::TYPE_CONTAINER) {
+            $code .= "    private object \$callableObject;\n";
+        }
+        
+        // Store object references for container-based advices
+        $containerAdviceIndices = [];
+        foreach (['beforeAdvices', 'afterAdvices', 'afterReturningAdvices', 'afterThrowingAdvices', 'aroundAdvices'] as $adviceType) {
+            foreach ($metadata[$adviceType] as $idx => $adviceMeta) {
+                if ($adviceMeta['type'] === CallableReference::TYPE_CONTAINER) {
+                    $containerAdviceIndices[] = ['type' => $adviceType, 'index' => $idx, 'meta' => $adviceMeta];
+                    $code .= "    private object \$adviceObject_{$adviceType}_{$idx};\n";
+                }
+            }
+        }
+
+        $code .= "\n";
 
         // Constructor
         $code .= "    public function __construct(\n";
-        $code .= "        \$callable,\n";
+        $code .= "        ContainerInterface \$container,\n";
+        $code .= "        \\Ultra\\Aop\\CallableReference \$callable,\n";
         $code .= "        array \$beforeAdvices,\n";
         $code .= "        array \$afterAdvices,\n";
         $code .= "        array \$afterReturningAdvices,\n";
         $code .= "        array \$afterThrowingAdvices,\n";
         $code .= "        array \$aroundAdvices\n";
         $code .= "    ) {\n";
-        $code .= "        \$this->callable = \$callable;\n";
-        $code .= "        \$this->beforeAdvices = \$beforeAdvices;\n";
-        $code .= "        \$this->afterAdvices = \$afterAdvices;\n";
-        $code .= "        \$this->afterReturningAdvices = \$afterReturningAdvices;\n";
-        $code .= "        \$this->afterThrowingAdvices = \$afterThrowingAdvices;\n";
-        $code .= "        \$this->aroundAdvices = \$aroundAdvices;\n";
+        $code .= "        \$this->container = \$container;\n";
+        
+        // Resolve container-based callable
+        if ($callableMeta['type'] === CallableReference::TYPE_CONTAINER) {
+            $code .= "        \$this->callableObject = \$container->get('{$callableMeta['containerId']}');\n";
+        }
+        
+        // Resolve container-based advices
+        foreach ($containerAdviceIndices as $adviceInfo) {
+            $type = $adviceInfo['type'];
+            $idx = $adviceInfo['index'];
+            $meta = $adviceInfo['meta'];
+            $code .= "        \$this->adviceObject_{$type}_{$idx} = \$container->get('{$meta['containerId']}');\n";
+        }
+        
         $code .= "    }\n\n";
 
         // Generate optimized call method
@@ -83,7 +108,7 @@ class InterceptorCompiler
 
         // Generate helper method for around chain if needed
         if ($metadata['aroundCount'] > 0) {
-            $code .= $this->generateAroundHelperMethod($metadata['aroundCount']);
+            $code .= $this->generateAroundHelperMethod($metadata);
         }
 
         $code .= "}\n";
@@ -106,7 +131,11 @@ class InterceptorCompiler
         if ($metadata['beforeCount'] > 0) {
             $code .= "        // Execute before advices\n";
             for ($i = 0; $i < $metadata['beforeCount']; ++$i) {
-                $code .= "        (\$this->beforeAdvices[{$i}])();\n";
+                $adviceMeta = $metadata['beforeAdvices'][$i];
+                $objectProperty = $adviceMeta['type'] === CallableReference::TYPE_CONTAINER 
+                    ? "adviceObject_beforeAdvices_{$i}" 
+                    : null;
+                $code .= "        " . $this->generateCallCode($adviceMeta, $objectProperty, []) . ";\n";
             }
             $code .= "\n";
         }
@@ -118,14 +147,22 @@ class InterceptorCompiler
                 // Use helper method to reduce stack depth in main call method
                 $code .= "            \$returnValue = \$this->executeAroundChain(\$args);\n";
             } else {
-                $code .= "            \$returnValue = (\$this->callable)(...\$args);\n";
+                $callableMeta = $metadata['callable'];
+                $objectProperty = $callableMeta['type'] === CallableReference::TYPE_CONTAINER 
+                    ? 'callableObject' 
+                    : null;
+                $code .= "            \$returnValue = " . $this->generateCallCode($callableMeta, $objectProperty, ['...$args']) . ";\n";
             }
 
             // After returning
             if ($hasAfterReturning) {
                 $code .= "\n";
                 for ($i = 0; $i < $metadata['afterReturningCount']; ++$i) {
-                    $code .= "            (\$this->afterReturningAdvices[{$i}])(\$returnValue);\n";
+                    $adviceMeta = $metadata['afterReturningAdvices'][$i];
+                    $objectProperty = $adviceMeta['type'] === CallableReference::TYPE_CONTAINER 
+                        ? "adviceObject_afterReturningAdvices_{$i}" 
+                        : null;
+                    $code .= "            " . $this->generateCallCode($adviceMeta, $objectProperty, ['$returnValue']) . ";\n";
                 }
             }
 
@@ -134,7 +171,11 @@ class InterceptorCompiler
             // After throwing
             if ($hasAfterThrowing) {
                 for ($i = 0; $i < $metadata['afterThrowingCount']; ++$i) {
-                    $code .= "            (\$this->afterThrowingAdvices[{$i}])(\$e);\n";
+                    $adviceMeta = $metadata['afterThrowingAdvices'][$i];
+                    $objectProperty = $adviceMeta['type'] === CallableReference::TYPE_CONTAINER 
+                        ? "adviceObject_afterThrowingAdvices_{$i}" 
+                        : null;
+                    $code .= "            " . $this->generateCallCode($adviceMeta, $objectProperty, ['$e']) . ";\n";
                 }
             }
 
@@ -145,7 +186,11 @@ class InterceptorCompiler
             if ($hasAfter) {
                 $code .= " finally {\n";
                 for ($i = 0; $i < $metadata['afterCount']; ++$i) {
-                    $code .= "            (\$this->afterAdvices[{$i}])();\n";
+                    $adviceMeta = $metadata['afterAdvices'][$i];
+                    $objectProperty = $adviceMeta['type'] === CallableReference::TYPE_CONTAINER 
+                        ? "adviceObject_afterAdvices_{$i}" 
+                        : null;
+                    $code .= "            " . $this->generateCallCode($adviceMeta, $objectProperty, []) . ";\n";
                 }
                 $code .= "        }\n";
             } else {
@@ -160,7 +205,11 @@ class InterceptorCompiler
                 // Use helper method to reduce stack depth in main call method
                 $code .= "        return \$this->executeAroundChain(\$args);\n";
             } else {
-                $code .= "        return (\$this->callable)(...\$args);\n";
+                $callableMeta = $metadata['callable'];
+                $objectProperty = $callableMeta['type'] === CallableReference::TYPE_CONTAINER 
+                    ? 'callableObject' 
+                    : null;
+                $code .= "        return " . $this->generateCallCode($callableMeta, $objectProperty, ['...$args']) . ";\n";
             }
         }
 
@@ -170,13 +219,30 @@ class InterceptorCompiler
     }
 
     /**
+     * Generate code to call a method based on CallableReference metadata
+     */
+    private function generateCallCode(array $meta, ?string $objectProperty, array $args): string
+    {
+        $argsStr = implode(', ', $args);
+        
+        return match ($meta['type']) {
+            CallableReference::TYPE_CONTAINER => "\$this->{$objectProperty}->{$meta['methodName']}(" . $argsStr . ")",
+            CallableReference::TYPE_STATIC => "\\{$meta['className']}::{$meta['methodName']}(" . $argsStr . ")",
+            CallableReference::TYPE_FUNCTION => "\\{$meta['methodName']}(" . $argsStr . ")",
+        };
+    }
+
+    /**
      * Generate helper method for around chain execution
      * This reduces stack depth in the main call() method by moving
      * the around chain logic to a separate method.
      * Builds the chain using an array to avoid closure variable capture issues.
      */
-    private function generateAroundHelperMethod(int $aroundCount): string
+    private function generateAroundHelperMethod(array $metadata): string
     {
+        $aroundCount = $metadata['aroundCount'];
+        $callableMeta = $metadata['callable'];
+        
         $code = "\n";
         $code .= "    private function executeAroundChain(array \$args)\n";
         $code .= "    {\n";
@@ -187,17 +253,25 @@ class InterceptorCompiler
 
         $code .= "        \$chain = [];\n";
         $code .= "        \$chain[0] = function () use (\$args) {\n";
-        $code .= "            return (\$this->callable)(...\$args);\n";
+        $objectProperty = $callableMeta['type'] === CallableReference::TYPE_CONTAINER 
+            ? 'callableObject' 
+            : null;
+        $code .= "            return " . $this->generateCallCode($callableMeta, $objectProperty, ['...$args']) . ";\n";
         $code .= "        };\n\n";
 
         // Wrap with each around advice from last to first (reverse order)
         for ($i = $aroundCount - 1; $i >= 0; --$i) {
             $prevIndex = $aroundCount - $i - 1;
             $currentIndex = $aroundCount - $i;
+            $adviceMeta = $metadata['aroundAdvices'][$i];
+            
+            $objectProperty = $adviceMeta['type'] === CallableReference::TYPE_CONTAINER 
+                ? "adviceObject_aroundAdvices_{$i}" 
+                : null;
 
             $code .= "        \$prev{$currentIndex} = \$chain[{$prevIndex}];\n";
             $code .= "        \$chain[{$currentIndex}] = function () use (\$prev{$currentIndex}, \$args) {\n";
-            $code .= "            return (\$this->aroundAdvices[{$i}])(\$prev{$currentIndex}, ...\$args);\n";
+            $code .= "            return " . $this->generateCallCode($adviceMeta, $objectProperty, ['$prev' . $currentIndex, '...$args']) . ";\n";
             $code .= "        };\n";
             if ($i > 0) {
                 $code .= "\n";
