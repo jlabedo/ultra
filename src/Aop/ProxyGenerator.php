@@ -16,113 +16,124 @@ class ProxyGenerator
      * @param array<string, array{before: array, after: array, around: array}> $methods
      * @return string
      */
-    public function generate(string $targetClass, string $proxyClass, array $methods): string
+    public function generate(string $targetClass, string $interceptorClass, array $methods): string
     {
         $reflection = new \ReflectionClass($targetClass);
-        $class = new ClassGenerator($proxyClass);
-        $class->setExtendedClass($targetClass);
+        $class = new ClassGenerator($interceptorClass);
 
-        $class->addProperty('interceptors', [], PropertyGenerator::FLAG_PRIVATE);
+        $class->addProperty('advices', [], PropertyGenerator::FLAG_PRIVATE);
+        $class->addProperty('methods', [], PropertyGenerator::FLAG_PRIVATE);
 
-        $constructor = $reflection->getConstructor();
-        if ($constructor) {
-            $params = [];
-            $paramNames = [];
-            foreach ($constructor->getParameters() as $parameter) {
-                $params[] = [
-                    'name' => $parameter->getName(),
-                    'type' => $parameter->getType()?->getName(),
-                ];
-                $paramNames[] = '$' . $parameter->getName();
-            }
-            
-            $class->addMethod(
-                '__construct',
-                array_merge([['name' => 'interceptors', 'type' => 'array']], $params),
-                MethodGenerator::FLAG_PUBLIC,
-                '$this->interceptors = $interceptors;' . PHP_EOL . 'parent::__construct(' . implode(', ', $paramNames) . ');'
-            );
-        } else {
-            $class->addMethod(
-                '__construct',
-                [['name' => 'interceptors', 'type' => 'array']],
-                MethodGenerator::FLAG_PUBLIC,
-                '$this->interceptors = $interceptors;'
-            );
-        }
+        $class->addMethod(
+            '__construct',
+            [['name' => 'advices', 'type' => 'array']],
+            MethodGenerator::FLAG_PUBLIC,
+            '$this->advices = $advices;' . PHP_EOL . '$this->methods = [];'
+        );
 
+        // Generate individual call methods for each intercepted method
         foreach ($methods as $methodName => $advices) {
             $targetMethod = $reflection->getMethod($methodName);
-            $params = [];
-            $paramNames = [];
-            foreach ($targetMethod->getParameters() as $parameter) {
-                $params[] = [
-                    'name' => $parameter->getName(),
-                    'type' => $parameter->getType()?->getName(),
-                ];
-                $paramNames[] = '$' . $parameter->getName();
-            }
+            $methodBody = $this->generateCallMethodBody($methodName, $advices);
 
-            $methodBody = $this->generateMethodBody($methodName, $advices, $paramNames);
             $class->addMethod(
-                $methodName,
-                $params,
+                'call_' . $methodName,
+                [
+                    ['name' => 'target', 'type' => 'object'],
+                    ['name' => 'args', 'type' => 'array']
+                ],
                 MethodGenerator::FLAG_PUBLIC,
                 $methodBody
             );
         }
+
+        // Generate generic invoke method
+        $invokeBody = $this->generateInvokeMethod($methods);
+        $class->addMethod(
+            'invoke',
+            [
+                ['name' => 'target', 'type' => 'object'],
+                ['name' => 'method', 'type' => 'string'],
+                ['name' => 'args', 'type' => 'array']
+            ],
+            MethodGenerator::FLAG_PUBLIC,
+            $invokeBody
+        );
 
         $file = new FileGenerator();
         $file->setClass($class);
         return $file->generate();
     }
 
-    private function generateMethodBody(string $methodName, array $advices, array $paramNames): string
+    private function generateCallMethodBody(string $methodName, array $advices): string
     {
         $body = "";
-        
+
         $beforeAdvices = $advices['before'] ?? [];
         foreach ($beforeAdvices as $index => $advice) {
-            $body .= "\$this->interceptors['{$methodName}']['before'][{$index}]->{$advice['method']}();\n";
+            $body .= "\$this->advices['{$methodName}']['before'][{$index}]->{$advice['method']}();\n";
         }
 
-        $parentCall = "parent::{$methodName}(" . implode(', ', $paramNames) . ")";
+        $targetCall = "\$target->{$methodName}(...\$args)";
 
-        if (empty($advices['around'])) {
-            if (!empty($advices['afterThrowing']) || !empty($advices['afterReturning']) || !empty($advices['after'])) {
-                $body .= "try {\n";
-                $body .= "    \$returnValue = " . $parentCall . ";\n";
-                foreach ($advices['afterReturning'] ?? [] as $index => $advice) {
-                    $body .= "    \$this->interceptors['{$methodName}']['afterReturning'][{$index}]->{$advice['method']}(\$returnValue);\n";
-                }
-                $body .= "} catch (\\Throwable \$e) {\n";
-                foreach ($advices['afterThrowing'] ?? [] as $index => $advice) {
-                    $body .= "    \$this->interceptors['{$methodName}']['afterThrowing'][{$index}]->{$advice['method']}(\$e);\n";
-                }
-                $body .= "    throw \$e;\n";
-                $body .= "} finally {\n";
-                foreach ($advices['after'] ?? [] as $index => $advice) {
-                    $body .= "    \$this->interceptors['{$methodName}']['after'][{$index}]->{$advice['method']}();\n";
-                }
-                $body .= "}\n";
-                $body .= "return \$returnValue;\n";
-            } else {
-                $body .= "return " . $parentCall . ";\n";
-            }
-        } else {
-            $body .= "\$pipeline = function (" . implode(', ', $paramNames) . ") {\n";
-            $body .= "    return " . $parentCall . ";\n";
-            $body .= "};\n";
+        // Build the core execution (target call or around pipeline)
+        $coreExecution = "";
+        if (!empty($advices['around'])) {
+            $coreExecution .= "\$pipeline = function () use (\$target, \$args) {\n";
+            $coreExecution .= "    return " . $targetCall . ";\n";
+            $coreExecution .= "};\n";
 
             foreach (array_reverse($advices['around']) as $index => $advice) {
-                $body .= "\$next = \$pipeline;\n";
-                $body .= "\$pipeline = function (" . implode(', ', $paramNames) . ") use (\$next) {\n";
-                $body .= "    return \$this->interceptors['{$methodName}']['around'][{$index}]->{$advice['method']}(\$next, " . implode(', ', $paramNames) . ");\n";
-                $body .= "};\n";
+                $coreExecution .= "\$next = \$pipeline;\n";
+                $coreExecution .= "\$pipeline = function () use (\$next, \$args) {\n";
+                $coreExecution .= "    return \$this->advices['{$methodName}']['around'][{$index}]->{$advice['method']}(\$next, ...\$args);\n";
+                $coreExecution .= "};\n";
             }
-
-            $body .= "return \$pipeline(" . implode(', ', $paramNames) . ");\n";
+            $coreExecution .= "\$returnValue = \$pipeline();\n";
+        } else {
+            $coreExecution .= "\$returnValue = " . $targetCall . ";\n";
         }
+
+        // Wrap with try-catch-finally if needed
+        if (!empty($advices['afterThrowing']) || !empty($advices['afterReturning']) || !empty($advices['after'])) {
+            $body .= "try {\n";
+            $body .= $this->indent($coreExecution, 1);
+            foreach ($advices['afterReturning'] ?? [] as $index => $advice) {
+                $body .= "    \$this->advices['{$methodName}']['afterReturning'][{$index}]->{$advice['method']}(\$returnValue);\n";
+            }
+            $body .= "} catch (\\Throwable \$e) {\n";
+            foreach ($advices['afterThrowing'] ?? [] as $index => $advice) {
+                $body .= "    \$this->advices['{$methodName}']['afterThrowing'][{$index}]->{$advice['method']}(\$e);\n";
+            }
+            $body .= "    throw \$e;\n";
+            $body .= "} finally {\n";
+            foreach ($advices['after'] ?? [] as $index => $advice) {
+                $body .= "    \$this->advices['{$methodName}']['after'][{$index}]->{$advice['method']}();\n";
+            }
+            $body .= "}\n";
+            $body .= "return \$returnValue;\n";
+        } else {
+            $body .= $coreExecution;
+            $body .= "return \$returnValue;\n";
+        }
+
+        return $body;
+    }
+
+    private function indent(string $code, int $levels): string
+    {
+        $indent = str_repeat('    ', $levels);
+        return $indent . str_replace("\n", "\n" . $indent, rtrim($code));
+    }
+
+    private function generateInvokeMethod(array $methods): string
+    {
+        $body = "return match (\$method) {\n";
+        foreach (array_keys($methods) as $methodName) {
+            $body .= "    '{$methodName}' => \$this->call_{$methodName}(\$target, \$args),\n";
+        }
+        $body .= "    default => \$target->\$method(...\$args),\n";
+        $body .= "};\n";
 
         return $body;
     }

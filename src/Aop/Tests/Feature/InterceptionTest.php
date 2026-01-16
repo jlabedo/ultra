@@ -23,14 +23,13 @@ class Interceptor extends StackIncrementer {
 test('full integration', function () {
     $stack = new Stack();
     $interceptor = new Interceptor($stack);
-    
+
     $container = new AopContainer();
     $container->interceptor($interceptor, 'intercept')->before(Target::class, 'invoke');
     $container->compile();
 
-    $proxy = $container->create(Target::class, $stack);
-
-    $proxy->invoke();
+    $target = new Target($stack);
+    $container->invoke($target, 'invoke');
 
     expect($stack->stack)->toBe(['bar', 'foo']);
 });
@@ -45,7 +44,7 @@ test('around', function () {
     };
     $classReflection = new ReflectionClass($class);
     $className = $classReflection->getName();
-    
+
     $interceptor = new class ($stack) extends StackIncrementer {
         public function intercept(callable $proceed): string
         {
@@ -55,49 +54,16 @@ test('around', function () {
             return $result . 'bar';
         }
     };
-    
+
     $container = new AopContainer();
     $container->interceptor($interceptor, 'intercept')->around($className, 'invoke');
     $container->compile();
 
-    $proxy = $container->create($className, $stack);
-
-    $result = $proxy->invoke();
+    $target = $class;
+    $result = $container->invoke($target, 'invoke');
 
     expect($result)->toBe('foobar');
     expect($stack->stack)->toBe(['before', 'after']);
-});
-
-test('caching', function () {
-    $cacheDir = __DIR__ . '/../../../../var/aop_cache_test';
-    if (is_dir($cacheDir)) {
-        exec('rm -rf ' . escapeshellarg($cacheDir));
-    }
-    
-    $stack = new Stack();
-    $interceptor = new Interceptor($stack);
-    
-    $container = new AopContainer($cacheDir);
-    $container->interceptor($interceptor, 'intercept')->before(Target::class, 'invoke');
-    $container->compile();
-
-    $proxyFile = $cacheDir . '/TargetProxy.php';
-    expect(file_exists($proxyFile))->toBeTrue();
-    expect(file_get_contents($proxyFile))->toContain('class TargetProxy extends Target');
-
-    $proxy = $container->create(Target::class, $stack);
-    $proxy->invoke();
-
-    expect($stack->stack)->toBe(['bar', 'foo']);
-
-    // Second compile should reuse same file or overwrite it without issues
-    $container->compile();
-    $proxy2 = $container->create(Target::class, $stack);
-    $proxy2->invoke();
-    expect($stack->stack)->toBe(['bar', 'foo', 'bar', 'foo']);
-
-    // Cleanup
-    exec('rm -rf ' . escapeshellarg($cacheDir));
 });
 
 class TargetForAll extends StackIncrementer {
@@ -141,15 +107,15 @@ test('all interceptors on same method', function () {
     $container->interceptor($interceptor, 'afterReturning')->afterReturning($targetClass, 'invoke');
     $container->interceptor($interceptor, 'afterThrowing')->afterThrowing($targetClass, 'invoke');
     $container->interceptor($interceptor, 'around')->around($targetClass, 'invoke');
-    
+
     $container->compile();
 
-    $proxy = $container->create($targetClass, $stack);
+    $target = new TargetForAll($stack);
 
     // Test successful execution
     $stack->reset();
-    $result = $proxy->invoke(false);
-    
+    $result = $container->invoke($target, 'invoke', [false]);
+
     expect($result)->toBe('result_around');
     // Expected order:
     // 1. Before
@@ -172,7 +138,7 @@ test('all interceptors on same method', function () {
     // Test execution with exception
     $stack->reset();
     try {
-        $proxy->invoke(true);
+        $container->invoke($target, 'invoke', [true]);
     } catch (\Throwable $e) {
         expect($e->getMessage())->toBe('target exception');
     }

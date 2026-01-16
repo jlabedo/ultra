@@ -15,7 +15,7 @@ class AopContainer
     /** @var InterceptorBuilder[] */
     private array $interceptors = [];
 
-    private array $proxies = [];
+    private array $interceptorInstances = [];
     private string $cacheDir;
 
     public function __construct(?string $cacheDir = null)
@@ -54,39 +54,54 @@ class AopContainer
 
         $generator = new ProxyGenerator();
         foreach ($targetClasses as $targetClass => $methods) {
-            $proxyClass = 'Proxy_' . md5($targetClass);
+            $interceptorClass = 'Interceptor_' . md5($targetClass);
             $safeClassName = str_replace(['\\', "\0", '/', ':', '$', '@'], '_', $targetClass);
-            $cacheFile = $this->cacheDir . '/' . $safeClassName . 'Proxy.php';
-            
-            $code = $generator->generate($targetClass, $proxyClass, $methods);
+            $cacheFile = $this->cacheDir . '/' . $safeClassName . 'Interceptor.php';
+
+            $code = $generator->generate($targetClass, $interceptorClass, $methods);
             file_put_contents($cacheFile, $code);
             require_once $cacheFile;
 
-            $this->proxies[$targetClass] = [
-                'class' => $proxyClass,
-                'methods' => $methods,
-            ];
+            $advices = [];
+            foreach ($methods as $method => $adviceTypes) {
+                foreach ($adviceTypes as $type => $adviceList) {
+                    foreach ($adviceList as $index => $advice) {
+                        $advices[$method][$type][$index] = $advice['object'];
+                    }
+                }
+            }
+
+            $this->interceptorInstances[$targetClass] = new $interceptorClass($advices);
         }
     }
 
+    /**
+     * Invoke a method on a target object with AOP interception
+     */
+    public function invoke(object $target, string $method, array $args = []): mixed
+    {
+        $class = get_class($target);
+
+        if (!isset($this->interceptorInstances[$class])) {
+            return $target->$method(...$args);
+        }
+
+        return $this->interceptorInstances[$class]->invoke($target, $method, $args);
+    }
+
+    /**
+     * Get the interceptor instance for a class (for direct usage in mediator/bus)
+     */
+    public function getInterceptor(string $class): ?object
+    {
+        return $this->interceptorInstances[$class] ?? null;
+    }
+
+    /**
+     * @deprecated Use invoke() instead. This method is kept for backward compatibility.
+     */
     public function create(string $class, mixed ...$args): object
     {
-        if (!isset($this->proxies[$class])) {
-            return new $class(...$args);
-        }
-
-        $proxyData = $this->proxies[$class];
-        $proxyClass = $proxyData['class'];
-        
-        $interceptors = [];
-        foreach ($proxyData['methods'] as $method => $advices) {
-            foreach ($advices as $type => $adviceList) {
-                foreach ($adviceList as $index => $advice) {
-                    $interceptors[$method][$type][$index] = $advice['object'];
-                }
-            }
-        }
-
-        return new $proxyClass($interceptors, ...$args);
+        return new $class(...$args);
     }
 }
