@@ -39,10 +39,28 @@ class InterceptorBenchmark
         // Benchmark 7: Compiled interceptor - around advice
         $results['compiled_around'] = $this->benchmarkCompiledAround();
 
-        // Benchmark 8: Runtime interceptor - all advice types
+        // Benchmark 8: Runtime interceptor - afterReturning advice
+        $results['runtime_afterReturning'] = $this->benchmarkRuntimeAfterReturning();
+
+        // Benchmark 9: Compiled interceptor - afterReturning advice
+        $results['compiled_afterReturning'] = $this->benchmarkCompiledAfterReturning();
+
+        // Benchmark 10: Runtime interceptor - after advice
+        $results['runtime_after'] = $this->benchmarkRuntimeAfter();
+
+        // Benchmark 11: Compiled interceptor - after advice
+        $results['compiled_after'] = $this->benchmarkCompiledAfter();
+
+        // Benchmark 12: Runtime interceptor - multiple before advices
+        $results['runtime_multiple_before'] = $this->benchmarkRuntimeMultipleBefore();
+
+        // Benchmark 13: Compiled interceptor - multiple before advices
+        $results['compiled_multiple_before'] = $this->benchmarkCompiledMultipleBefore();
+
+        // Benchmark 14: Runtime interceptor - all advice types
         $results['runtime_all'] = $this->benchmarkRuntimeAll();
 
-        // Benchmark 9: Compiled interceptor - all advice types
+        // Benchmark 15: Compiled interceptor - all advice types
         $results['compiled_all'] = $this->benchmarkCompiledAll();
 
         // Print results
@@ -211,6 +229,159 @@ class InterceptorBenchmark
         ];
     }
 
+    private function benchmarkRuntimeAfterReturning(): array
+    {
+        $counter = 0;
+        $callable = fn(int $x) => $x * 2;
+        $interceptor = new Interceptor($callable);
+        $interceptor->afterReturning(fn($result) => $counter += $result);
+
+        // Warmup
+        for ($i = 0; $i < self::WARMUP; $i++) {
+            $interceptor->call(42);
+        }
+
+        $start = hrtime(true);
+        for ($i = 0; $i < self::ITERATIONS; $i++) {
+            $interceptor->call(42);
+        }
+        $duration = (hrtime(true) - $start) / 1e9;
+
+        return [
+            'duration' => $duration,
+            'per_call' => $duration / self::ITERATIONS * 1e6,
+        ];
+    }
+
+    private function benchmarkCompiledAfterReturning(): array
+    {
+        $counter = 0;
+        $callable = fn(int $x) => $x * 2;
+        $interceptor = new Interceptor($callable);
+        $interceptor->afterReturning(fn($result) => $counter += $result);
+        $interceptor->compile();
+
+        // Warmup
+        for ($i = 0; $i < self::WARMUP; $i++) {
+            $interceptor->call(42);
+        }
+
+        $start = hrtime(true);
+        for ($i = 0; $i < self::ITERATIONS; $i++) {
+            $interceptor->call(42);
+        }
+        $duration = (hrtime(true) - $start) / 1e9;
+
+        return [
+            'duration' => $duration,
+            'per_call' => $duration / self::ITERATIONS * 1e6,
+        ];
+    }
+
+    private function benchmarkRuntimeAfter(): array
+    {
+        $counter = 0;
+        $callable = fn(int $x) => $x * 2;
+        $interceptor = new Interceptor($callable);
+        $interceptor->after(fn() => $counter++);
+
+        // Warmup
+        for ($i = 0; $i < self::WARMUP; $i++) {
+            $interceptor->call(42);
+        }
+
+        $start = hrtime(true);
+        for ($i = 0; $i < self::ITERATIONS; $i++) {
+            $interceptor->call(42);
+        }
+        $duration = (hrtime(true) - $start) / 1e9;
+
+        return [
+            'duration' => $duration,
+            'per_call' => $duration / self::ITERATIONS * 1e6,
+        ];
+    }
+
+    private function benchmarkCompiledAfter(): array
+    {
+        $counter = 0;
+        $callable = fn(int $x) => $x * 2;
+        $interceptor = new Interceptor($callable);
+        $interceptor->after(fn() => $counter++);
+        $interceptor->compile();
+
+        // Warmup
+        for ($i = 0; $i < self::WARMUP; $i++) {
+            $interceptor->call(42);
+        }
+
+        $start = hrtime(true);
+        for ($i = 0; $i < self::ITERATIONS; $i++) {
+            $interceptor->call(42);
+        }
+        $duration = (hrtime(true) - $start) / 1e9;
+
+        return [
+            'duration' => $duration,
+            'per_call' => $duration / self::ITERATIONS * 1e6,
+        ];
+    }
+
+    private function benchmarkRuntimeMultipleBefore(): array
+    {
+        $counter = 0;
+        $callable = fn(int $x) => $x * 2;
+        $interceptor = new Interceptor($callable);
+        $interceptor
+            ->before(fn() => $counter++)
+            ->before(fn() => $counter++)
+            ->before(fn() => $counter++);
+
+        // Warmup
+        for ($i = 0; $i < self::WARMUP; $i++) {
+            $interceptor->call(42);
+        }
+
+        $start = hrtime(true);
+        for ($i = 0; $i < self::ITERATIONS; $i++) {
+            $interceptor->call(42);
+        }
+        $duration = (hrtime(true) - $start) / 1e9;
+
+        return [
+            'duration' => $duration,
+            'per_call' => $duration / self::ITERATIONS * 1e6,
+        ];
+    }
+
+    private function benchmarkCompiledMultipleBefore(): array
+    {
+        $counter = 0;
+        $callable = fn(int $x) => $x * 2;
+        $interceptor = new Interceptor($callable);
+        $interceptor
+            ->before(fn() => $counter++)
+            ->before(fn() => $counter++)
+            ->before(fn() => $counter++);
+        $interceptor->compile();
+
+        // Warmup
+        for ($i = 0; $i < self::WARMUP; $i++) {
+            $interceptor->call(42);
+        }
+
+        $start = hrtime(true);
+        for ($i = 0; $i < self::ITERATIONS; $i++) {
+            $interceptor->call(42);
+        }
+        $duration = (hrtime(true) - $start) / 1e9;
+
+        return [
+            'duration' => $duration,
+            'per_call' => $duration / self::ITERATIONS * 1e6,
+        ];
+    }
+
     private function benchmarkRuntimeAll(): array
     {
         $counter = 0;
@@ -298,10 +469,14 @@ class InterceptorBenchmark
         $comparisons = [
             ['No Advices', 'runtime_no_advices', 'compiled_no_advices'],
             ['Before Advice', 'runtime_before', 'compiled_before'],
+            ['AfterReturning Advice', 'runtime_afterReturning', 'compiled_afterReturning'],
+            ['After Advice', 'runtime_after', 'compiled_after'],
             ['Around Advice', 'runtime_around', 'compiled_around'],
+            ['Multiple Before', 'runtime_multiple_before', 'compiled_multiple_before'],
             ['All Advices', 'runtime_all', 'compiled_all'],
         ];
 
+        $speedups = [];
         foreach ($comparisons as [$label, $runtime, $compiled]) {
             if (!isset($results[$runtime]) || !isset($results[$compiled])) {
                 continue;
@@ -309,13 +484,28 @@ class InterceptorBenchmark
 
             $speedup = $results[$runtime]['per_call'] / $results[$compiled]['per_call'];
             $improvement = (($results[$runtime]['per_call'] - $results[$compiled]['per_call']) / $results[$runtime]['per_call']) * 100;
+            $speedups[] = ['label' => $label, 'speedup' => $speedup, 'improvement' => $improvement];
 
             printf(
-                "%-20s: Compiled is %.2fx faster (%.1f%% improvement)\n",
+                "%-25s: Compiled is %.2fx faster (%.1f%% improvement)\n",
                 $label,
                 $speedup,
                 $improvement
             );
+        }
+
+        // Summary statistics
+        if (!empty($speedups)) {
+            $avgSpeedup = array_sum(array_column($speedups, 'speedup')) / count($speedups);
+            $maxSpeedup = max(array_column($speedups, 'speedup'));
+            $minSpeedup = min(array_column($speedups, 'speedup'));
+            $maxLabel = $speedups[array_search($maxSpeedup, array_column($speedups, 'speedup'))]['label'];
+            $minLabel = $speedups[array_search($minSpeedup, array_column($speedups, 'speedup'))]['label'];
+
+            echo "\n=== Summary ===\n\n";
+            printf("Average speedup: %.2fx\n", $avgSpeedup);
+            printf("Best speedup: %.2fx (%s)\n", $maxSpeedup, $maxLabel);
+            printf("Lowest speedup: %.2fx (%s)\n", $minSpeedup, $minLabel);
         }
 
         echo "\n";
@@ -329,8 +519,14 @@ class InterceptorBenchmark
             'compiled_no_advices' => 'Compiled - No Advices',
             'runtime_before' => 'Runtime - Before',
             'compiled_before' => 'Compiled - Before',
+            'runtime_afterReturning' => 'Runtime - AfterReturning',
+            'compiled_afterReturning' => 'Compiled - AfterReturning',
+            'runtime_after' => 'Runtime - After',
+            'compiled_after' => 'Compiled - After',
             'runtime_around' => 'Runtime - Around',
             'compiled_around' => 'Compiled - Around',
+            'runtime_multiple_before' => 'Runtime - Multiple Before',
+            'compiled_multiple_before' => 'Compiled - Multiple Before',
             'runtime_all' => 'Runtime - All Advices',
             'compiled_all' => 'Compiled - All Advices',
         ];
