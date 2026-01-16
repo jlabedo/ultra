@@ -6,27 +6,29 @@ namespace Ultra\Aop;
 
 class InterceptorCompiler
 {
+    private const string VERSION_ID = '1';
+
     public function __construct(
         private readonly ?string $cacheDir = null
-    ) {
-    }
+    ) {}
 
     /**
-     * Compile an interceptor into optimized PHP code
+     * Compile an interceptor into optimized PHP code.
      *
      * @return string The fully qualified class name of the compiled interceptor
      */
     public function compile(Interceptor $interceptor): string
     {
         $hash = $interceptor->getHash();
-        $className = 'CompiledInterceptor_' . $hash;
+        $className = 'CompiledInterceptor_'.self::VERSION_ID.$hash;
 
-        $cacheDir = $this->cacheDir ?? dirname(__DIR__, 2) . '/var/aop_cache';
-        $cacheFile = $cacheDir . '/' . $className . '.php';
+        $cacheDir = $this->cacheDir ?? dirname(__DIR__, 2).'/var/aop_cache';
+        $cacheFile = $cacheDir.'/'.$className.'.php';
 
         // Return cached version if exists
         if (file_exists($cacheFile)) {
             require_once $cacheFile;
+
             return $className;
         }
 
@@ -34,8 +36,8 @@ class InterceptorCompiler
         $code = $this->generateCode($className, $interceptor);
 
         // Write to cache
-        if (!is_dir($cacheDir)) {
-            mkdir($cacheDir, 0777, true);
+        if (! is_dir($cacheDir)) {
+            mkdir($cacheDir, 0o777, true);
         }
         file_put_contents($cacheFile, $code);
         require_once $cacheFile;
@@ -103,7 +105,7 @@ class InterceptorCompiler
         // Before advices
         if ($metadata['beforeCount'] > 0) {
             $code .= "        // Execute before advices\n";
-            for ($i = 0; $i < $metadata['beforeCount']; $i++) {
+            for ($i = 0; $i < $metadata['beforeCount']; ++$i) {
                 $code .= "        (\$this->beforeAdvices[{$i}])();\n";
             }
             $code .= "\n";
@@ -122,7 +124,7 @@ class InterceptorCompiler
             // After returning
             if ($hasAfterReturning) {
                 $code .= "\n";
-                for ($i = 0; $i < $metadata['afterReturningCount']; $i++) {
+                for ($i = 0; $i < $metadata['afterReturningCount']; ++$i) {
                     $code .= "            (\$this->afterReturningAdvices[{$i}])(\$returnValue);\n";
                 }
             }
@@ -131,18 +133,18 @@ class InterceptorCompiler
 
             // After throwing
             if ($hasAfterThrowing) {
-                for ($i = 0; $i < $metadata['afterThrowingCount']; $i++) {
+                for ($i = 0; $i < $metadata['afterThrowingCount']; ++$i) {
                     $code .= "            (\$this->afterThrowingAdvices[{$i}])(\$e);\n";
                 }
             }
 
             $code .= "            throw \$e;\n";
-            $code .= "        }";
+            $code .= '        }';
 
             // After (finally)
             if ($hasAfter) {
                 $code .= " finally {\n";
-                for ($i = 0; $i < $metadata['afterCount']; $i++) {
+                for ($i = 0; $i < $metadata['afterCount']; ++$i) {
                     $code .= "            (\$this->afterAdvices[{$i}])();\n";
                 }
                 $code .= "        }\n";
@@ -178,21 +180,21 @@ class InterceptorCompiler
         $code = "\n";
         $code .= "    private function executeAroundChain(array \$args)\n";
         $code .= "    {\n";
-        
+
         // Build the chain from innermost (callable) to outermost (last around advice)
         // around advices are applied in reverse order, so around[count-1] is outermost
         // Use an array to store closures to avoid variable capture issues
-        
+
         $code .= "        \$chain = [];\n";
         $code .= "        \$chain[0] = function () use (\$args) {\n";
         $code .= "            return (\$this->callable)(...\$args);\n";
         $code .= "        };\n\n";
-        
+
         // Wrap with each around advice from last to first (reverse order)
-        for ($i = $aroundCount - 1; $i >= 0; $i--) {
+        for ($i = $aroundCount - 1; $i >= 0; --$i) {
             $prevIndex = $aroundCount - $i - 1;
             $currentIndex = $aroundCount - $i;
-            
+
             $code .= "        \$prev{$currentIndex} = \$chain[{$prevIndex}];\n";
             $code .= "        \$chain[{$currentIndex}] = function () use (\$prev{$currentIndex}, \$args) {\n";
             $code .= "            return (\$this->aroundAdvices[{$i}])(\$prev{$currentIndex}, ...\$args);\n";
@@ -201,12 +203,12 @@ class InterceptorCompiler
                 $code .= "\n";
             }
         }
-        
+
         $finalIndex = $aroundCount;
         $code .= "\n";
         $code .= "        return \$chain[{$finalIndex}]();\n";
         $code .= "    }\n";
-        
+
         return $code;
     }
 }
