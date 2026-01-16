@@ -78,13 +78,7 @@ class InterceptorCompiler
 
         // Constructor
         $code .= "    public function __construct(\n";
-        $code .= "        ContainerInterface \$container,\n";
-        $code .= "        \\Ultra\\Aop\\CallableReference \$callable,\n";
-        $code .= "        array \$beforeAdvices,\n";
-        $code .= "        array \$afterAdvices,\n";
-        $code .= "        array \$afterReturningAdvices,\n";
-        $code .= "        array \$afterThrowingAdvices,\n";
-        $code .= "        array \$aroundAdvices\n";
+        $code .= "        ContainerInterface \$container\n";
         $code .= "    ) {\n";
         $code .= "        \$this->container = \$container;\n";
         

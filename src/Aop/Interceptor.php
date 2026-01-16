@@ -117,13 +117,7 @@ class Interceptor
         $className = $compiler->compile($this);
 
         $this->compiled = new $className(
-            $this->container,
-            $this->callable,
-            $this->beforeAdvices,
-            $this->afterAdvices,
-            $this->afterReturningAdvices,
-            $this->afterThrowingAdvices,
-            $this->aroundAdvices
+            $this->container
         );
 
         return $this;
