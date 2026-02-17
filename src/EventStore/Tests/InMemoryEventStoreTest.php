@@ -29,7 +29,7 @@ test('append one event with one domain id and load by that domain id', function 
     expect($loaded[0]->sequenceNumber)->toBe(1);
 });
 
-test('append second event with expected version 1 on same domain id and load returns both in order', function () {
+test('append second event on same domain id and load returns both in order', function () {
     $store = new InMemoryEventStore();
     $store->append(new AppendableEvent(
         id: 'e1',
@@ -43,7 +43,7 @@ test('append second event with expected version 1 on same domain id and load ret
         eventType: 'course-capacity-changed',
         payload: ['capacity' => 30],
         domainIds: ['courseId' => 'course-123'],
-        expectedVersions: ['courseId' => 1],
+        expectedVersions: ['courseId' => 0],
     ));
 
     $loaded = $store->load([new DomainIdentifier('courseId', 'course-123')]);
@@ -52,14 +52,14 @@ test('append second event with expected version 1 on same domain id and load ret
     expect($loaded[0]->id)->toBe('e1');
     expect($loaded[0]->versions['courseId'])->toBe(1);
     expect($loaded[1]->id)->toBe('e2');
-    expect($loaded[1]->versions['courseId'])->toBe(2);
+    expect($loaded[1]->versions['courseId'])->toBe(1);
 });
 
 test('append with wrong expected version throws concurrency exception', function () {
     $store = new InMemoryEventStore();
     $store->append(new AppendableEvent(
         id: 'e1',
-        eventType: 'course-created',
+        eventType: 'course-capacity-changed',
         payload: [],
         domainIds: ['courseId' => 'course-123'],
         expectedVersions: ['courseId' => 0],
@@ -97,7 +97,7 @@ test('event with two domain ids: append with expected 0/0, load by courseId, by 
     expect($byBoth[0]->versions)->toBe(['courseId' => 1, 'studentId' => 1]);
 });
 
-test('load filtered by event types', function () {
+test('load by domain identifiers and event types', function () {
     $store = new InMemoryEventStore();
     $store->append(new AppendableEvent(
         id: 'e1',
@@ -111,14 +111,14 @@ test('load filtered by event types', function () {
         eventType: 'course-capacity-changed',
         payload: [],
         domainIds: ['courseId' => 'course-123'],
-        expectedVersions: ['courseId' => 1],
+        expectedVersions: ['courseId' => 0],
     ));
     $store->append(new AppendableEvent(
         id: 'e3',
         eventType: 'course-capacity-changed',
         payload: [],
         domainIds: ['courseId' => 'course-123'],
-        expectedVersions: ['courseId' => 2],
+        expectedVersions: ['courseId' => 1],
     ));
 
     $onlyCapacity = $store->load(
@@ -159,7 +159,7 @@ test('multiple events in one append: versions advance per dimension as expected'
             eventType: 'course-capacity-changed',
             payload: ['capacity' => 2],
             domainIds: ['courseId' => 'course-123'],
-            expectedVersions: ['courseId' => 2],
+            expectedVersions: ['courseId' => 0],
         ),
     );
 
@@ -167,7 +167,7 @@ test('multiple events in one append: versions advance per dimension as expected'
     expect($byCourse)->toHaveCount(3);
     expect($byCourse[0]->versions['courseId'])->toBe(1);
     expect($byCourse[1]->versions['courseId'])->toBe(2);
-    expect($byCourse[2]->versions['courseId'])->toBe(3);
+    expect($byCourse[2]->versions['courseId'])->toBe(1);
 
     $byStudent1 = $store->load([new DomainIdentifier('studentId', 'student-1')]);
     $byStudent2 = $store->load([new DomainIdentifier('studentId', 'student-2')]);
@@ -216,4 +216,91 @@ test('load by both domain ids returns only events matching both', function () {
 
     expect($forStudent456)->toHaveCount(1);
     expect($forStudent456[0]->id)->toBe('e1');
+});
+
+test('student-created and course-name-changed: load by domain identifiers and event names', function () {
+    $store = new InMemoryEventStore();
+    $store->append(new AppendableEvent(
+        id: 'e1',
+        eventType: 'student-created',
+        payload: ['name' => 'Alice'],
+        domainIds: ['studentId' => 'student-456'],
+        expectedVersions: ['studentId' => 0],
+    ));
+    $store->append(new AppendableEvent(
+        id: 'e2',
+        eventType: 'course-created',
+        payload: ['name' => 'Math 101'],
+        domainIds: ['courseId' => 'course-123'],
+        expectedVersions: ['courseId' => 0],
+    ));
+    $store->append(new AppendableEvent(
+        id: 'e3',
+        eventType: 'course-capacity-changed',
+        payload: ['capacity' => 30],
+        domainIds: ['courseId' => 'course-123'],
+        expectedVersions: ['courseId' => 0],
+    ));
+    $store->append(new AppendableEvent(
+        id: 'e4',
+        eventType: 'course-name-changed',
+        payload: ['name' => 'Mathematics 101'],
+        domainIds: ['courseId' => 'course-123'],
+        expectedVersions: ['courseId' => 0],
+    ));
+
+    $capacityAndSubscriptions = $store->load(
+        [new DomainIdentifier('courseId', 'course-123')],
+        ['course-created', 'course-capacity-changed', 'student-subscribed-to-course'],
+    );
+    $nameChangesOnly = $store->load(
+        [new DomainIdentifier('courseId', 'course-123')],
+        ['course-name-changed'],
+    );
+    $students = $store->load(
+        [new DomainIdentifier('studentId', 'student-456')],
+        ['student-created'],
+    );
+
+    expect($capacityAndSubscriptions)->toHaveCount(2);
+    expect($capacityAndSubscriptions[0]->eventType)->toBe('course-created');
+    expect($capacityAndSubscriptions[1]->eventType)->toBe('course-capacity-changed');
+    expect($nameChangesOnly)->toHaveCount(1);
+    expect($nameChangesOnly[0]->eventType)->toBe('course-name-changed');
+    expect($nameChangesOnly[0]->payload['name'])->toBe('Mathematics 101');
+    expect($students)->toHaveCount(1);
+    expect($students[0]->eventType)->toBe('student-created');
+    expect($students[0]->payload['name'])->toBe('Alice');
+});
+
+test('course-name-changed does not throw when not interested in it', function () {
+    $store = new InMemoryEventStore();
+    $store->append(new AppendableEvent(
+        id: 'e1',
+        eventType: 'course-created',
+        payload: [],
+        domainIds: ['courseId' => 'course-123'],
+        expectedVersions: ['courseId' => 0],
+    ));
+    $store->append(new AppendableEvent(
+        id: 'e2',
+        eventType: 'course-capacity-changed',
+        payload: ['capacity' => 30],
+        domainIds: ['courseId' => 'course-123'],
+        expectedVersions: ['courseId' => 0],
+    ));
+
+    $store->append(new AppendableEvent(
+        id: 'e3',
+        eventType: 'course-name-changed',
+        payload: ['name' => 'New Name'],
+        domainIds: ['courseId' => 'course-123'],
+        expectedVersions: ['courseId' => 0],
+    ));
+
+    $forCapacityInvariant = $store->load(
+        [new DomainIdentifier('courseId', 'course-123')],
+        ['course-created', 'course-capacity-changed', 'student-subscribed-to-course'],
+    );
+    expect($forCapacityInvariant)->toHaveCount(2);
 });

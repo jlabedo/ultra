@@ -11,7 +11,7 @@ final class InMemoryEventStore implements EventStore
     /** @var list<StoredEvent> */
     private array $events = [];
 
-    /** @var array<string, int> key is DomainIdentifier::key() => current version */
+    /** @var array<string, int> key is versionKey(dimension, value, eventType) => current version */
     private array $versions = [];
 
     private int $nextSequence = 1;
@@ -26,7 +26,7 @@ final class InMemoryEventStore implements EventStore
     private function appendOne(AppendableEvent $event): void
     {
         foreach ($event->domainIds as $dimension => $value) {
-            $key = (new DomainIdentifier($dimension, $value))->key();
+            $key = $this->versionKey($dimension, $value, $event->eventType);
             $current = $this->versions[$key] ?? 0;
             $expected = $event->expectedVersions[$dimension];
             if ($current !== $expected) {
@@ -36,7 +36,7 @@ final class InMemoryEventStore implements EventStore
 
         $newVersions = [];
         foreach ($event->domainIds as $dimension => $value) {
-            $key = (new DomainIdentifier($dimension, $value))->key();
+            $key = $this->versionKey($dimension, $value, $event->eventType);
             $next = ($this->versions[$key] ?? 0) + 1;
             $this->versions[$key] = $next;
             $newVersions[$dimension] = $next;
@@ -90,5 +90,10 @@ final class InMemoryEventStore implements EventStore
         }
 
         return true;
+    }
+
+    private function versionKey(string $dimension, string $value, string $eventType): string
+    {
+        return $dimension . "\0" . $value . "\0" . $eventType;
     }
 }
