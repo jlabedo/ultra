@@ -15,8 +15,9 @@ interface EventStore
     public function load(StreamQuery $query): LoadResult;
 
     /**
-     * Append events. If expectedVersion is provided, the store checks that each stream touched by the new events
-     * has its current last eventId equal to the one in expectedVersion; otherwise throws ConcurrencyException.
+     * Append events. If expectedVersion is provided, the store re-runs the StreamVersion's query to rebuild
+     * the current version, then checks that each stream touched by the new events has the same last eventId
+     * as in expectedVersion (streams not present in the version map are treated as 0). Otherwise throws ConcurrencyException.
      * If expectedVersion is null, no concurrency check is performed.
      *
      * @param list<AppendableEvent> $events

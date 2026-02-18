@@ -19,7 +19,7 @@ final class InMemoryEventStore implements EventStore
     public function load(StreamQuery $query): LoadResult
     {
         if ($query->isEmpty()) {
-            return new LoadResult([], new StreamVersion());
+            return new LoadResult([], new StreamVersion([], $query));
         }
 
         $eventNamesSet = $query->eventNames !== [] ? array_fill_keys($query->eventNames, true) : null;
@@ -37,7 +37,7 @@ final class InMemoryEventStore implements EventStore
 
         usort($result, static fn (StoredEvent $a, StoredEvent $b): int => $a->eventId <=> $b->eventId);
 
-        $streamVersion = $this->buildStreamVersionFromEvents($result);
+        $streamVersion = $this->buildStreamVersionFromEvents($result, $query);
 
         return new LoadResult($result, $streamVersion);
     }
@@ -45,10 +45,11 @@ final class InMemoryEventStore implements EventStore
     public function append(array $events, ?StreamVersion $expectedVersion = null): void
     {
         if ($expectedVersion !== null) {
+            $currentResult = $this->load($expectedVersion->query);
             foreach ($events as $event) {
                 foreach (StreamId::fromEvent($event->eventType, $event->domainIds) as $streamId) {
                     $key = $streamId->toString();
-                    $current = $this->lastEventIdByStream[$key] ?? 0;
+                    $current = $currentResult->streamVersion->getLastEventId($streamId);
                     $expected = $expectedVersion->getLastEventId($streamId);
                     if ($current !== $expected) {
                         throw new ConcurrencyException($key, $expected, $current);
@@ -95,7 +96,7 @@ final class InMemoryEventStore implements EventStore
     /**
      * @param list<StoredEvent> $events
      */
-    private function buildStreamVersionFromEvents(array $events): StreamVersion
+    private function buildStreamVersionFromEvents(array $events, StreamQuery $query): StreamVersion
     {
         $version = [];
         foreach ($events as $event) {
@@ -105,6 +106,6 @@ final class InMemoryEventStore implements EventStore
             }
         }
 
-        return new StreamVersion($version);
+        return new StreamVersion($version, $query);
     }
 }

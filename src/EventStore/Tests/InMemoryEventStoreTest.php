@@ -64,7 +64,10 @@ test('append with wrong expected version throws concurrency exception', function
         domainIds: ['courseId' => 'course-123'],
     )]);
 
-    $staleVersion = new StreamVersion(["courseId\0course-123\0course-capacity-changed" => 0]);
+    $staleVersion = new StreamVersion(
+        ["courseId\0course-123\0course-capacity-changed" => 0],
+        new StreamQuery(['courseId' => 'course-123'], ['course-capacity-changed']),
+    );
 
     $store->append([
         new AppendableEvent(
@@ -399,4 +402,27 @@ test('stream version from load reflects last eventId per stream in result', func
     $capacityKey = "courseId\0course-123\0course-capacity-changed";
     expect($result->streamVersion->version[$courseSubscriptionKey] ?? null)->toBe(1);
     expect($result->streamVersion->version[$capacityKey] ?? null)->toBe(2);
+});
+
+test('append with expected version from empty result set succeeds when stream does not exist yet', function () {
+    $store = new InMemoryEventStore();
+    $query = new StreamQuery(['courseId' => 'course-999'], ['course-capacity-changed']);
+
+    $result = $store->load($query);
+    expect($result->events)->toBe([]);
+    expect($result->streamVersion->version)->toBe([]);
+    expect($result->streamVersion->query)->toBe($query);
+
+    $store->append([
+        new AppendableEvent(
+            id: 'e1',
+            eventType: 'course-capacity-changed',
+            payload: ['capacity' => 10],
+            domainIds: ['courseId' => 'course-999'],
+        ),
+    ], $result->streamVersion);
+
+    $after = $store->load($query);
+    expect($after->events)->toHaveCount(1);
+    expect($after->events[0]->eventId)->toBe(1);
 });

@@ -10,7 +10,8 @@ readonly class StreamVersion
      * @param array<string, int> $version streamId (StreamId::toString()) => last eventId in that stream
      */
     public function __construct(
-        public array $version = [],
+        public array $version,
+        public StreamQuery $query,
     ) {
     }
 
