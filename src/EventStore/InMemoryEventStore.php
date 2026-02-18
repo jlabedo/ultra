@@ -46,16 +46,7 @@ final class InMemoryEventStore implements EventStore
     {
         if ($expectedVersion !== null) {
             $currentResult = $this->load($expectedVersion->query);
-            foreach ($events as $event) {
-                foreach (StreamId::fromEvent($event->eventType, $event->domainIds) as $streamId) {
-                    $key = $streamId->toString();
-                    $current = $currentResult->streamVersion->getLastEventId($streamId);
-                    $expected = $expectedVersion->getLastEventId($streamId);
-                    if ($current !== $expected) {
-                        throw new ConcurrencyException($key, $expected, $current);
-                    }
-                }
-            }
+            $currentResult->streamVersion->assertMatches($expectedVersion);
         }
 
         foreach ($events as $event) {
