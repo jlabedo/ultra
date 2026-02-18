@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore;
 
-use Ultra\EventStore\Exception\ConcurrencyException;
-
 final class InMemoryEventStore implements EventStore
 {
     /** @var list<StoredEvent> */
