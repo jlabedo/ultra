@@ -7,19 +7,17 @@ namespace Ultra\EventStore\Exception;
 class ConcurrencyException extends \RuntimeException
 {
     public function __construct(
-        string $dimension,
-        string $value,
-        int $expectedVersion,
-        int $actualVersion,
+        string $streamId,
+        int $expectedEventId,
+        int $actualEventId,
         ?\Throwable $previous = null,
     ) {
         parent::__construct(
             sprintf(
-                'Version conflict on dimension "%s" for value "%s": expected version %d, actual version %d.',
-                $dimension,
-                $value,
-                $expectedVersion,
-                $actualVersion,
+                'Version conflict on stream "%s": expected last eventId %d, actual last eventId %d.',
+                $streamId,
+                $expectedEventId,
+                $actualEventId,
             ),
             0,
             $previous,

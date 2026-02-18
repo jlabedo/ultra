@@ -11,13 +11,52 @@ final class InMemoryEventStore implements EventStore
     /** @var list<StoredEvent> */
     private array $events = [];
 
-    /** @var array<string, int> key is versionKey(dimension, value, eventType) => current version */
-    private array $versions = [];
+    /** @var array<string, int> streamId (StreamId::toString()) => last eventId in that stream */
+    private array $lastEventIdByStream = [];
 
-    private int $nextSequence = 1;
+    private int $nextEventId = 1;
 
-    public function append(AppendableEvent ...$events): void
+    public function load(StreamQuery $query): LoadResult
     {
+        if ($query->isEmpty()) {
+            return new LoadResult([], new StreamVersion());
+        }
+
+        $eventNamesSet = $query->eventNames !== [] ? array_fill_keys($query->eventNames, true) : null;
+
+        $result = [];
+        foreach ($this->events as $event) {
+            if (!$this->eventMatchesQuery($event, $query)) {
+                continue;
+            }
+            if ($eventNamesSet !== null && !isset($eventNamesSet[$event->eventType])) {
+                continue;
+            }
+            $result[] = $event;
+        }
+
+        usort($result, static fn (StoredEvent $a, StoredEvent $b): int => $a->eventId <=> $b->eventId);
+
+        $streamVersion = $this->buildStreamVersionFromEvents($result);
+
+        return new LoadResult($result, $streamVersion);
+    }
+
+    public function append(array $events, ?StreamVersion $expectedVersion = null): void
+    {
+        if ($expectedVersion !== null) {
+            foreach ($events as $event) {
+                foreach (StreamId::fromEvent($event->eventType, $event->domainIds) as $streamId) {
+                    $key = $streamId->toString();
+                    $current = $this->lastEventIdByStream[$key] ?? 0;
+                    $expected = $expectedVersion->getLastEventId($streamId);
+                    if ($current !== $expected) {
+                        throw new ConcurrencyException($key, $expected, $current);
+                    }
+                }
+            }
+        }
+
         foreach ($events as $event) {
             $this->appendOne($event);
         }
@@ -25,66 +64,27 @@ final class InMemoryEventStore implements EventStore
 
     private function appendOne(AppendableEvent $event): void
     {
-        foreach ($event->domainIds as $dimension => $value) {
-            $key = $this->versionKey($dimension, $value, $event->eventType);
-            $current = $this->versions[$key] ?? 0;
-            $expected = $event->expectedVersions[$dimension];
-            if ($current !== $expected) {
-                throw new ConcurrencyException($dimension, $value, $expected, $current);
-            }
-        }
-
-        $newVersions = [];
-        foreach ($event->domainIds as $dimension => $value) {
-            $key = $this->versionKey($dimension, $value, $event->eventType);
-            $next = ($this->versions[$key] ?? 0) + 1;
-            $this->versions[$key] = $next;
-            $newVersions[$dimension] = $next;
-        }
+        $eventId = $this->nextEventId++;
 
         $stored = new StoredEvent(
+            eventId: $eventId,
             id: $event->id,
             eventType: $event->eventType,
             payload: $event->payload,
             domainIds: $event->domainIds,
-            versions: $newVersions,
-            sequenceNumber: $this->nextSequence++,
             recordedAt: new \DateTimeImmutable(),
         );
         $this->events[] = $stored;
+
+        foreach (StreamId::fromEvent($event->eventType, $event->domainIds) as $streamId) {
+            $this->lastEventIdByStream[$streamId->toString()] = $eventId;
+        }
     }
 
-    public function load(array $domainIds, ?array $eventTypes = null): array
+    private function eventMatchesQuery(StoredEvent $event, StreamQuery $query): bool
     {
-        if ($domainIds === []) {
-            return [];
-        }
-
-        $eventTypesSet = $eventTypes !== null ? array_fill_keys($eventTypes, true) : null;
-
-        $result = [];
-        foreach ($this->events as $event) {
-            if (!$this->eventMatchesDomainIds($event, $domainIds)) {
-                continue;
-            }
-            if ($eventTypesSet !== null && !isset($eventTypesSet[$event->eventType])) {
-                continue;
-            }
-            $result[] = $event;
-        }
-
-        usort($result, static fn (StoredEvent $a, StoredEvent $b): int => $a->sequenceNumber <=> $b->sequenceNumber);
-
-        return $result;
-    }
-
-    /**
-     * @param array<DomainIdentifier> $domainIds
-     */
-    private function eventMatchesDomainIds(StoredEvent $event, array $domainIds): bool
-    {
-        foreach ($domainIds as $domainId) {
-            if (!isset($event->domainIds[$domainId->dimension]) || $event->domainIds[$domainId->dimension] !== $domainId->value) {
+        foreach ($query->domainIdentifiers as $dimension => $value) {
+            if (!isset($event->domainIds[$dimension]) || $event->domainIds[$dimension] !== $value) {
                 return false;
             }
         }
@@ -92,8 +92,19 @@ final class InMemoryEventStore implements EventStore
         return true;
     }
 
-    private function versionKey(string $dimension, string $value, string $eventType): string
+    /**
+     * @param list<StoredEvent> $events
+     */
+    private function buildStreamVersionFromEvents(array $events): StreamVersion
     {
-        return $dimension . "\0" . $value . "\0" . $eventType;
+        $version = [];
+        foreach ($events as $event) {
+            foreach (StreamId::fromEvent($event->eventType, $event->domainIds) as $streamId) {
+                $key = $streamId->toString();
+                $version[$key] = max($version[$key] ?? 0, $event->eventId);
+            }
+        }
+
+        return new StreamVersion($version);
     }
 }

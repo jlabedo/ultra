@@ -9,22 +9,19 @@ use Ultra\EventStore\Exception\ConcurrencyException;
 interface EventStore
 {
     /**
-     * Append one or more events. Versioning is per (dimension, value, event type): each event type
-     * on a domain identifier has its own version sequence. Expected versions are checked; on first
-     * mismatch, ConcurrencyException is thrown. Events are processed in order.
-     *
-     * @throws ConcurrencyException when expected version does not match current version for any (dimension, value, event type)
+     * Load events matching the query (all domain identifier pairs and any of the event names).
+     * Returns events ordered by eventId ascending, plus the StreamVersion (last eventId per stream) of the result set.
      */
-    public function append(AppendableEvent ...$events): void;
+    public function load(StreamQuery $query): LoadResult;
 
     /**
-     * Load events that match ALL of the given domain identifiers, optionally filtered by event type names.
-     * Returns events ordered by sequenceNumber ascending.
+     * Append events. If expectedVersion is provided, the store checks that each stream touched by the new events
+     * has its current last eventId equal to the one in expectedVersion; otherwise throws ConcurrencyException.
+     * If expectedVersion is null, no concurrency check is performed.
      *
-     * @param array<DomainIdentifier> $domainIds events must contain every (dimension, value) in this list
-     * @param array<string>|null $eventTypes optional list of event type names to include; null means all
+     * @param list<AppendableEvent> $events
      *
-     * @return list<StoredEvent>
+     * @throws ConcurrencyException when expectedVersion is provided and any stream's last eventId does not match
      */
-    public function load(array $domainIds, ?array $eventTypes = null): array;
+    public function append(array $events, ?StreamVersion $expectedVersion = null): void;
 }
