@@ -43,8 +43,20 @@ final class InMemoryEventStore implements EventStore
     public function append(array $events, ?StreamVersion $expectedVersion = null): void
     {
         if ($expectedVersion !== null) {
-            $currentResult = $this->load($expectedVersion->query);
-            $currentResult->streamVersion->assertMatches($expectedVersion);
+            if ($expectedVersion->query->isEmpty()) {
+                $currentVersionMap = [];
+                foreach (array_keys($expectedVersion->version) as $key) {
+                    $currentVersionMap[$key] = $this->lastEventIdByStream[$key] ?? 0;
+                }
+                $currentVersion = new StreamVersion(
+                    $currentVersionMap,
+                    $expectedVersion->query,
+                );
+                $currentVersion->assertMatches($expectedVersion);
+            } else {
+                $currentResult = $this->load($expectedVersion->query);
+                $currentResult->streamVersion->assertMatches($expectedVersion);
+            }
         }
 
         foreach ($events as $event) {
