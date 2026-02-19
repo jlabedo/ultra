@@ -6,6 +6,9 @@ namespace Ultra\DecisionEngine;
 
 trait ReducerTrait
 {
+    /** @var array<string, string>|null eventClass => method name (cached per class) */
+    private static ?array $__reducerHandlers = null;
+
     /**
      * Create a new instance and apply events in order. Events with no matching handler are skipped.
      *
@@ -20,7 +23,8 @@ trait ReducerTrait
         foreach ($events as $event) {
             $eventClass = $event::class;
             if (isset($handlers[$eventClass])) {
-                $handlers[$eventClass]($instance, $event);
+                $methodName = $handlers[$eventClass];
+                $instance->$methodName($event);
             }
         }
 
@@ -40,10 +44,14 @@ trait ReducerTrait
     }
 
     /**
-     * @return array<string, callable(static, object): void>
+     * @return array<string, string> eventClass => method name
      */
     private static function resolveHandlers(string $class): array
     {
+        if (self::$__reducerHandlers !== null) {
+            return self::$__reducerHandlers;
+        }
+
         $handlers = [];
         $ref = new \ReflectionClass($class);
 
@@ -57,11 +65,10 @@ trait ReducerTrait
                 continue;
             }
             $eventClass = $type->getName();
-            $handlers[$eventClass] = static function (self $instance, object $event) use ($method): void {
-                $method->setAccessible(true);
-                $method->invoke($instance, $event);
-            };
+            $handlers[$eventClass] = $method->getName();
         }
+
+        self::$__reducerHandlers = $handlers;
 
         return $handlers;
     }
