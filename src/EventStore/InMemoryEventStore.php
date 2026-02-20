@@ -20,14 +20,9 @@ final class InMemoryEventStore implements EventStore
             return new LoadResult([], new StreamVersion([], $query));
         }
 
-        $eventNamesSet = $query->eventNames !== [] ? array_fill_keys($query->eventNames, true) : null;
-
         $result = [];
         foreach ($this->events as $event) {
-            if (!$this->eventMatchesQuery($event, $query)) {
-                continue;
-            }
-            if ($eventNamesSet !== null && !isset($eventNamesSet[$event->eventType])) {
+            if (!$query->matches($event)) {
                 continue;
             }
             $result[] = $event;
@@ -76,34 +71,6 @@ final class InMemoryEventStore implements EventStore
         foreach (StreamId::fromEvent($event->eventType, $event->domainIds) as $streamId) {
             $this->lastEventIdByStream[$streamId->toString()] = $eventId;
         }
-    }
-
-    private function eventMatchesQuery(StoredEvent $event, StreamQuery $query): bool
-    {
-        if ($query->orCriteria !== []) {
-            foreach ($query->orCriteria as $criterion) {
-                $matches = true;
-                foreach ($criterion as $dimension => $value) {
-                    if (!isset($event->domainIds[$dimension]) || $event->domainIds[$dimension] !== $value) {
-                        $matches = false;
-                        break;
-                    }
-                }
-                if ($matches) {
-                    return true;
-                }
-            }
-
-            return false;
-        }
-
-        foreach ($query->domainIdentifiers as $dimension => $value) {
-            if (!isset($event->domainIds[$dimension]) || $event->domainIds[$dimension] !== $value) {
-                return false;
-            }
-        }
-
-        return true;
     }
 
     /**

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\EventStore\Tests;
 
 use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
@@ -425,4 +426,86 @@ test('append with expected version from empty result set succeeds when stream do
     $after = $store->load($query);
     expect($after->events)->toHaveCount(1);
     expect($after->events[0]->eventId)->toBe(1);
+});
+
+test('fluent API: forStream with DomainIdentifier loads by stream', function () {
+    $store = new InMemoryEventStore();
+    $store->append([new AppendableEvent(
+        id: 'e1',
+        eventType: 'course-created',
+        payload: [],
+        domainIds: ['course' => 'math-101'],
+    )]);
+
+    $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'));
+    $result = $store->load($query);
+
+    expect($result->events)->toHaveCount(1);
+    expect($result->events[0]->domainIds['course'])->toBe('math-101');
+});
+
+test('fluent API: anyOf merges branches with OR semantics', function () {
+    $store = new InMemoryEventStore();
+    $store->append([new AppendableEvent(
+        id: 'e1',
+        eventType: 'course-created',
+        payload: [],
+        domainIds: ['course' => 'math-101'],
+    )]);
+    $store->append([new AppendableEvent(
+        id: 'e2',
+        eventType: 'student-enrolled',
+        payload: [],
+        domainIds: ['student' => 'alice'],
+    )]);
+
+    $query = StreamQuery::anyOf(
+        StreamQuery::forStream(new DomainIdentifier('course', 'math-101')),
+        StreamQuery::forStream(new DomainIdentifier('student', 'alice')),
+    );
+    $result = $store->load($query);
+
+    expect($result->events)->toHaveCount(2);
+});
+
+test('fluent API: forStream with multiple identifiers has AND semantics', function () {
+    $store = new InMemoryEventStore();
+    $store->append([new AppendableEvent(
+        id: 'e1',
+        eventType: 'student-subscribed',
+        payload: [],
+        domainIds: ['course' => 'math-101', 'student' => 'alice'],
+    )]);
+
+    $query = StreamQuery::forStream(
+        new DomainIdentifier('course', 'math-101'),
+        new DomainIdentifier('student', 'alice'),
+    );
+    $result = $store->load($query);
+
+    expect($result->events)->toHaveCount(1);
+    expect($result->events[0]->eventType)->toBe('student-subscribed');
+});
+
+test('fluent API: ofTypes filters by event type names', function () {
+    $store = new InMemoryEventStore();
+    $store->append([new AppendableEvent(
+        id: 'e1',
+        eventType: 'course-created',
+        payload: [],
+        domainIds: ['course' => 'math-101'],
+    )]);
+    $store->append([new AppendableEvent(
+        id: 'e2',
+        eventType: 'course-updated',
+        payload: [],
+        domainIds: ['course' => 'math-101'],
+    )]);
+
+    $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'))
+        ->ofTypes('course-created');
+    $result = $store->load($query);
+
+    expect($result->events)->toHaveCount(1);
+    expect($result->events[0]->eventType)->toBe('course-created');
 });

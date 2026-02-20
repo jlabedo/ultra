@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Engine;
 
+use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\StreamQuery;
 
 final class StreamIdentityResolver
@@ -14,13 +15,13 @@ final class StreamIdentityResolver
      */
     public function resolveStreamQuery(object $command, CommandMetadata $metadata): StreamQuery
     {
-        $orCriteria = [];
+        $branches = [];
         foreach ($metadata->stateParameters as $stateParam) {
             $value = $this->getCommandPropertyValue($command, $stateParam->commandProperty);
-            $orCriteria[] = [$stateParam->domainIdentifierName => $value];
+            $branches[] = StreamQuery::forStream(new DomainIdentifier($stateParam->domainIdentifierName, $value));
         }
 
-        return new StreamQuery([], [], $orCriteria);
+        return StreamQuery::anyOf(...$branches);
     }
 
     private function getCommandPropertyValue(object $command, string $property): string
