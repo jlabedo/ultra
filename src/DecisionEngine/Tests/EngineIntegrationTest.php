@@ -64,9 +64,9 @@ function createEngine(?InMemoryEventStore $store = null, ?ContainerInterface $co
 {
     $store = $store ?? new InMemoryEventStore();
     $eventClassRegistry = new MapEventClassRegistry([
-        'course.created' => \Ultra\DecisionEngine\Tests\Example\Event\CourseCreated::class,
-        'student.subscribed' => \Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed::class,
-        'student.unsubscribed' => \Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed::class,
+        'course.created' => CourseCreated::class,
+        'student.subscribed' => StudentSubscribed::class,
+        'student.unsubscribed' => StudentUnsubscribed::class,
     ]);
 
     $engine = new Engine(
