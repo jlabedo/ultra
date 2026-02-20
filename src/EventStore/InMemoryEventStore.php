@@ -43,20 +43,15 @@ final class InMemoryEventStore implements EventStore
     public function append(array $events, ?StreamVersion $expectedVersion = null): void
     {
         if ($expectedVersion !== null) {
-            if ($expectedVersion->query->isEmpty()) {
-                $currentVersionMap = [];
-                foreach (array_keys($expectedVersion->version) as $key) {
+            $currentResult = $this->load($expectedVersion->query);
+            $currentVersionMap = $currentResult->streamVersion->version;
+            foreach (array_keys($expectedVersion->version) as $key) {
+                if (!array_key_exists($key, $currentVersionMap)) {
                     $currentVersionMap[$key] = $this->lastEventIdByStream[$key] ?? 0;
                 }
-                $currentVersion = new StreamVersion(
-                    $currentVersionMap,
-                    $expectedVersion->query,
-                );
-                $currentVersion->assertMatches($expectedVersion);
-            } else {
-                $currentResult = $this->load($expectedVersion->query);
-                $currentResult->streamVersion->assertMatches($expectedVersion);
             }
+            $currentVersion = new StreamVersion($currentVersionMap, $expectedVersion->query);
+            $currentVersion->assertMatches($expectedVersion);
         }
 
         foreach ($events as $event) {
@@ -85,6 +80,23 @@ final class InMemoryEventStore implements EventStore
 
     private function eventMatchesQuery(StoredEvent $event, StreamQuery $query): bool
     {
+        if ($query->orCriteria !== []) {
+            foreach ($query->orCriteria as $criterion) {
+                $matches = true;
+                foreach ($criterion as $dimension => $value) {
+                    if (!isset($event->domainIds[$dimension]) || $event->domainIds[$dimension] !== $value) {
+                        $matches = false;
+                        break;
+                    }
+                }
+                if ($matches) {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         foreach ($query->domainIdentifiers as $dimension => $value) {
             if (!isset($event->domainIds[$dimension]) || $event->domainIds[$dimension] !== $value) {
                 return false;

@@ -8,6 +8,7 @@ use Ultra\DecisionEngine\Engine\CommandMetadata;
 use Ultra\DecisionEngine\Engine\CommandMetadataResolver;
 use Ultra\DecisionEngine\Engine\EventClassRegistry;
 use Ultra\DecisionEngine\Engine\EventRouter;
+use Ultra\DecisionEngine\Engine\StateParameterMetadata;
 use Ultra\DecisionEngine\Engine\StreamIdentityResolver;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamId;
@@ -36,20 +37,13 @@ final class Engine
     public function handle(object $command): array
     {
         $metadata = $this->metadataResolver->resolve($command::class);
-        $queries = $this->streamIdentityResolver->resolveStreamQueries($command, $metadata);
-
-        $loadResults = [];
-        foreach ($queries as $query) {
-            $loadResults[] = $this->eventStore->load($query);
-        }
+        $query = $this->streamIdentityResolver->resolveStreamQuery($command, $metadata);
+        $loadResult = $this->eventStore->load($query);
 
         $states = [];
-        $mergedVersion = [];
-
-        foreach ($metadata->stateParameters as $i => $stateParam) {
-            $result = $loadResults[$i];
-            $events = $result->events;
-            $streamEvents = $this->storedEventsToObjects($events, $stateParam->stateClass);
+        foreach ($metadata->stateParameters as $stateParam) {
+            $streamValue = $this->getCommandPropertyValue($command, $stateParam->commandProperty);
+            $streamEvents = $this->eventsForStream($loadResult->events, $stateParam, $streamValue);
 
             if ($streamEvents === []) {
                 if ($stateParam->isNullable) {
@@ -59,22 +53,18 @@ final class Engine
                 } else {
                     throw new Exception\StreamNotFoundException(
                         $stateParam->domainIdentifierName,
-                        $this->getCommandPropertyValue($command, $stateParam->commandProperty),
+                        $streamValue,
                     );
                 }
             } else {
                 if ($stateParam->isNewStream) {
                     throw new Exception\StreamAlreadyExistsException(
                         $stateParam->domainIdentifierName,
-                        $this->getCommandPropertyValue($command, $stateParam->commandProperty),
+                        $streamValue,
                     );
                 }
                 $state = $stateParam->stateClass::fromEvents($streamEvents);
                 $states[] = $state;
-            }
-
-            foreach ($result->streamVersion->version as $key => $eventId) {
-                $mergedVersion[$key] = max($mergedVersion[$key] ?? 0, $eventId);
             }
         }
 
@@ -87,17 +77,15 @@ final class Engine
 
         $appendableEvents = $this->eventRouter->toAppendableEvents($emittedEvents);
 
+        $versionMap = $loadResult->streamVersion->version;
         foreach ($appendableEvents as $appendable) {
             foreach (StreamId::fromEvent($appendable->eventType, $appendable->domainIds) as $streamId) {
                 $key = $streamId->toString();
-                $mergedVersion[$key] = $mergedVersion[$key] ?? 0;
+                $versionMap[$key] = $versionMap[$key] ?? 0;
             }
         }
 
-        $expectedVersion = new StreamVersion(
-            $mergedVersion,
-            new StreamQuery([], []),
-        );
+        $expectedVersion = new StreamVersion($versionMap, $loadResult->streamVersion->query);
         $this->eventStore->append($appendableEvents, $expectedVersion);
 
         return $emittedEvents;
@@ -115,21 +103,18 @@ final class Engine
             throw new Exception\CommandHasNoCheckException($command::class);
         }
 
-        $queries = $this->streamIdentityResolver->resolveStreamQueries($command, $metadata);
-        $loadResults = [];
-        foreach ($queries as $query) {
-            $loadResults[] = $this->eventStore->load($query);
-        }
+        $query = $this->streamIdentityResolver->resolveStreamQuery($command, $metadata);
+        $loadResult = $this->eventStore->load($query);
 
         $states = [];
-        foreach ($metadata->stateParameters as $i => $stateParam) {
-            $result = $loadResults[$i];
-            $streamEvents = $this->storedEventsToObjects($result->events, $stateParam->stateClass);
+        foreach ($metadata->stateParameters as $stateParam) {
+            $streamValue = $this->getCommandPropertyValue($command, $stateParam->commandProperty);
+            $streamEvents = $this->eventsForStream($loadResult->events, $stateParam, $streamValue);
 
             if ($streamEvents === [] && !$stateParam->isNullable && !$stateParam->isNewStream) {
                 throw new Exception\StreamNotFoundException(
                     $stateParam->domainIdentifierName,
-                    $this->getCommandPropertyValue($command, $stateParam->commandProperty),
+                    $streamValue,
                 );
             }
 
@@ -144,6 +129,26 @@ final class Engine
         $violations = $metadata->checkMethod->invoke($command, ...$checkArgs);
 
         return is_array($violations) ? $violations : [];
+    }
+
+    /**
+     * Filter loaded events to those belonging to the given stream and convert to DTOs for the state.
+     *
+     * @param list<StoredEvent> $events
+     * @return list<object>
+     */
+    private function eventsForStream(array $events, StateParameterMetadata $stateParam, string $streamValue): array
+    {
+        $dimension = $stateParam->domainIdentifierName;
+        $filtered = [];
+        foreach ($events as $stored) {
+            if (($stored->domainIds[$dimension] ?? null) !== $streamValue) {
+                continue;
+            }
+            $filtered[] = $stored;
+        }
+
+        return $this->storedEventsToObjects($filtered, $stateParam->stateClass);
     }
 
     /**

@@ -9,20 +9,18 @@ use Ultra\EventStore\StreamQuery;
 final class StreamIdentityResolver
 {
     /**
-     * Returns one StreamQuery per state parameter, in the same order as CommandMetadata::stateParameters.
-     * Each query has a single domain identifier (dimension => value) from the command.
-     *
-     * @return list<StreamQuery>
+     * Returns a single StreamQuery that matches events for any of the command's streams (OR semantics).
+     * The store can load once and return one StreamVersion to use when appending.
      */
-    public function resolveStreamQueries(object $command, CommandMetadata $metadata): array
+    public function resolveStreamQuery(object $command, CommandMetadata $metadata): StreamQuery
     {
-        $queries = [];
+        $orCriteria = [];
         foreach ($metadata->stateParameters as $stateParam) {
             $value = $this->getCommandPropertyValue($command, $stateParam->commandProperty);
-            $queries[] = new StreamQuery([$stateParam->domainIdentifierName => $value]);
+            $orCriteria[] = [$stateParam->domainIdentifierName => $value];
         }
 
-        return $queries;
+        return new StreamQuery([], [], $orCriteria);
     }
 
     private function getCommandPropertyValue(object $command, string $property): string
