@@ -11,12 +11,10 @@ test('intercept function call with before advice', function () {
     $stack = new Stack();
     $container = new TestContainer();
 
-    $target = function (string $value) use ($stack) {
+    $container->set('target', new ClosureCallable(function (string $value) use ($stack) {
         $stack->push($value);
         return 'result';
-    };
-
-    $container->set('target', new ClosureCallable($target));
+    }));
     $container->set('before', new ClosureCallable(fn() => $stack->push('before')));
 
     $interceptor = new Interceptor(

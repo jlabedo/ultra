@@ -11,9 +11,6 @@ use Ultra\DecisionEngine\Engine\EventRouter;
 use Ultra\DecisionEngine\Engine\StateParameterMetadata;
 use Ultra\DecisionEngine\Engine\StreamIdentityResolver;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\StreamId;
-use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore\StreamVersion;
 use Ultra\EventStore\StoredEvent;
 use Psr\Container\ContainerInterface;
 
@@ -69,16 +66,7 @@ final class Engine
 
         $appendableEvents = $this->eventRouter->toAppendableEvents($emittedEvents);
 
-        $versionMap = $loadResult->streamVersion->version;
-        foreach ($appendableEvents as $appendable) {
-            foreach (StreamId::fromEvent($appendable->eventType, $appendable->domainIds) as $streamId) {
-                $key = $streamId->toString();
-                $versionMap[$key] = $versionMap[$key] ?? 0;
-            }
-        }
-
-        $expectedVersion = new StreamVersion($versionMap, $loadResult->streamVersion->query);
-        $this->eventStore->append($appendableEvents, $expectedVersion);
+        $this->eventStore->append($appendableEvents, $loadResult->streamVersion);
 
         return $emittedEvents;
     }
