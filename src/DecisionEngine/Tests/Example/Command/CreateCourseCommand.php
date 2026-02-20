@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests\Example\Command;
 
-use Ultra\DecisionEngine\Attribute\NewStream;
 use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
 
@@ -21,7 +20,6 @@ readonly class CreateCourseCommand
      * @return list<CourseCreated>
      */
     public function decide(
-        #[NewStream]
         ?CourseCapacityState $course,
     ): array {
         if ($course !== null) {

@@ -11,7 +11,6 @@ use Ultra\DecisionEngine\Engine\MapEventClassRegistry;
 use Ultra\DecisionEngine\Engine\StreamIdentityResolver;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\DecisionEngine\Exception\StreamAlreadyExistsException;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
@@ -120,13 +119,13 @@ test('handle throws InvariantViolation when invariants fail', function () {
         ->toThrow(InvariantViolation::class);
 });
 
-test('handle throws on NewStream if stream already exists', function () {
+test('handle throws when creating course that already exists', function () {
     ['engine' => $engine] = createEngine();
 
     $engine->handle(new CreateCourseCommand('math-101', 'Math', 10));
 
     expect(fn () => $engine->handle(new CreateCourseCommand('math-101', 'Other', 5)))
-        ->toThrow(StreamAlreadyExistsException::class);
+        ->toThrow(\InvalidArgumentException::class);
 });
 
 test('handle passes null for nullable state when stream is empty', function () {

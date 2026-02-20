@@ -6,7 +6,6 @@ namespace Ultra\DecisionEngine\Engine;
 
 use Ultra\DecisionEngine\Attribute\BindTo;
 use Ultra\DecisionEngine\Attribute\DomainIdentifier;
-use Ultra\DecisionEngine\Attribute\NewStream;
 use Ultra\DecisionEngine\ReducerTrait;
 
 final class CommandMetadataResolver
@@ -89,12 +88,6 @@ final class CommandMetadataResolver
             ? $bindTo->property
             : $domainIdentifierName . 'Id';
 
-        $isNewStream = false;
-        foreach ($parameter->getAttributes(NewStream::class) as $attr) {
-            $isNewStream = true;
-            break;
-        }
-
         $type = $parameter->getType();
         $isNullable = $type !== null && $type->allowsNull();
 
@@ -103,7 +96,6 @@ final class CommandMetadataResolver
             $stateClass,
             $domainIdentifierName,
             $commandProperty,
-            $isNewStream,
             $isNullable,
         );
     }

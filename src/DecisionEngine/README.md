@@ -16,7 +16,6 @@ Event-sourcing command engine that runs **commands** against state hydrated from
 |-----------|--------|---------|
 | `#[DomainIdentifier('name')]` | Property | Marks the stream dimension; engine uses command property `{name}Id` (or `#[BindTo]`) for the stream value. |
 | `#[Event('type.name')]` | Class | Event type name for storage and routing. |
-| `#[NewStream]` | Parameter | This stream must not exist yet (e.g. create aggregate). |
 | `#[BindTo('propertyName')]` | Parameter | Override convention: use this command property for the state’s stream id. |
 
 ## Core types
@@ -47,7 +46,7 @@ $events = $engine->handle($command);  // returns emitted event DTOs
 1. Resolve command metadata from `decide()` (and optional `check()`).
 2. Resolve stream queries from the command instance.
 3. Load events for each stream and hydrate states (`State::fromEvents(...)`).
-4. Pass `null` for nullable state parameters when a stream has no events; throw if a required stream is missing or `#[NewStream]` but stream exists.
+4. Pass `null` for nullable state parameters when a stream has no events; throw if a required stream is missing.
 5. Resolve service parameters from the container.
 6. Call `$command->decide(...)` and route returned events to `AppendableEvent`.
 7. Append with an expected version (optimistic concurrency); merge version map for multi-stream commands.

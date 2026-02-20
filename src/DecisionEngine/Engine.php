@@ -48,8 +48,6 @@ final class Engine
             if ($streamEvents === []) {
                 if ($stateParam->isNullable) {
                     $states[] = null;
-                } elseif ($stateParam->isNewStream) {
-                    $states[] = null;
                 } else {
                     throw new Exception\StreamNotFoundException(
                         $stateParam->domainIdentifierName,
@@ -57,12 +55,6 @@ final class Engine
                     );
                 }
             } else {
-                if ($stateParam->isNewStream) {
-                    throw new Exception\StreamAlreadyExistsException(
-                        $stateParam->domainIdentifierName,
-                        $streamValue,
-                    );
-                }
                 $state = $stateParam->stateClass::fromEvents($streamEvents);
                 $states[] = $state;
             }
@@ -111,7 +103,7 @@ final class Engine
             $streamValue = $this->getCommandPropertyValue($command, $stateParam->commandProperty);
             $streamEvents = $this->eventsForStream($loadResult->events, $stateParam, $streamValue);
 
-            if ($streamEvents === [] && !$stateParam->isNullable && !$stateParam->isNewStream) {
+            if ($streamEvents === [] && !$stateParam->isNullable) {
                 throw new Exception\StreamNotFoundException(
                     $stateParam->domainIdentifierName,
                     $streamValue,

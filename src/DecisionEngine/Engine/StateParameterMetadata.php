@@ -11,7 +11,6 @@ final readonly class StateParameterMetadata
         public string $stateClass,
         public string $domainIdentifierName,
         public string $commandProperty,
-        public bool $isNewStream,
         public bool $isNullable,
     ) {
     }

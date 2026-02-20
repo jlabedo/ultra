@@ -23,7 +23,6 @@ test('resolves state parameters from SubscribeStudentToCourseCommand correctly',
     expect($courseParam->stateClass)->toBe(CourseCapacityState::class);
     expect($courseParam->domainIdentifierName)->toBe('course');
     expect($courseParam->commandProperty)->toBe('courseId');
-    expect($courseParam->isNewStream)->toBeFalse();
     expect($courseParam->isNullable)->toBeFalse();
 
     $studentParam = $meta->stateParameters[1];
@@ -46,15 +45,6 @@ test('check method is null when absent', function () {
     $meta = $resolver->resolve(CreateCourseCommand::class);
 
     expect($meta->checkMethod)->toBeNull();
-});
-
-test('detects NewStream on CreateCourseCommand', function () {
-    $resolver = new CommandMetadataResolver();
-    $meta = $resolver->resolve(CreateCourseCommand::class);
-
-    expect($meta->stateParameters)->toHaveCount(1);
-    expect($meta->stateParameters[0]->isNewStream)->toBeTrue();
-    expect($meta->stateParameters[0]->isNullable)->toBeTrue();
 });
 
 test('detects nullable state parameter', function () {
