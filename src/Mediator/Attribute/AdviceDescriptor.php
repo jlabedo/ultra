@@ -11,14 +11,28 @@ namespace Ultra\Mediator\Attribute;
  *
  *   Before:  method(object $message, array $context): void
  *   Around:  method(callable $proceed, object $message, array $context): mixed
- *              — $proceed is fn(object $message, array $context): mixed
+ *              — $proceed is fn(object $message, array $context, ...$provided): mixed
+ *
+ * When an advice implements ParameterProvidingAspect:
+ *   $claimedDepIndices lists which handler dependency slots (0-based, message excluded)
+ *   this advice will fill at runtime by passing extra arguments to $proceed.
+ *   $runtimeConfig carries compile-time metadata (e.g. service IDs, type names) that the
+ *   advice service uses to load/resolve the claimed parameters; it is embedded verbatim as
+ *   a PHP literal array in the generated dispatch method and passed as a final argument to
+ *   the advice method: method(callable $proceed, object $message, array $context, array $config).
  */
 final readonly class AdviceDescriptor
 {
+    /**
+     * @param list<int> $claimedDepIndices  0-based indices into the handler's dep-param array
+     * @param array     $runtimeConfig      serializable config embedded in generated code
+     */
     public function __construct(
         public AdviceType $type,
         public string $serviceId,
         public string $method,
+        public array $claimedDepIndices = [],
+        public array $runtimeConfig = [],
     ) {
     }
 

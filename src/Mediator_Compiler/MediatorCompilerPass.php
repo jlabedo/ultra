@@ -10,9 +10,10 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\ServiceLocator;
-use Ultra\Mediator\Attribute\AspectAttribute;
 use Ultra\Mediator\Attribute\AdviceDescriptor;
+use Ultra\Mediator\Attribute\AspectAttribute;
 use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\ParameterProvidingAspect;
 use Ultra\Mediator\MediatorInterface;
 
 /**
@@ -22,11 +23,15 @@ use Ultra\Mediator\MediatorInterface;
  *  1. Find all services tagged with $handlerTag (default: "mediator.handler").
  *  2. Reflect on each class to discover public methods marked with #[Handles].
  *  3. For each #[Handles] method, also collect any attributes implementing AspectAttribute.
+ *     Attributes implementing ParameterProvidingAspect additionally declare which dep
+ *     parameters they will supply at runtime (claimedDepIndices) and carry serializable
+ *     runtimeConfig that is embedded as a PHP literal in the generated dispatch method.
  *  4. Build a handler map: messageClass => [serviceId, methodName, depServiceIds, advices].
  *  5. Generate a concrete PHP class (via MediatorGenerator) with one private dispatch method
  *     per message type, inlining all AOP advice code.
  *  6. Register the generated class as the MediatorInterface service, wired to a
- *     ServiceLocator containing every handler and its dependencies (including aspect services).
+ *     ServiceLocator containing every handler, its non-claimed deps, and aspect services.
+ *     Claimed dep types are NOT added to the locator — the aspect injects them directly.
  *
  * The generated file must be on an autoloaded path at runtime. Place $outputDir inside
  * your framework's cache directory and ensure it is classmap-autoloaded.
@@ -90,8 +95,19 @@ final class MediatorCompilerPass implements CompilerPassInterface
 
                 $locatorServices[$serviceId] = new ServiceClosureArgument(new Reference($serviceId));
 
-                foreach ($depServiceIds as $depId) {
-                    $locatorServices[$depId] = new ServiceClosureArgument(new Reference($depId));
+                // Collect dep indices claimed by parameter-providing aspects so they are
+                // excluded from the locator — the aspect service injects them directly.
+                $claimedIndices = [];
+                foreach ($advices as $advice) {
+                    foreach ($advice->claimedDepIndices as $idx) {
+                        $claimedIndices[$idx] = true;
+                    }
+                }
+
+                foreach ($depServiceIds as $i => $depId) {
+                    if (!isset($claimedIndices[$i])) {
+                        $locatorServices[$depId] = new ServiceClosureArgument(new Reference($depId));
+                    }
                 }
 
                 foreach ($advices as $advice) {
@@ -128,7 +144,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
             $type = $param->getType();
             if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
                 throw new \LogicException(sprintf(
-                    'Parameter "$%s" of handler method "%s::%s" must have a non-builtin type for container resolution.',
+                    'Parameter "$%s" of handler method "%s::%s" must have a non-builtin type.',
                     $param->getName(),
                     $method->getDeclaringClass()->getName(),
                     $method->getName(),
@@ -143,11 +159,28 @@ final class MediatorCompilerPass implements CompilerPassInterface
     /** @return list<AdviceDescriptor> */
     private function resolveAdvices(\ReflectionMethod $method): array
     {
+        $depParams = array_slice($method->getParameters(), 1);
+
         $advices = [];
         foreach ($method->getAttributes() as $refAttr) {
             $instance = $refAttr->newInstance();
-            if ($instance instanceof AspectAttribute) {
-                $advices[] = $instance->getAdviceDescriptor();
+            if (!$instance instanceof AspectAttribute) {
+                continue;
+            }
+
+            $base = $instance->getAdviceDescriptor();
+
+            if ($instance instanceof ParameterProvidingAspect) {
+                $resolution = $instance->compileParameterResolution($depParams);
+                $advices[] = new AdviceDescriptor(
+                    $base->type,
+                    $base->serviceId,
+                    $base->method,
+                    $resolution['indices'],
+                    $resolution['config'],
+                );
+            } else {
+                $advices[] = $base;
             }
         }
 

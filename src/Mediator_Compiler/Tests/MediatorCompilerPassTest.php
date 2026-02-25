@@ -10,6 +10,7 @@ use Symfony\Component\DependencyInjection\ServiceLocator;
 use Ultra\Mediator\Attribute\AdviceDescriptor;
 use Ultra\Mediator\Attribute\AspectAttribute;
 use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\ParameterProvidingAspect;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
 
@@ -229,6 +230,96 @@ final class DoubleWrappedHandler
 }
 
 // ---------------------------------------------------------------------------
+// ParameterProvidingAspect fixtures
+// ---------------------------------------------------------------------------
+
+final readonly class ProcessEntityMessage
+{
+    public function __construct(public string $entityId)
+    {
+    }
+}
+
+final class TestEntity
+{
+    public bool $processed = false;
+
+    public function __construct(public readonly string $id)
+    {
+    }
+
+    public function process(): void
+    {
+        $this->processed = true;
+    }
+}
+
+final class TestEntityRepository
+{
+    /** @var array<string, TestEntity> */
+    public array $saved = [];
+
+    public function load(object $message): TestEntity
+    {
+        return new TestEntity($message->entityId);
+    }
+
+    public function save(TestEntity $entity): void
+    {
+        $this->saved[$entity->id] = $entity;
+    }
+}
+
+/** Aspect service — holds the repository directly (no locator needed for testing) */
+final class TestEntityAspect
+{
+    public function __construct(private readonly TestEntityRepository $repo)
+    {
+    }
+
+    public function execute(callable $proceed, object $message, array $context): mixed
+    {
+        $entity = $this->repo->load($message);
+        $result = $proceed($message, $context, $entity);
+        $this->repo->save($entity);
+        return $result;
+    }
+}
+
+/** Aspect attribute — claims the TestEntity parameter; no runtimeConfig needed for this test */
+#[\Attribute(\Attribute::TARGET_METHOD)]
+final class WithEntity implements ParameterProvidingAspect
+{
+    public function getAdviceDescriptor(): AdviceDescriptor
+    {
+        return AdviceDescriptor::around(TestEntityAspect::class, 'execute');
+    }
+
+    public function compileParameterResolution(array $depParams): array
+    {
+        $indices = [];
+        foreach ($depParams as $i => $param) {
+            $type = $param->getType();
+            if ($type instanceof \ReflectionNamedType && $type->getName() === TestEntity::class) {
+                $indices[] = $i;
+            }
+        }
+        return ['indices' => $indices, 'config' => []];
+    }
+}
+
+final class EntityProcessingHandler
+{
+    #[Handles]
+    #[WithEntity]
+    public function process(ProcessEntityMessage $_msg, TestEntity $entity): string
+    {
+        $entity->process();
+        return $entity->id;
+    }
+}
+
+// ---------------------------------------------------------------------------
 // MediatorCompilerPass — integration tests
 // (ContainerBuilder wiring; no filesystem class loading)
 // ---------------------------------------------------------------------------
@@ -385,6 +476,50 @@ test('generated mediator calls around-advice wrapping the handler', function () 
 
     expect($result)->toBe('wrapped: test')
         ->and($txManager->calls)->toBe(1);
+});
+
+test('compiler pass excludes claimed dep types from the service locator', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(EntityProcessingHandler::class, (new Definition(EntityProcessingHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(TestEntityAspect::class, new Definition(TestEntityAspect::class));
+
+    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding0');
+    $pass->process($container);
+
+    $locatorArgs = $container->getDefinition('ultra.mediator.locator')->getArgument(0);
+
+    expect($locatorArgs)
+        ->toHaveKey(EntityProcessingHandler::class)
+        ->toHaveKey(TestEntityAspect::class)
+        // TestEntity is a claimed dep — the aspect provides it, so it must NOT be in the locator
+        ->not->toHaveKey(TestEntity::class);
+});
+
+test('generated mediator uses parameter-providing aspect to inject and save entity', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(EntityProcessingHandler::class, (new Definition(EntityProcessingHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(TestEntityAspect::class, new Definition(TestEntityAspect::class));
+
+    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding1');
+    $pass->process($container);
+
+    require_once $testOutputDir . '/CompiledMediatorParamProviding1.php';
+
+    $repo   = new TestEntityRepository();
+    $aspect = new TestEntityAspect($repo);
+
+    // TestEntity is NOT in the locator — the aspect provides it directly
+    $locator = new ServiceLocator([
+        EntityProcessingHandler::class => fn() => new EntityProcessingHandler(),
+        TestEntityAspect::class        => fn() => $aspect,
+    ]);
+
+    $mediator = new \CompiledMediatorParamProviding1($locator);
+    $result   = $mediator->send(new ProcessEntityMessage('entity-123'));
+
+    expect($result)->toBe('entity-123')
+        ->and($repo->saved)->toHaveKey('entity-123')
+        ->and($repo->saved['entity-123']->processed)->toBeTrue();
 });
 
 test('generated mediator executes multiple around-advices in declaration order', function () use ($testOutputDir) {

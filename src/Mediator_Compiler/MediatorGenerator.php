@@ -23,9 +23,14 @@ use Ultra\Mediator\Attribute\AdviceType;
  *   array<class-string, array{
  *     0: string,                  // handler service ID
  *     1: string,                  // handler method name
- *     2: list<string>,            // method-level dep service IDs
+ *     2: list<string>,            // method-level dep service IDs (all dep types, including claimed)
  *     3: list<AdviceDescriptor>,  // (optional) ordered aspect advices
  *   }>
+ *
+ * Claimed dep slots (declared by ParameterProvidingAspect attributes) are passed as
+ * extra arrow-function parameters in the $proceed lambda rather than being fetched from
+ * the service locator. PHP arrow functions automatically capture outer-scope variables,
+ * so nested around chains with multiple claiming aspects work without explicit use clauses.
  */
 final class MediatorGenerator
 {
@@ -99,7 +104,7 @@ final class MediatorGenerator
     }
 
     /**
-     * @param list<string> $depServiceIds
+     * @param list<string>           $depServiceIds
      * @param list<AdviceDescriptor> $advices
      */
     private function buildDispatchMethod(
@@ -112,6 +117,17 @@ final class MediatorGenerator
         $befores = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::Before));
         $arounds = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::Around));
 
+        // Collect all dep indices claimed by parameter-providing around advices.
+        // Each claimed index maps to a generated variable name $_p{depIndex}.
+        // Arrow functions auto-capture outer-scope variables, so nested around
+        // chains with different claiming aspects compose correctly without use clauses.
+        $claimedVarNames = []; // depIndex => '$_p{depIndex}'
+        foreach ($arounds as $advice) {
+            foreach ($advice->claimedDepIndices as $depIdx) {
+                $claimedVarNames[$depIdx] = '$_p' . $depIdx;
+            }
+        }
+
         $lines = [];
 
         // Before advices — sequential calls with ($message, $context)
@@ -123,16 +139,12 @@ final class MediatorGenerator
             );
         }
 
-        // Build the handler invocation string.
-        // Inside an around lambda the message is $m; without around it is $message.
-        $depArgs = array_map(
-            fn(string $id) => '$this->locator->get(' . $this->exportString($id) . ')',
-            $depServiceIds,
-        );
-
         if ($arounds === []) {
-            // No around advices — call handler directly with $message
-            $handlerArgs = array_merge(['$message'], $depArgs);
+            // No around advices — call handler directly with $message and all deps from locator
+            $handlerArgs = ['$message'];
+            foreach ($depServiceIds as $depId) {
+                $handlerArgs[] = '$this->locator->get(' . $this->exportString($depId) . ')';
+            }
             $lines[] = sprintf(
                 '        return $this->locator->get(%s)->%s(%s);',
                 $this->exportString($serviceId),
@@ -142,7 +154,15 @@ final class MediatorGenerator
         } else {
             // Build the around chain from the inside out.
             // The innermost layer is the handler call, using $m (lambda parameter).
-            $handlerArgs = array_merge(['$m'], $depArgs);
+            // Claimed dep slots use their assigned variable names; unclaimed deps come
+            // from the locator.
+            $handlerArgs = ['$m'];
+            foreach ($depServiceIds as $depIdx => $depId) {
+                $handlerArgs[] = isset($claimedVarNames[$depIdx])
+                    ? $claimedVarNames[$depIdx]
+                    : '$this->locator->get(' . $this->exportString($depId) . ')';
+            }
+
             $inner = sprintf(
                 '$this->locator->get(%s)->%s(%s)',
                 $this->exportString($serviceId),
@@ -157,13 +177,29 @@ final class MediatorGenerator
                 $mArg = $isOutermost ? '$message' : '$m';
                 $cArg = $isOutermost ? '$context' : '$c';
 
-                $inner = sprintf(
-                    '$this->locator->get(%s)->%s(fn($m, $c) => %s, %s, %s)',
-                    $this->exportString($advice->serviceId),
-                    $advice->method,
-                    $inner,
+                // Lambda params: $m and $c, plus any dep vars this advice claims.
+                // Inner lambdas auto-capture claimed vars from outer lambda scopes.
+                $lambdaParams = ['$m', '$c'];
+                foreach ($advice->claimedDepIndices as $depIdx) {
+                    $lambdaParams[] = $claimedVarNames[$depIdx];
+                }
+
+                // Aspect call args: proceed lambda, message, context, and — when the
+                // advice carries a non-empty runtimeConfig — a PHP literal array.
+                $aspectArgs = [
+                    'fn(' . implode(', ', $lambdaParams) . ') => ' . $inner,
                     $mArg,
                     $cArg,
+                ];
+                if ($advice->runtimeConfig !== []) {
+                    $aspectArgs[] = $this->exportValue($advice->runtimeConfig);
+                }
+
+                $inner = sprintf(
+                    '$this->locator->get(%s)->%s(%s)',
+                    $this->exportString($advice->serviceId),
+                    $advice->method,
+                    implode(', ', $aspectArgs),
                 );
             }
 
@@ -195,5 +231,36 @@ final class MediatorGenerator
     private function exportString(string $value): string
     {
         return "'" . str_replace('\\', '\\\\', $value) . "'";
+    }
+
+    /**
+     * Export a scalar or array value as a PHP literal string for code generation.
+     * Supports string, int, float, bool, null, and recursively nested arrays.
+     */
+    private function exportValue(mixed $value): string
+    {
+        return match (true) {
+            is_string($value) => $this->exportString($value),
+            is_int($value)    => (string) $value,
+            is_float($value)  => var_export($value, true),
+            is_bool($value)   => $value ? 'true' : 'false',
+            is_null($value)   => 'null',
+            $value === []     => '[]',
+            is_array($value)  => $this->exportArray($value),
+            default           => throw new \LogicException(
+                'Unsupported type in runtimeConfig: ' . get_debug_type($value),
+            ),
+        };
+    }
+
+    private function exportArray(array $array): string
+    {
+        $isList = array_is_list($array);
+        $pairs  = [];
+        foreach ($array as $k => $v) {
+            $pairs[] = ($isList ? '' : $this->exportValue($k) . ' => ') . $this->exportValue($v);
+        }
+
+        return '[' . implode(', ', $pairs) . ']';
     }
 }
