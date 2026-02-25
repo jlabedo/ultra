@@ -13,6 +13,7 @@
         "php": ">=8.4",
         "laminas/laminas-code": "^4.5",
         "psr/container": "^2.0",
+        "symfony/dependency-injection": "7.*|8.*",
         "symfony/type-info": "7.*|8.*"
     },
     "require-dev": {
@@ -21,8 +22,13 @@
         "pestphp/pest": "^4"
     },
     "replace": {
+        "ultra/aop": "self.version",
+        "ultra/decision-engine": "self.version",
+        "ultra/event-store": "self.version",
         "ultra/mapper": "self.version",
-        "ultra/mapper-compiler": "self.version"
+        "ultra/mapper-compiler": "self.version",
+        "ultra/mediator": "self.version",
+        "ultra/mediator-compiler": "self.version"
     },
     "minimum-stability": "dev",
     "prefer-stable": true,

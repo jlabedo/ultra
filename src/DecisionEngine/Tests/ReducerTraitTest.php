@@ -27,12 +27,16 @@ final class ReducerTraitTestState
 
 final readonly class TestEventIncrement
 {
-    public function __construct(public int $delta) {}
+    public function __construct(public int $delta)
+    {
+    }
 }
 
 final readonly class TestEventNamed
 {
-    public function __construct(public string $name) {}
+    public function __construct(public string $name)
+    {
+    }
 }
 
 /** State that does not handle SomeUnhandledEvent */
@@ -79,20 +83,4 @@ test('fromEvents with empty array returns default state', function () {
 
     expect($state->count)->toBe(0);
     expect($state->lastName)->toBe('');
-});
-
-test('handledEventTypes returns correct list', function () {
-    $types = ReducerTraitTestState::handledEventTypes();
-
-    expect($types)->toContain(TestEventIncrement::class);
-    expect($types)->toContain(TestEventNamed::class);
-    expect($types)->toHaveCount(2);
-});
-
-test('handledEventTypes does not include unhandled event', function () {
-    $types = ReducerTraitTestStateWithSkip::handledEventTypes();
-
-    expect($types)->toContain(TestEventIncrement::class);
-    expect($types)->not->toContain(SomeUnhandledEvent::class);
-    expect($types)->toHaveCount(1);
 });

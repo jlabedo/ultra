@@ -32,18 +32,6 @@ trait ReducerTrait
     }
 
     /**
-     * Return the list of event class names that this state handles.
-     *
-     * @return list<string>
-     */
-    public static function handledEventTypes(): array
-    {
-        $handlers = self::resolveHandlers(static::class);
-
-        return array_keys($handlers);
-    }
-
-    /**
      * @return array<string, string> eventClass => method name
      */
     private static function resolveHandlers(string $class): array
