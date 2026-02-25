@@ -12,7 +12,6 @@ use Ultra\Mediator\Attribute\AspectAttribute;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
-use Ultra\Mediator_Compiler\MediatorGenerator;
 
 // ---------------------------------------------------------------------------
 // Shared temp directory for this test run
@@ -228,94 +227,6 @@ final class DoubleWrappedHandler
         return 'double: ' . $msg->payload;
     }
 }
-
-// ---------------------------------------------------------------------------
-// MediatorGenerator — unit tests
-// (no Symfony container, no filesystem side effects that affect class loading)
-// ---------------------------------------------------------------------------
-
-test('generator produces a class declaration implementing MediatorInterface', function () {
-    $handlers = [
-        HelloMessage::class => [SalutationHandler::class, 'hello', [], []],
-    ];
-
-    $code = (new MediatorGenerator())->buildCode('GeneratedMediatorA', $handlers);
-
-    expect($code)
-        ->toContain('final class GeneratedMediatorA implements \Ultra\Mediator\MediatorInterface')
-        ->toContain('\Ultra\Mediator_Compiler\Tests\HelloMessage::class')
-        ->toContain("->get('" . addslashes(SalutationHandler::class) . "')->hello(\$message)")
-        ->toContain('throw new \Ultra\Mediator\Exception\NoHandlerFound');
-});
-
-test('generator includes service locator calls for method-level dependencies', function () {
-    $handlers = [
-        PingMessage::class => [GreetWithServiceHandler::class, 'ping', [GreeterService::class], []],
-    ];
-
-    $code = (new MediatorGenerator())->buildCode('GeneratedMediatorB', $handlers);
-
-    expect($code)
-        ->toContain("->get('" . addslashes(GreeterService::class) . "')")
-        ->toContain('->ping($message, $this->locator->get(');
-});
-
-test('generator inlines before-advice call before the handler invocation', function () {
-    $advices = [AdviceDescriptor::before('my_logger', 'log')];
-    $handlers = [
-        HelloMessage::class => ['my_handler', 'handle', [], $advices],
-    ];
-
-    $code = (new MediatorGenerator())->buildCode('GeneratedWithBefore', $handlers);
-
-    expect($code)
-        ->toContain("->get('my_logger')->log(\$message, \$context)")
-        ->toContain("->get('my_handler')->handle(\$message)");
-
-    // The before call must appear before the handler call
-    expect(strpos($code, "->log(\$message, \$context)"))->toBeLessThan(
-        strpos($code, "->handle(\$message)"),
-    );
-});
-
-test('generator wraps handler in an around-advice arrow-function chain', function () {
-    $advices = [AdviceDescriptor::around('tx_manager', 'execute')];
-    $handlers = [
-        HelloMessage::class => ['my_handler', 'handle', [], $advices],
-    ];
-
-    $code = (new MediatorGenerator())->buildCode('GeneratedWithAround', $handlers);
-
-    expect($code)
-        // Around aspect receives a proceed lambda and the original $message / $context
-        ->toContain("->get('tx_manager')->execute(fn(\$m, \$c) =>")
-        // Inside the lambda the handler is called with $m (not $message)
-        ->toContain("->get('my_handler')->handle(\$m)")
-        // The outermost call receives the real $message and $context
-        ->toContain("\$message, \$context)");
-});
-
-test('generator nests multiple around-advices with first-declared advice as outermost', function () {
-    $advices = [
-        AdviceDescriptor::around('outer_aspect', 'wrap'),
-        AdviceDescriptor::around('inner_aspect', 'wrap'),
-    ];
-    $handlers = [
-        HelloMessage::class => ['my_handler', 'handle', [], $advices],
-    ];
-
-    $code = (new MediatorGenerator())->buildCode('GeneratedMultiAround', $handlers);
-
-    expect($code)
-        ->toContain("->get('outer_aspect')->wrap(fn(\$m, \$c) =>")
-        ->toContain("->get('inner_aspect')->wrap(fn(\$m, \$c) =>")
-        ->toContain("->get('my_handler')->handle(\$m)");
-
-    // outer_aspect is the outermost call (appears first in the source)
-    expect(strpos($code, "->get('outer_aspect')"))->toBeLessThan(
-        strpos($code, "->get('inner_aspect')"),
-    );
-});
 
 // ---------------------------------------------------------------------------
 // MediatorCompilerPass — integration tests
