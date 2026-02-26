@@ -212,7 +212,7 @@ final class DoubleWrappedHandler
 }
 
 // ---------------------------------------------------------------------------
-// ParameterProvidingAspect fixtures — single entity, load+save
+// Parameter-providing aspect fixtures — single entity, load+save
 // ---------------------------------------------------------------------------
 
 final readonly class ProcessEntityMessage

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mediator\Attribute;
+namespace Ultra\Mediator_Compiler;
 
 /**
  * Describes a single advice: the type of advice, the service to call, and the method name.

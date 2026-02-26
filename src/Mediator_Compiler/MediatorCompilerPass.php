@@ -10,8 +10,6 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\ServiceLocator;
-use Ultra\Mediator\Attribute\AdviceDescriptor;
-use Ultra\Mediator\Attribute\AdviceType;
 use Ultra\Mediator\Attribute\After;
 use Ultra\Mediator\Attribute\AfterReturning;
 use Ultra\Mediator\Attribute\AfterThrowing;

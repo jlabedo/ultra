@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Compiler;
 
-use Ultra\Mediator\Attribute\AdviceDescriptor;
-use Ultra\Mediator\Attribute\AdviceType;
 
 /**
  * Generates a compiled mediator PHP class from a resolved handler map.
@@ -27,10 +25,11 @@ use Ultra\Mediator\Attribute\AdviceType;
  *     3: list<AdviceDescriptor>,  // (optional) ordered aspect advices
  *   }>
  *
- * Claimed dep slots (declared by ParameterProvidingAspect attributes) are passed as
- * extra arrow-function parameters in the $proceed lambda rather than being fetched from
- * the service locator. PHP arrow functions automatically capture outer-scope variables,
- * so nested around chains with multiple claiming aspects work without explicit use clauses.
+ * Claimed dep slots (declared via MatchResult::apply(provides: [...]) in #[Around] closures)
+ * are passed as extra arrow-function parameters in the $proceed lambda rather than being
+ * fetched from the service locator. PHP arrow functions automatically capture outer-scope
+ * variables, so nested around chains with multiple claiming aspects work without explicit
+ * use clauses.
  */
 final class MediatorGenerator
 {
