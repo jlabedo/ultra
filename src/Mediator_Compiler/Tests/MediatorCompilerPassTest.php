@@ -380,7 +380,9 @@ final class BatchLoadAspect
                 $repos[]   = TestEntityBRepository::class;
             }
         }
-        return $indices !== [] ? MatchResult::apply(config: ['repos' => $repos], provides: $indices) : null;
+        return $indices !== []
+            ? MatchResult::apply(config: ['repos' => $repos], provides: $indices)
+            : null;
     })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
@@ -510,7 +512,9 @@ final class EntityManagerAspect
             $indices[]  = $i;
             $entities[] = ['class' => $type->getName(), 'idFrom' => $entityAttr->idFrom];
         }
-        return $entities !== [] ? MatchResult::apply(config: ['entities' => $entities], provides: $indices) : null;
+        return $entities !== []
+            ? MatchResult::apply(config: ['entities' => $entities], provides: $indices)
+            : null;
     })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
