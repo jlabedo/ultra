@@ -369,9 +369,24 @@ final class EntityProcessingHandler
 }
 
 // ---------------------------------------------------------------------------
+// Entity marker attribute — applied to domain entity classes so that the
+// generic #[LoadAndSave] aspect attribute can discover them at compile time.
+// ---------------------------------------------------------------------------
+
+/** Marks a class as a domain entity and declares which message property holds its ID. */
+#[\Attribute(\Attribute::TARGET_CLASS)]
+final class Entity
+{
+    public function __construct(public readonly string $idFrom)
+    {
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Multi-param and split-aspect fixtures
 // ---------------------------------------------------------------------------
 
+#[Entity(idFrom: 'aId')]
 final class EntityA
 {
     public function __construct(public readonly string $id)
@@ -379,6 +394,7 @@ final class EntityA
     }
 }
 
+#[Entity(idFrom: 'bId')]
 final class EntityB
 {
     public function __construct(public readonly string $id)
@@ -506,6 +522,117 @@ final class SeparateEntitiesHandler
     public function handle(SeparateEntitiesMessage $_msg, EntityA $a, EntityB $b): string
     {
         return $a->id . '+' . $b->id;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// EntityManager-based aspect fixtures
+//
+// A single EntityManager (à la Doctrine) replaces per-entity repositories.
+// The #[LoadAndSave] attribute scans handler dep-params for classes marked
+// with #[Entity], embeds their class names + idFrom fields in runtimeConfig,
+// and the EntityManagerAspect uses them at runtime to load and save.
+// ---------------------------------------------------------------------------
+
+interface EntityManagerInterface
+{
+    public function find(string $class, mixed $id): object;
+    public function save(object $entity): void;
+}
+
+final class TestEntityManager implements EntityManagerInterface
+{
+    /** @var list<array{class: string, id: mixed}> */
+    public array $findCalls = [];
+    /** @var array<class-string, array<mixed, object>> */
+    public array $saved = [];
+
+    public function find(string $class, mixed $id): object
+    {
+        $this->findCalls[] = ['class' => $class, 'id' => $id];
+        return new $class($id);
+    }
+
+    public function save(object $entity): void
+    {
+        $this->saved[$entity::class][$entity->id] = $entity;
+    }
+}
+
+/**
+ * Runtime aspect: uses a single EntityManager to load every entity listed in
+ * $config['entities'], passes them all to $proceed, then saves them.
+ */
+final class EntityManagerAspect
+{
+    public function __construct(private readonly EntityManagerInterface $em)
+    {
+    }
+
+    public function execute(callable $proceed, object $message, array $context, array $config): mixed
+    {
+        $entities = [];
+        foreach ($config['entities'] as ['class' => $class, 'idFrom' => $idFrom]) {
+            $entities[] = $this->em->find($class, $message->$idFrom);
+        }
+        $result = $proceed($message, $context, ...$entities);
+        foreach ($entities as $entity) {
+            $this->em->save($entity);
+        }
+        return $result;
+    }
+}
+
+/**
+ * Compile-time attribute: auto-discovers which handler parameters are entities
+ * by checking for the #[Entity] attribute on their type class, then embeds
+ * ['class' => ..., 'idFrom' => ...] for each in runtimeConfig.
+ */
+#[\Attribute(\Attribute::TARGET_METHOD)]
+final class LoadAndSave implements ParameterProvidingAspect
+{
+    public function getAdviceDescriptor(): AdviceDescriptor
+    {
+        return AdviceDescriptor::around(EntityManagerAspect::class, 'execute');
+    }
+
+    public function compileParameterResolution(array $depParams): array
+    {
+        $indices  = [];
+        $entities = [];
+
+        foreach ($depParams as $i => $param) {
+            $type = $param->getType();
+            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                continue;
+            }
+            $refAttrs = (new \ReflectionClass($type->getName()))->getAttributes(Entity::class);
+            if ($refAttrs === []) {
+                continue;
+            }
+            $entityAttr = $refAttrs[0]->newInstance();
+            $indices[]  = $i;
+            $entities[] = ['class' => $type->getName(), 'idFrom' => $entityAttr->idFrom];
+        }
+
+        return ['indices' => $indices, 'config' => ['entities' => $entities]];
+    }
+}
+
+final readonly class ProcessEntitiesMessage
+{
+    public function __construct(public string $aId, public string $bId)
+    {
+    }
+}
+
+final class EntityManagerHandler
+{
+    #[Handles]
+    #[LoadAndSave]
+    public function handle(ProcessEntitiesMessage $_msg, EntityA $entityA, EntityB $entityB): string
+    {
+        return $entityA->id . '+' . $entityB->id;
     }
 }
 
@@ -800,4 +927,36 @@ test('two parameter-providing aspects each claiming a different parameter compos
     // EntityB injected by the inner #[WithEntityB] advice (config: TestEntityBRepository),
     // both via the same LoadAspect service — arrow-function capture propagates $_p0 inward.
     expect($result)->toBe('a-1+b-2');
+});
+
+test('#[LoadAndSave] discovers #[Entity] parameters at compile time and delegates to a single EntityManager at runtime', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(EntityManagerHandler::class, (new Definition(EntityManagerHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(EntityManagerAspect::class, new Definition(EntityManagerAspect::class));
+
+    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorEm');
+    $pass->process($container);
+
+    require_once $testOutputDir . '/CompiledMediatorEm.php';
+
+    $em     = new TestEntityManager();
+    $aspect = new EntityManagerAspect($em);
+
+    // Neither EntityA nor EntityB is in the mediator locator — EntityManagerAspect provides both
+    $locator = new ServiceLocator([
+        EntityManagerHandler::class => fn() => new EntityManagerHandler(),
+        EntityManagerAspect::class  => fn() => $aspect,
+    ]);
+
+    $mediator = new \CompiledMediatorEm($locator);
+    $result   = $mediator->send(new ProcessEntitiesMessage('a-1', 'b-2'));
+
+    expect($result)->toBe('a-1+b-2')
+        // find() was called once per entity, in declaration order, with IDs extracted from the message
+        ->and($em->findCalls)->toHaveCount(2)
+        ->and($em->findCalls[0])->toBe(['class' => EntityA::class, 'id' => 'a-1'])
+        ->and($em->findCalls[1])->toBe(['class' => EntityB::class, 'id' => 'b-2'])
+        // save() was called for both entities after $proceed returned
+        ->and($em->saved)->toHaveKey(EntityA::class)
+        ->and($em->saved)->toHaveKey(EntityB::class);
 });
