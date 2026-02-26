@@ -10,7 +10,7 @@
         }
     ],
     "require": {
-        "php": ">=8.4",
+        "php": ">=8.5",
         "ultra/mediator": "^0.1",
         "symfony/dependency-injection": "7.*|8.*"
     },

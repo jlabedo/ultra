@@ -10,7 +10,7 @@
         }
     ],
     "require": {
-        "php": ">=8.4",
+        "php": ">=8.5",
         "laminas/laminas-code": "^4.5",
         "psr/container": "^2.0",
         "symfony/dependency-injection": "7.*|8.*",

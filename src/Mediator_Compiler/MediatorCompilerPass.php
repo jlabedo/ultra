@@ -11,30 +11,37 @@ use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Ultra\Mediator\Attribute\AdviceDescriptor;
-use Ultra\Mediator\Attribute\AspectAttribute;
+use Ultra\Mediator\Attribute\AdviceType;
+use Ultra\Mediator\Attribute\Around;
+use Ultra\Mediator\Attribute\Before;
 use Ultra\Mediator\Attribute\Handles;
-use Ultra\Mediator\Attribute\ParameterProvidingAspect;
 use Ultra\Mediator\MediatorInterface;
 
 /**
  * Symfony DI compiler pass that generates a zero-overhead compiled mediator.
  *
  * Flow:
- *  1. Find all services tagged with $handlerTag (default: "mediator.handler").
- *  2. Reflect on each class to discover public methods marked with #[Handles].
- *  3. For each #[Handles] method, also collect any attributes implementing AspectAttribute.
- *     Attributes implementing ParameterProvidingAspect additionally declare which dep
- *     parameters they will supply at runtime (claimedDepIndices) and carry serializable
- *     runtimeConfig that is embedded as a PHP literal in the generated dispatch method.
- *  4. Build a handler map: messageClass => [serviceId, methodName, depServiceIds, advices].
- *  5. Generate a concrete PHP class (via MediatorGenerator) with one private dispatch method
- *     per message type, inlining all AOP advice code.
- *  6. Register the generated class as the MediatorInterface service, wired to a
- *     ServiceLocator containing every handler, its non-claimed deps, and aspect services.
- *     Claimed dep types are NOT added to the locator — the aspect injects them directly.
+ *  Phase 1 — Handler discovery:
+ *    Find all services tagged with $handlerTag (default: "mediator.handler").
+ *    Reflect on each class; collect every public method marked with #[Handles].
+ *    For each such method, record the message class, service ID, method name,
+ *    and non-message dep service IDs.
  *
- * The generated file must be on an autoloaded path at runtime. Place $outputDir inside
- * your framework's cache directory and ensure it is classmap-autoloaded.
+ *  Phase 2 — Aspect matching:
+ *    Find all services tagged with $aspectTag (default: "mediator.aspect").
+ *    Reflect on each aspect class; scan public methods for #[Around] and #[Before].
+ *    For each attribute, call its $matcher closure with the handler's ReflectionMethod.
+ *    A non-null return means "apply this advice"; the array may contain:
+ *      'indices' => list<int>  dep-param slots this advice provides at runtime
+ *      'config'  => array      serializable config embedded in the generated dispatch method
+ *    Collect all matching advices, sort by priority (descending = outermost first).
+ *
+ *  Phase 3 — Code generation and registration:
+ *    Build a handler map and pass it to MediatorGenerator.
+ *    Register a ServiceLocator with all handler, dep, and aspect services.
+ *    Dep slots claimed by around advices are excluded from the locator.
+ *
+ * The generated file must be on an autoloaded path at runtime.
  */
 final class MediatorCompilerPass implements CompilerPassInterface
 {
@@ -42,23 +49,27 @@ final class MediatorCompilerPass implements CompilerPassInterface
         private readonly string $outputDir,
         private readonly string $generatedClass = 'CompiledMediator',
         private readonly string $handlerTag = 'mediator.handler',
+        private readonly string $aspectTag = 'mediator.aspect',
     ) {
     }
 
     public function process(ContainerBuilder $container): void
     {
-        $tagged = $container->findTaggedServiceIds($this->handlerTag);
+        $taggedHandlers = $container->findTaggedServiceIds($this->handlerTag);
 
-        if ($tagged === []) {
+        if ($taggedHandlers === []) {
             return;
         }
 
         /** @var array<class-string, array{0: string, 1: string, 2: list<string>, 3: list<AdviceDescriptor>}> $handlers */
         $handlers = [];
+        /** @var array<class-string, \ReflectionMethod> $handlerReflections */
+        $handlerReflections = [];
         /** @var array<string, ServiceClosureArgument> $locatorServices */
         $locatorServices = [];
 
-        foreach (array_keys($tagged) as $serviceId) {
+        // ── Phase 1: discover handler methods ────────────────────────────────
+        foreach (array_keys($taggedHandlers) as $serviceId) {
             $definition = $container->getDefinition($serviceId);
             $class = $definition->getClass() ?? $serviceId;
 
@@ -89,30 +100,10 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 }
 
                 $depServiceIds = $this->resolveDepServiceIds($method);
-                $advices = $this->resolveAdvices($method);
-
-                $handlers[$messageClass] = [$serviceId, $method->getName(), $depServiceIds, $advices];
+                $handlers[$messageClass] = [$serviceId, $method->getName(), $depServiceIds, []];
+                $handlerReflections[$messageClass] = $method;
 
                 $locatorServices[$serviceId] = new ServiceClosureArgument(new Reference($serviceId));
-
-                // Collect dep indices claimed by parameter-providing aspects so they are
-                // excluded from the locator — the aspect service injects them directly.
-                $claimedIndices = [];
-                foreach ($advices as $advice) {
-                    foreach ($advice->claimedDepIndices as $idx) {
-                        $claimedIndices[$idx] = true;
-                    }
-                }
-
-                foreach ($depServiceIds as $i => $depId) {
-                    if (!isset($claimedIndices[$i])) {
-                        $locatorServices[$depId] = new ServiceClosureArgument(new Reference($depId));
-                    }
-                }
-
-                foreach ($advices as $advice) {
-                    $locatorServices[$advice->serviceId] = new ServiceClosureArgument(new Reference($advice->serviceId));
-                }
             }
         }
 
@@ -120,17 +111,52 @@ final class MediatorCompilerPass implements CompilerPassInterface
             return;
         }
 
-        // Generate the concrete mediator class
+        // ── Phase 2: match aspect services to each handler ───────────────────
+        $taggedAspects = $container->findTaggedServiceIds($this->aspectTag);
+
+        foreach ($handlers as $messageClass => &$handlerData) {
+            $handlerMethod = $handlerReflections[$messageClass];
+            $rawAdvices = $this->collectAdvices($handlerMethod, $taggedAspects, $container);
+
+            // Higher priority → outermost around advice / first before advice
+            usort($rawAdvices, static fn($a, $b) => $b['priority'] <=> $a['priority']);
+
+            $advices = array_map(
+                static fn($r) => new AdviceDescriptor($r['type'], $r['serviceId'], $r['method'], $r['indices'], $r['config']),
+                $rawAdvices,
+            );
+
+            $handlerData[3] = $advices;
+
+            // Claimed dep slots are provided by the aspect — exclude from locator
+            $claimedIndices = [];
+            foreach ($advices as $advice) {
+                foreach ($advice->claimedDepIndices as $idx) {
+                    $claimedIndices[$idx] = true;
+                }
+            }
+
+            foreach ($handlerData[2] as $i => $depId) {
+                if (!isset($claimedIndices[$i])) {
+                    $locatorServices[$depId] = new ServiceClosureArgument(new Reference($depId));
+                }
+            }
+
+            foreach ($advices as $advice) {
+                $locatorServices[$advice->serviceId] = new ServiceClosureArgument(new Reference($advice->serviceId));
+            }
+        }
+        unset($handlerData);
+
+        // ── Phase 3: generate and register ───────────────────────────────────
         $filePath = rtrim($this->outputDir, '/') . '/' . $this->generatedClass . '.php';
         (new MediatorGenerator())->generate($this->generatedClass, $handlers, $filePath);
 
-        // ServiceLocator — one per mediator, holds all handlers, their deps, and aspect services
         $locatorId = 'ultra.mediator.locator';
         $locatorDef = new Definition(ServiceLocator::class, [$locatorServices]);
         $locatorDef->setPublic(false)->addTag('container.service_locator');
         $container->setDefinition($locatorId, $locatorDef);
 
-        // The generated mediator service, autowirable via MediatorInterface
         $mediatorDef = new Definition($this->generatedClass, [new Reference($locatorId)]);
         $mediatorDef->setPublic(true);
         $container->setDefinition(MediatorInterface::class, $mediatorDef);
@@ -156,34 +182,60 @@ final class MediatorCompilerPass implements CompilerPassInterface
         return $ids;
     }
 
-    /** @return list<AdviceDescriptor> */
-    private function resolveAdvices(\ReflectionMethod $method): array
-    {
-        $depParams = array_slice($method->getParameters(), 1);
+    /**
+     * Scan all aspect services for #[Around] and #[Before] methods that match $handlerMethod.
+     *
+     * @param  array<string, mixed>  $taggedAspects
+     * @return list<array{type: AdviceType, serviceId: string, method: string, priority: int, indices: list<int>, config: array}>
+     */
+    private function collectAdvices(
+        \ReflectionMethod $handlerMethod,
+        array $taggedAspects,
+        ContainerBuilder $container,
+    ): array {
+        $rawAdvices = [];
 
-        $advices = [];
-        foreach ($method->getAttributes() as $refAttr) {
-            $instance = $refAttr->newInstance();
-            if (!$instance instanceof AspectAttribute) {
-                continue;
-            }
+        foreach (array_keys($taggedAspects) as $aspectServiceId) {
+            $definition = $container->getDefinition($aspectServiceId);
+            $aspectClass = $definition->getClass() ?? $aspectServiceId;
 
-            $base = $instance->getAdviceDescriptor();
+            foreach ((new \ReflectionClass($aspectClass))->getMethods(\ReflectionMethod::IS_PUBLIC) as $aspectMethod) {
+                foreach ($aspectMethod->getAttributes(Around::class) as $refAttr) {
+                    /** @var Around $around */
+                    $around = $refAttr->newInstance();
+                    $result = ($around->matcher)($handlerMethod);
+                    if ($result === null) {
+                        continue;
+                    }
+                    $rawAdvices[] = [
+                        'type'      => AdviceType::Around,
+                        'serviceId' => $aspectServiceId,
+                        'method'    => $aspectMethod->getName(),
+                        'priority'  => $around->priority,
+                        'indices'   => $result['indices'] ?? [],
+                        'config'    => $result['config'] ?? [],
+                    ];
+                }
 
-            if ($instance instanceof ParameterProvidingAspect) {
-                $resolution = $instance->compileParameterResolution($depParams);
-                $advices[] = new AdviceDescriptor(
-                    $base->type,
-                    $base->serviceId,
-                    $base->method,
-                    $resolution['indices'],
-                    $resolution['config'],
-                );
-            } else {
-                $advices[] = $base;
+                foreach ($aspectMethod->getAttributes(Before::class) as $refAttr) {
+                    /** @var Before $before */
+                    $before = $refAttr->newInstance();
+                    $result = ($before->matcher)($handlerMethod);
+                    if ($result === null) {
+                        continue;
+                    }
+                    $rawAdvices[] = [
+                        'type'      => AdviceType::Before,
+                        'serviceId' => $aspectServiceId,
+                        'method'    => $aspectMethod->getName(),
+                        'priority'  => $before->priority,
+                        'indices'   => [],
+                        'config'    => $result['config'] ?? [],
+                    ];
+                }
             }
         }
 
-        return $advices;
+        return $rawAdvices;
     }
 }

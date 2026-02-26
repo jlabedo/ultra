@@ -8,10 +8,9 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Contracts\Service\ServiceProviderInterface;
-use Ultra\Mediator\Attribute\AdviceDescriptor;
-use Ultra\Mediator\Attribute\AspectAttribute;
+use Ultra\Mediator\Attribute\Around;
+use Ultra\Mediator\Attribute\Before;
 use Ultra\Mediator\Attribute\Handles;
-use Ultra\Mediator\Attribute\ParameterProvidingAspect;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
 
@@ -65,7 +64,7 @@ final readonly class DoubleWrappedMessage
 }
 
 // ---------------------------------------------------------------------------
-// Service fixtures (plain collaborators and aspect services)
+// Service fixtures (plain collaborators)
 // ---------------------------------------------------------------------------
 
 final class GreeterService
@@ -76,11 +75,23 @@ final class GreeterService
     }
 }
 
+// ---------------------------------------------------------------------------
+// Aspect service fixtures
+//
+// Each aspect method is decorated with #[Before] or #[Around].
+// The static closure receives the handler's ReflectionMethod and returns:
+//   null  → this aspect does not apply to that handler
+//   array → apply; optional keys 'indices' (claimed dep slots) and 'config'
+// ---------------------------------------------------------------------------
+
 final class TestLogger
 {
     /** @var list<object> */
     public array $logged = [];
 
+    #[Before(static function (\ReflectionMethod $m): ?array {
+        return []; // apply to every handler registered alongside this aspect
+    })]
     public function log(object $message, array $context): void
     {
         $this->logged[] = $message;
@@ -91,6 +102,9 @@ final class TestTransactionManager
 {
     public int $calls = 0;
 
+    #[Around(static function (\ReflectionMethod $m): ?array {
+        return []; // apply to every handler registered alongside this aspect
+    })]
     public function execute(callable $proceed, object $message, array $context): mixed
     {
         $this->calls++;
@@ -103,6 +117,9 @@ final class OuterAspectService
     /** @var list<string> */
     public array $log = [];
 
+    #[Around(static function (\ReflectionMethod $m): ?array {
+        return [];
+    }, priority: 10)]
     public function wrap(callable $proceed, object $message, array $context): mixed
     {
         $this->log[] = 'outer-before';
@@ -117,6 +134,9 @@ final class InnerAspectService
     /** @var list<string> */
     public array $log = [];
 
+    #[Around(static function (\ReflectionMethod $m): ?array {
+        return [];
+    }, priority: 0)]
     public function wrap(callable $proceed, object $message, array $context): mixed
     {
         $this->log[] = 'inner-before';
@@ -127,47 +147,8 @@ final class InnerAspectService
 }
 
 // ---------------------------------------------------------------------------
-// Aspect-attribute fixtures
-// ---------------------------------------------------------------------------
-
-#[\Attribute(\Attribute::TARGET_METHOD)]
-final class LogBefore implements AspectAttribute
-{
-    public function getAdviceDescriptor(): AdviceDescriptor
-    {
-        return AdviceDescriptor::before(TestLogger::class, 'log');
-    }
-}
-
-#[\Attribute(\Attribute::TARGET_METHOD)]
-final class Transactional implements AspectAttribute
-{
-    public function getAdviceDescriptor(): AdviceDescriptor
-    {
-        return AdviceDescriptor::around(TestTransactionManager::class, 'execute');
-    }
-}
-
-#[\Attribute(\Attribute::TARGET_METHOD)]
-final class OuterAspect implements AspectAttribute
-{
-    public function getAdviceDescriptor(): AdviceDescriptor
-    {
-        return AdviceDescriptor::around(OuterAspectService::class, 'wrap');
-    }
-}
-
-#[\Attribute(\Attribute::TARGET_METHOD)]
-final class InnerAspect implements AspectAttribute
-{
-    public function getAdviceDescriptor(): AdviceDescriptor
-    {
-        return AdviceDescriptor::around(InnerAspectService::class, 'wrap');
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Handler fixtures
+// Handler fixtures (plain — no aspect attributes; aspects are declared
+// on the aspect service side and matched via their $matcher closures)
 // ---------------------------------------------------------------------------
 
 final class SalutationHandler
@@ -202,7 +183,6 @@ final class GreetWithServiceHandler
 final class AuditedHandler
 {
     #[Handles]
-    #[LogBefore]
     public function handle(AuditedMessage $msg): string
     {
         return 'handled: ' . $msg->payload;
@@ -212,7 +192,6 @@ final class AuditedHandler
 final class WrappedHandler
 {
     #[Handles]
-    #[Transactional]
     public function handle(WrappedMessage $msg): string
     {
         return 'wrapped: ' . $msg->payload;
@@ -222,8 +201,6 @@ final class WrappedHandler
 final class DoubleWrappedHandler
 {
     #[Handles]
-    #[OuterAspect]
-    #[InnerAspect]
     public function handle(DoubleWrappedMessage $msg): string
     {
         return 'double: ' . $msg->payload;
@@ -231,7 +208,7 @@ final class DoubleWrappedHandler
 }
 
 // ---------------------------------------------------------------------------
-// ParameterProvidingAspect fixtures
+// ParameterProvidingAspect fixtures — single entity, load+save
 // ---------------------------------------------------------------------------
 
 final readonly class ProcessEntityMessage
@@ -272,8 +249,8 @@ final class TestEntityRepository
 }
 
 /**
- * Generic aspect: loads one entity via $config['repoClass'], passes it to $proceed,
- * then saves it — all without knowing the entity type at compile time.
+ * Loads one TestEntity from $config['repoClass'] and saves it after $proceed.
+ * The #[Around] matcher claims the first TestEntity dep-param it finds.
  */
 final class LoadAndSaveAspect
 {
@@ -281,6 +258,15 @@ final class LoadAndSaveAspect
     {
     }
 
+    #[Around(static function (\ReflectionMethod $m): ?array {
+        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+            $type = $param->getType();
+            if ($type instanceof \ReflectionNamedType && $type->getName() === TestEntity::class) {
+                return ['indices' => [$i], 'config' => ['repoClass' => TestEntityRepository::class]];
+            }
+        }
+        return null;
+    })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
         $repo   = $this->locator->get($config['repoClass']);
@@ -291,76 +277,9 @@ final class LoadAndSaveAspect
     }
 }
 
-/**
- * Generic aspect: loads one entity via $config['repoClass'] and passes it to $proceed.
- * No save — for read-only or externally-committed scenarios.
- */
-final class LoadAspect
-{
-    public function __construct(private readonly ServiceProviderInterface $locator)
-    {
-    }
-
-    public function execute(callable $proceed, object $message, array $context, array $config): mixed
-    {
-        $entity = $this->locator->get($config['repoClass'])->load($message);
-        return $proceed($message, $context, $entity);
-    }
-}
-
-/**
- * Generic aspect: loads multiple entities, one per repo in $config['repos'],
- * and passes them all to $proceed via splat.
- */
-final class BatchLoadAspect
-{
-    public function __construct(private readonly ServiceProviderInterface $locator)
-    {
-    }
-
-    public function execute(callable $proceed, object $message, array $context, array $config): mixed
-    {
-        $entities = array_map(
-            fn(string $repoClass) => $this->locator->get($repoClass)->load($message),
-            $config['repos'],
-        );
-        return $proceed($message, $context, ...$entities);
-    }
-}
-
-/**
- * Aspect attribute — claims the TestEntity parameter and embeds the repository class
- * in runtimeConfig so the generic LoadAndSaveAspect can resolve it without hardcoding.
- */
-#[\Attribute(\Attribute::TARGET_METHOD)]
-final class WithEntity implements ParameterProvidingAspect
-{
-    public function __construct(private readonly string $repositoryClass)
-    {
-    }
-
-    public function getAdviceDescriptor(): AdviceDescriptor
-    {
-        return AdviceDescriptor::around(LoadAndSaveAspect::class, 'execute');
-    }
-
-    public function compileParameterResolution(array $depParams): array
-    {
-        $indices = [];
-        foreach ($depParams as $i => $param) {
-            $type = $param->getType();
-            if ($type instanceof \ReflectionNamedType && $type->getName() === TestEntity::class) {
-                $indices[] = $i;
-            }
-        }
-        return ['indices' => $indices, 'config' => ['repoClass' => $this->repositoryClass]];
-    }
-}
-
 final class EntityProcessingHandler
 {
     #[Handles]
-    #[WithEntity(TestEntityRepository::class)]
     public function process(ProcessEntityMessage $_msg, TestEntity $entity): string
     {
         $entity->process();
@@ -369,8 +288,8 @@ final class EntityProcessingHandler
 }
 
 // ---------------------------------------------------------------------------
-// Entity marker attribute — applied to domain entity classes so that the
-// generic #[LoadAndSave] aspect attribute can discover them at compile time.
+// Entity marker attribute — applied to domain entity classes so that generic
+// aspects can discover them at compile time via reflection.
 // ---------------------------------------------------------------------------
 
 /** Marks a class as a domain entity and declares which message property holds its ID. */
@@ -416,7 +335,7 @@ final readonly class SeparateEntitiesMessage
     }
 }
 
-/** Repository for EntityA — knows how to extract the ID from a MultiEntityMessage or SeparateEntitiesMessage */
+/** Repository for EntityA — extracts the ID from the message */
 final class TestEntityARepository
 {
     public function load(object $message): EntityA
@@ -425,7 +344,7 @@ final class TestEntityARepository
     }
 }
 
-/** Repository for EntityB — knows how to extract the ID from a MultiEntityMessage or SeparateEntitiesMessage */
+/** Repository for EntityB — extracts the ID from the message */
 final class TestEntityBRepository
 {
     public function load(object $message): EntityB
@@ -435,79 +354,82 @@ final class TestEntityBRepository
 }
 
 /**
- * Claims both EntityA and EntityB parameters; delegates to BatchLoadAspect with
- * the two repository classes embedded in runtimeConfig.
+ * Single #[Around] that claims ALL EntityA+EntityB dep-params at once.
+ * Loads them via $config['repos'] and passes them together to $proceed.
  */
-#[\Attribute(\Attribute::TARGET_METHOD)]
-final class WithMultiEntity implements ParameterProvidingAspect
+final class BatchLoadAspect
 {
-    public function getAdviceDescriptor(): AdviceDescriptor
+    public function __construct(private readonly ServiceProviderInterface $locator)
     {
-        return AdviceDescriptor::around(BatchLoadAspect::class, 'execute');
     }
 
-    public function compileParameterResolution(array $depParams): array
-    {
+    #[Around(static function (\ReflectionMethod $m): ?array {
         $indices = [];
-        foreach ($depParams as $i => $param) {
+        $repos   = [];
+        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
             $type = $param->getType();
-            if ($type instanceof \ReflectionNamedType
-                && in_array($type->getName(), [EntityA::class, EntityB::class], true)) {
+            if (!$type instanceof \ReflectionNamedType) {
+                continue;
+            }
+            if ($type->getName() === EntityA::class) {
                 $indices[] = $i;
+                $repos[]   = TestEntityARepository::class;
+            } elseif ($type->getName() === EntityB::class) {
+                $indices[] = $i;
+                $repos[]   = TestEntityBRepository::class;
             }
         }
-        return ['indices' => $indices, 'config' => ['repos' => [TestEntityARepository::class, TestEntityBRepository::class]]];
+        return $indices !== [] ? ['indices' => $indices, 'config' => ['repos' => $repos]] : null;
+    })]
+    public function execute(callable $proceed, object $message, array $context, array $config): mixed
+    {
+        $entities = array_map(
+            static fn(string $repoClass) => (new $repoClass())->load($message),
+            $config['repos'],
+        );
+        return $proceed($message, $context, ...$entities);
     }
 }
 
-/** Claims EntityA only; the generic LoadAspect resolves it via $config['repoClass'] at runtime. */
-#[\Attribute(\Attribute::TARGET_METHOD)]
-final class WithEntityA implements ParameterProvidingAspect
+/**
+ * Two #[Around] attributes on the same method — one for EntityA (priority 10, outer),
+ * one for EntityB (priority 0, inner). Demonstrates arrow-function capture:
+ * the outer $_p0 is automatically captured inside the inner lambda.
+ */
+final class LoadAspect
 {
-    public function getAdviceDescriptor(): AdviceDescriptor
+    public function __construct(private readonly ServiceProviderInterface $locator)
     {
-        return AdviceDescriptor::around(LoadAspect::class, 'execute');
     }
 
-    public function compileParameterResolution(array $depParams): array
-    {
-        $indices = [];
-        foreach ($depParams as $i => $param) {
+    #[Around(static function (\ReflectionMethod $m): ?array {
+        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
             $type = $param->getType();
             if ($type instanceof \ReflectionNamedType && $type->getName() === EntityA::class) {
-                $indices[] = $i;
+                return ['indices' => [$i], 'config' => ['repoClass' => TestEntityARepository::class]];
             }
         }
-        return ['indices' => $indices, 'config' => ['repoClass' => TestEntityARepository::class]];
-    }
-}
-
-/** Claims EntityB only; the generic LoadAspect resolves it via $config['repoClass'] at runtime. */
-#[\Attribute(\Attribute::TARGET_METHOD)]
-final class WithEntityB implements ParameterProvidingAspect
-{
-    public function getAdviceDescriptor(): AdviceDescriptor
-    {
-        return AdviceDescriptor::around(LoadAspect::class, 'execute');
-    }
-
-    public function compileParameterResolution(array $depParams): array
-    {
-        $indices = [];
-        foreach ($depParams as $i => $param) {
+        return null;
+    }, priority: 10)]
+    #[Around(static function (\ReflectionMethod $m): ?array {
+        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
             $type = $param->getType();
             if ($type instanceof \ReflectionNamedType && $type->getName() === EntityB::class) {
-                $indices[] = $i;
+                return ['indices' => [$i], 'config' => ['repoClass' => TestEntityBRepository::class]];
             }
         }
-        return ['indices' => $indices, 'config' => ['repoClass' => TestEntityBRepository::class]];
+        return null;
+    }, priority: 0)]
+    public function execute(callable $proceed, object $message, array $context, array $config): mixed
+    {
+        $entity = $this->locator->get($config['repoClass'])->load($message);
+        return $proceed($message, $context, $entity);
     }
 }
 
 final class MultiEntityHandler
 {
     #[Handles]
-    #[WithMultiEntity]
     public function handle(MultiEntityMessage $_msg, EntityA $a, EntityB $b): string
     {
         return $a->id . '+' . $b->id;
@@ -517,8 +439,6 @@ final class MultiEntityHandler
 final class SeparateEntitiesHandler
 {
     #[Handles]
-    #[WithEntityA]
-    #[WithEntityB]
     public function handle(SeparateEntitiesMessage $_msg, EntityA $a, EntityB $b): string
     {
         return $a->id . '+' . $b->id;
@@ -528,10 +448,11 @@ final class SeparateEntitiesHandler
 // ---------------------------------------------------------------------------
 // EntityManager-based aspect fixtures
 //
-// A single EntityManager (à la Doctrine) replaces per-entity repositories.
-// The #[LoadAndSave] attribute scans handler dep-params for classes marked
-// with #[Entity], embeds their class names + idFrom fields in runtimeConfig,
-// and the EntityManagerAspect uses them at runtime to load and save.
+// A single EntityManager replaces per-entity repositories.
+// The #[Around] closure on EntityManagerAspect::execute() scans handler
+// parameters for classes marked with #[Entity] at compile time, embeds
+// their class names and idFrom fields in runtimeConfig, and the aspect
+// uses them at runtime to find() and save() via a single EM.
 // ---------------------------------------------------------------------------
 
 interface EntityManagerInterface
@@ -561,7 +482,10 @@ final class TestEntityManager implements EntityManagerInterface
 
 /**
  * Runtime aspect: uses a single EntityManager to load every entity listed in
- * $config['entities'], passes them all to $proceed, then saves them.
+ * $config['entities'] and save them after $proceed returns.
+ *
+ * The compile-time logic lives in the #[Around] closure: it scans handler
+ * dep-params for classes annotated with #[Entity] and builds the config.
  */
 final class EntityManagerAspect
 {
@@ -569,6 +493,24 @@ final class EntityManagerAspect
     {
     }
 
+    #[Around(static function (\ReflectionMethod $m): ?array {
+        $indices  = [];
+        $entities = [];
+        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+            $type = $param->getType();
+            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                continue;
+            }
+            $refAttrs = (new \ReflectionClass($type->getName()))->getAttributes(Entity::class);
+            if ($refAttrs === []) {
+                continue;
+            }
+            $entityAttr = $refAttrs[0]->newInstance();
+            $indices[]  = $i;
+            $entities[] = ['class' => $type->getName(), 'idFrom' => $entityAttr->idFrom];
+        }
+        return $entities !== [] ? ['indices' => $indices, 'config' => ['entities' => $entities]] : null;
+    })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
         $entities = [];
@@ -583,42 +525,6 @@ final class EntityManagerAspect
     }
 }
 
-/**
- * Compile-time attribute: auto-discovers which handler parameters are entities
- * by checking for the #[Entity] attribute on their type class, then embeds
- * ['class' => ..., 'idFrom' => ...] for each in runtimeConfig.
- */
-#[\Attribute(\Attribute::TARGET_METHOD)]
-final class LoadAndSave implements ParameterProvidingAspect
-{
-    public function getAdviceDescriptor(): AdviceDescriptor
-    {
-        return AdviceDescriptor::around(EntityManagerAspect::class, 'execute');
-    }
-
-    public function compileParameterResolution(array $depParams): array
-    {
-        $indices  = [];
-        $entities = [];
-
-        foreach ($depParams as $i => $param) {
-            $type = $param->getType();
-            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
-                continue;
-            }
-            $refAttrs = (new \ReflectionClass($type->getName()))->getAttributes(Entity::class);
-            if ($refAttrs === []) {
-                continue;
-            }
-            $entityAttr = $refAttrs[0]->newInstance();
-            $indices[]  = $i;
-            $entities[] = ['class' => $type->getName(), 'idFrom' => $entityAttr->idFrom];
-        }
-
-        return ['indices' => $indices, 'config' => ['entities' => $entities]];
-    }
-}
-
 final readonly class ProcessEntitiesMessage
 {
     public function __construct(public string $aId, public string $bId)
@@ -629,7 +535,6 @@ final readonly class ProcessEntitiesMessage
 final class EntityManagerHandler
 {
     #[Handles]
-    #[LoadAndSave]
     public function handle(ProcessEntitiesMessage $_msg, EntityA $entityA, EntityB $entityB): string
     {
         return $entityA->id . '+' . $entityB->id;
@@ -674,9 +579,9 @@ test('compiler pass throws on duplicate handlers for the same message', function
 test('compiler pass adds aspect service IDs to the service locator', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(AuditedHandler::class, (new Definition(AuditedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(TestLogger::class, new Definition(TestLogger::class));
+    $container->setDefinition(TestLogger::class, (new Definition(TestLogger::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorPassAop1');
+    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAopWiring');
     $pass->process($container);
 
     $locatorArgs = $container->getDefinition('ultra.mediator.locator')->getArgument(0);
@@ -721,7 +626,7 @@ test('generated mediator injects services from the locator into handler methods'
 
     $locator = new ServiceLocator([
         GreetWithServiceHandler::class => fn() => new GreetWithServiceHandler(),
-        GreeterService::class => fn() => new GreeterService(),
+        GreeterService::class          => fn() => new GreeterService(),
     ]);
 
     $mediator = new \CompiledMediatorE2E2($locator);
@@ -738,9 +643,7 @@ test('generated mediator throws NoHandlerFound for unregistered messages', funct
 
     require_once $testOutputDir . '/CompiledMediatorE2E3.php';
 
-    $locator = new ServiceLocator([
-        SalutationHandler::class => fn() => new SalutationHandler(),
-    ]);
+    $locator  = new ServiceLocator([SalutationHandler::class => fn() => new SalutationHandler()]);
     $mediator = new \CompiledMediatorE2E3($locator);
 
     expect(fn() => $mediator->send(new PingMessage()))
@@ -750,22 +653,22 @@ test('generated mediator throws NoHandlerFound for unregistered messages', funct
 test('generated mediator calls before-advice then invokes the handler', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(AuditedHandler::class, (new Definition(AuditedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(TestLogger::class, new Definition(TestLogger::class));
+    $container->setDefinition(TestLogger::class, (new Definition(TestLogger::class))->addTag('mediator.aspect'));
 
     $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop1');
     $pass->process($container);
 
     require_once $testOutputDir . '/CompiledMediatorAop1.php';
 
-    $logger = new TestLogger();
+    $logger  = new TestLogger();
     $locator = new ServiceLocator([
         AuditedHandler::class => fn() => new AuditedHandler(),
-        TestLogger::class => fn() => $logger,
+        TestLogger::class     => fn() => $logger,
     ]);
 
     $mediator = new \CompiledMediatorAop1($locator);
-    $message = new AuditedMessage('test');
-    $result = $mediator->send($message);
+    $message  = new AuditedMessage('test');
+    $result   = $mediator->send($message);
 
     expect($result)->toBe('handled: test')
         ->and($logger->logged)->toHaveCount(1)
@@ -775,7 +678,7 @@ test('generated mediator calls before-advice then invokes the handler', function
 test('generated mediator calls around-advice wrapping the handler', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(WrappedHandler::class, (new Definition(WrappedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(TestTransactionManager::class, new Definition(TestTransactionManager::class));
+    $container->setDefinition(TestTransactionManager::class, (new Definition(TestTransactionManager::class))->addTag('mediator.aspect'));
 
     $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop2');
     $pass->process($container);
@@ -783,22 +686,51 @@ test('generated mediator calls around-advice wrapping the handler', function () 
     require_once $testOutputDir . '/CompiledMediatorAop2.php';
 
     $txManager = new TestTransactionManager();
-    $locator = new ServiceLocator([
-        WrappedHandler::class => fn() => new WrappedHandler(),
+    $locator   = new ServiceLocator([
+        WrappedHandler::class        => fn() => new WrappedHandler(),
         TestTransactionManager::class => fn() => $txManager,
     ]);
 
     $mediator = new \CompiledMediatorAop2($locator);
-    $result = $mediator->send(new WrappedMessage('test'));
+    $result   = $mediator->send(new WrappedMessage('test'));
 
     expect($result)->toBe('wrapped: test')
         ->and($txManager->calls)->toBe(1);
 });
 
+test('generated mediator executes multiple around-advices ordered by priority', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(DoubleWrappedHandler::class, (new Definition(DoubleWrappedHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(OuterAspectService::class, (new Definition(OuterAspectService::class))->addTag('mediator.aspect'));
+    $container->setDefinition(InnerAspectService::class, (new Definition(InnerAspectService::class))->addTag('mediator.aspect'));
+
+    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop3');
+    $pass->process($container);
+
+    require_once $testOutputDir . '/CompiledMediatorAop3.php';
+
+    $outer   = new OuterAspectService();
+    $inner   = new InnerAspectService();
+    $locator = new ServiceLocator([
+        DoubleWrappedHandler::class => fn() => new DoubleWrappedHandler(),
+        OuterAspectService::class   => fn() => $outer,
+        InnerAspectService::class   => fn() => $inner,
+    ]);
+
+    $mediator = new \CompiledMediatorAop3($locator);
+    $result   = $mediator->send(new DoubleWrappedMessage('test'));
+
+    expect($result)->toBe('double: test')
+        // priority 10 → outermost
+        ->and($outer->log)->toBe(['outer-before', 'outer-after'])
+        // priority 0 → nested inside outer
+        ->and($inner->log)->toBe(['inner-before', 'inner-after']);
+});
+
 test('compiler pass excludes claimed dep types from the service locator', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(EntityProcessingHandler::class, (new Definition(EntityProcessingHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(LoadAndSaveAspect::class, new Definition(LoadAndSaveAspect::class));
+    $container->setDefinition(LoadAndSaveAspect::class, (new Definition(LoadAndSaveAspect::class))->addTag('mediator.aspect'));
 
     $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding0');
     $pass->process($container);
@@ -815,7 +747,7 @@ test('compiler pass excludes claimed dep types from the service locator', functi
 test('generated mediator uses parameter-providing aspect to inject and save entity', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(EntityProcessingHandler::class, (new Definition(EntityProcessingHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(LoadAndSaveAspect::class, new Definition(LoadAndSaveAspect::class));
+    $container->setDefinition(LoadAndSaveAspect::class, (new Definition(LoadAndSaveAspect::class))->addTag('mediator.aspect'));
 
     $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding1');
     $pass->process($container);
@@ -826,7 +758,7 @@ test('generated mediator uses parameter-providing aspect to inject and save enti
     $repoLocator = new ServiceLocator([TestEntityRepository::class => fn() => $repo]);
     $aspect      = new LoadAndSaveAspect($repoLocator);
 
-    // TestEntity is NOT in the mediator locator — LoadAndSaveAspect resolves it via its own repo locator
+    // TestEntity is NOT in the mediator locator — LoadAndSaveAspect provides it
     $locator = new ServiceLocator([
         EntityProcessingHandler::class => fn() => new EntityProcessingHandler(),
         LoadAndSaveAspect::class       => fn() => $aspect,
@@ -840,39 +772,10 @@ test('generated mediator uses parameter-providing aspect to inject and save enti
         ->and($repo->saved['entity-123']->processed)->toBeTrue();
 });
 
-test('generated mediator executes multiple around-advices in declaration order', function () use ($testOutputDir) {
-    $container = new ContainerBuilder();
-    $container->setDefinition(DoubleWrappedHandler::class, (new Definition(DoubleWrappedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(OuterAspectService::class, new Definition(OuterAspectService::class));
-    $container->setDefinition(InnerAspectService::class, new Definition(InnerAspectService::class));
-
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop3');
-    $pass->process($container);
-
-    require_once $testOutputDir . '/CompiledMediatorAop3.php';
-
-    $outer = new OuterAspectService();
-    $inner = new InnerAspectService();
-    $locator = new ServiceLocator([
-        DoubleWrappedHandler::class => fn() => new DoubleWrappedHandler(),
-        OuterAspectService::class => fn() => $outer,
-        InnerAspectService::class => fn() => $inner,
-    ]);
-
-    $mediator = new \CompiledMediatorAop3($locator);
-    $result = $mediator->send(new DoubleWrappedMessage('test'));
-
-    expect($result)->toBe('double: test')
-        // First-declared (#[OuterAspect]) wraps everything
-        ->and($outer->log)->toBe(['outer-before', 'outer-after'])
-        // Second-declared (#[InnerAspect]) is nested inside outer
-        ->and($inner->log)->toBe(['inner-before', 'inner-after']);
-});
-
 test('one parameter-providing aspect can claim multiple handler parameters at once', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(MultiEntityHandler::class, (new Definition(MultiEntityHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(BatchLoadAspect::class, new Definition(BatchLoadAspect::class));
+    $container->setDefinition(BatchLoadAspect::class, (new Definition(BatchLoadAspect::class))->addTag('mediator.aspect'));
 
     $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam1');
     $pass->process($container);
@@ -896,12 +799,12 @@ test('one parameter-providing aspect can claim multiple handler parameters at on
     expect($result)->toBe('a-1+b-2');
 });
 
-test('two parameter-providing aspects each claiming a different parameter compose via arrow-function capture', function () use ($testOutputDir) {
+test('two #[Around] on the same aspect method each claim a different parameter and compose via arrow-function capture', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(SeparateEntitiesHandler::class, (new Definition(SeparateEntitiesHandler::class))->addTag('mediator.handler'));
-    // Both #[WithEntityA] and #[WithEntityB] reference the same LoadAspect service class;
-    // the compiler deduplicates — one locator entry, each call receives a different $config.
-    $container->setDefinition(LoadAspect::class, new Definition(LoadAspect::class));
+    // A single LoadAspect service produces two separate advices — one per #[Around] attribute.
+    // Each call receives a different $config; one locator entry serves both.
+    $container->setDefinition(LoadAspect::class, (new Definition(LoadAspect::class))->addTag('mediator.aspect'));
 
     $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam2');
     $pass->process($container);
@@ -914,7 +817,7 @@ test('two parameter-providing aspects each claiming a different parameter compos
     ]);
     $singleAspect = new LoadAspect($repoLocator);
 
-    // Neither EntityA nor EntityB is in the mediator locator — LoadAspect resolves both via config
+    // Neither EntityA nor EntityB is in the mediator locator — LoadAspect provides both
     $locator = new ServiceLocator([
         SeparateEntitiesHandler::class => fn() => new SeparateEntitiesHandler(),
         LoadAspect::class              => fn() => $singleAspect,
@@ -923,16 +826,15 @@ test('two parameter-providing aspects each claiming a different parameter compos
     $mediator = new \CompiledMediatorMultiParam2($locator);
     $result   = $mediator->send(new SeparateEntitiesMessage('a-1', 'b-2'));
 
-    // EntityA injected by the outer #[WithEntityA] advice (config: TestEntityARepository),
-    // EntityB injected by the inner #[WithEntityB] advice (config: TestEntityBRepository),
-    // both via the same LoadAspect service — arrow-function capture propagates $_p0 inward.
+    // EntityA from priority-10 advice (outer), EntityB from priority-0 advice (inner);
+    // arrow-function capture propagates $_p0 inward without an explicit use clause.
     expect($result)->toBe('a-1+b-2');
 });
 
-test('#[LoadAndSave] discovers #[Entity] parameters at compile time and delegates to a single EntityManager at runtime', function () use ($testOutputDir) {
+test('#[Around] closure discovers #[Entity] parameters at compile time and delegates to a single EntityManager at runtime', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(EntityManagerHandler::class, (new Definition(EntityManagerHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(EntityManagerAspect::class, new Definition(EntityManagerAspect::class));
+    $container->setDefinition(EntityManagerAspect::class, (new Definition(EntityManagerAspect::class))->addTag('mediator.aspect'));
 
     $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorEm');
     $pass->process($container);
@@ -952,11 +854,9 @@ test('#[LoadAndSave] discovers #[Entity] parameters at compile time and delegate
     $result   = $mediator->send(new ProcessEntitiesMessage('a-1', 'b-2'));
 
     expect($result)->toBe('a-1+b-2')
-        // find() was called once per entity, in declaration order, with IDs extracted from the message
         ->and($em->findCalls)->toHaveCount(2)
         ->and($em->findCalls[0])->toBe(['class' => EntityA::class, 'id' => 'a-1'])
         ->and($em->findCalls[1])->toBe(['class' => EntityB::class, 'id' => 'b-2'])
-        // save() was called for both entities after $proceed returned
         ->and($em->saved)->toHaveKey(EntityA::class)
         ->and($em->saved)->toHaveKey(EntityB::class);
 });
