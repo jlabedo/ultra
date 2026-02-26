@@ -9,11 +9,9 @@ namespace Ultra\Mediator\Attribute;
  *
  * The $matcher closure is called at compile time for every #[Handles] method
  * in the container. It receives the handler's ReflectionMethod and must return:
- *  - null  — this aspect does not apply to that handler
- *  - array — this aspect applies; the array may contain:
- *      'indices' => list<int>  0-based dep-param indices this advice will provide
- *      'config'  => array      serializable runtime config embedded in generated code
- *    Both keys are optional and default to [].
+ *  - null                    — this aspect does not apply to that handler
+ *  - MatchResult::apply(...) — this aspect applies, with optional runtime config
+ *                              and optional dep-param indices to claim (provides).
  *
  * The $priority controls execution order when multiple around advices apply to
  * the same handler. Higher priority runs outermost (first before $proceed,
@@ -26,8 +24,8 @@ namespace Ultra\Mediator\Attribute;
  * Requires PHP 8.5+ (static closure as constant expression in attribute arguments).
  *
  * Example:
- *   #[Around(static function(\ReflectionMethod $m): ?array {
- *       // inspect $m->getParameters(), return config or null
+ *   #[Around(static function(\ReflectionMethod $m): ?MatchResult {
+ *       // inspect $m->getParameters(), return MatchResult::apply(...) or null
  *   }, priority: 10)]
  *   public function execute(callable $proceed, object $message, array $context, array $config): mixed
  */

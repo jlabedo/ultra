@@ -11,6 +11,7 @@ use Symfony\Contracts\Service\ServiceProviderInterface;
 use Ultra\Mediator\Attribute\Around;
 use Ultra\Mediator\Attribute\Before;
 use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\MatchResult;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
 
@@ -80,8 +81,8 @@ final class GreeterService
 //
 // Each aspect method is decorated with #[Before] or #[Around].
 // The static closure receives the handler's ReflectionMethod and returns:
-//   null  → this aspect does not apply to that handler
-//   array → apply; optional keys 'indices' (claimed dep slots) and 'config'
+//   null                  → this aspect does not apply to that handler
+//   MatchResult::apply()  → apply; optional 'config' and 'provides' (claimed dep slots)
 // ---------------------------------------------------------------------------
 
 final class TestLogger
@@ -89,8 +90,8 @@ final class TestLogger
     /** @var list<object> */
     public array $logged = [];
 
-    #[Before(static function (\ReflectionMethod $m): ?array {
-        return []; // apply to every handler registered alongside this aspect
+    #[Before(static function (\ReflectionMethod $m): ?MatchResult {
+        return MatchResult::apply(); // apply to every handler registered alongside this aspect
     })]
     public function log(object $message, array $context): void
     {
@@ -102,8 +103,8 @@ final class TestTransactionManager
 {
     public int $calls = 0;
 
-    #[Around(static function (\ReflectionMethod $m): ?array {
-        return []; // apply to every handler registered alongside this aspect
+    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
+        return MatchResult::apply(); // apply to every handler registered alongside this aspect
     })]
     public function execute(callable $proceed, object $message, array $context): mixed
     {
@@ -117,8 +118,8 @@ final class OuterAspectService
     /** @var list<string> */
     public array $log = [];
 
-    #[Around(static function (\ReflectionMethod $m): ?array {
-        return [];
+    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
+        return MatchResult::apply();
     }, priority: 10)]
     public function wrap(callable $proceed, object $message, array $context): mixed
     {
@@ -134,8 +135,8 @@ final class InnerAspectService
     /** @var list<string> */
     public array $log = [];
 
-    #[Around(static function (\ReflectionMethod $m): ?array {
-        return [];
+    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
+        return MatchResult::apply();
     }, priority: 0)]
     public function wrap(callable $proceed, object $message, array $context): mixed
     {
@@ -258,11 +259,11 @@ final class LoadAndSaveAspect
     {
     }
 
-    #[Around(static function (\ReflectionMethod $m): ?array {
+    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
         foreach (array_slice($m->getParameters(), 1) as $i => $param) {
             $type = $param->getType();
             if ($type instanceof \ReflectionNamedType && $type->getName() === TestEntity::class) {
-                return ['indices' => [$i], 'config' => ['repoClass' => TestEntityRepository::class]];
+                return MatchResult::apply(config: ['repoClass' => TestEntityRepository::class], provides: [$i]);
             }
         }
         return null;
@@ -363,7 +364,7 @@ final class BatchLoadAspect
     {
     }
 
-    #[Around(static function (\ReflectionMethod $m): ?array {
+    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
         $indices = [];
         $repos   = [];
         foreach (array_slice($m->getParameters(), 1) as $i => $param) {
@@ -379,7 +380,7 @@ final class BatchLoadAspect
                 $repos[]   = TestEntityBRepository::class;
             }
         }
-        return $indices !== [] ? ['indices' => $indices, 'config' => ['repos' => $repos]] : null;
+        return $indices !== [] ? MatchResult::apply(config: ['repos' => $repos], provides: $indices) : null;
     })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
@@ -402,20 +403,20 @@ final class LoadAspect
     {
     }
 
-    #[Around(static function (\ReflectionMethod $m): ?array {
+    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
         foreach (array_slice($m->getParameters(), 1) as $i => $param) {
             $type = $param->getType();
             if ($type instanceof \ReflectionNamedType && $type->getName() === EntityA::class) {
-                return ['indices' => [$i], 'config' => ['repoClass' => TestEntityARepository::class]];
+                return MatchResult::apply(config: ['repoClass' => TestEntityARepository::class], provides: [$i]);
             }
         }
         return null;
     }, priority: 10)]
-    #[Around(static function (\ReflectionMethod $m): ?array {
+    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
         foreach (array_slice($m->getParameters(), 1) as $i => $param) {
             $type = $param->getType();
             if ($type instanceof \ReflectionNamedType && $type->getName() === EntityB::class) {
-                return ['indices' => [$i], 'config' => ['repoClass' => TestEntityBRepository::class]];
+                return MatchResult::apply(config: ['repoClass' => TestEntityBRepository::class], provides: [$i]);
             }
         }
         return null;
@@ -493,7 +494,7 @@ final class EntityManagerAspect
     {
     }
 
-    #[Around(static function (\ReflectionMethod $m): ?array {
+    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
         $indices  = [];
         $entities = [];
         foreach (array_slice($m->getParameters(), 1) as $i => $param) {
@@ -509,7 +510,7 @@ final class EntityManagerAspect
             $indices[]  = $i;
             $entities[] = ['class' => $type->getName(), 'idFrom' => $entityAttr->idFrom];
         }
-        return $entities !== [] ? ['indices' => $indices, 'config' => ['entities' => $entities]] : null;
+        return $entities !== [] ? MatchResult::apply(config: ['entities' => $entities], provides: $indices) : null;
     })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {

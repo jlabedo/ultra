@@ -15,6 +15,7 @@ use Ultra\Mediator\Attribute\AdviceType;
 use Ultra\Mediator\Attribute\Around;
 use Ultra\Mediator\Attribute\Before;
 use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\MatchResult;
 use Ultra\Mediator\MediatorInterface;
 
 /**
@@ -31,9 +32,9 @@ use Ultra\Mediator\MediatorInterface;
  *    Find all services tagged with $aspectTag (default: "mediator.aspect").
  *    Reflect on each aspect class; scan public methods for #[Around] and #[Before].
  *    For each attribute, call its $matcher closure with the handler's ReflectionMethod.
- *    A non-null return means "apply this advice"; the array may contain:
- *      'indices' => list<int>  dep-param slots this advice provides at runtime
- *      'config'  => array      serializable config embedded in the generated dispatch method
+ *    A non-null MatchResult means "apply this advice":
+ *      $result->provides  list<int>  dep-param slots this advice provides at runtime
+ *      $result->config    array      serializable config embedded in the generated dispatch method
  *    Collect all matching advices, sort by priority (descending = outermost first).
  *
  *  Phase 3 — Code generation and registration:
@@ -187,6 +188,8 @@ final class MediatorCompilerPass implements CompilerPassInterface
      *
      * @param  array<string, mixed>  $taggedAspects
      * @return list<array{type: AdviceType, serviceId: string, method: string, priority: int, indices: list<int>, config: array}>
+     *
+     * The matcher closure must return a MatchResult (or null to skip).
      */
     private function collectAdvices(
         \ReflectionMethod $handlerMethod,
@@ -203,6 +206,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 foreach ($aspectMethod->getAttributes(Around::class) as $refAttr) {
                     /** @var Around $around */
                     $around = $refAttr->newInstance();
+                    /** @var MatchResult|null $result */
                     $result = ($around->matcher)($handlerMethod);
                     if ($result === null) {
                         continue;
@@ -212,14 +216,15 @@ final class MediatorCompilerPass implements CompilerPassInterface
                         'serviceId' => $aspectServiceId,
                         'method'    => $aspectMethod->getName(),
                         'priority'  => $around->priority,
-                        'indices'   => $result['indices'] ?? [],
-                        'config'    => $result['config'] ?? [],
+                        'indices'   => $result->provides,
+                        'config'    => $result->config,
                     ];
                 }
 
                 foreach ($aspectMethod->getAttributes(Before::class) as $refAttr) {
                     /** @var Before $before */
                     $before = $refAttr->newInstance();
+                    /** @var MatchResult|null $result */
                     $result = ($before->matcher)($handlerMethod);
                     if ($result === null) {
                         continue;
@@ -230,7 +235,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
                         'method'    => $aspectMethod->getName(),
                         'priority'  => $before->priority,
                         'indices'   => [],
-                        'config'    => $result['config'] ?? [],
+                        'config'    => $result->config,
                     ];
                 }
             }
