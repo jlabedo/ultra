@@ -6,6 +6,9 @@ namespace Ultra\Mediator\Attribute;
 
 enum AdviceType: string
 {
-    case Before = 'before';
-    case Around = 'around';
+    case Before          = 'before';
+    case Around          = 'around';
+    case AfterReturning  = 'after_returning';
+    case AfterThrowing   = 'after_throwing';
+    case After           = 'after';
 }

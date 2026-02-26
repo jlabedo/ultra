@@ -8,6 +8,9 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Symfony\Contracts\Service\ServiceProviderInterface;
+use Ultra\Mediator\Attribute\After;
+use Ultra\Mediator\Attribute\AfterReturning;
+use Ultra\Mediator\Attribute\AfterThrowing;
 use Ultra\Mediator\Attribute\Around;
 use Ultra\Mediator\Attribute\Before;
 use Ultra\Mediator\Attribute\Handles;
@@ -864,4 +867,173 @@ test('#[Around] closure discovers #[Entity] parameters at compile time and deleg
         ->and($em->findCalls[1])->toBe(['class' => EntityB::class, 'id' => 'b-2'])
         ->and($em->saved)->toHaveKey(EntityA::class)
         ->and($em->saved)->toHaveKey(EntityB::class);
+});
+
+// ---------------------------------------------------------------------------
+// After-type advice fixtures
+// ---------------------------------------------------------------------------
+
+final readonly class ObservedMessage
+{
+    public function __construct(public string $payload)
+    {
+    }
+}
+
+final readonly class FailingMessage
+{
+}
+
+final class ObservedHandler
+{
+    #[Handles]
+    public function handle(ObservedMessage $msg): string
+    {
+        return 'observed: ' . $msg->payload;
+    }
+}
+
+final class FailingHandler
+{
+    #[Handles]
+    public function handle(FailingMessage $_msg): string
+    {
+        throw new \RuntimeException('handler failed');
+    }
+}
+
+/** Captures the return value via #[AfterReturning]. */
+final class ResultInspector
+{
+    public mixed $captured = null;
+
+    #[AfterReturning(static function (\ReflectionMethod $m): ?MatchResult {
+        return MatchResult::apply();
+    })]
+    public function inspect(object $message, array $context, mixed $returnValue): void
+    {
+        $this->captured = $returnValue;
+    }
+}
+
+/** Captures the thrown exception via #[AfterThrowing]. */
+final class ErrorRecorder
+{
+    public ?\Throwable $caught = null;
+
+    #[AfterThrowing(static function (\ReflectionMethod $m): ?MatchResult {
+        return MatchResult::apply();
+    })]
+    public function record(object $message, array $context, \Throwable $e): void
+    {
+        $this->caught = $e;
+    }
+}
+
+/** Counts invocations via #[After] (runs regardless of outcome). */
+final class Cleaner
+{
+    public int $calls = 0;
+
+    #[After(static function (\ReflectionMethod $m): ?MatchResult {
+        return MatchResult::apply();
+    })]
+    public function cleanup(object $message, array $context): void
+    {
+        $this->calls++;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// After-type advice tests
+// ---------------------------------------------------------------------------
+
+test('AfterReturning advice receives the handler return value', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(ObservedHandler::class, (new Definition(ObservedHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(ResultInspector::class, (new Definition(ResultInspector::class))->addTag('mediator.aspect'));
+
+    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfterReturning1');
+    $pass->process($container);
+
+    require_once $testOutputDir . '/CompiledMediatorAfterReturning1.php';
+
+    $inspector = new ResultInspector();
+    $locator   = new ServiceLocator([
+        ObservedHandler::class => fn() => new ObservedHandler(),
+        ResultInspector::class => fn() => $inspector,
+    ]);
+
+    $mediator = new \CompiledMediatorAfterReturning1($locator);
+    $result   = $mediator->send(new ObservedMessage('hello'));
+
+    expect($result)->toBe('observed: hello')
+        ->and($inspector->captured)->toBe('observed: hello');
+});
+
+test('AfterThrowing advice is called when handler throws and exception still propagates', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(FailingHandler::class, (new Definition(FailingHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(ErrorRecorder::class, (new Definition(ErrorRecorder::class))->addTag('mediator.aspect'));
+
+    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfterThrowing1');
+    $pass->process($container);
+
+    require_once $testOutputDir . '/CompiledMediatorAfterThrowing1.php';
+
+    $recorder = new ErrorRecorder();
+    $locator  = new ServiceLocator([
+        FailingHandler::class => fn() => new FailingHandler(),
+        ErrorRecorder::class  => fn() => $recorder,
+    ]);
+
+    $mediator = new \CompiledMediatorAfterThrowing1($locator);
+
+    expect(fn() => $mediator->send(new FailingMessage()))->toThrow(\RuntimeException::class, 'handler failed')
+        ->and($recorder->caught)->toBeInstanceOf(\RuntimeException::class);
+});
+
+test('After advice runs after a successful handler invocation', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(ObservedHandler::class, (new Definition(ObservedHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(Cleaner::class, (new Definition(Cleaner::class))->addTag('mediator.aspect'));
+
+    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfter1');
+    $pass->process($container);
+
+    require_once $testOutputDir . '/CompiledMediatorAfter1.php';
+
+    $cleaner = new Cleaner();
+    $locator = new ServiceLocator([
+        ObservedHandler::class => fn() => new ObservedHandler(),
+        Cleaner::class         => fn() => $cleaner,
+    ]);
+
+    $mediator = new \CompiledMediatorAfter1($locator);
+    $result   = $mediator->send(new ObservedMessage('world'));
+
+    expect($result)->toBe('observed: world')
+        ->and($cleaner->calls)->toBe(1);
+});
+
+test('After advice runs even when handler throws', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(FailingHandler::class, (new Definition(FailingHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(Cleaner::class, (new Definition(Cleaner::class))->addTag('mediator.aspect'));
+
+    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfter2');
+    $pass->process($container);
+
+    require_once $testOutputDir . '/CompiledMediatorAfter2.php';
+
+    $cleaner = new Cleaner();
+    $locator = new ServiceLocator([
+        FailingHandler::class => fn() => new FailingHandler(),
+        Cleaner::class        => fn() => $cleaner,
+    ]);
+
+    $mediator = new \CompiledMediatorAfter2($locator);
+
+    expect(fn() => $mediator->send(new FailingMessage()))->toThrow(\RuntimeException::class)
+        ->and($cleaner->calls)->toBe(1);
 });

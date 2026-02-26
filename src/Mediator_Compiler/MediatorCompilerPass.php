@@ -12,6 +12,9 @@ use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\ServiceLocator;
 use Ultra\Mediator\Attribute\AdviceDescriptor;
 use Ultra\Mediator\Attribute\AdviceType;
+use Ultra\Mediator\Attribute\After;
+use Ultra\Mediator\Attribute\AfterReturning;
+use Ultra\Mediator\Attribute\AfterThrowing;
 use Ultra\Mediator\Attribute\Around;
 use Ultra\Mediator\Attribute\Before;
 use Ultra\Mediator\Attribute\Handles;
@@ -234,6 +237,60 @@ final class MediatorCompilerPass implements CompilerPassInterface
                         'serviceId' => $aspectServiceId,
                         'method'    => $aspectMethod->getName(),
                         'priority'  => $before->priority,
+                        'indices'   => [],
+                        'config'    => $result->config,
+                    ];
+                }
+
+                foreach ($aspectMethod->getAttributes(AfterReturning::class) as $refAttr) {
+                    /** @var AfterReturning $afterReturning */
+                    $afterReturning = $refAttr->newInstance();
+                    /** @var MatchResult|null $result */
+                    $result = ($afterReturning->matcher)($handlerMethod);
+                    if ($result === null) {
+                        continue;
+                    }
+                    $rawAdvices[] = [
+                        'type'      => AdviceType::AfterReturning,
+                        'serviceId' => $aspectServiceId,
+                        'method'    => $aspectMethod->getName(),
+                        'priority'  => $afterReturning->priority,
+                        'indices'   => [],
+                        'config'    => $result->config,
+                    ];
+                }
+
+                foreach ($aspectMethod->getAttributes(AfterThrowing::class) as $refAttr) {
+                    /** @var AfterThrowing $afterThrowing */
+                    $afterThrowing = $refAttr->newInstance();
+                    /** @var MatchResult|null $result */
+                    $result = ($afterThrowing->matcher)($handlerMethod);
+                    if ($result === null) {
+                        continue;
+                    }
+                    $rawAdvices[] = [
+                        'type'      => AdviceType::AfterThrowing,
+                        'serviceId' => $aspectServiceId,
+                        'method'    => $aspectMethod->getName(),
+                        'priority'  => $afterThrowing->priority,
+                        'indices'   => [],
+                        'config'    => $result->config,
+                    ];
+                }
+
+                foreach ($aspectMethod->getAttributes(After::class) as $refAttr) {
+                    /** @var After $after */
+                    $after = $refAttr->newInstance();
+                    /** @var MatchResult|null $result */
+                    $result = ($after->matcher)($handlerMethod);
+                    if ($result === null) {
+                        continue;
+                    }
+                    $rawAdvices[] = [
+                        'type'      => AdviceType::After,
+                        'serviceId' => $aspectServiceId,
+                        'method'    => $aspectMethod->getName(),
+                        'priority'  => $after->priority,
                         'indices'   => [],
                         'config'    => $result->config,
                     ];

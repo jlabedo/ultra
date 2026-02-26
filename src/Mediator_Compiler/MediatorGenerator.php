@@ -114,8 +114,11 @@ final class MediatorGenerator
         array $depServiceIds,
         array $advices,
     ): string {
-        $befores = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::Before));
-        $arounds = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::Around));
+        $befores         = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::Before));
+        $arounds         = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::Around));
+        $afterReturnings = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::AfterReturning));
+        $afterThrowings  = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::AfterThrowing));
+        $afters          = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::After));
 
         // Collect all dep indices claimed by parameter-providing around advices.
         // Each claimed index maps to a generated variable name $_p{depIndex}.
@@ -130,80 +133,62 @@ final class MediatorGenerator
 
         $lines = [];
 
-        // Before advices — sequential calls with ($message, $context)
+        // Before advices — sequential calls before the core expression
         foreach ($befores as $advice) {
+            $beforeArgs = ['$message', '$context'];
+            if ($advice->runtimeConfig !== []) {
+                $beforeArgs[] = $this->exportValue($advice->runtimeConfig);
+            }
             $lines[] = sprintf(
-                '        $this->locator->get(%s)->%s($message, $context);',
+                '        $this->locator->get(%s)->%s(%s);',
                 $this->exportString($advice->serviceId),
                 $advice->method,
+                implode(', ', $beforeArgs),
             );
         }
 
-        if ($arounds === []) {
-            // No around advices — call handler directly with $message and all deps from locator
-            $handlerArgs = ['$message'];
-            foreach ($depServiceIds as $depId) {
-                $handlerArgs[] = '$this->locator->get(' . $this->exportString($depId) . ')';
+        // Build the core expression (handler call, optionally wrapped in around chain)
+        $coreExpr = $this->buildCoreExpression(
+            $serviceId, $handlerMethod, $depServiceIds, $arounds, $claimedVarNames,
+        );
+
+        // Emit the core expression, wrapped in try/catch/finally when after-type advices apply
+        $needsCatch   = $afterThrowings !== [];
+        $needsFinally = $afters !== [];
+        $needsTry     = $needsCatch || $needsFinally;
+
+        if (!$needsTry && $afterReturnings === []) {
+            // Simple path: no after-type advices
+            $lines[] = '        return ' . $coreExpr . ';';
+        } elseif (!$needsTry) {
+            // AfterReturning only — no try block needed
+            $lines[] = '        $__result = ' . $coreExpr . ';';
+            foreach ($afterReturnings as $advice) {
+                $lines[] = $this->buildAfterReturningCall('        ', $advice);
             }
-            $lines[] = sprintf(
-                '        return $this->locator->get(%s)->%s(%s);',
-                $this->exportString($serviceId),
-                $handlerMethod,
-                implode(', ', $handlerArgs),
-            );
+            $lines[] = '        return $__result;';
         } else {
-            // Build the around chain from the inside out.
-            // The innermost layer is the handler call, using $m (lambda parameter).
-            // Claimed dep slots use their assigned variable names; unclaimed deps come
-            // from the locator.
-            $handlerArgs = ['$m'];
-            foreach ($depServiceIds as $depIdx => $depId) {
-                $handlerArgs[] = isset($claimedVarNames[$depIdx])
-                    ? $claimedVarNames[$depIdx]
-                    : '$this->locator->get(' . $this->exportString($depId) . ')';
+            // try block — always capture the result so AfterReturning can observe it
+            $lines[] = '        try {';
+            $lines[] = '            $__result = ' . $coreExpr . ';';
+            foreach ($afterReturnings as $advice) {
+                $lines[] = $this->buildAfterReturningCall('            ', $advice);
             }
-
-            $inner = sprintf(
-                '$this->locator->get(%s)->%s(%s)',
-                $this->exportString($serviceId),
-                $handlerMethod,
-                implode(', ', $handlerArgs),
-            );
-
-            // Wrap with around advices. Traverse in reverse so the first declared
-            // advice becomes the outermost wrapper.
-            foreach (array_reverse($arounds) as $i => $advice) {
-                $isOutermost = ($i === count($arounds) - 1);
-                $mArg = $isOutermost ? '$message' : '$m';
-                $cArg = $isOutermost ? '$context' : '$c';
-
-                // Lambda params: $m and $c, plus any dep vars this advice claims.
-                // Inner lambdas auto-capture claimed vars from outer lambda scopes.
-                $lambdaParams = ['$m', '$c'];
-                foreach ($advice->claimedDepIndices as $depIdx) {
-                    $lambdaParams[] = $claimedVarNames[$depIdx];
+            $lines[] = '            return $__result;';
+            if ($needsCatch) {
+                $lines[] = '        } catch (\Throwable $__e) {';
+                foreach ($afterThrowings as $advice) {
+                    $lines[] = $this->buildAfterThrowingCall('            ', $advice);
                 }
-
-                // Aspect call args: proceed lambda, message, context, and — when the
-                // advice carries a non-empty runtimeConfig — a PHP literal array.
-                $aspectArgs = [
-                    'fn(' . implode(', ', $lambdaParams) . ') => ' . $inner,
-                    $mArg,
-                    $cArg,
-                ];
-                if ($advice->runtimeConfig !== []) {
-                    $aspectArgs[] = $this->exportValue($advice->runtimeConfig);
-                }
-
-                $inner = sprintf(
-                    '$this->locator->get(%s)->%s(%s)',
-                    $this->exportString($advice->serviceId),
-                    $advice->method,
-                    implode(', ', $aspectArgs),
-                );
+                $lines[] = '            throw $__e;';
             }
-
-            $lines[] = '        return ' . $inner . ';';
+            if ($needsFinally) {
+                $lines[] = '        } finally {';
+                foreach ($afters as $advice) {
+                    $lines[] = $this->buildAfterCall('            ', $advice);
+                }
+            }
+            $lines[] = '        }';
         }
 
         $body = implode("\n", $lines);
@@ -214,6 +199,137 @@ final class MediatorGenerator
             {$body}
                 }
             PHP;
+    }
+
+    /**
+     * Build the core expression: handler call, wrapped in the around chain if present.
+     *
+     * @param list<string>           $depServiceIds
+     * @param list<AdviceDescriptor> $arounds
+     * @param array<int, string>     $claimedVarNames
+     */
+    private function buildCoreExpression(
+        string $serviceId,
+        string $handlerMethod,
+        array $depServiceIds,
+        array $arounds,
+        array $claimedVarNames,
+    ): string {
+        if ($arounds === []) {
+            // No around advices — call handler directly with $message and all deps from locator
+            $handlerArgs = ['$message'];
+            foreach ($depServiceIds as $depId) {
+                $handlerArgs[] = '$this->locator->get(' . $this->exportString($depId) . ')';
+            }
+
+            return sprintf(
+                '$this->locator->get(%s)->%s(%s)',
+                $this->exportString($serviceId),
+                $handlerMethod,
+                implode(', ', $handlerArgs),
+            );
+        }
+
+        // Build the around chain from the inside out.
+        // The innermost layer is the handler call, using $m (lambda parameter).
+        // Claimed dep slots use their assigned variable names; unclaimed deps come
+        // from the locator.
+        $handlerArgs = ['$m'];
+        foreach ($depServiceIds as $depIdx => $depId) {
+            $handlerArgs[] = isset($claimedVarNames[$depIdx])
+                ? $claimedVarNames[$depIdx]
+                : '$this->locator->get(' . $this->exportString($depId) . ')';
+        }
+
+        $inner = sprintf(
+            '$this->locator->get(%s)->%s(%s)',
+            $this->exportString($serviceId),
+            $handlerMethod,
+            implode(', ', $handlerArgs),
+        );
+
+        // Wrap with around advices. Traverse in reverse so the highest-priority
+        // advice becomes the outermost wrapper.
+        foreach (array_reverse($arounds) as $i => $advice) {
+            $isOutermost = ($i === count($arounds) - 1);
+            $mArg = $isOutermost ? '$message' : '$m';
+            $cArg = $isOutermost ? '$context' : '$c';
+
+            // Lambda params: $m and $c, plus any dep vars this advice claims.
+            // Inner lambdas auto-capture claimed vars from outer lambda scopes.
+            $lambdaParams = ['$m', '$c'];
+            foreach ($advice->claimedDepIndices as $depIdx) {
+                $lambdaParams[] = $claimedVarNames[$depIdx];
+            }
+
+            // Aspect call args: proceed lambda, message, context, and — when the
+            // advice carries a non-empty runtimeConfig — a PHP literal array.
+            $aspectArgs = [
+                'fn(' . implode(', ', $lambdaParams) . ') => ' . $inner,
+                $mArg,
+                $cArg,
+            ];
+            if ($advice->runtimeConfig !== []) {
+                $aspectArgs[] = $this->exportValue($advice->runtimeConfig);
+            }
+
+            $inner = sprintf(
+                '$this->locator->get(%s)->%s(%s)',
+                $this->exportString($advice->serviceId),
+                $advice->method,
+                implode(', ', $aspectArgs),
+            );
+        }
+
+        return $inner;
+    }
+
+    private function buildAfterReturningCall(string $indent, AdviceDescriptor $advice): string
+    {
+        $args = ['$message', '$context', '$__result'];
+        if ($advice->runtimeConfig !== []) {
+            $args[] = $this->exportValue($advice->runtimeConfig);
+        }
+
+        return sprintf(
+            '%s$this->locator->get(%s)->%s(%s);',
+            $indent,
+            $this->exportString($advice->serviceId),
+            $advice->method,
+            implode(', ', $args),
+        );
+    }
+
+    private function buildAfterThrowingCall(string $indent, AdviceDescriptor $advice): string
+    {
+        $args = ['$message', '$context', '$__e'];
+        if ($advice->runtimeConfig !== []) {
+            $args[] = $this->exportValue($advice->runtimeConfig);
+        }
+
+        return sprintf(
+            '%s$this->locator->get(%s)->%s(%s);',
+            $indent,
+            $this->exportString($advice->serviceId),
+            $advice->method,
+            implode(', ', $args),
+        );
+    }
+
+    private function buildAfterCall(string $indent, AdviceDescriptor $advice): string
+    {
+        $args = ['$message', '$context'];
+        if ($advice->runtimeConfig !== []) {
+            $args[] = $this->exportValue($advice->runtimeConfig);
+        }
+
+        return sprintf(
+            '%s$this->locator->get(%s)->%s(%s);',
+            $indent,
+            $this->exportString($advice->serviceId),
+            $advice->method,
+            implode(', ', $args),
+        );
     }
 
     /**
