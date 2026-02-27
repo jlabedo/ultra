@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Compiler\Tests;
 
+use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\ServiceLocator;
@@ -561,7 +562,7 @@ test('compiler pass registers MediatorInterface definition in the container', fu
     new MediatorCompilerPass($testOutputDir, 'CompiledMediatorPassTest1')->process($container);
 
     expect($container->hasDefinition(MediatorInterface::class))->toBeTrue();
-    expect($container->hasDefinition('ultra.mediator.locator'))->toBeTrue();
+    expect($container->getDefinition(MediatorInterface::class)->getArgument(0))->toBeInstanceOf(ServiceLocatorArgument::class);
 });
 
 test('compiler pass does nothing when no handlers are tagged', function () use ($testOutputDir) {
@@ -588,9 +589,9 @@ test('compiler pass adds aspect service IDs to the service locator', function ()
 
     new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAopWiring')->process($container);
 
-    $locatorArgs = $container->getDefinition('ultra.mediator.locator')->getArgument(0);
+    $locatorServices = $container->getDefinition(MediatorInterface::class)->getArgument(0)->getValues();
 
-    expect($locatorArgs)
+    expect($locatorServices)
         ->toHaveKey(AuditedHandler::class)
         ->toHaveKey(TestLogger::class);
 });
@@ -738,9 +739,9 @@ test('compiler pass excludes claimed dep types from the service locator', functi
 
     new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding0')->process($container);
 
-    $locatorArgs = $container->getDefinition('ultra.mediator.locator')->getArgument(0);
+    $locatorServices = $container->getDefinition(MediatorInterface::class)->getArgument(0)->getValues();
 
-    expect($locatorArgs)
+    expect($locatorServices)
         ->toHaveKey(EntityProcessingHandler::class)
         ->toHaveKey(LoadAndSaveAspect::class)
         // TestEntity is a claimed dep — the aspect provides it, so it must NOT be in the locator

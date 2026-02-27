@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Ultra\Mediator_Compiler;
 
 use Symfony\Component\DependencyInjection\Argument\ServiceClosureArgument;
+use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Component\DependencyInjection\ServiceLocator;
 use Ultra\Mediator\Attribute\After;
 use Ultra\Mediator\Attribute\AfterReturning;
 use Ultra\Mediator\Attribute\AfterThrowing;
@@ -40,8 +40,9 @@ use Ultra\Mediator\MediatorInterface;
  *
  *  Phase 3 — Code generation and registration:
  *    Build a handler map and pass it to MediatorGenerator.
- *    Register a ServiceLocator with all handler, dep, and aspect services.
- *    Dep slots claimed by around advices are excluded from the locator.
+ *    Register the generated mediator with a ServiceLocatorArgument carrying all
+ *    handler, dep, and aspect services. Dep slots claimed by around advices are
+ *    excluded from the locator.
  *
  * The generated file must be on an autoloaded path at runtime.
  */
@@ -154,12 +155,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
         $filePath = rtrim($this->outputDir, '/') . '/' . $this->generatedClass . '.php';
         (new MediatorGenerator())->generate($this->generatedClass, $handlers, $filePath);
 
-        $locatorId = 'ultra.mediator.locator';
-        $locatorDef = new Definition(ServiceLocator::class, [$locatorServices]);
-        $locatorDef->setPublic(false)->addTag('container.service_locator');
-        $container->setDefinition($locatorId, $locatorDef);
-
-        $mediatorDef = new Definition($this->generatedClass, [new Reference($locatorId)]);
+        $mediatorDef = new Definition($this->generatedClass, [new ServiceLocatorArgument($locatorServices)]);
         $mediatorDef->setPublic(true);
         $container->setDefinition(MediatorInterface::class, $mediatorDef);
     }
