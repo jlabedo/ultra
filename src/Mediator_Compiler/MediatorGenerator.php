@@ -14,7 +14,7 @@ namespace Ultra\Mediator_Compiler;
  *  - one private dispatchXxx() method per message type, which inlines all AOP advice
  *    (before calls, around chain) and the handler call with its service dependencies.
  *
- * Everything is resolved lazily from a ServiceProviderInterface at runtime.
+ * Everything is resolved lazily from a Psr\Container\ContainerInterface at runtime.
  * No reflection, no dispatch table — pure generated PHP.
  *
  * Handler map format:
@@ -87,7 +87,7 @@ final class MediatorGenerator
             final class {$className} implements \\Ultra\\Mediator\\MediatorInterface
             {
                 public function __construct(
-                    private \\Symfony\\Contracts\\Service\\ServiceProviderInterface \$locator
+                    private \\Psr\\Container\\ContainerInterface \$locator
                 ) {}
 
                 public function send(object \$message, array \$context = []): mixed

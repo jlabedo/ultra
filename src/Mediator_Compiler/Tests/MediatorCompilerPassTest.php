@@ -8,7 +8,7 @@ use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Contracts\Service\ServiceProviderInterface;
+use Psr\Container\ContainerInterface;
 use Ultra\Mediator\Attribute\After;
 use Ultra\Mediator\Attribute\AfterReturning;
 use Ultra\Mediator\Attribute\AfterThrowing;
@@ -259,7 +259,7 @@ final class TestEntityRepository
  */
 final class LoadAndSaveAspect
 {
-    public function __construct(private readonly ServiceProviderInterface $locator)
+    public function __construct(private readonly ContainerInterface $locator)
     {
     }
 
@@ -364,10 +364,6 @@ final class TestEntityBRepository
  */
 final class BatchLoadAspect
 {
-    public function __construct(private readonly ServiceProviderInterface $locator)
-    {
-    }
-
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
             $indices = [];
             $repos = [];
@@ -405,7 +401,7 @@ final class BatchLoadAspect
  */
 final class LoadAspect
 {
-    public function __construct(private readonly ServiceProviderInterface $locator)
+    public function __construct(private readonly ContainerInterface $locator)
     {
     }
 
@@ -737,7 +733,7 @@ test('one parameter-providing aspect can claim multiple handler parameters at on
     $container = new ContainerBuilder();
     $container->setDefinition(MultiEntityHandler::class, new Definition(MultiEntityHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(BatchLoadAspect::class,
-        new Definition(BatchLoadAspect::class, [new ServiceLocatorArgument([])])
+        new Definition(BatchLoadAspect::class)
             ->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam1'));
