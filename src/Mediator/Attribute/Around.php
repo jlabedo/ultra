@@ -30,11 +30,6 @@ namespace Ultra\Mediator\Attribute;
  *   public function execute(callable $proceed, object $message, array $context, array $config): mixed
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
-final class Around
+final class Around extends Advice
 {
-    public function __construct(
-        public readonly \Closure $matcher,
-        public readonly int $priority = 0,
-    ) {
-    }
 }

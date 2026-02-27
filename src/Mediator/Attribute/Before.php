@@ -27,11 +27,6 @@ namespace Ultra\Mediator\Attribute;
  *   public function log(object $message, array $context): void
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
-final class Before
+final class Before extends Advice
 {
-    public function __construct(
-        public readonly \Closure $matcher,
-        public readonly int $priority = 0,
-    ) {
-    }
 }

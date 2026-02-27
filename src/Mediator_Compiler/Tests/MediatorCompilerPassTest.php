@@ -945,3 +945,27 @@ test('After advice runs even when handler throws', function () use ($testOutputD
     expect(fn() => $mediator->send(new FailingMessage()))->toThrow(\RuntimeException::class)
         ->and($cleaner->calls)->toBe(1);
 });
+
+// ---------------------------------------------------------------------------
+// provides-validation fixtures and test
+// ---------------------------------------------------------------------------
+
+/** An #[After] advice that illegally claims a dep-param slot via provides. */
+final class IllegalProvidesAspect
+{
+    #[After(static function (\ReflectionMethod $m): ?MatchResult {
+            return MatchResult::apply(provides: [0]);
+            })]
+    public function cleanup(object $message, array $context): void
+    {
+    }
+}
+
+test('compiler pass throws when an after-type advice returns provides', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(ObservedHandler::class, new Definition(ObservedHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(IllegalProvidesAspect::class, new Definition(IllegalProvidesAspect::class)->addTag('mediator.aspect'));
+
+    expect(fn() => new MediatorCompilerPass($testOutputDir, 'CompiledMediatorProvidesValidation')->process($container))
+        ->toThrow(\LogicException::class, 'only #[Around] and #[Before] advices may provide dep-param slots');
+});

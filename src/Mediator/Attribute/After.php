@@ -25,11 +25,6 @@ namespace Ultra\Mediator\Attribute;
  *   public function release(object $message, array $context): void
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
-final class After
+final class After extends Advice
 {
-    public function __construct(
-        public readonly \Closure $matcher,
-        public readonly int $priority = 0,
-    ) {
-    }
 }

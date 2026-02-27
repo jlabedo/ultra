@@ -9,13 +9,13 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\Mediator\Attribute\Advice;
 use Ultra\Mediator\Attribute\After;
 use Ultra\Mediator\Attribute\AfterReturning;
 use Ultra\Mediator\Attribute\AfterThrowing;
 use Ultra\Mediator\Attribute\Around;
 use Ultra\Mediator\Attribute\Before;
 use Ultra\Mediator\Attribute\Handles;
-use Ultra\Mediator\Attribute\MatchResult;
 use Ultra\Mediator\MediatorInterface;
 
 /**
@@ -180,18 +180,25 @@ final class MediatorCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * Scan all aspect services for #[Around] and #[Before] methods that match $handlerMethod.
+     * Scan all aspect services for advice methods that match $handlerMethod.
      *
      * @param  array<string, mixed>  $taggedAspects
      * @return list<array{type: AdviceType, serviceId: string, method: string, priority: int, indices: list<int>, config: array}>
-     *
-     * The matcher closure must return a MatchResult (or null to skip).
      */
     private function collectAdvices(
         \ReflectionMethod $handlerMethod,
         array $taggedAspects,
         ContainerBuilder $container,
     ): array {
+        /** @var array<class-string<Advice>, AdviceType> $adviceTypes */
+        $adviceTypes = [
+            Around::class        => AdviceType::Around,
+            Before::class        => AdviceType::Before,
+            AfterReturning::class => AdviceType::AfterReturning,
+            AfterThrowing::class  => AdviceType::AfterThrowing,
+            After::class          => AdviceType::After,
+        ];
+
         $rawAdvices = [];
 
         foreach (array_keys($taggedAspects) as $aspectServiceId) {
@@ -199,94 +206,35 @@ final class MediatorCompilerPass implements CompilerPassInterface
             $aspectClass = $definition->getClass() ?? $aspectServiceId;
 
             foreach (new \ReflectionClass($aspectClass)->getMethods(\ReflectionMethod::IS_PUBLIC) as $aspectMethod) {
-                foreach ($aspectMethod->getAttributes(Around::class) as $refAttr) {
-                    /** @var Around $around */
-                    $around = $refAttr->newInstance();
-                    /** @var MatchResult|null $result */
-                    $result = ($around->matcher)($handlerMethod);
-                    if ($result === null) {
-                        continue;
-                    }
-                    $rawAdvices[] = [
-                        'type'      => AdviceType::Around,
-                        'serviceId' => $aspectServiceId,
-                        'method'    => $aspectMethod->getName(),
-                        'priority'  => $around->priority,
-                        'indices'   => $result->provides,
-                        'config'    => $result->config,
-                    ];
-                }
+                foreach ($adviceTypes as $attributeClass => $adviceType) {
+                    foreach ($aspectMethod->getAttributes($attributeClass) as $refAttr) {
+                        /** @var Advice $advice */
+                        $advice = $refAttr->newInstance();
+                        $result = ($advice->matcher)($handlerMethod);
+                        if ($result === null) {
+                            continue;
+                        }
 
-                foreach ($aspectMethod->getAttributes(Before::class) as $refAttr) {
-                    /** @var Before $before */
-                    $before = $refAttr->newInstance();
-                    /** @var MatchResult|null $result */
-                    $result = ($before->matcher)($handlerMethod);
-                    if ($result === null) {
-                        continue;
-                    }
-                    $rawAdvices[] = [
-                        'type'      => AdviceType::Before,
-                        'serviceId' => $aspectServiceId,
-                        'method'    => $aspectMethod->getName(),
-                        'priority'  => $before->priority,
-                        'indices'   => [],
-                        'config'    => $result->config,
-                    ];
-                }
+                        $canProvide = $adviceType === AdviceType::Around || $adviceType === AdviceType::Before;
 
-                foreach ($aspectMethod->getAttributes(AfterReturning::class) as $refAttr) {
-                    /** @var AfterReturning $afterReturning */
-                    $afterReturning = $refAttr->newInstance();
-                    /** @var MatchResult|null $result */
-                    $result = ($afterReturning->matcher)($handlerMethod);
-                    if ($result === null) {
-                        continue;
-                    }
-                    $rawAdvices[] = [
-                        'type'      => AdviceType::AfterReturning,
-                        'serviceId' => $aspectServiceId,
-                        'method'    => $aspectMethod->getName(),
-                        'priority'  => $afterReturning->priority,
-                        'indices'   => [],
-                        'config'    => $result->config,
-                    ];
-                }
+                        if ($result->provides !== [] && !$canProvide) {
+                            throw new \LogicException(\sprintf(
+                                'Advice "%s::%s" (#[%s]) returned a MatchResult with "provides" set, but only #[Around] and #[Before] advices may provide dep-param slots.',
+                                $aspectClass,
+                                $aspectMethod->getName(),
+                                new \ReflectionClass($attributeClass)->getShortName(),
+                            ));
+                        }
 
-                foreach ($aspectMethod->getAttributes(AfterThrowing::class) as $refAttr) {
-                    /** @var AfterThrowing $afterThrowing */
-                    $afterThrowing = $refAttr->newInstance();
-                    /** @var MatchResult|null $result */
-                    $result = ($afterThrowing->matcher)($handlerMethod);
-                    if ($result === null) {
-                        continue;
+                        $rawAdvices[] = [
+                            'type'      => $adviceType,
+                            'serviceId' => $aspectServiceId,
+                            'method'    => $aspectMethod->getName(),
+                            'priority'  => $advice->priority,
+                            'indices'   => $canProvide ? $result->provides : [],
+                            'config'    => $result->config,
+                        ];
                     }
-                    $rawAdvices[] = [
-                        'type'      => AdviceType::AfterThrowing,
-                        'serviceId' => $aspectServiceId,
-                        'method'    => $aspectMethod->getName(),
-                        'priority'  => $afterThrowing->priority,
-                        'indices'   => [],
-                        'config'    => $result->config,
-                    ];
-                }
-
-                foreach ($aspectMethod->getAttributes(After::class) as $refAttr) {
-                    /** @var After $after */
-                    $after = $refAttr->newInstance();
-                    /** @var MatchResult|null $result */
-                    $result = ($after->matcher)($handlerMethod);
-                    if ($result === null) {
-                        continue;
-                    }
-                    $rawAdvices[] = [
-                        'type'      => AdviceType::After,
-                        'serviceId' => $aspectServiceId,
-                        'method'    => $aspectMethod->getName(),
-                        'priority'  => $after->priority,
-                        'indices'   => [],
-                        'config'    => $result->config,
-                    ];
                 }
             }
         }
