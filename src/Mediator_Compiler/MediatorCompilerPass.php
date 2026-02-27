@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Compiler;
 
-use Symfony\Component\DependencyInjection\Argument\ServiceClosureArgument;
 use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -44,7 +43,7 @@ use Ultra\Mediator\MediatorInterface;
  *    handler, dep, and aspect services. Dep slots claimed by around advices are
  *    excluded from the locator.
  *
- * The generated file must be on an autoloaded path at runtime.
+ * The container loads the generated file automatically via Definition::setFile().
  */
 final class MediatorCompilerPass implements CompilerPassInterface
 {
@@ -68,7 +67,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
         $handlers = [];
         /** @var array<class-string, \ReflectionMethod> $handlerReflections */
         $handlerReflections = [];
-        /** @var array<string, ServiceClosureArgument> $locatorServices */
+        /** @var array<string, Reference> $locatorServices */
         $locatorServices = [];
 
         // ── Phase 1: discover handler methods ────────────────────────────────
@@ -76,7 +75,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
             $definition = $container->getDefinition($serviceId);
             $class = $definition->getClass() ?? $serviceId;
 
-            foreach ((new \ReflectionClass($class))->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            foreach (new \ReflectionClass($class)->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
                 if ($method->getAttributes(Handles::class) === []) {
                     continue;
                 }
@@ -106,7 +105,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 $handlers[$messageClass] = [$serviceId, $method->getName(), $depServiceIds, []];
                 $handlerReflections[$messageClass] = $method;
 
-                $locatorServices[$serviceId] = new ServiceClosureArgument(new Reference($serviceId));
+                $locatorServices[$serviceId] = new Reference($serviceId);
             }
         }
 
@@ -141,22 +140,22 @@ final class MediatorCompilerPass implements CompilerPassInterface
 
             foreach ($handlerData[2] as $i => $depId) {
                 if (!isset($claimedIndices[$i])) {
-                    $locatorServices[$depId] = new ServiceClosureArgument(new Reference($depId));
+                    $locatorServices[$depId] = new Reference($depId);
                 }
             }
 
             foreach ($advices as $advice) {
-                $locatorServices[$advice->serviceId] = new ServiceClosureArgument(new Reference($advice->serviceId));
+                $locatorServices[$advice->serviceId] = new Reference($advice->serviceId);
             }
         }
         unset($handlerData);
 
         // ── Phase 3: generate and register ───────────────────────────────────
         $filePath = rtrim($this->outputDir, '/') . '/' . $this->generatedClass . '.php';
-        (new MediatorGenerator())->generate($this->generatedClass, $handlers, $filePath);
+        new MediatorGenerator()->generate($this->generatedClass, $handlers, $filePath);
 
         $mediatorDef = new Definition($this->generatedClass, [new ServiceLocatorArgument($locatorServices)]);
-        $mediatorDef->setPublic(true);
+        $mediatorDef->setFile($filePath)->setPublic(true);
         $container->setDefinition(MediatorInterface::class, $mediatorDef);
     }
 
@@ -199,7 +198,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
             $definition = $container->getDefinition($aspectServiceId);
             $aspectClass = $definition->getClass() ?? $aspectServiceId;
 
-            foreach ((new \ReflectionClass($aspectClass))->getMethods(\ReflectionMethod::IS_PUBLIC) as $aspectMethod) {
+            foreach (new \ReflectionClass($aspectClass)->getMethods(\ReflectionMethod::IS_PUBLIC) as $aspectMethod) {
                 foreach ($aspectMethod->getAttributes(Around::class) as $refAttr) {
                     /** @var Around $around */
                     $around = $refAttr->newInstance();

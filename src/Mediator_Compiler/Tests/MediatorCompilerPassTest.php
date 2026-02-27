@@ -7,7 +7,7 @@ namespace Ultra\Mediator_Compiler\Tests;
 use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
-use Symfony\Component\DependencyInjection\ServiceLocator;
+use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Contracts\Service\ServiceProviderInterface;
 use Ultra\Mediator\Attribute\After;
 use Ultra\Mediator\Attribute\AfterReturning;
@@ -607,13 +607,7 @@ test('generated mediator routes messages to the correct handler method', functio
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E1'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorE2E1.php';
-
-    $locator = new ServiceLocator([
-        SalutationHandler::class => fn() => new SalutationHandler(),
-    ]);
-
-    $mediator = new \CompiledMediatorE2E1($locator);
+    $mediator = $container->get(MediatorInterface::class);
 
     expect($mediator->send(new HelloMessage('Alice')))->toBe('Hi, Alice')
         ->and($mediator->send(new GoodbyeMessage('Bob')))->toBe('Bye, Bob');
@@ -627,14 +621,7 @@ test('generated mediator injects services from the locator into handler methods'
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E2'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorE2E2.php';
-
-    $locator = new ServiceLocator([
-        GreetWithServiceHandler::class => fn() => new GreetWithServiceHandler(),
-        GreeterService::class => fn() => new GreeterService(),
-    ]);
-
-    $mediator = new \CompiledMediatorE2E2($locator);
+    $mediator = $container->get(MediatorInterface::class);
 
     expect($mediator->send(new PingMessage()))->toBe('Hello, pong!');
 });
@@ -646,10 +633,7 @@ test('generated mediator throws NoHandlerFound for unregistered messages', funct
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E3'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorE2E3.php';
-
-    $locator = new ServiceLocator([SalutationHandler::class => fn() => new SalutationHandler()]);
-    $mediator = new \CompiledMediatorE2E3($locator);
+    $mediator = $container->get(MediatorInterface::class);
 
     expect(fn() => $mediator->send(new PingMessage()))
         ->toThrow(\Ultra\Mediator\Exception\NoHandlerFound::class);
@@ -658,20 +642,14 @@ test('generated mediator throws NoHandlerFound for unregistered messages', funct
 test('generated mediator calls before-advice then invokes the handler', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(AuditedHandler::class, (new Definition(AuditedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(TestLogger::class, (new Definition(TestLogger::class))->addTag('mediator.aspect'));
+    $container->setDefinition(TestLogger::class, (new Definition(TestLogger::class))->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop1'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorAop1.php';
+    $logger = $container->get(TestLogger::class);
 
-    $logger = new TestLogger();
-    $locator = new ServiceLocator([
-        AuditedHandler::class => fn() => new AuditedHandler(),
-        TestLogger::class => fn() => $logger,
-    ]);
-
-    $mediator = new \CompiledMediatorAop1($locator);
+    $mediator = $container->get(MediatorInterface::class);
     $message = new AuditedMessage('test');
     $result = $mediator->send($message);
 
@@ -683,20 +661,13 @@ test('generated mediator calls before-advice then invokes the handler', function
 test('generated mediator calls around-advice wrapping the handler', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(WrappedHandler::class, (new Definition(WrappedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(TestTransactionManager::class, (new Definition(TestTransactionManager::class))->addTag('mediator.aspect'));
+    $container->setDefinition(TestTransactionManager::class, (new Definition(TestTransactionManager::class))->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop2'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorAop2.php';
-
-    $txManager = new TestTransactionManager();
-    $locator = new ServiceLocator([
-        WrappedHandler::class => fn() => new WrappedHandler(),
-        TestTransactionManager::class => fn() => $txManager,
-    ]);
-
-    $mediator = new \CompiledMediatorAop2($locator);
+    $txManager = $container->get(TestTransactionManager::class);
+    $mediator = $container->get(MediatorInterface::class);
     $result = $mediator->send(new WrappedMessage('test'));
 
     expect($result)->toBe('wrapped: test')
@@ -706,23 +677,15 @@ test('generated mediator calls around-advice wrapping the handler', function () 
 test('generated mediator executes multiple around-advices ordered by priority', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(DoubleWrappedHandler::class, (new Definition(DoubleWrappedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(OuterAspectService::class, (new Definition(OuterAspectService::class))->addTag('mediator.aspect'));
-    $container->setDefinition(InnerAspectService::class, (new Definition(InnerAspectService::class))->addTag('mediator.aspect'));
+    $container->setDefinition(OuterAspectService::class, (new Definition(OuterAspectService::class))->addTag('mediator.aspect')->setPublic(true));
+    $container->setDefinition(InnerAspectService::class, (new Definition(InnerAspectService::class))->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop3'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorAop3.php';
-
-    $outer = new OuterAspectService();
-    $inner = new InnerAspectService();
-    $locator = new ServiceLocator([
-        DoubleWrappedHandler::class => fn() => new DoubleWrappedHandler(),
-        OuterAspectService::class => fn() => $outer,
-        InnerAspectService::class => fn() => $inner,
-    ]);
-
-    $mediator = new \CompiledMediatorAop3($locator);
+    $outer = $container->get(OuterAspectService::class);
+    $inner = $container->get(InnerAspectService::class);
+    $mediator = $container->get(MediatorInterface::class);
     $result = $mediator->send(new DoubleWrappedMessage('test'));
 
     expect($result)->toBe('double: test')
@@ -750,25 +713,19 @@ test('compiler pass excludes claimed dep types from the service locator', functi
 
 test('generated mediator uses parameter-providing aspect to inject and save entity', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(EntityProcessingHandler::class, (new Definition(EntityProcessingHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(LoadAndSaveAspect::class, (new Definition(LoadAndSaveAspect::class))->addTag('mediator.aspect'));
+    $container->setDefinition(EntityProcessingHandler::class, new Definition(EntityProcessingHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(TestEntityRepository::class, new Definition(TestEntityRepository::class)->setPublic(true));
+    $container->setDefinition(LoadAndSaveAspect::class,
+        new Definition(LoadAndSaveAspect::class, [
+            new ServiceLocatorArgument([TestEntityRepository::class => new Reference(TestEntityRepository::class)]),
+        ])->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding1'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorParamProviding1.php';
-
-    $repo = new TestEntityRepository();
-    $repoLocator = new ServiceLocator([TestEntityRepository::class => fn() => $repo]);
-    $aspect = new LoadAndSaveAspect($repoLocator);
-
     // TestEntity is NOT in the mediator locator — LoadAndSaveAspect provides it
-    $locator = new ServiceLocator([
-        EntityProcessingHandler::class => fn() => new EntityProcessingHandler(),
-        LoadAndSaveAspect::class => fn() => $aspect,
-    ]);
-
-    $mediator = new \CompiledMediatorParamProviding1($locator);
+    $repo = $container->get(TestEntityRepository::class);
+    $mediator = $container->get(MediatorInterface::class);
     $result = $mediator->send(new ProcessEntityMessage('entity-123'));
 
     expect($result)->toBe('entity-123')
@@ -778,56 +735,40 @@ test('generated mediator uses parameter-providing aspect to inject and save enti
 
 test('one parameter-providing aspect can claim multiple handler parameters at once', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(MultiEntityHandler::class, (new Definition(MultiEntityHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(BatchLoadAspect::class, (new Definition(BatchLoadAspect::class))->addTag('mediator.aspect'));
+    $container->setDefinition(MultiEntityHandler::class, new Definition(MultiEntityHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(BatchLoadAspect::class,
+        new Definition(BatchLoadAspect::class, [new ServiceLocatorArgument([])])
+            ->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam1'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorMultiParam1.php';
-
-    $repoLocator = new ServiceLocator([
-        TestEntityARepository::class => fn() => new TestEntityARepository(),
-        TestEntityBRepository::class => fn() => new TestEntityBRepository(),
-    ]);
-    $aspect = new BatchLoadAspect($repoLocator);
-
-    $locator = new ServiceLocator([
-        MultiEntityHandler::class => fn() => new MultiEntityHandler(),
-        BatchLoadAspect::class => fn() => $aspect,
-    ]);
-
-    $mediator = new \CompiledMediatorMultiParam1($locator);
+    $mediator = $container->get(MediatorInterface::class);
     $result = $mediator->send(new MultiEntityMessage('a-1', 'b-2'));
 
     expect($result)->toBe('a-1+b-2');
 });
 
 test('two #[Around] on the same aspect method each claim a different parameter and compose via arrow-function capture', function () use ($testOutputDir) {
-    $container = new ContainerBuilder();
-    $container->setDefinition(SeparateEntitiesHandler::class, (new Definition(SeparateEntitiesHandler::class))->addTag('mediator.handler'));
     // A single LoadAspect service produces two separate advices — one per #[Around] attribute.
     // Each call receives a different $config; one locator entry serves both.
-    $container->setDefinition(LoadAspect::class, (new Definition(LoadAspect::class))->addTag('mediator.aspect'));
+    $container = new ContainerBuilder();
+    $container->setDefinition(SeparateEntitiesHandler::class, new Definition(SeparateEntitiesHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(TestEntityARepository::class, new Definition(TestEntityARepository::class));
+    $container->setDefinition(TestEntityBRepository::class, new Definition(TestEntityBRepository::class));
+    $container->setDefinition(LoadAspect::class,
+        new Definition(LoadAspect::class, [
+            new ServiceLocatorArgument([
+                TestEntityARepository::class => new Reference(TestEntityARepository::class),
+                TestEntityBRepository::class => new Reference(TestEntityBRepository::class),
+            ]),
+        ])->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam2'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorMultiParam2.php';
-
-    $repoLocator = new ServiceLocator([
-        TestEntityARepository::class => fn() => new TestEntityARepository(),
-        TestEntityBRepository::class => fn() => new TestEntityBRepository(),
-    ]);
-    $singleAspect = new LoadAspect($repoLocator);
-
     // Neither EntityA nor EntityB is in the mediator locator — LoadAspect provides both
-    $locator = new ServiceLocator([
-        SeparateEntitiesHandler::class => fn() => new SeparateEntitiesHandler(),
-        LoadAspect::class => fn() => $singleAspect,
-    ]);
-
-    $mediator = new \CompiledMediatorMultiParam2($locator);
+    $mediator = $container->get(MediatorInterface::class);
     $result = $mediator->send(new SeparateEntitiesMessage('a-1', 'b-2'));
 
     // EntityA from priority-10 advice (outer), EntityB from priority-0 advice (inner);
@@ -837,24 +778,18 @@ test('two #[Around] on the same aspect method each claim a different parameter a
 
 test('#[Around] closure discovers #[Entity] parameters at compile time and delegates to a single EntityManager at runtime', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(EntityManagerHandler::class, (new Definition(EntityManagerHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(EntityManagerAspect::class, (new Definition(EntityManagerAspect::class))->addTag('mediator.aspect'));
+    $container->setDefinition(EntityManagerHandler::class, new Definition(EntityManagerHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(TestEntityManager::class, new Definition(TestEntityManager::class)->setPublic(true));
+    $container->setDefinition(EntityManagerAspect::class,
+        new Definition(EntityManagerAspect::class, [new Reference(TestEntityManager::class)])
+            ->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorEm'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorEm.php';
-
-    $em = new TestEntityManager();
-    $aspect = new EntityManagerAspect($em);
-
     // Neither EntityA nor EntityB is in the mediator locator — EntityManagerAspect provides both
-    $locator = new ServiceLocator([
-        EntityManagerHandler::class => fn() => new EntityManagerHandler(),
-        EntityManagerAspect::class => fn() => $aspect,
-    ]);
-
-    $mediator = new \CompiledMediatorEm($locator);
+    $em = $container->get(TestEntityManager::class);
+    $mediator = $container->get(MediatorInterface::class);
     $result = $mediator->send(new ProcessEntitiesMessage('a-1', 'b-2'));
 
     expect($result)->toBe('a-1+b-2')
@@ -946,21 +881,14 @@ final class Cleaner
 
 test('AfterReturning advice receives the handler return value', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(ObservedHandler::class, (new Definition(ObservedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(ResultInspector::class, (new Definition(ResultInspector::class))->addTag('mediator.aspect'));
+    $container->setDefinition(ObservedHandler::class, new Definition(ObservedHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(ResultInspector::class, new Definition(ResultInspector::class)->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfterReturning1'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorAfterReturning1.php';
-
-    $inspector = new ResultInspector();
-    $locator = new ServiceLocator([
-        ObservedHandler::class => fn() => new ObservedHandler(),
-        ResultInspector::class => fn() => $inspector,
-    ]);
-
-    $mediator = new \CompiledMediatorAfterReturning1($locator);
+    $inspector = $container->get(ResultInspector::class);
+    $mediator = $container->get(MediatorInterface::class);
     $result = $mediator->send(new ObservedMessage('hello'));
 
     expect($result)->toBe('observed: hello')
@@ -969,21 +897,14 @@ test('AfterReturning advice receives the handler return value', function () use 
 
 test('AfterThrowing advice is called when handler throws and exception still propagates', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(FailingHandler::class, (new Definition(FailingHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(ErrorRecorder::class, (new Definition(ErrorRecorder::class))->addTag('mediator.aspect'));
+    $container->setDefinition(FailingHandler::class, new Definition(FailingHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(ErrorRecorder::class, new Definition(ErrorRecorder::class)->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfterThrowing1'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorAfterThrowing1.php';
-
-    $recorder = new ErrorRecorder();
-    $locator = new ServiceLocator([
-        FailingHandler::class => fn() => new FailingHandler(),
-        ErrorRecorder::class => fn() => $recorder,
-    ]);
-
-    $mediator = new \CompiledMediatorAfterThrowing1($locator);
+    $recorder = $container->get(ErrorRecorder::class);
+    $mediator = $container->get(MediatorInterface::class);
 
     expect(fn() => $mediator->send(new FailingMessage()))->toThrow(\RuntimeException::class, 'handler failed')
         ->and($recorder->caught)->toBeInstanceOf(\RuntimeException::class);
@@ -991,21 +912,14 @@ test('AfterThrowing advice is called when handler throws and exception still pro
 
 test('After advice runs after a successful handler invocation', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(ObservedHandler::class, (new Definition(ObservedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(Cleaner::class, (new Definition(Cleaner::class))->addTag('mediator.aspect'));
+    $container->setDefinition(ObservedHandler::class, new Definition(ObservedHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(Cleaner::class, new Definition(Cleaner::class)->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfter1'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorAfter1.php';
-
-    $cleaner = new Cleaner();
-    $locator = new ServiceLocator([
-        ObservedHandler::class => fn() => new ObservedHandler(),
-        Cleaner::class => fn() => $cleaner,
-    ]);
-
-    $mediator = new \CompiledMediatorAfter1($locator);
+    $cleaner = $container->get(Cleaner::class);
+    $mediator = $container->get(MediatorInterface::class);
     $result = $mediator->send(new ObservedMessage('world'));
 
     expect($result)->toBe('observed: world')
@@ -1014,21 +928,14 @@ test('After advice runs after a successful handler invocation', function () use 
 
 test('After advice runs even when handler throws', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(FailingHandler::class, (new Definition(FailingHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(Cleaner::class, (new Definition(Cleaner::class))->addTag('mediator.aspect'));
+    $container->setDefinition(FailingHandler::class, new Definition(FailingHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(Cleaner::class, new Definition(Cleaner::class)->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfter2'));
     $container->compile();
 
-    require_once $testOutputDir . '/CompiledMediatorAfter2.php';
-
-    $cleaner = new Cleaner();
-    $locator = new ServiceLocator([
-        FailingHandler::class => fn() => new FailingHandler(),
-        Cleaner::class => fn() => $cleaner,
-    ]);
-
-    $mediator = new \CompiledMediatorAfter2($locator);
+    $cleaner = $container->get(Cleaner::class);
+    $mediator = $container->get(MediatorInterface::class);
 
     expect(fn() => $mediator->send(new FailingMessage()))->toThrow(\RuntimeException::class)
         ->and($cleaner->calls)->toBe(1);
