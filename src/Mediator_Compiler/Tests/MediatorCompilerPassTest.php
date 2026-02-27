@@ -94,8 +94,8 @@ final class TestLogger
     public array $logged = [];
 
     #[Before(static function (\ReflectionMethod $m): ?MatchResult {
-        return MatchResult::apply(); // apply to every handler registered alongside this aspect
-    })]
+            return MatchResult::apply(); // apply to every handler registered alongside this aspect
+            })]
     public function log(object $message, array $context): void
     {
         $this->logged[] = $message;
@@ -107,8 +107,8 @@ final class TestTransactionManager
     public int $calls = 0;
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-        return MatchResult::apply(); // apply to every handler registered alongside this aspect
-    })]
+            return MatchResult::apply(); // apply to every handler registered alongside this aspect
+            })]
     public function execute(callable $proceed, object $message, array $context): mixed
     {
         $this->calls++;
@@ -122,8 +122,8 @@ final class OuterAspectService
     public array $log = [];
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-        return MatchResult::apply();
-    }, priority: 10)]
+            return MatchResult::apply();
+            }, priority: 10)]
     public function wrap(callable $proceed, object $message, array $context): mixed
     {
         $this->log[] = 'outer-before';
@@ -139,8 +139,8 @@ final class InnerAspectService
     public array $log = [];
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-        return MatchResult::apply();
-    }, priority: 0)]
+            return MatchResult::apply();
+            }, priority: 0)]
     public function wrap(callable $proceed, object $message, array $context): mixed
     {
         $this->log[] = 'inner-before';
@@ -263,17 +263,17 @@ final class LoadAndSaveAspect
     }
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
-            $type = $param->getType();
-            if ($type instanceof \ReflectionNamedType && $type->getName() === TestEntity::class) {
-                return MatchResult::apply(config: ['repoClass' => TestEntityRepository::class], provides: [$i]);
-            }
-        }
-        return null;
-    })]
+            foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+                $type = $param->getType();
+                    if ($type instanceof \ReflectionNamedType && $type->getName() === TestEntity::class) {
+                    return MatchResult::apply(config: ['repoClass' => TestEntityRepository::class], provides: [$i]);
+                    }
+                }
+            return null;
+            })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
-        $repo   = $this->locator->get($config['repoClass']);
+        $repo = $this->locator->get($config['repoClass']);
         $entity = $repo->load($message);
         $result = $proceed($message, $context, $entity);
         $repo->save($entity);
@@ -368,25 +368,25 @@ final class BatchLoadAspect
     }
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-        $indices = [];
-        $repos   = [];
-        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
-            $type = $param->getType();
-            if (!$type instanceof \ReflectionNamedType) {
-                continue;
-            }
-            if ($type->getName() === EntityA::class) {
-                $indices[] = $i;
-                $repos[]   = TestEntityARepository::class;
-            } elseif ($type->getName() === EntityB::class) {
-                $indices[] = $i;
-                $repos[]   = TestEntityBRepository::class;
-            }
-        }
-        return $indices !== []
-            ? MatchResult::apply(config: ['repos' => $repos], provides: $indices)
-            : null;
-    })]
+            $indices = [];
+            $repos = [];
+            foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+                $type = $param->getType();
+                    if (!$type instanceof \ReflectionNamedType) {
+                    continue;
+                    }
+                    if ($type->getName() === EntityA::class) {
+                    $indices[] = $i;
+                    $repos[] = TestEntityARepository::class;
+                    } elseif ($type->getName() === EntityB::class) {
+                    $indices[] = $i;
+                    $repos[] = TestEntityBRepository::class;
+                    }
+                }
+            return $indices !== []
+                ? MatchResult::apply(config: ['repos' => $repos], provides: $indices)
+                : null;
+            })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
         $entities = array_map(
@@ -409,23 +409,23 @@ final class LoadAspect
     }
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
-            $type = $param->getType();
-            if ($type instanceof \ReflectionNamedType && $type->getName() === EntityA::class) {
-                return MatchResult::apply(config: ['repoClass' => TestEntityARepository::class], provides: [$i]);
-            }
-        }
-        return null;
-    }, priority: 10)]
+            foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+                $type = $param->getType();
+                    if ($type instanceof \ReflectionNamedType && $type->getName() === EntityA::class) {
+                    return MatchResult::apply(config: ['repoClass' => TestEntityARepository::class], provides: [$i]);
+                    }
+                }
+            return null;
+            }, priority: 10)]
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
-            $type = $param->getType();
-            if ($type instanceof \ReflectionNamedType && $type->getName() === EntityB::class) {
-                return MatchResult::apply(config: ['repoClass' => TestEntityBRepository::class], provides: [$i]);
-            }
-        }
-        return null;
-    }, priority: 0)]
+            foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+                $type = $param->getType();
+                    if ($type instanceof \ReflectionNamedType && $type->getName() === EntityB::class) {
+                    return MatchResult::apply(config: ['repoClass' => TestEntityBRepository::class], provides: [$i]);
+                    }
+                }
+            return null;
+            }, priority: 0)]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
         $entity = $this->locator->get($config['repoClass'])->load($message);
@@ -500,25 +500,25 @@ final class EntityManagerAspect
     }
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-        $indices  = [];
-        $entities = [];
-        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
-            $type = $param->getType();
-            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
-                continue;
-            }
-            $refAttrs = (new \ReflectionClass($type->getName()))->getAttributes(Entity::class);
-            if ($refAttrs === []) {
-                continue;
-            }
-            $entityAttr = $refAttrs[0]->newInstance();
-            $indices[]  = $i;
-            $entities[] = ['class' => $type->getName(), 'idFrom' => $entityAttr->idFrom];
-        }
-        return $entities !== []
-            ? MatchResult::apply(config: ['entities' => $entities], provides: $indices)
-            : null;
-    })]
+            $indices = [];
+            $entities = [];
+            foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+                $type = $param->getType();
+                    if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                    continue;
+                    }
+                $refAttrs = (new \ReflectionClass($type->getName()))->getAttributes(Entity::class);
+                    if ($refAttrs === []) {
+                    continue;
+                    }
+                $entityAttr = $refAttrs[0]->newInstance();
+                $indices[] = $i;
+                $entities[] = ['class' => $type->getName(), 'idFrom' => $entityAttr->idFrom];
+                }
+            return $entities !== []
+                ? MatchResult::apply(config: ['entities' => $entities], provides: $indices)
+                : null;
+            })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
         $entities = [];
@@ -634,7 +634,7 @@ test('generated mediator injects services from the locator into handler methods'
 
     $locator = new ServiceLocator([
         GreetWithServiceHandler::class => fn() => new GreetWithServiceHandler(),
-        GreeterService::class          => fn() => new GreeterService(),
+        GreeterService::class => fn() => new GreeterService(),
     ]);
 
     $mediator = new \CompiledMediatorE2E2($locator);
@@ -651,7 +651,7 @@ test('generated mediator throws NoHandlerFound for unregistered messages', funct
 
     require_once $testOutputDir . '/CompiledMediatorE2E3.php';
 
-    $locator  = new ServiceLocator([SalutationHandler::class => fn() => new SalutationHandler()]);
+    $locator = new ServiceLocator([SalutationHandler::class => fn() => new SalutationHandler()]);
     $mediator = new \CompiledMediatorE2E3($locator);
 
     expect(fn() => $mediator->send(new PingMessage()))
@@ -668,15 +668,15 @@ test('generated mediator calls before-advice then invokes the handler', function
 
     require_once $testOutputDir . '/CompiledMediatorAop1.php';
 
-    $logger  = new TestLogger();
+    $logger = new TestLogger();
     $locator = new ServiceLocator([
         AuditedHandler::class => fn() => new AuditedHandler(),
-        TestLogger::class     => fn() => $logger,
+        TestLogger::class => fn() => $logger,
     ]);
 
     $mediator = new \CompiledMediatorAop1($locator);
-    $message  = new AuditedMessage('test');
-    $result   = $mediator->send($message);
+    $message = new AuditedMessage('test');
+    $result = $mediator->send($message);
 
     expect($result)->toBe('handled: test')
         ->and($logger->logged)->toHaveCount(1)
@@ -694,13 +694,13 @@ test('generated mediator calls around-advice wrapping the handler', function () 
     require_once $testOutputDir . '/CompiledMediatorAop2.php';
 
     $txManager = new TestTransactionManager();
-    $locator   = new ServiceLocator([
-        WrappedHandler::class        => fn() => new WrappedHandler(),
+    $locator = new ServiceLocator([
+        WrappedHandler::class => fn() => new WrappedHandler(),
         TestTransactionManager::class => fn() => $txManager,
     ]);
 
     $mediator = new \CompiledMediatorAop2($locator);
-    $result   = $mediator->send(new WrappedMessage('test'));
+    $result = $mediator->send(new WrappedMessage('test'));
 
     expect($result)->toBe('wrapped: test')
         ->and($txManager->calls)->toBe(1);
@@ -717,16 +717,16 @@ test('generated mediator executes multiple around-advices ordered by priority', 
 
     require_once $testOutputDir . '/CompiledMediatorAop3.php';
 
-    $outer   = new OuterAspectService();
-    $inner   = new InnerAspectService();
+    $outer = new OuterAspectService();
+    $inner = new InnerAspectService();
     $locator = new ServiceLocator([
         DoubleWrappedHandler::class => fn() => new DoubleWrappedHandler(),
-        OuterAspectService::class   => fn() => $outer,
-        InnerAspectService::class   => fn() => $inner,
+        OuterAspectService::class => fn() => $outer,
+        InnerAspectService::class => fn() => $inner,
     ]);
 
     $mediator = new \CompiledMediatorAop3($locator);
-    $result   = $mediator->send(new DoubleWrappedMessage('test'));
+    $result = $mediator->send(new DoubleWrappedMessage('test'));
 
     expect($result)->toBe('double: test')
         // priority 10 → outermost
@@ -762,18 +762,18 @@ test('generated mediator uses parameter-providing aspect to inject and save enti
 
     require_once $testOutputDir . '/CompiledMediatorParamProviding1.php';
 
-    $repo        = new TestEntityRepository();
+    $repo = new TestEntityRepository();
     $repoLocator = new ServiceLocator([TestEntityRepository::class => fn() => $repo]);
-    $aspect      = new LoadAndSaveAspect($repoLocator);
+    $aspect = new LoadAndSaveAspect($repoLocator);
 
     // TestEntity is NOT in the mediator locator — LoadAndSaveAspect provides it
     $locator = new ServiceLocator([
         EntityProcessingHandler::class => fn() => new EntityProcessingHandler(),
-        LoadAndSaveAspect::class       => fn() => $aspect,
+        LoadAndSaveAspect::class => fn() => $aspect,
     ]);
 
     $mediator = new \CompiledMediatorParamProviding1($locator);
-    $result   = $mediator->send(new ProcessEntityMessage('entity-123'));
+    $result = $mediator->send(new ProcessEntityMessage('entity-123'));
 
     expect($result)->toBe('entity-123')
         ->and($repo->saved)->toHaveKey('entity-123')
@@ -798,11 +798,11 @@ test('one parameter-providing aspect can claim multiple handler parameters at on
 
     $locator = new ServiceLocator([
         MultiEntityHandler::class => fn() => new MultiEntityHandler(),
-        BatchLoadAspect::class    => fn() => $aspect,
+        BatchLoadAspect::class => fn() => $aspect,
     ]);
 
     $mediator = new \CompiledMediatorMultiParam1($locator);
-    $result   = $mediator->send(new MultiEntityMessage('a-1', 'b-2'));
+    $result = $mediator->send(new MultiEntityMessage('a-1', 'b-2'));
 
     expect($result)->toBe('a-1+b-2');
 });
@@ -828,11 +828,11 @@ test('two #[Around] on the same aspect method each claim a different parameter a
     // Neither EntityA nor EntityB is in the mediator locator — LoadAspect provides both
     $locator = new ServiceLocator([
         SeparateEntitiesHandler::class => fn() => new SeparateEntitiesHandler(),
-        LoadAspect::class              => fn() => $singleAspect,
+        LoadAspect::class => fn() => $singleAspect,
     ]);
 
     $mediator = new \CompiledMediatorMultiParam2($locator);
-    $result   = $mediator->send(new SeparateEntitiesMessage('a-1', 'b-2'));
+    $result = $mediator->send(new SeparateEntitiesMessage('a-1', 'b-2'));
 
     // EntityA from priority-10 advice (outer), EntityB from priority-0 advice (inner);
     // arrow-function capture propagates $_p0 inward without an explicit use clause.
@@ -849,17 +849,17 @@ test('#[Around] closure discovers #[Entity] parameters at compile time and deleg
 
     require_once $testOutputDir . '/CompiledMediatorEm.php';
 
-    $em     = new TestEntityManager();
+    $em = new TestEntityManager();
     $aspect = new EntityManagerAspect($em);
 
     // Neither EntityA nor EntityB is in the mediator locator — EntityManagerAspect provides both
     $locator = new ServiceLocator([
         EntityManagerHandler::class => fn() => new EntityManagerHandler(),
-        EntityManagerAspect::class  => fn() => $aspect,
+        EntityManagerAspect::class => fn() => $aspect,
     ]);
 
     $mediator = new \CompiledMediatorEm($locator);
-    $result   = $mediator->send(new ProcessEntitiesMessage('a-1', 'b-2'));
+    $result = $mediator->send(new ProcessEntitiesMessage('a-1', 'b-2'));
 
     expect($result)->toBe('a-1+b-2')
         ->and($em->findCalls)->toHaveCount(2)
@@ -908,8 +908,8 @@ final class ResultInspector
     public mixed $captured = null;
 
     #[AfterReturning(static function (\ReflectionMethod $m): ?MatchResult {
-        return MatchResult::apply();
-    })]
+            return MatchResult::apply();
+            })]
     public function inspect(object $message, array $context, mixed $returnValue): void
     {
         $this->captured = $returnValue;
@@ -922,8 +922,8 @@ final class ErrorRecorder
     public ?\Throwable $caught = null;
 
     #[AfterThrowing(static function (\ReflectionMethod $m): ?MatchResult {
-        return MatchResult::apply();
-    })]
+            return MatchResult::apply();
+            })]
     public function record(object $message, array $context, \Throwable $e): void
     {
         $this->caught = $e;
@@ -936,8 +936,8 @@ final class Cleaner
     public int $calls = 0;
 
     #[After(static function (\ReflectionMethod $m): ?MatchResult {
-        return MatchResult::apply();
-    })]
+            return MatchResult::apply();
+            })]
     public function cleanup(object $message, array $context): void
     {
         $this->calls++;
@@ -959,13 +959,13 @@ test('AfterReturning advice receives the handler return value', function () use 
     require_once $testOutputDir . '/CompiledMediatorAfterReturning1.php';
 
     $inspector = new ResultInspector();
-    $locator   = new ServiceLocator([
+    $locator = new ServiceLocator([
         ObservedHandler::class => fn() => new ObservedHandler(),
         ResultInspector::class => fn() => $inspector,
     ]);
 
     $mediator = new \CompiledMediatorAfterReturning1($locator);
-    $result   = $mediator->send(new ObservedMessage('hello'));
+    $result = $mediator->send(new ObservedMessage('hello'));
 
     expect($result)->toBe('observed: hello')
         ->and($inspector->captured)->toBe('observed: hello');
@@ -982,9 +982,9 @@ test('AfterThrowing advice is called when handler throws and exception still pro
     require_once $testOutputDir . '/CompiledMediatorAfterThrowing1.php';
 
     $recorder = new ErrorRecorder();
-    $locator  = new ServiceLocator([
+    $locator = new ServiceLocator([
         FailingHandler::class => fn() => new FailingHandler(),
-        ErrorRecorder::class  => fn() => $recorder,
+        ErrorRecorder::class => fn() => $recorder,
     ]);
 
     $mediator = new \CompiledMediatorAfterThrowing1($locator);
@@ -1006,11 +1006,11 @@ test('After advice runs after a successful handler invocation', function () use 
     $cleaner = new Cleaner();
     $locator = new ServiceLocator([
         ObservedHandler::class => fn() => new ObservedHandler(),
-        Cleaner::class         => fn() => $cleaner,
+        Cleaner::class => fn() => $cleaner,
     ]);
 
     $mediator = new \CompiledMediatorAfter1($locator);
-    $result   = $mediator->send(new ObservedMessage('world'));
+    $result = $mediator->send(new ObservedMessage('world'));
 
     expect($result)->toBe('observed: world')
         ->and($cleaner->calls)->toBe(1);
@@ -1029,7 +1029,7 @@ test('After advice runs even when handler throws', function () use ($testOutputD
     $cleaner = new Cleaner();
     $locator = new ServiceLocator([
         FailingHandler::class => fn() => new FailingHandler(),
-        Cleaner::class        => fn() => $cleaner,
+        Cleaner::class => fn() => $cleaner,
     ]);
 
     $mediator = new \CompiledMediatorAfter2($locator);
