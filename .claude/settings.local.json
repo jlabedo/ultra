@@ -2,12 +2,11 @@
   "permissions": {
     "allow": [
       "Bash(git -C /Users/jean/Code/ultra log --oneline -20)",
-      "Bash(vendor/bin/pest src/Mediator/Tests/)",
       "Bash(composer require symfony/dependency-injection:\"7.*|8.*\" --no-interaction)",
-      "Bash(vendor/bin/pest src/Mediator_Compiler/Tests/ --no-coverage)",
-      "Bash(vendor/bin/pest src/Mediator/ src/Mediator_Compiler/ --no-coverage)",
-      "Bash(./vendor/bin/pest src/Mediator_Compiler/Tests/ --colors=never)",
-      "Bash(./vendor/bin/pest src/Mediator/ --colors=never)"
+      "Bash(perl -i -pe ':*)",
+      "Bash(vendor/bin/pest*)",
+      "Bash(./vendor/bin/pest*)",
+      "Bash(php vendor/bin/pest*)"
     ]
   }
 }
