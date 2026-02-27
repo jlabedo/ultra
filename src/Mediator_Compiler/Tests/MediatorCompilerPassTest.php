@@ -558,8 +558,7 @@ test('compiler pass registers MediatorInterface definition in the container', fu
     $container = new ContainerBuilder();
     $container->setDefinition(SalutationHandler::class, (new Definition(SalutationHandler::class))->addTag('mediator.handler'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorPassTest1');
-    $pass->process($container);
+    new MediatorCompilerPass($testOutputDir, 'CompiledMediatorPassTest1')->process($container);
 
     expect($container->hasDefinition(MediatorInterface::class))->toBeTrue();
     expect($container->hasDefinition('ultra.mediator.locator'))->toBeTrue();
@@ -568,8 +567,8 @@ test('compiler pass registers MediatorInterface definition in the container', fu
 test('compiler pass does nothing when no handlers are tagged', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorPassTest2');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorPassTest2'));
+    $container->compile();
 
     expect($container->hasDefinition(MediatorInterface::class))->toBeFalse();
 });
@@ -579,9 +578,7 @@ test('compiler pass throws on duplicate handlers for the same message', function
     $container->setDefinition('handler_a', (new Definition(SalutationHandler::class))->addTag('mediator.handler'));
     $container->setDefinition('handler_b', (new Definition(SalutationHandler::class))->addTag('mediator.handler'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorPassTest3');
-
-    expect(fn() => $pass->process($container))->toThrow(\LogicException::class);
+    expect(fn() => new MediatorCompilerPass($testOutputDir, 'CompiledMediatorPassTest3')->process($container))->toThrow(\LogicException::class);
 });
 
 test('compiler pass adds aspect service IDs to the service locator', function () use ($testOutputDir) {
@@ -589,8 +586,7 @@ test('compiler pass adds aspect service IDs to the service locator', function ()
     $container->setDefinition(AuditedHandler::class, (new Definition(AuditedHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(TestLogger::class, (new Definition(TestLogger::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAopWiring');
-    $pass->process($container);
+    new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAopWiring')->process($container);
 
     $locatorArgs = $container->getDefinition('ultra.mediator.locator')->getArgument(0);
 
@@ -607,8 +603,8 @@ test('generated mediator routes messages to the correct handler method', functio
     $container = new ContainerBuilder();
     $container->setDefinition(SalutationHandler::class, (new Definition(SalutationHandler::class))->addTag('mediator.handler'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E1');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E1'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorE2E1.php';
 
@@ -627,8 +623,8 @@ test('generated mediator injects services from the locator into handler methods'
     $container->setDefinition(GreetWithServiceHandler::class, (new Definition(GreetWithServiceHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(GreeterService::class, new Definition(GreeterService::class));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E2');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E2'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorE2E2.php';
 
@@ -646,8 +642,8 @@ test('generated mediator throws NoHandlerFound for unregistered messages', funct
     $container = new ContainerBuilder();
     $container->setDefinition(SalutationHandler::class, (new Definition(SalutationHandler::class))->addTag('mediator.handler'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E3');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E3'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorE2E3.php';
 
@@ -663,8 +659,8 @@ test('generated mediator calls before-advice then invokes the handler', function
     $container->setDefinition(AuditedHandler::class, (new Definition(AuditedHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(TestLogger::class, (new Definition(TestLogger::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop1');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop1'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorAop1.php';
 
@@ -688,8 +684,8 @@ test('generated mediator calls around-advice wrapping the handler', function () 
     $container->setDefinition(WrappedHandler::class, (new Definition(WrappedHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(TestTransactionManager::class, (new Definition(TestTransactionManager::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop2');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop2'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorAop2.php';
 
@@ -712,8 +708,8 @@ test('generated mediator executes multiple around-advices ordered by priority', 
     $container->setDefinition(OuterAspectService::class, (new Definition(OuterAspectService::class))->addTag('mediator.aspect'));
     $container->setDefinition(InnerAspectService::class, (new Definition(InnerAspectService::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop3');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop3'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorAop3.php';
 
@@ -740,8 +736,7 @@ test('compiler pass excludes claimed dep types from the service locator', functi
     $container->setDefinition(EntityProcessingHandler::class, (new Definition(EntityProcessingHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(LoadAndSaveAspect::class, (new Definition(LoadAndSaveAspect::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding0');
-    $pass->process($container);
+    new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding0')->process($container);
 
     $locatorArgs = $container->getDefinition('ultra.mediator.locator')->getArgument(0);
 
@@ -757,8 +752,8 @@ test('generated mediator uses parameter-providing aspect to inject and save enti
     $container->setDefinition(EntityProcessingHandler::class, (new Definition(EntityProcessingHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(LoadAndSaveAspect::class, (new Definition(LoadAndSaveAspect::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding1');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding1'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorParamProviding1.php';
 
@@ -785,8 +780,8 @@ test('one parameter-providing aspect can claim multiple handler parameters at on
     $container->setDefinition(MultiEntityHandler::class, (new Definition(MultiEntityHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(BatchLoadAspect::class, (new Definition(BatchLoadAspect::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam1');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam1'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorMultiParam1.php';
 
@@ -814,8 +809,8 @@ test('two #[Around] on the same aspect method each claim a different parameter a
     // Each call receives a different $config; one locator entry serves both.
     $container->setDefinition(LoadAspect::class, (new Definition(LoadAspect::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam2');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam2'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorMultiParam2.php';
 
@@ -844,8 +839,8 @@ test('#[Around] closure discovers #[Entity] parameters at compile time and deleg
     $container->setDefinition(EntityManagerHandler::class, (new Definition(EntityManagerHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(EntityManagerAspect::class, (new Definition(EntityManagerAspect::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorEm');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorEm'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorEm.php';
 
@@ -953,8 +948,8 @@ test('AfterReturning advice receives the handler return value', function () use 
     $container->setDefinition(ObservedHandler::class, (new Definition(ObservedHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(ResultInspector::class, (new Definition(ResultInspector::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfterReturning1');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfterReturning1'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorAfterReturning1.php';
 
@@ -976,8 +971,8 @@ test('AfterThrowing advice is called when handler throws and exception still pro
     $container->setDefinition(FailingHandler::class, (new Definition(FailingHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(ErrorRecorder::class, (new Definition(ErrorRecorder::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfterThrowing1');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfterThrowing1'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorAfterThrowing1.php';
 
@@ -998,8 +993,8 @@ test('After advice runs after a successful handler invocation', function () use 
     $container->setDefinition(ObservedHandler::class, (new Definition(ObservedHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(Cleaner::class, (new Definition(Cleaner::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfter1');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfter1'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorAfter1.php';
 
@@ -1021,8 +1016,8 @@ test('After advice runs even when handler throws', function () use ($testOutputD
     $container->setDefinition(FailingHandler::class, (new Definition(FailingHandler::class))->addTag('mediator.handler'));
     $container->setDefinition(Cleaner::class, (new Definition(Cleaner::class))->addTag('mediator.aspect'));
 
-    $pass = new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfter2');
-    $pass->process($container);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfter2'));
+    $container->compile();
 
     require_once $testOutputDir . '/CompiledMediatorAfter2.php';
 
