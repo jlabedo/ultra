@@ -7,6 +7,7 @@ namespace Ultra\Mediator_Compiler\Tests;
 use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\DependencyInjection\Reference;
 use Psr\Container\ContainerInterface;
 use Ultra\Mediator\Attribute\After;
@@ -711,10 +712,12 @@ test('generated mediator uses parameter-providing aspect to inject and save enti
     $container = new ContainerBuilder();
     $container->setDefinition(EntityProcessingHandler::class, new Definition(EntityProcessingHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(TestEntityRepository::class, new Definition(TestEntityRepository::class)->setPublic(true));
-    $container->setDefinition(LoadAndSaveAspect::class,
+    $container->setDefinition(
+        LoadAndSaveAspect::class,
         new Definition(LoadAndSaveAspect::class, [
             new ServiceLocatorArgument([TestEntityRepository::class => new Reference(TestEntityRepository::class)]),
-        ])->addTag('mediator.aspect')->setPublic(true));
+        ])->addTag('mediator.aspect')->setPublic(true)
+    );
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding1'));
     $container->compile();
@@ -732,9 +735,11 @@ test('generated mediator uses parameter-providing aspect to inject and save enti
 test('one parameter-providing aspect can claim multiple handler parameters at once', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(MultiEntityHandler::class, new Definition(MultiEntityHandler::class)->addTag('mediator.handler'));
-    $container->setDefinition(BatchLoadAspect::class,
+    $container->setDefinition(
+        BatchLoadAspect::class,
         new Definition(BatchLoadAspect::class)
-            ->addTag('mediator.aspect')->setPublic(true));
+            ->addTag('mediator.aspect')->setPublic(true)
+    );
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam1'));
     $container->compile();
@@ -752,13 +757,15 @@ test('two #[Around] on the same aspect method each claim a different parameter a
     $container->setDefinition(SeparateEntitiesHandler::class, new Definition(SeparateEntitiesHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(TestEntityARepository::class, new Definition(TestEntityARepository::class));
     $container->setDefinition(TestEntityBRepository::class, new Definition(TestEntityBRepository::class));
-    $container->setDefinition(LoadAspect::class,
+    $container->setDefinition(
+        LoadAspect::class,
         new Definition(LoadAspect::class, [
             new ServiceLocatorArgument([
                 TestEntityARepository::class => new Reference(TestEntityARepository::class),
                 TestEntityBRepository::class => new Reference(TestEntityBRepository::class),
             ]),
-        ])->addTag('mediator.aspect')->setPublic(true));
+        ])->addTag('mediator.aspect')->setPublic(true)
+    );
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam2'));
     $container->compile();
@@ -776,9 +783,11 @@ test('#[Around] closure discovers #[Entity] parameters at compile time and deleg
     $container = new ContainerBuilder();
     $container->setDefinition(EntityManagerHandler::class, new Definition(EntityManagerHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(TestEntityManager::class, new Definition(TestEntityManager::class)->setPublic(true));
-    $container->setDefinition(EntityManagerAspect::class,
+    $container->setDefinition(
+        EntityManagerAspect::class,
         new Definition(EntityManagerAspect::class, [new Reference(TestEntityManager::class)])
-            ->addTag('mediator.aspect')->setPublic(true));
+            ->addTag('mediator.aspect')->setPublic(true)
+    );
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorEm'));
     $container->compile();

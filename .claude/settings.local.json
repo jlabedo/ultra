@@ -6,7 +6,9 @@
       "Bash(perl -i -pe ':*)",
       "Bash(vendor/bin/pest*)",
       "Bash(./vendor/bin/pest*)",
-      "Bash(php vendor/bin/pest*)"
+      "Bash(php vendor/bin/pest*)",
+      "WebFetch(domain:github.com)",
+      "Bash(git -C /Users/jean/Code/ultra diff --stat HEAD)"
     ]
   }
 }

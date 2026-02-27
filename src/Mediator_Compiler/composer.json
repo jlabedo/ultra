@@ -11,6 +11,7 @@
     ],
     "require": {
         "php": ">=8.5",
+        "psr/container": "^2.0",
         "ultra/mediator": "^0.1",
         "symfony/dependency-injection": "7.*|8.*"
     },
