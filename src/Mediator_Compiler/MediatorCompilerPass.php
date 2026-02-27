@@ -28,6 +28,13 @@ use Ultra\Mediator\MediatorInterface;
  *    For each such method, record the message class, service ID, method name,
  *    and non-message dep service IDs.
  *
+ *  Phase 1b — Self-handler discovery:
+ *    Find all services tagged with $selfHandlerTag (default: "mediator.self-handler").
+ *    These are message classes that handle themselves: the #[Handles] method is on the
+ *    message class itself, takes only dep params (no message param — $this is the message),
+ *    and is invoked as $message->method(...deps) at runtime. The message class is not added
+ *    to the service locator. The service ID sentinel '@self' signals the generator.
+ *
  *  Phase 2 — Aspect matching:
  *    Find all services tagged with $aspectTag (default: "mediator.aspect").
  *    Reflect on each aspect class; scan public methods for #[Around] and #[Before].
@@ -52,14 +59,16 @@ final class MediatorCompilerPass implements CompilerPassInterface
         private readonly string $generatedClass = 'CompiledMediator',
         private readonly string $handlerTag = 'mediator.handler',
         private readonly string $aspectTag = 'mediator.aspect',
+        private readonly string $selfHandlerTag = 'mediator.self-handler',
     ) {
     }
 
     public function process(ContainerBuilder $container): void
     {
-        $taggedHandlers = $container->findTaggedServiceIds($this->handlerTag);
+        $taggedHandlers     = $container->findTaggedServiceIds($this->handlerTag);
+        $taggedSelfHandlers = $container->findTaggedServiceIds($this->selfHandlerTag);
 
-        if ($taggedHandlers === []) {
+        if ($taggedHandlers === [] && $taggedSelfHandlers === []) {
             return;
         }
 
@@ -93,7 +102,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 $messageClass = $firstType->getName();
 
                 if (isset($handlers[$messageClass])) {
-                    throw new \LogicException(sprintf(
+                    throw new \LogicException(\sprintf(
                         'Duplicate handler for message "%s": already registered by service "%s", cannot also register "%s".',
                         $messageClass,
                         $handlers[$messageClass][0],
@@ -106,6 +115,38 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 $handlerReflections[$messageClass] = $method;
 
                 $locatorServices[$serviceId] = new Reference($serviceId);
+            }
+        }
+
+        // ── Phase 1b: discover self-handler message classes ───────────────────
+        // The message class IS the handler: #[Handles] method has only dep params
+        // (no message param — $this is the message). Generated code: $message->method(...deps).
+        foreach (array_keys($taggedSelfHandlers) as $serviceId) {
+            $definition = $container->getDefinition($serviceId);
+            $class = $definition->getClass() ?? $serviceId;
+
+            foreach (new \ReflectionClass($class)->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+                if ($method->getAttributes(Handles::class) === []) {
+                    continue;
+                }
+
+                $messageClass = $class;
+
+                if (isset($handlers[$messageClass])) {
+                    throw new \LogicException(\sprintf(
+                        'Duplicate handler for message "%s": already registered by service "%s", cannot also register "%s" as a self-handler.',
+                        $messageClass,
+                        $handlers[$messageClass][0],
+                        $serviceId,
+                    ));
+                }
+
+                // All params are deps — no message param to skip
+                $depServiceIds = $this->resolveDepServiceIds($method, skipFirst: false);
+                // '@self' sentinel: generator emits $message->method(...) instead of $locator->get(...)
+                $handlers[$messageClass] = ['@self', $method->getName(), $depServiceIds, []];
+                $handlerReflections[$messageClass] = $method;
+                // Message class is NOT added to the locator — it is passed directly at dispatch time
             }
         }
 
@@ -160,13 +201,13 @@ final class MediatorCompilerPass implements CompilerPassInterface
     }
 
     /** @return list<string> */
-    private function resolveDepServiceIds(\ReflectionMethod $method): array
+    private function resolveDepServiceIds(\ReflectionMethod $method, bool $skipFirst = true): array
     {
         $ids = [];
-        foreach (array_slice($method->getParameters(), 1) as $param) {
+        foreach (\array_slice($method->getParameters(), $skipFirst ? 1 : 0) as $param) {
             $type = $param->getType();
             if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
-                throw new \LogicException(sprintf(
+                throw new \LogicException(\sprintf(
                     'Parameter "$%s" of handler method "%s::%s" must have a non-builtin type.',
                     $param->getName(),
                     $method->getDeclaringClass()->getName(),

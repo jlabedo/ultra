@@ -969,3 +969,116 @@ test('compiler pass throws when an after-type advice returns provides', function
     expect(fn() => new MediatorCompilerPass($testOutputDir, 'CompiledMediatorProvidesValidation')->process($container))
         ->toThrow(\LogicException::class, 'only #[Around] and #[Before] advices may provide dep-param slots');
 });
+
+// ---------------------------------------------------------------------------
+// Self-handler fixtures
+// Message classes that handle themselves: #[Handles] method has only dep params
+// ($this is the message — no message param in the method signature).
+// ---------------------------------------------------------------------------
+
+final class SelfGreetMessage
+{
+    public function __construct(public readonly string $name)
+    {
+    }
+
+    #[Handles]
+    public function greet(): string
+    {
+        return 'Hi, ' . $this->name . ' (self)';
+    }
+}
+
+final class SelfGreetWithServiceMessage
+{
+    public function __construct(public readonly string $name)
+    {
+    }
+
+    #[Handles]
+    public function greet(GreeterService $greeter): string
+    {
+        return $greeter->greet($this->name);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Self-handler tests
+// ---------------------------------------------------------------------------
+
+test('compiler pass does nothing when only self-handler tag is absent and no regular handlers', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorSelfHandler0'));
+    $container->compile();
+
+    expect($container->hasDefinition(MediatorInterface::class))->toBeFalse();
+});
+
+test('generated mediator dispatches to a no-dep self-handler method', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(
+        SelfGreetMessage::class,
+        new Definition(SelfGreetMessage::class)->addTag('mediator.self-handler'),
+    );
+
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorSelfHandler1'));
+    $container->compile();
+
+    $mediator = $container->get(MediatorInterface::class);
+
+    expect($mediator->send(new SelfGreetMessage('Alice')))->toBe('Hi, Alice (self)');
+});
+
+test('generated mediator injects deps from locator into a self-handler method', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(
+        SelfGreetWithServiceMessage::class,
+        new Definition(SelfGreetWithServiceMessage::class)->addTag('mediator.self-handler'),
+    );
+    $container->setDefinition(GreeterService::class, new Definition(GreeterService::class));
+
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorSelfHandler2'));
+    $container->compile();
+
+    $mediator = $container->get(MediatorInterface::class);
+
+    expect($mediator->send(new SelfGreetWithServiceMessage('Bob')))->toBe('Hello, Bob!');
+});
+
+test('self-handler and regular handler can coexist in the same container', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(SalutationHandler::class, new Definition(SalutationHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(
+        SelfGreetMessage::class,
+        new Definition(SelfGreetMessage::class)->addTag('mediator.self-handler'),
+    );
+
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorSelfHandler3'));
+    $container->compile();
+
+    $mediator = $container->get(MediatorInterface::class);
+
+    expect($mediator->send(new HelloMessage('Alice')))->toBe('Hi, Alice')
+        ->and($mediator->send(new SelfGreetMessage('Bob')))->toBe('Hi, Bob (self)');
+});
+
+test('before-advice applies to self-handler method', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(
+        SelfGreetMessage::class,
+        new Definition(SelfGreetMessage::class)->addTag('mediator.self-handler'),
+    );
+    $container->setDefinition(TestLogger::class, new Definition(TestLogger::class)->addTag('mediator.aspect')->setPublic(true));
+
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorSelfHandler4'));
+    $container->compile();
+
+    $logger = $container->get(TestLogger::class);
+    $mediator = $container->get(MediatorInterface::class);
+    $message = new SelfGreetMessage('Carol');
+    $result = $mediator->send($message);
+
+    expect($result)->toBe('Hi, Carol (self)')
+        ->and($logger->logged)->toHaveCount(1)
+        ->and($logger->logged[0])->toBe($message);
+});

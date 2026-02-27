@@ -214,38 +214,52 @@ final class MediatorGenerator
         array $arounds,
         array $claimedVarNames,
     ): string {
+        $isSelf = $serviceId === '@self';
+
         if ($arounds === []) {
-            // No around advices — call handler directly with $message and all deps from locator
-            $handlerArgs = ['$message'];
+            // No around advices — call handler directly
+            $handlerArgs = [];
+            if (!$isSelf) {
+                // Regular handler: first arg is the message
+                $handlerArgs[] = '$message';
+            }
             foreach ($depServiceIds as $depId) {
                 $handlerArgs[] = '$this->locator->get(' . $this->exportString($depId) . ')';
             }
 
-            return sprintf(
-                '$this->locator->get(%s)->%s(%s)',
-                $this->exportString($serviceId),
-                $handlerMethod,
-                implode(', ', $handlerArgs),
-            );
+            return $isSelf
+                ? \sprintf('$message->%s(%s)', $handlerMethod, implode(', ', $handlerArgs))
+                : \sprintf(
+                    '$this->locator->get(%s)->%s(%s)',
+                    $this->exportString($serviceId),
+                    $handlerMethod,
+                    implode(', ', $handlerArgs),
+                );
         }
 
         // Build the around chain from the inside out.
         // The innermost layer is the handler call, using $m (lambda parameter).
         // Claimed dep slots use their assigned variable names; unclaimed deps come
         // from the locator.
-        $handlerArgs = ['$m'];
+        $handlerArgs = [];
+        if (!$isSelf) {
+            // Regular handler: first arg is the message (lambda param $m)
+            $handlerArgs[] = '$m';
+        }
         foreach ($depServiceIds as $depIdx => $depId) {
             $handlerArgs[] = isset($claimedVarNames[$depIdx])
                 ? $claimedVarNames[$depIdx]
                 : '$this->locator->get(' . $this->exportString($depId) . ')';
         }
 
-        $inner = sprintf(
-            '$this->locator->get(%s)->%s(%s)',
-            $this->exportString($serviceId),
-            $handlerMethod,
-            implode(', ', $handlerArgs),
-        );
+        $inner = $isSelf
+            ? \sprintf('$m->%s(%s)', $handlerMethod, implode(', ', $handlerArgs))
+            : \sprintf(
+                '$this->locator->get(%s)->%s(%s)',
+                $this->exportString($serviceId),
+                $handlerMethod,
+                implode(', ', $handlerArgs),
+            );
 
         // Wrap with around advices. Traverse in reverse so the highest-priority
         // advice becomes the outermost wrapper.
