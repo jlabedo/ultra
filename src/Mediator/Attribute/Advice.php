@@ -14,7 +14,7 @@ namespace Ultra\Mediator\Attribute;
  *  $matcher  — compile-time closure invoked once per #[Handles] method.
  *              Returns MatchResult::apply(...) to attach the advice, null to skip.
  *  $priority — execution order when multiple advices match the same handler.
- *              Higher value = outermost / earliest. Default 0.
+ *              Lower value = outermost / earliest. Default 0.
  *
  * Only #[Around] and #[Before] may return a MatchResult with non-empty $provides.
  * Returning $provides on an after-type advice is a compile-time LogicException.

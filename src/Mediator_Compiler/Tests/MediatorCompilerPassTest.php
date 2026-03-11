@@ -125,7 +125,7 @@ final class OuterAspectService
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
             return MatchResult::apply();
-            }, priority: 10)]
+            }, priority: 0)]
     public function wrap(callable $proceed, object $message, array $context): mixed
     {
         $this->log[] = 'outer-before';
@@ -142,7 +142,7 @@ final class InnerAspectService
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
             return MatchResult::apply();
-            }, priority: 0)]
+            }, priority: 10)]
     public function wrap(callable $proceed, object $message, array $context): mixed
     {
         $this->log[] = 'inner-before';
@@ -396,8 +396,8 @@ final class BatchLoadAspect
 }
 
 /**
- * Two #[Around] attributes on the same method — one for EntityA (priority 10, outer),
- * one for EntityB (priority 0, inner). Demonstrates arrow-function capture:
+ * Two #[Around] attributes on the same method — one for EntityA (priority 0, outer),
+ * one for EntityB (priority 10, inner). Demonstrates arrow-function capture:
  * the outer $_p0 is automatically captured inside the inner lambda.
  */
 final class LoadAspect
@@ -414,7 +414,7 @@ final class LoadAspect
                     }
                 }
             return null;
-            }, priority: 10)]
+            }, priority: 0)]
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
             foreach (array_slice($m->getParameters(), 1) as $i => $param) {
                 $type = $param->getType();
@@ -423,7 +423,7 @@ final class LoadAspect
                     }
                 }
             return null;
-            }, priority: 0)]
+            }, priority: 10)]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
         $entity = $this->locator->get($config['repoClass'])->load($message);
@@ -686,9 +686,9 @@ test('generated mediator executes multiple around-advices ordered by priority', 
     $result = $mediator->send(new DoubleWrappedMessage('test'));
 
     expect($result)->toBe('double: test')
-        // priority 10 → outermost
+        // priority 0 → outermost
         ->and($outer->log)->toBe(['outer-before', 'outer-after'])
-        // priority 0 → nested inside outer
+        // priority 10 → nested inside outer
         ->and($inner->log)->toBe(['inner-before', 'inner-after']);
 });
 
@@ -774,7 +774,7 @@ test('two #[Around] on the same aspect method each claim a different parameter a
     $mediator = $container->get(MediatorInterface::class);
     $result = $mediator->send(new SeparateEntitiesMessage('a-1', 'b-2'));
 
-    // EntityA from priority-10 advice (outer), EntityB from priority-0 advice (inner);
+    // EntityA from priority-0 advice (outer), EntityB from priority-10 advice (inner);
     // arrow-function capture propagates $_p0 inward without an explicit use clause.
     expect($result)->toBe('a-1+b-2');
 });

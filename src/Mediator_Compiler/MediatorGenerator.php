@@ -22,7 +22,7 @@ namespace Ultra\Mediator_Compiler;
  *     0: string,                  // handler service ID
  *     1: string,                  // handler method name
  *     2: list<string>,            // method-level dep service IDs (all dep types, including claimed)
- *     3: list<AdviceDescriptor>,  // (optional) ordered aspect advices
+ *     3: list<AdviceDescriptor>,  // (optional) aspect advices (ordering is computed here)
  *   }>
  *
  * Claimed dep slots (declared via MatchResult::apply(provides: [...]) in #[Around] closures)
@@ -113,82 +113,51 @@ final class MediatorGenerator
         array $depServiceIds,
         array $advices,
     ): string {
-        $befores         = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::Before));
-        $arounds         = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::Around));
-        $afterReturnings = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::AfterReturning));
-        $afterThrowings  = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::AfterThrowing));
-        $afters          = array_values(array_filter($advices, fn($a) => $a->type === AdviceType::After));
+        $grouped = $this->groupAdvicesByPriority($advices);
+        $priorities = array_keys($grouped);
+        rsort($priorities, SORT_NUMERIC); // higher priority = deeper
+
+        $allArounds = $this->flattenAdvicesByType($grouped, AdviceType::Around);
 
         // Collect all dep indices claimed by parameter-providing around advices.
         // Each claimed index maps to a generated variable name $_p{depIndex}.
         // Arrow functions auto-capture outer-scope variables, so nested around
         // chains with different claiming aspects compose correctly without use clauses.
         $claimedVarNames = []; // depIndex => '$_p{depIndex}'
-        foreach ($arounds as $advice) {
+        foreach ($allArounds as $advice) {
             foreach ($advice->claimedDepIndices as $depIdx) {
                 $claimedVarNames[$depIdx] = '$_p' . $depIdx;
             }
         }
 
-        $lines = [];
+        $coreExpr = $this->buildHandlerExpression(
+            $serviceId,
+            $handlerMethod,
+            $depServiceIds,
+            $claimedVarNames,
+            '$m',
+        );
 
-        // Before advices — sequential calls before the core expression
-        foreach ($befores as $advice) {
-            $beforeArgs = ['$message', '$context'];
-            if ($advice->runtimeConfig !== []) {
-                $beforeArgs[] = $this->exportValue($advice->runtimeConfig);
-            }
-            $lines[] = sprintf(
-                '        $this->locator->get(%s)->%s(%s);',
-                $this->exportString($advice->serviceId),
-                $advice->method,
-                implode(', ', $beforeArgs),
+        foreach ($priorities as $priority) {
+            $bucket = $grouped[$priority];
+            $coreExpr = $this->applyAroundsAtPriority(
+                $bucket[AdviceType::Around->value],
+                $coreExpr,
+                $claimedVarNames,
+            );
+            $coreExpr = $this->wrapWithBeforeAfter(
+                $coreExpr,
+                $bucket[AdviceType::Before->value],
+                $bucket[AdviceType::AfterReturning->value],
+                $bucket[AdviceType::AfterThrowing->value],
+                $bucket[AdviceType::After->value],
             );
         }
 
-        // Build the core expression (handler call, optionally wrapped in around chain)
-        $coreExpr = $this->buildCoreExpression(
-            $serviceId, $handlerMethod, $depServiceIds, $arounds, $claimedVarNames,
-        );
-
-        // Emit the core expression, wrapped in try/catch/finally when after-type advices apply
-        $needsCatch   = $afterThrowings !== [];
-        $needsFinally = $afters !== [];
-        $needsTry     = $needsCatch || $needsFinally;
-
-        if (!$needsTry && $afterReturnings === []) {
-            // Simple path: no after-type advices
-            $lines[] = '        return ' . $coreExpr . ';';
-        } elseif (!$needsTry) {
-            // AfterReturning only — no try block needed
-            $lines[] = '        $__result = ' . $coreExpr . ';';
-            foreach ($afterReturnings as $advice) {
-                $lines[] = $this->buildAfterReturningCall('        ', $advice);
-            }
-            $lines[] = '        return $__result;';
-        } else {
-            // try block — always capture the result so AfterReturning can observe it
-            $lines[] = '        try {';
-            $lines[] = '            $__result = ' . $coreExpr . ';';
-            foreach ($afterReturnings as $advice) {
-                $lines[] = $this->buildAfterReturningCall('            ', $advice);
-            }
-            $lines[] = '            return $__result;';
-            if ($needsCatch) {
-                $lines[] = '        } catch (\Throwable $__e) {';
-                foreach ($afterThrowings as $advice) {
-                    $lines[] = $this->buildAfterThrowingCall('            ', $advice);
-                }
-                $lines[] = '            throw $__e;';
-            }
-            if ($needsFinally) {
-                $lines[] = '        } finally {';
-                foreach ($afters as $advice) {
-                    $lines[] = $this->buildAfterCall('            ', $advice);
-                }
-            }
-            $lines[] = '        }';
-        }
+        $lines = [];
+        $lines[] = '        $m = $message;';
+        $lines[] = '        $c = $context;';
+        $lines[] = '        return ' . $coreExpr . ';';
 
         $body = implode("\n", $lines);
 
@@ -201,50 +170,25 @@ final class MediatorGenerator
     }
 
     /**
-     * Build the core expression: handler call, wrapped in the around chain if present.
+     * Build the handler call expression (used as the innermost expression).
      *
      * @param list<string>           $depServiceIds
      * @param list<AdviceDescriptor> $arounds
      * @param array<int, string>     $claimedVarNames
      */
-    private function buildCoreExpression(
+    private function buildHandlerExpression(
         string $serviceId,
         string $handlerMethod,
         array $depServiceIds,
-        array $arounds,
         array $claimedVarNames,
+        string $messageVar,
     ): string {
         $isSelf = $serviceId === '@self';
 
-        if ($arounds === []) {
-            // No around advices — call handler directly
-            $handlerArgs = [];
-            if (!$isSelf) {
-                // Regular handler: first arg is the message
-                $handlerArgs[] = '$message';
-            }
-            foreach ($depServiceIds as $depId) {
-                $handlerArgs[] = '$this->locator->get(' . $this->exportString($depId) . ')';
-            }
-
-            return $isSelf
-                ? \sprintf('$message->%s(%s)', $handlerMethod, implode(', ', $handlerArgs))
-                : \sprintf(
-                    '$this->locator->get(%s)->%s(%s)',
-                    $this->exportString($serviceId),
-                    $handlerMethod,
-                    implode(', ', $handlerArgs),
-                );
-        }
-
-        // Build the around chain from the inside out.
-        // The innermost layer is the handler call, using $m (lambda parameter).
-        // Claimed dep slots use their assigned variable names; unclaimed deps come
-        // from the locator.
+        // Handler call; claimed dep slots use their assigned variable names.
         $handlerArgs = [];
         if (!$isSelf) {
-            // Regular handler: first arg is the message (lambda param $m)
-            $handlerArgs[] = '$m';
+            $handlerArgs[] = $messageVar;
         }
         foreach ($depServiceIds as $depIdx => $depId) {
             $handlerArgs[] = isset($claimedVarNames[$depIdx])
@@ -252,22 +196,35 @@ final class MediatorGenerator
                 : '$this->locator->get(' . $this->exportString($depId) . ')';
         }
 
-        $inner = $isSelf
-            ? \sprintf('$m->%s(%s)', $handlerMethod, implode(', ', $handlerArgs))
+        return $isSelf
+            ? \sprintf('%s->%s(%s)', $messageVar, $handlerMethod, implode(', ', $handlerArgs))
             : \sprintf(
                 '$this->locator->get(%s)->%s(%s)',
                 $this->exportString($serviceId),
                 $handlerMethod,
                 implode(', ', $handlerArgs),
             );
+    }
 
-        // Wrap with around advices. Traverse in reverse so the highest-priority
-        // advice becomes the outermost wrapper.
-        foreach (array_reverse($arounds) as $i => $advice) {
-            $isOutermost = ($i === count($arounds) - 1);
-            $mArg = $isOutermost ? '$message' : '$m';
-            $cArg = $isOutermost ? '$context' : '$c';
+    /**
+     * Wrap inner expression with around advices at the same priority.
+     *
+     * @param list<AdviceDescriptor> $arounds
+     */
+    private function applyAroundsAtPriority(
+        array $arounds,
+        string $innerExpr,
+        array $claimedVarNames,
+    ): string {
+        if ($arounds === []) {
+            return $innerExpr;
+        }
 
+        $inner = $innerExpr;
+
+        // Wrap with around advices. Reverse so the earlier advice (deterministic order)
+        // becomes the outermost wrapper.
+        foreach (array_reverse($arounds) as $advice) {
             // Lambda params: $m and $c, plus any dep vars this advice claims.
             // Inner lambdas auto-capture claimed vars from outer lambda scopes.
             $lambdaParams = ['$m', '$c'];
@@ -279,8 +236,8 @@ final class MediatorGenerator
             // advice carries a non-empty runtimeConfig — a PHP literal array.
             $aspectArgs = [
                 'fn(' . implode(', ', $lambdaParams) . ') => ' . $inner,
-                $mArg,
-                $cArg,
+                '$m',
+                '$c',
             ];
             if ($advice->runtimeConfig !== []) {
                 $aspectArgs[] = $this->exportValue($advice->runtimeConfig);
@@ -297,9 +254,91 @@ final class MediatorGenerator
         return $inner;
     }
 
-    private function buildAfterReturningCall(string $indent, AdviceDescriptor $advice): string
+    /**
+     * Wrap the inner expression with before/after-type advices for a priority.
+     *
+     * @param list<AdviceDescriptor> $befores
+     * @param list<AdviceDescriptor> $afterReturnings
+     * @param list<AdviceDescriptor> $afterThrowings
+     * @param list<AdviceDescriptor> $afters
+     */
+    private function wrapWithBeforeAfter(
+        string $innerExpr,
+        array $befores,
+        array $afterReturnings,
+        array $afterThrowings,
+        array $afters,
+    ): string {
+        if ($befores === [] && $afterReturnings === [] && $afterThrowings === [] && $afters === []) {
+            return $innerExpr;
+        }
+
+        $lines = [];
+        $lines[] = '(function ($m, $c) {';
+
+        foreach ($befores as $advice) {
+            $beforeArgs = ['$m', '$c'];
+            if ($advice->runtimeConfig !== []) {
+                $beforeArgs[] = $this->exportValue($advice->runtimeConfig);
+            }
+            $lines[] = sprintf(
+                '    $this->locator->get(%s)->%s(%s);',
+                $this->exportString($advice->serviceId),
+                $advice->method,
+                implode(', ', $beforeArgs),
+            );
+        }
+
+        $needsCatch   = $afterThrowings !== [];
+        $needsFinally = $afters !== [];
+
+        if (!$needsCatch && !$needsFinally) {
+            if ($afterReturnings === []) {
+                $lines[] = '    return ' . $innerExpr . ';';
+            } else {
+                $lines[] = '    $__result = ' . $innerExpr . ';';
+                foreach ($afterReturnings as $advice) {
+                    $lines[] = $this->buildAfterReturningCall('    ', $advice, '$m', '$c', '$__result');
+                }
+                $lines[] = '    return $__result;';
+            }
+        } else {
+            $lines[] = '    try {';
+            $lines[] = '        $__result = ' . $innerExpr . ';';
+            foreach ($afterReturnings as $advice) {
+                $lines[] = $this->buildAfterReturningCall('        ', $advice, '$m', '$c', '$__result');
+            }
+            $lines[] = '        return $__result;';
+            if ($needsCatch) {
+                $lines[] = '    } catch (\Throwable $__e) {';
+                foreach ($afterThrowings as $advice) {
+                    $lines[] = $this->buildAfterThrowingCall('        ', $advice, '$m', '$c', '$__e');
+                }
+                $lines[] = '        throw $__e;';
+            }
+            if ($needsFinally) {
+                $lines[] = '    } finally {';
+                foreach ($afters as $advice) {
+                    $lines[] = $this->buildAfterCall('        ', $advice, '$m', '$c');
+                }
+            }
+            $lines[] = '    }';
+        }
+
+        $lines[] = '})($m, $c)';
+
+        return implode("\n", $lines);
+    }
+
+    private function buildAfterReturningCall(
+        string $indent,
+        AdviceDescriptor $advice,
+        string $messageVar,
+        string $contextVar,
+        string $resultVar,
+    ): string
     {
-        $args = ['$message', '$context', '$__result'];
+        $args = [$messageVar, $contextVar, $resultVar];
         if ($advice->runtimeConfig !== []) {
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
@@ -313,9 +352,15 @@ final class MediatorGenerator
         );
     }
 
-    private function buildAfterThrowingCall(string $indent, AdviceDescriptor $advice): string
+    private function buildAfterThrowingCall(
+        string $indent,
+        AdviceDescriptor $advice,
+        string $messageVar,
+        string $contextVar,
+        string $errorVar,
+    ): string
     {
-        $args = ['$message', '$context', '$__e'];
+        $args = [$messageVar, $contextVar, $errorVar];
         if ($advice->runtimeConfig !== []) {
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
@@ -329,9 +374,14 @@ final class MediatorGenerator
         );
     }
 
-    private function buildAfterCall(string $indent, AdviceDescriptor $advice): string
+    private function buildAfterCall(
+        string $indent,
+        AdviceDescriptor $advice,
+        string $messageVar,
+        string $contextVar,
+    ): string
     {
-        $args = ['$message', '$context'];
+        $args = [$messageVar, $contextVar];
         if ($advice->runtimeConfig !== []) {
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
@@ -391,5 +441,75 @@ final class MediatorGenerator
         }
 
         return '[' . implode(', ', $pairs) . ']';
+    }
+
+    /**
+     * @param list<AdviceDescriptor> $advices
+     * @return array<int, array<string, list<AdviceDescriptor>>>
+     */
+    private function groupAdvicesByPriority(array $advices): array
+    {
+        $grouped = [];
+
+        foreach ($advices as $advice) {
+            $priority = $advice->priority;
+            if (!isset($grouped[$priority])) {
+                $grouped[$priority] = [
+                    AdviceType::Before->value => [],
+                    AdviceType::Around->value => [],
+                    AdviceType::AfterReturning->value => [],
+                    AdviceType::AfterThrowing->value => [],
+                    AdviceType::After->value => [],
+                ];
+            }
+            $grouped[$priority][$advice->type->value][] = $advice;
+        }
+
+        foreach ($grouped as $priority => $bucket) {
+            foreach ($bucket as $type => $list) {
+                $grouped[$priority][$type] = $this->sortAdvices($list);
+            }
+        }
+
+        return $grouped;
+    }
+
+    /**
+     * @param array<int, array<string, list<AdviceDescriptor>>> $grouped
+     * @return list<AdviceDescriptor>
+     */
+    private function flattenAdvicesByType(array $grouped, AdviceType $type): array
+    {
+        $result = [];
+        foreach ($grouped as $bucket) {
+            foreach ($bucket[$type->value] as $advice) {
+                $result[] = $advice;
+            }
+        }
+
+        return $result;
+    }
+
+    /**
+     * Deterministic, stable-ish ordering within the same type.
+     *
+     * @param list<AdviceDescriptor> $advices
+     * @return list<AdviceDescriptor>
+     */
+    private function sortAdvices(array $advices): array
+    {
+        usort($advices, static function (AdviceDescriptor $a, AdviceDescriptor $b): int {
+            $cmp = $a->className <=> $b->className;
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            $cmp = $a->method <=> $b->method;
+            if ($cmp !== 0) {
+                return $cmp;
+            }
+            return $a->serviceId <=> $b->serviceId;
+        });
+
+        return $advices;
     }
 }

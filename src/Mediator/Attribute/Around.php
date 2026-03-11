@@ -14,9 +14,9 @@ namespace Ultra\Mediator\Attribute;
  *                              and optional dep-param indices to claim (provides).
  *
  * The $priority controls execution order when multiple around advices apply to
- * the same handler. Higher priority runs outermost (first before $proceed,
- * last after). Advices with equal priority are ordered by aspect service
- * registration order.
+ * the same handler. Lower priority runs outermost (first before $proceed,
+ * last after). Advices with equal priority are ordered deterministically by
+ * aspect class name.
  *
  * The attribute is repeatable so one aspect method can produce multiple advices
  * (e.g. an aspect that claims each entity parameter with a separate priority).
@@ -26,7 +26,7 @@ namespace Ultra\Mediator\Attribute;
  * Example:
  *   #[Around(static function(\ReflectionMethod $m): ?MatchResult {
  *       // inspect $m->getParameters(), return MatchResult::apply(...) or null
- *   }, priority: 10)]
+ *   }, priority: 0)]
  *   public function execute(callable $proceed, object $message, array $context, array $config): mixed
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]

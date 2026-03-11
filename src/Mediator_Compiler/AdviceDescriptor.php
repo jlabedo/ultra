@@ -30,6 +30,8 @@ namespace Ultra\Mediator_Compiler;
 final readonly class AdviceDescriptor
 {
     /**
+     * @param int       $priority           lower = outer, higher = inner
+     * @param string    $className          FQCN of the aspect class (used for deterministic ordering)
      * @param list<int> $claimedDepIndices  0-based indices into the handler's dep-param array
      * @param array     $runtimeConfig      serializable config embedded in generated code
      */
@@ -37,6 +39,8 @@ final readonly class AdviceDescriptor
         public AdviceType $type,
         public string $serviceId,
         public string $method,
+        public int $priority = 0,
+        public string $className = '',
         public array $claimedDepIndices = [],
         public array $runtimeConfig = [],
     ) {

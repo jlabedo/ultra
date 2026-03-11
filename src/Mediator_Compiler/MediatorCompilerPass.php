@@ -42,7 +42,8 @@ use Ultra\Mediator\MediatorInterface;
  *    A non-null MatchResult means "apply this advice":
  *      $result->provides  list<int>  dep-param slots this advice provides at runtime
  *      $result->config    array      serializable config embedded in the generated dispatch method
- *    Collect all matching advices, sort by priority (descending = outermost first).
+ *    Collect all matching advices; ordering happens in MediatorGenerator based on
+ *    priority and advice type.
  *
  *  Phase 3 — Code generation and registration:
  *    Build a handler map and pass it to MediatorGenerator.
@@ -161,11 +162,16 @@ final class MediatorCompilerPass implements CompilerPassInterface
             $handlerMethod = $handlerReflections[$messageClass];
             $rawAdvices = $this->collectAdvices($handlerMethod, $taggedAspects, $container);
 
-            // Higher priority → outermost around advice / first before advice
-            usort($rawAdvices, static fn($a, $b) => $b['priority'] <=> $a['priority']);
-
             $advices = array_map(
-                static fn($r) => new AdviceDescriptor($r['type'], $r['serviceId'], $r['method'], $r['indices'], $r['config']),
+                static fn($r) => new AdviceDescriptor(
+                    $r['type'],
+                    $r['serviceId'],
+                    $r['method'],
+                    $r['priority'],
+                    $r['className'],
+                    $r['indices'],
+                    $r['config'],
+                ),
                 $rawAdvices,
             );
 
@@ -224,7 +230,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
      * Scan all aspect services for advice methods that match $handlerMethod.
      *
      * @param  array<string, mixed>  $taggedAspects
-     * @return list<array{type: AdviceType, serviceId: string, method: string, priority: int, indices: list<int>, config: array}>
+     * @return list<array{type: AdviceType, serviceId: string, method: string, priority: int, className: string, indices: list<int>, config: array}>
      */
     private function collectAdvices(
         \ReflectionMethod $handlerMethod,
@@ -272,6 +278,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
                             'serviceId' => $aspectServiceId,
                             'method'    => $aspectMethod->getName(),
                             'priority'  => $advice->priority,
+                            'className' => $aspectClass,
                             'indices'   => $canProvide ? $result->provides : [],
                             'config'    => $result->config,
                         ];
