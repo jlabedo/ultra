@@ -35,6 +35,9 @@ final class DecisionEngineAspect
             return null;
         }
 
+        $commandClass = $method->getDeclaringClass()->getName();
+        $commandRef = new \ReflectionClass($commandClass);
+
         $stateParams = [];
         $provides = [];
 
@@ -57,6 +60,16 @@ final class DecisionEngineAspect
             $commandProperty = $bindTo !== null
                 ? $bindTo->property
                 : $domainIdentifierName . 'Id';
+            if (!$commandRef->hasProperty($commandProperty)) {
+                throw new \LogicException(sprintf(
+                    'Command %s has no property "%s" required for decision handler parameter "%s" (domain identifier "%s"). '
+                    . 'Either add the property or use #[BindTo("propertyName")] to bind to a different command property.',
+                    $commandClass,
+                    $commandProperty,
+                    $parameter->getName(),
+                    $domainIdentifierName,
+                ));
+            }
 
             $stateParams[] = [
                 'parameterName' => $parameter->getName(),
@@ -68,8 +81,20 @@ final class DecisionEngineAspect
             $provides[] = $index;
         }
 
+        $checkParamNames = null;
+        if ($commandRef->hasMethod('check')) {
+            $checkMethod = $commandRef->getMethod('check');
+            $checkParamNames = [];
+            foreach ($checkMethod->getParameters() as $param) {
+                $checkParamNames[] = $param->getName();
+            }
+        }
+
         return MatchResult::apply(
-            config: ['stateParams' => $stateParams],
+            config: [
+                'stateParams' => $stateParams,
+                'checkParamNames' => $checkParamNames,
+            ],
             provides: $provides,
         );
     })]
@@ -103,16 +128,15 @@ final class DecisionEngineAspect
         }
 
         if (($context[self::CONTEXT_DECISION_MODE] ?? null) === self::MODE_CHECK) {
-            $ref = new \ReflectionClass($message);
-            if (!$ref->hasMethod('check')) {
+            $checkParamNames = $config['checkParamNames'] ?? null;
+            if ($checkParamNames === null) {
                 throw new CommandHasNoCheckException($message::class);
             }
-            $checkMethod = $ref->getMethod('check');
             $checkArgs = [];
-            foreach ($checkMethod->getParameters() as $param) {
-                $checkArgs[] = $stateByName[$param->getName()] ?? null;
+            foreach ($checkParamNames as $paramName) {
+                $checkArgs[] = $stateByName[$paramName] ?? null;
             }
-            $violations = $checkMethod->invoke($message, ...$checkArgs);
+            $violations = $message->check(...$checkArgs);
 
             return is_array($violations) ? $violations : [];
         }
@@ -202,19 +226,10 @@ final class DecisionEngineAspect
 
     private function getCommandPropertyValue(object $command, string $property): string
     {
-        $ref = new \ReflectionClass($command);
-        if (!$ref->hasProperty($property)) {
-            throw new \LogicException(sprintf('Command %s has no property "%s".', $ref->getName(), $property));
-        }
-        $prop = $ref->getProperty($property);
-        if ($prop->isPublic()) {
-            $value = $prop->getValue($command);
-        } else {
-            $getter = static function (string $prop): mixed {
-                return $this->$prop;
-            };
-            $value = $getter->call($command, $property);
-        }
+        $getter = function (string $prop): mixed {
+            return $this->$prop;
+        };
+        $value = $getter->call($command, $property);
         if (!is_string($value)) {
             throw new \LogicException(sprintf('Command property "%s" must be string, got %s.', $property, get_debug_type($value)));
         }
