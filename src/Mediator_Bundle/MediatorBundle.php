@@ -9,7 +9,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\Mediator\Attribute\Advice;
 use Ultra\Mediator\Attribute\Handles;
-use Ultra\Mediator_Bundle\DependencyInjection\Compiler\MediatorCompilerPassAdapter;
+use Ultra\Mediator_Compiler\MediatorCompilerPass;
 
 final class MediatorBundle extends Bundle
 {
@@ -39,6 +39,16 @@ final class MediatorBundle extends Bundle
             }
         );
 
-        $container->addCompilerPass(new MediatorCompilerPassAdapter(), priority: -100);
+        $buildDir = (string) $container->getParameter('kernel.build_dir');
+        $outputDir = $buildDir . '/mediator';
+        $generatedClass = (string) $container->getParameter('ultra_mediator.generated_class');
+
+        $container->addCompilerPass(new MediatorCompilerPass(
+            $outputDir,
+            $generatedClass,
+            TagNames::HANDLER,
+            TagNames::ASPECT,
+            TagNames::SELF_HANDLER,
+        ), priority: -100);
     }
 }
