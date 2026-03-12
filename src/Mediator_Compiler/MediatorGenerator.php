@@ -18,12 +18,7 @@ namespace Ultra\Mediator_Compiler;
  * No reflection, no dispatch table — pure generated PHP.
  *
  * Handler map format:
- *   array<class-string, array{
- *     0: string,                  // handler service ID
- *     1: string,                  // handler method name
- *     2: list<string>,            // method-level dep service IDs (all dep types, including claimed)
- *     3: list<AdviceDescriptor>,  // (optional) aspect advices (ordering is computed here)
- *   }>
+ *   array<class-string, HandlerDescriptor>
  *
  * Claimed dep slots (declared via MatchResult::apply(provides: [...]) in #[Around] closures)
  * are passed as extra arrow-function parameters in the $proceed lambda rather than being
@@ -42,7 +37,7 @@ final class MediatorGenerator
     /**
      * Generate the PHP source and write it to disk.
      *
-     * @param array<class-string, array{0: string, 1: string, 2: list<string>, 3?: list<AdviceDescriptor>}> $handlers
+     * @param array<class-string, HandlerDescriptor> $handlers
      */
     public function generate(string $className, array $handlers, string $filePath): void
     {
@@ -57,14 +52,14 @@ final class MediatorGenerator
     /**
      * Build the PHP source code string. Exposed for testing without filesystem I/O.
      *
-     * @param array<class-string, array{0: string, 1: string, 2: list<string>, 3?: list<AdviceDescriptor>}> $handlers
+     * @param array<class-string, HandlerDescriptor> $handlers
      */
     public function buildCode(string $className, array $handlers): string
     {
         $matchArms = [];
         $dispatchMethods = [];
 
-        foreach ($handlers as $messageClass => [$serviceId, $method, $depServiceIds, $advices]) {
+        foreach ($handlers as $messageClass => $handler) {
             $dispatchName = $this->dispatchMethodName($messageClass);
 
             $matchArms[] = sprintf(
@@ -75,10 +70,10 @@ final class MediatorGenerator
 
             $dispatchMethods[] = $this->buildDispatchMethod(
                 $dispatchName,
-                $serviceId,
-                $method,
-                $depServiceIds,
-                $advices,
+                $handler->serviceId,
+                $handler->method,
+                $handler->depServiceIds,
+                $handler->advices,
             );
         }
 

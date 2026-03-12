@@ -73,7 +73,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
             return;
         }
 
-        /** @var array<class-string, array{0: string, 1: string, 2: list<string>, 3: list<AdviceDescriptor>}> $handlers */
+        /** @var array<class-string, HandlerDescriptor> $handlers */
         $handlers = [];
         /** @var array<class-string, \ReflectionMethod> $handlerReflections */
         $handlerReflections = [];
@@ -106,13 +106,13 @@ final class MediatorCompilerPass implements CompilerPassInterface
                     throw new \LogicException(\sprintf(
                         'Duplicate handler for message "%s": already registered by service "%s", cannot also register "%s".',
                         $messageClass,
-                        $handlers[$messageClass][0],
+                        $handlers[$messageClass]->serviceId,
                         $serviceId,
                     ));
                 }
 
                 $depServiceIds = $this->resolveDepServiceIds($method);
-                $handlers[$messageClass] = [$serviceId, $method->getName(), $depServiceIds, []];
+                $handlers[$messageClass] = new HandlerDescriptor($serviceId, $method->getName(), $depServiceIds);
                 $handlerReflections[$messageClass] = $method;
 
                 $locatorServices[$serviceId] = new Reference($serviceId);
@@ -137,7 +137,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
                     throw new \LogicException(\sprintf(
                         'Duplicate handler for message "%s": already registered by service "%s", cannot also register "%s" as a self-handler.',
                         $messageClass,
-                        $handlers[$messageClass][0],
+                        $handlers[$messageClass]->serviceId,
                         $serviceId,
                     ));
                 }
@@ -145,7 +145,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 // All params are deps — no message param to skip
                 $depServiceIds = $this->resolveDepServiceIds($method, skipFirst: false);
                 // '@self' sentinel: generator emits $message->method(...) instead of $locator->get(...)
-                $handlers[$messageClass] = ['@self', $method->getName(), $depServiceIds, []];
+                $handlers[$messageClass] = new HandlerDescriptor('@self', $method->getName(), $depServiceIds);
                 $handlerReflections[$messageClass] = $method;
                 // Message class is NOT added to the locator — it is passed directly at dispatch time
             }
@@ -158,24 +158,11 @@ final class MediatorCompilerPass implements CompilerPassInterface
         // ── Phase 2: match aspect services to each handler ───────────────────
         $taggedAspects = $container->findTaggedServiceIds($this->aspectTag);
 
-        foreach ($handlers as $messageClass => &$handlerData) {
+        foreach ($handlers as $messageClass => $handlerDescriptor) {
             $handlerMethod = $handlerReflections[$messageClass];
-            $rawAdvices = $this->collectAdvices($handlerMethod, $taggedAspects, $container);
+            $advices = $this->collectAdvices($handlerMethod, $taggedAspects, $container);
 
-            $advices = array_map(
-                static fn($r) => new AdviceDescriptor(
-                    $r['type'],
-                    $r['serviceId'],
-                    $r['method'],
-                    $r['priority'],
-                    $r['className'],
-                    $r['indices'],
-                    $r['config'],
-                ),
-                $rawAdvices,
-            );
-
-            $handlerData[3] = $advices;
+            $handlers[$messageClass] = $handlerDescriptor->withAdvices($advices);
 
             // Claimed dep slots are provided by the aspect — exclude from locator
             $claimedIndices = [];
@@ -185,7 +172,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 }
             }
 
-            foreach ($handlerData[2] as $i => $depId) {
+            foreach ($handlerDescriptor->depServiceIds as $i => $depId) {
                 if (!isset($claimedIndices[$i])) {
                     $locatorServices[$depId] = new Reference($depId);
                 }
@@ -195,7 +182,6 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 $locatorServices[$advice->serviceId] = new Reference($advice->serviceId);
             }
         }
-        unset($handlerData);
 
         // ── Phase 3: generate and register ───────────────────────────────────
         $filePath = rtrim($this->outputDir, '/') . '/' . $this->generatedClass . '.php';
@@ -230,7 +216,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
      * Scan all aspect services for advice methods that match $handlerMethod.
      *
      * @param  array<string, mixed>  $taggedAspects
-     * @return list<array{type: AdviceType, serviceId: string, method: string, priority: int, className: string, indices: list<int>, config: array}>
+     * @return list<AdviceDescriptor>
      */
     private function collectAdvices(
         \ReflectionMethod $handlerMethod,
@@ -246,7 +232,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
             After::class          => AdviceType::After,
         ];
 
-        $rawAdvices = [];
+        $advices = [];
 
         foreach (array_keys($taggedAspects) as $aspectServiceId) {
             $definition = $container->getDefinition($aspectServiceId);
@@ -273,20 +259,20 @@ final class MediatorCompilerPass implements CompilerPassInterface
                             ));
                         }
 
-                        $rawAdvices[] = [
-                            'type'      => $adviceType,
-                            'serviceId' => $aspectServiceId,
-                            'method'    => $aspectMethod->getName(),
-                            'priority'  => $advice->priority,
-                            'className' => $aspectClass,
-                            'indices'   => $canProvide ? $result->provides : [],
-                            'config'    => $result->config,
-                        ];
+                        $advices[] = new AdviceDescriptor(
+                            $adviceType,
+                            $aspectServiceId,
+                            $aspectMethod->getName(),
+                            $advice->priority,
+                            $aspectClass,
+                            $canProvide ? $result->provides : [],
+                            $result->config,
+                        );
                     }
                 }
             }
         }
 
-        return $rawAdvices;
+        return $advices;
     }
 }
