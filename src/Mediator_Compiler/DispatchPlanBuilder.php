@@ -36,13 +36,24 @@ final class DispatchPlanBuilder
             }
         }
 
+        $layers = [];
+        foreach (array_reverse($priorities) as $priority) {
+            $bucket = $grouped[$priority];
+            $layers[] = new AdviceLayer(
+                $bucket[AdviceType::Before->value],
+                $bucket[AdviceType::Around->value],
+                $bucket[AdviceType::AfterReturning->value],
+                $bucket[AdviceType::AfterThrowing->value],
+                $bucket[AdviceType::After->value],
+            );
+        }
+
         return new DispatchPlan(
             $serviceId,
             $handlerMethod,
             $depServiceIds,
-            $priorities,
+            $layers,
             $claimedVarNames,
-            $grouped,
         );
     }
 }

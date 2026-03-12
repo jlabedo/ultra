@@ -16,19 +16,18 @@ final class DispatchPlanRenderer
             '$m',
         );
 
-        foreach ($plan->priorities as $priority) {
-            $bucket = $plan->groupedAdvices[$priority];
+        foreach (array_reverse($plan->layers) as $layer) {
             $coreExpr = $this->applyAroundsAtPriority(
-                $bucket[AdviceType::Around->value],
+                $layer->arounds,
                 $coreExpr,
                 $plan->claimedVarNames,
             );
             $coreExpr = $this->wrapWithBeforeAfter(
                 $coreExpr,
-                $bucket[AdviceType::Before->value],
-                $bucket[AdviceType::AfterReturning->value],
-                $bucket[AdviceType::AfterThrowing->value],
-                $bucket[AdviceType::After->value],
+                $layer->befores,
+                $layer->afterReturnings,
+                $layer->afterThrowings,
+                $layer->afters,
             );
         }
 

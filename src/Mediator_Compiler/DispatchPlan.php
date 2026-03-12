@@ -7,23 +7,20 @@ namespace Ultra\Mediator_Compiler;
 /**
  * Immutable plan describing a dispatch method to be rendered.
  *
- * @phpstan-type AdviceBuckets array<int, array<string, list<AdviceDescriptor>>>
  */
 final readonly class DispatchPlan
 {
     /**
-     * @param list<string>           $depServiceIds
-     * @param list<int>              $priorities      priorities in descending order (higher = deeper)
-     * @param array<int, string>     $claimedVarNames depIndex => '$_p{depIndex}'
-     * @param array<int, array<string, list<AdviceDescriptor>>> $groupedAdvices
+     * @param list<string>       $depServiceIds
+     * @param list<AdviceLayer>  $layers         ordered outer → inner (lower priority → higher)
+     * @param array<int, string> $claimedVarNames depIndex => '$_p{depIndex}'
      */
     public function __construct(
         public string $serviceId,
         public string $handlerMethod,
         public array $depServiceIds,
-        public array $priorities,
+        public array $layers,
         public array $claimedVarNames,
-        public array $groupedAdvices,
     ) {
     }
 }

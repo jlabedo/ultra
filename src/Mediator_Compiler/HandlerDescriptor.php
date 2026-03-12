@@ -21,13 +21,6 @@ final readonly class HandlerDescriptor
     ) {
     }
 
-    public function withServiceId(string $serviceId): self
-    {
-        return clone($this, [
-            'serviceId' => $serviceId,
-        ]);
-    }
-
     public function withMethod(string $method): self
     {
         return clone($this, [
