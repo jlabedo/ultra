@@ -20,7 +20,7 @@ final class MapperCacheWarmer implements CacheWarmerInterface
     ) {
     }
 
-    public function warmUp(string $cacheDir): array
+    public function warmUp(string $cacheDir, ?string $buildDir = null): array
     {
         if (!class_exists(NormalizerGenerator::class)) {
             throw new \RuntimeException('Cannot warm mapper cache because ultra/mapper-compiler is not installed.');

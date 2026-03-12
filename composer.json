@@ -50,7 +50,8 @@
     },
     "autoload-dev": {
         "psr-4": {
-            "Ultra\\Mediator_Example\\OrderProcessing\\": "tests/mediator_example/src/"
+            "Ultra\\Mediator_Example\\OrderProcessing\\": "tests/mediator_example/src/",
+            "Ultra\\Mapper_Example\\": "tests/mapper_example/src/"
         }
     },
     "config": {
