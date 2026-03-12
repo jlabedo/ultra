@@ -7,9 +7,14 @@ namespace Ultra\DecisionEngine\Engine;
 use Ultra\DecisionEngine\Attribute\DomainIdentifier;
 use Ultra\DecisionEngine\Attribute\Event;
 use Ultra\EventStore\AppendableEvent;
+use Ultra\Mapper\UltraNormalizer;
 
 final class EventRouter
 {
+    public function __construct(private readonly UltraNormalizer $normalizer)
+    {
+    }
+
     public function toAppendableEvent(object $event): AppendableEvent
     {
         $ref = new \ReflectionClass($event);
@@ -83,12 +88,9 @@ final class EventRouter
      */
     private function getPayload(object $event): array
     {
-        $payload = [];
-        foreach ((new \ReflectionClass($event))->getProperties() as $property) {
-            if (!$property->isPublic()) {
-                continue;
-            }
-            $payload[$property->getName()] = $property->getValue($event);
+        $payload = $this->normalizer->toScalar($event);
+        if (!is_array($payload)) {
+            throw new \LogicException(sprintf('Event %s normalized payload must be an array, got %s.', $event::class, get_debug_type($payload)));
         }
 
         return $payload;

@@ -22,6 +22,7 @@ use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
+use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
@@ -51,6 +52,13 @@ final class CommandWithClockDependency
 function createMediator(array $serviceDefinitions = []): array
 {
     $container = new ContainerBuilder();
+    $outputDir = sys_get_temp_dir() . '/decision-mediator-' . bin2hex(random_bytes(4));
+    if (!is_dir($outputDir)) {
+        mkdir($outputDir, 0777, true);
+    }
+
+    $container->register(UltraNormalizer::class, UltraNormalizer::class)
+        ->setArguments([$outputDir . '/normalizer']);
     $container->register(InMemoryEventStore::class, InMemoryEventStore::class)->setPublic(true);
     $container->setAlias(\Ultra\EventStore\EventStore::class, InMemoryEventStore::class)->setPublic(true);
 
@@ -87,11 +95,6 @@ function createMediator(array $serviceDefinitions = []): array
             continue;
         }
         $container->set($id, $definition);
-    }
-
-    $outputDir = sys_get_temp_dir() . '/decision-mediator-' . bin2hex(random_bytes(4));
-    if (!is_dir($outputDir)) {
-        mkdir($outputDir, 0777, true);
     }
 
     $generatedClass = 'CompiledDecisionMediator_' . bin2hex(random_bytes(4));
@@ -228,7 +231,8 @@ test('concurrency: appending with stale version throws', function () {
     $result = $store->load(new StreamQuery(['course' => 'math-101']));
     $staleVersion = $result->streamVersion;
 
-    $router = new EventRouter();
+    $normalizer = new UltraNormalizer(sys_get_temp_dir() . '/decision-normalizer-' . bin2hex(random_bytes(4)));
+    $router = new EventRouter($normalizer);
     $extraEvent = $router->toAppendableEvent(new CourseCreated('math-101', 'Other', 5));
     $store->append([$extraEvent], null);
 

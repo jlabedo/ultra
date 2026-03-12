@@ -15,6 +15,7 @@ use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StoredEvent;
 use Ultra\EventStore\StreamQuery;
+use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mediator\Attribute\Around;
 use Ultra\Mediator\Attribute\MatchResult;
 
@@ -27,6 +28,7 @@ final class DecisionEngineAspect
         private readonly EventStore $eventStore,
         private readonly EventRouter $eventRouter,
         private readonly EventClassRegistry $eventClassRegistry,
+        private readonly UltraNormalizer $normalizer,
     ) {
     }
 
@@ -209,19 +211,7 @@ final class DecisionEngineAspect
 
     private function storedEventToDto(StoredEvent $stored, string $eventClass): object
     {
-        $payload = $stored->payload;
-        $ref = new \ReflectionClass($eventClass);
-        $ctor = $ref->getConstructor();
-        if ($ctor === null) {
-            return $ref->newInstance();
-        }
-        $params = [];
-        foreach ($ctor->getParameters() as $param) {
-            $name = $param->getName();
-            $params[] = $payload[$name] ?? throw new \LogicException(sprintf('Missing payload key "%s" for event %s', $name, $eventClass));
-        }
-
-        return $ref->newInstance(...$params);
+        return $this->normalizer->fromScalar($stored->payload, $eventClass);
     }
 
     private function getCommandPropertyValue(object $command, string $property): string
