@@ -33,6 +33,11 @@ namespace Ultra\Mediator_Compiler;
  */
 final class MediatorGenerator
 {
+    public function __construct(
+        private readonly AdviceOrdering $ordering = new AdviceOrdering()
+    ) {
+    }
+
     /**
      * Generate the PHP source and write it to disk.
      *
@@ -113,11 +118,11 @@ final class MediatorGenerator
         array $depServiceIds,
         array $advices,
     ): string {
-        $grouped = $this->groupAdvicesByPriority($advices);
+        $grouped = $this->ordering->groupByPriority($advices);
         $priorities = array_keys($grouped);
         rsort($priorities, SORT_NUMERIC); // higher priority = deeper
 
-        $allArounds = $this->flattenAdvicesByType($grouped, AdviceType::Around);
+        $allArounds = $this->ordering->flattenByType($grouped, AdviceType::Around);
 
         // Collect all dep indices claimed by parameter-providing around advices.
         // Each claimed index maps to a generated variable name $_p{depIndex}.
@@ -443,73 +448,4 @@ final class MediatorGenerator
         return '[' . implode(', ', $pairs) . ']';
     }
 
-    /**
-     * @param list<AdviceDescriptor> $advices
-     * @return array<int, array<string, list<AdviceDescriptor>>>
-     */
-    private function groupAdvicesByPriority(array $advices): array
-    {
-        $grouped = [];
-
-        foreach ($advices as $advice) {
-            $priority = $advice->priority;
-            if (!isset($grouped[$priority])) {
-                $grouped[$priority] = [
-                    AdviceType::Before->value => [],
-                    AdviceType::Around->value => [],
-                    AdviceType::AfterReturning->value => [],
-                    AdviceType::AfterThrowing->value => [],
-                    AdviceType::After->value => [],
-                ];
-            }
-            $grouped[$priority][$advice->type->value][] = $advice;
-        }
-
-        foreach ($grouped as $priority => $bucket) {
-            foreach ($bucket as $type => $list) {
-                $grouped[$priority][$type] = $this->sortAdvices($list);
-            }
-        }
-
-        return $grouped;
-    }
-
-    /**
-     * @param array<int, array<string, list<AdviceDescriptor>>> $grouped
-     * @return list<AdviceDescriptor>
-     */
-    private function flattenAdvicesByType(array $grouped, AdviceType $type): array
-    {
-        $result = [];
-        foreach ($grouped as $bucket) {
-            foreach ($bucket[$type->value] as $advice) {
-                $result[] = $advice;
-            }
-        }
-
-        return $result;
-    }
-
-    /**
-     * Deterministic, stable-ish ordering within the same type.
-     *
-     * @param list<AdviceDescriptor> $advices
-     * @return list<AdviceDescriptor>
-     */
-    private function sortAdvices(array $advices): array
-    {
-        usort($advices, static function (AdviceDescriptor $a, AdviceDescriptor $b): int {
-            $cmp = $a->className <=> $b->className;
-            if ($cmp !== 0) {
-                return $cmp;
-            }
-            $cmp = $a->method <=> $b->method;
-            if ($cmp !== 0) {
-                return $cmp;
-            }
-            return $a->serviceId <=> $b->serviceId;
-        });
-
-        return $advices;
-    }
 }
