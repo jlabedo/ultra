@@ -32,6 +32,14 @@ trait ReducerTrait
     }
 
     /**
+     * @return list<string>
+     */
+    public static function handledEventTypes(): array
+    {
+        return array_keys(self::resolveHandlers(static::class));
+    }
+
+    /**
      * @return array<string, string> eventClass => method name
      */
     private static function resolveHandlers(string $class): array

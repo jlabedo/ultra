@@ -1,12 +1,12 @@
 # Decision Engine
 
-Event-sourcing command engine that runs **commands** against state hydrated from an event store. Commands declare their consistency boundary via their `decide()` method signature; the engine loads the right streams, hydrates **states** (reducers), resolves services from a container, and appends emitted **events** with optimistic concurrency.
+Event-sourcing decision pipeline built on the mediator. Commands declare their consistency boundary via their `decide()` method signature; a single decision aspect loads the right streams, hydrates **states** (reducers), resolves services, and appends emitted **events** with optimistic concurrency.
 
 ## Design
 
-- **Decider pattern**: Each command owns the decision logic in a `decide()` method. The engine discovers what to load and inject by reflecting on that method.
+- **Decider pattern**: Each command owns the decision logic in a method marked with `#[DecisionHandler]`. The decision aspect discovers what to load and inject by reflecting on that method.
 - **States are reducers**: State classes use `ReducerTrait` and private handlers (one typed event parameter) to fold events from a single stream. No aggregate root is required.
-- **Consistency by signature**: Parameters of `decide()` are either **state** (hydrated from the event store by stream) or **services** (resolved from the PSR-11 container). The engine infers which is which and loads only the streams needed for that command.
+- **Consistency by signature**: Parameters of the decision handler are either **state** (hydrated from the event store by stream) or **services** (resolved from the container). The aspect infers which is which and loads only the streams needed for that command.
 - **Identity by convention**: A state’s stream is identified by a property annotated with `#[DomainIdentifier('name')]`; the engine reads the value from the command’s `{name}Id` property (or a custom property via `#[BindTo]`).
 - **Events are DTOs**: Events are plain classes with `#[Event('type.name')]` and `#[DomainIdentifier]` on properties. Stream routing is derived from those attributes when appending.
 
@@ -14,7 +14,9 @@ Event-sourcing command engine that runs **commands** against state hydrated from
 
 | Attribute | Target | Purpose |
 |-----------|--------|---------|
-| `#[DomainIdentifier('name')]` | Property | Marks the stream dimension; engine uses command property `{name}Id` (or `#[BindTo]`) for the stream value. |
+| `#[DecisionHandler]` | Method | Marks a method as a decision handler for the aspect. |
+| `#[Handles]` | Method | Mediator handler marker (required for discovery). |
+| `#[DomainIdentifier('name')]` | Property | Marks the stream dimension; aspect uses command property `{name}Id` (or `#[BindTo]`) for the stream value. |
 | `#[Event('type.name')]` | Class | Event type name for storage and routing. |
 | `#[BindTo('propertyName')]` | Parameter | Override convention: use this command property for the state’s stream id. |
 
@@ -29,32 +31,41 @@ Event-sourcing command engine that runs **commands** against state hydrated from
 ### Running a command
 
 ```php
-$engine = new Engine(
-    $eventStore,
-    new CommandMetadataResolver(),
-    new StreamIdentityResolver(),
-    new EventRouter(),
-    $eventClassRegistry,  // maps event type names to DTO classes
-    $container
-);
+$mediator = /* mediator instance */;
 
-$events = $engine->handle($command);  // returns emitted event DTOs
+$events = $mediator->send($command);  // returns emitted event DTOs
 ```
 
-`handle()` will:
+Decision commands are self-handling messages:
 
-1. Resolve command metadata from `decide()` (and optional `check()`).
-2. Resolve stream queries from the command instance.
-3. Load events for each stream and hydrate states (`State::fromEvents(...)`).
-4. Pass `null` for nullable state parameters when a stream has no events; throw if a required stream is missing.
-5. Resolve service parameters from the container.
-6. Call `$command->decide(...)` and route returned events to `AppendableEvent`.
-7. Append with an expected version (optimistic concurrency); merge version map for multi-stream commands.
+```php
+use Ultra\DecisionEngine\Attribute\DecisionHandler;
+use Ultra\Mediator\Attribute\Handles;
+
+final class CreateCourseCommand
+{
+    #[Handles]
+    #[DecisionHandler]
+    public function decide(?CourseCapacityState $course): array
+    {
+        // return events
+    }
+}
+```
+
+`send()` will:
+
+1. Resolve stream queries from the command instance.
+2. Load events for each stream and hydrate states (`State::fromEvents(...)`).
+3. Pass `null` for nullable state parameters when a stream has no events; throw if a required stream is missing.
+4. Resolve service parameters from the container.
+5. Call the decision handler and route returned events to `AppendableEvent`.
+6. Append with an expected version (optimistic concurrency).
 
 ### Read-only validation
 
 ```php
-$violations = $engine->check($command);
+$violations = $mediator->send($command, ['decision_mode' => 'check']);
 ```
 
 Uses the same loading and state hydration, then calls `$command->check(...)` (required) and returns the violation list. No append.

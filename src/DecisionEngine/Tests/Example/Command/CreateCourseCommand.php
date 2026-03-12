@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests\Example\Command;
 
+use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
+use Ultra\Mediator\Attribute\Handles;
 
 readonly class CreateCourseCommand
 {
@@ -19,6 +21,8 @@ readonly class CreateCourseCommand
     /**
      * @return list<CourseCreated>
      */
+    #[Handles]
+    #[DecisionHandler]
     public function decide(
         ?CourseCapacityState $course,
     ): array {

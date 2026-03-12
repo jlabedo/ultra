@@ -57,8 +57,14 @@ final class EventRouter
         foreach ($ref->getProperties() as $property) {
             foreach ($property->getAttributes(DomainIdentifier::class) as $attr) {
                 $name = $attr->newInstance()->name;
-                $property->setAccessible(true);
-                $value = $property->getValue($event);
+                if ($property->isPublic()) {
+                    $value = $property->getValue($event);
+                } else {
+                    $getter = static function (string $prop): mixed {
+                        return $this->$prop;
+                    };
+                    $value = $getter->call($event, $property->getName());
+                }
                 if (is_string($value)) {
                     $domainIds[$name] = $value;
                 }

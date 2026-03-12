@@ -10,9 +10,10 @@
         }
     ],
     "require": {
-        "php": ">=8.4",
+        "php": ">=8.5",
         "psr/container": "^2.0",
-        "ultra/event-store": "^0.1"
+        "ultra/event-store": "^0.1",
+        "ultra/mediator": "*"
     },
     "autoload": {
         "psr-4": {

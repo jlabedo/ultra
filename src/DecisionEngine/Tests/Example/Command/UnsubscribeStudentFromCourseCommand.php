@@ -4,11 +4,13 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests\Example\Command;
 
+use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
 use Ultra\DecisionEngine\Violation;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
 use Ultra\DecisionEngine\Tests\Example\State\StudentSubscriptionState;
+use Ultra\Mediator\Attribute\Handles;
 
 readonly class UnsubscribeStudentFromCourseCommand
 {
@@ -35,6 +37,8 @@ readonly class UnsubscribeStudentFromCourseCommand
     /**
      * @return list<StudentUnsubscribed>
      */
+    #[Handles]
+    #[DecisionHandler]
     public function decide(
         CourseCapacityState $course,
         StudentSubscriptionState $student,

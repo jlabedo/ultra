@@ -4,22 +4,27 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests;
 
-use Ultra\DecisionEngine\Engine;
-use Ultra\DecisionEngine\Engine\CommandMetadataResolver;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
+use Ultra\DecisionEngine\Aspect\DecisionEngineAspect;
+use Ultra\DecisionEngine\Attribute\DecisionHandler;
+use Ultra\DecisionEngine\Engine\EventClassRegistry;
 use Ultra\DecisionEngine\Engine\EventRouter;
 use Ultra\DecisionEngine\Engine\MapEventClassRegistry;
-use Ultra\DecisionEngine\Engine\StreamIdentityResolver;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\EventStore\Exception\ConcurrencyException;
-use Ultra\EventStore\InMemoryEventStore;
-use Ultra\EventStore\StreamQuery;
 use Ultra\DecisionEngine\Tests\Example\Command\CreateCourseCommand;
 use Ultra\DecisionEngine\Tests\Example\Command\SubscribeStudentToCourseCommand;
+use Ultra\DecisionEngine\Tests\Example\Command\UnsubscribeStudentFromCourseCommand;
 use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
-use Psr\Container\ContainerInterface;
+use Ultra\EventStore\Exception\ConcurrencyException;
+use Ultra\EventStore\InMemoryEventStore;
+use Ultra\EventStore\StreamQuery;
+use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\MediatorInterface;
+use Ultra\Mediator_Compiler\MediatorCompilerPass;
 
 /** Test command with service dependency (Clock) */
 final class CommandWithClockDependency
@@ -30,6 +35,8 @@ final class CommandWithClockDependency
         public int $maxCapacity,
     ) {}
 
+    #[Handles]
+    #[DecisionHandler]
     public function decide(
         ?\Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState $course,
         \DateTimeInterface $clock,
@@ -41,57 +48,73 @@ final class CommandWithClockDependency
     }
 }
 
-/** Simple container for tests */
-final class ArrayContainer implements ContainerInterface
+function createMediator(array $serviceDefinitions = []): array
 {
-    public function __construct(
-        private array $entries = [],
-    ) {
+    $container = new ContainerBuilder();
+    $container->register(InMemoryEventStore::class, InMemoryEventStore::class)->setPublic(true);
+    $container->setAlias(\Ultra\EventStore\EventStore::class, InMemoryEventStore::class)->setPublic(true);
+
+    $container->register(MapEventClassRegistry::class, MapEventClassRegistry::class)
+        ->setArguments([[
+            'course.created' => CourseCreated::class,
+            'student.subscribed' => StudentSubscribed::class,
+            'student.unsubscribed' => StudentUnsubscribed::class,
+        ]]);
+    $container->setAlias(EventClassRegistry::class, MapEventClassRegistry::class)->setPublic(true);
+
+    $container->register(EventRouter::class, EventRouter::class)->setAutowired(true);
+    $container->register(DecisionEngineAspect::class, DecisionEngineAspect::class)
+        ->setAutowired(true)
+        ->addTag('mediator.aspect');
+
+    $container->register(\DateTimeInterface::class, \DateTimeImmutable::class)
+        ->setArguments(['2020-01-01 00:00:00']);
+
+    foreach ([
+        CreateCourseCommand::class,
+        SubscribeStudentToCourseCommand::class,
+        UnsubscribeStudentFromCourseCommand::class,
+        CommandWithClockDependency::class,
+    ] as $commandClass) {
+        $container->register($commandClass, $commandClass)
+            ->setAutoconfigured(false)
+            ->addTag('mediator.self-handler');
     }
 
-    public function get(string $id): mixed
-    {
-        return $this->entries[$id] ?? throw new \Exception("Service not found: {$id}");
+    foreach ($serviceDefinitions as $id => $definition) {
+        if ($definition instanceof Definition) {
+            $container->setDefinition($id, $definition);
+            continue;
+        }
+        $container->set($id, $definition);
     }
 
-    public function has(string $id): bool
-    {
-        return isset($this->entries[$id]);
+    $outputDir = sys_get_temp_dir() . '/decision-mediator-' . bin2hex(random_bytes(4));
+    if (!is_dir($outputDir)) {
+        mkdir($outputDir, 0777, true);
     }
-}
 
-function createEngine(?InMemoryEventStore $store = null, ?ContainerInterface $container = null): array
-{
-    $store = $store ?? new InMemoryEventStore();
-    $eventClassRegistry = new MapEventClassRegistry([
-        'course.created' => CourseCreated::class,
-        'student.subscribed' => StudentSubscribed::class,
-        'student.unsubscribed' => StudentUnsubscribed::class,
-    ]);
+    $generatedClass = 'CompiledDecisionMediator_' . bin2hex(random_bytes(4));
+    $container->addCompilerPass(new MediatorCompilerPass($outputDir, $generatedClass));
+    $container->compile();
 
-    $engine = new Engine(
-        $store,
-        new CommandMetadataResolver(),
-        new StreamIdentityResolver(),
-        new EventRouter(),
-        $eventClassRegistry,
-        $container ?? new ArrayContainer(),
-    );
-
-    return ['engine' => $engine, 'store' => $store];
+    return [
+        'mediator' => $container->get(MediatorInterface::class),
+        'store' => $container->get(InMemoryEventStore::class),
+    ];
 }
 
 test('full handle flow: create course then subscribe student', function () {
-    ['engine' => $engine, 'store' => $store] = createEngine();
+    ['mediator' => $mediator, 'store' => $store] = createMediator();
 
     $createCmd = new CreateCourseCommand('math-101', 'Math', 10);
-    $events1 = $engine->handle($createCmd);
+    $events1 = $mediator->send($createCmd);
 
     expect($events1)->toHaveCount(1);
     expect($events1[0])->toBeInstanceOf(CourseCreated::class);
 
     $subscribeCmd = new SubscribeStudentToCourseCommand('math-101', 'alice');
-    $events2 = $engine->handle($subscribeCmd);
+    $events2 = $mediator->send($subscribeCmd);
 
     expect($events2)->toHaveCount(1);
     expect($events2[0])->toBeInstanceOf(StudentSubscribed::class);
@@ -101,88 +124,95 @@ test('full handle flow: create course then subscribe student', function () {
 });
 
 test('handle returns the emitted events', function () {
-    ['engine' => $engine] = createEngine();
+    ['mediator' => $mediator] = createMediator();
 
-    $events = $engine->handle(new CreateCourseCommand('c1', 'Course 1', 5));
+    $events = $mediator->send(new CreateCourseCommand('c1', 'Course 1', 5));
 
     expect($events)->toHaveCount(1);
     expect($events[0])->toEqual(new CourseCreated('c1', 'Course 1', 5));
 });
 
 test('handle throws InvariantViolation when invariants fail', function () {
-    ['engine' => $engine] = createEngine();
+    ['mediator' => $mediator] = createMediator();
 
-    $engine->handle(new CreateCourseCommand('math-101', 'Math', 1));
-    $engine->handle(new SubscribeStudentToCourseCommand('math-101', 'alice'));
+    $mediator->send(new CreateCourseCommand('math-101', 'Math', 1));
+    $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
 
-    expect(fn () => $engine->handle(new SubscribeStudentToCourseCommand('math-101', 'bob')))
+    expect(fn () => $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'bob')))
         ->toThrow(InvariantViolation::class);
 });
 
 test('handle throws when creating course that already exists', function () {
-    ['engine' => $engine] = createEngine();
+    ['mediator' => $mediator] = createMediator();
 
-    $engine->handle(new CreateCourseCommand('math-101', 'Math', 10));
+    $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
 
-    expect(fn () => $engine->handle(new CreateCourseCommand('math-101', 'Other', 5)))
+    expect(fn () => $mediator->send(new CreateCourseCommand('math-101', 'Other', 5)))
         ->toThrow(\InvalidArgumentException::class);
 });
 
 test('handle passes null for nullable state when stream is empty', function () {
-    ['engine' => $engine] = createEngine();
+    ['mediator' => $mediator] = createMediator();
 
-    $events = $engine->handle(new CreateCourseCommand('new-course', 'New', 20));
+    $events = $mediator->send(new CreateCourseCommand('new-course', 'New', 20));
 
     expect($events)->toHaveCount(1);
     expect($events[0]->courseId)->toBe('new-course');
 });
 
 test('handle allows multiple commands in sequence', function () {
-    ['engine' => $engine, 'store' => $store] = createEngine();
+    ['mediator' => $mediator, 'store' => $store] = createMediator();
 
-    $engine->handle(new CreateCourseCommand('math-101', 'Math', 10));
-    $engine->handle(new SubscribeStudentToCourseCommand('math-101', 'alice'));
-    $engine->handle(new SubscribeStudentToCourseCommand('math-101', 'bob'));
+    $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
+    $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
+    $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'bob'));
 
     $result = $store->load(new StreamQuery(['course' => 'math-101']));
     expect($result->events)->toHaveCount(3);
 });
 
 test('check returns empty violations for valid state', function () {
-    ['engine' => $engine] = createEngine();
-    $engine->handle(new CreateCourseCommand('math-101', 'Math', 10));
+    ['mediator' => $mediator] = createMediator();
+    $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
 
-    $violations = $engine->check(new SubscribeStudentToCourseCommand('math-101', 'alice'));
+    $violations = $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'), [
+        'decision_mode' => 'check',
+    ]);
 
     expect($violations)->toBeArray();
     expect($violations)->toHaveCount(0);
 });
 
 test('check returns violations for invalid state', function () {
-    ['engine' => $engine] = createEngine();
-    $engine->handle(new CreateCourseCommand('math-101', 'Math', 1));
-    $engine->handle(new SubscribeStudentToCourseCommand('math-101', 'alice'));
+    ['mediator' => $mediator] = createMediator();
+    $mediator->send(new CreateCourseCommand('math-101', 'Math', 1));
+    $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
 
-    $violations = $engine->check(new SubscribeStudentToCourseCommand('math-101', 'bob'));
+    $violations = $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'bob'), [
+        'decision_mode' => 'check',
+    ]);
 
     expect($violations)->toHaveCount(1);
     expect($violations[0]->code)->toBe('course.full');
 });
 
 test('check throws if command has no check method', function () {
-    ['engine' => $engine] = createEngine();
+    ['mediator' => $mediator] = createMediator();
 
-    expect(fn () => $engine->check(new CreateCourseCommand('x', 'X', 1)))
-        ->toThrow(CommandHasNoCheckException::class);
+    expect(fn () => $mediator->send(new CreateCourseCommand('x', 'X', 1), [
+        'decision_mode' => 'check',
+    ]))->toThrow(CommandHasNoCheckException::class);
 });
 
 test('handle with service dependency resolves from container', function () {
-    $clock = new \DateTimeImmutable('2020-06-15 12:00:00');
-    $container = new ArrayContainer([\DateTimeInterface::class => $clock]);
-    ['engine' => $engine, 'store' => $store] = createEngine(null, $container);
+    $clockDef = new Definition(\DateTimeImmutable::class);
+    $clockDef->setArguments(['2020-06-15 12:00:00']);
+    ['mediator' => $mediator, 'store' => $store] = createMediator([
+        \DateTimeInterface::class => $clockDef,
+    ]);
 
     $command = new CommandWithClockDependency('timed-1', 'Timed Course', 10);
-    $events = $engine->handle($command);
+    $events = $mediator->send($command);
 
     expect($events)->toHaveCount(1);
     expect($events[0])->toBeInstanceOf(CourseCreated::class);
@@ -192,9 +222,9 @@ test('handle with service dependency resolves from container', function () {
 });
 
 test('concurrency: appending with stale version throws', function () {
-    ['engine' => $engine, 'store' => $store] = createEngine();
+    ['mediator' => $mediator, 'store' => $store] = createMediator();
 
-    $engine->handle(new CreateCourseCommand('math-101', 'Math', 10));
+    $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
     $result = $store->load(new StreamQuery(['course' => 'math-101']));
     $staleVersion = $result->streamVersion;
 
@@ -207,10 +237,10 @@ test('concurrency: appending with stale version throws', function () {
 });
 
 test('events are correctly routed to multiple streams', function () {
-    ['engine' => $engine, 'store' => $store] = createEngine();
+    ['mediator' => $mediator, 'store' => $store] = createMediator();
 
-    $engine->handle(new CreateCourseCommand('math-101', 'Math', 10));
-    $engine->handle(new SubscribeStudentToCourseCommand('math-101', 'alice'));
+    $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
+    $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
 
     $courseStream = $store->load(new StreamQuery(['course' => 'math-101']));
     $studentStream = $store->load(new StreamQuery(['student' => 'alice']));
