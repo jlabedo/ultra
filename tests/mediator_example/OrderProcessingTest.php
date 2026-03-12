@@ -14,8 +14,10 @@ use Ultra\Mediator_Example\OrderProcessing\Infrastructure\EventBus;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\Metrics;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\OrderRepository;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\PaymentGateway;
+use Ultra\Mediator_Example\OrderProcessing\Infrastructure\SelfHandlingTracker;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\TransactionManager;
 use Ultra\Mediator_Example\OrderProcessing\Kernel;
+use Ultra\Mediator_Example\OrderProcessing\Message\SelfHandledPing;
 
 final class OrderProcessingTest extends KernelTestCase
 {
@@ -131,5 +133,24 @@ final class OrderProcessingTest extends KernelTestCase
         $audit = $container->get(AuditLog::class);
         $this->assertCount(1, $audit->entries);
         $this->assertSame(PlaceOrder::class, $audit->entries[0]['message']);
+    }
+
+    public function testSelfHandlingMessageDispatchesThroughMediator(): void
+    {
+        self::bootKernel(['debug' => true]);
+        $container = self::$kernel->getContainer();
+
+        /** @var MediatorInterface $mediator */
+        $mediator = $container->get(MediatorInterface::class);
+
+        /** @var SelfHandlingTracker $tracker */
+        $tracker = $container->get(SelfHandlingTracker::class);
+
+        $message = new SelfHandledPing('ping');
+        $result = $mediator->send($message);
+
+        $this->assertSame('PING', $result);
+        $this->assertSame(1, $tracker->calls);
+        $this->assertSame(['ping'], $tracker->payloads);
     }
 }

@@ -9,6 +9,9 @@ use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 use Ultra\Mediator_Bundle\MediatorBundle;
+use Ultra\Mediator_Bundle\TagNames;
+use Ultra\Mediator_Example\OrderProcessing\Infrastructure\SelfHandlingTracker;
+use Ultra\Mediator_Example\OrderProcessing\Message\SelfHandledPing;
 
 final class Kernel extends BaseKernel
 {
@@ -39,5 +42,11 @@ final class Kernel extends BaseKernel
                 __DIR__ . '/Kernel.php',
                 __DIR__ . '/Domain/',
             ]);
+
+        $services->set(SelfHandledPing::class)
+            ->autoconfigure(false)
+            ->tag(TagNames::SELF_HANDLER);
+
+        $services->set(SelfHandlingTracker::class);
     }
 }
