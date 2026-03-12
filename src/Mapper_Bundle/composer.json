@@ -1,0 +1,25 @@
+{
+    "name": "ultra/mapper-bundle",
+    "description": "Ultra Framework - Mapper Symfony Bundle",
+    "type": "symfony-bundle",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Jean de La Bedoyere",
+            "email": "1191198+jlabedo@users.noreply.github.com"
+        }
+    ],
+    "require": {
+        "php": ">=8.5",
+        "ultra/mapper": "*",
+        "ultra/mapper-compiler": "*",
+        "symfony/framework-bundle": "7.*|8.*",
+        "symfony/dependency-injection": "7.*|8.*",
+        "symfony/config": "7.*|8.*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Ultra\\Mapper_Bundle\\": ""
+        }
+    }
+}

@@ -8,7 +8,7 @@ use Symfony\Component\TypeInfo\Type\ObjectType;
 readonly class RuntimeNormalizerCallCodeGeneratorBuilder implements CodeGeneratorBuilder
 {
     /**
-     * @param array<class-string, mixed> $runtimeNormalizers
+     * @param array<class-string, true> $runtimeNormalizers
      */
     public function __construct(private array $runtimeNormalizers) {}
 

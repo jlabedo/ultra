@@ -17,7 +17,7 @@ use Ultra\Mapper\UltraNormalizer;
 class NormalizerGenerator
 {
     /**
-     * @param array<class-string, mixed> $availableRuntimeNormalizer
+     * @param array<class-string, true> $availableRuntimeNormalizer
      */
     public static function for(string $originClassname, string $normalizerClass, array $availableRuntimeNormalizer): FileGenerator
     {

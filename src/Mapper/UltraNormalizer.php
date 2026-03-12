@@ -84,7 +84,8 @@ class UltraNormalizer
                 if (! class_exists(NormalizerGenerator::class)) {
                     throw new \RuntimeException("Cannot generate normalizer for class '{$className}' on the fly because the ultra/mapper-compiler package is not installed. Try running \"composer require ultra/mapper-compiler\".");
                 }
-                $fileGen = NormalizerGenerator::for($className, $normalizerClass, $this->runtimeNormalizers);
+                $runtimeTypes = array_fill_keys(array_keys($this->runtimeNormalizers), true);
+                $fileGen = NormalizerGenerator::for($className, $normalizerClass, $runtimeTypes);
                 file_put_contents($cacheFile, $fileGen->generate());
             }
             require_once $cacheFile;
