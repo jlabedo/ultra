@@ -16,12 +16,12 @@ namespace Ultra\Mediator\Attribute;
  * If the matcher returns a MatchResult with a non-empty config:
  *   method(object $message, array $context, array $config): void
  *
+ * The matcher defaults to Pointcut::all(...), so #[After] applies to every handler.
+ *
  * Requires PHP 8.5+ (static closure as constant expression in attribute arguments).
  *
  * Example:
- *   #[After(static function(\ReflectionMethod $m): ?MatchResult {
- *       return MatchResult::apply();
- *   })]
+ *   #[After]
  *   public function release(object $message, array $context): void
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]

@@ -13,6 +13,9 @@ namespace Ultra\Mediator\Attribute;
  *  - MatchResult::apply(...) — this aspect applies, with optional runtime config
  *                              and optional dep-param indices to claim (provides).
  *
+ * If omitted, the matcher defaults to Pointcut::all(...), meaning the advice
+ * applies to every handler.
+ *
  * The $priority controls execution order when multiple around advices apply to
  * the same handler. Lower priority runs outermost (first before $proceed,
  * last after). Advices with equal priority are ordered deterministically by
@@ -23,7 +26,10 @@ namespace Ultra\Mediator\Attribute;
  *
  * Requires PHP 8.5+ (static closure as constant expression in attribute arguments).
  *
- * Example:
+ * Examples:
+ *   #[Around]
+ *   public function execute(callable $proceed, object $message, array $context): mixed
+ *
  *   #[Around(static function(\ReflectionMethod $m): ?MatchResult {
  *       // inspect $m->getParameters(), return MatchResult::apply(...) or null
  *   }, priority: 0)]

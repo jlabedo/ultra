@@ -12,7 +12,6 @@ use Ultra\Mediator\Attribute\AfterThrowing;
 use Ultra\Mediator\Attribute\Around;
 use Ultra\Mediator\Attribute\Before;
 use Ultra\Mediator\Attribute\Handles;
-use Ultra\Mediator\Attribute\MatchResult;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
 
@@ -53,17 +52,13 @@ final class OrderingAspect
     {
     }
 
-    #[Before(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 20)]
+    #[Before(priority: 20)]
     public function before(object $message, array $context): void
     {
         $this->log->entries[] = 'before:20';
     }
 
-    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 10)]
+    #[Around(priority: 10)]
     public function around(callable $proceed, object $message, array $context): mixed
     {
         $this->log->entries[] = 'around:10:before';
@@ -72,9 +67,7 @@ final class OrderingAspect
         return $result;
     }
 
-    #[After(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 5)]
+    #[After(priority: 5)]
     public function after(object $message, array $context): void
     {
         $this->log->entries[] = 'after:5';
@@ -87,17 +80,13 @@ final class SamePriorityOrderingAspect
     {
     }
 
-    #[Before(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 10)]
+    #[Before(priority: 10)]
     public function before(object $message, array $context): void
     {
         $this->log->entries[] = 'before:10';
     }
 
-    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 10)]
+    #[Around(priority: 10)]
     public function around(callable $proceed, object $message, array $context): mixed
     {
         $this->log->entries[] = 'around:10:before';
@@ -106,25 +95,19 @@ final class SamePriorityOrderingAspect
         return $result;
     }
 
-    #[AfterReturning(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 10)]
+    #[AfterReturning(priority: 10)]
     public function afterReturning(object $message, array $context, mixed $result): void
     {
         $this->log->entries[] = 'afterReturning:10:' . $result;
     }
 
-    #[AfterThrowing(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 10)]
+    #[AfterThrowing(priority: 10)]
     public function afterThrowing(object $message, array $context, \Throwable $e): void
     {
         $this->log->entries[] = 'afterThrowing:10:' . $e->getMessage();
     }
 
-    #[After(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 10)]
+    #[After(priority: 10)]
     public function after(object $message, array $context): void
     {
         $this->log->entries[] = 'after:10';
@@ -151,9 +134,7 @@ final class InterleavedAroundOuter
     {
     }
 
-    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 0)]
+    #[Around(priority: 0)]
     public function around(callable $proceed, object $message, array $context): mixed
     {
         $this->log->entries[] = 'around:0:before';
@@ -169,9 +150,7 @@ final class InterleavedBeforeMid
     {
     }
 
-    #[Before(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 10)]
+    #[Before(priority: 10)]
     public function before(object $message, array $context): void
     {
         $this->log->entries[] = 'before:10';
@@ -184,9 +163,7 @@ final class InterleavedAroundInner
     {
     }
 
-    #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 20)]
+    #[Around(priority: 20)]
     public function around(callable $proceed, object $message, array $context): mixed
     {
         $this->log->entries[] = 'around:20:before';
@@ -202,9 +179,7 @@ final class AlphabeticalBeforeA
     {
     }
 
-    #[Before(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 10)]
+    #[Before(priority: 10)]
     public function before(object $message, array $context): void
     {
         $this->log->entries[] = 'before:A';
@@ -217,9 +192,7 @@ final class AlphabeticalBeforeB
     {
     }
 
-    #[Before(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 10)]
+    #[Before(priority: 10)]
     public function before(object $message, array $context): void
     {
         $this->log->entries[] = 'before:B';
@@ -232,9 +205,7 @@ final class InterleavedAfterThrowingMid
     {
     }
 
-    #[AfterThrowing(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 10)]
+    #[AfterThrowing(priority: 10)]
     public function afterThrowing(object $message, array $context, \Throwable $e): void
     {
         $this->log->entries[] = 'afterThrowing:10:' . $e->getMessage();
@@ -247,9 +218,7 @@ final class InterleavedAfterOuter
     {
     }
 
-    #[After(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: -5)]
+    #[After(priority: -5)]
     public function after(object $message, array $context): void
     {
         $this->log->entries[] = 'after:-5';

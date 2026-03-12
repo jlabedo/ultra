@@ -13,6 +13,7 @@ namespace Ultra\Mediator\Attribute;
  *
  *  $matcher  — compile-time closure invoked once per #[Handles] method.
  *              Returns MatchResult::apply(...) to attach the advice, null to skip.
+ *              Defaults to "match all" (Pointcut::all(...)).
  *  $priority — execution order when multiple advices match the same handler.
  *              Lower value = outermost / earliest. Default 0.
  *
@@ -22,7 +23,7 @@ namespace Ultra\Mediator\Attribute;
 abstract class Advice
 {
     public function __construct(
-        public readonly \Closure $matcher,
+        public readonly \Closure $matcher = Pointcut::all(...),
         public readonly int $priority = 0,
     ) {
     }
