@@ -11,9 +11,7 @@ use Ultra\Mapper\UltraNormalizer;
 
 final class EventRouter
 {
-    public function __construct(private readonly UltraNormalizer $normalizer)
-    {
-    }
+    public function __construct(private readonly UltraNormalizer $normalizer) {}
 
     public function toAppendableEvent(object $event): AppendableEvent
     {
@@ -32,6 +30,7 @@ final class EventRouter
 
     /**
      * @param list<object> $events
+     *
      * @return list<AppendableEvent>
      */
     public function toAppendableEvents(array $events): array
@@ -66,7 +65,7 @@ final class EventRouter
                     $value = $property->getValue($event);
                 } else {
                     $getter = static function (string $prop): mixed {
-                        return $this->$prop;
+                        return $this->{$prop};
                     };
                     $value = $getter->call($event, $property->getName());
                 }
@@ -76,7 +75,7 @@ final class EventRouter
             }
         }
 
-        if ($domainIds === []) {
+        if ([] === $domainIds) {
             throw new \LogicException(sprintf('Event class %s has no properties with #[DomainIdentifier].', $ref->getName()));
         }
 
@@ -89,7 +88,7 @@ final class EventRouter
     private function getPayload(object $event): array
     {
         $payload = $this->normalizer->toScalar($event);
-        if (!is_array($payload)) {
+        if (! is_array($payload)) {
             throw new \LogicException(sprintf('Event %s normalized payload must be an array, got %s.', $event::class, get_debug_type($payload)));
         }
 

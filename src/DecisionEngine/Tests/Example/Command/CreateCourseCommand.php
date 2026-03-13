@@ -15,8 +15,7 @@ readonly class CreateCourseCommand
         public string $courseId,
         public string $name,
         public int $maxCapacity,
-    ) {
-    }
+    ) {}
 
     /**
      * @return list<CourseCreated>
@@ -26,8 +25,8 @@ readonly class CreateCourseCommand
     public function decide(
         ?CourseCapacityState $course,
     ): array {
-        if ($course !== null) {
-            throw new \InvalidArgumentException('Course already exists: ' . $this->courseId);
+        if (null !== $course) {
+            throw new \InvalidArgumentException('Course already exists: '.$this->courseId);
         }
 
         return [

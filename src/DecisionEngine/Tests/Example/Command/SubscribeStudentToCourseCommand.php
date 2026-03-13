@@ -6,10 +6,10 @@ namespace Ultra\DecisionEngine\Tests\Example\Command;
 
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\DecisionEngine\Violation;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
 use Ultra\DecisionEngine\Tests\Example\State\StudentSubscriptionState;
+use Ultra\DecisionEngine\Violation;
 use Ultra\Mediator\Attribute\Handles;
 
 readonly class SubscribeStudentToCourseCommand
@@ -17,8 +17,7 @@ readonly class SubscribeStudentToCourseCommand
     public function __construct(
         public string $courseId,
         public string $studentId,
-    ) {
-    }
+    ) {}
 
     /**
      * @return list<Violation>
@@ -31,7 +30,7 @@ readonly class SubscribeStudentToCourseCommand
             $course->isFull()
                 ? new Violation('course.full', 'Course has reached maximum capacity')
                 : null,
-            $student !== null && $student->isSubscribedTo($this->courseId)
+            null !== $student && $student->isSubscribedTo($this->courseId)
                 ? new Violation('student.already_subscribed', 'Student is already subscribed')
                 : null,
         ]);
@@ -48,7 +47,7 @@ readonly class SubscribeStudentToCourseCommand
     ): array {
         $violations = $this->check($course, $student);
 
-        if ($violations !== []) {
+        if ([] !== $violations) {
             throw new InvariantViolation($violations);
         }
 

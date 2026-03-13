@@ -13,8 +13,7 @@ final readonly class MapEventClassRegistry implements EventClassRegistry
 {
     public function __construct(
         private array $map = [],
-    ) {
-    }
+    ) {}
 
     public function getClass(string $eventType): ?string
     {

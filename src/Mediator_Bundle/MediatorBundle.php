@@ -17,7 +17,7 @@ final class MediatorBundle extends Bundle
     {
         parent::build($container);
 
-        if (!$container->hasParameter('ultra_mediator.generated_class')) {
+        if (! $container->hasParameter('ultra_mediator.generated_class')) {
             $container->setParameter('ultra_mediator.generated_class', 'CompiledMediator');
         }
 
@@ -40,7 +40,7 @@ final class MediatorBundle extends Bundle
         );
 
         $buildDir = (string) $container->getParameter('kernel.build_dir');
-        $outputDir = $buildDir . '/mediator';
+        $outputDir = $buildDir.'/mediator';
         $generatedClass = (string) $container->getParameter('ultra_mediator.generated_class');
 
         $container->addCompilerPass(new MediatorCompilerPass(

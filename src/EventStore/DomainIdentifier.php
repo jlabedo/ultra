@@ -13,8 +13,7 @@ final readonly class DomainIdentifier
     public function __construct(
         public string $dimension,
         public string $value,
-    ) {
-    }
+    ) {}
 
     /** @return array<string, string> */
     public function toMap(): array

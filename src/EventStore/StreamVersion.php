@@ -14,8 +14,7 @@ readonly class StreamVersion
     public function __construct(
         public array $version,
         public StreamQuery $query,
-    ) {
-    }
+    ) {}
 
     public function getLastEventId(StreamId $streamId): int
     {

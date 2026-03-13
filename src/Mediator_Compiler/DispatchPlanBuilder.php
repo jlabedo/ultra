@@ -8,8 +8,7 @@ final class DispatchPlanBuilder
 {
     public function __construct(
         private readonly AdviceOrdering $ordering = new AdviceOrdering()
-    ) {
-    }
+    ) {}
 
     /**
      * @param list<string>           $depServiceIds
@@ -32,7 +31,7 @@ final class DispatchPlanBuilder
         $claimedVarNames = []; // depIndex => '$_p{depIndex}'
         foreach ($allArounds as $advice) {
             foreach ($advice->claimedDepIndices as $depIdx) {
-                $claimedVarNames[$depIdx] = '$_p' . $depIdx;
+                $claimedVarNames[$depIdx] = '$_p'.$depIdx;
             }
         }
 

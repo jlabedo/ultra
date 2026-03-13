@@ -16,7 +16,7 @@ class InvariantViolation extends \DomainException
         ?\Throwable $previous = null,
     ) {
         $messages = array_map(
-            static fn (Violation $v): string => $v->code . ': ' . $v->message,
+            static fn (Violation $v): string => $v->code.': '.$v->message,
             $violations,
         );
         parent::__construct(

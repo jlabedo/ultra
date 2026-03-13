@@ -19,6 +19,8 @@ use Ultra\DecisionEngine\Tests\Example\Command\UnsubscribeStudentFromCourseComma
 use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
+use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
+use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
@@ -39,12 +41,13 @@ final class CommandWithClockDependency
     #[Handles]
     #[DecisionHandler]
     public function decide(
-        ?\Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState $course,
+        ?CourseCapacityState $course,
         \DateTimeInterface $clock,
     ): array {
-        if ($course !== null) {
+        if (null !== $course) {
             throw new \InvalidArgumentException('Course already exists');
         }
+
         return [new CourseCreated($this->courseId, $this->name, $this->maxCapacity)];
     }
 }
@@ -52,31 +55,35 @@ final class CommandWithClockDependency
 function createMediator(array $serviceDefinitions = []): array
 {
     $container = new ContainerBuilder();
-    $outputDir = sys_get_temp_dir() . '/decision-mediator-' . bin2hex(random_bytes(4));
-    if (!is_dir($outputDir)) {
-        mkdir($outputDir, 0777, true);
+    $outputDir = sys_get_temp_dir().'/decision-mediator-'.bin2hex(random_bytes(4));
+    if (! is_dir($outputDir)) {
+        mkdir($outputDir, 0o777, true);
     }
 
     $container->register(UltraNormalizer::class, UltraNormalizer::class)
-        ->setArguments([$outputDir . '/normalizer']);
+        ->setArguments([$outputDir.'/normalizer'])
+    ;
     $container->register(InMemoryEventStore::class, InMemoryEventStore::class)->setPublic(true);
-    $container->setAlias(\Ultra\EventStore\EventStore::class, InMemoryEventStore::class)->setPublic(true);
+    $container->setAlias(EventStore::class, InMemoryEventStore::class)->setPublic(true);
 
     $container->register(MapEventClassRegistry::class, MapEventClassRegistry::class)
         ->setArguments([[
             'course.created' => CourseCreated::class,
             'student.subscribed' => StudentSubscribed::class,
             'student.unsubscribed' => StudentUnsubscribed::class,
-        ]]);
+        ]])
+    ;
     $container->setAlias(EventClassRegistry::class, MapEventClassRegistry::class)->setPublic(true);
 
     $container->register(EventRouter::class, EventRouter::class)->setAutowired(true);
     $container->register(DecisionEngineAspect::class, DecisionEngineAspect::class)
         ->setAutowired(true)
-        ->addTag('mediator.aspect');
+        ->addTag('mediator.aspect')
+    ;
 
     $container->register(\DateTimeInterface::class, \DateTimeImmutable::class)
-        ->setArguments(['2020-01-01 00:00:00']);
+        ->setArguments(['2020-01-01 00:00:00'])
+    ;
 
     foreach ([
         CreateCourseCommand::class,
@@ -86,18 +93,20 @@ function createMediator(array $serviceDefinitions = []): array
     ] as $commandClass) {
         $container->register($commandClass, $commandClass)
             ->setAutoconfigured(false)
-            ->addTag('mediator.self-handler');
+            ->addTag('mediator.self-handler')
+        ;
     }
 
     foreach ($serviceDefinitions as $id => $definition) {
         if ($definition instanceof Definition) {
             $container->setDefinition($id, $definition);
+
             continue;
         }
         $container->set($id, $definition);
     }
 
-    $generatedClass = 'CompiledDecisionMediator_' . bin2hex(random_bytes(4));
+    $generatedClass = 'CompiledDecisionMediator_'.bin2hex(random_bytes(4));
     $container->addCompilerPass(new MediatorCompilerPass($outputDir, $generatedClass));
     $container->compile();
 
@@ -142,7 +151,8 @@ test('handle throws InvariantViolation when invariants fail', function () {
     $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
 
     expect(fn () => $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'bob')))
-        ->toThrow(InvariantViolation::class);
+        ->toThrow(InvariantViolation::class)
+    ;
 });
 
 test('handle throws when creating course that already exists', function () {
@@ -151,7 +161,8 @@ test('handle throws when creating course that already exists', function () {
     $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
 
     expect(fn () => $mediator->send(new CreateCourseCommand('math-101', 'Other', 5)))
-        ->toThrow(\InvalidArgumentException::class);
+        ->toThrow(\InvalidArgumentException::class)
+    ;
 });
 
 test('handle passes null for nullable state when stream is empty', function () {
@@ -231,7 +242,7 @@ test('concurrency: appending with stale version throws', function () {
     $result = $store->load(new StreamQuery(['course' => 'math-101']));
     $staleVersion = $result->streamVersion;
 
-    $normalizer = new UltraNormalizer(sys_get_temp_dir() . '/decision-normalizer-' . bin2hex(random_bytes(4)));
+    $normalizer = new UltraNormalizer(sys_get_temp_dir().'/decision-normalizer-'.bin2hex(random_bytes(4)));
     $router = new EventRouter($normalizer);
     $extraEvent = $router->toAppendableEvent(new CourseCreated('math-101', 'Other', 5));
     $store->append([$extraEvent], null);

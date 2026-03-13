@@ -34,7 +34,7 @@ final class DispatchPlanRenderer
         $lines = [];
         $lines[] = '        $m = $message;';
         $lines[] = '        $c = $context;';
-        $lines[] = '        return ' . $coreExpr . ';';
+        $lines[] = '        return '.$coreExpr.';';
 
         $body = implode("\n", $lines);
 
@@ -59,16 +59,15 @@ final class DispatchPlanRenderer
         array $claimedVarNames,
         string $messageVar,
     ): string {
-        $isSelf = $serviceId === '@self';
+        $isSelf = '@self' === $serviceId;
 
         $handlerArgs = [];
-        if (!$isSelf) {
+        if (! $isSelf) {
             $handlerArgs[] = $messageVar;
         }
         foreach ($depServiceIds as $depIdx => $depId) {
-            $handlerArgs[] = isset($claimedVarNames[$depIdx])
-                ? $claimedVarNames[$depIdx]
-                : '$this->locator->get(' . $this->exportString($depId) . ')';
+            $handlerArgs[] = $claimedVarNames[$depIdx]
+                ?? '$this->locator->get('.$this->exportString($depId).')';
         }
 
         return $isSelf
@@ -92,7 +91,7 @@ final class DispatchPlanRenderer
         string $innerExpr,
         array $claimedVarNames,
     ): string {
-        if ($arounds === []) {
+        if ([] === $arounds) {
             return $innerExpr;
         }
 
@@ -111,11 +110,11 @@ final class DispatchPlanRenderer
             // Aspect call args: proceed lambda, message, context, and — when the
             // advice carries a non-empty runtimeConfig — a PHP literal array.
             $aspectArgs = [
-                'fn(' . implode(', ', $lambdaParams) . ') => ' . $inner,
+                'fn('.implode(', ', $lambdaParams).') => '.$inner,
                 '$m',
                 '$c',
             ];
-            if ($advice->runtimeConfig !== []) {
+            if ([] !== $advice->runtimeConfig) {
                 $aspectArgs[] = $this->exportValue($advice->runtimeConfig);
             }
 
@@ -145,7 +144,7 @@ final class DispatchPlanRenderer
         array $afterThrowings,
         array $afters,
     ): string {
-        if ($befores === [] && $afterReturnings === [] && $afterThrowings === [] && $afters === []) {
+        if ([] === $befores && [] === $afterReturnings && [] === $afterThrowings && [] === $afters) {
             return $innerExpr;
         }
 
@@ -154,7 +153,7 @@ final class DispatchPlanRenderer
 
         foreach ($befores as $advice) {
             $beforeArgs = ['$m', '$c'];
-            if ($advice->runtimeConfig !== []) {
+            if ([] !== $advice->runtimeConfig) {
                 $beforeArgs[] = $this->exportValue($advice->runtimeConfig);
             }
             $lines[] = sprintf(
@@ -165,14 +164,14 @@ final class DispatchPlanRenderer
             );
         }
 
-        $needsCatch   = $afterThrowings !== [];
-        $needsFinally = $afters !== [];
+        $needsCatch = [] !== $afterThrowings;
+        $needsFinally = [] !== $afters;
 
-        if (!$needsCatch && !$needsFinally) {
-            if ($afterReturnings === []) {
-                $lines[] = '    return ' . $innerExpr . ';';
+        if (! $needsCatch && ! $needsFinally) {
+            if ([] === $afterReturnings) {
+                $lines[] = '    return '.$innerExpr.';';
             } else {
-                $lines[] = '    $__result = ' . $innerExpr . ';';
+                $lines[] = '    $__result = '.$innerExpr.';';
                 foreach ($afterReturnings as $advice) {
                     $lines[] = $this->buildAfterReturningCall('    ', $advice, '$m', '$c', '$__result');
                 }
@@ -180,7 +179,7 @@ final class DispatchPlanRenderer
             }
         } else {
             $lines[] = '    try {';
-            $lines[] = '        $__result = ' . $innerExpr . ';';
+            $lines[] = '        $__result = '.$innerExpr.';';
             foreach ($afterReturnings as $advice) {
                 $lines[] = $this->buildAfterReturningCall('        ', $advice, '$m', '$c', '$__result');
             }
@@ -214,7 +213,7 @@ final class DispatchPlanRenderer
         string $resultVar,
     ): string {
         $args = [$messageVar, $contextVar, $resultVar];
-        if ($advice->runtimeConfig !== []) {
+        if ([] !== $advice->runtimeConfig) {
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
 
@@ -235,7 +234,7 @@ final class DispatchPlanRenderer
         string $errorVar,
     ): string {
         $args = [$messageVar, $contextVar, $errorVar];
-        if ($advice->runtimeConfig !== []) {
+        if ([] !== $advice->runtimeConfig) {
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
 
@@ -255,7 +254,7 @@ final class DispatchPlanRenderer
         string $contextVar,
     ): string {
         $args = [$messageVar, $contextVar];
-        if ($advice->runtimeConfig !== []) {
+        if ([] !== $advice->runtimeConfig) {
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
 
@@ -270,7 +269,7 @@ final class DispatchPlanRenderer
 
     private function exportString(string $value): string
     {
-        return "'" . str_replace('\\', '\\\\', $value) . "'";
+        return "'".str_replace('\\', '\\\\', $value)."'";
     }
 
     /**
@@ -281,14 +280,14 @@ final class DispatchPlanRenderer
     {
         return match (true) {
             is_string($value) => $this->exportString($value),
-            is_int($value)    => (string) $value,
-            is_float($value)  => var_export($value, true),
-            is_bool($value)   => $value ? 'true' : 'false',
-            is_null($value)   => 'null',
-            $value === []     => '[]',
-            is_array($value)  => $this->exportArray($value),
-            default           => throw new \LogicException(
-                'Unsupported type in runtimeConfig: ' . get_debug_type($value),
+            is_int($value) => (string) $value,
+            is_float($value) => var_export($value, true),
+            is_bool($value) => $value ? 'true' : 'false',
+            is_null($value) => 'null',
+            [] === $value => '[]',
+            is_array($value) => $this->exportArray($value),
+            default => throw new \LogicException(
+                'Unsupported type in runtimeConfig: '.get_debug_type($value),
             ),
         };
     }
@@ -296,11 +295,11 @@ final class DispatchPlanRenderer
     private function exportArray(array $array): string
     {
         $isList = array_is_list($array);
-        $pairs  = [];
+        $pairs = [];
         foreach ($array as $k => $v) {
-            $pairs[] = ($isList ? '' : $this->exportValue($k) . ' => ') . $this->exportValue($v);
+            $pairs[] = ($isList ? '' : $this->exportValue($k).' => ').$this->exportValue($v);
         }
 
-        return '[' . implode(', ', $pairs) . ']';
+        return '['.implode(', ', $pairs).']';
     }
 }

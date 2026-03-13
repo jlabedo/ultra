@@ -22,6 +22,5 @@ final readonly class AdviceLayer
         public array $afterReturnings,
         public array $afterThrowings,
         public array $afters,
-    ) {
-    }
+    ) {}
 }

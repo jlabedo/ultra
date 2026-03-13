@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Compiler;
 
-
 /**
  * Generates a compiled mediator PHP class from a resolved handler map.
  *
@@ -31,8 +30,7 @@ final class MediatorGenerator
     public function __construct(
         private readonly DispatchPlanBuilder $planBuilder = new DispatchPlanBuilder(),
         private readonly DispatchPlanRenderer $renderer = new DispatchPlanRenderer(),
-    ) {
-    }
+    ) {}
 
     /**
      * Generate the PHP source and write it to disk.
@@ -42,7 +40,7 @@ final class MediatorGenerator
     public function generate(string $className, array $handlers, string $filePath): void
     {
         $dir = dirname($filePath);
-        if (!is_dir($dir)) {
+        if (! is_dir($dir)) {
             mkdir($dir, 0o777, true);
         }
 
@@ -63,7 +61,7 @@ final class MediatorGenerator
             $dispatchName = $this->dispatchMethodName($messageClass);
 
             $matchArms[] = sprintf(
-                '        \\%s::class => $this->%s($message, $context),',
+                '        \%s::class => $this->%s($message, $context),',
                 ltrim($messageClass, '\\'),
                 $dispatchName,
             );
@@ -77,7 +75,7 @@ final class MediatorGenerator
             );
         }
 
-        $matchArmsCode = implode("\n", $matchArms) . "\n";
+        $matchArmsCode = implode("\n", $matchArms)."\n";
         $dispatchMethodsCode = implode("\n\n", $dispatchMethods);
 
         return <<<PHP
@@ -124,7 +122,6 @@ final class MediatorGenerator
         return $this->renderer->renderDispatchMethod($dispatchName, $plan);
     }
 
-
     /**
      * Derive a unique-enough private method name from a message FQCN.
      * Uses the short class name for readability, with a short hash to prevent
@@ -134,8 +131,6 @@ final class MediatorGenerator
     {
         $short = substr($messageClass, strrpos($messageClass, '\\') + 1);
 
-        return 'dispatch' . $short . '_' . substr(md5($messageClass), 0, 6);
+        return 'dispatch'.$short.'_'.substr(md5($messageClass), 0, 6);
     }
-
-
 }

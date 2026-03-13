@@ -7,7 +7,7 @@ namespace Ultra\Aop\Tests;
 use Psr\Container\ContainerInterface;
 
 /**
- * Simple test container for AOP tests
+ * Simple test container for AOP tests.
  */
 class TestContainer implements ContainerInterface
 {
@@ -15,9 +15,10 @@ class TestContainer implements ContainerInterface
 
     public function get(string $id): mixed
     {
-        if (!isset($this->services[$id])) {
+        if (! isset($this->services[$id])) {
             throw new \RuntimeException("Service '{$id}' not found in container");
         }
+
         return $this->services[$id];
     }
 

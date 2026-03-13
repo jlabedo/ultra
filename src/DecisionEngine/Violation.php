@@ -9,6 +9,5 @@ final readonly class Violation
     public function __construct(
         public string $code,
         public string $message,
-    ) {
-    }
+    ) {}
 }

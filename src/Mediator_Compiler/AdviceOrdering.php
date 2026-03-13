@@ -16,6 +16,7 @@ final class AdviceOrdering
 {
     /**
      * @param list<AdviceDescriptor> $advices
+     *
      * @return array<int, array<string, list<AdviceDescriptor>>>
      */
     public function groupByPriority(array $advices): array
@@ -24,7 +25,7 @@ final class AdviceOrdering
 
         foreach ($advices as $advice) {
             $priority = $advice->priority;
-            if (!isset($grouped[$priority])) {
+            if (! isset($grouped[$priority])) {
                 $grouped[$priority] = [
                     AdviceType::Before->value => [],
                     AdviceType::Around->value => [],
@@ -47,6 +48,7 @@ final class AdviceOrdering
 
     /**
      * @param array<int, array<string, list<AdviceDescriptor>>> $grouped
+     *
      * @return list<AdviceDescriptor>
      */
     public function flattenByType(array $grouped, AdviceType $type): array
@@ -65,19 +67,21 @@ final class AdviceOrdering
      * Deterministic ordering within the same type and priority.
      *
      * @param list<AdviceDescriptor> $advices
+     *
      * @return list<AdviceDescriptor>
      */
     private function sortWithinType(array $advices): array
     {
         usort($advices, static function (AdviceDescriptor $a, AdviceDescriptor $b): int {
             $cmp = $a->className <=> $b->className;
-            if ($cmp !== 0) {
+            if (0 !== $cmp) {
                 return $cmp;
             }
             $cmp = $a->method <=> $b->method;
-            if ($cmp !== 0) {
+            if (0 !== $cmp) {
                 return $cmp;
             }
+
             return $a->serviceId <=> $b->serviceId;
         });
 

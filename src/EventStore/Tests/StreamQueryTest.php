@@ -83,7 +83,8 @@ test('matches: anyOf matches event that matches any branch', function () {
 
 test('matches: ofTypes filters by event type', function () {
     $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'))
-        ->ofTypes('course.created', 'course.updated');
+        ->ofTypes('course.created', 'course.updated')
+    ;
     $eventMatching = storedEvent(['course' => 'math-101'], 'course.created');
     $eventNotMatching = storedEvent(['course' => 'math-101'], 'course.deleted');
 

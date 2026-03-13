@@ -30,10 +30,10 @@ namespace Ultra\Mediator_Compiler;
 final readonly class AdviceDescriptor
 {
     /**
-     * @param int       $priority           lower = outer, higher = inner
-     * @param string    $className          FQCN of the aspect class (used for deterministic ordering)
-     * @param list<int> $claimedDepIndices  0-based indices into the handler's dep-param array
-     * @param array     $runtimeConfig      serializable config embedded in generated code
+     * @param int       $priority          lower = outer, higher = inner
+     * @param string    $className         FQCN of the aspect class (used for deterministic ordering)
+     * @param list<int> $claimedDepIndices 0-based indices into the handler's dep-param array
+     * @param array     $runtimeConfig     serializable config embedded in generated code
      */
     public function __construct(
         public AdviceType $type,
@@ -43,8 +43,7 @@ final readonly class AdviceDescriptor
         public string $className = '',
         public array $claimedDepIndices = [],
         public array $runtimeConfig = [],
-    ) {
-    }
+    ) {}
 
     public static function before(string $serviceId, string $method): self
     {

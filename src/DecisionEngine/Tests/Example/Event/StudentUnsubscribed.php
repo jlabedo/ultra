@@ -15,6 +15,5 @@ readonly class StudentUnsubscribed
         public string $courseId,
         #[DomainIdentifier('student')]
         public string $studentId,
-    ) {
-    }
+    ) {}
 }

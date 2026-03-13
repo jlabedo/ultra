@@ -6,7 +6,7 @@ namespace Ultra\DecisionEngine;
 
 trait ReducerTrait
 {
-    /** @var array<string, string>|null eventClass => method name (cached per class) */
+    /** @var null|array<string, string> eventClass => method name (cached per class) */
     private static ?array $__reducerHandlers = null;
 
     /**
@@ -24,7 +24,7 @@ trait ReducerTrait
             $eventClass = $event::class;
             if (isset($handlers[$eventClass])) {
                 $methodName = $handlers[$eventClass];
-                $instance->$methodName($event);
+                $instance->{$methodName}($event);
             }
         }
 
@@ -44,7 +44,7 @@ trait ReducerTrait
      */
     private static function resolveHandlers(string $class): array
     {
-        if (self::$__reducerHandlers !== null) {
+        if (null !== self::$__reducerHandlers) {
             return self::$__reducerHandlers;
         }
 
@@ -53,11 +53,11 @@ trait ReducerTrait
 
         foreach ($ref->getMethods(\ReflectionMethod::IS_PRIVATE) as $method) {
             $params = $method->getParameters();
-            if (count($params) !== 1) {
+            if (1 !== count($params)) {
                 continue;
             }
             $type = $params[0]->getType();
-            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+            if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
                 continue;
             }
             $eventClass = $type->getName();

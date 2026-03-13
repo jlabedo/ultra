@@ -61,15 +61,14 @@ final class MediatorCompilerPass implements CompilerPassInterface
         private readonly string $handlerTag = 'mediator.handler',
         private readonly string $aspectTag = 'mediator.aspect',
         private readonly string $selfHandlerTag = 'mediator.self-handler',
-    ) {
-    }
+    ) {}
 
     public function process(ContainerBuilder $container): void
     {
-        $taggedHandlers     = $container->findTaggedServiceIds($this->handlerTag);
+        $taggedHandlers = $container->findTaggedServiceIds($this->handlerTag);
         $taggedSelfHandlers = $container->findTaggedServiceIds($this->selfHandlerTag);
 
-        if ($taggedHandlers === [] && $taggedSelfHandlers === []) {
+        if ([] === $taggedHandlers && [] === $taggedSelfHandlers) {
             return;
         }
 
@@ -86,17 +85,17 @@ final class MediatorCompilerPass implements CompilerPassInterface
             $class = $definition->getClass() ?? $serviceId;
 
             foreach (new \ReflectionClass($class)->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-                if ($method->getAttributes(Handles::class) === []) {
+                if ([] === $method->getAttributes(Handles::class)) {
                     continue;
                 }
 
                 $params = $method->getParameters();
-                if ($params === []) {
+                if ([] === $params) {
                     continue;
                 }
 
                 $firstType = $params[0]->getType();
-                if (!$firstType instanceof \ReflectionNamedType || $firstType->isBuiltin()) {
+                if (! $firstType instanceof \ReflectionNamedType || $firstType->isBuiltin()) {
                     continue;
                 }
 
@@ -127,7 +126,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
             $class = $definition->getClass() ?? $serviceId;
 
             foreach (new \ReflectionClass($class)->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-                if ($method->getAttributes(Handles::class) === []) {
+                if ([] === $method->getAttributes(Handles::class)) {
                     continue;
                 }
 
@@ -151,7 +150,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
             }
         }
 
-        if ($handlers === []) {
+        if ([] === $handlers) {
             return;
         }
 
@@ -173,7 +172,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
             }
 
             foreach ($handlerDescriptor->depServiceIds as $i => $depId) {
-                if (!isset($claimedIndices[$i])) {
+                if (! isset($claimedIndices[$i])) {
                     $locatorServices[$depId] = new Reference($depId);
                 }
             }
@@ -184,7 +183,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
         }
 
         // ── Phase 3: generate and register ───────────────────────────────────
-        $filePath = rtrim($this->outputDir, '/') . '/' . $this->generatedClass . '.php';
+        $filePath = rtrim($this->outputDir, '/').'/'.$this->generatedClass.'.php';
         new MediatorGenerator()->generate($this->generatedClass, $handlers, $filePath);
 
         $mediatorDef = new Definition($this->generatedClass, [new ServiceLocatorArgument($locatorServices)]);
@@ -198,7 +197,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
         $ids = [];
         foreach (\array_slice($method->getParameters(), $skipFirst ? 1 : 0) as $param) {
             $type = $param->getType();
-            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+            if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
                 throw new \LogicException(\sprintf(
                     'Parameter "$%s" of handler method "%s::%s" must have a non-builtin type.',
                     $param->getName(),
@@ -215,7 +214,8 @@ final class MediatorCompilerPass implements CompilerPassInterface
     /**
      * Scan all aspect services for advice methods that match $handlerMethod.
      *
-     * @param  array<string, mixed>  $taggedAspects
+     * @param array<string, mixed> $taggedAspects
+     *
      * @return list<AdviceDescriptor>
      */
     private function collectAdvices(
@@ -225,11 +225,11 @@ final class MediatorCompilerPass implements CompilerPassInterface
     ): array {
         /** @var array<class-string<Advice>, AdviceType> $adviceTypes */
         $adviceTypes = [
-            Around::class        => AdviceType::Around,
-            Before::class        => AdviceType::Before,
+            Around::class => AdviceType::Around,
+            Before::class => AdviceType::Before,
             AfterReturning::class => AdviceType::AfterReturning,
-            AfterThrowing::class  => AdviceType::AfterThrowing,
-            After::class          => AdviceType::After,
+            AfterThrowing::class => AdviceType::AfterThrowing,
+            After::class => AdviceType::After,
         ];
 
         $advices = [];
@@ -244,13 +244,13 @@ final class MediatorCompilerPass implements CompilerPassInterface
                         /** @var Advice $advice */
                         $advice = $refAttr->newInstance();
                         $result = ($advice->matcher)($handlerMethod);
-                        if ($result === null) {
+                        if (null === $result) {
                             continue;
                         }
 
-                        $canProvide = $adviceType === AdviceType::Around || $adviceType === AdviceType::Before;
+                        $canProvide = AdviceType::Around === $adviceType || AdviceType::Before === $adviceType;
 
-                        if ($result->provides !== [] && !$canProvide) {
+                        if ([] !== $result->provides && ! $canProvide) {
                             throw new \LogicException(\sprintf(
                                 'Advice "%s::%s" (#[%s]) returned a MatchResult with "provides" set, but only #[Around] and #[Before] advices may provide dep-param slots.',
                                 $aspectClass,

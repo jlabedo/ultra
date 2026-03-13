@@ -4,12 +4,11 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Compiler\Tests;
 
+use Psr\Container\ContainerInterface;
 use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
-use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\DependencyInjection\Reference;
-use Psr\Container\ContainerInterface;
 use Ultra\Mediator\Attribute\After;
 use Ultra\Mediator\Attribute\AfterReturning;
 use Ultra\Mediator\Attribute\AfterThrowing;
@@ -17,6 +16,7 @@ use Ultra\Mediator\Attribute\Around;
 use Ultra\Mediator\Attribute\Before;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator\Attribute\MatchResult;
+use Ultra\Mediator\Exception\NoHandlerFound;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
 
@@ -24,7 +24,7 @@ use Ultra\Mediator_Compiler\MediatorCompilerPass;
 // Shared temp directory for this test run
 // ---------------------------------------------------------------------------
 
-$testOutputDir = dirname(__DIR__, 3) . '/var/mediator_compiler_tests';
+$testOutputDir = dirname(__DIR__, 3).'/var/mediator_compiler_tests';
 
 // ---------------------------------------------------------------------------
 // Message fixtures
@@ -32,41 +32,29 @@ $testOutputDir = dirname(__DIR__, 3) . '/var/mediator_compiler_tests';
 
 final readonly class HelloMessage
 {
-    public function __construct(public string $name)
-    {
-    }
+    public function __construct(public string $name) {}
 }
 
 final readonly class GoodbyeMessage
 {
-    public function __construct(public string $name)
-    {
-    }
+    public function __construct(public string $name) {}
 }
 
-final readonly class PingMessage
-{
-}
+final readonly class PingMessage {}
 
 final readonly class AuditedMessage
 {
-    public function __construct(public string $payload)
-    {
-    }
+    public function __construct(public string $payload) {}
 }
 
 final readonly class WrappedMessage
 {
-    public function __construct(public string $payload)
-    {
-    }
+    public function __construct(public string $payload) {}
 }
 
 final readonly class DoubleWrappedMessage
 {
-    public function __construct(public string $payload)
-    {
-    }
+    public function __construct(public string $payload) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -77,7 +65,7 @@ final class GreeterService
 {
     public function greet(string $name): string
     {
-        return 'Hello, ' . $name . '!';
+        return 'Hello, '.$name.'!';
     }
 }
 
@@ -96,8 +84,8 @@ final class TestLogger
     public array $logged = [];
 
     #[Before(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply(); // apply to every handler registered alongside this aspect
-            })]
+        return MatchResult::apply(); // apply to every handler registered alongside this aspect
+    })]
     public function log(object $message, array $context): void
     {
         $this->logged[] = $message;
@@ -109,11 +97,12 @@ final class TestTransactionManager
     public int $calls = 0;
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply(); // apply to every handler registered alongside this aspect
-            })]
+        return MatchResult::apply(); // apply to every handler registered alongside this aspect
+    })]
     public function execute(callable $proceed, object $message, array $context): mixed
     {
-        $this->calls++;
+        ++$this->calls;
+
         return $proceed($message, $context);
     }
 }
@@ -124,13 +113,14 @@ final class OuterAspectService
     public array $log = [];
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 0)]
+        return MatchResult::apply();
+    }, priority: 0)]
     public function wrap(callable $proceed, object $message, array $context): mixed
     {
         $this->log[] = 'outer-before';
         $result = $proceed($message, $context);
         $this->log[] = 'outer-after';
+
         return $result;
     }
 }
@@ -141,13 +131,14 @@ final class InnerAspectService
     public array $log = [];
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            }, priority: 10)]
+        return MatchResult::apply();
+    }, priority: 10)]
     public function wrap(callable $proceed, object $message, array $context): mixed
     {
         $this->log[] = 'inner-before';
         $result = $proceed($message, $context);
         $this->log[] = 'inner-after';
+
         return $result;
     }
 }
@@ -162,19 +153,17 @@ final class SalutationHandler
     #[Handles]
     public function hello(HelloMessage $msg): string
     {
-        return 'Hi, ' . $msg->name;
+        return 'Hi, '.$msg->name;
     }
 
     #[Handles]
     public function goodbye(GoodbyeMessage $msg): string
     {
-        return 'Bye, ' . $msg->name;
+        return 'Bye, '.$msg->name;
     }
 
     /** Regular method — must be ignored */
-    public function helper(): void
-    {
-    }
+    public function helper(): void {}
 }
 
 final class GreetWithServiceHandler
@@ -191,7 +180,7 @@ final class AuditedHandler
     #[Handles]
     public function handle(AuditedMessage $msg): string
     {
-        return 'handled: ' . $msg->payload;
+        return 'handled: '.$msg->payload;
     }
 }
 
@@ -200,7 +189,7 @@ final class WrappedHandler
     #[Handles]
     public function handle(WrappedMessage $msg): string
     {
-        return 'wrapped: ' . $msg->payload;
+        return 'wrapped: '.$msg->payload;
     }
 }
 
@@ -209,7 +198,7 @@ final class DoubleWrappedHandler
     #[Handles]
     public function handle(DoubleWrappedMessage $msg): string
     {
-        return 'double: ' . $msg->payload;
+        return 'double: '.$msg->payload;
     }
 }
 
@@ -219,18 +208,14 @@ final class DoubleWrappedHandler
 
 final readonly class ProcessEntityMessage
 {
-    public function __construct(public string $entityId)
-    {
-    }
+    public function __construct(public string $entityId) {}
 }
 
 final class TestEntity
 {
     public bool $processed = false;
 
-    public function __construct(public readonly string $id)
-    {
-    }
+    public function __construct(public readonly string $id) {}
 
     public function process(): void
     {
@@ -260,25 +245,25 @@ final class TestEntityRepository
  */
 final class LoadAndSaveAspect
 {
-    public function __construct(private readonly ContainerInterface $locator)
-    {
-    }
+    public function __construct(private readonly ContainerInterface $locator) {}
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            foreach (array_slice($m->getParameters(), 1) as $i => $param) {
-                $type = $param->getType();
-                    if ($type instanceof \ReflectionNamedType && $type->getName() === TestEntity::class) {
-                    return MatchResult::apply(config: ['repoClass' => TestEntityRepository::class], provides: [$i]);
-                    }
-                }
-            return null;
-            })]
+        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+            $type = $param->getType();
+            if ($type instanceof \ReflectionNamedType && TestEntity::class === $type->getName()) {
+                return MatchResult::apply(config: ['repoClass' => TestEntityRepository::class], provides: [$i]);
+            }
+        }
+
+        return null;
+    })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
         $repo = $this->locator->get($config['repoClass']);
         $entity = $repo->load($message);
         $result = $proceed($message, $context, $entity);
         $repo->save($entity);
+
         return $result;
     }
 }
@@ -289,6 +274,7 @@ final class EntityProcessingHandler
     public function process(ProcessEntityMessage $_msg, TestEntity $entity): string
     {
         $entity->process();
+
         return $entity->id;
     }
 }
@@ -302,9 +288,7 @@ final class EntityProcessingHandler
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final class Entity
 {
-    public function __construct(public readonly string $idFrom)
-    {
-    }
+    public function __construct(public readonly string $idFrom) {}
 }
 
 // ---------------------------------------------------------------------------
@@ -314,31 +298,23 @@ final class Entity
 #[Entity(idFrom: 'aId')]
 final class EntityA
 {
-    public function __construct(public readonly string $id)
-    {
-    }
+    public function __construct(public readonly string $id) {}
 }
 
 #[Entity(idFrom: 'bId')]
 final class EntityB
 {
-    public function __construct(public readonly string $id)
-    {
-    }
+    public function __construct(public readonly string $id) {}
 }
 
 final readonly class MultiEntityMessage
 {
-    public function __construct(public string $aId, public string $bId)
-    {
-    }
+    public function __construct(public string $aId, public string $bId) {}
 }
 
 final readonly class SeparateEntitiesMessage
 {
-    public function __construct(public string $aId, public string $bId)
-    {
-    }
+    public function __construct(public string $aId, public string $bId) {}
 }
 
 /** Repository for EntityA — extracts the ID from the message */
@@ -366,31 +342,33 @@ final class TestEntityBRepository
 final class BatchLoadAspect
 {
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            $indices = [];
-            $repos = [];
-            foreach (array_slice($m->getParameters(), 1) as $i => $param) {
-                $type = $param->getType();
-                    if (!$type instanceof \ReflectionNamedType) {
-                    continue;
-                    }
-                    if ($type->getName() === EntityA::class) {
-                    $indices[] = $i;
-                    $repos[] = TestEntityARepository::class;
-                    } elseif ($type->getName() === EntityB::class) {
-                    $indices[] = $i;
-                    $repos[] = TestEntityBRepository::class;
-                    }
-                }
-            return $indices !== []
-                ? MatchResult::apply(config: ['repos' => $repos], provides: $indices)
-                : null;
-            })]
+        $indices = [];
+        $repos = [];
+        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+            $type = $param->getType();
+            if (! $type instanceof \ReflectionNamedType) {
+                continue;
+            }
+            if (EntityA::class === $type->getName()) {
+                $indices[] = $i;
+                $repos[] = TestEntityARepository::class;
+            } elseif (EntityB::class === $type->getName()) {
+                $indices[] = $i;
+                $repos[] = TestEntityBRepository::class;
+            }
+        }
+
+        return [] !== $indices
+            ? MatchResult::apply(config: ['repos' => $repos], provides: $indices)
+            : null;
+    })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
         $entities = array_map(
-            static fn(string $repoClass) => (new $repoClass())->load($message),
+            static fn (string $repoClass) => new $repoClass()->load($message),
             $config['repos'],
         );
+
         return $proceed($message, $context, ...$entities);
     }
 }
@@ -402,31 +380,32 @@ final class BatchLoadAspect
  */
 final class LoadAspect
 {
-    public function __construct(private readonly ContainerInterface $locator)
-    {
-    }
+    public function __construct(private readonly ContainerInterface $locator) {}
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            foreach (array_slice($m->getParameters(), 1) as $i => $param) {
-                $type = $param->getType();
-                    if ($type instanceof \ReflectionNamedType && $type->getName() === EntityA::class) {
-                    return MatchResult::apply(config: ['repoClass' => TestEntityARepository::class], provides: [$i]);
-                    }
-                }
-            return null;
-            }, priority: 0)]
+        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+            $type = $param->getType();
+            if ($type instanceof \ReflectionNamedType && EntityA::class === $type->getName()) {
+                return MatchResult::apply(config: ['repoClass' => TestEntityARepository::class], provides: [$i]);
+            }
+        }
+
+        return null;
+    }, priority: 0)]
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            foreach (array_slice($m->getParameters(), 1) as $i => $param) {
-                $type = $param->getType();
-                    if ($type instanceof \ReflectionNamedType && $type->getName() === EntityB::class) {
-                    return MatchResult::apply(config: ['repoClass' => TestEntityBRepository::class], provides: [$i]);
-                    }
-                }
-            return null;
-            }, priority: 10)]
+        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+            $type = $param->getType();
+            if ($type instanceof \ReflectionNamedType && EntityB::class === $type->getName()) {
+                return MatchResult::apply(config: ['repoClass' => TestEntityBRepository::class], provides: [$i]);
+            }
+        }
+
+        return null;
+    }, priority: 10)]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
         $entity = $this->locator->get($config['repoClass'])->load($message);
+
         return $proceed($message, $context, $entity);
     }
 }
@@ -436,7 +415,7 @@ final class MultiEntityHandler
     #[Handles]
     public function handle(MultiEntityMessage $_msg, EntityA $a, EntityB $b): string
     {
-        return $a->id . '+' . $b->id;
+        return $a->id.'+'.$b->id;
     }
 }
 
@@ -445,7 +424,7 @@ final class SeparateEntitiesHandler
     #[Handles]
     public function handle(SeparateEntitiesMessage $_msg, EntityA $a, EntityB $b): string
     {
-        return $a->id . '+' . $b->id;
+        return $a->id.'+'.$b->id;
     }
 }
 
@@ -462,6 +441,7 @@ final class SeparateEntitiesHandler
 interface EntityManagerInterface
 {
     public function find(string $class, mixed $id): object;
+
     public function save(object $entity): void;
 }
 
@@ -475,6 +455,7 @@ final class TestEntityManager implements EntityManagerInterface
     public function find(string $class, mixed $id): object
     {
         $this->findCalls[] = ['class' => $class, 'id' => $id];
+
         return new $class($id);
     }
 
@@ -493,49 +474,47 @@ final class TestEntityManager implements EntityManagerInterface
  */
 final class EntityManagerAspect
 {
-    public function __construct(private readonly EntityManagerInterface $em)
-    {
-    }
+    public function __construct(private readonly EntityManagerInterface $em) {}
 
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
-            $indices = [];
-            $entities = [];
-            foreach (array_slice($m->getParameters(), 1) as $i => $param) {
-                $type = $param->getType();
-                    if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
-                    continue;
-                    }
-                $refAttrs = (new \ReflectionClass($type->getName()))->getAttributes(Entity::class);
-                    if ($refAttrs === []) {
-                    continue;
-                    }
-                $entityAttr = $refAttrs[0]->newInstance();
-                $indices[] = $i;
-                $entities[] = ['class' => $type->getName(), 'idFrom' => $entityAttr->idFrom];
-                }
-            return $entities !== []
-                ? MatchResult::apply(config: ['entities' => $entities], provides: $indices)
-                : null;
-            })]
+        $indices = [];
+        $entities = [];
+        foreach (array_slice($m->getParameters(), 1) as $i => $param) {
+            $type = $param->getType();
+            if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                continue;
+            }
+            $refAttrs = new \ReflectionClass($type->getName())->getAttributes(Entity::class);
+            if ([] === $refAttrs) {
+                continue;
+            }
+            $entityAttr = $refAttrs[0]->newInstance();
+            $indices[] = $i;
+            $entities[] = ['class' => $type->getName(), 'idFrom' => $entityAttr->idFrom];
+        }
+
+        return [] !== $entities
+            ? MatchResult::apply(config: ['entities' => $entities], provides: $indices)
+            : null;
+    })]
     public function execute(callable $proceed, object $message, array $context, array $config): mixed
     {
         $entities = [];
         foreach ($config['entities'] as ['class' => $class, 'idFrom' => $idFrom]) {
-            $entities[] = $this->em->find($class, $message->$idFrom);
+            $entities[] = $this->em->find($class, $message->{$idFrom});
         }
         $result = $proceed($message, $context, ...$entities);
         foreach ($entities as $entity) {
             $this->em->save($entity);
         }
+
         return $result;
     }
 }
 
 final readonly class ProcessEntitiesMessage
 {
-    public function __construct(public string $aId, public string $bId)
-    {
-    }
+    public function __construct(public string $aId, public string $bId) {}
 }
 
 final class EntityManagerHandler
@@ -543,7 +522,7 @@ final class EntityManagerHandler
     #[Handles]
     public function handle(ProcessEntitiesMessage $_msg, EntityA $entityA, EntityB $entityB): string
     {
-        return $entityA->id . '+' . $entityB->id;
+        return $entityA->id.'+'.$entityB->id;
     }
 }
 
@@ -554,7 +533,7 @@ final class EntityManagerHandler
 
 test('compiler pass registers MediatorInterface definition in the container', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(SalutationHandler::class, (new Definition(SalutationHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(SalutationHandler::class, new Definition(SalutationHandler::class)->addTag('mediator.handler'));
 
     new MediatorCompilerPass($testOutputDir, 'CompiledMediatorPassTest1')->process($container);
 
@@ -573,16 +552,16 @@ test('compiler pass does nothing when no handlers are tagged', function () use (
 
 test('compiler pass throws on duplicate handlers for the same message', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition('handler_a', (new Definition(SalutationHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition('handler_b', (new Definition(SalutationHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition('handler_a', new Definition(SalutationHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition('handler_b', new Definition(SalutationHandler::class)->addTag('mediator.handler'));
 
-    expect(fn() => new MediatorCompilerPass($testOutputDir, 'CompiledMediatorPassTest3')->process($container))->toThrow(\LogicException::class);
+    expect(fn () => new MediatorCompilerPass($testOutputDir, 'CompiledMediatorPassTest3')->process($container))->toThrow(\LogicException::class);
 });
 
 test('compiler pass adds aspect service IDs to the service locator', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(AuditedHandler::class, (new Definition(AuditedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(TestLogger::class, (new Definition(TestLogger::class))->addTag('mediator.aspect'));
+    $container->setDefinition(AuditedHandler::class, new Definition(AuditedHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(TestLogger::class, new Definition(TestLogger::class)->addTag('mediator.aspect'));
 
     new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAopWiring')->process($container);
 
@@ -590,7 +569,8 @@ test('compiler pass adds aspect service IDs to the service locator', function ()
 
     expect($locatorServices)
         ->toHaveKey(AuditedHandler::class)
-        ->toHaveKey(TestLogger::class);
+        ->toHaveKey(TestLogger::class)
+    ;
 });
 
 // ---------------------------------------------------------------------------
@@ -599,7 +579,7 @@ test('compiler pass adds aspect service IDs to the service locator', function ()
 
 test('generated mediator routes messages to the correct handler method', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(SalutationHandler::class, (new Definition(SalutationHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(SalutationHandler::class, new Definition(SalutationHandler::class)->addTag('mediator.handler'));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E1'));
     $container->compile();
@@ -607,12 +587,13 @@ test('generated mediator routes messages to the correct handler method', functio
     $mediator = $container->get(MediatorInterface::class);
 
     expect($mediator->send(new HelloMessage('Alice')))->toBe('Hi, Alice')
-        ->and($mediator->send(new GoodbyeMessage('Bob')))->toBe('Bye, Bob');
+        ->and($mediator->send(new GoodbyeMessage('Bob')))->toBe('Bye, Bob')
+    ;
 });
 
 test('generated mediator injects services from the locator into handler methods', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(GreetWithServiceHandler::class, (new Definition(GreetWithServiceHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(GreetWithServiceHandler::class, new Definition(GreetWithServiceHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(GreeterService::class, new Definition(GreeterService::class));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E2'));
@@ -625,21 +606,22 @@ test('generated mediator injects services from the locator into handler methods'
 
 test('generated mediator throws NoHandlerFound for unregistered messages', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(SalutationHandler::class, (new Definition(SalutationHandler::class))->addTag('mediator.handler'));
+    $container->setDefinition(SalutationHandler::class, new Definition(SalutationHandler::class)->addTag('mediator.handler'));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E3'));
     $container->compile();
 
     $mediator = $container->get(MediatorInterface::class);
 
-    expect(fn() => $mediator->send(new PingMessage()))
-        ->toThrow(\Ultra\Mediator\Exception\NoHandlerFound::class);
+    expect(fn () => $mediator->send(new PingMessage()))
+        ->toThrow(NoHandlerFound::class)
+    ;
 });
 
 test('generated mediator calls before-advice then invokes the handler', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(AuditedHandler::class, (new Definition(AuditedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(TestLogger::class, (new Definition(TestLogger::class))->addTag('mediator.aspect')->setPublic(true));
+    $container->setDefinition(AuditedHandler::class, new Definition(AuditedHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(TestLogger::class, new Definition(TestLogger::class)->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop1'));
     $container->compile();
@@ -652,13 +634,14 @@ test('generated mediator calls before-advice then invokes the handler', function
 
     expect($result)->toBe('handled: test')
         ->and($logger->logged)->toHaveCount(1)
-        ->and($logger->logged[0])->toBe($message);
+        ->and($logger->logged[0])->toBe($message)
+    ;
 });
 
 test('generated mediator calls around-advice wrapping the handler', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(WrappedHandler::class, (new Definition(WrappedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(TestTransactionManager::class, (new Definition(TestTransactionManager::class))->addTag('mediator.aspect')->setPublic(true));
+    $container->setDefinition(WrappedHandler::class, new Definition(WrappedHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(TestTransactionManager::class, new Definition(TestTransactionManager::class)->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop2'));
     $container->compile();
@@ -668,14 +651,15 @@ test('generated mediator calls around-advice wrapping the handler', function () 
     $result = $mediator->send(new WrappedMessage('test'));
 
     expect($result)->toBe('wrapped: test')
-        ->and($txManager->calls)->toBe(1);
+        ->and($txManager->calls)->toBe(1)
+    ;
 });
 
 test('generated mediator executes multiple around-advices ordered by priority', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(DoubleWrappedHandler::class, (new Definition(DoubleWrappedHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(OuterAspectService::class, (new Definition(OuterAspectService::class))->addTag('mediator.aspect')->setPublic(true));
-    $container->setDefinition(InnerAspectService::class, (new Definition(InnerAspectService::class))->addTag('mediator.aspect')->setPublic(true));
+    $container->setDefinition(DoubleWrappedHandler::class, new Definition(DoubleWrappedHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(OuterAspectService::class, new Definition(OuterAspectService::class)->addTag('mediator.aspect')->setPublic(true));
+    $container->setDefinition(InnerAspectService::class, new Definition(InnerAspectService::class)->addTag('mediator.aspect')->setPublic(true));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop3'));
     $container->compile();
@@ -689,13 +673,14 @@ test('generated mediator executes multiple around-advices ordered by priority', 
         // priority 0 → outermost
         ->and($outer->log)->toBe(['outer-before', 'outer-after'])
         // priority 10 → nested inside outer
-        ->and($inner->log)->toBe(['inner-before', 'inner-after']);
+        ->and($inner->log)->toBe(['inner-before', 'inner-after'])
+    ;
 });
 
 test('compiler pass excludes claimed dep types from the service locator', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setDefinition(EntityProcessingHandler::class, (new Definition(EntityProcessingHandler::class))->addTag('mediator.handler'));
-    $container->setDefinition(LoadAndSaveAspect::class, (new Definition(LoadAndSaveAspect::class))->addTag('mediator.aspect'));
+    $container->setDefinition(EntityProcessingHandler::class, new Definition(EntityProcessingHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(LoadAndSaveAspect::class, new Definition(LoadAndSaveAspect::class)->addTag('mediator.aspect'));
 
     new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding0')->process($container);
 
@@ -705,7 +690,8 @@ test('compiler pass excludes claimed dep types from the service locator', functi
         ->toHaveKey(EntityProcessingHandler::class)
         ->toHaveKey(LoadAndSaveAspect::class)
         // TestEntity is a claimed dep — the aspect provides it, so it must NOT be in the locator
-        ->not->toHaveKey(TestEntity::class);
+        ->not->toHaveKey(TestEntity::class)
+    ;
 });
 
 test('generated mediator uses parameter-providing aspect to inject and save entity', function () use ($testOutputDir) {
@@ -729,7 +715,8 @@ test('generated mediator uses parameter-providing aspect to inject and save enti
 
     expect($result)->toBe('entity-123')
         ->and($repo->saved)->toHaveKey('entity-123')
-        ->and($repo->saved['entity-123']->processed)->toBeTrue();
+        ->and($repo->saved['entity-123']->processed)->toBeTrue()
+    ;
 });
 
 test('one parameter-providing aspect can claim multiple handler parameters at once', function () use ($testOutputDir) {
@@ -802,7 +789,8 @@ test('#[Around] closure discovers #[Entity] parameters at compile time and deleg
         ->and($em->findCalls[0])->toBe(['class' => EntityA::class, 'id' => 'a-1'])
         ->and($em->findCalls[1])->toBe(['class' => EntityB::class, 'id' => 'b-2'])
         ->and($em->saved)->toHaveKey(EntityA::class)
-        ->and($em->saved)->toHaveKey(EntityB::class);
+        ->and($em->saved)->toHaveKey(EntityB::class)
+    ;
 });
 
 // ---------------------------------------------------------------------------
@@ -811,21 +799,17 @@ test('#[Around] closure discovers #[Entity] parameters at compile time and deleg
 
 final readonly class ObservedMessage
 {
-    public function __construct(public string $payload)
-    {
-    }
+    public function __construct(public string $payload) {}
 }
 
-final readonly class FailingMessage
-{
-}
+final readonly class FailingMessage {}
 
 final class ObservedHandler
 {
     #[Handles]
     public function handle(ObservedMessage $msg): string
     {
-        return 'observed: ' . $msg->payload;
+        return 'observed: '.$msg->payload;
     }
 }
 
@@ -844,8 +828,8 @@ final class ResultInspector
     public mixed $captured = null;
 
     #[AfterReturning(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            })]
+        return MatchResult::apply();
+    })]
     public function inspect(object $message, array $context, mixed $returnValue): void
     {
         $this->captured = $returnValue;
@@ -858,8 +842,8 @@ final class ErrorRecorder
     public ?\Throwable $caught = null;
 
     #[AfterThrowing(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            })]
+        return MatchResult::apply();
+    })]
     public function record(object $message, array $context, \Throwable $e): void
     {
         $this->caught = $e;
@@ -872,11 +856,11 @@ final class Cleaner
     public int $calls = 0;
 
     #[After(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply();
-            })]
+        return MatchResult::apply();
+    })]
     public function cleanup(object $message, array $context): void
     {
-        $this->calls++;
+        ++$this->calls;
     }
 }
 
@@ -897,7 +881,8 @@ test('AfterReturning advice receives the handler return value', function () use 
     $result = $mediator->send(new ObservedMessage('hello'));
 
     expect($result)->toBe('observed: hello')
-        ->and($inspector->captured)->toBe('observed: hello');
+        ->and($inspector->captured)->toBe('observed: hello')
+    ;
 });
 
 test('AfterThrowing advice is called when handler throws and exception still propagates', function () use ($testOutputDir) {
@@ -911,8 +896,9 @@ test('AfterThrowing advice is called when handler throws and exception still pro
     $recorder = $container->get(ErrorRecorder::class);
     $mediator = $container->get(MediatorInterface::class);
 
-    expect(fn() => $mediator->send(new FailingMessage()))->toThrow(\RuntimeException::class, 'handler failed')
-        ->and($recorder->caught)->toBeInstanceOf(\RuntimeException::class);
+    expect(fn () => $mediator->send(new FailingMessage()))->toThrow(\RuntimeException::class, 'handler failed')
+        ->and($recorder->caught)->toBeInstanceOf(\RuntimeException::class)
+    ;
 });
 
 test('After advice runs after a successful handler invocation', function () use ($testOutputDir) {
@@ -928,7 +914,8 @@ test('After advice runs after a successful handler invocation', function () use 
     $result = $mediator->send(new ObservedMessage('world'));
 
     expect($result)->toBe('observed: world')
-        ->and($cleaner->calls)->toBe(1);
+        ->and($cleaner->calls)->toBe(1)
+    ;
 });
 
 test('After advice runs even when handler throws', function () use ($testOutputDir) {
@@ -942,8 +929,9 @@ test('After advice runs even when handler throws', function () use ($testOutputD
     $cleaner = $container->get(Cleaner::class);
     $mediator = $container->get(MediatorInterface::class);
 
-    expect(fn() => $mediator->send(new FailingMessage()))->toThrow(\RuntimeException::class)
-        ->and($cleaner->calls)->toBe(1);
+    expect(fn () => $mediator->send(new FailingMessage()))->toThrow(\RuntimeException::class)
+        ->and($cleaner->calls)->toBe(1)
+    ;
 });
 
 // ---------------------------------------------------------------------------
@@ -954,11 +942,9 @@ test('After advice runs even when handler throws', function () use ($testOutputD
 final class IllegalProvidesAspect
 {
     #[After(static function (\ReflectionMethod $m): ?MatchResult {
-            return MatchResult::apply(provides: [0]);
-            })]
-    public function cleanup(object $message, array $context): void
-    {
-    }
+        return MatchResult::apply(provides: [0]);
+    })]
+    public function cleanup(object $message, array $context): void {}
 }
 
 test('compiler pass throws when an after-type advice returns provides', function () use ($testOutputDir) {
@@ -966,8 +952,9 @@ test('compiler pass throws when an after-type advice returns provides', function
     $container->setDefinition(ObservedHandler::class, new Definition(ObservedHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(IllegalProvidesAspect::class, new Definition(IllegalProvidesAspect::class)->addTag('mediator.aspect'));
 
-    expect(fn() => new MediatorCompilerPass($testOutputDir, 'CompiledMediatorProvidesValidation')->process($container))
-        ->toThrow(\LogicException::class, 'only #[Around] and #[Before] advices may provide dep-param slots');
+    expect(fn () => new MediatorCompilerPass($testOutputDir, 'CompiledMediatorProvidesValidation')->process($container))
+        ->toThrow(\LogicException::class, 'only #[Around] and #[Before] advices may provide dep-param slots')
+    ;
 });
 
 // ---------------------------------------------------------------------------
@@ -978,22 +965,18 @@ test('compiler pass throws when an after-type advice returns provides', function
 
 final class SelfGreetMessage
 {
-    public function __construct(public readonly string $name)
-    {
-    }
+    public function __construct(public readonly string $name) {}
 
     #[Handles]
     public function greet(): string
     {
-        return 'Hi, ' . $this->name . ' (self)';
+        return 'Hi, '.$this->name.' (self)';
     }
 }
 
 final class SelfGreetWithServiceMessage
 {
-    public function __construct(public readonly string $name)
-    {
-    }
+    public function __construct(public readonly string $name) {}
 
     #[Handles]
     public function greet(GreeterService $greeter): string
@@ -1059,7 +1042,8 @@ test('self-handler and regular handler can coexist in the same container', funct
     $mediator = $container->get(MediatorInterface::class);
 
     expect($mediator->send(new HelloMessage('Alice')))->toBe('Hi, Alice')
-        ->and($mediator->send(new SelfGreetMessage('Bob')))->toBe('Hi, Bob (self)');
+        ->and($mediator->send(new SelfGreetMessage('Bob')))->toBe('Hi, Bob (self)')
+    ;
 });
 
 test('before-advice applies to self-handler method', function () use ($testOutputDir) {

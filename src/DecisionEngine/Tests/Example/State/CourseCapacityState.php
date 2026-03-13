@@ -33,11 +33,11 @@ class CourseCapacityState
 
     private function onStudentSubscribed(StudentSubscribed $event): void
     {
-        $this->subscribedCount++;
+        ++$this->subscribedCount;
     }
 
     private function onStudentUnsubscribed(StudentUnsubscribed $event): void
     {
-        $this->subscribedCount--;
+        --$this->subscribedCount;
     }
 }

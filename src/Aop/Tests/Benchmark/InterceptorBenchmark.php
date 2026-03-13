@@ -16,7 +16,7 @@ class InterceptorBenchmark
     public function run(): void
     {
         echo "=== Interceptor Performance Benchmark ===\n";
-        echo "Iterations: " . number_format(self::ITERATIONS) . "\n\n";
+        echo 'Iterations: '.number_format(self::ITERATIONS)."\n\n";
 
         $results = [];
 
@@ -74,12 +74,12 @@ class InterceptorBenchmark
         $target = new BenchmarkTarget();
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $target->multiply(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $target->multiply(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -94,19 +94,19 @@ class InterceptorBenchmark
     {
         $container = new TestContainer();
         $container->set('target', new BenchmarkTarget());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
         );
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -121,7 +121,7 @@ class InterceptorBenchmark
     {
         $container = new TestContainer();
         $container->set('target', new BenchmarkTarget());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -129,12 +129,12 @@ class InterceptorBenchmark
         $interceptor->compile();
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -150,7 +150,7 @@ class InterceptorBenchmark
         $container = new TestContainer();
         $container->set('target', new BenchmarkTarget());
         $container->set('before', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -158,12 +158,12 @@ class InterceptorBenchmark
         $interceptor->before(CallableReference::fromContainer('before', BenchmarkAdvice::class, 'increment'));
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -179,7 +179,7 @@ class InterceptorBenchmark
         $container = new TestContainer();
         $container->set('target', new BenchmarkTarget());
         $container->set('before', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -188,12 +188,12 @@ class InterceptorBenchmark
         $interceptor->compile();
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -209,7 +209,7 @@ class InterceptorBenchmark
         $container = new TestContainer();
         $container->set('target', new BenchmarkTarget());
         $container->set('around', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -217,12 +217,12 @@ class InterceptorBenchmark
         $interceptor->around(CallableReference::fromContainer('around', BenchmarkAdvice::class, 'around'));
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -238,7 +238,7 @@ class InterceptorBenchmark
         $container = new TestContainer();
         $container->set('target', new BenchmarkTarget());
         $container->set('around', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -247,12 +247,12 @@ class InterceptorBenchmark
         $interceptor->compile();
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -268,7 +268,7 @@ class InterceptorBenchmark
         $container = new TestContainer();
         $container->set('target', new BenchmarkTarget());
         $container->set('afterReturning', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -276,12 +276,12 @@ class InterceptorBenchmark
         $interceptor->afterReturning(CallableReference::fromContainer('afterReturning', BenchmarkAdvice::class, 'incrementBy'));
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -297,7 +297,7 @@ class InterceptorBenchmark
         $container = new TestContainer();
         $container->set('target', new BenchmarkTarget());
         $container->set('afterReturning', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -306,12 +306,12 @@ class InterceptorBenchmark
         $interceptor->compile();
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -327,7 +327,7 @@ class InterceptorBenchmark
         $container = new TestContainer();
         $container->set('target', new BenchmarkTarget());
         $container->set('after', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -335,12 +335,12 @@ class InterceptorBenchmark
         $interceptor->after(CallableReference::fromContainer('after', BenchmarkAdvice::class, 'increment'));
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -356,7 +356,7 @@ class InterceptorBenchmark
         $container = new TestContainer();
         $container->set('target', new BenchmarkTarget());
         $container->set('after', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -365,12 +365,12 @@ class InterceptorBenchmark
         $interceptor->compile();
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -388,7 +388,7 @@ class InterceptorBenchmark
         $container->set('before1', new BenchmarkAdvice());
         $container->set('before2', new BenchmarkAdvice());
         $container->set('before3', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -396,15 +396,16 @@ class InterceptorBenchmark
         $interceptor
             ->before(CallableReference::fromContainer('before1', BenchmarkAdvice::class, 'increment'))
             ->before(CallableReference::fromContainer('before2', BenchmarkAdvice::class, 'increment'))
-            ->before(CallableReference::fromContainer('before3', BenchmarkAdvice::class, 'increment'));
+            ->before(CallableReference::fromContainer('before3', BenchmarkAdvice::class, 'increment'))
+        ;
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -422,7 +423,7 @@ class InterceptorBenchmark
         $container->set('before1', new BenchmarkAdvice());
         $container->set('before2', new BenchmarkAdvice());
         $container->set('before3', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -430,16 +431,17 @@ class InterceptorBenchmark
         $interceptor
             ->before(CallableReference::fromContainer('before1', BenchmarkAdvice::class, 'increment'))
             ->before(CallableReference::fromContainer('before2', BenchmarkAdvice::class, 'increment'))
-            ->before(CallableReference::fromContainer('before3', BenchmarkAdvice::class, 'increment'));
+            ->before(CallableReference::fromContainer('before3', BenchmarkAdvice::class, 'increment'))
+        ;
         $interceptor->compile();
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -458,7 +460,7 @@ class InterceptorBenchmark
         $container->set('around', new BenchmarkAdvice());
         $container->set('afterReturning', new BenchmarkAdvice());
         $container->set('after', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -467,15 +469,16 @@ class InterceptorBenchmark
             ->before(CallableReference::fromContainer('before', BenchmarkAdvice::class, 'increment'))
             ->around(CallableReference::fromContainer('around', BenchmarkAdvice::class, 'around'))
             ->afterReturning(CallableReference::fromContainer('afterReturning', BenchmarkAdvice::class, 'incrementBy'))
-            ->after(CallableReference::fromContainer('after', BenchmarkAdvice::class, 'increment'));
+            ->after(CallableReference::fromContainer('after', BenchmarkAdvice::class, 'increment'))
+        ;
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -494,7 +497,7 @@ class InterceptorBenchmark
         $container->set('around', new BenchmarkAdvice());
         $container->set('afterReturning', new BenchmarkAdvice());
         $container->set('after', new BenchmarkAdvice());
-        
+
         $interceptor = new Interceptor(
             CallableReference::fromContainer('target', BenchmarkTarget::class, 'multiply'),
             $container
@@ -503,16 +506,17 @@ class InterceptorBenchmark
             ->before(CallableReference::fromContainer('before', BenchmarkAdvice::class, 'increment'))
             ->around(CallableReference::fromContainer('around', BenchmarkAdvice::class, 'around'))
             ->afterReturning(CallableReference::fromContainer('afterReturning', BenchmarkAdvice::class, 'incrementBy'))
-            ->after(CallableReference::fromContainer('after', BenchmarkAdvice::class, 'increment'));
+            ->after(CallableReference::fromContainer('after', BenchmarkAdvice::class, 'increment'))
+        ;
         $interceptor->compile();
 
         // Warmup
-        for ($i = 0; $i < self::WARMUP; $i++) {
+        for ($i = 0; $i < self::WARMUP; ++$i) {
             $interceptor->call(42);
         }
 
         $start = hrtime(true);
-        for ($i = 0; $i < self::ITERATIONS; $i++) {
+        for ($i = 0; $i < self::ITERATIONS; ++$i) {
             $interceptor->call(42);
         }
         $duration = (hrtime(true) - $start) / 1e9;
@@ -562,7 +566,7 @@ class InterceptorBenchmark
 
         $speedups = [];
         foreach ($comparisons as [$label, $runtime, $compiled]) {
-            if (!isset($results[$runtime]) || !isset($results[$compiled])) {
+            if (! isset($results[$runtime]) || ! isset($results[$compiled])) {
                 continue;
             }
 
@@ -579,7 +583,7 @@ class InterceptorBenchmark
         }
 
         // Summary statistics
-        if (!empty($speedups)) {
+        if (! empty($speedups)) {
             $avgSpeedup = array_sum(array_column($speedups, 'speedup')) / count($speedups);
             $maxSpeedup = max(array_column($speedups, 'speedup'));
             $minSpeedup = min(array_column($speedups, 'speedup'));
@@ -634,10 +638,10 @@ class InterceptorBenchmark
 
         // Print header
         $this->printRow($table[0], $widths);
-        echo str_repeat('-', array_sum($widths) + count($widths) * 3 - 1) . "\n";
+        echo str_repeat('-', array_sum($widths) + count($widths) * 3 - 1)."\n";
 
         // Print data rows
-        for ($i = 1; $i < count($table); $i++) {
+        for ($i = 1; $i < count($table); ++$i) {
             $this->printRow($table[$i], $widths);
         }
     }
@@ -645,7 +649,7 @@ class InterceptorBenchmark
     private function printRow(array $row, array $widths): void
     {
         foreach ($row as $i => $cell) {
-            echo str_pad($cell, $widths[$i]) . '   ';
+            echo str_pad($cell, $widths[$i]).'   ';
         }
         echo "\n";
     }

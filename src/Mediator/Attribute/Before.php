@@ -32,6 +32,4 @@ namespace Ultra\Mediator\Attribute;
  *   public function log(object $message, array $context): void
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
-final class Before extends Advice
-{
-}
+final class Before extends Advice {}

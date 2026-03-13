@@ -10,6 +10,7 @@ use Ultra\DecisionEngine\Attribute\DomainIdentifier;
 use Ultra\DecisionEngine\Engine\EventClassRegistry;
 use Ultra\DecisionEngine\Engine\EventRouter;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
+use Ultra\DecisionEngine\Exception\StreamNotFoundException;
 use Ultra\DecisionEngine\ReducerTrait;
 use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
 use Ultra\EventStore\EventStore;
@@ -29,11 +30,10 @@ final class DecisionEngineAspect
         private readonly EventRouter $eventRouter,
         private readonly EventClassRegistry $eventClassRegistry,
         private readonly UltraNormalizer $normalizer,
-    ) {
-    }
+    ) {}
 
     #[Around(static function (\ReflectionMethod $method): ?MatchResult {
-        if ($method->getAttributes(DecisionHandler::class) === []) {
+        if ([] === $method->getAttributes(DecisionHandler::class)) {
             return null;
         }
 
@@ -45,11 +45,11 @@ final class DecisionEngineAspect
 
         foreach ($method->getParameters() as $index => $parameter) {
             $type = $parameter->getType();
-            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+            if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
                 continue;
             }
             $typeClass = $type->getName();
-            if (!DecisionEngineAspect::isStateClass($typeClass)) {
+            if (! DecisionEngineAspect::isStateClass($typeClass)) {
                 continue;
             }
 
@@ -57,15 +57,16 @@ final class DecisionEngineAspect
             $bindTo = null;
             foreach ($parameter->getAttributes(BindTo::class) as $attr) {
                 $bindTo = $attr->newInstance();
+
                 break;
             }
-            $commandProperty = $bindTo !== null
+            $commandProperty = null !== $bindTo
                 ? $bindTo->property
-                : $domainIdentifierName . 'Id';
-            if (!$commandRef->hasProperty($commandProperty)) {
+                : $domainIdentifierName.'Id';
+            if (! $commandRef->hasProperty($commandProperty)) {
                 throw new \LogicException(sprintf(
                     'Command %s has no property "%s" required for decision handler parameter "%s" (domain identifier "%s"). '
-                    . 'Either add the property or use #[BindTo("propertyName")] to bind to a different command property.',
+                    .'Either add the property or use #[BindTo("propertyName")] to bind to a different command property.',
                     $commandClass,
                     $commandProperty,
                     $parameter->getName(),
@@ -112,11 +113,11 @@ final class DecisionEngineAspect
             $streamValue = $this->getCommandPropertyValue($message, $stateParam['commandProperty']);
             $streamEvents = $this->eventsForStream($loadResult->events, $stateParam, $streamValue);
 
-            if ($streamEvents === []) {
+            if ([] === $streamEvents) {
                 if ($stateParam['isNullable']) {
                     $state = null;
                 } else {
-                    throw new \Ultra\DecisionEngine\Exception\StreamNotFoundException(
+                    throw new StreamNotFoundException(
                         $stateParam['domainIdentifierName'],
                         $streamValue,
                     );
@@ -131,7 +132,7 @@ final class DecisionEngineAspect
 
         if (($context[self::CONTEXT_DECISION_MODE] ?? null) === self::MODE_CHECK) {
             $checkParamNames = $config['checkParamNames'] ?? null;
-            if ($checkParamNames === null) {
+            if (null === $checkParamNames) {
                 throw new CommandHasNoCheckException($message::class);
             }
             $checkArgs = [];
@@ -144,7 +145,7 @@ final class DecisionEngineAspect
         }
 
         $emittedEvents = $proceed($message, $context, ...$states);
-        if (!is_array($emittedEvents)) {
+        if (! is_array($emittedEvents)) {
             $emittedEvents = [];
         }
 
@@ -172,8 +173,9 @@ final class DecisionEngineAspect
     }
 
     /**
-     * @param list<StoredEvent> $events
+     * @param list<StoredEvent>    $events
      * @param array<string, mixed> $stateParam
+     *
      * @return list<object>
      */
     private function eventsForStream(array $events, array $stateParam, string $streamValue): array
@@ -192,6 +194,7 @@ final class DecisionEngineAspect
 
     /**
      * @param list<StoredEvent> $events
+     *
      * @return list<object>
      */
     private function storedEventsToObjects(array $events, string $stateClass): array
@@ -200,7 +203,7 @@ final class DecisionEngineAspect
         $objects = [];
         foreach ($events as $stored) {
             $eventClass = $this->eventClassRegistry->getClass($stored->eventType);
-            if ($eventClass === null || !in_array($eventClass, $handledTypes, true)) {
+            if (null === $eventClass || ! in_array($eventClass, $handledTypes, true)) {
                 continue;
             }
             $objects[] = $this->storedEventToDto($stored, $eventClass);
@@ -217,10 +220,10 @@ final class DecisionEngineAspect
     private function getCommandPropertyValue(object $command, string $property): string
     {
         $getter = function (string $prop): mixed {
-            return $this->$prop;
+            return $this->{$prop};
         };
         $value = $getter->call($command, $property);
-        if (!is_string($value)) {
+        if (! is_string($value)) {
             throw new \LogicException(sprintf('Command property "%s" must be string, got %s.', $property, get_debug_type($value)));
         }
 
@@ -229,12 +232,12 @@ final class DecisionEngineAspect
 
     private static function isStateClass(string $class): bool
     {
-        if (!class_exists($class)) {
+        if (! class_exists($class)) {
             return false;
         }
         $ref = new \ReflectionClass($class);
 
-        if ($ref->getTraitNames() !== [] && in_array(ReducerTrait::class, $ref->getTraitNames(), true)) {
+        if ([] !== $ref->getTraitNames() && in_array(ReducerTrait::class, $ref->getTraitNames(), true)) {
             return true;
         }
 

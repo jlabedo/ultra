@@ -503,7 +503,8 @@ test('fluent API: ofTypes filters by event type names', function () {
     )]);
 
     $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'))
-        ->ofTypes('course-created');
+        ->ofTypes('course-created')
+    ;
     $result = $store->load($query);
 
     expect($result->events)->toHaveCount(1);

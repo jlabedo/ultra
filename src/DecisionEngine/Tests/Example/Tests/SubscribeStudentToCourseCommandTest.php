@@ -93,6 +93,7 @@ test('decide calls check internally - violations from check match exception from
         $command->decide($course, $student);
     } catch (InvariantViolation $e) {
         expect($e->violations)->toEqual($violationsFromCheck);
+
         return;
     }
 

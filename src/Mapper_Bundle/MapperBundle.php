@@ -9,7 +9,6 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\Mapper\RuntimeNormalizerInterface;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Bundle\DependencyInjection\Compiler\MapperCompilerPass;
-use Ultra\Mapper_Bundle\TagNames;
 
 final class MapperBundle extends Bundle
 {
@@ -18,10 +17,12 @@ final class MapperBundle extends Bundle
         parent::build($container);
 
         $container->register(UltraNormalizer::class, UltraNormalizer::class)
-            ->setArguments(['%kernel.build_dir%/mapper']);
+            ->setArguments(['%kernel.build_dir%/mapper'])
+        ;
 
         $container->registerForAutoconfiguration(RuntimeNormalizerInterface::class)
-            ->addTag(TagNames::RUNTIME_NORMALIZER);
+            ->addTag(TagNames::RUNTIME_NORMALIZER)
+        ;
 
         $container->addCompilerPass(new MapperCompilerPass(), priority: -100);
     }

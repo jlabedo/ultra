@@ -6,10 +6,10 @@ namespace Ultra\DecisionEngine\Tests\Example\Command;
 
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\DecisionEngine\Violation;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
 use Ultra\DecisionEngine\Tests\Example\State\StudentSubscriptionState;
+use Ultra\DecisionEngine\Violation;
 use Ultra\Mediator\Attribute\Handles;
 
 readonly class UnsubscribeStudentFromCourseCommand
@@ -17,8 +17,7 @@ readonly class UnsubscribeStudentFromCourseCommand
     public function __construct(
         public string $courseId,
         public string $studentId,
-    ) {
-    }
+    ) {}
 
     /**
      * @return list<Violation>
@@ -28,7 +27,7 @@ readonly class UnsubscribeStudentFromCourseCommand
         StudentSubscriptionState $student,
     ): array {
         return array_filter([
-            !$student->isSubscribedTo($this->courseId)
+            ! $student->isSubscribedTo($this->courseId)
                 ? new Violation('student.not_subscribed', 'Student is not subscribed to this course')
                 : null,
         ]);
@@ -45,7 +44,7 @@ readonly class UnsubscribeStudentFromCourseCommand
     ): array {
         $violations = $this->check($course, $student);
 
-        if ($violations !== []) {
+        if ([] !== $violations) {
             throw new InvariantViolation($violations);
         }
 

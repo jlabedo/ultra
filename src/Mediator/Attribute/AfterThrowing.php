@@ -25,6 +25,4 @@ namespace Ultra\Mediator\Attribute;
  *   public function reportError(object $message, array $context, \Throwable $e): void
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
-final class AfterThrowing extends Advice
-{
-}
+final class AfterThrowing extends Advice {}

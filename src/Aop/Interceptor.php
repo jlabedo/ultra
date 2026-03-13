@@ -19,47 +19,51 @@ class Interceptor
     public function __construct(
         private readonly CallableReference $callable,
         private readonly ?ContainerInterface $container = null
-    ) {
-    }
+    ) {}
 
     public function before(CallableReference $advice): self
     {
         $this->beforeAdvices[] = $advice;
+
         return $this;
     }
 
     public function after(CallableReference $advice): self
     {
         $this->afterAdvices[] = $advice;
+
         return $this;
     }
 
     public function afterReturning(CallableReference $advice): self
     {
         $this->afterReturningAdvices[] = $advice;
+
         return $this;
     }
 
     public function afterThrowing(CallableReference $advice): self
     {
         $this->afterThrowingAdvices[] = $advice;
+
         return $this;
     }
 
     public function around(CallableReference $advice): self
     {
         $this->aroundAdvices[] = $advice;
+
         return $this;
     }
 
     public function call(mixed ...$args): mixed
     {
-        if ($this->container === null) {
+        if (null === $this->container) {
             throw new \RuntimeException('Container is required for runtime execution');
         }
 
         // Use compiled version if available
-        if ($this->compiled !== null) {
+        if (null !== $this->compiled) {
             return $this->compiled->call(...$args);
         }
 
@@ -82,7 +86,7 @@ class Interceptor
         }
 
         // Execute with after/afterReturning/afterThrowing handling
-        if (!empty($this->afterThrowingAdvices) || !empty($this->afterReturningAdvices) || !empty($this->afterAdvices)) {
+        if (! empty($this->afterThrowingAdvices) || ! empty($this->afterReturningAdvices) || ! empty($this->afterAdvices)) {
             try {
                 $returnValue = $pipeline();
                 foreach ($this->afterReturningAdvices as $advice) {
@@ -92,24 +96,27 @@ class Interceptor
                 foreach ($this->afterThrowingAdvices as $advice) {
                     $advice->call($this->container, $e);
                 }
+
                 throw $e;
             } finally {
                 foreach ($this->afterAdvices as $advice) {
                     $advice->call($this->container);
                 }
             }
+
             return $returnValue;
-        } else {
-            return $pipeline();
         }
+
+        return $pipeline();
+
     }
 
     /**
-     * Compile this interceptor to optimized code for minimal runtime overhead
+     * Compile this interceptor to optimized code for minimal runtime overhead.
      */
     public function compile(?string $cacheDir = null): self
     {
-        if ($this->container === null) {
+        if (null === $this->container) {
             throw new \RuntimeException('Container is required for compilation');
         }
 
@@ -124,16 +131,17 @@ class Interceptor
     }
 
     /**
-     * Get a unique hash for this interceptor configuration
+     * Get a unique hash for this interceptor configuration.
      */
     public function getHash(): string
     {
         $metadata = $this->getMetadata();
+
         return md5(json_encode($metadata));
     }
 
     /**
-     * Get metadata about this interceptor for code generation
+     * Get metadata about this interceptor for code generation.
      */
     public function getMetadata(): array
     {
@@ -144,11 +152,11 @@ class Interceptor
             'afterReturningCount' => count($this->afterReturningAdvices),
             'afterThrowingCount' => count($this->afterThrowingAdvices),
             'aroundCount' => count($this->aroundAdvices),
-            'beforeAdvices' => array_map(fn($a) => $a->getMetadata(), $this->beforeAdvices),
-            'afterAdvices' => array_map(fn($a) => $a->getMetadata(), $this->afterAdvices),
-            'afterReturningAdvices' => array_map(fn($a) => $a->getMetadata(), $this->afterReturningAdvices),
-            'afterThrowingAdvices' => array_map(fn($a) => $a->getMetadata(), $this->afterThrowingAdvices),
-            'aroundAdvices' => array_map(fn($a) => $a->getMetadata(), $this->aroundAdvices),
+            'beforeAdvices' => array_map(fn ($a) => $a->getMetadata(), $this->beforeAdvices),
+            'afterAdvices' => array_map(fn ($a) => $a->getMetadata(), $this->afterAdvices),
+            'afterReturningAdvices' => array_map(fn ($a) => $a->getMetadata(), $this->afterReturningAdvices),
+            'afterThrowingAdvices' => array_map(fn ($a) => $a->getMetadata(), $this->afterThrowingAdvices),
+            'aroundAdvices' => array_map(fn ($a) => $a->getMetadata(), $this->aroundAdvices),
         ];
     }
 }

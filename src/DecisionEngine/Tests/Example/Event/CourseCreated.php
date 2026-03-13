@@ -15,6 +15,5 @@ readonly class CourseCreated
         public string $courseId,
         public string $name,
         public int $maxCapacity,
-    ) {
-    }
+    ) {}
 }

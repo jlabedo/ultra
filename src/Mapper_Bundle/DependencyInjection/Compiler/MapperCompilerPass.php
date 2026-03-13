@@ -6,7 +6,6 @@ namespace Ultra\Mapper_Bundle\DependencyInjection\Compiler;
 
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper\RuntimeNormalizerInterface;
 use Ultra\Mapper_Bundle\Cache\MapperCacheWarmer;
 use Ultra\Mapper_Bundle\TagNames;
@@ -16,7 +15,7 @@ final class MapperCompilerPass implements CompilerPassInterface
     public function process(ContainerBuilder $container): void
     {
         $classes = $this->collectTaggedClasses($container);
-        if ($classes === []) {
+        if ([] === $classes) {
             return;
         }
 
@@ -24,7 +23,8 @@ final class MapperCompilerPass implements CompilerPassInterface
 
         $container->register(MapperCacheWarmer::class, MapperCacheWarmer::class)
             ->setArguments([$classes, $runtimeTypes])
-            ->addTag('kernel.cache_warmer');
+            ->addTag('kernel.cache_warmer')
+        ;
     }
 
     /**
@@ -38,7 +38,7 @@ final class MapperCompilerPass implements CompilerPassInterface
             $definition = $container->findDefinition($id);
             foreach ($tags as $tag) {
                 $class = $tag['class'] ?? $definition->getClass();
-                if ($class === null) {
+                if (null === $class) {
                     throw new \LogicException(sprintf(
                         'Service "%s" tagged "%s" has no class; use tag attribute "class" to specify one.',
                         $id,
@@ -65,7 +65,7 @@ final class MapperCompilerPass implements CompilerPassInterface
         foreach ($container->findTaggedServiceIds(TagNames::RUNTIME_NORMALIZER) as $id => $tags) {
             $definition = $container->findDefinition($id);
             $class = $definition->getClass();
-            if ($class === null) {
+            if (null === $class) {
                 throw new \LogicException(sprintf(
                     'Service "%s" tagged "%s" has no class.',
                     $id,
@@ -73,7 +73,7 @@ final class MapperCompilerPass implements CompilerPassInterface
                 ));
             }
             $class = $container->getParameterBag()->resolveValue($class);
-            if (!is_a($class, RuntimeNormalizerInterface::class, true)) {
+            if (! is_a($class, RuntimeNormalizerInterface::class, true)) {
                 throw new \LogicException(sprintf(
                     'Service "%s" tagged "%s" must implement %s.',
                     $id,

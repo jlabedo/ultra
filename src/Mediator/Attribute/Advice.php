@@ -25,6 +25,5 @@ abstract class Advice
     public function __construct(
         public readonly \Closure $matcher = Pointcut::all(...),
         public readonly int $priority = 0,
-    ) {
-    }
+    ) {}
 }

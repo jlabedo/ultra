@@ -17,10 +17,10 @@ class CallableReference
     public const TYPE_FUNCTION = 'function';
 
     /**
-     * @param string $type One of TYPE_CONTAINER, TYPE_STATIC, or TYPE_FUNCTION
-     * @param string $className Fully qualified class name
-     * @param string $methodName Method or function name
-     * @param string|null $containerId Container service ID (only for TYPE_CONTAINER)
+     * @param string      $type        One of TYPE_CONTAINER, TYPE_STATIC, or TYPE_FUNCTION
+     * @param string      $className   Fully qualified class name
+     * @param string      $methodName  Method or function name
+     * @param null|string $containerId Container service ID (only for TYPE_CONTAINER)
      */
     public function __construct(
         private readonly string $type,
@@ -28,16 +28,16 @@ class CallableReference
         private readonly string $methodName,
         private readonly ?string $containerId = null
     ) {
-        if ($type === self::TYPE_CONTAINER && $containerId === null) {
+        if (self::TYPE_CONTAINER === $type && null === $containerId) {
             throw new \InvalidArgumentException('Container ID is required for container type callable');
         }
-        if ($type !== self::TYPE_CONTAINER && $containerId !== null) {
+        if (self::TYPE_CONTAINER !== $type && null !== $containerId) {
             throw new \InvalidArgumentException('Container ID should only be provided for container type callable');
         }
     }
 
     /**
-     * Create a callable reference from a container service
+     * Create a callable reference from a container service.
      */
     public static function fromContainer(string $containerId, string $className, string $methodName): self
     {
@@ -45,7 +45,7 @@ class CallableReference
     }
 
     /**
-     * Create a callable reference for a static method
+     * Create a callable reference for a static method.
      */
     public static function fromStatic(string $className, string $methodName): self
     {
@@ -53,7 +53,7 @@ class CallableReference
     }
 
     /**
-     * Create a callable reference for a global function
+     * Create a callable reference for a global function.
      */
     public static function fromFunction(string $functionName): self
     {
@@ -81,7 +81,7 @@ class CallableReference
     }
 
     /**
-     * Resolve and call this reference using the provided container
+     * Resolve and call this reference using the provided container.
      */
     public function call(ContainerInterface $container, mixed ...$args): mixed
     {
@@ -93,7 +93,7 @@ class CallableReference
     }
 
     /**
-     * Get metadata for code generation
+     * Get metadata for code generation.
      */
     public function getMetadata(): array
     {

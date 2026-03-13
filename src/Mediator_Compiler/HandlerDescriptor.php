@@ -18,8 +18,7 @@ final readonly class HandlerDescriptor
         public string $method,
         public array $depServiceIds,
         public array $advices = [],
-    ) {
-    }
+    ) {}
 
     public function withMethod(string $method): self
     {

@@ -27,16 +27,12 @@ final class ReducerTraitTestState
 
 final readonly class TestEventIncrement
 {
-    public function __construct(public int $delta)
-    {
-    }
+    public function __construct(public int $delta) {}
 }
 
 final readonly class TestEventNamed
 {
-    public function __construct(public string $name)
-    {
-    }
+    public function __construct(public string $name) {}
 }
 
 /** State that does not handle SomeUnhandledEvent */
@@ -52,9 +48,7 @@ final class ReducerTraitTestStateWithSkip
     }
 }
 
-final readonly class SomeUnhandledEvent
-{
-}
+final readonly class SomeUnhandledEvent {}
 
 test('fromEvents with matching events applies them in order', function () {
     $state = ReducerTraitTestState::fromEvents([

@@ -25,6 +25,4 @@ namespace Ultra\Mediator\Attribute;
  *   public function audit(object $message, array $context, mixed $returnValue): void
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
-final class AfterReturning extends Advice
-{
-}
+final class AfterReturning extends Advice {}

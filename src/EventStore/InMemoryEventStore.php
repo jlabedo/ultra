@@ -22,7 +22,7 @@ final class InMemoryEventStore implements EventStore
 
         $result = [];
         foreach ($this->events as $event) {
-            if (!$query->matches($event)) {
+            if (! $query->matches($event)) {
                 continue;
             }
             $result[] = $event;
@@ -37,11 +37,11 @@ final class InMemoryEventStore implements EventStore
 
     public function append(array $events, ?StreamVersion $expectedVersion = null): void
     {
-        if ($expectedVersion !== null) {
+        if (null !== $expectedVersion) {
             $currentResult = $this->load($expectedVersion->query);
             $currentVersionMap = $currentResult->streamVersion->version;
             foreach (array_keys($expectedVersion->version) as $key) {
-                if (!array_key_exists($key, $currentVersionMap)) {
+                if (! array_key_exists($key, $currentVersionMap)) {
                     $currentVersionMap[$key] = $this->lastEventIdByStream[$key] ?? 0;
                 }
             }

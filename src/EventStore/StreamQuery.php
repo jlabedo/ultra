@@ -11,18 +11,17 @@ namespace Ultra\EventStore;
 readonly class StreamQuery
 {
     /**
-     * @param array<string, string>   $domainIdentifiers dimension => value (event must match all when orCriteria is empty)
-     * @param array<string>           $eventNames       event types to include (empty = all) when orBranchEventNames is null
-     * @param list<array<string,string>> $orCriteria    when non-empty: event matches if it matches any criterion (each criterion is dimension => value)
-     * @param list<array<string>>|null $orBranchEventNames when set, same length as orCriteria: event type filter per branch (empty = all types)
+     * @param array<string, string>      $domainIdentifiers  dimension => value (event must match all when orCriteria is empty)
+     * @param array<string>              $eventNames         event types to include (empty = all) when orBranchEventNames is null
+     * @param list<array<string,string>> $orCriteria         when non-empty: event matches if it matches any criterion (each criterion is dimension => value)
+     * @param null|list<array<string>>   $orBranchEventNames when set, same length as orCriteria: event type filter per branch (empty = all types)
      */
     public function __construct(
         public array $domainIdentifiers = [],
         public array $eventNames = [],
         public array $orCriteria = [],
         public ?array $orBranchEventNames = null,
-    ) {
-    }
+    ) {}
 
     /**
      * Start a branch: events that have all of these domain identifiers (AND).
@@ -30,7 +29,7 @@ readonly class StreamQuery
      */
     public static function forStream(DomainIdentifier ...$identifiers): self
     {
-        if ($identifiers === []) {
+        if ([] === $identifiers) {
             return new self([], [], []);
         }
 
@@ -43,10 +42,10 @@ readonly class StreamQuery
     public function andStream(DomainIdentifier $identifier): self
     {
         $clauses = $this->orCriteria;
-        if ($this->domainIdentifiers !== []) {
+        if ([] !== $this->domainIdentifiers) {
             $clauses = [$this->domainIdentifiers];
         }
-        if ($clauses === []) {
+        if ([] === $clauses) {
             return new self([], $this->eventNames, [$identifier->toMap()], $this->orBranchEventNames);
         }
         $last = array_key_last($clauses);
@@ -62,8 +61,8 @@ readonly class StreamQuery
     public function ofTypes(string ...$eventTypeNames): self
     {
         $names = array_values($eventTypeNames);
-        $clauses = $this->orCriteria !== [] ? $this->orCriteria : ($this->domainIdentifiers !== [] ? [$this->domainIdentifiers] : []);
-        $orBranchEventNames = $clauses !== [] ? array_fill(0, count($clauses), $names) : null;
+        $clauses = [] !== $this->orCriteria ? $this->orCriteria : ([] !== $this->domainIdentifiers ? [$this->domainIdentifiers] : []);
+        $orBranchEventNames = [] !== $clauses ? array_fill(0, count($clauses), $names) : null;
 
         return new self($this->domainIdentifiers, $names, $this->orCriteria, $orBranchEventNames);
     }
@@ -78,7 +77,7 @@ readonly class StreamQuery
         $orBranchEventNames = [];
         foreach ($branches as $q) {
             $clauses = $q->orCriteria;
-            if ($q->domainIdentifiers !== []) {
+            if ([] !== $q->domainIdentifiers) {
                 $clauses = [$q->domainIdentifiers];
             }
             $branchEventNames = $q->orBranchEventNames ?? array_fill(0, count($clauses), $q->eventNames);
@@ -93,7 +92,7 @@ readonly class StreamQuery
 
     public function isEmpty(): bool
     {
-        return $this->domainIdentifiers === [] && $this->orCriteria === [];
+        return [] === $this->domainIdentifiers && [] === $this->orCriteria;
     }
 
     /**
@@ -104,17 +103,18 @@ readonly class StreamQuery
         if ($this->isEmpty()) {
             return false;
         }
-        if ($this->orCriteria !== [] && $this->orBranchEventNames !== null && count($this->orBranchEventNames) === count($this->orCriteria)) {
+        if ([] !== $this->orCriteria && null !== $this->orBranchEventNames && count($this->orBranchEventNames) === count($this->orCriteria)) {
             foreach ($this->orCriteria as $i => $criterion) {
                 $clauseMatches = true;
                 foreach ($criterion as $dimension => $value) {
-                    if (!isset($event->domainIds[$dimension]) || $event->domainIds[$dimension] !== $value) {
+                    if (! isset($event->domainIds[$dimension]) || $event->domainIds[$dimension] !== $value) {
                         $clauseMatches = false;
+
                         break;
                     }
                 }
                 $branchTypes = $this->orBranchEventNames[$i];
-                $typeOk = $branchTypes === [] || in_array($event->eventType, $branchTypes, true);
+                $typeOk = [] === $branchTypes || in_array($event->eventType, $branchTypes, true);
                 if ($clauseMatches && $typeOk) {
                     return true;
                 }
@@ -122,15 +122,16 @@ readonly class StreamQuery
 
             return false;
         }
-        if ($this->eventNames !== [] && !in_array($event->eventType, $this->eventNames, true)) {
+        if ([] !== $this->eventNames && ! in_array($event->eventType, $this->eventNames, true)) {
             return false;
         }
-        if ($this->orCriteria !== []) {
+        if ([] !== $this->orCriteria) {
             foreach ($this->orCriteria as $criterion) {
                 $matches = true;
                 foreach ($criterion as $dimension => $value) {
-                    if (!isset($event->domainIds[$dimension]) || $event->domainIds[$dimension] !== $value) {
+                    if (! isset($event->domainIds[$dimension]) || $event->domainIds[$dimension] !== $value) {
                         $matches = false;
+
                         break;
                     }
                 }
@@ -142,7 +143,7 @@ readonly class StreamQuery
             return false;
         }
         foreach ($this->domainIdentifiers as $dimension => $value) {
-            if (!isset($event->domainIds[$dimension]) || $event->domainIds[$dimension] !== $value) {
+            if (! isset($event->domainIds[$dimension]) || $event->domainIds[$dimension] !== $value) {
                 return false;
             }
         }
@@ -152,6 +153,7 @@ readonly class StreamQuery
 
     /**
      * @param list<DomainIdentifier> $identifiers
+     *
      * @return array<string, string>
      */
     private static function identifiersToMap(array $identifiers): array

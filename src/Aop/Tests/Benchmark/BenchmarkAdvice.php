@@ -10,7 +10,7 @@ class BenchmarkAdvice
 
     public function increment(): void
     {
-        $this->counter++;
+        ++$this->counter;
     }
 
     public function incrementBy(int $value): void
