@@ -38,14 +38,11 @@
     "prefer-stable": true,
     "autoload": {
         "psr-4": {
-            "Ultra\\": "src",
-            "Ultra\\Mapper\\": "src/Mapper/"
+            "Ultra\\": "src"
         },
         "exclude-from-classmap": [
             "**/Tests/",
-            "**/bin/",
-            "src/Mapper/Tests/",
-            "src/Mapper_Compiler/Tests/"
+            "**/bin/"
         ]
     },
     "autoload-dev": {
