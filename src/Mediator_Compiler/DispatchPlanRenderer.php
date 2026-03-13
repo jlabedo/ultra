@@ -6,44 +6,19 @@ namespace Ultra\Mediator_Compiler;
 
 final class DispatchPlanRenderer
 {
+    private const INDENT = '    ';
+
     public function renderDispatchMethod(string $dispatchName, DispatchPlan $plan): string
     {
-        $coreExpr = $this->buildHandlerExpression(
-            $plan->serviceId,
-            $plan->handlerMethod,
-            $plan->depServiceIds,
-            $plan->claimedVarNames,
-            '$m',
-        );
+        $dispatchExpr = $this->renderDispatchExpression($plan);
 
-        foreach (array_reverse($plan->layers) as $layer) {
-            $coreExpr = $this->applyAroundsAtPriority(
-                $layer->arounds,
-                $coreExpr,
-                $plan->claimedVarNames,
-            );
-            $coreExpr = $this->wrapWithBeforeAfter(
-                $coreExpr,
-                $layer->befores,
-                $layer->afterReturnings,
-                $layer->afterThrowings,
-                $layer->afters,
-            );
-        }
+        $bodyLines = [
+            $this->indent(2).'$m = $message;',
+            $this->indent(2).'$c = $context;',
+        ];
+        $this->appendExpression($bodyLines, 2, 'return ', $dispatchExpr, ';');
 
-        $lines = [];
-        $lines[] = '        $m = $message;';
-        $lines[] = '        $c = $context;';
-        $inlinedBody = $this->unwrapRootMessageContextIife($coreExpr);
-        if (null !== $inlinedBody) {
-            foreach (explode("\n", $inlinedBody) as $line) {
-                $lines[] = '        '.$line;
-            }
-        } else {
-            $this->appendExpression($lines, '        return ', $coreExpr, ';');
-        }
-
-        $body = implode("\n", $lines);
+        $body = implode("\n", $bodyLines);
 
         return <<<PHP
                 private function {$dispatchName}(object \$message, array \$context): mixed
@@ -53,13 +28,35 @@ final class DispatchPlanRenderer
             PHP;
     }
 
+    private function renderDispatchExpression(DispatchPlan $plan): string
+    {
+        $expr = $this->renderHandlerCall(
+            $plan->serviceId,
+            $plan->handlerMethod,
+            $plan->depServiceIds,
+            $plan->claimedVarNames,
+            '$m',
+        );
+
+        foreach (array_reverse($plan->layers) as $layer) {
+            $expr = $this->renderAroundStack($layer->arounds, $expr, $plan->claimedVarNames);
+            $expr = $this->renderLayerFrame(
+                $expr,
+                $layer->befores,
+                $layer->afterReturnings,
+                $layer->afterThrowings,
+                $layer->afters,
+            );
+        }
+
+        return $expr;
+    }
+
     /**
-     * Build the handler call expression (used as the innermost expression).
-     *
      * @param list<string>       $depServiceIds
      * @param array<int, string> $claimedVarNames
      */
-    private function buildHandlerExpression(
+    private function renderHandlerCall(
         string $serviceId,
         string $handlerMethod,
         array $depServiceIds,
@@ -68,83 +65,64 @@ final class DispatchPlanRenderer
     ): string {
         $isSelf = '@self' === $serviceId;
 
-        $handlerArgs = [];
+        $args = [];
         if (! $isSelf) {
-            $handlerArgs[] = $messageVar;
+            $args[] = $messageVar;
         }
+
         foreach ($depServiceIds as $depIdx => $depId) {
-            $handlerArgs[] = $claimedVarNames[$depIdx]
+            $args[] = $claimedVarNames[$depIdx]
                 ?? '$this->locator->get('.$this->exportString($depId).')';
         }
 
-        return $isSelf
-            ? \sprintf('%s->%s(%s)', $messageVar, $handlerMethod, implode(', ', $handlerArgs))
-            : \sprintf(
-                '$this->locator->get(%s)->%s(%s)',
-                $this->exportString($serviceId),
-                $handlerMethod,
-                implode(', ', $handlerArgs),
-            );
+        if ($isSelf) {
+            return sprintf('%s->%s(%s)', $messageVar, $handlerMethod, implode(', ', $args));
+        }
+
+        return $this->renderServiceMethodCall($serviceId, $handlerMethod, $args);
     }
 
     /**
-     * Wrap inner expression with around advices at the same priority.
-     *
      * @param list<AdviceDescriptor> $arounds
      * @param array<int, string>     $claimedVarNames
      */
-    private function applyAroundsAtPriority(
-        array $arounds,
-        string $innerExpr,
-        array $claimedVarNames,
-    ): string {
+    private function renderAroundStack(array $arounds, string $innerExpr, array $claimedVarNames): string
+    {
         if ([] === $arounds) {
             return $innerExpr;
         }
 
-        $inner = $innerExpr;
+        $wrapped = $innerExpr;
 
-        // Wrap with around advices. Reverse so the earlier advice (deterministic order)
-        // becomes the outermost wrapper.
+        // Reverse so stable ordering keeps the first advice as the outermost one.
         foreach (array_reverse($arounds) as $advice) {
-            // Lambda params: $m and $c, plus any dep vars this advice claims.
-            // Inner lambdas auto-capture claimed vars from outer lambda scopes.
-            $lambdaParams = ['$m', '$c'];
+            $proceedParams = ['$m', '$c'];
             foreach ($advice->claimedDepIndices as $depIdx) {
-                $lambdaParams[] = $claimedVarNames[$depIdx];
+                $proceedParams[] = $claimedVarNames[$depIdx];
             }
 
-            // Aspect call args: proceed lambda, message, context, and — when the
-            // advice carries a non-empty runtimeConfig — a PHP literal array.
-            $aspectArgs = [
-                $this->buildProceedCallable($lambdaParams, $inner),
+            $args = [
+                $this->renderProceedCallable($proceedParams, $wrapped),
                 '$m',
                 '$c',
             ];
             if ([] !== $advice->runtimeConfig) {
-                $aspectArgs[] = $this->exportValue($advice->runtimeConfig);
+                $args[] = $this->exportValue($advice->runtimeConfig);
             }
 
-            $inner = sprintf(
-                '$this->locator->get(%s)->%s(%s)',
-                $this->exportString($advice->serviceId),
-                $advice->method,
-                implode(', ', $aspectArgs),
-            );
+            $wrapped = $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args);
         }
 
-        return $inner;
+        return $wrapped;
     }
 
     /**
-     * Wrap the inner expression with before/after-type advices for a priority.
-     *
      * @param list<AdviceDescriptor> $befores
      * @param list<AdviceDescriptor> $afterReturnings
      * @param list<AdviceDescriptor> $afterThrowings
      * @param list<AdviceDescriptor> $afters
      */
-    private function wrapWithBeforeAfter(
+    private function renderLayerFrame(
         string $innerExpr,
         array $befores,
         array $afterReturnings,
@@ -155,20 +133,14 @@ final class DispatchPlanRenderer
             return $innerExpr;
         }
 
-        $lines = [];
-        $lines[] = '(function ($m, $c) {';
+        $lines = ['(function ($m, $c) {'];
 
         foreach ($befores as $advice) {
-            $beforeArgs = ['$m', '$c'];
+            $args = ['$m', '$c'];
             if ([] !== $advice->runtimeConfig) {
-                $beforeArgs[] = $this->exportValue($advice->runtimeConfig);
+                $args[] = $this->exportValue($advice->runtimeConfig);
             }
-            $lines[] = sprintf(
-                '    $this->locator->get(%s)->%s(%s);',
-                $this->exportString($advice->serviceId),
-                $advice->method,
-                implode(', ', $beforeArgs),
-            );
+            $lines[] = $this->indent(1).$this->renderServiceMethodCall($advice->serviceId, $advice->method, $args).';';
         }
 
         $needsCatch = [] !== $afterThrowings;
@@ -176,35 +148,40 @@ final class DispatchPlanRenderer
 
         if (! $needsCatch && ! $needsFinally) {
             if ([] === $afterReturnings) {
-                $this->appendExpression($lines, '    return ', $innerExpr, ';');
+                $this->appendExpression($lines, 1, 'return ', $innerExpr, ';');
             } else {
-                $this->appendExpression($lines, '    $__result = ', $innerExpr, ';');
+                $this->appendExpression($lines, 1, '$__result = ', $innerExpr, ';');
                 foreach ($afterReturnings as $advice) {
-                    $lines[] = $this->buildAfterReturningCall('    ', $advice, '$m', '$c', '$__result');
+                    $lines[] = $this->indent(1).$this->renderAfterReturningCall($advice, '$m', '$c', '$__result');
                 }
-                $lines[] = '    return $__result;';
+                $lines[] = $this->indent(1).'return $__result;';
             }
         } else {
-            $lines[] = '    try {';
-            $this->appendExpression($lines, '        $__result = ', $innerExpr, ';');
+            $lines[] = $this->indent(1).'try {';
+            $this->appendExpression($lines, 2, '$__result = ', $innerExpr, ';');
+
             foreach ($afterReturnings as $advice) {
-                $lines[] = $this->buildAfterReturningCall('        ', $advice, '$m', '$c', '$__result');
+                $lines[] = $this->indent(2).$this->renderAfterReturningCall($advice, '$m', '$c', '$__result');
             }
-            $lines[] = '        return $__result;';
+
+            $lines[] = $this->indent(2).'return $__result;';
+
             if ($needsCatch) {
-                $lines[] = '    } catch (\Throwable $__e) {';
+                $lines[] = $this->indent(1).'} catch (\Throwable $__e) {';
                 foreach ($afterThrowings as $advice) {
-                    $lines[] = $this->buildAfterThrowingCall('        ', $advice, '$m', '$c', '$__e');
+                    $lines[] = $this->indent(2).$this->renderAfterThrowingCall($advice, '$m', '$c', '$__e');
                 }
-                $lines[] = '        throw $__e;';
+                $lines[] = $this->indent(2).'throw $__e;';
             }
+
             if ($needsFinally) {
-                $lines[] = '    } finally {';
+                $lines[] = $this->indent(1).'} finally {';
                 foreach ($afters as $advice) {
-                    $lines[] = $this->buildAfterCall('        ', $advice, '$m', '$c');
+                    $lines[] = $this->indent(2).$this->renderAfterCall($advice, '$m', '$c');
                 }
             }
-            $lines[] = '    }';
+
+            $lines[] = $this->indent(1).'}';
         }
 
         $lines[] = '})($m, $c)';
@@ -212,8 +189,28 @@ final class DispatchPlanRenderer
         return implode("\n", $lines);
     }
 
-    private function buildAfterReturningCall(
-        string $indent,
+    /**
+     * @param list<string> $params
+     */
+    private function renderProceedCallable(array $params, string $innerExpr): string
+    {
+        return $this->inlineExpression('fn('.implode(', ', $params).') => ', $innerExpr);
+    }
+
+    /**
+     * @param list<string> $args
+     */
+    private function renderServiceMethodCall(string $serviceId, string $method, array $args): string
+    {
+        return sprintf(
+            '$this->locator->get(%s)->%s(%s)',
+            $this->exportString($serviceId),
+            $method,
+            implode(', ', $args),
+        );
+    }
+
+    private function renderAfterReturningCall(
         AdviceDescriptor $advice,
         string $messageVar,
         string $contextVar,
@@ -224,17 +221,10 @@ final class DispatchPlanRenderer
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
 
-        return sprintf(
-            '%s$this->locator->get(%s)->%s(%s);',
-            $indent,
-            $this->exportString($advice->serviceId),
-            $advice->method,
-            implode(', ', $args),
-        );
+        return $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args).';';
     }
 
-    private function buildAfterThrowingCall(
-        string $indent,
+    private function renderAfterThrowingCall(
         AdviceDescriptor $advice,
         string $messageVar,
         string $contextVar,
@@ -245,17 +235,10 @@ final class DispatchPlanRenderer
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
 
-        return sprintf(
-            '%s$this->locator->get(%s)->%s(%s);',
-            $indent,
-            $this->exportString($advice->serviceId),
-            $advice->method,
-            implode(', ', $args),
-        );
+        return $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args).';';
     }
 
-    private function buildAfterCall(
-        string $indent,
+    private function renderAfterCall(
         AdviceDescriptor $advice,
         string $messageVar,
         string $contextVar,
@@ -265,13 +248,40 @@ final class DispatchPlanRenderer
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
 
-        return sprintf(
-            '%s$this->locator->get(%s)->%s(%s);',
-            $indent,
-            $this->exportString($advice->serviceId),
-            $advice->method,
-            implode(', ', $args),
-        );
+        return $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args).';';
+    }
+
+    private function indent(int $level): string
+    {
+        return str_repeat(self::INDENT, $level);
+    }
+
+    /**
+     * @param list<string> $lines
+     */
+    private function appendExpression(array &$lines, int $indentLevel, string $prefix, string $expr, string $suffix = ''): void
+    {
+        $lines = [...$lines, ...explode("\n", $this->inlineExpression($this->indent($indentLevel).$prefix, $expr, $suffix))];
+    }
+
+    private function inlineExpression(string $prefix, string $expr, string $suffix = ''): string
+    {
+        $exprLines = explode("\n", $expr);
+        if (1 === count($exprLines)) {
+            return $prefix.$expr.$suffix;
+        }
+
+        preg_match('/^\s*/', $prefix, $matches);
+        $continuationIndent = ($matches[0] ?? '').self::INDENT;
+
+        $lines = [$prefix.$exprLines[0]];
+        foreach (array_slice($exprLines, 1) as $line) {
+            $lines[] = $continuationIndent.$line;
+        }
+
+        $lines[count($lines) - 1] .= $suffix;
+
+        return implode("\n", $lines);
     }
 
     private function exportString(string $value): string
@@ -308,139 +318,5 @@ final class DispatchPlanRenderer
         }
 
         return '['.implode(', ', $pairs).']';
-    }
-
-    /**
-     * @param list<string> $lines
-     */
-    private function appendExpression(array &$lines, string $prefix, string $expr, string $suffix = ''): void
-    {
-        $lines = [...$lines, ...explode("\n", $this->inlineExpression($prefix, $expr, $suffix))];
-    }
-
-    private function inlineExpression(string $prefix, string $expr, string $suffix = ''): string
-    {
-        $exprLines = explode("\n", $expr);
-        if (1 === \count($exprLines)) {
-            return $prefix.$expr.$suffix;
-        }
-
-        $exprLines = $this->dedentTail($exprLines);
-
-        preg_match('/^\s*/', $prefix, $matches);
-        $continuationIndent = ($matches[0] ?? '').'    ';
-        $lines = [$prefix.$exprLines[0]];
-        foreach (array_slice($exprLines, 1) as $line) {
-            $lines[] = $continuationIndent.$line;
-        }
-
-        $lines[\count($lines) - 1] .= $suffix;
-
-        return implode("\n", $lines);
-    }
-
-    /**
-     * @param list<string> $lines
-     *
-     * @return list<string>
-     */
-    private function dedentTail(array $lines): array
-    {
-        $tail = array_slice($lines, 1);
-        $baseIndent = null;
-
-        foreach ($tail as $line) {
-            if ('' === trim($line)) {
-                continue;
-            }
-
-            preg_match('/^ */', $line, $matches);
-            $baseIndent = strlen($matches[0] ?? '');
-            break;
-        }
-
-        if (null === $baseIndent || 0 === $baseIndent) {
-            return $lines;
-        }
-
-        foreach ($tail as $i => $line) {
-            if ('' === trim($line)) {
-                $tail[$i] = '';
-                continue;
-            }
-
-            preg_match('/^ */', $line, $matches);
-            $indent = strlen($matches[0] ?? '');
-            $trimBy = min($baseIndent, $indent);
-            $tail[$i] = substr($line, $trimBy);
-        }
-
-        return [$lines[0], ...$tail];
-    }
-
-    private function unwrapRootMessageContextIife(string $expr): ?string
-    {
-        $body = $this->unwrapIifeExpression($expr, ['$m', '$c']);
-
-        return null === $body ? null : $this->dedentBlock($body);
-    }
-
-    private function buildProceedCallable(array $lambdaParams, string $inner): string
-    {
-        $iifeBody = $this->unwrapIifeExpression($inner, ['$m', '$c']);
-        if (null === $iifeBody) {
-            return $this->inlineExpression('fn('.implode(', ', $lambdaParams).') => ', $inner);
-        }
-
-        $bodyLines = explode("\n", $this->dedentBlock($iifeBody));
-        $lines = ['function ('.implode(', ', $lambdaParams).') {'];
-        foreach ($bodyLines as $line) {
-            $lines[] = '    '.$line;
-        }
-        $lines[] = '}';
-
-        return implode("\n", $lines);
-    }
-
-    private function unwrapIifeExpression(string $expr, array $params): ?string
-    {
-        $paramList = implode(', ', $params);
-        $prefix = '(function ('.$paramList.') {';
-        $suffix = '})('.$paramList.')';
-        $trimmed = trim($expr);
-
-        if (! str_starts_with($trimmed, $prefix) || ! str_ends_with($trimmed, $suffix)) {
-            return null;
-        }
-
-        $body = substr($trimmed, strlen($prefix), -strlen($suffix));
-        $body = trim($body, "\n");
-
-        return '' === $body ? null : $body;
-    }
-
-    private function dedentBlock(string $body): string
-    {
-        $lines = explode("\n", $body);
-        $minIndent = null;
-        foreach ($lines as $line) {
-            if ('' === trim($line)) {
-                continue;
-            }
-            preg_match('/^ */', $line, $matches);
-            $indent = strlen($matches[0] ?? '');
-            $minIndent = null === $minIndent ? $indent : min($minIndent, $indent);
-        }
-
-        if (null !== $minIndent && $minIndent > 0) {
-            foreach ($lines as $i => $line) {
-                if ('' === trim($line)) {
-                    continue;
-                }
-                $lines[$i] = substr($line, min($minIndent, strlen($line)));
-            }
-        }
-
-        return implode("\n", $lines);
     }
 }
