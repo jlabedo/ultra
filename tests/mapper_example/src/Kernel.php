@@ -33,8 +33,7 @@ final class Kernel extends BaseKernel
 
         $services->defaults()
             ->autowire()
-            ->autoconfigure()
-            ->public();
+            ->autoconfigure();
 
         $services->load(__NAMESPACE__ . '\\', __DIR__ . '/')
             ->exclude([

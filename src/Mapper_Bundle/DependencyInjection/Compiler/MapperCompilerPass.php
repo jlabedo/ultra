@@ -20,18 +20,10 @@ final class MapperCompilerPass implements CompilerPassInterface
             return;
         }
 
-        $buildDir = (string) $container->getParameter('kernel.build_dir');
-        $cacheDir = $buildDir . '/mapper';
-
-        if (!$container->hasDefinition(UltraNormalizer::class)) {
-            $container->register(UltraNormalizer::class, UltraNormalizer::class)
-                ->setArguments([$cacheDir]);
-        }
-
         $runtimeTypes = $this->collectRuntimeNormalizedTypes($container);
 
         $container->register(MapperCacheWarmer::class, MapperCacheWarmer::class)
-            ->setArguments([$classes, $cacheDir, $runtimeTypes])
+            ->setArguments([$classes, $runtimeTypes])
             ->addTag('kernel.cache_warmer');
     }
 

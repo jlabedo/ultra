@@ -23,7 +23,7 @@ final class MapperBundleTest extends KernelTestCase
     {
         return new Kernel(
             $options['environment'] ?? 'test',
-            $options['debug'] ?? false,
+            $options['debug'] ?? true,
         );
     }
 
@@ -37,17 +37,12 @@ final class MapperBundleTest extends KernelTestCase
     public function testCacheWarmupUsesRuntimeNormalizers(): void
     {
         self::bootKernel();
-        $container = self::getContainer();
 
-        /** @var MapperCacheWarmer $warmer */
-        $warmer = $container->get(MapperCacheWarmer::class);
-        $warmer->warmUp(self::$kernel->getCacheDir());
-
-        $buildDir = $container->getParameter('kernel.build_dir');
-        $cacheFile = $buildDir . '/mapper/__Normalizer_Ultra_Mapper_Example_Domain_UserRegistered.php';
+        $cacheDir = self::$kernel->getBuildDir() . '/mapper';
+        $cacheFile = $cacheDir . '/__Normalizer_Ultra_Mapper_Example_Domain_UserRegistered.php';
         $this->assertFileExists($cacheFile);
 
-        $normalizer = new UltraNormalizer($buildDir . '/mapper');
+        $normalizer = new UltraNormalizer($cacheDir);
         $normalizer->registerRuntimeNormalizer(new RuntimeEmailNormalizer());
 
         $event = new UserRegistered(new RuntimeEmail('user@example.test'), 'User');

@@ -15,7 +15,6 @@ final class MapperCacheWarmer implements CacheWarmerInterface
      */
     public function __construct(
         private readonly array $classes,
-        private readonly string $cacheDir,
         private readonly array $runtimeNormalizedTypes,
     ) {
     }
@@ -26,8 +25,10 @@ final class MapperCacheWarmer implements CacheWarmerInterface
             throw new \RuntimeException('Cannot warm mapper cache because ultra/mapper-compiler is not installed.');
         }
 
-        if (!is_dir($this->cacheDir)) {
-            mkdir($this->cacheDir, 0o777, true);
+        $mapperBuildDir = rtrim((string) ($buildDir ?? $cacheDir), '/') . '/mapper';
+
+        if (!is_dir($mapperBuildDir)) {
+            mkdir($mapperBuildDir, 0o777, true);
         }
 
         foreach ($this->classes as $className) {
@@ -36,7 +37,7 @@ final class MapperCacheWarmer implements CacheWarmerInterface
             }
             $normalizerClassBaseName = '__Normalizer_' . str_replace('\\', '_', ltrim($className, '\\'));
             $normalizerClass = 'Ultra\\Normalizer\\Generated\\' . $normalizerClassBaseName;
-            $cacheFile = $this->cacheDir . '/' . $normalizerClassBaseName . '.php';
+            $cacheFile = $mapperBuildDir . '/' . $normalizerClassBaseName . '.php';
 
             if (!file_exists($cacheFile)) {
                 $fileGen = NormalizerGenerator::for($className, $normalizerClass, $this->runtimeNormalizedTypes);
