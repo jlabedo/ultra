@@ -61,7 +61,7 @@ final class MediatorGenerator
             $dispatchName = $this->dispatchMethodName($messageClass);
 
             $matchArms[] = sprintf(
-                '        \%s::class => $this->%s($message, $context),',
+                '            \%s::class => $this->%s($message, $context),',
                 ltrim($messageClass, '\\'),
                 $dispatchName,
             );

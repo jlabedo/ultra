@@ -34,7 +34,14 @@ final class DispatchPlanRenderer
         $lines = [];
         $lines[] = '        $m = $message;';
         $lines[] = '        $c = $context;';
-        $lines[] = '        return '.$coreExpr.';';
+        $inlinedBody = $this->unwrapRootMessageContextIife($coreExpr);
+        if (null !== $inlinedBody) {
+            foreach (explode("\n", $inlinedBody) as $line) {
+                $lines[] = '        '.$line;
+            }
+        } else {
+            $this->appendExpression($lines, '        return ', $coreExpr, ';');
+        }
 
         $body = implode("\n", $lines);
 
@@ -110,7 +117,7 @@ final class DispatchPlanRenderer
             // Aspect call args: proceed lambda, message, context, and — when the
             // advice carries a non-empty runtimeConfig — a PHP literal array.
             $aspectArgs = [
-                'fn('.implode(', ', $lambdaParams).') => '.$inner,
+                $this->buildProceedCallable($lambdaParams, $inner),
                 '$m',
                 '$c',
             ];
@@ -169,9 +176,9 @@ final class DispatchPlanRenderer
 
         if (! $needsCatch && ! $needsFinally) {
             if ([] === $afterReturnings) {
-                $lines[] = '    return '.$innerExpr.';';
+                $this->appendExpression($lines, '    return ', $innerExpr, ';');
             } else {
-                $lines[] = '    $__result = '.$innerExpr.';';
+                $this->appendExpression($lines, '    $__result = ', $innerExpr, ';');
                 foreach ($afterReturnings as $advice) {
                     $lines[] = $this->buildAfterReturningCall('    ', $advice, '$m', '$c', '$__result');
                 }
@@ -179,7 +186,7 @@ final class DispatchPlanRenderer
             }
         } else {
             $lines[] = '    try {';
-            $lines[] = '        $__result = '.$innerExpr.';';
+            $this->appendExpression($lines, '        $__result = ', $innerExpr, ';');
             foreach ($afterReturnings as $advice) {
                 $lines[] = $this->buildAfterReturningCall('        ', $advice, '$m', '$c', '$__result');
             }
@@ -301,5 +308,139 @@ final class DispatchPlanRenderer
         }
 
         return '['.implode(', ', $pairs).']';
+    }
+
+    /**
+     * @param list<string> $lines
+     */
+    private function appendExpression(array &$lines, string $prefix, string $expr, string $suffix = ''): void
+    {
+        $lines = [...$lines, ...explode("\n", $this->inlineExpression($prefix, $expr, $suffix))];
+    }
+
+    private function inlineExpression(string $prefix, string $expr, string $suffix = ''): string
+    {
+        $exprLines = explode("\n", $expr);
+        if (1 === \count($exprLines)) {
+            return $prefix.$expr.$suffix;
+        }
+
+        $exprLines = $this->dedentTail($exprLines);
+
+        preg_match('/^\s*/', $prefix, $matches);
+        $continuationIndent = ($matches[0] ?? '').'    ';
+        $lines = [$prefix.$exprLines[0]];
+        foreach (array_slice($exprLines, 1) as $line) {
+            $lines[] = $continuationIndent.$line;
+        }
+
+        $lines[\count($lines) - 1] .= $suffix;
+
+        return implode("\n", $lines);
+    }
+
+    /**
+     * @param list<string> $lines
+     *
+     * @return list<string>
+     */
+    private function dedentTail(array $lines): array
+    {
+        $tail = array_slice($lines, 1);
+        $baseIndent = null;
+
+        foreach ($tail as $line) {
+            if ('' === trim($line)) {
+                continue;
+            }
+
+            preg_match('/^ */', $line, $matches);
+            $baseIndent = strlen($matches[0] ?? '');
+            break;
+        }
+
+        if (null === $baseIndent || 0 === $baseIndent) {
+            return $lines;
+        }
+
+        foreach ($tail as $i => $line) {
+            if ('' === trim($line)) {
+                $tail[$i] = '';
+                continue;
+            }
+
+            preg_match('/^ */', $line, $matches);
+            $indent = strlen($matches[0] ?? '');
+            $trimBy = min($baseIndent, $indent);
+            $tail[$i] = substr($line, $trimBy);
+        }
+
+        return [$lines[0], ...$tail];
+    }
+
+    private function unwrapRootMessageContextIife(string $expr): ?string
+    {
+        $body = $this->unwrapIifeExpression($expr, ['$m', '$c']);
+
+        return null === $body ? null : $this->dedentBlock($body);
+    }
+
+    private function buildProceedCallable(array $lambdaParams, string $inner): string
+    {
+        $iifeBody = $this->unwrapIifeExpression($inner, ['$m', '$c']);
+        if (null === $iifeBody) {
+            return $this->inlineExpression('fn('.implode(', ', $lambdaParams).') => ', $inner);
+        }
+
+        $bodyLines = explode("\n", $this->dedentBlock($iifeBody));
+        $lines = ['function ('.implode(', ', $lambdaParams).') {'];
+        foreach ($bodyLines as $line) {
+            $lines[] = '    '.$line;
+        }
+        $lines[] = '}';
+
+        return implode("\n", $lines);
+    }
+
+    private function unwrapIifeExpression(string $expr, array $params): ?string
+    {
+        $paramList = implode(', ', $params);
+        $prefix = '(function ('.$paramList.') {';
+        $suffix = '})('.$paramList.')';
+        $trimmed = trim($expr);
+
+        if (! str_starts_with($trimmed, $prefix) || ! str_ends_with($trimmed, $suffix)) {
+            return null;
+        }
+
+        $body = substr($trimmed, strlen($prefix), -strlen($suffix));
+        $body = trim($body, "\n");
+
+        return '' === $body ? null : $body;
+    }
+
+    private function dedentBlock(string $body): string
+    {
+        $lines = explode("\n", $body);
+        $minIndent = null;
+        foreach ($lines as $line) {
+            if ('' === trim($line)) {
+                continue;
+            }
+            preg_match('/^ */', $line, $matches);
+            $indent = strlen($matches[0] ?? '');
+            $minIndent = null === $minIndent ? $indent : min($minIndent, $indent);
+        }
+
+        if (null !== $minIndent && $minIndent > 0) {
+            foreach ($lines as $i => $line) {
+                if ('' === trim($line)) {
+                    continue;
+                }
+                $lines[$i] = substr($line, min($minIndent, strlen($line)));
+            }
+        }
+
+        return implode("\n", $lines);
     }
 }
