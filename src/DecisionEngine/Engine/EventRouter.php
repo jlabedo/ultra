@@ -5,13 +5,16 @@ declare(strict_types=1);
 namespace Ultra\DecisionEngine\Engine;
 
 use Ultra\DecisionEngine\Attribute\DomainIdentifier;
-use Ultra\DecisionEngine\Attribute\Event;
+use Ultra\EventBus\EventRegistryInterface;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\Mapper\UltraNormalizer;
 
 final class EventRouter
 {
-    public function __construct(private readonly UltraNormalizer $normalizer) {}
+    public function __construct(
+        private readonly UltraNormalizer $normalizer,
+        private readonly EventRegistryInterface $eventRegistry,
+    ) {}
 
     public function toAppendableEvent(object $event): AppendableEvent
     {
@@ -45,8 +48,9 @@ final class EventRouter
 
     private function getEventType(\ReflectionClass $ref): string
     {
-        foreach ($ref->getAttributes(Event::class) as $attr) {
-            return $attr->newInstance()->name;
+        $eventType = $this->eventRegistry->getName($ref->getName());
+        if (null !== $eventType) {
+            return $eventType;
         }
 
         throw new \LogicException(sprintf('Event class %s has no #[Event] attribute.', $ref->getName()));

@@ -6,11 +6,11 @@ namespace Ultra\Mediator_Compiler\Tests;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
-use Ultra\Mediator\Attribute\After;
-use Ultra\Mediator\Attribute\AfterReturning;
-use Ultra\Mediator\Attribute\AfterThrowing;
-use Ultra\Mediator\Attribute\Around;
-use Ultra\Mediator\Attribute\Before;
+use Ultra\MessageHandling\Attribute\After;
+use Ultra\MessageHandling\Attribute\AfterReturning;
+use Ultra\MessageHandling\Attribute\AfterThrowing;
+use Ultra\MessageHandling\Attribute\Around;
+use Ultra\MessageHandling\Attribute\Before;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mediator_Compiler;
+namespace Ultra\MessageHandling_Compiler;
 
 enum AdviceType: string
 {

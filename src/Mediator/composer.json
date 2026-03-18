@@ -10,8 +10,7 @@
         }
     ],
     "require": {
-        "php": ">=8.5",
-        "psr/container": "^2.0"
+        "php": ">=8.5"
     },
     "suggest": {
         "ultra/mediator-compiler": "Symfony DI compiler for zero-overhead compiled mediator"

@@ -8,9 +8,9 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Ultra\DecisionEngine\Aspect\DecisionEngineAspect;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Engine\EventClassRegistry;
 use Ultra\DecisionEngine\Engine\EventRouter;
-use Ultra\DecisionEngine\Engine\MapEventClassRegistry;
+use Ultra\EventBus\CompiledEventRegistry;
+use Ultra\EventBus\EventRegistryInterface;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
 use Ultra\DecisionEngine\Tests\Example\Command\CreateCourseCommand;
@@ -66,14 +66,14 @@ function createMediator(array $serviceDefinitions = []): array
     $container->register(InMemoryEventStore::class, InMemoryEventStore::class)->setPublic(true);
     $container->setAlias(EventStore::class, InMemoryEventStore::class)->setPublic(true);
 
-    $container->register(MapEventClassRegistry::class, MapEventClassRegistry::class)
+    $container->register(CompiledEventRegistry::class, CompiledEventRegistry::class)
         ->setArguments([[
             'course.created' => CourseCreated::class,
             'student.subscribed' => StudentSubscribed::class,
             'student.unsubscribed' => StudentUnsubscribed::class,
         ]])
     ;
-    $container->setAlias(EventClassRegistry::class, MapEventClassRegistry::class)->setPublic(true);
+    $container->setAlias(EventRegistryInterface::class, CompiledEventRegistry::class)->setPublic(true);
 
     $container->register(EventRouter::class, EventRouter::class)->setAutowired(true);
     $container->register(DecisionEngineAspect::class, DecisionEngineAspect::class)
@@ -243,7 +243,11 @@ test('concurrency: appending with stale version throws', function () {
     $staleVersion = $result->streamVersion;
 
     $normalizer = new UltraNormalizer(sys_get_temp_dir().'/decision-normalizer-'.bin2hex(random_bytes(4)));
-    $router = new EventRouter($normalizer);
+    $router = new EventRouter($normalizer, new CompiledEventRegistry([
+        'course.created' => CourseCreated::class,
+        'student.subscribed' => StudentSubscribed::class,
+        'student.unsubscribed' => StudentUnsubscribed::class,
+    ]));
     $extraEvent = $router->toAppendableEvent(new CourseCreated('math-101', 'Other', 5));
     $store->append([$extraEvent], null);
 

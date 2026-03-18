@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mediator_Compiler;
+namespace Ultra\MessageHandling_Compiler;
 
 final class DispatchPlanRenderer
 {
@@ -36,6 +36,7 @@ final class DispatchPlanRenderer
             $plan->depServiceIds,
             $plan->claimedVarNames,
             '$m',
+            $plan->returnsVoid,
         );
 
         foreach (array_reverse($plan->layers) as $layer) {
@@ -62,6 +63,7 @@ final class DispatchPlanRenderer
         array $depServiceIds,
         array $claimedVarNames,
         string $messageVar,
+        bool $returnsVoid = false,
     ): string {
         $isSelf = '@self' === $serviceId;
 
@@ -75,11 +77,25 @@ final class DispatchPlanRenderer
                 ?? '$this->locator->get('.$this->exportString($depId).')';
         }
 
-        if ($isSelf) {
-            return sprintf('%s->%s(%s)', $messageVar, $handlerMethod, implode(', ', $args));
+        $call = $isSelf
+            ? sprintf('%s->%s(%s)', $messageVar, $handlerMethod, implode(', ', $args))
+            : $this->renderServiceMethodCall($serviceId, $handlerMethod, $args);
+
+        if (! $returnsVoid) {
+            return $call;
         }
 
-        return $this->renderServiceMethodCall($serviceId, $handlerMethod, $args);
+        $captures = [$messageVar];
+        foreach ($claimedVarNames as $varName) {
+            $captures[] = $varName;
+        }
+        $captures = array_values(array_unique($captures));
+
+        return sprintf(
+            '(function () use (%s) { %s; return null; })()',
+            implode(', ', $captures),
+            $call,
+        );
     }
 
     /**

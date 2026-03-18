@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Example\OrderProcessing\Infrastructure;
 
-final class EventBus
+final class PublishedEvents
 {
     /** @var list<object> */
     public array $events = [];
 
-    public function dispatch(object $event): void
+    public function record(object $event): void
     {
         $this->events[] = $event;
     }

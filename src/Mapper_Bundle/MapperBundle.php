@@ -20,6 +20,10 @@ final class MapperBundle extends Bundle
             ->setArguments(['%kernel.build_dir%/mapper'])
         ;
 
+        if (! $container->hasParameter('ultra_mapper.normalizable_classes')) {
+            $container->setParameter('ultra_mapper.normalizable_classes', []);
+        }
+
         $container->registerForAutoconfiguration(RuntimeNormalizerInterface::class)
             ->addTag(TagNames::RUNTIME_NORMALIZER)
         ;

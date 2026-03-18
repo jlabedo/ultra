@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mediator\Attribute;
+namespace Ultra\MessageHandling\Attribute;
 
 /**
  * The typed return value of an #[Around] or #[Before] matcher closure.

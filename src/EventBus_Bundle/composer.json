@@ -1,0 +1,25 @@
+{
+    "name": "ultra/event-bus-bundle",
+    "description": "Ultra Framework - Event Bus Symfony Bundle",
+    "type": "symfony-bundle",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Jean de La Bédoyère",
+            "email": "1191198+jlabedo@users.noreply.github.com"
+        }
+    ],
+    "require": {
+        "php": ">=8.5",
+        "ultra/event-bus": "*",
+        "ultra/event-bus-compiler": "*",
+        "symfony/framework-bundle": "7.*|8.*",
+        "symfony/dependency-injection": "7.*|8.*",
+        "symfony/config": "7.*|8.*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Ultra\\EventBus_Bundle\\": ""
+        }
+    }
+}

@@ -91,5 +91,5 @@ A full course/student subscription example (events, states, commands, and tests)
 
 - **Event store**: `Ultra\EventStore\EventStore` (load by `StreamQuery`, append with optional `StreamVersion`). Build queries with the fluent API: `StreamQuery::forStream(DomainIdentifier ...)->ofTypes(...)` for one branch; `StreamQuery::anyOf(StreamQuery ...$branches)` for OR of branches.
 - **PSR-11 container** for service parameters.
-- **EventClassRegistry**: maps event type strings (from `#[Event]`) to DTO class names so the engine can rehydrate events when building state from stored events.
+- **EventRegistryInterface**: maps event type strings (from `#[Event]`) to DTO class names so the engine can rehydrate events when building state from stored events.
 - **UltraNormalizer**: normalizes event DTOs into payload arrays and rehydrates events from stored payloads (codegen-backed).

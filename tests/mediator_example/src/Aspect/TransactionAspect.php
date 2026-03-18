@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Example\OrderProcessing\Aspect;
 
-use Ultra\Mediator\Attribute\Around;
+use Ultra\MessageHandling\Attribute\Around;
+use Ultra\MessageHandling\Attribute\MatchResult;
+use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\TransactionManager;
 
 final class TransactionAspect
@@ -13,7 +15,11 @@ final class TransactionAspect
     {
     }
 
-    #[Around]
+    #[Around(static function (\ReflectionMethod $method): ?MatchResult {
+        return [] !== $method->getAttributes(Handles::class)
+            ? MatchResult::apply()
+            : null;
+    })]
     public function wrap(callable $proceed, object $message, array $context): mixed
     {
         $this->tx->begin();

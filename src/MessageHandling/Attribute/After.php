@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mediator\Attribute;
+namespace Ultra\MessageHandling\Attribute;
 
 /**
  * Marks an aspect service method as an after (finally) advice.

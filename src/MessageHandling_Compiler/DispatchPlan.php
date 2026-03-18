@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mediator_Compiler;
+namespace Ultra\MessageHandling_Compiler;
 
 /**
  * Immutable plan describing a dispatch method to be rendered.
@@ -20,5 +20,6 @@ final readonly class DispatchPlan
         public array $depServiceIds,
         public array $layers,
         public array $claimedVarNames,
+        public bool $returnsVoid = false,
     ) {}
 }

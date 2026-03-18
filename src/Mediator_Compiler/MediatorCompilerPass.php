@@ -9,14 +9,10 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Ultra\Mediator\Attribute\Advice;
-use Ultra\Mediator\Attribute\After;
-use Ultra\Mediator\Attribute\AfterReturning;
-use Ultra\Mediator\Attribute\AfterThrowing;
-use Ultra\Mediator\Attribute\Around;
-use Ultra\Mediator\Attribute\Before;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator\MediatorInterface;
+use Ultra\MessageHandling_Compiler\AdviceCollector;
+use Ultra\MessageHandling_Compiler\HandlerDescriptor;
 
 /**
  * Symfony DI compiler pass that generates a zero-overhead compiled mediator.
@@ -65,6 +61,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
 
     public function process(ContainerBuilder $container): void
     {
+        $adviceCollector = new AdviceCollector($this->aspectTag);
         $taggedHandlers = $container->findTaggedServiceIds($this->handlerTag);
         $taggedSelfHandlers = $container->findTaggedServiceIds($this->selfHandlerTag);
 
@@ -111,7 +108,9 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 }
 
                 $depServiceIds = $this->resolveDepServiceIds($method);
-                $handlers[$messageClass] = new HandlerDescriptor($serviceId, $method->getName(), $depServiceIds);
+                $handlers[$messageClass] = (new HandlerDescriptor($serviceId, $method->getName(), $depServiceIds))
+                    ->withClassName($class)
+                    ->withReturnsVoid($this->returnsVoid($method));
                 $handlerReflections[$messageClass] = $method;
 
                 $locatorServices[$serviceId] = new Reference($serviceId);
@@ -144,7 +143,9 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 // All params are deps — no message param to skip
                 $depServiceIds = $this->resolveDepServiceIds($method, skipFirst: false);
                 // '@self' sentinel: generator emits $message->method(...) instead of $locator->get(...)
-                $handlers[$messageClass] = new HandlerDescriptor('@self', $method->getName(), $depServiceIds);
+                $handlers[$messageClass] = (new HandlerDescriptor('@self', $method->getName(), $depServiceIds))
+                    ->withClassName($class)
+                    ->withReturnsVoid($this->returnsVoid($method));
                 $handlerReflections[$messageClass] = $method;
                 // Message class is NOT added to the locator — it is passed directly at dispatch time
             }
@@ -155,11 +156,9 @@ final class MediatorCompilerPass implements CompilerPassInterface
         }
 
         // ── Phase 2: match aspect services to each handler ───────────────────
-        $taggedAspects = $container->findTaggedServiceIds($this->aspectTag);
-
         foreach ($handlers as $messageClass => $handlerDescriptor) {
             $handlerMethod = $handlerReflections[$messageClass];
-            $advices = $this->collectAdvices($handlerMethod, $taggedAspects, $container);
+            $advices = $adviceCollector->collect($handlerMethod, $container);
 
             $handlers[$messageClass] = $handlerDescriptor->withAdvices($advices);
 
@@ -211,68 +210,10 @@ final class MediatorCompilerPass implements CompilerPassInterface
         return $ids;
     }
 
-    /**
-     * Scan all aspect services for advice methods that match $handlerMethod.
-     *
-     * @param array<string, mixed> $taggedAspects
-     *
-     * @return list<AdviceDescriptor>
-     */
-    private function collectAdvices(
-        \ReflectionMethod $handlerMethod,
-        array $taggedAspects,
-        ContainerBuilder $container,
-    ): array {
-        /** @var array<class-string<Advice>, AdviceType> $adviceTypes */
-        $adviceTypes = [
-            Around::class => AdviceType::Around,
-            Before::class => AdviceType::Before,
-            AfterReturning::class => AdviceType::AfterReturning,
-            AfterThrowing::class => AdviceType::AfterThrowing,
-            After::class => AdviceType::After,
-        ];
+    private function returnsVoid(\ReflectionMethod $method): bool
+    {
+        $returnType = $method->getReturnType();
 
-        $advices = [];
-
-        foreach (array_keys($taggedAspects) as $aspectServiceId) {
-            $definition = $container->getDefinition($aspectServiceId);
-            $aspectClass = $definition->getClass() ?? $aspectServiceId;
-
-            foreach (new \ReflectionClass($aspectClass)->getMethods(\ReflectionMethod::IS_PUBLIC) as $aspectMethod) {
-                foreach ($adviceTypes as $attributeClass => $adviceType) {
-                    foreach ($aspectMethod->getAttributes($attributeClass) as $refAttr) {
-                        /** @var Advice $advice */
-                        $advice = $refAttr->newInstance();
-                        $result = ($advice->matcher)($handlerMethod);
-                        if (null === $result) {
-                            continue;
-                        }
-
-                        $canProvide = AdviceType::Around === $adviceType || AdviceType::Before === $adviceType;
-
-                        if ([] !== $result->provides && ! $canProvide) {
-                            throw new \LogicException(\sprintf(
-                                'Advice "%s::%s" (#[%s]) returned a MatchResult with "provides" set, but only #[Around] and #[Before] advices may provide dep-param slots.',
-                                $aspectClass,
-                                $aspectMethod->getName(),
-                                new \ReflectionClass($attributeClass)->getShortName(),
-                            ));
-                        }
-
-                        $advices[] = new AdviceDescriptor(
-                            $adviceType,
-                            $aspectServiceId,
-                            $aspectMethod->getName(),
-                            $advice->priority,
-                            $aspectClass,
-                            $canProvide ? $result->provides : [],
-                            $result->config,
-                        );
-                    }
-                }
-            }
-        }
-
-        return $advices;
+        return $returnType instanceof \ReflectionNamedType && 'void' === $returnType->getName();
     }
 }

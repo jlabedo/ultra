@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mediator_Compiler;
+namespace Ultra\MessageHandling_Compiler;
 
 /**
  * Immutable description of a message handler for code generation.
@@ -18,6 +18,9 @@ final readonly class HandlerDescriptor
         public string $method,
         public array $depServiceIds,
         public array $advices = [],
+        public int $priority = 0,
+        public string $className = '',
+        public bool $returnsVoid = false,
     ) {}
 
     public function withMethod(string $method): self
@@ -40,6 +43,27 @@ final readonly class HandlerDescriptor
     {
         return clone($this, [
             'advices' => $advices,
+        ]);
+    }
+
+    public function withPriority(int $priority): self
+    {
+        return clone($this, [
+            'priority' => $priority,
+        ]);
+    }
+
+    public function withClassName(string $className): self
+    {
+        return clone($this, [
+            'className' => $className,
+        ]);
+    }
+
+    public function withReturnsVoid(bool $returnsVoid): self
+    {
+        return clone($this, [
+            'returnsVoid' => $returnsVoid,
         ]);
     }
 }

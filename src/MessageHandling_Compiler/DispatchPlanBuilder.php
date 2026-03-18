@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mediator_Compiler;
+namespace Ultra\MessageHandling_Compiler;
 
 final class DispatchPlanBuilder
 {
@@ -19,6 +19,7 @@ final class DispatchPlanBuilder
         string $handlerMethod,
         array $depServiceIds,
         array $advices,
+        bool $returnsVoid = false,
     ): DispatchPlan {
         $grouped = $this->ordering->groupByPriority($advices);
         $priorities = array_keys($grouped);
@@ -53,6 +54,7 @@ final class DispatchPlanBuilder
             $depServiceIds,
             $layers,
             $claimedVarNames,
+            $returnsVoid,
         );
     }
 }

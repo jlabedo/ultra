@@ -10,10 +10,10 @@ use Ultra\Mediator_Example\OrderProcessing\Domain\OrderPlaced;
 use Ultra\Mediator_Example\OrderProcessing\Domain\PlaceOrder;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\AuditLog;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\CleanupTracker;
-use Ultra\Mediator_Example\OrderProcessing\Infrastructure\EventBus;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\Metrics;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\OrderRepository;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\PaymentGateway;
+use Ultra\Mediator_Example\OrderProcessing\Infrastructure\PublishedEvents;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\SelfHandlingTracker;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\TransactionManager;
 use Ultra\Mediator_Example\OrderProcessing\Kernel;
@@ -30,7 +30,7 @@ final class OrderProcessingTest extends KernelTestCase
     {
         return new Kernel(
             $options['environment'] ?? 'test',
-            $options['debug'] ?? false,
+            $options['debug'] ?? true,
         );
     }
 
@@ -63,10 +63,10 @@ final class OrderProcessingTest extends KernelTestCase
         $this->assertCount(1, $orders->saved);
         $this->assertSame('order-1', $orders->saved[0]->orderId);
 
-        /** @var EventBus $bus */
-        $bus = $container->get(EventBus::class);
-        $this->assertCount(1, $bus->events);
-        $this->assertInstanceOf(OrderPlaced::class, $bus->events[0]);
+        /** @var PublishedEvents $publishedEvents */
+        $publishedEvents = $container->get(PublishedEvents::class);
+        $this->assertCount(1, $publishedEvents->events);
+        $this->assertInstanceOf(OrderPlaced::class, $publishedEvents->events[0]);
 
         /** @var TransactionManager $tx */
         $tx = $container->get(TransactionManager::class);

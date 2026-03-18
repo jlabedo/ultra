@@ -8,8 +8,10 @@ use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
+use Ultra\EventBus_Bundle\EventBusBundle;
 use Ultra\Mediator_Bundle\MediatorBundle;
 use Ultra\Mediator_Bundle\TagNames;
+use Ultra\Mediator_Example\OrderProcessing\Infrastructure\PublishedEvents;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\SelfHandlingTracker;
 use Ultra\Mediator_Example\OrderProcessing\Message\SelfHandledPing;
 
@@ -21,6 +23,7 @@ final class Kernel extends BaseKernel
     {
         yield new FrameworkBundle();
         yield new MediatorBundle();
+        yield new EventBusBundle();
     }
 
     protected function configureContainer(ContainerConfigurator $container): void
@@ -48,5 +51,6 @@ final class Kernel extends BaseKernel
             ->tag(TagNames::SELF_HANDLER);
 
         $services->set(SelfHandlingTracker::class);
+        $services->set(PublishedEvents::class);
     }
 }

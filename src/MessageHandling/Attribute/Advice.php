@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mediator\Attribute;
+namespace Ultra\MessageHandling\Attribute;
 
 /**
  * Abstract base for all advice attributes: #[Around], #[Before], #[After],

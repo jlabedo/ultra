@@ -7,7 +7,7 @@ namespace Ultra\Mediator_Bundle;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
-use Ultra\Mediator\Attribute\Advice;
+use Ultra\MessageHandling\Attribute\Advice;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
 

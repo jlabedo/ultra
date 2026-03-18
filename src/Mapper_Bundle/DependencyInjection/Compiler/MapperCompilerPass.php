@@ -32,7 +32,13 @@ final class MapperCompilerPass implements CompilerPassInterface
      */
     private function collectTaggedClasses(ContainerBuilder $container): array
     {
-        $classes = [];
+        $classes = $container->hasParameter('ultra_mapper.normalizable_classes')
+            ? $container->getParameter('ultra_mapper.normalizable_classes')
+            : [];
+
+        if (! is_array($classes)) {
+            $classes = [];
+        }
 
         foreach ($container->findTaggedServiceIds(TagNames::NORMALIZABLE) as $id => $tags) {
             $definition = $container->findDefinition($id);

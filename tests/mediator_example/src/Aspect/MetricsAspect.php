@@ -4,8 +4,10 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Example\OrderProcessing\Aspect;
 
-use Ultra\Mediator\Attribute\AfterReturning;
-use Ultra\Mediator\Attribute\AfterThrowing;
+use Ultra\MessageHandling\Attribute\AfterReturning;
+use Ultra\MessageHandling\Attribute\AfterThrowing;
+use Ultra\MessageHandling\Attribute\MatchResult;
+use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\Metrics;
 
 final class MetricsAspect
@@ -14,13 +16,21 @@ final class MetricsAspect
     {
     }
 
-    #[AfterReturning(priority: 10)]
+    #[AfterReturning(static function (\ReflectionMethod $method): ?MatchResult {
+        return [] !== $method->getAttributes(Handles::class)
+            ? MatchResult::apply()
+            : null;
+    }, priority: 10)]
     public function success(object $message, array $context, mixed $result): void
     {
         $this->metrics->recordSuccess();
     }
 
-    #[AfterThrowing(priority: 10)]
+    #[AfterThrowing(static function (\ReflectionMethod $method): ?MatchResult {
+        return [] !== $method->getAttributes(Handles::class)
+            ? MatchResult::apply()
+            : null;
+    }, priority: 10)]
     public function failure(object $message, array $context, \Throwable $e): void
     {
         $this->metrics->recordFailure();

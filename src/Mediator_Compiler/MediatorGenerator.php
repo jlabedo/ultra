@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Compiler;
 
+use Ultra\MessageHandling_Compiler\HandlerDescriptor;
+use Ultra\MessageHandling_Compiler\HandlerMethodGenerator;
+
 /**
  * Generates a compiled mediator PHP class from a resolved handler map.
  *
@@ -28,8 +31,7 @@ namespace Ultra\Mediator_Compiler;
 final class MediatorGenerator
 {
     public function __construct(
-        private readonly DispatchPlanBuilder $planBuilder = new DispatchPlanBuilder(),
-        private readonly DispatchPlanRenderer $renderer = new DispatchPlanRenderer(),
+        private readonly HandlerMethodGenerator $methodGenerator = new HandlerMethodGenerator(),
     ) {}
 
     /**
@@ -68,10 +70,7 @@ final class MediatorGenerator
 
             $dispatchMethods[] = $this->buildDispatchMethod(
                 $dispatchName,
-                $handler->serviceId,
-                $handler->method,
-                $handler->depServiceIds,
-                $handler->advices,
+                $handler,
             );
         }
 
@@ -102,24 +101,12 @@ final class MediatorGenerator
     }
 
     /**
-     * @param list<string>           $depServiceIds
-     * @param list<AdviceDescriptor> $advices
      */
     private function buildDispatchMethod(
         string $dispatchName,
-        string $serviceId,
-        string $handlerMethod,
-        array $depServiceIds,
-        array $advices,
+        HandlerDescriptor $handler,
     ): string {
-        $plan = $this->planBuilder->build(
-            $serviceId,
-            $handlerMethod,
-            $depServiceIds,
-            $advices,
-        );
-
-        return $this->renderer->renderDispatchMethod($dispatchName, $plan);
+        return $this->methodGenerator->generate($dispatchName, $handler);
     }
 
     /**
