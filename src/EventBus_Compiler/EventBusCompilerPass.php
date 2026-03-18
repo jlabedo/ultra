@@ -17,6 +17,8 @@ use Ultra\EventBus\EventRegistryInterface;
 use Ultra\MessageHandling\Attribute\Event;
 use Ultra\MessageHandling_Compiler\AdviceCollector;
 use Ultra\MessageHandling_Compiler\HandlerDescriptor;
+use Ultra\MessageHandling_Compiler\HandlerDescriptorFactory;
+use Ultra\MessageHandling_Compiler\LocatorReferenceCollector;
 
 final class EventBusCompilerPass implements CompilerPassInterface
 {
@@ -31,11 +33,11 @@ final class EventBusCompilerPass implements CompilerPassInterface
     {
         $eventMap = $this->discoverEvents();
         $adviceCollector = new AdviceCollector($this->aspectTag);
+        $descriptorFactory = new HandlerDescriptorFactory();
+        $locatorReferences = new LocatorReferenceCollector();
 
         /** @var array<string, list<array{handler: HandlerDescriptor, method: \ReflectionMethod}>> $subscriptions */
         $subscriptions = [];
-        /** @var array<string, Reference> $locatorServices */
-        $locatorServices = [];
 
         foreach (array_keys($container->findTaggedServiceIds($this->handlerTag)) as $serviceId) {
             $definition = $container->getDefinition($serviceId);
@@ -67,16 +69,18 @@ final class EventBusCompilerPass implements CompilerPassInterface
 
                 $attribute = $attributes[0]->newInstance();
                 $subscriptionType = $firstType->getName();
-                $handler = (new HandlerDescriptor($serviceId, $method->getName(), $this->resolveDepServiceIds($method)))
-                    ->withClassName($class)
-                    ->withPriority($attribute->priority)
-                    ->withReturnsVoid($this->returnsVoid($method));
+                $handler = $descriptorFactory->create(
+                    $serviceId,
+                    $class,
+                    $method,
+                    priority: $attribute->priority,
+                );
 
                 $subscriptions[$subscriptionType][] = [
                     'handler' => $handler,
                     'method' => $method,
                 ];
-                $locatorServices[$serviceId] = new Reference($serviceId);
+                $locatorReferences->addService($serviceId);
             }
         }
 
@@ -93,23 +97,7 @@ final class EventBusCompilerPass implements CompilerPassInterface
                     $advices = $adviceCollector->collect($entry['method'], $container);
                     $handler = $entry['handler']->withAdvices($advices);
                     $matchedHandlers[] = $handler;
-
-                    $claimedIndices = [];
-                    foreach ($advices as $advice) {
-                        foreach ($advice->claimedDepIndices as $index) {
-                            $claimedIndices[$index] = true;
-                        }
-                    }
-
-                    foreach ($handler->depServiceIds as $index => $depId) {
-                        if (! isset($claimedIndices[$index])) {
-                            $locatorServices[$depId] = new Reference($depId);
-                        }
-                    }
-
-                    foreach ($advices as $advice) {
-                        $locatorServices[$advice->serviceId] = new Reference($advice->serviceId);
-                    }
+                    $locatorReferences->addHandlerDependencies($handler, $advices);
                 }
             }
 
@@ -136,31 +124,9 @@ final class EventBusCompilerPass implements CompilerPassInterface
         $filePath = rtrim($this->outputDir, '/').'/'.$this->generatedClass.'.php';
         (new EventBusGenerator())->generate($this->generatedClass, $routes, $filePath);
 
-        $eventBusDef = new Definition($this->generatedClass, [new ServiceLocatorArgument($locatorServices)]);
+        $eventBusDef = new Definition($this->generatedClass, [new ServiceLocatorArgument($this->serviceLocatorReferences($locatorReferences->all()))]);
         $eventBusDef->setFile($filePath)->setPublic(true);
         $container->setDefinition(EventBusInterface::class, $eventBusDef);
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function resolveDepServiceIds(\ReflectionMethod $method): array
-    {
-        $ids = [];
-        foreach (array_slice($method->getParameters(), 1) as $param) {
-            $type = $param->getType();
-            if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
-                throw new \LogicException(sprintf(
-                    'Parameter "$%s" of event handler method "%s::%s" must have a non-builtin type.',
-                    $param->getName(),
-                    $method->getDeclaringClass()->getName(),
-                    $method->getName(),
-                ));
-            }
-            $ids[] = $type->getName();
-        }
-
-        return $ids;
     }
 
     /**
@@ -287,10 +253,17 @@ final class EventBusCompilerPass implements CompilerPassInterface
         $container->setParameter('ultra_mapper.normalizable_classes', $merged);
     }
 
-    private function returnsVoid(\ReflectionMethod $method): bool
+    /**
+     * @param list<string> $serviceIds
+     * @return array<string, Reference>
+     */
+    private function serviceLocatorReferences(array $serviceIds): array
     {
-        $returnType = $method->getReturnType();
+        $references = [];
+        foreach ($serviceIds as $serviceId) {
+            $references[$serviceId] = new Reference($serviceId);
+        }
 
-        return $returnType instanceof \ReflectionNamedType && 'void' === $returnType->getName();
+        return $references;
     }
 }

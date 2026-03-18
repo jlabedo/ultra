@@ -13,6 +13,8 @@ use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\MessageHandling_Compiler\AdviceCollector;
 use Ultra\MessageHandling_Compiler\HandlerDescriptor;
+use Ultra\MessageHandling_Compiler\HandlerDescriptorFactory;
+use Ultra\MessageHandling_Compiler\LocatorReferenceCollector;
 
 /**
  * Symfony DI compiler pass that generates a zero-overhead compiled mediator.
@@ -62,6 +64,8 @@ final class MediatorCompilerPass implements CompilerPassInterface
     public function process(ContainerBuilder $container): void
     {
         $adviceCollector = new AdviceCollector($this->aspectTag);
+        $descriptorFactory = new HandlerDescriptorFactory();
+        $locatorReferences = new LocatorReferenceCollector();
         $taggedHandlers = $container->findTaggedServiceIds($this->handlerTag);
         $taggedSelfHandlers = $container->findTaggedServiceIds($this->selfHandlerTag);
 
@@ -73,8 +77,6 @@ final class MediatorCompilerPass implements CompilerPassInterface
         $handlers = [];
         /** @var array<class-string, \ReflectionMethod> $handlerReflections */
         $handlerReflections = [];
-        /** @var array<string, Reference> $locatorServices */
-        $locatorServices = [];
 
         // ── Phase 1: discover handler methods ────────────────────────────────
         foreach (array_keys($taggedHandlers) as $serviceId) {
@@ -107,13 +109,9 @@ final class MediatorCompilerPass implements CompilerPassInterface
                     ));
                 }
 
-                $depServiceIds = $this->resolveDepServiceIds($method);
-                $handlers[$messageClass] = (new HandlerDescriptor($serviceId, $method->getName(), $depServiceIds))
-                    ->withClassName($class)
-                    ->withReturnsVoid($this->returnsVoid($method));
+                $handlers[$messageClass] = $descriptorFactory->create($serviceId, $class, $method);
                 $handlerReflections[$messageClass] = $method;
-
-                $locatorServices[$serviceId] = new Reference($serviceId);
+                $locatorReferences->addService($serviceId);
             }
         }
 
@@ -141,11 +139,8 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 }
 
                 // All params are deps — no message param to skip
-                $depServiceIds = $this->resolveDepServiceIds($method, skipFirst: false);
                 // '@self' sentinel: generator emits $message->method(...) instead of $locator->get(...)
-                $handlers[$messageClass] = (new HandlerDescriptor('@self', $method->getName(), $depServiceIds))
-                    ->withClassName($class)
-                    ->withReturnsVoid($this->returnsVoid($method));
+                $handlers[$messageClass] = $descriptorFactory->create('@self', $class, $method, skipFirstParameter: false);
                 $handlerReflections[$messageClass] = $method;
                 // Message class is NOT added to the locator — it is passed directly at dispatch time
             }
@@ -161,59 +156,29 @@ final class MediatorCompilerPass implements CompilerPassInterface
             $advices = $adviceCollector->collect($handlerMethod, $container);
 
             $handlers[$messageClass] = $handlerDescriptor->withAdvices($advices);
-
-            // Claimed dep slots are provided by the aspect — exclude from locator
-            $claimedIndices = [];
-            foreach ($advices as $advice) {
-                foreach ($advice->claimedDepIndices as $idx) {
-                    $claimedIndices[$idx] = true;
-                }
-            }
-
-            foreach ($handlerDescriptor->depServiceIds as $i => $depId) {
-                if (! isset($claimedIndices[$i])) {
-                    $locatorServices[$depId] = new Reference($depId);
-                }
-            }
-
-            foreach ($advices as $advice) {
-                $locatorServices[$advice->serviceId] = new Reference($advice->serviceId);
-            }
+            $locatorReferences->addHandlerDependencies($handlerDescriptor, $advices);
         }
 
         // ── Phase 3: generate and register ───────────────────────────────────
         $filePath = rtrim($this->outputDir, '/').'/'.$this->generatedClass.'.php';
         new MediatorGenerator()->generate($this->generatedClass, $handlers, $filePath);
 
-        $mediatorDef = new Definition($this->generatedClass, [new ServiceLocatorArgument($locatorServices)]);
+        $mediatorDef = new Definition($this->generatedClass, [new ServiceLocatorArgument($this->serviceLocatorReferences($locatorReferences->all()))]);
         $mediatorDef->setFile($filePath)->setPublic(true);
         $container->setDefinition(MediatorInterface::class, $mediatorDef);
     }
 
-    /** @return list<string> */
-    private function resolveDepServiceIds(\ReflectionMethod $method, bool $skipFirst = true): array
+    /**
+     * @param list<string> $serviceIds
+     * @return array<string, Reference>
+     */
+    private function serviceLocatorReferences(array $serviceIds): array
     {
-        $ids = [];
-        foreach (\array_slice($method->getParameters(), $skipFirst ? 1 : 0) as $param) {
-            $type = $param->getType();
-            if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
-                throw new \LogicException(\sprintf(
-                    'Parameter "$%s" of handler method "%s::%s" must have a non-builtin type.',
-                    $param->getName(),
-                    $method->getDeclaringClass()->getName(),
-                    $method->getName(),
-                ));
-            }
-            $ids[] = $type->getName();
+        $references = [];
+        foreach ($serviceIds as $serviceId) {
+            $references[$serviceId] = new Reference($serviceId);
         }
 
-        return $ids;
-    }
-
-    private function returnsVoid(\ReflectionMethod $method): bool
-    {
-        $returnType = $method->getReturnType();
-
-        return $returnType instanceof \ReflectionNamedType && 'void' === $returnType->getName();
+        return $references;
     }
 }
