@@ -38,7 +38,7 @@ final class EventBusGenerator
         foreach ($routes as $eventClass => $handlers) {
             $publishMethod = $this->publishMethodName($eventClass);
             $matchArms[] = sprintf(
-                '            \\%s::class => $this->%s($event, $context),',
+                '            \\%s::class => $this->%s($event, $messageContext),',
                 ltrim($eventClass, '\\'),
                 $publishMethod,
             );
@@ -56,7 +56,7 @@ final class EventBusGenerator
             }
 
             $publishMethods[] = <<<PHP
-                private function {$publishMethod}(object \$event, array \$context): void
+                private function {$publishMethod}(object \$event, \\Ultra\\MessageHandling\\MessageContext \$context): void
                 {
             {$body}    }
             PHP;
@@ -80,6 +80,7 @@ final class EventBusGenerator
 
                 public function publish(object \$event, array \$context = []): void
                 {
+                    \$messageContext = \\Ultra\\MessageHandling\\MessageContext::fromArray(\$context);
                     match (\$event::class) {
             {$matchArmsCode}            default => throw new \\Ultra\\EventBus\\Exception\\UnknownEvent(\$event::class),
                     };

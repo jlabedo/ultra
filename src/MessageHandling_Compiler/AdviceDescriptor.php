@@ -9,20 +9,20 @@ namespace Ultra\MessageHandling_Compiler;
  *
  * Method signatures expected by the mediator compiler per advice type:
  *
- *   Before:         method(object $message, array $context): void
- *   Around:         method(callable $proceed, object $message, array $context): mixed
- *                     — $proceed is fn(object $message, array $context, ...$provided): mixed
- *   AfterReturning: method(object $message, array $context, mixed $returnValue): void
- *   AfterThrowing:  method(object $message, array $context, \Throwable $e): void
- *   After:          method(object $message, array $context): void
+ *   Before:         method(object $message, \Ultra\MessageHandling\MessageContext $context): void
+ *   Around:         method(callable $proceed, object $message, \Ultra\MessageHandling\MessageContext $context): mixed
+ *                     — $proceed signature: fn(?MessageContext $context = null, array $provided = []): mixed
+ *   AfterReturning: method(object $message, \Ultra\MessageHandling\MessageContext $context, mixed $returnValue): void
+ *   AfterThrowing:  method(object $message, \Ultra\MessageHandling\MessageContext $context, \Throwable $e): void
+ *   After:          method(object $message, \Ultra\MessageHandling\MessageContext $context): void
  *
  * When runtimeConfig is non-empty it is embedded verbatim as a PHP literal array in the
  * generated dispatch method and passed as a final argument to the advice method:
- *   Around:         method(callable $proceed, object $message, array $context, array $config)
- *   Before:         method(object $message, array $context, array $config)
- *   AfterReturning: method(object $message, array $context, mixed $returnValue, array $config)
- *   AfterThrowing:  method(object $message, array $context, \Throwable $e, array $config)
- *   After:          method(object $message, array $context, array $config)
+ *   Around:         method(callable $proceed, object $message, \Ultra\MessageHandling\MessageContext $context, array $config)
+ *   Before:         method(object $message, \Ultra\MessageHandling\MessageContext $context, array $config)
+ *   AfterReturning: method(object $message, \Ultra\MessageHandling\MessageContext $context, mixed $returnValue, array $config)
+ *   AfterThrowing:  method(object $message, \Ultra\MessageHandling\MessageContext $context, \Throwable $e, array $config)
+ *   After:          method(object $message, \Ultra\MessageHandling\MessageContext $context, array $config)
  *
  * $claimedDepIndices (Around only): 0-based indices into the handler's dep-param array
  * that this advice will fill at runtime by passing extra args to $proceed.

@@ -11,10 +11,10 @@ namespace Ultra\MessageHandling\Attribute;
  * Cannot modify the return value or short-circuit execution — use #[Around] for that.
  *
  * Expected runtime method signature:
- *   method(object $message, array $context, mixed $returnValue): void
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context, mixed $returnValue): void
  *
  * If the matcher returns a MatchResult with a non-empty config:
- *   method(object $message, array $context, mixed $returnValue, array $config): void
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context, mixed $returnValue, array $config): void
  *
  * The matcher defaults to Pointcut::all(...), so #[AfterReturning] applies to every handler.
  *
@@ -22,7 +22,7 @@ namespace Ultra\MessageHandling\Attribute;
  *
  * Example:
  *   #[AfterReturning]
- *   public function audit(object $message, array $context, mixed $returnValue): void
+ *   public function audit(object $message, \Ultra\MessageHandling\MessageContext $context, mixed $returnValue): void
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
 final class AfterReturning extends Advice {}

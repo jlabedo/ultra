@@ -6,6 +6,7 @@ namespace Ultra\Mediator_Example\OrderProcessing\Aspect;
 
 use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\MatchResult;
+use Ultra\MessageHandling\MessageContext;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\CleanupTracker;
 
@@ -20,7 +21,7 @@ final class CleanupAspect
             ? MatchResult::apply()
             : null;
     }, priority: -5)]
-    public function after(object $message, array $context): void
+    public function after(object $message, MessageContext $context): void
     {
         $this->cleanup->cleanup();
     }

@@ -11,10 +11,10 @@ namespace Ultra\MessageHandling\Attribute;
  * or throwing. Equivalent to a finally block — use for cleanup, resource release, etc.
  *
  * Expected runtime method signature:
- *   method(object $message, array $context): void
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context): void
  *
  * If the matcher returns a MatchResult with a non-empty config:
- *   method(object $message, array $context, array $config): void
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context, array $config): void
  *
  * The matcher defaults to Pointcut::all(...), so #[After] applies to every handler.
  *
@@ -22,7 +22,7 @@ namespace Ultra\MessageHandling\Attribute;
  *
  * Example:
  *   #[After]
- *   public function release(object $message, array $context): void
+ *   public function release(object $message, \Ultra\MessageHandling\MessageContext $context): void
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
 final class After extends Advice {}

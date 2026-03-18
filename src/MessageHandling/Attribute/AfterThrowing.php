@@ -11,10 +11,10 @@ namespace Ultra\MessageHandling\Attribute;
  * re-thrown after all AfterThrowing advices run. Use #[Around] to swallow exceptions.
  *
  * Expected runtime method signature:
- *   method(object $message, array $context, \Throwable $e): void
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context, \Throwable $e): void
  *
  * If the matcher returns a MatchResult with a non-empty config:
- *   method(object $message, array $context, \Throwable $e, array $config): void
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context, \Throwable $e, array $config): void
  *
  * The matcher defaults to Pointcut::all(...), so #[AfterThrowing] applies to every handler.
  *
@@ -22,7 +22,7 @@ namespace Ultra\MessageHandling\Attribute;
  *
  * Example:
  *   #[AfterThrowing]
- *   public function reportError(object $message, array $context, \Throwable $e): void
+ *   public function reportError(object $message, \Ultra\MessageHandling\MessageContext $context, \Throwable $e): void
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
 final class AfterThrowing extends Advice {}

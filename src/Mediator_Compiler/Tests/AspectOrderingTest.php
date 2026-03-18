@@ -6,6 +6,7 @@ namespace Ultra\Mediator_Compiler\Tests;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
@@ -48,23 +49,23 @@ final class OrderingAspect
     public function __construct(public OrderingLog $log) {}
 
     #[Before(priority: 20)]
-    public function before(object $message, array $context): void
+    public function before(object $message, MessageContext $context): void
     {
         $this->log->entries[] = 'before:20';
     }
 
     #[Around(priority: 10)]
-    public function around(callable $proceed, object $message, array $context): mixed
+    public function around(callable $proceed, object $message, MessageContext $context): mixed
     {
         $this->log->entries[] = 'around:10:before';
-        $result = $proceed($message, $context);
+        $result = $proceed();
         $this->log->entries[] = 'around:10:after';
 
         return $result;
     }
 
     #[After(priority: 5)]
-    public function after(object $message, array $context): void
+    public function after(object $message, MessageContext $context): void
     {
         $this->log->entries[] = 'after:5';
     }
@@ -75,35 +76,35 @@ final class SamePriorityOrderingAspect
     public function __construct(public OrderingLog $log) {}
 
     #[Before(priority: 10)]
-    public function before(object $message, array $context): void
+    public function before(object $message, MessageContext $context): void
     {
         $this->log->entries[] = 'before:10';
     }
 
     #[Around(priority: 10)]
-    public function around(callable $proceed, object $message, array $context): mixed
+    public function around(callable $proceed, object $message, MessageContext $context): mixed
     {
         $this->log->entries[] = 'around:10:before';
-        $result = $proceed($message, $context);
+        $result = $proceed();
         $this->log->entries[] = 'around:10:after';
 
         return $result;
     }
 
     #[AfterReturning(priority: 10)]
-    public function afterReturning(object $message, array $context, mixed $result): void
+    public function afterReturning(object $message, MessageContext $context, mixed $result): void
     {
         $this->log->entries[] = 'afterReturning:10:'.$result;
     }
 
     #[AfterThrowing(priority: 10)]
-    public function afterThrowing(object $message, array $context, \Throwable $e): void
+    public function afterThrowing(object $message, MessageContext $context, \Throwable $e): void
     {
         $this->log->entries[] = 'afterThrowing:10:'.$e->getMessage();
     }
 
     #[After(priority: 10)]
-    public function after(object $message, array $context): void
+    public function after(object $message, MessageContext $context): void
     {
         $this->log->entries[] = 'after:10';
     }
@@ -127,10 +128,10 @@ final class InterleavedAroundOuter
     public function __construct(public OrderingLog $log) {}
 
     #[Around(priority: 0)]
-    public function around(callable $proceed, object $message, array $context): mixed
+    public function around(callable $proceed, object $message, MessageContext $context): mixed
     {
         $this->log->entries[] = 'around:0:before';
-        $result = $proceed($message, $context);
+        $result = $proceed();
         $this->log->entries[] = 'around:0:after';
 
         return $result;
@@ -142,7 +143,7 @@ final class InterleavedBeforeMid
     public function __construct(public OrderingLog $log) {}
 
     #[Before(priority: 10)]
-    public function before(object $message, array $context): void
+    public function before(object $message, MessageContext $context): void
     {
         $this->log->entries[] = 'before:10';
     }
@@ -153,10 +154,10 @@ final class InterleavedAroundInner
     public function __construct(public OrderingLog $log) {}
 
     #[Around(priority: 20)]
-    public function around(callable $proceed, object $message, array $context): mixed
+    public function around(callable $proceed, object $message, MessageContext $context): mixed
     {
         $this->log->entries[] = 'around:20:before';
-        $result = $proceed($message, $context);
+        $result = $proceed();
         $this->log->entries[] = 'around:20:after';
 
         return $result;
@@ -168,7 +169,7 @@ final class AlphabeticalBeforeA
     public function __construct(public OrderingLog $log) {}
 
     #[Before(priority: 10)]
-    public function before(object $message, array $context): void
+    public function before(object $message, MessageContext $context): void
     {
         $this->log->entries[] = 'before:A';
     }
@@ -179,7 +180,7 @@ final class AlphabeticalBeforeB
     public function __construct(public OrderingLog $log) {}
 
     #[Before(priority: 10)]
-    public function before(object $message, array $context): void
+    public function before(object $message, MessageContext $context): void
     {
         $this->log->entries[] = 'before:B';
     }
@@ -190,7 +191,7 @@ final class InterleavedAfterThrowingMid
     public function __construct(public OrderingLog $log) {}
 
     #[AfterThrowing(priority: 10)]
-    public function afterThrowing(object $message, array $context, \Throwable $e): void
+    public function afterThrowing(object $message, MessageContext $context, \Throwable $e): void
     {
         $this->log->entries[] = 'afterThrowing:10:'.$e->getMessage();
     }
@@ -201,9 +202,39 @@ final class InterleavedAfterOuter
     public function __construct(public OrderingLog $log) {}
 
     #[After(priority: -5)]
-    public function after(object $message, array $context): void
+    public function after(object $message, MessageContext $context): void
     {
         $this->log->entries[] = 'after:-5';
+    }
+}
+
+final class ContextPropagatingOuterAspect
+{
+    public function __construct(public OrderingLog $log) {}
+
+    #[Around(priority: 0)]
+    public function around(callable $proceed, object $message, MessageContext $context): mixed
+    {
+        $this->log->entries[] = 'context:outer-before:'.$context->get('trace', 'none');
+        $result = $proceed(context: $context->with('trace', 'propagated'));
+        $this->log->entries[] = 'context:outer-after:'.$context->get('trace', 'none');
+
+        return $result;
+    }
+}
+
+final class ContextObservingInnerAspect
+{
+    public function __construct(public OrderingLog $log) {}
+
+    #[Around(priority: 10)]
+    public function around(callable $proceed, object $message, MessageContext $context): mixed
+    {
+        $this->log->entries[] = 'context:inner-before:'.$context->get('trace', 'none');
+        $result = $proceed();
+        $this->log->entries[] = 'context:inner-after:'.$context->get('trace', 'none');
+
+        return $result;
     }
 }
 
@@ -396,5 +427,36 @@ test('interleaved priorities place afterThrowing inside outer after', function (
         'handler:fail',
         'afterThrowing:10:boom',
         'after:-5',
+    ]);
+});
+
+test('around advices can pass a derived immutable context down the chain', function () {
+    $log = new OrderingLog();
+    $container = new ContainerBuilder();
+    $container->setDefinition(
+        OrderingHandler::class,
+        new Definition(OrderingHandler::class, [$log])->addTag('mediator.handler')
+    );
+    $container->setDefinition(
+        ContextPropagatingOuterAspect::class,
+        new Definition(ContextPropagatingOuterAspect::class, [$log])->addTag('mediator.aspect')->setPublic(true)
+    );
+    $container->setDefinition(
+        ContextObservingInnerAspect::class,
+        new Definition(ContextObservingInnerAspect::class, [$log])->addTag('mediator.aspect')->setPublic(true)
+    );
+
+    $container->addCompilerPass(new MediatorCompilerPass(dirname(__DIR__, 3).'/var/mediator_compiler_tests', 'CompiledMediatorOrdering7'));
+    $container->compile();
+
+    $mediator = $container->get(MediatorInterface::class);
+    $mediator->send(new OrderingMessage('ok'));
+
+    expect($log->entries)->toBe([
+        'context:outer-before:none',
+        'context:inner-before:propagated',
+        'handler:ok',
+        'context:inner-after:propagated',
+        'context:outer-after:none',
     ]);
 });

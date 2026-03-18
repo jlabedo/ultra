@@ -28,12 +28,20 @@ namespace Ultra\MessageHandling\Attribute;
  *
  * Examples:
  *   #[Around]
- *   public function execute(callable $proceed, object $message, array $context): mixed
+ *   public function execute(callable $proceed, object $message, \Ultra\MessageHandling\MessageContext $context): mixed
  *
  *   #[Around(static function(\ReflectionMethod $m): ?MatchResult {
  *       // inspect $m->getParameters(), return MatchResult::apply(...) or null
  *   }, priority: 0)]
- *   public function execute(callable $proceed, object $message, array $context, array $config): mixed
+ *   public function execute(callable $proceed, object $message, \Ultra\MessageHandling\MessageContext $context, array $config): mixed
+ *
+ * Continue execution with:
+ *   $proceed()
+ *   $proceed(context: $context->with('key', 'value'))
+ *   $proceed(provided: [$resolvedDependency])
+ *
+ * The message object itself cannot be replaced through $proceed; only the context
+ * and any values for claimed dep-param slots may be supplied.
  */
 #[\Attribute(\Attribute::TARGET_METHOD | \Attribute::IS_REPEATABLE)]
 final class Around extends Advice {}

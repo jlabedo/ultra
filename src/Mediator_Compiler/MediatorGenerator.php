@@ -23,10 +23,10 @@ use Ultra\MessageHandling_Compiler\HandlerMethodGenerator;
  *   array<class-string, HandlerDescriptor>
  *
  * Claimed dep slots (declared via MatchResult::apply(provides: [...]) in #[Around] closures)
- * are passed as extra arrow-function parameters in the $proceed lambda rather than being
- * fetched from the service locator. PHP arrow functions automatically capture outer-scope
- * variables, so nested around chains with multiple claiming aspects work without explicit
- * use clauses.
+ * are supplied explicitly through a fixed-signature $proceed callable:
+ *   $proceed(?MessageContext $context = null, array $provided = [])
+ * rather than being fetched from the service locator. The generated continuation
+ * closure captures the already-resolved values needed by deeper layers.
  */
 final class MediatorGenerator
 {
@@ -63,7 +63,7 @@ final class MediatorGenerator
             $dispatchName = $this->dispatchMethodName($messageClass);
 
             $matchArms[] = sprintf(
-                '            \%s::class => $this->%s($message, $context),',
+                '            \%s::class => $this->%s($message, $messageContext),',
                 ltrim($messageClass, '\\'),
                 $dispatchName,
             );
@@ -90,6 +90,7 @@ final class MediatorGenerator
 
                 public function send(object \$message, array \$context = []): mixed
                 {
+                    \$messageContext = \\Ultra\\MessageHandling\\MessageContext::fromArray(\$context);
                     return match (\$message::class) {
             {$matchArmsCode}            default => throw new \\Ultra\\Mediator\\Exception\\NoHandlerFound(\$message::class),
                     };

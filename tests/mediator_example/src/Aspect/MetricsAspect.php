@@ -7,6 +7,7 @@ namespace Ultra\Mediator_Example\OrderProcessing\Aspect;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
 use Ultra\MessageHandling\Attribute\MatchResult;
+use Ultra\MessageHandling\MessageContext;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\Metrics;
 
@@ -21,7 +22,7 @@ final class MetricsAspect
             ? MatchResult::apply()
             : null;
     }, priority: 10)]
-    public function success(object $message, array $context, mixed $result): void
+    public function success(object $message, MessageContext $context, mixed $result): void
     {
         $this->metrics->recordSuccess();
     }
@@ -31,7 +32,7 @@ final class MetricsAspect
             ? MatchResult::apply()
             : null;
     }, priority: 10)]
-    public function failure(object $message, array $context, \Throwable $e): void
+    public function failure(object $message, MessageContext $context, \Throwable $e): void
     {
         $this->metrics->recordFailure();
     }

@@ -16,6 +16,7 @@ use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StoredEvent;
 use Ultra\EventStore\StreamQuery;
+use Ultra\MessageHandling\MessageContext;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\MatchResult;
@@ -101,7 +102,7 @@ final class DecisionEngineAspect
             provides: $provides,
         );
     })]
-    public function around(callable $proceed, object $message, array $context, array $config): mixed
+    public function around(callable $proceed, object $message, MessageContext $context, array $config): mixed
     {
         $stateParams = $config['stateParams'] ?? [];
         $loadResult = $this->eventStore->load($this->buildStreamQuery($message, $stateParams));
@@ -130,7 +131,7 @@ final class DecisionEngineAspect
             $stateByName[$stateParam['parameterName']] = $state;
         }
 
-        if (($context[self::CONTEXT_DECISION_MODE] ?? null) === self::MODE_CHECK) {
+        if ($context->get(self::CONTEXT_DECISION_MODE) === self::MODE_CHECK) {
             $checkParamNames = $config['checkParamNames'] ?? null;
             if (null === $checkParamNames) {
                 throw new CommandHasNoCheckException($message::class);
@@ -144,7 +145,7 @@ final class DecisionEngineAspect
             return is_array($violations) ? $violations : [];
         }
 
-        $emittedEvents = $proceed($message, $context, ...$states);
+        $emittedEvents = $proceed(provided: $states);
         if (! is_array($emittedEvents)) {
             $emittedEvents = [];
         }

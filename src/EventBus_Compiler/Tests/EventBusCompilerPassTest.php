@@ -12,6 +12,7 @@ use Ultra\EventBus\EventRegistryInterface;
 use Ultra\EventBus\Exception\UnknownEvent;
 use Ultra\EventBus_Compiler\EventBusCompilerPass;
 use Ultra\Mapper_Bundle\DependencyInjection\Compiler\MapperCompilerPass;
+use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
@@ -104,7 +105,7 @@ final class AfterReturningRecorder
             ? MatchResult::apply()
             : null;
     })]
-    public function record(object $message, array $context, mixed $returnValue): void
+    public function record(object $message, MessageContext $context, mixed $returnValue): void
     {
         $this->values[] = $returnValue;
     }
@@ -120,7 +121,7 @@ final class FailureRecorder
             ? MatchResult::apply()
             : null;
     })]
-    public function record(object $message, array $context, \Throwable $error): void
+    public function record(object $message, MessageContext $context, \Throwable $error): void
     {
         $this->message = $error->getMessage();
     }
@@ -130,7 +131,7 @@ final class FailureRecorder
             ? MatchResult::apply()
             : null;
     })]
-    public function after(object $message, array $context): void
+    public function after(object $message, MessageContext $context): void
     {
         ++$this->afterCalls;
     }

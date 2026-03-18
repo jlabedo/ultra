@@ -16,12 +16,15 @@ final class DispatchPlanRenderer
             $this->indent(2).'$m = $message;',
             $this->indent(2).'$c = $context;',
         ];
+        foreach ($plan->claimedVarNames as $varName) {
+            $bodyLines[] = $this->indent(2).$varName.' = null;';
+        }
         $this->appendExpression($bodyLines, 2, 'return ', $dispatchExpr, ';');
 
         $body = implode("\n", $bodyLines);
 
         return <<<PHP
-                private function {$dispatchName}(object \$message, array \$context): mixed
+                private function {$dispatchName}(object \$message, \\Ultra\\MessageHandling\\MessageContext \$context): mixed
                 {
             {$body}
                 }
@@ -112,13 +115,8 @@ final class DispatchPlanRenderer
 
         // Reverse so stable ordering keeps the first advice as the outermost one.
         foreach (array_reverse($arounds) as $advice) {
-            $proceedParams = ['$m', '$c'];
-            foreach ($advice->claimedDepIndices as $depIdx) {
-                $proceedParams[] = $claimedVarNames[$depIdx];
-            }
-
             $args = [
-                $this->renderProceedCallable($proceedParams, $wrapped),
+                $this->renderProceed($advice, $wrapped, $claimedVarNames),
                 '$m',
                 '$c',
             ];
@@ -206,11 +204,44 @@ final class DispatchPlanRenderer
     }
 
     /**
-     * @param list<string> $params
+     * @param array<int, string> $claimedVarNames
      */
-    private function renderProceedCallable(array $params, string $innerExpr): string
+    private function renderProceed(AdviceDescriptor $advice, string $innerExpr, array $claimedVarNames): string
     {
-        return $this->inlineExpression('fn('.implode(', ', $params).') => ', $innerExpr);
+        return $this->renderProceedCallable($advice, $innerExpr, $claimedVarNames);
+    }
+
+    /**
+     * @param array<int, string> $claimedVarNames
+     */
+    private function renderProceedCallable(AdviceDescriptor $advice, string $innerExpr, array $claimedVarNames): string
+    {
+        $owner = '' !== $advice->className
+            ? $advice->className.'::'.$advice->method
+            : $advice->serviceId.'::'.$advice->method;
+
+        $captures = ['$m', '$c'];
+        foreach ($claimedVarNames as $varName) {
+            $captures[] = $varName;
+        }
+        $captures = array_values(array_unique($captures));
+
+        $lines = ['function (?\\Ultra\\MessageHandling\\MessageContext $context = null, array $provided = []) use ('.implode(', ', $captures).') {'];
+        $lines[] = $this->indent(1).'if (count($provided) !== '.count($advice->claimedDepIndices).') {';
+        $lines[] = $this->indent(2).'throw new \\LogicException(sprintf('
+            .$this->exportString($owner.' must call $proceed() with exactly '.count($advice->claimedDepIndices).' provided value(s); received %d.')
+            .', count($provided)));';
+        $lines[] = $this->indent(1).'}';
+        $lines[] = $this->indent(1).'$c = $context ?? $c;';
+
+        foreach ($advice->claimedDepIndices as $offset => $depIdx) {
+            $lines[] = $this->indent(1).'$_p'.$depIdx.' = $provided['.$offset.'];';
+        }
+
+        $this->appendExpression($lines, 1, 'return ', $innerExpr, ';');
+        $lines[] = '}';
+
+        return implode("\n", $lines);
     }
 
     /**

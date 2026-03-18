@@ -6,6 +6,7 @@ namespace Ultra\Mediator_Example\OrderProcessing\Aspect;
 
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\Attribute\Before;
+use Ultra\MessageHandling\MessageContext;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\AuditLog;
 
@@ -20,7 +21,7 @@ final class AuditAspect
             ? MatchResult::apply()
             : null;
     }, priority: 10)]
-    public function record(object $message, array $context): void
+    public function record(object $message, MessageContext $context): void
     {
         $this->log->record($message, $context);
     }

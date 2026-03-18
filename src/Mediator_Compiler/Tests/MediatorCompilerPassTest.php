@@ -9,6 +9,7 @@ use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
@@ -86,7 +87,7 @@ final class TestLogger
     #[Before(static function (\ReflectionMethod $m): ?MatchResult {
         return MatchResult::apply(); // apply to every handler registered alongside this aspect
     })]
-    public function log(object $message, array $context): void
+    public function log(object $message, MessageContext $context): void
     {
         $this->logged[] = $message;
     }
@@ -99,11 +100,11 @@ final class TestTransactionManager
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
         return MatchResult::apply(); // apply to every handler registered alongside this aspect
     })]
-    public function execute(callable $proceed, object $message, array $context): mixed
+    public function execute(callable $proceed, object $message, MessageContext $context): mixed
     {
         ++$this->calls;
 
-        return $proceed($message, $context);
+        return $proceed();
     }
 }
 
@@ -115,10 +116,10 @@ final class OuterAspectService
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
         return MatchResult::apply();
     }, priority: 0)]
-    public function wrap(callable $proceed, object $message, array $context): mixed
+    public function wrap(callable $proceed, object $message, MessageContext $context): mixed
     {
         $this->log[] = 'outer-before';
-        $result = $proceed($message, $context);
+        $result = $proceed();
         $this->log[] = 'outer-after';
 
         return $result;
@@ -133,10 +134,10 @@ final class InnerAspectService
     #[Around(static function (\ReflectionMethod $m): ?MatchResult {
         return MatchResult::apply();
     }, priority: 10)]
-    public function wrap(callable $proceed, object $message, array $context): mixed
+    public function wrap(callable $proceed, object $message, MessageContext $context): mixed
     {
         $this->log[] = 'inner-before';
-        $result = $proceed($message, $context);
+        $result = $proceed();
         $this->log[] = 'inner-after';
 
         return $result;
@@ -257,11 +258,11 @@ final class LoadAndSaveAspect
 
         return null;
     })]
-    public function execute(callable $proceed, object $message, array $context, array $config): mixed
+    public function execute(callable $proceed, object $message, MessageContext $context, array $config): mixed
     {
         $repo = $this->locator->get($config['repoClass']);
         $entity = $repo->load($message);
-        $result = $proceed($message, $context, $entity);
+        $result = $proceed(provided: [$entity]);
         $repo->save($entity);
 
         return $result;
@@ -362,21 +363,21 @@ final class BatchLoadAspect
             ? MatchResult::apply(config: ['repos' => $repos], provides: $indices)
             : null;
     })]
-    public function execute(callable $proceed, object $message, array $context, array $config): mixed
+    public function execute(callable $proceed, object $message, MessageContext $context, array $config): mixed
     {
         $entities = array_map(
             static fn (string $repoClass) => new $repoClass()->load($message),
             $config['repos'],
         );
 
-        return $proceed($message, $context, ...$entities);
+        return $proceed(provided: $entities);
     }
 }
 
 /**
  * Two #[Around] attributes on the same method — one for EntityA (priority 0, outer),
- * one for EntityB (priority 10, inner). Demonstrates arrow-function capture:
- * the outer $_p0 is automatically captured inside the inner lambda.
+ * one for EntityB (priority 10, inner). Demonstrates nested proceed composition:
+ * the outer $_p0 value remains available inside the deeper continuation.
  */
 final class LoadAspect
 {
@@ -402,11 +403,11 @@ final class LoadAspect
 
         return null;
     }, priority: 10)]
-    public function execute(callable $proceed, object $message, array $context, array $config): mixed
+    public function execute(callable $proceed, object $message, MessageContext $context, array $config): mixed
     {
         $entity = $this->locator->get($config['repoClass'])->load($message);
 
-        return $proceed($message, $context, $entity);
+        return $proceed(provided: [$entity]);
     }
 }
 
@@ -497,13 +498,13 @@ final class EntityManagerAspect
             ? MatchResult::apply(config: ['entities' => $entities], provides: $indices)
             : null;
     })]
-    public function execute(callable $proceed, object $message, array $context, array $config): mixed
+    public function execute(callable $proceed, object $message, MessageContext $context, array $config): mixed
     {
         $entities = [];
         foreach ($config['entities'] as ['class' => $class, 'idFrom' => $idFrom]) {
             $entities[] = $this->em->find($class, $message->{$idFrom});
         }
-        $result = $proceed($message, $context, ...$entities);
+        $result = $proceed(provided: $entities);
         foreach ($entities as $entity) {
             $this->em->save($entity);
         }
@@ -737,7 +738,7 @@ test('one parameter-providing aspect can claim multiple handler parameters at on
     expect($result)->toBe('a-1+b-2');
 });
 
-test('two #[Around] on the same aspect method each claim a different parameter and compose via arrow-function capture', function () use ($testOutputDir) {
+test('two #[Around] on the same aspect method each claim a different parameter and compose through nested proceed continuations', function () use ($testOutputDir) {
     // A single LoadAspect service produces two separate advices — one per #[Around] attribute.
     // Each call receives a different $config; one locator entry serves both.
     $container = new ContainerBuilder();
@@ -762,7 +763,7 @@ test('two #[Around] on the same aspect method each claim a different parameter a
     $result = $mediator->send(new SeparateEntitiesMessage('a-1', 'b-2'));
 
     // EntityA from priority-0 advice (outer), EntityB from priority-10 advice (inner);
-    // arrow-function capture propagates $_p0 inward without an explicit use clause.
+    // the generated proceed closures keep the outer provided value available inward.
     expect($result)->toBe('a-1+b-2');
 });
 
@@ -830,7 +831,7 @@ final class ResultInspector
     #[AfterReturning(static function (\ReflectionMethod $m): ?MatchResult {
         return MatchResult::apply();
     })]
-    public function inspect(object $message, array $context, mixed $returnValue): void
+    public function inspect(object $message, MessageContext $context, mixed $returnValue): void
     {
         $this->captured = $returnValue;
     }
@@ -844,7 +845,7 @@ final class ErrorRecorder
     #[AfterThrowing(static function (\ReflectionMethod $m): ?MatchResult {
         return MatchResult::apply();
     })]
-    public function record(object $message, array $context, \Throwable $e): void
+    public function record(object $message, MessageContext $context, \Throwable $e): void
     {
         $this->caught = $e;
     }
@@ -858,7 +859,7 @@ final class Cleaner
     #[After(static function (\ReflectionMethod $m): ?MatchResult {
         return MatchResult::apply();
     })]
-    public function cleanup(object $message, array $context): void
+    public function cleanup(object $message, MessageContext $context): void
     {
         ++$this->calls;
     }
@@ -944,7 +945,7 @@ final class IllegalProvidesAspect
     #[After(static function (\ReflectionMethod $m): ?MatchResult {
         return MatchResult::apply(provides: [0]);
     })]
-    public function cleanup(object $message, array $context): void {}
+    public function cleanup(object $message, MessageContext $context): void {}
 }
 
 test('compiler pass throws when an after-type advice returns provides', function () use ($testOutputDir) {
