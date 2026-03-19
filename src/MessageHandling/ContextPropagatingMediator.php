@@ -13,8 +13,8 @@ final readonly class ContextPropagatingMediator implements MediatorInterface
         private MessageContext $context,
     ) {}
 
-    public function send(object $message, array $context = []): mixed
+    public function send(object $message, array|MessageContext $context = []): mixed
     {
-        return $this->inner->send($message, $this->context->merge($context)->all());
+        return $this->inner->send($message, $this->context->merge($context));
     }
 }

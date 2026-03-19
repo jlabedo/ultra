@@ -78,9 +78,9 @@ final class EventBusGenerator
                     private \\Psr\\Container\\ContainerInterface \$locator
                 ) {}
 
-                public function publish(object \$event, array \$context = []): void
+                public function publish(object \$event, array|\\Ultra\\MessageHandling\\MessageContext \$context = []): void
                 {
-                    \$messageContext = \\Ultra\\MessageHandling\\MessageContext::fromArray(\$context);
+                    \$messageContext = \\Ultra\\MessageHandling\\MessageContext::coerce(\$context);
                     match (\$event::class) {
             {$matchArmsCode}            default => throw new \\Ultra\\EventBus\\Exception\\UnknownEvent(\$event::class),
                     };

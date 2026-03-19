@@ -96,11 +96,11 @@ final class RecordingEventBus implements EventBusInterface
     /** @var list<array{event: object, context: array}> */
     public array $calls = [];
 
-    public function publish(object $event, array $context = []): void
+    public function publish(object $event, array|MessageContext $context = []): void
     {
         $this->calls[] = [
             'event' => $event,
-            'context' => $context,
+            'context' => MessageContext::coerce($context)->all(),
         ];
     }
 }
@@ -780,6 +780,31 @@ test('generated mediator propagates message context through nested send calls fr
             [
                 'message' => ChildMessage::class,
                 'context' => ['traceId' => 'trace-456'],
+            ],
+        ]);
+});
+
+test('generated mediator accepts MessageContext objects at the public send boundary', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(ParentHandler::class, new Definition(ParentHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(ChildHandler::class, new Definition(ChildHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(MessageContextRecorder::class, new Definition(MessageContextRecorder::class)->addTag('mediator.aspect')->setPublic(true));
+
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMessageContextInput'));
+    $container->compile();
+
+    $mediator = $container->get(MediatorInterface::class);
+    $recorder = $container->get(MessageContextRecorder::class);
+
+    expect($mediator->send(new ParentMessage('typed'), MessageContext::coerce(['traceId' => 'trace-typed'])))->toBe('child: typed')
+        ->and($recorder->entries)->toBe([
+            [
+                'message' => ParentMessage::class,
+                'context' => ['traceId' => 'trace-typed'],
+            ],
+            [
+                'message' => ChildMessage::class,
+                'context' => ['traceId' => 'trace-typed'],
             ],
         ]);
 });

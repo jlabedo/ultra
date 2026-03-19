@@ -88,9 +88,9 @@ final class MediatorGenerator
                     private \\Psr\\Container\\ContainerInterface \$locator
                 ) {}
 
-                public function send(object \$message, array \$context = []): mixed
+                public function send(object \$message, array|\\Ultra\\MessageHandling\\MessageContext \$context = []): mixed
                 {
-                    \$messageContext = \\Ultra\\MessageHandling\\MessageContext::fromArray(\$context);
+                    \$messageContext = \\Ultra\\MessageHandling\\MessageContext::coerce(\$context);
                     return match (\$message::class) {
             {$matchArmsCode}            default => throw new \\Ultra\\Mediator\\Exception\\NoHandlerFound(\$message::class),
                     };

@@ -49,11 +49,11 @@ final class RecordingMediator implements MediatorInterface
     /** @var list<array{message: object, context: array}> */
     public array $calls = [];
 
-    public function send(object $message, array $context = []): mixed
+    public function send(object $message, array|MessageContext $context = []): mixed
     {
         $this->calls[] = [
             'message' => $message,
-            'context' => $context,
+            'context' => MessageContext::coerce($context)->all(),
         ];
 
         return 'sent';
@@ -337,6 +337,33 @@ test('event bus propagates message context through nested publish calls from han
         ->and($recorder->entries[1])->toBe([
             'message' => TestOrderCreated::class,
             'context' => ['traceId' => 'trace-123'],
+        ]);
+});
+
+test('event bus accepts MessageContext objects at the public publish boundary', function () {
+    $log = new EventLog();
+    $container = createEventBusContainer('CompiledEventBusMessageContextInput', [
+        NestedPublishingCreatedHandler::class => (new Definition(NestedPublishingCreatedHandler::class))->addTag('event_bus.handler'),
+        CancelledEventHandler::class => (new Definition(CancelledEventHandler::class, [$log]))->addTag('event_bus.handler'),
+        EventContextRecorder::class => (new Definition(EventContextRecorder::class))->addTag('event_bus.aspect')->setPublic(true),
+    ]);
+
+    $container->get(EventBusInterface::class)->publish(
+        new TestOrderCreated('o-typed'),
+        MessageContext::coerce(['traceId' => 'trace-typed']),
+    );
+
+    $recorder = $container->get(EventContextRecorder::class);
+
+    expect($log->entries)->toBe(['cancelled:o-typed'])
+        ->and($recorder->entries)->toHaveCount(2)
+        ->and($recorder->entries[0])->toBe([
+            'message' => TestOrderCancelled::class,
+            'context' => ['traceId' => 'trace-typed'],
+        ])
+        ->and($recorder->entries[1])->toBe([
+            'message' => TestOrderCreated::class,
+            'context' => ['traceId' => 'trace-typed'],
         ]);
 });
 

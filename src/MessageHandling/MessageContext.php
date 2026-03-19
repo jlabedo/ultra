@@ -7,8 +7,9 @@ namespace Ultra\MessageHandling;
 /**
  * Immutable message metadata passed through the advice chain.
  *
- * The public bus APIs still accept arrays for ergonomics, but advices receive a
- * MessageContext so updates are explicit via with()/without()/merge().
+ * The public bus APIs accept either arrays or MessageContext instances for
+ * ergonomics, but advices always receive a MessageContext so updates are
+ * explicit via with()/without()/merge().
  *
  * @implements \ArrayAccess<array-key, mixed>
  * @implements \IteratorAggregate<array-key, mixed>
@@ -28,6 +29,16 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
     public static function fromArray(array $values): self
     {
         return new self($values);
+    }
+
+    /**
+     * @param array<array-key, mixed>|self $values
+     */
+    public static function coerce(array|self $values): self
+    {
+        return $values instanceof self
+            ? $values
+            : new self($values);
     }
 
     /**
@@ -71,10 +82,14 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
     }
 
     /**
-     * @param array<array-key, mixed> $values
+     * @param array<array-key, mixed>|self $values
      */
-    public function merge(array $values): self
+    public function merge(array|self $values): self
     {
+        $values = $values instanceof self
+            ? $values->all()
+            : $values;
+
         if ([] === $values) {
             return $this;
         }

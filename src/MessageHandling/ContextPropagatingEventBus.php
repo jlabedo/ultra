@@ -13,8 +13,8 @@ final readonly class ContextPropagatingEventBus implements EventBusInterface
         private MessageContext $context,
     ) {}
 
-    public function publish(object $event, array $context = []): void
+    public function publish(object $event, array|MessageContext $context = []): void
     {
-        $this->inner->publish($event, $this->context->merge($context)->all());
+        $this->inner->publish($event, $this->context->merge($context));
     }
 }
