@@ -8,4 +8,5 @@ final class TagNames
 {
     public const HANDLER = 'ultra_event_bus.handler';
     public const ASPECT = 'ultra_event_bus.aspect';
+    public const EVENT = 'ultra_event_bus.event';
 }

@@ -9,6 +9,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\EventBus\Attribute\EventHandler;
 use Ultra\EventBus_Compiler\EventBusCompilerPass;
+use Ultra\MessageHandling\Attribute\Event;
 use Ultra\MessageHandling\Attribute\Advice;
 
 final class EventBusBundle extends Bundle
@@ -39,6 +40,15 @@ final class EventBusBundle extends Bundle
             }
         );
 
+        $container->registerAttributeForAutoconfiguration(
+            Event::class,
+            static function (ChildDefinition $definition, Event $attribute, \Reflector $reflector): void {
+                if ($reflector instanceof \ReflectionClass) {
+                    $definition->addResourceTag(TagNames::EVENT);
+                }
+            }
+        );
+
         $buildDir = (string) $container->getParameter('kernel.build_dir');
         $outputDir = $buildDir.'/event_bus';
         $generatedClass = (string) $container->getParameter('ultra_event_bus.generated_class');
@@ -48,6 +58,7 @@ final class EventBusBundle extends Bundle
             $generatedClass,
             TagNames::HANDLER,
             TagNames::ASPECT,
+            TagNames::EVENT,
         ), priority: -90);
     }
 }

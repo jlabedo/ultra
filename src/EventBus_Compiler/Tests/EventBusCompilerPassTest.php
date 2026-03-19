@@ -255,6 +255,11 @@ function createEventBusContainer(string $className, array $definitions = [], boo
         $container->addCompilerPass(new MapperCompilerPass(), priority: -100);
     }
 
+    $definitions = array_merge([
+        TestOrderCreated::class => createEventDefinition(TestOrderCreated::class),
+        TestOrderCancelled::class => createEventDefinition(TestOrderCancelled::class),
+    ], $definitions);
+
     foreach ($definitions as $id => $definition) {
         $container->setDefinition($id, $definition);
     }
@@ -263,6 +268,12 @@ function createEventBusContainer(string $className, array $definitions = [], boo
     $container->compile();
 
     return $container;
+}
+
+function createEventDefinition(string $class): Definition
+{
+    return (new Definition($class))
+        ->addResourceTag('event_bus.event');
 }
 
 test('compiler pass registers event bus and registry even with no handlers', function () {
@@ -393,6 +404,8 @@ test('event bus accepts MessageContext objects at the public publish boundary', 
 test('event bus uses the configured message context propagator service', function () {
     $log = new EventLog();
     $container = new ContainerBuilder();
+    $container->setDefinition(TestOrderCreated::class, createEventDefinition(TestOrderCreated::class));
+    $container->setDefinition(TestOrderCancelled::class, createEventDefinition(TestOrderCancelled::class));
     $container->setDefinition(NestedPublishingCreatedHandler::class, (new Definition(NestedPublishingCreatedHandler::class))->addTag('event_bus.handler'));
     $container->setDefinition(CancelledEventHandler::class, (new Definition(CancelledEventHandler::class, [$log]))->addTag('event_bus.handler'));
     $container->setDefinition(EventContextRecorder::class, (new Definition(EventContextRecorder::class))->addTag('event_bus.aspect')->setPublic(true));
@@ -414,6 +427,7 @@ test('event bus uses the configured message context propagator service', functio
 
 test('event bus propagates message context to mediator injected into handlers', function () {
     $container = new ContainerBuilder();
+    $container->setDefinition(TestOrderCreated::class, createEventDefinition(TestOrderCreated::class));
     $container->setDefinition(MediatingCreatedHandler::class, (new Definition(MediatingCreatedHandler::class))->addTag('event_bus.handler'));
     $container->setDefinition(RecordingMediator::class, (new Definition(RecordingMediator::class))->setPublic(true));
     $container->setAlias(MediatorInterface::class, RecordingMediator::class)->setPublic(true);
@@ -485,7 +499,10 @@ test('compiler pass rejects duplicate event names', function () {
     PHP);
 
     try {
-        expect(fn () => createEventBusContainer('CompiledEventBusDuplicate'))
+        expect(fn () => createEventBusContainer('CompiledEventBusDuplicate', [
+            'Ultra\\EventBus_Compiler\\Tmp\\DuplicateEventA' => createEventDefinition('Ultra\\EventBus_Compiler\\Tmp\\DuplicateEventA'),
+            'Ultra\\EventBus_Compiler\\Tmp\\DuplicateEventB' => createEventDefinition('Ultra\\EventBus_Compiler\\Tmp\\DuplicateEventB'),
+        ]))
             ->toThrow(\LogicException::class, 'Duplicate #[Event] name');
     } finally {
         @unlink($fileA);

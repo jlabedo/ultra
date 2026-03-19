@@ -11,6 +11,7 @@ use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 use Ultra\EventBus_Bundle\EventBusBundle;
 use Ultra\Mediator_Bundle\MediatorBundle;
 use Ultra\Mediator_Bundle\TagNames;
+use Ultra\Mediator_Example\OrderProcessing\Domain\OrderPlaced;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\PublishedEvents;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\SelfHandlingTracker;
 use Ultra\Mediator_Example\OrderProcessing\Message\SelfHandledPing;
@@ -50,6 +51,7 @@ final class Kernel extends BaseKernel
             ->autoconfigure(false)
             ->tag(TagNames::SELF_HANDLER);
 
+        $services->set(OrderPlaced::class);
         $services->set(SelfHandlingTracker::class);
         $services->set(PublishedEvents::class);
     }

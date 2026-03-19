@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\EventBus_Compiler;
 
-use Composer\Autoload\ClassLoader;
 use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -32,13 +31,14 @@ final class EventBusCompilerPass implements CompilerPassInterface
         private readonly string $generatedClass = 'CompiledEventBus',
         private readonly string $handlerTag = 'event_bus.handler',
         private readonly string $aspectTag = 'event_bus.aspect',
+        private readonly string $eventTag = 'event_bus.event',
     ) {}
 
     public function process(ContainerBuilder $container): void
     {
         $this->ensureMessageContextPropagator($container);
 
-        $eventMap = $this->discoverEvents();
+        $eventMap = $this->discoverEvents($container);
         $adviceCollector = new AdviceCollector($this->aspectTag);
         $descriptorFactory = new HandlerDescriptorFactory();
         $locatorReferences = new LocatorReferenceCollector();
@@ -155,11 +155,14 @@ final class EventBusCompilerPass implements CompilerPassInterface
     /**
      * @return array<string, class-string>
      */
-    private function discoverEvents(): array
+    private function discoverEvents(ContainerBuilder $container): array
     {
         $events = [];
 
-        foreach ($this->discoverProjectClasses() as $class) {
+        foreach (array_keys($container->findTaggedResourceIds($this->eventTag)) as $serviceId) {
+            $definition = $container->getDefinition($serviceId);
+            $class = $definition->getClass() ?? $serviceId;
+
             if (! class_exists($class)) {
                 continue;
             }
@@ -191,61 +194,6 @@ final class EventBusCompilerPass implements CompilerPassInterface
         ksort($events);
 
         return $events;
-    }
-
-    /**
-     * @return list<class-string>
-     */
-    private function discoverProjectClasses(): array
-    {
-        $projectRoot = getcwd();
-        if (false === $projectRoot) {
-            return [];
-        }
-
-        $classes = [];
-        foreach (ClassLoader::getRegisteredLoaders() as $loader) {
-            foreach ($loader->getPrefixesPsr4() as $prefix => $dirs) {
-                foreach ($dirs as $dir) {
-                    if (! is_dir($dir)) {
-                        continue;
-                    }
-                    $realDir = realpath($dir);
-                    if (false === $realDir) {
-                        continue;
-                    }
-                    if (! str_starts_with($realDir, $projectRoot) || str_contains($realDir, DIRECTORY_SEPARATOR.'vendor'.DIRECTORY_SEPARATOR)) {
-                        continue;
-                    }
-
-                    $iterator = new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($realDir, \FilesystemIterator::SKIP_DOTS));
-                    foreach ($iterator as $file) {
-                        if ('php' !== $file->getExtension()) {
-                            continue;
-                        }
-                        if (str_ends_with($file->getFilename(), 'Test.php')) {
-                            continue;
-                        }
-
-                        $relativePath = substr($file->getPathname(), strlen($realDir) + 1);
-                        if (false === $relativePath) {
-                            continue;
-                        }
-
-                        $class = $prefix.str_replace(
-                            [DIRECTORY_SEPARATOR, '.php'],
-                            ['\\', ''],
-                            $relativePath,
-                        );
-                        $classes[$class] = $class;
-                    }
-                }
-            }
-        }
-
-        ksort($classes);
-
-        return array_values($classes);
     }
 
     /**
