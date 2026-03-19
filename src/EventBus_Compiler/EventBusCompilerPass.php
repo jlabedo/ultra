@@ -16,8 +16,11 @@ use Ultra\EventBus\EventBusInterface;
 use Ultra\EventBus\EventRegistryInterface;
 use Ultra\MessageHandling\Attribute\Event;
 use Ultra\MessageHandling_Compiler\AdviceCollector;
+use Ultra\MessageHandling_Compiler\DecoratingDependencyExpressionResolver;
+use Ultra\MessageHandling_Compiler\DispatchPlanRenderer;
 use Ultra\MessageHandling_Compiler\HandlerDescriptor;
 use Ultra\MessageHandling_Compiler\HandlerDescriptorFactory;
+use Ultra\MessageHandling_Compiler\HandlerMethodGenerator;
 use Ultra\MessageHandling_Compiler\LocatorReferenceCollector;
 
 final class EventBusCompilerPass implements CompilerPassInterface
@@ -122,7 +125,20 @@ final class EventBusCompilerPass implements CompilerPassInterface
         $this->registerNormalizableEvents($container, array_values($eventMap));
 
         $filePath = rtrim($this->outputDir, '/').'/'.$this->generatedClass.'.php';
-        (new EventBusGenerator())->generate($this->generatedClass, $routes, $filePath);
+        (new EventBusGenerator(
+            new HandlerMethodGenerator(
+                renderer: new DispatchPlanRenderer([
+                    new DecoratingDependencyExpressionResolver(
+                        EventBusInterface::class,
+                        'Ultra\\MessageHandling\\ContextPropagatingEventBus',
+                    ),
+                    new DecoratingDependencyExpressionResolver(
+                        'Ultra\\Mediator\\MediatorInterface',
+                        'Ultra\\MessageHandling\\ContextPropagatingMediator',
+                    ),
+                ]),
+            ),
+        ))->generate($this->generatedClass, $routes, $filePath);
 
         $eventBusDef = new Definition($this->generatedClass, [new ServiceLocatorArgument($this->serviceLocatorReferences($locatorReferences->all()))]);
         $eventBusDef->setFile($filePath)->setPublic(true);

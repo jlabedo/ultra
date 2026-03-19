@@ -17,6 +17,7 @@ use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
 use Ultra\MessageHandling\Attribute\MatchResult;
+use Ultra\Mediator\MediatorInterface;
 
 const TEST_OUTPUT_DIR = __DIR__.'/../../../var/event_bus_compiler_tests';
 
@@ -32,10 +33,31 @@ final readonly class UnknownTestEvent
     public function __construct(public string $orderId) {}
 }
 
+final readonly class DispatchFromEventMessage
+{
+    public function __construct(public string $orderId) {}
+}
+
 final class EventLog
 {
     /** @var list<string> */
     public array $entries = [];
+}
+
+final class RecordingMediator implements MediatorInterface
+{
+    /** @var list<array{message: object, context: array}> */
+    public array $calls = [];
+
+    public function send(object $message, array $context = []): mixed
+    {
+        $this->calls[] = [
+            'message' => $message,
+            'context' => $context,
+        ];
+
+        return 'sent';
+    }
 }
 
 final class ExactCreatedHandler
@@ -95,6 +117,35 @@ final class LaterCreatedHandler
     }
 }
 
+final class NestedPublishingCreatedHandler
+{
+    #[EventHandler(priority: 50)]
+    public function handle(TestOrderCreated $event, EventBusInterface $eventBus): void
+    {
+        $eventBus->publish(new TestOrderCancelled($event->orderId));
+    }
+}
+
+final class CancelledEventHandler
+{
+    public function __construct(private readonly EventLog $log) {}
+
+    #[EventHandler]
+    public function handle(TestOrderCancelled $event): void
+    {
+        $this->log->entries[] = 'cancelled:'.$event->orderId;
+    }
+}
+
+final class MediatingCreatedHandler
+{
+    #[EventHandler(priority: 50)]
+    public function handle(TestOrderCreated $event, MediatorInterface $mediator): void
+    {
+        $mediator->send(new DispatchFromEventMessage($event->orderId));
+    }
+}
+
 final class AfterReturningRecorder
 {
     /** @var list<mixed> */
@@ -134,6 +185,25 @@ final class FailureRecorder
     public function after(object $message, MessageContext $context): void
     {
         ++$this->afterCalls;
+    }
+}
+
+final class EventContextRecorder
+{
+    /** @var list<array{message: string, context: array}> */
+    public array $entries = [];
+
+    #[After(static function (\ReflectionMethod $method): ?MatchResult {
+        return [] !== $method->getAttributes(EventHandler::class)
+            ? MatchResult::apply()
+            : null;
+    })]
+    public function after(object $message, MessageContext $context): void
+    {
+        $this->entries[] = [
+            'message' => $message::class,
+            'context' => $context->all(),
+        ];
     }
 }
 
@@ -244,6 +314,47 @@ test('AfterThrowing and After apply to event handlers', function () {
     $recorder = $container->get(FailureRecorder::class);
     expect($recorder->message)->toBe('boom')
         ->and($recorder->afterCalls)->toBe(1);
+});
+
+test('event bus propagates message context through nested publish calls from handlers', function () {
+    $log = new EventLog();
+    $container = createEventBusContainer('CompiledEventBusNestedPublishContext', [
+        NestedPublishingCreatedHandler::class => (new Definition(NestedPublishingCreatedHandler::class))->addTag('event_bus.handler'),
+        CancelledEventHandler::class => (new Definition(CancelledEventHandler::class, [$log]))->addTag('event_bus.handler'),
+        EventContextRecorder::class => (new Definition(EventContextRecorder::class))->addTag('event_bus.aspect')->setPublic(true),
+    ]);
+
+    $container->get(EventBusInterface::class)->publish(new TestOrderCreated('o-ctx'), ['traceId' => 'trace-123']);
+
+    $recorder = $container->get(EventContextRecorder::class);
+
+    expect($log->entries)->toBe(['cancelled:o-ctx'])
+        ->and($recorder->entries)->toHaveCount(2)
+        ->and($recorder->entries[0])->toBe([
+            'message' => TestOrderCancelled::class,
+            'context' => ['traceId' => 'trace-123'],
+        ])
+        ->and($recorder->entries[1])->toBe([
+            'message' => TestOrderCreated::class,
+            'context' => ['traceId' => 'trace-123'],
+        ]);
+});
+
+test('event bus propagates message context to mediator injected into handlers', function () {
+    $container = new ContainerBuilder();
+    $container->setDefinition(MediatingCreatedHandler::class, (new Definition(MediatingCreatedHandler::class))->addTag('event_bus.handler'));
+    $container->setDefinition(RecordingMediator::class, (new Definition(RecordingMediator::class))->setPublic(true));
+    $container->setAlias(MediatorInterface::class, RecordingMediator::class)->setPublic(true);
+    $container->addCompilerPass(new EventBusCompilerPass(TEST_OUTPUT_DIR, 'CompiledEventBusMediatorContext'));
+    $container->compile();
+
+    $container->get(EventBusInterface::class)->publish(new TestOrderCreated('o-med'), ['traceId' => 'trace-med']);
+
+    $mediator = $container->get(RecordingMediator::class);
+
+    expect($mediator->calls)->toHaveCount(1)
+        ->and($mediator->calls[0]['message'])->toBeInstanceOf(DispatchFromEventMessage::class)
+        ->and($mediator->calls[0]['context'])->toBe(['traceId' => 'trace-med']);
 });
 
 test('event discovery contributes known events to mapper cache warming', function () {

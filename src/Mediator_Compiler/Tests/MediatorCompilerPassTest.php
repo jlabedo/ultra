@@ -15,6 +15,7 @@ use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Before;
+use Ultra\EventBus\EventBusInterface;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\Mediator\Exception\NoHandlerFound;
@@ -58,6 +59,26 @@ final readonly class DoubleWrappedMessage
     public function __construct(public string $payload) {}
 }
 
+final readonly class ParentMessage
+{
+    public function __construct(public string $payload) {}
+}
+
+final readonly class ChildMessage
+{
+    public function __construct(public string $payload) {}
+}
+
+final readonly class PublishedFromMediatorMessage
+{
+    public function __construct(public string $payload) {}
+}
+
+final readonly class RecordedEvent
+{
+    public function __construct(public string $payload) {}
+}
+
 // ---------------------------------------------------------------------------
 // Service fixtures (plain collaborators)
 // ---------------------------------------------------------------------------
@@ -67,6 +88,20 @@ final class GreeterService
     public function greet(string $name): string
     {
         return 'Hello, '.$name.'!';
+    }
+}
+
+final class RecordingEventBus implements EventBusInterface
+{
+    /** @var list<array{event: object, context: array}> */
+    public array $calls = [];
+
+    public function publish(object $event, array $context = []): void
+    {
+        $this->calls[] = [
+            'event' => $event,
+            'context' => $context,
+        ];
     }
 }
 
@@ -90,6 +125,23 @@ final class TestLogger
     public function log(object $message, MessageContext $context): void
     {
         $this->logged[] = $message;
+    }
+}
+
+final class MessageContextRecorder
+{
+    /** @var list<array{message: string, context: array}> */
+    public array $entries = [];
+
+    #[Before(static function (\ReflectionMethod $m): ?MatchResult {
+        return MatchResult::apply();
+    })]
+    public function record(object $message, MessageContext $context): void
+    {
+        $this->entries[] = [
+            'message' => $message::class,
+            'context' => $context->all(),
+        ];
     }
 }
 
@@ -200,6 +252,35 @@ final class DoubleWrappedHandler
     public function handle(DoubleWrappedMessage $msg): string
     {
         return 'double: '.$msg->payload;
+    }
+}
+
+final class ParentHandler
+{
+    #[Handles]
+    public function handle(ParentMessage $msg, MediatorInterface $mediator): string
+    {
+        return $mediator->send(new ChildMessage($msg->payload));
+    }
+}
+
+final class ChildHandler
+{
+    #[Handles]
+    public function handle(ChildMessage $msg): string
+    {
+        return 'child: '.$msg->payload;
+    }
+}
+
+final class EventPublishingHandler
+{
+    #[Handles]
+    public function handle(PublishedFromMediatorMessage $msg, EventBusInterface $eventBus): string
+    {
+        $eventBus->publish(new RecordedEvent($msg->payload));
+
+        return 'published: '.$msg->payload;
     }
 }
 
@@ -676,6 +757,49 @@ test('generated mediator executes multiple around-advices ordered by priority', 
         // priority 10 → nested inside outer
         ->and($inner->log)->toBe(['inner-before', 'inner-after'])
     ;
+});
+
+test('generated mediator propagates message context through nested send calls from handlers', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(ParentHandler::class, new Definition(ParentHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(ChildHandler::class, new Definition(ChildHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(MessageContextRecorder::class, new Definition(MessageContextRecorder::class)->addTag('mediator.aspect')->setPublic(true));
+
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorNestedSendContext'));
+    $container->compile();
+
+    $mediator = $container->get(MediatorInterface::class);
+    $recorder = $container->get(MessageContextRecorder::class);
+
+    expect($mediator->send(new ParentMessage('nested'), ['traceId' => 'trace-456']))->toBe('child: nested')
+        ->and($recorder->entries)->toBe([
+            [
+                'message' => ParentMessage::class,
+                'context' => ['traceId' => 'trace-456'],
+            ],
+            [
+                'message' => ChildMessage::class,
+                'context' => ['traceId' => 'trace-456'],
+            ],
+        ]);
+});
+
+test('generated mediator propagates message context to event bus injected into handlers', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(EventPublishingHandler::class, new Definition(EventPublishingHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(RecordingEventBus::class, new Definition(RecordingEventBus::class)->setPublic(true));
+    $container->setAlias(EventBusInterface::class, RecordingEventBus::class)->setPublic(true);
+
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorEventBusContext'));
+    $container->compile();
+
+    $mediator = $container->get(MediatorInterface::class);
+    $eventBus = $container->get(RecordingEventBus::class);
+
+    expect($mediator->send(new PublishedFromMediatorMessage('bridge'), ['traceId' => 'trace-eb']))->toBe('published: bridge')
+        ->and($eventBus->calls)->toHaveCount(1)
+        ->and($eventBus->calls[0]['event'])->toBeInstanceOf(RecordedEvent::class)
+        ->and($eventBus->calls[0]['context'])->toBe(['traceId' => 'trace-eb']);
 });
 
 test('compiler pass excludes claimed dep types from the service locator', function () use ($testOutputDir) {

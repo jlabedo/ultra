@@ -12,8 +12,11 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\MessageHandling_Compiler\AdviceCollector;
+use Ultra\MessageHandling_Compiler\DecoratingDependencyExpressionResolver;
+use Ultra\MessageHandling_Compiler\DispatchPlanRenderer;
 use Ultra\MessageHandling_Compiler\HandlerDescriptor;
 use Ultra\MessageHandling_Compiler\HandlerDescriptorFactory;
+use Ultra\MessageHandling_Compiler\HandlerMethodGenerator;
 use Ultra\MessageHandling_Compiler\LocatorReferenceCollector;
 
 /**
@@ -161,7 +164,20 @@ final class MediatorCompilerPass implements CompilerPassInterface
 
         // ── Phase 3: generate and register ───────────────────────────────────
         $filePath = rtrim($this->outputDir, '/').'/'.$this->generatedClass.'.php';
-        new MediatorGenerator()->generate($this->generatedClass, $handlers, $filePath);
+        (new MediatorGenerator(
+            new HandlerMethodGenerator(
+                renderer: new DispatchPlanRenderer([
+                    new DecoratingDependencyExpressionResolver(
+                        'Ultra\\EventBus\\EventBusInterface',
+                        'Ultra\\MessageHandling\\ContextPropagatingEventBus',
+                    ),
+                    new DecoratingDependencyExpressionResolver(
+                        MediatorInterface::class,
+                        'Ultra\\MessageHandling\\ContextPropagatingMediator',
+                    ),
+                ]),
+            ),
+        ))->generate($this->generatedClass, $handlers, $filePath);
 
         $mediatorDef = new Definition($this->generatedClass, [new ServiceLocatorArgument($this->serviceLocatorReferences($locatorReferences->all()))]);
         $mediatorDef->setFile($filePath)->setPublic(true);

@@ -8,6 +8,13 @@ final class DispatchPlanRenderer
 {
     private const INDENT = '    ';
 
+    /**
+     * @param list<HandlerDependencyExpressionResolverInterface> $dependencyResolvers
+     */
+    public function __construct(
+        private readonly array $dependencyResolvers = [],
+    ) {}
+
     public function renderDispatchMethod(string $dispatchName, DispatchPlan $plan): string
     {
         $bodyLines = [
@@ -66,7 +73,7 @@ final class DispatchPlanRenderer
 
         foreach ($depServiceIds as $depIdx => $depId) {
             $args[] = $claimedVarNames[$depIdx]
-                ?? '$this->locator->get('.$this->exportString($depId).')';
+                ?? $this->renderHandlerDependencyExpression($depId);
         }
 
         $call = $isSelf
@@ -74,6 +81,18 @@ final class DispatchPlanRenderer
             : $this->renderServiceMethodCall($serviceId, $handlerMethod, $args);
 
         return $call;
+    }
+
+    private function renderHandlerDependencyExpression(string $depId): string
+    {
+        foreach ($this->dependencyResolvers as $resolver) {
+            $expression = $resolver->resolve($depId, '$c');
+            if (null !== $expression) {
+                return $expression;
+            }
+        }
+
+        return '$this->locator->get('.$this->exportString($depId).')';
     }
 
     /**
