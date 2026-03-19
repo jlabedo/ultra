@@ -12,7 +12,6 @@ readonly class StoredEvent
      */
     public function __construct(
         public int $eventId,
-        public string $id,
         public string $eventType,
         public array $payload,
         public array $domainIds,

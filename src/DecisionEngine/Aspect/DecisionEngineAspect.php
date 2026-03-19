@@ -10,16 +10,16 @@ use Ultra\DecisionEngine\Attribute\DomainIdentifier;
 use Ultra\DecisionEngine\Engine\EventRouter;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\DecisionEngine\Exception\StreamNotFoundException;
-use Ultra\EventBus\EventRegistryInterface;
 use Ultra\DecisionEngine\ReducerTrait;
+use Ultra\EventBus\EventRegistryInterface;
 use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StoredEvent;
 use Ultra\EventStore\StreamQuery;
-use Ultra\MessageHandling\MessageContext;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\MatchResult;
+use Ultra\MessageHandling\MessageContext;
 
 final class DecisionEngineAspect
 {
@@ -131,7 +131,7 @@ final class DecisionEngineAspect
             $stateByName[$stateParam['parameterName']] = $state;
         }
 
-        if ($context->get(self::CONTEXT_DECISION_MODE) === self::MODE_CHECK) {
+        if (self::MODE_CHECK === $context->get(self::CONTEXT_DECISION_MODE)) {
             $checkParamNames = $config['checkParamNames'] ?? null;
             if (null === $checkParamNames) {
                 throw new CommandHasNoCheckException($message::class);
@@ -151,7 +151,7 @@ final class DecisionEngineAspect
         }
 
         $appendableEvents = $this->eventRouter->toAppendableEvents($emittedEvents);
-        $this->eventStore->append($appendableEvents, $loadResult->streamVersion);
+        $this->eventStore->append($appendableEvents, $loadResult->queryVersion);
 
         return $emittedEvents;
     }
@@ -167,7 +167,7 @@ final class DecisionEngineAspect
             $branches[] = StreamQuery::forStream(new EventStoreDomainIdentifier(
                 $stateParam['domainIdentifierName'],
                 $value,
-            ));
+            ))->ofTypes(...$this->handledEventNames($stateParam['stateClass']));
         }
 
         return StreamQuery::anyOf(...$branches);
@@ -216,6 +216,27 @@ final class DecisionEngineAspect
     private function storedEventToDto(StoredEvent $stored, string $eventClass): object
     {
         return $this->normalizer->fromScalar($stored->payload, $eventClass);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function handledEventNames(string $stateClass): array
+    {
+        $names = [];
+        foreach ($stateClass::handledEventTypes() as $eventClass) {
+            $eventName = $this->eventClassRegistry->getName($eventClass);
+            if (null === $eventName) {
+                throw new \LogicException(sprintf(
+                    'State class %s handles event class %s but it is not registered.',
+                    $stateClass,
+                    $eventClass,
+                ));
+            }
+            $names[] = $eventName;
+        }
+
+        return array_values(array_unique($names));
     }
 
     private function getCommandPropertyValue(object $command, string $property): string

@@ -6,11 +6,10 @@ namespace Ultra\DecisionEngine\Tests;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
 use Ultra\DecisionEngine\Aspect\DecisionEngineAspect;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Engine\EventRouter;
-use Ultra\EventBus\CompiledEventRegistry;
-use Ultra\EventBus\EventRegistryInterface;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
 use Ultra\DecisionEngine\Tests\Example\Command\CreateCourseCommand;
@@ -20,9 +19,14 @@ use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
+use Ultra\EventBus\CompiledEventRegistry;
+use Ultra\EventBus\EventRegistryInterface;
 use Ultra\EventStore\EventStore;
+use Ultra\EventStore\EventTopology;
+use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\InMemoryEventStore;
+use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mediator\Attribute\Handles;
@@ -63,7 +67,17 @@ function createMediator(array $serviceDefinitions = []): array
     $container->register(UltraNormalizer::class, UltraNormalizer::class)
         ->setArguments([$outputDir.'/normalizer'])
     ;
-    $container->register(InMemoryEventStore::class, InMemoryEventStore::class)->setPublic(true);
+    $container->register(EventTopologyProvider::class, StaticEventTopologyProvider::class)
+        ->setArguments([[
+            'course.created' => new EventTopology(['course']),
+            'student.subscribed' => new EventTopology(['course', 'student']),
+            'student.unsubscribed' => new EventTopology(['course', 'student']),
+        ]])
+    ;
+    $container->register(InMemoryEventStore::class, InMemoryEventStore::class)
+        ->setArguments([new Reference(EventTopologyProvider::class)])
+        ->setPublic(true)
+    ;
     $container->setAlias(EventStore::class, InMemoryEventStore::class)->setPublic(true);
 
     $container->register(CompiledEventRegistry::class, CompiledEventRegistry::class)
@@ -131,7 +145,11 @@ test('full handle flow: create course then subscribe student', function () {
     expect($events2)->toHaveCount(1);
     expect($events2[0])->toBeInstanceOf(StudentSubscribed::class);
 
-    $result = $store->load(new StreamQuery(['course' => 'math-101']));
+    $result = $store->load(new StreamQuery(['course' => 'math-101'], [
+        'course.created',
+        'student.subscribed',
+        'student.unsubscribed',
+    ]));
     expect($result->events)->toHaveCount(2);
 });
 
@@ -181,7 +199,11 @@ test('handle allows multiple commands in sequence', function () {
     $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
     $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'bob'));
 
-    $result = $store->load(new StreamQuery(['course' => 'math-101']));
+    $result = $store->load(new StreamQuery(['course' => 'math-101'], [
+        'course.created',
+        'student.subscribed',
+        'student.unsubscribed',
+    ]));
     expect($result->events)->toHaveCount(3);
 });
 
@@ -231,7 +253,9 @@ test('handle with service dependency resolves from container', function () {
     expect($events)->toHaveCount(1);
     expect($events[0])->toBeInstanceOf(CourseCreated::class);
     expect($events[0]->courseId)->toBe('timed-1');
-    $result = $store->load(new StreamQuery(['course' => 'timed-1']));
+    $result = $store->load(new StreamQuery(['course' => 'timed-1'], [
+        'course.created',
+    ]));
     expect($result->events)->toHaveCount(1);
 });
 
@@ -239,8 +263,12 @@ test('concurrency: appending with stale version throws', function () {
     ['mediator' => $mediator, 'store' => $store] = createMediator();
 
     $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
-    $result = $store->load(new StreamQuery(['course' => 'math-101']));
-    $staleVersion = $result->streamVersion;
+    $result = $store->load(new StreamQuery(['course' => 'math-101'], [
+        'course.created',
+        'student.subscribed',
+        'student.unsubscribed',
+    ]));
+    $staleVersion = $result->queryVersion;
 
     $normalizer = new UltraNormalizer(sys_get_temp_dir().'/decision-normalizer-'.bin2hex(random_bytes(4)));
     $router = new EventRouter($normalizer, new CompiledEventRegistry([
@@ -261,8 +289,15 @@ test('events are correctly routed to multiple streams', function () {
     $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
     $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
 
-    $courseStream = $store->load(new StreamQuery(['course' => 'math-101']));
-    $studentStream = $store->load(new StreamQuery(['student' => 'alice']));
+    $courseStream = $store->load(new StreamQuery(['course' => 'math-101'], [
+        'course.created',
+        'student.subscribed',
+        'student.unsubscribed',
+    ]));
+    $studentStream = $store->load(new StreamQuery(['student' => 'alice'], [
+        'student.subscribed',
+        'student.unsubscribed',
+    ]));
 
     expect($courseStream->events)->toHaveCount(2);
     expect($studentStream->events)->toHaveCount(1);

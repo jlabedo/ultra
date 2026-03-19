@@ -9,15 +9,23 @@ final class InMemoryEventStore implements EventStore
     /** @var list<StoredEvent> */
     private array $events = [];
 
-    /** @var array<string, int> streamId (StreamId::toString()) => last eventId in that stream */
-    private array $lastEventIdByStream = [];
+    /** @var array<string, int> canonical query stream key => last eventId */
+    private array $lastEventIdByQueryStream = [];
 
     private int $nextEventId = 1;
 
+    private CanonicalQueryKeyFactory $queryKeyFactory;
+
+    public function __construct(?EventTopologyProvider $topologyProvider = null)
+    {
+        $this->queryKeyFactory = new CanonicalQueryKeyFactory($topologyProvider ?? new StaticEventTopologyProvider([]));
+    }
+
     public function load(StreamQuery $query): LoadResult
     {
+        $canonicalQuery = $this->queryKeyFactory->resolveQuery($query);
         if ($query->isEmpty()) {
-            return new LoadResult([], new StreamVersion([], $query));
+            return new LoadResult([], new QueryVersion([], $query));
         }
 
         $result = [];
@@ -30,22 +38,15 @@ final class InMemoryEventStore implements EventStore
 
         usort($result, static fn (StoredEvent $a, StoredEvent $b): int => $a->eventId <=> $b->eventId);
 
-        $streamVersion = $this->buildStreamVersionFromEvents($result, $query);
+        $queryVersion = $this->buildQueryVersion($canonicalQuery);
 
-        return new LoadResult($result, $streamVersion);
+        return new LoadResult($result, $queryVersion);
     }
 
-    public function append(array $events, ?StreamVersion $expectedVersion = null): void
+    public function append(array $events, ?QueryVersion $expectedVersion = null): void
     {
         if (null !== $expectedVersion) {
-            $currentResult = $this->load($expectedVersion->query);
-            $currentVersionMap = $currentResult->streamVersion->version;
-            foreach (array_keys($expectedVersion->version) as $key) {
-                if (! array_key_exists($key, $currentVersionMap)) {
-                    $currentVersionMap[$key] = $this->lastEventIdByStream[$key] ?? 0;
-                }
-            }
-            $currentVersion = new StreamVersion($currentVersionMap, $expectedVersion->query);
+            $currentVersion = $this->buildQueryVersion($this->queryKeyFactory->resolveQuery($expectedVersion->query));
             $currentVersion->assertMatches($expectedVersion);
         }
 
@@ -60,7 +61,6 @@ final class InMemoryEventStore implements EventStore
 
         $stored = new StoredEvent(
             eventId: $eventId,
-            id: $event->id,
             eventType: $event->eventType,
             payload: $event->payload,
             domainIds: $event->domainIds,
@@ -68,24 +68,18 @@ final class InMemoryEventStore implements EventStore
         );
         $this->events[] = $stored;
 
-        foreach (StreamId::fromEvent($event->eventType, $event->domainIds) as $streamId) {
-            $this->lastEventIdByStream[$streamId->toString()] = $eventId;
+        foreach ($this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds) as $queryStreamKey) {
+            $this->lastEventIdByQueryStream[$queryStreamKey] = $eventId;
         }
     }
 
-    /**
-     * @param list<StoredEvent> $events
-     */
-    private function buildStreamVersionFromEvents(array $events, StreamQuery $query): StreamVersion
+    private function buildQueryVersion(CanonicalQuery $canonicalQuery): QueryVersion
     {
         $version = [];
-        foreach ($events as $event) {
-            foreach (StreamId::fromEvent($event->eventType, $event->domainIds) as $streamId) {
-                $key = $streamId->toString();
-                $version[$key] = max($version[$key] ?? 0, $event->eventId);
-            }
+        foreach ($canonicalQuery->allKeys() as $key) {
+            $version[$key] = $this->lastEventIdByQueryStream[$key] ?? 0;
         }
 
-        return new StreamVersion($version, $query);
+        return new QueryVersion($version, $canonicalQuery->query);
     }
 }

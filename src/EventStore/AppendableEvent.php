@@ -11,7 +11,6 @@ readonly class AppendableEvent
      * @param array<string, string> $domainIds dimension => value
      */
     public function __construct(
-        public string $id,
         public string $eventType,
         public array $payload,
         public array $domainIds,

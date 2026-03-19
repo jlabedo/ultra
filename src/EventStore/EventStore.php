@@ -6,23 +6,34 @@ namespace Ultra\EventStore;
 
 use Ultra\EventStore\Exception\ConcurrencyException;
 
+/**
+ * Stores events and exposes optimistic concurrency over typed canonical query streams.
+ *
+ * A successful `load()` returns both the matching events and a `QueryVersion` token that captures the
+ * last seen event id for each canonical query-stream key touched by the query. Passing that token back
+ * to `append()` allows implementations to reject concurrent writes that would have changed the queried
+ * snapshot in the meantime.
+ */
 interface EventStore
 {
     /**
-     * Load events matching the query (all domain identifier pairs and any of the event names).
-     * Returns events ordered by eventId ascending, plus the StreamVersion (last eventId per stream) of the result set.
+     * Load events matching the query.
+     *
+     * Implementations may reject queries they cannot represent safely for optimistic concurrency, for
+     * example untyped branches or non-canonical identifier pairs.
      */
     public function load(StreamQuery $query): LoadResult;
 
     /**
-     * Append events. If expectedVersion is provided, the store re-runs the StreamVersion's query to rebuild
-     * the current version, then checks that each stream touched by the new events has the same last eventId
-     * as in expectedVersion (streams not present in the version map are treated as 0). Otherwise throws ConcurrencyException.
-     * If expectedVersion is null, no concurrency check is performed.
+     * Append events to the store.
+     *
+     * If `expectedVersion` is provided, the store validates that every canonical query-stream key captured by
+     * that token still points to the same last event id. If any key has advanced, a `ConcurrencyException`
+     * is thrown and nothing should be considered committed by the caller.
      *
      * @param list<AppendableEvent> $events
      *
-     * @throws ConcurrencyException when expectedVersion is provided and any stream's last eventId does not match
+     * @throws ConcurrencyException when expectedVersion is provided and any canonical query stream's last eventId does not match
      */
-    public function append(array $events, ?StreamVersion $expectedVersion = null): void;
+    public function append(array $events, ?QueryVersion $expectedVersion = null): void;
 }

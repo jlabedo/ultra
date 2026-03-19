@@ -24,7 +24,6 @@ final class EventRouter
         $payload = $this->getPayload($event);
 
         return new AppendableEvent(
-            id: $this->generateId(),
             eventType: $eventType,
             payload: $payload,
             domainIds: $domainIds,
@@ -97,10 +96,5 @@ final class EventRouter
         }
 
         return $payload;
-    }
-
-    private function generateId(): string
-    {
-        return bin2hex(random_bytes(8));
     }
 }

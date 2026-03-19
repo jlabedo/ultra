@@ -12,7 +12,6 @@ function storedEvent(array $domainIds, string $eventType = 'test.event'): Stored
 {
     return new StoredEvent(
         eventId: 1,
-        id: 'e1',
         eventType: $eventType,
         payload: [],
         domainIds: $domainIds,
