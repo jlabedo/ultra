@@ -10,6 +10,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\MessageContextKeys;
+use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
@@ -27,6 +29,26 @@ use Ultra\Mediator_Compiler\MediatorCompilerPass;
 // ---------------------------------------------------------------------------
 
 $testOutputDir = dirname(__DIR__, 3).'/var/mediator_compiler_tests';
+
+/**
+ * @param list<array{message: string, context: array}> $entries
+ */
+function assertMessageFlowContexts(array $entries, string $firstMessage, string $secondMessage, string $traceId): void
+{
+    expect($entries)->toHaveCount(2)
+        ->and($entries[0]['message'])->toBe($firstMessage)
+        ->and($entries[1]['message'])->toBe($secondMessage)
+        ->and($entries[0]['context']['traceId'])->toBe($traceId)
+        ->and($entries[1]['context']['traceId'])->toBe($traceId)
+        ->and($entries[0]['context'])->toHaveKey(MessageContextKeys::MESSAGE_ID)
+        ->and($entries[0]['context'])->toHaveKey(MessageContextKeys::CORRELATION_ID)
+        ->and($entries[1]['context'])->toHaveKey(MessageContextKeys::MESSAGE_ID)
+        ->and($entries[1]['context'])->toHaveKey(MessageContextKeys::CORRELATION_ID)
+        ->and($entries[1]['context'])->toHaveKey(MessageContextKeys::CAUSATION_ID)
+        ->and($entries[0]['context'][MessageContextKeys::CORRELATION_ID])->toBe($entries[0]['context'][MessageContextKeys::MESSAGE_ID])
+        ->and($entries[1]['context'][MessageContextKeys::CORRELATION_ID])->toBe($entries[0]['context'][MessageContextKeys::CORRELATION_ID])
+        ->and($entries[1]['context'][MessageContextKeys::CAUSATION_ID])->toBe($entries[0]['context'][MessageContextKeys::MESSAGE_ID]);
+}
 
 // ---------------------------------------------------------------------------
 // Message fixtures
@@ -102,6 +124,23 @@ final class RecordingEventBus implements EventBusInterface
             'event' => $event,
             'context' => MessageContext::coerce($context)->all(),
         ];
+    }
+}
+
+final class FixedMessageContextPropagator implements MessageContextPropagatorInterface
+{
+    public function createDispatchContext(MessageContext $context): MessageContext
+    {
+        if ($context->has(MessageContextKeys::MESSAGE_ID) && ! $context->has(MessageContextKeys::CAUSATION_ID)) {
+            return $context
+                ->with(MessageContextKeys::MESSAGE_ID, 'fixed-child')
+                ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation')
+                ->with(MessageContextKeys::CAUSATION_ID, 'fixed-root');
+        }
+
+        return $context
+            ->with(MessageContextKeys::MESSAGE_ID, 'fixed-root')
+            ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation');
     }
 }
 
@@ -771,17 +810,8 @@ test('generated mediator propagates message context through nested send calls fr
     $mediator = $container->get(MediatorInterface::class);
     $recorder = $container->get(MessageContextRecorder::class);
 
-    expect($mediator->send(new ParentMessage('nested'), ['traceId' => 'trace-456']))->toBe('child: nested')
-        ->and($recorder->entries)->toBe([
-            [
-                'message' => ParentMessage::class,
-                'context' => ['traceId' => 'trace-456'],
-            ],
-            [
-                'message' => ChildMessage::class,
-                'context' => ['traceId' => 'trace-456'],
-            ],
-        ]);
+    expect($mediator->send(new ParentMessage('nested'), ['traceId' => 'trace-456']))->toBe('child: nested');
+    assertMessageFlowContexts($recorder->entries, ParentMessage::class, ChildMessage::class, 'trace-456');
 });
 
 test('generated mediator accepts MessageContext objects at the public send boundary', function () use ($testOutputDir) {
@@ -796,17 +826,29 @@ test('generated mediator accepts MessageContext objects at the public send bound
     $mediator = $container->get(MediatorInterface::class);
     $recorder = $container->get(MessageContextRecorder::class);
 
-    expect($mediator->send(new ParentMessage('typed'), MessageContext::coerce(['traceId' => 'trace-typed'])))->toBe('child: typed')
-        ->and($recorder->entries)->toBe([
-            [
-                'message' => ParentMessage::class,
-                'context' => ['traceId' => 'trace-typed'],
-            ],
-            [
-                'message' => ChildMessage::class,
-                'context' => ['traceId' => 'trace-typed'],
-            ],
-        ]);
+    expect($mediator->send(new ParentMessage('typed'), MessageContext::coerce(['traceId' => 'trace-typed'])))->toBe('child: typed');
+    assertMessageFlowContexts($recorder->entries, ParentMessage::class, ChildMessage::class, 'trace-typed');
+});
+
+test('generated mediator uses the configured message context propagator service', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(ParentHandler::class, new Definition(ParentHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(ChildHandler::class, new Definition(ChildHandler::class)->addTag('mediator.handler'));
+    $container->setDefinition(MessageContextRecorder::class, new Definition(MessageContextRecorder::class)->addTag('mediator.aspect')->setPublic(true));
+    $container->setDefinition(MessageContextPropagatorInterface::class, (new Definition(FixedMessageContextPropagator::class))->setPublic(true));
+
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorCustomPropagator'));
+    $container->compile();
+
+    $mediator = $container->get(MediatorInterface::class);
+    $recorder = $container->get(MessageContextRecorder::class);
+
+    expect($mediator->send(new ParentMessage('custom'), ['traceId' => 'trace-custom']))->toBe('child: custom')
+        ->and($recorder->entries[0]['context'][MessageContextKeys::MESSAGE_ID])->toBe('fixed-root')
+        ->and($recorder->entries[0]['context'][MessageContextKeys::CORRELATION_ID])->toBe('fixed-correlation')
+        ->and($recorder->entries[1]['context'][MessageContextKeys::MESSAGE_ID])->toBe('fixed-child')
+        ->and($recorder->entries[1]['context'][MessageContextKeys::CORRELATION_ID])->toBe('fixed-correlation')
+        ->and($recorder->entries[1]['context'][MessageContextKeys::CAUSATION_ID])->toBe('fixed-root');
 });
 
 test('generated mediator propagates message context to event bus injected into handlers', function () use ($testOutputDir) {
@@ -824,7 +866,9 @@ test('generated mediator propagates message context to event bus injected into h
     expect($mediator->send(new PublishedFromMediatorMessage('bridge'), ['traceId' => 'trace-eb']))->toBe('published: bridge')
         ->and($eventBus->calls)->toHaveCount(1)
         ->and($eventBus->calls[0]['event'])->toBeInstanceOf(RecordedEvent::class)
-        ->and($eventBus->calls[0]['context'])->toBe(['traceId' => 'trace-eb']);
+        ->and($eventBus->calls[0]['context']['traceId'])->toBe('trace-eb')
+        ->and($eventBus->calls[0]['context'])->toHaveKey(MessageContextKeys::MESSAGE_ID)
+        ->and($eventBus->calls[0]['context'])->toHaveKey(MessageContextKeys::CORRELATION_ID);
 });
 
 test('compiler pass excludes claimed dep types from the service locator', function () use ($testOutputDir) {

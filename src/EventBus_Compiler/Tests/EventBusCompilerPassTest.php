@@ -13,6 +13,8 @@ use Ultra\EventBus\Exception\UnknownEvent;
 use Ultra\EventBus_Compiler\EventBusCompilerPass;
 use Ultra\Mapper_Bundle\DependencyInjection\Compiler\MapperCompilerPass;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\MessageContextKeys;
+use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
@@ -20,6 +22,26 @@ use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\Mediator\MediatorInterface;
 
 const TEST_OUTPUT_DIR = __DIR__.'/../../../var/event_bus_compiler_tests';
+
+/**
+ * @param list<array{message: string, context: array}> $entries
+ */
+function assertEventFlowContexts(array $entries, string $rootEvent, string $nestedEvent, string $traceId): void
+{
+    expect($entries)->toHaveCount(2)
+        ->and($entries[0]['message'])->toBe($nestedEvent)
+        ->and($entries[1]['message'])->toBe($rootEvent)
+        ->and($entries[0]['context']['traceId'])->toBe($traceId)
+        ->and($entries[1]['context']['traceId'])->toBe($traceId)
+        ->and($entries[0]['context'])->toHaveKey(MessageContextKeys::MESSAGE_ID)
+        ->and($entries[0]['context'])->toHaveKey(MessageContextKeys::CORRELATION_ID)
+        ->and($entries[0]['context'])->toHaveKey(MessageContextKeys::CAUSATION_ID)
+        ->and($entries[1]['context'])->toHaveKey(MessageContextKeys::MESSAGE_ID)
+        ->and($entries[1]['context'])->toHaveKey(MessageContextKeys::CORRELATION_ID)
+        ->and($entries[1]['context'][MessageContextKeys::CORRELATION_ID])->toBe($entries[1]['context'][MessageContextKeys::MESSAGE_ID])
+        ->and($entries[0]['context'][MessageContextKeys::CORRELATION_ID])->toBe($entries[1]['context'][MessageContextKeys::CORRELATION_ID])
+        ->and($entries[0]['context'][MessageContextKeys::CAUSATION_ID])->toBe($entries[1]['context'][MessageContextKeys::MESSAGE_ID]);
+}
 
 interface TestDomainEvent {}
 
@@ -57,6 +79,23 @@ final class RecordingMediator implements MediatorInterface
         ];
 
         return 'sent';
+    }
+}
+
+final class FixedMessageContextPropagator implements MessageContextPropagatorInterface
+{
+    public function createDispatchContext(MessageContext $context): MessageContext
+    {
+        if ($context->has(MessageContextKeys::MESSAGE_ID) && ! $context->has(MessageContextKeys::CAUSATION_ID)) {
+            return $context
+                ->with(MessageContextKeys::MESSAGE_ID, 'fixed-child')
+                ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation')
+                ->with(MessageContextKeys::CAUSATION_ID, 'fixed-root');
+        }
+
+        return $context
+            ->with(MessageContextKeys::MESSAGE_ID, 'fixed-root')
+            ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation');
     }
 }
 
@@ -328,16 +367,8 @@ test('event bus propagates message context through nested publish calls from han
 
     $recorder = $container->get(EventContextRecorder::class);
 
-    expect($log->entries)->toBe(['cancelled:o-ctx'])
-        ->and($recorder->entries)->toHaveCount(2)
-        ->and($recorder->entries[0])->toBe([
-            'message' => TestOrderCancelled::class,
-            'context' => ['traceId' => 'trace-123'],
-        ])
-        ->and($recorder->entries[1])->toBe([
-            'message' => TestOrderCreated::class,
-            'context' => ['traceId' => 'trace-123'],
-        ]);
+    expect($log->entries)->toBe(['cancelled:o-ctx']);
+    assertEventFlowContexts($recorder->entries, TestOrderCreated::class, TestOrderCancelled::class, 'trace-123');
 });
 
 test('event bus accepts MessageContext objects at the public publish boundary', function () {
@@ -355,16 +386,30 @@ test('event bus accepts MessageContext objects at the public publish boundary', 
 
     $recorder = $container->get(EventContextRecorder::class);
 
-    expect($log->entries)->toBe(['cancelled:o-typed'])
-        ->and($recorder->entries)->toHaveCount(2)
-        ->and($recorder->entries[0])->toBe([
-            'message' => TestOrderCancelled::class,
-            'context' => ['traceId' => 'trace-typed'],
-        ])
-        ->and($recorder->entries[1])->toBe([
-            'message' => TestOrderCreated::class,
-            'context' => ['traceId' => 'trace-typed'],
-        ]);
+    expect($log->entries)->toBe(['cancelled:o-typed']);
+    assertEventFlowContexts($recorder->entries, TestOrderCreated::class, TestOrderCancelled::class, 'trace-typed');
+});
+
+test('event bus uses the configured message context propagator service', function () {
+    $log = new EventLog();
+    $container = new ContainerBuilder();
+    $container->setDefinition(NestedPublishingCreatedHandler::class, (new Definition(NestedPublishingCreatedHandler::class))->addTag('event_bus.handler'));
+    $container->setDefinition(CancelledEventHandler::class, (new Definition(CancelledEventHandler::class, [$log]))->addTag('event_bus.handler'));
+    $container->setDefinition(EventContextRecorder::class, (new Definition(EventContextRecorder::class))->addTag('event_bus.aspect')->setPublic(true));
+    $container->setDefinition(MessageContextPropagatorInterface::class, (new Definition(FixedMessageContextPropagator::class))->setPublic(true));
+    $container->addCompilerPass(new EventBusCompilerPass(TEST_OUTPUT_DIR, 'CompiledEventBusCustomPropagator'));
+    $container->compile();
+
+    $container->get(EventBusInterface::class)->publish(new TestOrderCreated('o-custom'), ['traceId' => 'trace-custom']);
+
+    $recorder = $container->get(EventContextRecorder::class);
+
+    expect($log->entries)->toBe(['cancelled:o-custom'])
+        ->and($recorder->entries[1]['context'][MessageContextKeys::MESSAGE_ID])->toBe('fixed-root')
+        ->and($recorder->entries[1]['context'][MessageContextKeys::CORRELATION_ID])->toBe('fixed-correlation')
+        ->and($recorder->entries[0]['context'][MessageContextKeys::MESSAGE_ID])->toBe('fixed-child')
+        ->and($recorder->entries[0]['context'][MessageContextKeys::CORRELATION_ID])->toBe('fixed-correlation')
+        ->and($recorder->entries[0]['context'][MessageContextKeys::CAUSATION_ID])->toBe('fixed-root');
 });
 
 test('event bus propagates message context to mediator injected into handlers', function () {
@@ -381,7 +426,9 @@ test('event bus propagates message context to mediator injected into handlers', 
 
     expect($mediator->calls)->toHaveCount(1)
         ->and($mediator->calls[0]['message'])->toBeInstanceOf(DispatchFromEventMessage::class)
-        ->and($mediator->calls[0]['context'])->toBe(['traceId' => 'trace-med']);
+        ->and($mediator->calls[0]['context']['traceId'])->toBe('trace-med')
+        ->and($mediator->calls[0]['context'])->toHaveKey(MessageContextKeys::MESSAGE_ID)
+        ->and($mediator->calls[0]['context'])->toHaveKey(MessageContextKeys::CORRELATION_ID);
 });
 
 test('event discovery contributes known events to mapper cache warming', function () {

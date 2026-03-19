@@ -85,12 +85,14 @@ final class MediatorGenerator
             final class {$className} implements \\Ultra\\Mediator\\MediatorInterface
             {
                 public function __construct(
-                    private \\Psr\\Container\\ContainerInterface \$locator
+                    private \\Psr\\Container\\ContainerInterface \$locator,
+                    private \\Ultra\\MessageHandling\\MessageContextPropagatorInterface \$messageContextPropagator,
                 ) {}
 
                 public function send(object \$message, array|\\Ultra\\MessageHandling\\MessageContext \$context = []): mixed
                 {
-                    \$messageContext = \\Ultra\\MessageHandling\\MessageContext::coerce(\$context);
+                    \$messageContext = \$this->messageContextPropagator
+                        ->createDispatchContext(\\Ultra\\MessageHandling\\MessageContext::coerce(\$context));
                     return match (\$message::class) {
             {$matchArmsCode}            default => throw new \\Ultra\\Mediator\\Exception\\NoHandlerFound(\$message::class),
                     };

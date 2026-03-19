@@ -11,6 +11,8 @@ use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator\MediatorInterface;
+use Ultra\MessageHandling\MessageContextPropagator;
+use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling_Compiler\AdviceCollector;
 use Ultra\MessageHandling_Compiler\DecoratingDependencyExpressionResolver;
 use Ultra\MessageHandling_Compiler\DispatchPlanRenderer;
@@ -66,6 +68,8 @@ final class MediatorCompilerPass implements CompilerPassInterface
 
     public function process(ContainerBuilder $container): void
     {
+        $this->ensureMessageContextPropagator($container);
+
         $adviceCollector = new AdviceCollector($this->aspectTag);
         $descriptorFactory = new HandlerDescriptorFactory();
         $locatorReferences = new LocatorReferenceCollector();
@@ -179,7 +183,10 @@ final class MediatorCompilerPass implements CompilerPassInterface
             ),
         ))->generate($this->generatedClass, $handlers, $filePath);
 
-        $mediatorDef = new Definition($this->generatedClass, [new ServiceLocatorArgument($this->serviceLocatorReferences($locatorReferences->all()))]);
+        $mediatorDef = new Definition($this->generatedClass, [
+            new ServiceLocatorArgument($this->serviceLocatorReferences($locatorReferences->all())),
+            new Reference(MessageContextPropagatorInterface::class),
+        ]);
         $mediatorDef->setFile($filePath)->setPublic(true);
         $container->setDefinition(MediatorInterface::class, $mediatorDef);
     }
@@ -196,5 +203,17 @@ final class MediatorCompilerPass implements CompilerPassInterface
         }
 
         return $references;
+    }
+
+    private function ensureMessageContextPropagator(ContainerBuilder $container): void
+    {
+        if ($container->has(MessageContextPropagatorInterface::class)) {
+            return;
+        }
+
+        $container->setDefinition(
+            MessageContextPropagatorInterface::class,
+            (new Definition(MessageContextPropagator::class))->setPublic(true),
+        );
     }
 }

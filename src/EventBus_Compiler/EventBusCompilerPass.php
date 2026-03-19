@@ -14,6 +14,8 @@ use Ultra\EventBus\Attribute\EventHandler;
 use Ultra\EventBus\CompiledEventRegistry;
 use Ultra\EventBus\EventBusInterface;
 use Ultra\EventBus\EventRegistryInterface;
+use Ultra\MessageHandling\MessageContextPropagator;
+use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling\Attribute\Event;
 use Ultra\MessageHandling_Compiler\AdviceCollector;
 use Ultra\MessageHandling_Compiler\DecoratingDependencyExpressionResolver;
@@ -34,6 +36,8 @@ final class EventBusCompilerPass implements CompilerPassInterface
 
     public function process(ContainerBuilder $container): void
     {
+        $this->ensureMessageContextPropagator($container);
+
         $eventMap = $this->discoverEvents();
         $adviceCollector = new AdviceCollector($this->aspectTag);
         $descriptorFactory = new HandlerDescriptorFactory();
@@ -140,7 +144,10 @@ final class EventBusCompilerPass implements CompilerPassInterface
             ),
         ))->generate($this->generatedClass, $routes, $filePath);
 
-        $eventBusDef = new Definition($this->generatedClass, [new ServiceLocatorArgument($this->serviceLocatorReferences($locatorReferences->all()))]);
+        $eventBusDef = new Definition($this->generatedClass, [
+            new ServiceLocatorArgument($this->serviceLocatorReferences($locatorReferences->all())),
+            new Reference(MessageContextPropagatorInterface::class),
+        ]);
         $eventBusDef->setFile($filePath)->setPublic(true);
         $container->setDefinition(EventBusInterface::class, $eventBusDef);
     }
@@ -281,5 +288,17 @@ final class EventBusCompilerPass implements CompilerPassInterface
         }
 
         return $references;
+    }
+
+    private function ensureMessageContextPropagator(ContainerBuilder $container): void
+    {
+        if ($container->has(MessageContextPropagatorInterface::class)) {
+            return;
+        }
+
+        $container->setDefinition(
+            MessageContextPropagatorInterface::class,
+            (new Definition(MessageContextPropagator::class))->setPublic(true),
+        );
     }
 }

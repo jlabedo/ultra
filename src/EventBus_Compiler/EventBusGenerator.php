@@ -75,12 +75,14 @@ final class EventBusGenerator
             final class {$className} implements \\Ultra\\EventBus\\EventBusInterface
             {
                 public function __construct(
-                    private \\Psr\\Container\\ContainerInterface \$locator
+                    private \\Psr\\Container\\ContainerInterface \$locator,
+                    private \\Ultra\\MessageHandling\\MessageContextPropagatorInterface \$messageContextPropagator,
                 ) {}
 
                 public function publish(object \$event, array|\\Ultra\\MessageHandling\\MessageContext \$context = []): void
                 {
-                    \$messageContext = \\Ultra\\MessageHandling\\MessageContext::coerce(\$context);
+                    \$messageContext = \$this->messageContextPropagator
+                        ->createDispatchContext(\\Ultra\\MessageHandling\\MessageContext::coerce(\$context));
                     match (\$event::class) {
             {$matchArmsCode}            default => throw new \\Ultra\\EventBus\\Exception\\UnknownEvent(\$event::class),
                     };

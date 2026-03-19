@@ -9,6 +9,7 @@ final readonly class DecoratingDependencyExpressionResolver implements HandlerDe
     public function __construct(
         private string $serviceId,
         private string $decoratorClass,
+        private array $extraArgumentExpressions = [],
     ) {}
 
     public function resolve(string $serviceId, string $contextVar): ?string
@@ -18,10 +19,13 @@ final readonly class DecoratingDependencyExpressionResolver implements HandlerDe
         }
 
         return sprintf(
-            'new \\%s($this->locator->get(%s), %s)',
+            'new \\%s(%s)',
             ltrim($this->decoratorClass, '\\'),
-            var_export($serviceId, true),
-            $contextVar,
+            implode(', ', [
+                '$this->locator->get('.var_export($serviceId, true).')',
+                $contextVar,
+                ...$this->extraArgumentExpressions,
+            ]),
         );
     }
 }
