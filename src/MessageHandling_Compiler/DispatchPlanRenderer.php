@@ -10,8 +10,6 @@ final class DispatchPlanRenderer
 
     public function renderDispatchMethod(string $dispatchName, DispatchPlan $plan): string
     {
-        $dispatchExpr = $this->renderDispatchExpression($plan);
-
         $bodyLines = [
             $this->indent(2).'$m = $message;',
             $this->indent(2).'$c = $context;',
@@ -19,7 +17,24 @@ final class DispatchPlanRenderer
         foreach ($plan->claimedVarNames as $varName) {
             $bodyLines[] = $this->indent(2).$varName.' = null;';
         }
-        $this->appendExpression($bodyLines, 2, 'return ', $dispatchExpr, ';');
+        $handlerExpr = $this->renderHandlerCall(
+            $plan->serviceId,
+            $plan->handlerMethod,
+            $plan->depServiceIds,
+            $plan->claimedVarNames,
+            '$m',
+        );
+        $bodyLines = [
+            ...$bodyLines,
+            ...$this->renderExecutionLines(
+                $plan->layers,
+                0,
+                $handlerExpr,
+                $plan->claimedVarNames,
+                $plan->returnsVoid,
+                2,
+            ),
+        ];
 
         $body = implode("\n", $bodyLines);
 
@@ -29,31 +44,6 @@ final class DispatchPlanRenderer
             {$body}
                 }
             PHP;
-    }
-
-    private function renderDispatchExpression(DispatchPlan $plan): string
-    {
-        $expr = $this->renderHandlerCall(
-            $plan->serviceId,
-            $plan->handlerMethod,
-            $plan->depServiceIds,
-            $plan->claimedVarNames,
-            '$m',
-            $plan->returnsVoid,
-        );
-
-        foreach (array_reverse($plan->layers) as $layer) {
-            $expr = $this->renderAroundStack($layer->arounds, $expr, $plan->claimedVarNames);
-            $expr = $this->renderLayerFrame(
-                $expr,
-                $layer->befores,
-                $layer->afterReturnings,
-                $layer->afterThrowings,
-                $layer->afters,
-            );
-        }
-
-        return $expr;
     }
 
     /**
@@ -66,7 +56,6 @@ final class DispatchPlanRenderer
         array $depServiceIds,
         array $claimedVarNames,
         string $messageVar,
-        bool $returnsVoid = false,
     ): string {
         $isSelf = '@self' === $serviceId;
 
@@ -84,39 +73,191 @@ final class DispatchPlanRenderer
             ? sprintf('%s->%s(%s)', $messageVar, $handlerMethod, implode(', ', $args))
             : $this->renderServiceMethodCall($serviceId, $handlerMethod, $args);
 
-        if (! $returnsVoid) {
-            return $call;
+        return $call;
+    }
+
+    /**
+     * @param list<AdviceLayer>      $layers
+     * @param array<int, string>     $claimedVarNames
+     *
+     * @return list<string>
+     */
+    private function renderExecutionLines(
+        array $layers,
+        int $layerIndex,
+        string $handlerExpr,
+        array $claimedVarNames,
+        bool $returnsVoid,
+        int $indentLevel,
+        ?string $resultVar = null,
+    ): array {
+        if ($layerIndex >= count($layers)) {
+            return $this->renderTerminalExecutionLines($handlerExpr, $returnsVoid, $indentLevel, $resultVar);
         }
 
-        $captures = [$messageVar];
-        foreach ($claimedVarNames as $varName) {
-            $captures[] = $varName;
-        }
-        $captures = array_values(array_unique($captures));
+        $layer = $layers[$layerIndex];
+        $lines = [];
 
-        return sprintf(
-            '(function () use (%s) { %s; return null; })()',
-            implode(', ', $captures),
-            $call,
-        );
+        foreach ($layer->befores as $advice) {
+            $args = ['$m', '$c'];
+            if ([] !== $advice->runtimeConfig) {
+                $args[] = $this->exportValue($advice->runtimeConfig);
+            }
+            $lines[] = $this->indent($indentLevel).$this->renderServiceMethodCall($advice->serviceId, $advice->method, $args).';';
+        }
+
+        $needsAfterReturning = [] !== $layer->afterReturnings;
+        $needsCatch = [] !== $layer->afterThrowings;
+        $needsFinally = [] !== $layer->afters;
+        $hasArounds = [] !== $layer->arounds;
+
+        if (! $needsAfterReturning && ! $needsCatch && ! $needsFinally) {
+            if (! $hasArounds) {
+                return [
+                    ...$lines,
+                    ...$this->renderExecutionLines(
+                        $layers,
+                        $layerIndex + 1,
+                        $handlerExpr,
+                        $claimedVarNames,
+                        $returnsVoid,
+                        $indentLevel,
+                        $resultVar,
+                    ),
+                ];
+            }
+
+            $aroundExpr = $this->renderAroundStackExpression(
+                $layer->arounds,
+                $this->renderExecutionLines(
+                    $layers,
+                    $layerIndex + 1,
+                    $handlerExpr,
+                    $claimedVarNames,
+                    $returnsVoid,
+                    1,
+                ),
+                $claimedVarNames,
+            );
+
+            $prefix = null === $resultVar ? 'return ' : $resultVar.' = ';
+            $this->appendExpression($lines, $indentLevel, $prefix, $aroundExpr, ';');
+
+            return $lines;
+        }
+
+        $resultTmp = '$__result'.$layerIndex;
+        $errorTmp = '$__e'.$layerIndex;
+
+        if (! $needsCatch && ! $needsFinally) {
+            if ($hasArounds) {
+                $aroundExpr = $this->renderAroundStackExpression(
+                    $layer->arounds,
+                    $this->renderExecutionLines(
+                        $layers,
+                        $layerIndex + 1,
+                        $handlerExpr,
+                        $claimedVarNames,
+                        $returnsVoid,
+                        1,
+                    ),
+                    $claimedVarNames,
+                );
+                $this->appendExpression($lines, $indentLevel, $resultTmp.' = ', $aroundExpr, ';');
+            } else {
+                $lines = [
+                    ...$lines,
+                    ...$this->renderExecutionLines(
+                        $layers,
+                        $layerIndex + 1,
+                        $handlerExpr,
+                        $claimedVarNames,
+                        $returnsVoid,
+                        $indentLevel,
+                        $resultTmp,
+                    ),
+                ];
+            }
+
+            foreach ($layer->afterReturnings as $advice) {
+                $lines[] = $this->indent($indentLevel).$this->renderAfterReturningCall($advice, '$m', '$c', $resultTmp);
+            }
+
+            $lines[] = $this->indent($indentLevel).(null === $resultVar ? 'return '.$resultTmp.';' : $resultVar.' = '.$resultTmp.';');
+
+            return $lines;
+        }
+
+        $lines[] = $this->indent($indentLevel).'try {';
+
+        if ($hasArounds) {
+            $aroundExpr = $this->renderAroundStackExpression(
+                $layer->arounds,
+                $this->renderExecutionLines(
+                    $layers,
+                    $layerIndex + 1,
+                    $handlerExpr,
+                    $claimedVarNames,
+                    $returnsVoid,
+                    1,
+                ),
+                $claimedVarNames,
+            );
+            $this->appendExpression($lines, $indentLevel + 1, $resultTmp.' = ', $aroundExpr, ';');
+        } else {
+            $lines = [
+                ...$lines,
+                ...$this->renderExecutionLines(
+                    $layers,
+                    $layerIndex + 1,
+                    $handlerExpr,
+                    $claimedVarNames,
+                    $returnsVoid,
+                    $indentLevel + 1,
+                    $resultTmp,
+                ),
+            ];
+        }
+
+        foreach ($layer->afterReturnings as $advice) {
+            $lines[] = $this->indent($indentLevel + 1).$this->renderAfterReturningCall($advice, '$m', '$c', $resultTmp);
+        }
+
+        $lines[] = $this->indent($indentLevel + 1).(null === $resultVar ? 'return '.$resultTmp.';' : $resultVar.' = '.$resultTmp.';');
+
+        if ($needsCatch) {
+            $lines[] = $this->indent($indentLevel).'} catch (\Throwable '.$errorTmp.') {';
+            foreach ($layer->afterThrowings as $advice) {
+                $lines[] = $this->indent($indentLevel + 1).$this->renderAfterThrowingCall($advice, '$m', '$c', $errorTmp);
+            }
+            $lines[] = $this->indent($indentLevel + 1).'throw '.$errorTmp.';';
+        }
+
+        if ($needsFinally) {
+            $lines[] = $this->indent($indentLevel).'} finally {';
+            foreach ($layer->afters as $advice) {
+                $lines[] = $this->indent($indentLevel + 1).$this->renderAfterCall($advice, '$m', '$c');
+            }
+        }
+
+        $lines[] = $this->indent($indentLevel).'}';
+
+        return $lines;
     }
 
     /**
      * @param list<AdviceDescriptor> $arounds
      * @param array<int, string>     $claimedVarNames
      */
-    private function renderAroundStack(array $arounds, string $innerExpr, array $claimedVarNames): string
+    private function renderAroundStackExpression(array $arounds, array $innerLines, array $claimedVarNames): string
     {
-        if ([] === $arounds) {
-            return $innerExpr;
-        }
-
-        $wrapped = $innerExpr;
+        $wrappedExpr = '';
+        $wrappedLines = $innerLines;
 
         // Reverse so stable ordering keeps the first advice as the outermost one.
         foreach (array_reverse($arounds) as $advice) {
             $args = [
-                $this->renderProceed($advice, $wrapped, $claimedVarNames),
+                $this->renderProceedCallable($advice, $wrappedLines, $claimedVarNames),
                 '$m',
                 '$c',
             ];
@@ -124,97 +265,19 @@ final class DispatchPlanRenderer
                 $args[] = $this->exportValue($advice->runtimeConfig);
             }
 
-            $wrapped = $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args);
+            $wrappedExpr = $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args);
+            $wrappedLines = [];
+            $this->appendExpression($wrappedLines, 1, 'return ', $wrappedExpr, ';');
         }
 
-        return $wrapped;
-    }
-
-    /**
-     * @param list<AdviceDescriptor> $befores
-     * @param list<AdviceDescriptor> $afterReturnings
-     * @param list<AdviceDescriptor> $afterThrowings
-     * @param list<AdviceDescriptor> $afters
-     */
-    private function renderLayerFrame(
-        string $innerExpr,
-        array $befores,
-        array $afterReturnings,
-        array $afterThrowings,
-        array $afters,
-    ): string {
-        if ([] === $befores && [] === $afterReturnings && [] === $afterThrowings && [] === $afters) {
-            return $innerExpr;
-        }
-
-        $lines = ['(function ($m, $c) {'];
-
-        foreach ($befores as $advice) {
-            $args = ['$m', '$c'];
-            if ([] !== $advice->runtimeConfig) {
-                $args[] = $this->exportValue($advice->runtimeConfig);
-            }
-            $lines[] = $this->indent(1).$this->renderServiceMethodCall($advice->serviceId, $advice->method, $args).';';
-        }
-
-        $needsCatch = [] !== $afterThrowings;
-        $needsFinally = [] !== $afters;
-
-        if (! $needsCatch && ! $needsFinally) {
-            if ([] === $afterReturnings) {
-                $this->appendExpression($lines, 1, 'return ', $innerExpr, ';');
-            } else {
-                $this->appendExpression($lines, 1, '$__result = ', $innerExpr, ';');
-                foreach ($afterReturnings as $advice) {
-                    $lines[] = $this->indent(1).$this->renderAfterReturningCall($advice, '$m', '$c', '$__result');
-                }
-                $lines[] = $this->indent(1).'return $__result;';
-            }
-        } else {
-            $lines[] = $this->indent(1).'try {';
-            $this->appendExpression($lines, 2, '$__result = ', $innerExpr, ';');
-
-            foreach ($afterReturnings as $advice) {
-                $lines[] = $this->indent(2).$this->renderAfterReturningCall($advice, '$m', '$c', '$__result');
-            }
-
-            $lines[] = $this->indent(2).'return $__result;';
-
-            if ($needsCatch) {
-                $lines[] = $this->indent(1).'} catch (\Throwable $__e) {';
-                foreach ($afterThrowings as $advice) {
-                    $lines[] = $this->indent(2).$this->renderAfterThrowingCall($advice, '$m', '$c', '$__e');
-                }
-                $lines[] = $this->indent(2).'throw $__e;';
-            }
-
-            if ($needsFinally) {
-                $lines[] = $this->indent(1).'} finally {';
-                foreach ($afters as $advice) {
-                    $lines[] = $this->indent(2).$this->renderAfterCall($advice, '$m', '$c');
-                }
-            }
-
-            $lines[] = $this->indent(1).'}';
-        }
-
-        $lines[] = '})($m, $c)';
-
-        return implode("\n", $lines);
+        return $wrappedExpr;
     }
 
     /**
      * @param array<int, string> $claimedVarNames
+     * @param list<string>       $innerLines
      */
-    private function renderProceed(AdviceDescriptor $advice, string $innerExpr, array $claimedVarNames): string
-    {
-        return $this->renderProceedCallable($advice, $innerExpr, $claimedVarNames);
-    }
-
-    /**
-     * @param array<int, string> $claimedVarNames
-     */
-    private function renderProceedCallable(AdviceDescriptor $advice, string $innerExpr, array $claimedVarNames): string
+    private function renderProceedCallable(AdviceDescriptor $advice, array $innerLines, array $claimedVarNames): string
     {
         $owner = '' !== $advice->className
             ? $advice->className.'::'.$advice->method
@@ -238,10 +301,33 @@ final class DispatchPlanRenderer
             $lines[] = $this->indent(1).'$_p'.$depIdx.' = $provided['.$offset.'];';
         }
 
-        $this->appendExpression($lines, 1, 'return ', $innerExpr, ';');
+        $lines = [...$lines, ...$innerLines];
         $lines[] = '}';
 
         return implode("\n", $lines);
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function renderTerminalExecutionLines(
+        string $handlerExpr,
+        bool $returnsVoid,
+        int $indentLevel,
+        ?string $resultVar = null,
+    ): array {
+        if (! $returnsVoid) {
+            $lines = [];
+            $prefix = null === $resultVar ? 'return ' : $resultVar.' = ';
+            $this->appendExpression($lines, $indentLevel, $prefix, $handlerExpr, ';');
+
+            return $lines;
+        }
+
+        $lines = [$this->indent($indentLevel).$handlerExpr.';'];
+        $lines[] = $this->indent($indentLevel).(null === $resultVar ? 'return null;' : $resultVar.' = null;');
+
+        return $lines;
     }
 
     /**
