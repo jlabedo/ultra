@@ -1,0 +1,121 @@
+<?php
+
+declare(strict_types=1);
+
+use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Exception\ConcurrencyException;
+use Ultra\EventStore\QueryVersion;
+use Ultra\EventStore\StreamQuery;
+
+use function Ultra\EventStore_Postgres\Tests\postgresTestConnection;
+use function Ultra\EventStore_Postgres\Tests\postgresTestStore;
+
+require_once __DIR__.'/../../../../vendor/autoload.php';
+require_once __DIR__.'/../PostgresTestSupport.php';
+
+/**
+ * @param array<string, mixed> $message
+ */
+function emitMessage(array $message): void
+{
+    fwrite(STDOUT, json_encode($message, JSON_THROW_ON_ERROR).PHP_EOL);
+    fflush(STDOUT);
+}
+
+$configEncoded = getenv('ULTRA_WORKER_CONFIG');
+if (false === $configEncoded || '' === $configEncoded) {
+    fwrite(STDERR, "Missing ULTRA_WORKER_CONFIG\n");
+
+    exit(64);
+}
+
+$decoded = base64_decode($configEncoded, true);
+if (false === $decoded) {
+    fwrite(STDERR, "Invalid ULTRA_WORKER_CONFIG payload\n");
+
+    exit(64);
+}
+
+$config = json_decode($decoded, true, 512, JSON_THROW_ON_ERROR);
+$connection = postgresTestConnection($config['dsn']);
+$store = postgresTestStore($connection, $config['tablePrefix']);
+$query = new StreamQuery(
+    domainIdentifiers: $config['query']['domainIdentifiers'],
+    eventNames: $config['query']['eventNames'],
+    orCriteria: $config['query']['orCriteria'],
+    orBranchEventNames: $config['query']['orBranchEventNames'],
+);
+$expectedVersion = new QueryVersion($config['versionByKey'], $query);
+$event = new AppendableEvent(
+    eventType: $config['event']['eventType'],
+    payload: $config['event']['payload'],
+    domainIds: $config['event']['domainIds'],
+);
+
+try {
+    if (isset($config['lockTimeoutMs'])) {
+        $connection->executeStatement(sprintf("SET lock_timeout TO '%dms'", $config['lockTimeoutMs']));
+    }
+
+    if ('hold_then_commit' === $config['mode']) {
+        $connection->beginTransaction();
+        $store->append([$event], $expectedVersion);
+        emitMessage([
+            'type' => 'event',
+            'name' => 'ready',
+        ]);
+
+        $releaseSignal = fgets(STDIN);
+        if (false === $releaseSignal || 'release' !== trim($releaseSignal)) {
+            throw new RuntimeException('Expected "release" on STDIN.');
+        }
+
+        $connection->commit();
+        emitMessage([
+            'type' => 'result',
+            'status' => 'ok',
+        ]);
+
+        exit(0);
+    }
+
+    emitMessage([
+        'type' => 'event',
+        'name' => 'attempting',
+    ]);
+
+    $store->append([$event], $expectedVersion);
+    emitMessage([
+        'type' => 'result',
+        'status' => 'ok',
+    ]);
+
+    exit(0);
+} catch (ConcurrencyException $exception) {
+    if ($connection->isTransactionActive()) {
+        $connection->rollBack();
+    }
+
+    emitMessage([
+        'type' => 'result',
+        'status' => 'concurrency_exception',
+        'message' => $exception->getMessage(),
+    ]);
+
+    exit(10);
+} catch (Throwable $exception) {
+    if ($connection->isTransactionActive()) {
+        $connection->rollBack();
+    }
+
+    emitMessage([
+        'type' => 'result',
+        'status' => 'error',
+        'class' => $exception::class,
+        'message' => $exception->getMessage(),
+    ]);
+
+    fwrite(STDERR, $exception::class.': '.$exception->getMessage().PHP_EOL);
+
+    exit(1);
+}

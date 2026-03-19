@@ -4,17 +4,14 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore_Postgres\Tests;
 
-use Doctrine\DBAL\DriverManager;
-use Doctrine\DBAL\Tools\DsnParser;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\DomainIdentifier;
-use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\Exception\UnsupportedQueryException;
-use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\PostgresEventStore;
-use Ultra\EventStore_Postgres\PostgresEventStoreSchema;
+
+require_once __DIR__.'/PostgresTestSupport.php';
 
 function withPostgresStore(callable $callback): void
 {
@@ -23,32 +20,16 @@ function withPostgresStore(callable $callback): void
         test()->markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres event-store integration tests.');
     }
 
-    $connection = DriverManager::getConnection(
-        new DsnParser([
-            'postgres' => 'pgsql',
-            'postgresql' => 'pgsql',
-        ])->parse($dsn),
-    );
-    $prefix = 'ultra_event_store_'.bin2hex(random_bytes(4)).'_';
-    $schema = new PostgresEventStoreSchema($prefix);
+    $connection = postgresTestConnection($dsn);
+    $prefix = postgresTestUniquePrefix();
+    $schema = postgresTestSchema($prefix);
 
     try {
         foreach ($schema->createStatements() as $statement) {
             $connection->executeStatement($statement);
         }
 
-        $store = new PostgresEventStore(
-            connection: $connection,
-            topologyProvider: new StaticEventTopologyProvider([
-                'course.created' => new EventTopology(['courseId']),
-                'course.capacity_changed' => new EventTopology(['courseId']),
-                'student.subscribed' => new EventTopology(['facultyId', 'courseId', 'studentId'], [
-                    'courseId' => ['facultyId'],
-                    'studentId' => ['facultyId'],
-                ]),
-            ]),
-            tablePrefix: $prefix,
-        );
+        $store = postgresTestStore($connection, $prefix);
 
         $callback($store, $connection);
     } finally {
