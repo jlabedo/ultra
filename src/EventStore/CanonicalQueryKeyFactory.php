@@ -139,13 +139,7 @@ final readonly class CanonicalQueryKeyFactory
     {
         ksort($criteria);
 
-        $parts = [$eventType];
-        foreach ($criteria as $dimension => $value) {
-            $parts[] = $dimension;
-            $parts[] = $value;
-        }
-
-        return implode("\0", $parts);
+        return json_encode([$eventType, $criteria], JSON_THROW_ON_ERROR);
     }
 
     /**

@@ -24,11 +24,17 @@ test('keys for event generate canonical singletons and pairs only', function () 
     ]);
 
     expect($keys)->toHaveCount(5);
-    expect($keys)->toContain("student.subscribed\0courseId\0course-123");
-    expect($keys)->toContain("student.subscribed\0facultyId\0faculty-1");
-    expect($keys)->toContain("student.subscribed\0studentId\0student-1");
-    expect($keys)->toContain("student.subscribed\0courseId\0course-123\0studentId\0student-1");
-    expect($keys)->toContain("student.subscribed\0facultyId\0faculty-1\0studentId\0student-1");
+    expect($keys)->toContain($factory->buildKey('student.subscribed', ['courseId' => 'course-123']));
+    expect($keys)->toContain($factory->buildKey('student.subscribed', ['facultyId' => 'faculty-1']));
+    expect($keys)->toContain($factory->buildKey('student.subscribed', ['studentId' => 'student-1']));
+    expect($keys)->toContain($factory->buildKey('student.subscribed', [
+        'courseId' => 'course-123',
+        'studentId' => 'student-1',
+    ]));
+    expect($keys)->toContain($factory->buildKey('student.subscribed', [
+        'facultyId' => 'faculty-1',
+        'studentId' => 'student-1',
+    ]));
 });
 
 test('resolving non canonical pair throws', function () {

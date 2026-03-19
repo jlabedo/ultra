@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\EventStore_Postgres\Tests;
 
 use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Tools\DsnParser;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventTopology;
@@ -22,7 +23,12 @@ function withPostgresStore(callable $callback): void
         test()->markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres event-store integration tests.');
     }
 
-    $connection = DriverManager::getConnection(['url' => $dsn]);
+    $connection = DriverManager::getConnection(
+        new DsnParser([
+            'postgres' => 'pgsql',
+            'postgresql' => 'pgsql',
+        ])->parse($dsn),
+    );
     $prefix = 'ultra_event_store_'.bin2hex(random_bytes(4)).'_';
     $schema = new PostgresEventStoreSchema($prefix);
 
@@ -38,6 +44,7 @@ function withPostgresStore(callable $callback): void
                 'course.capacity_changed' => new EventTopology(['courseId']),
                 'student.subscribed' => new EventTopology(['facultyId', 'courseId', 'studentId'], [
                     'courseId' => ['facultyId'],
+                    'studentId' => ['facultyId'],
                 ]),
             ]),
             tablePrefix: $prefix,
