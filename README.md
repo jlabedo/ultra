@@ -35,6 +35,16 @@ Run tests with coverage:
 composer test:coverage
 ```
 
+Run the Postgres event-store benchmark:
+```bash
+composer bench:event-store-postgres
+```
+
+Override the database or benchmark size:
+```bash
+ULTRA_TEST_POSTGRES_DSN=pgsql://ultra:ultra@127.0.0.1:55432/ultra_test composer bench:event-store-postgres -- --seed-events=50000 --read-iterations=200
+```
+
 ### Code Style
 
 Fix code style issues:

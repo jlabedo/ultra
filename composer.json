@@ -64,6 +64,7 @@
         }
     },
     "scripts": {
+        "bench:event-store-postgres": "php benchmark_event_store_postgres.php",
         "test": "pest",
         "test:coverage": "pest --coverage",
         "cs-fix": "php-cs-fixer fix"
