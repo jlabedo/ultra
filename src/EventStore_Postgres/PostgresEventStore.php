@@ -18,10 +18,10 @@ use Ultra\EventStore\StreamQuery;
 /**
  * PostgreSQL implementation of the event store backed by typed canonical query streams.
  *
- * Events are stored once in the `events` table, while `query_streams` tracks the last event id seen for each
- * canonical key and `event_query_streams` materializes event membership in those keys. `append()` performs
- * optimistic locking by locking the expected `query_streams` rows and comparing them against the supplied
- * `QueryVersion` before inserting new events.
+ * Events are stored once in the `events` table, while `event_query_streams` materializes membership in the
+ * canonical singleton/pair keys used by supported queries. `load()` is lock-free. `append()` acquires
+ * transaction-scoped advisory locks, replays the expected query to compare its last event id, and only then
+ * inserts new events.
  */
 final class PostgresEventStore implements EventStore
 {
@@ -42,18 +42,18 @@ final class PostgresEventStore implements EventStore
     {
         $canonicalQuery = $this->queryKeyFactory->resolveQuery($query);
         if ($query->isEmpty()) {
-            return new LoadResult([], new QueryVersion([], $query));
+            return new LoadResult([], QueryVersion::empty($query));
         }
 
         $keys = $canonicalQuery->allKeys();
-        $version = $this->fetchVersionMap($keys);
         $events = [] === $keys ? [] : $this->fetchEvents($keys);
+        $lastEventId = [] === $events ? 0 : $events[array_key_last($events)]->eventId;
 
-        return new LoadResult($events, new QueryVersion($version, $query));
+        return new LoadResult($events, new QueryVersion($lastEventId, $query));
     }
 
     /**
-     * Append events and, when requested, verify the expected canonical query-stream heads under row locks.
+     * Append events and, when requested, verify the expected query under transaction-scoped advisory locks.
      */
     public function append(array $events, ?QueryVersion $expectedVersion = null): void
     {
@@ -63,31 +63,36 @@ final class PostgresEventStore implements EventStore
         }
 
         try {
+            $readKeys = [];
             if (null !== $expectedVersion) {
-                $canonicalQuery = $this->queryKeyFactory->resolveQuery($expectedVersion->query);
-                $expectedKeys = $canonicalQuery->allKeys();
-                $this->upsertQueryStreams(array_fill_keys($expectedKeys, 0));
+                $readKeys = $this->queryKeyFactory->resolveQuery($expectedVersion->query)->allKeys();
+            }
+
+            $eventsWithKeys = [];
+            $writeKeys = [];
+            foreach ($events as $event) {
+                $eventKeys = $this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds);
+                $eventsWithKeys[] = [$event, $eventKeys];
+                foreach ($eventKeys as $eventKey) {
+                    $writeKeys[$eventKey] = true;
+                }
+            }
+
+            $this->acquireAdvisoryLocks($readKeys, array_keys($writeKeys));
+
+            if (null !== $expectedVersion) {
                 $currentVersion = new QueryVersion(
-                    $this->fetchVersionMap($expectedKeys, true),
+                    $this->fetchLastEventId($readKeys),
                     $expectedVersion->query,
                 );
                 $currentVersion->assertMatches($expectedVersion);
             }
 
-            if ([] !== $events) {
-                $lastEventIdByKey = [];
-                foreach ($events as $event) {
+            if ([] !== $eventsWithKeys) {
+                foreach ($eventsWithKeys as [$event, $queryStreamKeys]) {
                     $eventId = $this->insertEvent($event);
-                    $queryStreamKeys = $this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds);
-                    $this->upsertQueryStreams(array_fill_keys($queryStreamKeys, 0));
                     $this->insertEventQueryStreams($eventId, $queryStreamKeys);
-
-                    foreach ($queryStreamKeys as $queryStreamKey) {
-                        $lastEventIdByKey[$queryStreamKey] = max($lastEventIdByKey[$queryStreamKey] ?? 0, $eventId);
-                    }
                 }
-
-                $this->upsertQueryStreams($lastEventIdByKey);
             }
 
             if ($ownsTransaction) {
@@ -105,39 +110,26 @@ final class PostgresEventStore implements EventStore
     /**
      * @param list<string> $queryStreamKeys
      *
-     * @return array<string, int>
-     *
-     * When `$forUpdate` is true, the selected query-stream rows are locked in deterministic key order
+     * Return the last event id visible for the canonical query keys. `0` means no matching events.
      */
-    private function fetchVersionMap(array $queryStreamKeys, bool $forUpdate = false): array
+    private function fetchLastEventId(array $queryStreamKeys): int
     {
         if ([] === $queryStreamKeys) {
-            return [];
+            return 0;
         }
 
         sort($queryStreamKeys);
 
-        $sql = sprintf(
-            'SELECT query_stream_key, last_event_id
-             FROM %s
-             WHERE query_stream_key IN (?)
-             ORDER BY query_stream_key%s',
-            $this->queryStreamsTable(),
-            $forUpdate ? ' FOR UPDATE' : '',
-        );
-
-        $rows = $this->connection->executeQuery(
-            $sql,
+        return (int) $this->connection->executeQuery(
+            sprintf(
+                'SELECT COALESCE(MAX(event_id), 0)
+                 FROM %s
+                 WHERE query_stream_key IN (?)',
+                $this->eventQueryStreamsTable(),
+            ),
             [$queryStreamKeys],
             [ArrayParameterType::STRING],
-        )->fetchAllAssociative();
-
-        $version = array_fill_keys($queryStreamKeys, 0);
-        foreach ($rows as $row) {
-            $version[$row['query_stream_key']] = (int) $row['last_event_id'];
-        }
-
-        return $version;
+        )->fetchOne();
     }
 
     /**
@@ -197,38 +189,6 @@ final class PostgresEventStore implements EventStore
     }
 
     /**
-     * @param array<string, int> $lastEventIdByKey
-     *
-     * Ensure query-stream rows exist and advance their heads monotonically
-     */
-    private function upsertQueryStreams(array $lastEventIdByKey): void
-    {
-        if ([] === $lastEventIdByKey) {
-            return;
-        }
-
-        ksort($lastEventIdByKey);
-        $placeholders = implode(', ', array_fill(0, count($lastEventIdByKey), '(?, ?)'));
-        $params = [];
-        foreach ($lastEventIdByKey as $queryStreamKey => $lastEventId) {
-            $params[] = $queryStreamKey;
-            $params[] = $lastEventId;
-        }
-
-        $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %1$s (query_stream_key, last_event_id)
-                 VALUES %2$s
-                 ON CONFLICT (query_stream_key) DO UPDATE
-                 SET last_event_id = GREATEST(%1$s.last_event_id, EXCLUDED.last_event_id)',
-                $this->queryStreamsTable(),
-                $placeholders,
-            ),
-            $params,
-        );
-    }
-
-    /**
      * @param list<string> $queryStreamKeys
      *
      * Record the canonical query streams an inserted event belongs to
@@ -256,14 +216,39 @@ final class PostgresEventStore implements EventStore
         );
     }
 
+    /**
+     * Acquire transaction-scoped advisory locks in deterministic order.
+     *
+     * Read locks use the exact query keys. Write locks use all canonical singleton/pair subsets produced by
+     * the appended events. When a key is present in both sets, the stronger exclusive lock wins.
+     *
+     * @param list<string> $readKeys
+     * @param list<string> $writeKeys
+     */
+    private function acquireAdvisoryLocks(array $readKeys, array $writeKeys): void
+    {
+        $modeByKey = [];
+        foreach ($readKeys as $readKey) {
+            $modeByKey[$readKey] = 'shared';
+        }
+        foreach ($writeKeys as $writeKey) {
+            $modeByKey[$writeKey] = 'exclusive';
+        }
+
+        ksort($modeByKey);
+
+        foreach ($modeByKey as $queryStreamKey => $mode) {
+            $function = 'exclusive' === $mode ? 'pg_advisory_xact_lock' : 'pg_advisory_xact_lock_shared';
+            $this->connection->executeQuery(
+                sprintf('SELECT %s(hashtextextended(CAST(? AS text), 0))', $function),
+                [$queryStreamKey],
+            )->free();
+        }
+    }
+
     private function eventsTable(): string
     {
         return $this->tablePrefix.'events';
-    }
-
-    private function queryStreamsTable(): string
-    {
-        return $this->tablePrefix.'query_streams';
     }
 
     private function eventQueryStreamsTable(): string

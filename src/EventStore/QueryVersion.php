@@ -9,44 +9,19 @@ use Ultra\EventStore\Exception\ConcurrencyException;
 /**
  * Opaque optimistic-concurrency token for a previously loaded query.
  *
- * The token is query-scoped: it stores the last seen event id for each canonical query-stream key derived
- * from the original `StreamQuery`. Missing keys are treated as `0`, which allows empty streams to participate
- * in concurrency checks without requiring pre-existing rows.
+ * The token is query-scoped: it stores the original `StreamQuery` plus the last event id observed when that
+ * query was loaded. `0` means the query returned no events.
  */
 readonly class QueryVersion
 {
-    /**
-     * @param array<string, int> $versionByKey canonical query stream key => last eventId
-     */
     public function __construct(
-        private array $versionByKey,
+        public int $lastEventId,
         public StreamQuery $query,
     ) {}
 
-    /**
-     * @return array<string, int>
-     */
-    public function toArray(): array
+    public static function empty(StreamQuery $query): self
     {
-        return $this->versionByKey;
-    }
-
-    /**
-     * @return list<string>
-     */
-    public function keys(): array
-    {
-        return array_keys($this->versionByKey);
-    }
-
-    /**
-     * Return the last event id seen for a canonical query-stream key.
-     *
-     * Unknown keys are treated as empty streams and therefore return `0`.
-     */
-    public function getLastEventId(string $queryStreamKey): int
-    {
-        return $this->versionByKey[$queryStreamKey] ?? 0;
+        return new self(0, $query);
     }
 
     /**
@@ -58,14 +33,26 @@ readonly class QueryVersion
      */
     public function assertMatches(self $expected): void
     {
-        $allKeys = array_unique(array_merge(array_keys($this->versionByKey), array_keys($expected->versionByKey)));
-        sort($allKeys);
-        foreach ($allKeys as $key) {
-            $current = $this->versionByKey[$key] ?? 0;
-            $expectedEventId = $expected->versionByKey[$key] ?? 0;
-            if ($current !== $expectedEventId) {
-                throw new ConcurrencyException($key, $expectedEventId, $current);
-            }
+        if ($this->lastEventId !== $expected->lastEventId) {
+            throw new ConcurrencyException(
+                self::describeQuery($expected->query),
+                $expected->lastEventId,
+                $this->lastEventId,
+            );
         }
+    }
+
+    private static function describeQuery(StreamQuery $query): string
+    {
+        $description = json_encode([
+            'domainIdentifiers' => $query->domainIdentifiers,
+            'eventNames' => array_values($query->eventNames),
+            'orCriteria' => array_values($query->orCriteria),
+            'orBranchEventNames' => null === $query->orBranchEventNames
+                ? null
+                : array_map(static fn (array $types): array => array_values($types), $query->orBranchEventNames),
+        ]);
+
+        return is_string($description) ? $description : 'query';
     }
 }

@@ -10,8 +10,8 @@ use Ultra\EventStore\Exception\ConcurrencyException;
  * Stores events and exposes optimistic concurrency over typed canonical query streams.
  *
  * A successful `load()` returns both the matching events and a `QueryVersion` token that captures the
- * last seen event id for each canonical query-stream key touched by the query. Passing that token back
- * to `append()` allows implementations to reject concurrent writes that would have changed the queried
+ * original query plus the last seen event id of its materialized result. Passing that token back to
+ * `append()` allows implementations to reject concurrent writes that would have changed the queried
  * snapshot in the meantime.
  */
 interface EventStore
@@ -27,13 +27,13 @@ interface EventStore
     /**
      * Append events to the store.
      *
-     * If `expectedVersion` is provided, the store validates that every canonical query-stream key captured by
-     * that token still points to the same last event id. If any key has advanced, a `ConcurrencyException`
-     * is thrown and nothing should be considered committed by the caller.
+     * If `expectedVersion` is provided, the store validates that replaying that exact query still yields the
+     * same last event id. If not, a `ConcurrencyException` is thrown and nothing should be considered
+     * committed by the caller.
      *
      * @param list<AppendableEvent> $events
      *
-     * @throws ConcurrencyException when expectedVersion is provided and any canonical query stream's last eventId does not match
+     * @throws ConcurrencyException when expectedVersion is provided and the query's last eventId has changed
      */
     public function append(array $events, ?QueryVersion $expectedVersion = null): void;
 }

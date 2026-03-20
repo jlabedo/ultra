@@ -39,14 +39,14 @@ function withPostgresStore(callable $callback): void
     }
 }
 
-test('load returns db generated recorded_at and query version entries', function () {
+test('load returns db generated recorded_at and query last event id', function () {
     withPostgresStore(function (PostgresEventStore $store): void {
         $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
             ->ofTypes('course.created')
         ;
 
         $empty = $store->load($query);
-        expect(array_values($empty->queryVersion->toArray()))->toBe([0]);
+        expect($empty->queryVersion->lastEventId)->toBe(0);
 
         $store->append([
             new AppendableEvent(
@@ -60,7 +60,7 @@ test('load returns db generated recorded_at and query version entries', function
 
         expect($result->events)->toHaveCount(1);
         expect($result->events[0]->recordedAt)->toBeInstanceOf(\DateTimeImmutable::class);
-        expect(array_values($result->queryVersion->toArray()))->toBe([1]);
+        expect($result->queryVersion->lastEventId)->toBe(1);
     });
 });
 

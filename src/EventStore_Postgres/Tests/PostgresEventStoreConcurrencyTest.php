@@ -252,7 +252,7 @@ test('concurrent append from another process waits for the lock and then fails w
             'tablePrefix' => $prefix,
             'mode' => 'hold_then_commit',
             'query' => streamQueryToArray($query),
-            'versionByKey' => $staleVersion->toArray(),
+            'lastEventId' => $staleVersion->lastEventId,
             'event' => [
                 'eventType' => $event->eventType,
                 'payload' => $event->payload,
@@ -267,7 +267,7 @@ test('concurrent append from another process waits for the lock and then fails w
             'tablePrefix' => $prefix,
             'mode' => 'append_once',
             'query' => streamQueryToArray($query),
-            'versionByKey' => $staleVersion->toArray(),
+            'lastEventId' => $staleVersion->lastEventId,
             'event' => [
                 'eventType' => $event->eventType,
                 'payload' => $event->payload,
@@ -307,7 +307,7 @@ test('concurrent append from another process waits for the lock and then fails w
     }
 });
 
-test('concurrent append for the same course and another student succeeds', function () {
+test('concurrent append for the same course and another student waits and then succeeds', function () {
     $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
     if (false === $dsn || '' === $dsn) {
         test()->markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres event-store integration tests.');
@@ -354,7 +354,7 @@ test('concurrent append for the same course and another student succeeds', funct
             'tablePrefix' => $prefix,
             'mode' => 'hold_then_commit',
             'query' => streamQueryToArray($studentOneQuery),
-            'versionByKey' => $staleVersion->toArray(),
+            'lastEventId' => $staleVersion->lastEventId,
             'event' => [
                 'eventType' => $studentOneEvent->eventType,
                 'payload' => $studentOneEvent->payload,

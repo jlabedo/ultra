@@ -40,14 +40,14 @@ $config = json_decode($decoded, true, 512, JSON_THROW_ON_ERROR);
 $connection = postgresTestConnection($config['dsn']);
 $store = postgresTestStore($connection, $config['tablePrefix']);
 $expectedVersion = null;
-if (isset($config['versionByKey'], $config['query'])) {
+if (isset($config['lastEventId'], $config['query'])) {
     $query = new StreamQuery(
         domainIdentifiers: $config['query']['domainIdentifiers'],
         eventNames: $config['query']['eventNames'],
         orCriteria: $config['query']['orCriteria'],
         orBranchEventNames: $config['query']['orBranchEventNames'],
     );
-    $expectedVersion = new QueryVersion($config['versionByKey'], $query);
+    $expectedVersion = new QueryVersion((int) $config['lastEventId'], $query);
 }
 $event = new AppendableEvent(
     eventType: $config['event']['eventType'],

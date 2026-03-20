@@ -8,7 +8,8 @@ namespace Ultra\EventStore;
  * Result of loading a stream query.
  *
  * The returned events are the materialized snapshot used by the caller, while `queryVersion` is the
- * optimistic-concurrency token that must be passed back to `append()` if the caller wants dynamic locking.
+ * optimistic-concurrency token that must be passed back to `append()` if the caller wants a replayed
+ * last-event-id check.
  */
 readonly class LoadResult
 {

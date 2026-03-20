@@ -14,7 +14,7 @@ final readonly class PostgresEventStoreSchema
     ) {}
 
     /**
-     * Statements needed to create the event, head, and membership tables.
+     * Statements needed to create the event and query-membership tables.
      *
      * @return list<string>
      */
@@ -32,16 +32,9 @@ final readonly class PostgresEventStoreSchema
                 $this->tablePrefix,
             ),
             sprintf(
-                'CREATE TABLE %1$squery_streams (
-                    query_stream_key TEXT PRIMARY KEY,
-                    last_event_id BIGINT NOT NULL DEFAULT 0
-                )',
-                $this->tablePrefix,
-            ),
-            sprintf(
                 'CREATE TABLE %1$sevent_query_streams (
                     event_id BIGINT NOT NULL REFERENCES %1$sevents(event_id) ON DELETE CASCADE,
-                    query_stream_key TEXT NOT NULL REFERENCES %1$squery_streams(query_stream_key) ON DELETE CASCADE,
+                    query_stream_key TEXT NOT NULL,
                     PRIMARY KEY (event_id, query_stream_key)
                 )',
                 $this->tablePrefix,
@@ -62,7 +55,6 @@ final readonly class PostgresEventStoreSchema
     {
         return [
             sprintf('DROP TABLE IF EXISTS %sevent_query_streams', $this->tablePrefix),
-            sprintf('DROP TABLE IF EXISTS %squery_streams', $this->tablePrefix),
             sprintf('DROP TABLE IF EXISTS %sevents', $this->tablePrefix),
         ];
     }

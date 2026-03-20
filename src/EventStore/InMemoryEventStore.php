@@ -9,9 +9,6 @@ final class InMemoryEventStore implements EventStore
     /** @var list<StoredEvent> */
     private array $events = [];
 
-    /** @var array<string, int> canonical query stream key => last eventId */
-    private array $lastEventIdByQueryStream = [];
-
     private int $nextEventId = 1;
 
     private CanonicalQueryKeyFactory $queryKeyFactory;
@@ -25,7 +22,7 @@ final class InMemoryEventStore implements EventStore
     {
         $canonicalQuery = $this->queryKeyFactory->resolveQuery($query);
         if ($query->isEmpty()) {
-            return new LoadResult([], new QueryVersion([], $query));
+            return new LoadResult([], QueryVersion::empty($query));
         }
 
         $result = [];
@@ -57,6 +54,8 @@ final class InMemoryEventStore implements EventStore
 
     private function appendOne(AppendableEvent $event): void
     {
+        $this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds);
+
         $eventId = $this->nextEventId++;
 
         $stored = new StoredEvent(
@@ -67,19 +66,19 @@ final class InMemoryEventStore implements EventStore
             recordedAt: new \DateTimeImmutable(),
         );
         $this->events[] = $stored;
-
-        foreach ($this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds) as $queryStreamKey) {
-            $this->lastEventIdByQueryStream[$queryStreamKey] = $eventId;
-        }
     }
 
     private function buildQueryVersion(CanonicalQuery $canonicalQuery): QueryVersion
     {
-        $version = [];
-        foreach ($canonicalQuery->allKeys() as $key) {
-            $version[$key] = $this->lastEventIdByQueryStream[$key] ?? 0;
+        $lastEventId = 0;
+        foreach ($this->events as $event) {
+            if (! $canonicalQuery->query->matches($event)) {
+                continue;
+            }
+
+            $lastEventId = $event->eventId;
         }
 
-        return new QueryVersion($version, $canonicalQuery->query);
+        return new QueryVersion($lastEventId, $canonicalQuery->query);
     }
 }

@@ -31,9 +31,9 @@ function store(): InMemoryEventStore
     return new InMemoryEventStore(topologyProvider());
 }
 
-function queryVersionMap(QueryVersion $queryVersion): array
+function queryVersionLastEventId(QueryVersion $queryVersion): int
 {
-    return $queryVersion->toArray();
+    return $queryVersion->lastEventId;
 }
 
 test('load with empty query returns empty events and empty query version', function () {
@@ -41,10 +41,10 @@ test('load with empty query returns empty events and empty query version', funct
     $result = $store->load(new StreamQuery([]));
 
     expect($result->events)->toBe([]);
-    expect(queryVersionMap($result->queryVersion))->toBe([]);
+    expect(queryVersionLastEventId($result->queryVersion))->toBe(0);
 });
 
-test('typed singleton query loads matching events and returns zero-based version entries', function () {
+test('typed singleton query loads matching events and returns last event id versions', function () {
     $store = store();
 
     $empty = $store->load(StreamQuery::forStream(
@@ -52,7 +52,7 @@ test('typed singleton query loads matching events and returns zero-based version
     )->ofTypes('course.created'));
 
     expect($empty->events)->toBe([]);
-    expect(array_values(queryVersionMap($empty->queryVersion)))->toBe([0]);
+    expect(queryVersionLastEventId($empty->queryVersion))->toBe(0);
 
     $store->append([
         new AppendableEvent(
@@ -69,7 +69,7 @@ test('typed singleton query loads matching events and returns zero-based version
     expect($result->events)->toHaveCount(1);
     expect($result->events[0]->eventId)->toBe(1);
     expect($result->events[0]->eventType)->toBe('course.created');
-    expect(array_values(queryVersionMap($result->queryVersion)))->toBe([1]);
+    expect(queryVersionLastEventId($result->queryVersion))->toBe(1);
 });
 
 test('append with stale singleton query version throws concurrency exception', function () {
