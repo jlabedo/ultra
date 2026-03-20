@@ -237,13 +237,14 @@ final class PostgresEventStore implements EventStore
 
         ksort($modeByKey);
 
-        foreach ($modeByKey as $queryStreamKey => $mode) {
-            $function = 'exclusive' === $mode ? 'pg_advisory_xact_lock' : 'pg_advisory_xact_lock_shared';
-            $this->connection->executeQuery(
-                sprintf('SELECT %s(hashtextextended(CAST(? AS text), 0))', $function),
-                [$queryStreamKey],
-            )->free();
+        if ([] === $modeByKey) {
+            return;
         }
+
+        $this->connection->executeQuery(
+            sprintf('SELECT %s(?::jsonb)', $this->acquireAdvisoryLocksFunction()),
+            [json_encode($modeByKey, JSON_THROW_ON_ERROR)],
+        )->free();
     }
 
     private function eventsTable(): string
@@ -254,5 +255,10 @@ final class PostgresEventStore implements EventStore
     private function eventQueryStreamsTable(): string
     {
         return $this->tablePrefix.'event_query_streams';
+    }
+
+    private function acquireAdvisoryLocksFunction(): string
+    {
+        return $this->tablePrefix.'acquire_advisory_locks';
     }
 }

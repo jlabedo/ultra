@@ -14,7 +14,7 @@ final readonly class PostgresEventStoreSchema
     ) {}
 
     /**
-     * Statements needed to create the event and query-membership tables.
+     * Statements needed to create the event and query-membership tables plus the advisory-lock helper.
      *
      * @return list<string>
      */
@@ -43,6 +43,30 @@ final readonly class PostgresEventStoreSchema
                 'CREATE INDEX %1$sevent_query_streams_query_stream_key_idx ON %1$sevent_query_streams (query_stream_key, event_id)',
                 $this->tablePrefix,
             ),
+            sprintf(
+                <<<'SQL'
+                    CREATE FUNCTION %1$sacquire_advisory_locks(lock_modes JSONB) RETURNS void AS $$
+                    DECLARE
+                        lock_entry RECORD;
+                    BEGIN
+                        FOR lock_entry IN
+                            SELECT entry.key AS query_stream_key, entry.value AS mode
+                            FROM jsonb_each_text(lock_modes) AS entry
+                            ORDER BY entry.key
+                        LOOP
+                            IF lock_entry.mode = 'exclusive' THEN
+                                PERFORM pg_advisory_xact_lock(hashtextextended(CAST(lock_entry.query_stream_key AS text), 0));
+                            ELSIF lock_entry.mode = 'shared' THEN
+                                PERFORM pg_advisory_xact_lock_shared(hashtextextended(CAST(lock_entry.query_stream_key AS text), 0));
+                                ELSE
+                                    RAISE EXCEPTION 'Unsupported advisory lock mode: %%', lock_entry.mode;
+                                END IF;
+                        END LOOP;
+                    END;
+                    $$ LANGUAGE plpgsql
+                    SQL,
+                $this->tablePrefix,
+            ),
         ];
     }
 
@@ -54,6 +78,7 @@ final readonly class PostgresEventStoreSchema
     public function dropStatements(): array
     {
         return [
+            sprintf('DROP FUNCTION IF EXISTS %sacquire_advisory_locks(JSONB)', $this->tablePrefix),
             sprintf('DROP TABLE IF EXISTS %sevent_query_streams', $this->tablePrefix),
             sprintf('DROP TABLE IF EXISTS %sevents', $this->tablePrefix),
         ];
