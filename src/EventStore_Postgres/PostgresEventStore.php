@@ -269,9 +269,21 @@ final class PostgresEventStore implements EventStore
             return;
         }
 
+        $lockInstructions = [];
+        foreach ($modeByKey as $queryStreamKey => $mode) {
+            $lockId = $this->advisoryLockId($queryStreamKey);
+            if (isset($lockInstructions[$lockId]) && 'exclusive' === $lockInstructions[$lockId][1]) {
+                continue;
+            }
+
+            $lockInstructions[$lockId] = [$lockId, $mode];
+        }
+
+        ksort($lockInstructions, SORT_NUMERIC);
+
         $this->connection->executeQuery(
             sprintf('SELECT %s(?::jsonb)', $this->acquireAdvisoryLocksFunction()),
-            [json_encode($modeByKey, JSON_THROW_ON_ERROR)],
+            [json_encode(array_values($lockInstructions), JSON_THROW_ON_ERROR)],
         )->free();
     }
 
@@ -288,5 +300,10 @@ final class PostgresEventStore implements EventStore
     private function acquireAdvisoryLocksFunction(): string
     {
         return $this->tablePrefix.'acquire_advisory_locks';
+    }
+
+    private function advisoryLockId(string $queryStreamKey): int
+    {
+        return unpack('J', hex2bin(hash('xxh3', $queryStreamKey)))[1];
     }
 }

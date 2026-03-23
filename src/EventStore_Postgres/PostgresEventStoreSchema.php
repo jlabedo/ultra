@@ -50,17 +50,19 @@ final readonly class PostgresEventStoreSchema
                         lock_entry RECORD;
                     BEGIN
                         FOR lock_entry IN
-                            SELECT entry.key AS query_stream_key, entry.value AS mode
-                            FROM jsonb_each_text(lock_modes) AS entry
-                            ORDER BY entry.key
+                            SELECT
+                                (entry.value->>0)::BIGINT AS lock_id,
+                                entry.value->>1 AS mode
+                            FROM jsonb_array_elements(lock_modes) WITH ORDINALITY AS entry(value, position)
+                            ORDER BY entry.position
                         LOOP
                             IF lock_entry.mode = 'exclusive' THEN
-                                PERFORM pg_advisory_xact_lock(hashtextextended(CAST(lock_entry.query_stream_key AS text), 0));
+                                PERFORM pg_advisory_xact_lock(lock_entry.lock_id);
                             ELSIF lock_entry.mode = 'shared' THEN
-                                PERFORM pg_advisory_xact_lock_shared(hashtextextended(CAST(lock_entry.query_stream_key AS text), 0));
-                                ELSE
-                                    RAISE EXCEPTION 'Unsupported advisory lock mode: %%', lock_entry.mode;
-                                END IF;
+                                PERFORM pg_advisory_xact_lock_shared(lock_entry.lock_id);
+                            ELSE
+                                RAISE EXCEPTION 'Unsupported advisory lock mode: %%', lock_entry.mode;
+                            END IF;
                         END LOOP;
                     END;
                     $$ LANGUAGE plpgsql
