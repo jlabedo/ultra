@@ -64,6 +64,34 @@ test('load returns db generated recorded_at and query last event id', function (
     });
 });
 
+test('append inserts multiple events in one batch', function () {
+    withPostgresStore(function (PostgresEventStore $store): void {
+        $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+            ->ofTypes('course.created')
+        ;
+
+        $store->append([
+            new AppendableEvent(
+                eventType: 'course.created',
+                payload: ['name' => 'Math 101'],
+                domainIds: ['courseId' => 'course-123'],
+            ),
+            new AppendableEvent(
+                eventType: 'course.created',
+                payload: ['name' => 'Math 101 v2'],
+                domainIds: ['courseId' => 'course-123'],
+            ),
+        ]);
+
+        $result = $store->load($query);
+
+        expect($result->events)->toHaveCount(2);
+        expect($result->events[0]->eventId)->toBe(1);
+        expect($result->events[1]->eventId)->toBe(2);
+        expect($result->queryVersion->lastEventId)->toBe(2);
+    });
+});
+
 test('canonical pair does not conflict for same course and different student', function () {
     withPostgresStore(function (PostgresEventStore $store): void {
         $query = StreamQuery::forStream(

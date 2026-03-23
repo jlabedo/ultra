@@ -89,10 +89,20 @@ final class PostgresEventStore implements EventStore
             }
 
             if ([] !== $eventsWithKeys) {
-                foreach ($eventsWithKeys as [$event, $queryStreamKeys]) {
-                    $eventId = $this->insertEvent($event);
-                    $this->insertEventQueryStreams($eventId, $queryStreamKeys);
+                $eventIds = $this->insertEvents(array_map(
+                    static fn (array $eventWithKeys): AppendableEvent => $eventWithKeys[0],
+                    $eventsWithKeys,
+                ));
+
+                $queryStreamRows = [];
+                foreach ($eventsWithKeys as $index => [$event, $queryStreamKeys]) {
+                    $eventId = $eventIds[$index];
+                    foreach ($queryStreamKeys as $queryStreamKey) {
+                        $queryStreamRows[] = [$eventId, $queryStreamKey];
+                    }
                 }
+
+                $this->insertEventQueryStreams($queryStreamRows);
             }
 
             if ($ownsTransaction) {
@@ -169,39 +179,59 @@ final class PostgresEventStore implements EventStore
         return $events;
     }
 
-    private function insertEvent(AppendableEvent $event): int
+    /**
+     * @param list<AppendableEvent> $events
+     *
+     * @return list<int>
+     */
+    private function insertEvents(array $events): array
     {
-        $row = $this->connection->executeQuery(
+        if ([] === $events) {
+            return [];
+        }
+
+        $placeholders = implode(', ', array_fill(0, count($events), '(?, ?, ?::jsonb, ?::jsonb)'));
+        $params = [];
+        foreach ($events as $position => $event) {
+            $params[] = $position;
+            $params[] = $event->eventType;
+            $params[] = json_encode($event->payload, JSON_THROW_ON_ERROR);
+            $params[] = json_encode($event->domainIds, JSON_THROW_ON_ERROR);
+        }
+
+        $eventIds = $this->connection->executeQuery(
             sprintf(
-                'INSERT INTO %s (event_type, payload, domain_ids)
-                 VALUES (?, ?::jsonb, ?::jsonb)
+                'WITH batch(position, event_type, payload, domain_ids) AS (
+                     VALUES %2$s
+                 )
+                 INSERT INTO %1$s (event_type, payload, domain_ids)
+                 SELECT event_type, payload, domain_ids
+                 FROM batch
+                 ORDER BY position
                  RETURNING event_id',
                 $this->eventsTable(),
+                $placeholders,
             ),
-            [
-                $event->eventType,
-                json_encode($event->payload, JSON_THROW_ON_ERROR),
-                json_encode($event->domainIds, JSON_THROW_ON_ERROR),
-            ],
-        )->fetchAssociative();
+            $params,
+        )->fetchFirstColumn();
 
-        return (int) $row['event_id'];
+        return array_map(static fn (mixed $eventId): int => (int) $eventId, $eventIds);
     }
 
     /**
-     * @param list<string> $queryStreamKeys
+     * @param list<array{0: int, 1: string}> $rows
      *
-     * Record the canonical query streams an inserted event belongs to
+     * Record the canonical query streams inserted events belong to in a single batched insert
      */
-    private function insertEventQueryStreams(int $eventId, array $queryStreamKeys): void
+    private function insertEventQueryStreams(array $rows): void
     {
-        if ([] === $queryStreamKeys) {
+        if ([] === $rows) {
             return;
         }
 
-        $placeholders = implode(', ', array_fill(0, count($queryStreamKeys), '(?, ?)'));
+        $placeholders = implode(', ', array_fill(0, count($rows), '(?, ?)'));
         $params = [];
-        foreach ($queryStreamKeys as $queryStreamKey) {
+        foreach ($rows as [$eventId, $queryStreamKey]) {
             $params[] = $eventId;
             $params[] = $queryStreamKey;
         }
@@ -234,8 +264,6 @@ final class PostgresEventStore implements EventStore
         foreach ($writeKeys as $writeKey) {
             $modeByKey[$writeKey] = 'exclusive';
         }
-
-        ksort($modeByKey);
 
         if ([] === $modeByKey) {
             return;

@@ -114,7 +114,7 @@ function benchmarkConfig(): array
         'writeOperations' => resolvePositiveIntOption($options, 'write-operations', 5_000),
         'writeBatchSize' => resolvePositiveIntOption($options, 'write-batch-size', 1),
         'writeStreamCount' => resolvePositiveIntOption($options, 'write-stream-count', 200),
-        'readIterations' => resolvePositiveIntOption($options, 'read-iterations', 500),
+        'readIterations' => resolvePositiveIntOption($options, 'read-iterations', 50),
         'readWarmupIterations' => resolvePositiveIntOption($options, 'read-warmup-iterations', 25),
     ];
 }
