@@ -272,18 +272,21 @@ final class PostgresEventStore implements EventStore
         $lockInstructions = [];
         foreach ($modeByKey as $queryStreamKey => $mode) {
             $lockId = $this->advisoryLockId($queryStreamKey);
-            if (isset($lockInstructions[$lockId]) && 'exclusive' === $lockInstructions[$lockId][1]) {
+            if (isset($lockInstructions[$lockId]) && 'exclusive' === $lockInstructions[$lockId]) {
                 continue;
             }
 
-            $lockInstructions[$lockId] = [$lockId, $mode];
+            $lockInstructions[$lockId] = $mode;
         }
 
         ksort($lockInstructions, SORT_NUMERIC);
 
         $this->connection->executeQuery(
-            sprintf('SELECT %s(?::jsonb)', $this->acquireAdvisoryLocksFunction()),
-            [json_encode(array_values($lockInstructions), JSON_THROW_ON_ERROR)],
+            sprintf('SELECT %s(?::bigint[], ?::boolean[])', $this->acquireAdvisoryLocksFunction()),
+            [
+                $this->postgresIntArrayLiteral(array_keys($lockInstructions)),
+                $this->postgresBoolArrayLiteral(array_values($lockInstructions)),
+            ],
         )->free();
     }
 
@@ -305,5 +308,26 @@ final class PostgresEventStore implements EventStore
     private function advisoryLockId(string $queryStreamKey): int
     {
         return unpack('J', hex2bin(hash('xxh3', $queryStreamKey)))[1];
+    }
+
+    /**
+     * @param list<int> $values
+     */
+    private function postgresIntArrayLiteral(array $values): string
+    {
+        return '{'.implode(',', $values).'}';
+    }
+
+    /**
+     * @param list<string> $values
+     */
+    private function postgresBoolArrayLiteral(array $values): string
+    {
+        $encoded = array_map(
+            static fn (string $value): string => 'exclusive' === $value ? 'true' : 'false',
+            $values,
+        );
+
+        return '{'.implode(',', $encoded).'}';
     }
 }

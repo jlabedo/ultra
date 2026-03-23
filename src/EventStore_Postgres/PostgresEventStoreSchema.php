@@ -45,23 +45,20 @@ final readonly class PostgresEventStoreSchema
             ),
             sprintf(
                 <<<'SQL'
-                    CREATE FUNCTION %1$sacquire_advisory_locks(lock_modes JSONB) RETURNS void AS $$
+                    CREATE FUNCTION %1$sacquire_advisory_locks(lock_ids BIGINT[], exclusive_modes BOOLEAN[]) RETURNS void AS $$
                     DECLARE
-                        lock_entry RECORD;
+                        position INTEGER;
                     BEGIN
-                        FOR lock_entry IN
-                            SELECT
-                                (entry.value->>0)::BIGINT AS lock_id,
-                                entry.value->>1 AS mode
-                            FROM jsonb_array_elements(lock_modes) WITH ORDINALITY AS entry(value, position)
-                            ORDER BY entry.position
+                        IF COALESCE(array_length(lock_ids, 1), 0) <> COALESCE(array_length(exclusive_modes, 1), 0) THEN
+                            RAISE EXCEPTION 'Lock id and mode array lengths must match';
+                        END IF;
+
+                        FOR position IN 1..COALESCE(array_length(lock_ids, 1), 0)
                         LOOP
-                            IF lock_entry.mode = 'exclusive' THEN
-                                PERFORM pg_advisory_xact_lock(lock_entry.lock_id);
-                            ELSIF lock_entry.mode = 'shared' THEN
-                                PERFORM pg_advisory_xact_lock_shared(lock_entry.lock_id);
+                            IF exclusive_modes[position] THEN
+                                PERFORM pg_advisory_xact_lock(lock_ids[position]);
                             ELSE
-                                RAISE EXCEPTION 'Unsupported advisory lock mode: %%', lock_entry.mode;
+                                PERFORM pg_advisory_xact_lock_shared(lock_ids[position]);
                             END IF;
                         END LOOP;
                     END;
@@ -80,7 +77,7 @@ final readonly class PostgresEventStoreSchema
     public function dropStatements(): array
     {
         return [
-            sprintf('DROP FUNCTION IF EXISTS %sacquire_advisory_locks(JSONB)', $this->tablePrefix),
+            sprintf('DROP FUNCTION IF EXISTS %sacquire_advisory_locks(BIGINT[], BOOLEAN[])', $this->tablePrefix),
             sprintf('DROP TABLE IF EXISTS %sevent_query_streams', $this->tablePrefix),
             sprintf('DROP TABLE IF EXISTS %sevents', $this->tablePrefix),
         ];
