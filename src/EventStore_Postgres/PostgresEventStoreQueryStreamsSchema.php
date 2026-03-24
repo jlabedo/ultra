@@ -32,7 +32,7 @@ final readonly class PostgresEventStoreQueryStreamsSchema implements PostgresEve
             sprintf(
                 'CREATE TABLE %1$sevent_query_streams (
                     event_id BIGINT NOT NULL REFERENCES %1$sevents(event_id) ON DELETE CASCADE,
-                    query_stream_key TEXT NOT NULL,
+                    query_stream_key BYTEA NOT NULL,
                     PRIMARY KEY (event_id, query_stream_key)
                 )',
                 $this->tablePrefix,

@@ -29,7 +29,7 @@ function withPostgresQueryStreamsStore(callable $callback): void
 
         $store = postgresTestStoreForImplementation($connection, $prefix, 'query-streams');
 
-        $callback($store);
+        $callback($store, $connection, $prefix);
     } finally {
         foreach ($schema->dropStatements() as $statement) {
             $connection->executeStatement($statement);
@@ -61,6 +61,60 @@ test('query-streams implementation returns db generated recorded_at and query la
         expect($result->events)->toHaveCount(1);
         expect($result->events[0]->recordedAt)->toBeInstanceOf(\DateTimeImmutable::class);
         expect($result->queryVersion->lastEventId)->toBe(1);
+    });
+});
+
+test('query-streams implementation inserts batched events and query streams in order', function () {
+    withPostgresQueryStreamsStore(function (EventStore $store): void {
+        $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+            ->ofTypes('student.subscribed')
+        ;
+        $pairQuery = StreamQuery::forStream(
+            new DomainIdentifier('courseId', 'course-123'),
+            new DomainIdentifier('studentId', 'student-2'),
+        )->ofTypes('student.subscribed');
+
+        $store->append([
+            new AppendableEvent(
+                eventType: 'student.subscribed',
+                payload: ['slot' => 1],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
+            ),
+            new AppendableEvent(
+                eventType: 'student.subscribed',
+                payload: ['slot' => 2],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
+            ),
+        ]);
+
+        $courseResult = $store->load($courseQuery);
+        $pairResult = $store->load($pairQuery);
+
+        expect($courseResult->events)->toHaveCount(2);
+        expect($courseResult->events[0]->eventId)->toBe(1);
+        expect($courseResult->events[1]->eventId)->toBe(2);
+        expect($pairResult->events)->toHaveCount(1);
+        expect($pairResult->events[0]->domainIds['studentId'])->toBe('student-2');
+        expect($pairResult->queryVersion->lastEventId)->toBe(2);
+    });
+});
+
+test('query-streams implementation stores fixed-width binary digests for query stream keys', function () {
+    withPostgresQueryStreamsStore(function (EventStore $store, \Doctrine\DBAL\Connection $connection, string $prefix): void {
+        $store->append([
+            new AppendableEvent(
+                eventType: 'student.subscribed',
+                payload: ['slot' => 1],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
+            ),
+        ]);
+
+        $keyLengths = $connection->fetchFirstColumn(sprintf(
+            'SELECT DISTINCT octet_length(query_stream_key) AS key_length FROM %sevent_query_streams',
+            $prefix,
+        ));
+
+        expect($keyLengths)->toBe([32]);
     });
 });
 
