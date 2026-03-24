@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore_Postgres;
 
-use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\CanonicalQuery;
 use Ultra\EventStore\CanonicalQueryKeyFactory;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopologyProvider;
@@ -18,8 +18,9 @@ use Ultra\EventStore\StreamQuery;
 /**
  * PostgreSQL implementation of the event store backed by typed canonical query streams.
  *
- * Events are stored once in the `events` table, while `event_query_streams` materializes membership in the
- * canonical singleton/pair keys used by supported queries. `load()` is lock-free. `append()` acquires
+ * Events are stored once in the `events` table, with `domain_ids` persisted directly as `hstore`. Queries are
+ * resolved against the typed event type and indexed `domain_ids` containment, while canonical singleton/pair
+ * keys remain the units used by optimistic-concurrency locks. `load()` is lock-free. `append()` acquires
  * transaction-scoped advisory locks, replays the expected query to compare its last event id, and only then
  * inserts new events.
  */
@@ -40,13 +41,12 @@ final class PostgresEventStore implements EventStore
      */
     public function load(StreamQuery $query): LoadResult
     {
-        $canonicalQuery = $this->queryKeyFactory->resolveQuery($query);
         if ($query->isEmpty()) {
             return new LoadResult([], QueryVersion::empty($query));
         }
 
-        $keys = $canonicalQuery->allKeys();
-        $events = [] === $keys ? [] : $this->fetchEvents($keys);
+        $canonicalQuery = $this->queryKeyFactory->resolveQuery($query);
+        $events = [] === $canonicalQuery->branches ? [] : $this->fetchEvents($canonicalQuery);
         $lastEventId = [] === $events ? 0 : $events[array_key_last($events)]->eventId;
 
         return new LoadResult($events, new QueryVersion($lastEventId, $query));
@@ -64,15 +64,17 @@ final class PostgresEventStore implements EventStore
 
         try {
             $readKeys = [];
+            $expectedCanonicalQuery = null;
             if (null !== $expectedVersion) {
-                $readKeys = $this->queryKeyFactory->resolveQuery($expectedVersion->query)->allKeys();
+                $expectedCanonicalQuery = $this->queryKeyFactory->resolveQuery($expectedVersion->query);
+                $readKeys = $expectedCanonicalQuery->allKeys();
             }
 
-            $eventsWithKeys = [];
+            $eventsToInsert = [];
             $writeKeys = [];
             foreach ($events as $event) {
+                $eventsToInsert[] = $event;
                 $eventKeys = $this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds);
-                $eventsWithKeys[] = [$event, $eventKeys];
                 foreach ($eventKeys as $eventKey) {
                     $writeKeys[$eventKey] = true;
                 }
@@ -82,27 +84,14 @@ final class PostgresEventStore implements EventStore
 
             if (null !== $expectedVersion) {
                 $currentVersion = new QueryVersion(
-                    $this->fetchLastEventId($readKeys),
+                    $this->fetchLastEventId($expectedCanonicalQuery),
                     $expectedVersion->query,
                 );
                 $currentVersion->assertMatches($expectedVersion);
             }
 
-            if ([] !== $eventsWithKeys) {
-                $eventIds = $this->insertEvents(array_map(
-                    static fn (array $eventWithKeys): AppendableEvent => $eventWithKeys[0],
-                    $eventsWithKeys,
-                ));
-
-                $queryStreamRows = [];
-                foreach ($eventsWithKeys as $index => [$event, $queryStreamKeys]) {
-                    $eventId = $eventIds[$index];
-                    foreach ($queryStreamKeys as $queryStreamKey) {
-                        $queryStreamRows[] = [$eventId, $queryStreamKey];
-                    }
-                }
-
-                $this->insertEventQueryStreams($queryStreamRows);
+            if ([] !== $eventsToInsert) {
+                $this->insertEvents($eventsToInsert);
             }
 
             if ($ownsTransaction) {
@@ -118,51 +107,45 @@ final class PostgresEventStore implements EventStore
     }
 
     /**
-     * @param list<string> $queryStreamKeys
-     *
-     * Return the last event id visible for the canonical query keys. `0` means no matching events.
+     * Return the last event id visible for the canonical query. `0` means no matching events.
      */
-    private function fetchLastEventId(array $queryStreamKeys): int
+    private function fetchLastEventId(?CanonicalQuery $canonicalQuery): int
     {
-        if ([] === $queryStreamKeys) {
+        if (null === $canonicalQuery || [] === $canonicalQuery->branches) {
             return 0;
         }
 
-        sort($queryStreamKeys);
+        [$whereClause, $params] = $this->canonicalQueryPredicate($canonicalQuery);
 
         return (int) $this->connection->executeQuery(
             sprintf(
                 'SELECT COALESCE(MAX(event_id), 0)
                  FROM %s
-                 WHERE query_stream_key IN (?)',
-                $this->eventQueryStreamsTable(),
+                 WHERE %s',
+                $this->eventsTable(),
+                $whereClause,
             ),
-            [$queryStreamKeys],
-            [ArrayParameterType::STRING],
+            $params,
         )->fetchOne();
     }
 
     /**
-     * @param list<string> $queryStreamKeys
-     *
      * @return list<StoredEvent>
-     *
-     * Events are deduplicated at SQL level because OR queries may resolve to multiple canonical keys
      */
-    private function fetchEvents(array $queryStreamKeys): array
+    private function fetchEvents(CanonicalQuery $canonicalQuery): array
     {
+        [$whereClause, $params] = $this->canonicalQueryPredicate($canonicalQuery);
+
         $rows = $this->connection->executeQuery(
             sprintf(
-                'SELECT DISTINCT e.event_id, e.event_type, e.payload, e.domain_ids, e.recorded_at
-                 FROM %1$s e
-                 INNER JOIN %2$s eqs ON eqs.event_id = e.event_id
-                 WHERE eqs.query_stream_key IN (?)
-                 ORDER BY e.event_id ASC',
+                'SELECT event_id, event_type, payload, hstore_to_json(domain_ids) AS domain_ids, recorded_at
+                 FROM %s
+                 WHERE %s
+                 ORDER BY event_id ASC',
                 $this->eventsTable(),
-                $this->eventQueryStreamsTable(),
+                $whereClause,
             ),
-            [$queryStreamKeys],
-            [ArrayParameterType::STRING],
+            $params,
         )->fetchAllAssociative();
 
         $events = [];
@@ -181,66 +164,28 @@ final class PostgresEventStore implements EventStore
 
     /**
      * @param list<AppendableEvent> $events
-     *
-     * @return list<int>
      */
-    private function insertEvents(array $events): array
+    private function insertEvents(array $events): void
     {
         if ([] === $events) {
-            return [];
-        }
-
-        $placeholders = implode(', ', array_fill(0, count($events), '(?, ?, ?::jsonb, ?::jsonb)'));
-        $params = [];
-        foreach ($events as $position => $event) {
-            $params[] = $position;
-            $params[] = $event->eventType;
-            $params[] = json_encode($event->payload, JSON_THROW_ON_ERROR);
-            $params[] = json_encode($event->domainIds, JSON_THROW_ON_ERROR);
-        }
-
-        $eventIds = $this->connection->executeQuery(
-            sprintf(
-                'WITH batch(position, event_type, payload, domain_ids) AS (
-                     VALUES %2$s
-                 )
-                 INSERT INTO %1$s (event_type, payload, domain_ids)
-                 SELECT event_type, payload, domain_ids
-                 FROM batch
-                 ORDER BY position
-                 RETURNING event_id',
-                $this->eventsTable(),
-                $placeholders,
-            ),
-            $params,
-        )->fetchFirstColumn();
-
-        return array_map(static fn (mixed $eventId): int => (int) $eventId, $eventIds);
-    }
-
-    /**
-     * @param list<array{0: int, 1: string}> $rows
-     *
-     * Record the canonical query streams inserted events belong to in a single batched insert
-     */
-    private function insertEventQueryStreams(array $rows): void
-    {
-        if ([] === $rows) {
             return;
         }
 
-        $placeholders = implode(', ', array_fill(0, count($rows), '(?, ?)'));
+        $placeholders = [];
         $params = [];
-        foreach ($rows as [$eventId, $queryStreamKey]) {
-            $params[] = $eventId;
-            $params[] = $queryStreamKey;
+        foreach ($events as $event) {
+            [$domainIdsSql, $domainIdsParams] = $this->hstoreValueExpression($event->domainIds);
+            $placeholders[] = sprintf('(?, ?::jsonb, %s)', $domainIdsSql);
+            $params[] = $event->eventType;
+            $params[] = json_encode($event->payload, JSON_THROW_ON_ERROR);
+            array_push($params, ...$domainIdsParams);
         }
 
         $this->connection->executeStatement(
             sprintf(
-                'INSERT INTO %s (event_id, query_stream_key) VALUES %s',
-                $this->eventQueryStreamsTable(),
-                $placeholders,
+                'INSERT INTO %1$s (event_type, payload, domain_ids) VALUES %2$s',
+                $this->eventsTable(),
+                implode(', ', $placeholders),
             ),
             $params,
         );
@@ -295,9 +240,28 @@ final class PostgresEventStore implements EventStore
         return $this->tablePrefix.'events';
     }
 
-    private function eventQueryStreamsTable(): string
+    /**
+     * @return array{0: string, 1: list<mixed>}
+     */
+    private function canonicalQueryPredicate(CanonicalQuery $canonicalQuery): array
     {
-        return $this->tablePrefix.'event_query_streams';
+        $clauses = [];
+        $params = [];
+
+        foreach ($canonicalQuery->branches as $branch) {
+            $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
+            [$domainIdsSql, $domainIdsParams] = $this->hstoreValueExpression($branch->domainIdentifiers);
+
+            $clauses[] = sprintf(
+                '(event_type IN (%s) AND domain_ids @> %s)',
+                $eventTypePlaceholders,
+                $domainIdsSql,
+            );
+
+            array_push($params, ...$branch->eventTypes, ...$domainIdsParams);
+        }
+
+        return [implode(' OR ', $clauses), $params];
     }
 
     private function acquireAdvisoryLocksFunction(): string
@@ -308,6 +272,31 @@ final class PostgresEventStore implements EventStore
     private function advisoryLockId(string $queryStreamKey): int
     {
         return unpack('J', hex2bin(hash('xxh3', $queryStreamKey)))[1];
+    }
+
+    /**
+     * @param array<string, string> $values
+     *
+     * @return array{0: string, 1: list<string>}
+     */
+    private function hstoreValueExpression(array $values): array
+    {
+        if ([] === $values) {
+            return ["''::hstore", []];
+        }
+
+        ksort($values);
+
+        $params = [];
+        foreach ($values as $key => $value) {
+            $params[] = $key;
+            $params[] = $value;
+        }
+
+        return [
+            sprintf('hstore(ARRAY[%s]::text[])', implode(', ', array_fill(0, count($params), '?'))),
+            $params,
+        ];
     }
 
     /**

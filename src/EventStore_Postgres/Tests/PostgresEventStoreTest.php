@@ -92,6 +92,53 @@ test('append inserts multiple events in one batch', function () {
     });
 });
 
+test('load round-trips hstore domain identifiers', function () {
+    withPostgresStore(function (PostgresEventStore $store): void {
+        $domainIds = ['courseId' => 'course-"123"\\example'];
+        $query = StreamQuery::forStream(new DomainIdentifier('courseId', $domainIds['courseId']))
+            ->ofTypes('course.created')
+        ;
+
+        $store->append([
+            new AppendableEvent(
+                eventType: 'course.created',
+                payload: ['name' => 'Math 101'],
+                domainIds: $domainIds,
+            ),
+        ]);
+
+        $result = $store->load($query);
+
+        expect($result->events)->toHaveCount(1);
+        expect($result->events[0]->domainIds)->toBe($domainIds);
+    });
+});
+
+test('load does not duplicate events for overlapping OR branches', function () {
+    withPostgresStore(function (PostgresEventStore $store): void {
+        $courseId = new DomainIdentifier('courseId', 'course-123');
+        $studentId = new DomainIdentifier('studentId', 'student-1');
+        $query = StreamQuery::anyOf(
+            StreamQuery::forStream($courseId)->ofTypes('student.subscribed'),
+            StreamQuery::forStream($courseId, $studentId)->ofTypes('student.subscribed'),
+        );
+
+        $store->append([
+            new AppendableEvent(
+                eventType: 'student.subscribed',
+                payload: [],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
+            ),
+        ]);
+
+        $result = $store->load($query);
+
+        expect($result->events)->toHaveCount(1);
+        expect($result->events[0]->eventType)->toBe('student.subscribed');
+        expect($result->queryVersion->lastEventId)->toBe(1);
+    });
+});
+
 test('canonical pair does not conflict for same course and different student', function () {
     withPostgresStore(function (PostgresEventStore $store): void {
         $query = StreamQuery::forStream(

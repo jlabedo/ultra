@@ -8,7 +8,7 @@ namespace Ultra\EventStore;
  * One validated branch of a canonical query.
  *
  * A branch keeps the original domain identifiers plus the canonical query-stream keys generated for each
- * requested event type. Those keys are the units used for loading and optimistic concurrency.
+ * requested event type. Those keys remain the units used for optimistic concurrency.
  */
 readonly class CanonicalQueryBranch
 {
