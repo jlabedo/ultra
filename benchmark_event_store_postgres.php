@@ -31,7 +31,6 @@ function main(): int
         createSchema($connection, $schema);
 
         $store = postgresTestStore($connection, $prefix);
-        $readQuery = readQuery();
 
         printHeader($config, $prefix);
         printLine('Seeding read dataset...');
@@ -49,14 +48,21 @@ function main(): int
         printBenchmarkResult('Writes', $writeResult);
 
         printLine();
+        printLine('Refreshing planner stats...');
+        analyzeEventStore($connection, $prefix);
+
+        printLine();
         printLine('Benchmarking reads...');
-        $readResult = benchmarkReads(
-            $store,
-            $readQuery,
-            iterations: $config['readIterations'],
-            warmupIterations: $config['readWarmupIterations'],
-        );
-        printBenchmarkResult('Reads', $readResult);
+        foreach (buildReadScenarios($seedResult['profile']) as $scenario) {
+            $readResult = benchmarkReads(
+                $store,
+                $scenario['query'],
+                iterations: $config['readIterations'],
+                warmupIterations: $config['readWarmupIterations'],
+            );
+            printReadBenchmarkResult($scenario['label'], $scenario['description'], $readResult);
+            printLine();
+        }
 
         return 0;
     } catch (\Throwable $exception) {
@@ -103,13 +109,17 @@ function benchmarkConfig(): array
     $envDsn = getenv('ULTRA_TEST_POSTGRES_DSN');
     $fallbackDsn = 'pgsql://ultra:ultra@127.0.0.1:55432/ultra_test';
     $dsn = resolveStringOption($options, 'dsn', false !== $envDsn && '' !== $envDsn ? $envDsn : $fallbackDsn);
+    $seedEvents = resolvePositiveIntOption($options, 'seed-events', 20_000);
+    if ($seedEvents < 4) {
+        throw new \InvalidArgumentException('Option "--seed-events" must be at least 4 to build the read benchmark suite.');
+    }
 
     return [
         'dsn' => $dsn,
         'dsnSource' => isset($options['dsn'])
             ? '--dsn'
             : (false !== $envDsn && '' !== $envDsn ? 'ULTRA_TEST_POSTGRES_DSN' : 'docker-compose default'),
-        'seedEvents' => resolvePositiveIntOption($options, 'seed-events', 20_000),
+        'seedEvents' => $seedEvents,
         'seedBatchSize' => resolvePositiveIntOption($options, 'seed-batch-size', 100),
         'writeOperations' => resolvePositiveIntOption($options, 'write-operations', 5_000),
         'writeBatchSize' => resolvePositiveIntOption($options, 'write-batch-size', 1),
@@ -171,12 +181,6 @@ function benchmarkTablePrefix(): string
     return 'ultra_event_store_bench_'.bin2hex(random_bytes(4)).'_';
 }
 
-function readQuery(): StreamQuery
-{
-    return StreamQuery::forStream(new DomainIdentifier('courseId', 'course-read-hot'))
-        ->ofTypes('student.subscribed');
-}
-
 function createSchema(Connection $connection, PostgresEventStoreSchema $schema): void
 {
     foreach ($schema->createStatements() as $statement) {
@@ -192,30 +196,189 @@ function dropSchema(Connection $connection, PostgresEventStoreSchema $schema): v
 }
 
 /**
- * @return array{operations: int, eventsPerOperation: int, totalSeconds: float, opsPerSecond: float, eventsPerSecond: float}
+ * @return array{
+ *     operations: int,
+ *     eventsPerOperation: int,
+ *     totalSeconds: float,
+ *     opsPerSecond: float,
+ *     eventsPerSecond: float,
+ *     profile: array{
+ *         facultyCount: int,
+ *         courseCount: int,
+ *         courseCountsByBand: array{hot: int, warm: int, cold: int},
+ *         eventCounts: array{course.created: int, course.capacity_changed: int, student.subscribed: int},
+ *         samples: array{
+ *             hotCourse: array{courseId: string, subscriptionCount: int},
+ *             warmCourse: array{courseId: string, subscriptionCount: int},
+ *             lifecycleCourse: array{courseId: string, eventCount: int},
+ *             pairLookup: array{courseId: string, studentId: string},
+ *             dashboard: array{courseIds: list<string>, eventCount: int}
+ *         }
+ *     }
+ * }
  */
 function seedReadDataset(PostgresEventStore $store, int $seedEvents, int $batchSize): array
 {
+    $courseCount = max(6, min(240, max(6, intdiv($seedEvents, 50))));
+    $courseCount = min($courseCount, $seedEvents - 1);
+    $facultyCount = max(4, min(24, max(1, intdiv($courseCount, 8))));
+
+    $hotCourseCount = min(max(1, intdiv($courseCount, 20)), 8);
+    $warmCourseCount = min(max(2, intdiv($courseCount, 5)), 32);
+    if ($hotCourseCount + $warmCourseCount >= $courseCount) {
+        $warmCourseCount = max(1, $courseCount - $hotCourseCount - 1);
+    }
+    if ($hotCourseCount + $warmCourseCount >= $courseCount) {
+        $hotCourseCount = max(1, $courseCount - $warmCourseCount - 1);
+    }
+    $coldCourseCount = max(1, $courseCount - $hotCourseCount - $warmCourseCount);
+
+    $courseCreatedCount = $courseCount;
+    $minimumStudentSubscriptions = min(max(1, $courseCount), max(0, $seedEvents - $courseCreatedCount));
+    $capacityChangeCount = min(
+        max($courseCount * 3, intdiv($seedEvents, 12)),
+        max(0, $seedEvents - $courseCreatedCount - $minimumStudentSubscriptions),
+    );
+    $studentSubscribedCount = max(0, $seedEvents - $courseCreatedCount - $capacityChangeCount);
+
+    $courses = [];
+    $courseIndexesByBand = [
+        'hot' => [],
+        'warm' => [],
+        'cold' => [],
+    ];
+
+    for ($courseIndex = 0; $courseIndex < $courseCount; ++$courseIndex) {
+        $band = match (true) {
+            $courseIndex < $hotCourseCount => 'hot',
+            $courseIndex < $hotCourseCount + $warmCourseCount => 'warm',
+            default => 'cold',
+        };
+
+        $courses[$courseIndex] = [
+            'courseId' => sprintf('course-read-%03d', $courseIndex),
+            'facultyId' => sprintf('faculty-read-%02d', $courseIndex % $facultyCount),
+            'band' => $band,
+            'subscriptionCount' => 0,
+            'capacityChangeCount' => 0,
+            'sampleStudentId' => null,
+        ];
+        $courseIndexesByBand[$band][] = $courseIndex;
+    }
+
     $sequence = 0;
     $startedAt = hrtime(true);
+    $batchedEvents = [];
 
-    while ($sequence < $seedEvents) {
-        $events = [];
+    foreach ($courses as $courseIndex => $course) {
+        $batchedEvents[] = courseCreatedEvent(
+            courseId: $course['courseId'],
+            facultyId: $course['facultyId'],
+            sequence: $sequence,
+        );
+        ++$sequence;
 
-        for ($batchIndex = 0; $batchIndex < $batchSize && $sequence < $seedEvents; ++$batchIndex) {
-            $events[] = studentSubscribedEvent(
-                courseId: 'course-read-hot',
-                facultyId: 'faculty-read',
-                studentId: 'student-read-'.$sequence,
+        if (count($batchedEvents) >= $batchSize) {
+            $store->append($batchedEvents);
+            $batchedEvents = [];
+        }
+    }
+
+    $remainingCapacityChanges = $capacityChangeCount;
+    $remainingStudentSubscriptions = $studentSubscribedCount;
+    $capacityCursor = 0;
+    $subscriptionCursor = 0;
+    $subscriptionCursorByBand = [
+        'hot' => 0,
+        'warm' => 0,
+        'cold' => 0,
+    ];
+    $subscriptionBandSequence = [
+        'hot', 'hot', 'hot', 'hot', 'hot', 'hot', 'hot', 'hot', 'hot', 'hot', 'hot',
+        'warm', 'warm', 'warm', 'warm', 'warm', 'warm',
+        'cold', 'cold', 'cold',
+    ];
+
+    while ($remainingCapacityChanges > 0 || $remainingStudentSubscriptions > 0) {
+        $shouldSeedCapacityChange = $remainingCapacityChanges > 0
+            && (0 === $sequence % 12 || 0 === $remainingStudentSubscriptions);
+
+        if ($shouldSeedCapacityChange) {
+            $courseIndex = $capacityCursor % $courseCount;
+            ++$capacityCursor;
+            ++$courses[$courseIndex]['capacityChangeCount'];
+
+            $batchedEvents[] = courseCapacityChangedEvent(
+                courseId: $courses[$courseIndex]['courseId'],
+                capacity: 40 + (($sequence + $courseIndex) % 180),
                 sequence: $sequence,
             );
+            --$remainingCapacityChanges;
+            ++$sequence;
+        } else {
+            $band = $subscriptionBandSequence[$subscriptionCursor % count($subscriptionBandSequence)];
+            if ([] === $courseIndexesByBand[$band]) {
+                $band = 'warm' === $band ? 'hot' : 'warm';
+            }
+
+            $bandIndexes = $courseIndexesByBand[$band];
+            $bandCourseIndex = $bandIndexes[$subscriptionCursorByBand[$band] % count($bandIndexes)];
+            ++$subscriptionCursor;
+            ++$subscriptionCursorByBand[$band];
+
+            $studentNumber = $courses[$bandCourseIndex]['subscriptionCount'];
+            $studentId = sprintf('student-read-%03d-%05d', $bandCourseIndex, $studentNumber);
+            ++$courses[$bandCourseIndex]['subscriptionCount'];
+            if (null === $courses[$bandCourseIndex]['sampleStudentId']) {
+                $courses[$bandCourseIndex]['sampleStudentId'] = $studentId;
+            }
+
+            $batchedEvents[] = studentSubscribedEvent(
+                courseId: $courses[$bandCourseIndex]['courseId'],
+                facultyId: $courses[$bandCourseIndex]['facultyId'],
+                studentId: $studentId,
+                sequence: $sequence,
+            );
+            --$remainingStudentSubscriptions;
             ++$sequence;
         }
 
-        $store->append($events);
+        if (count($batchedEvents) >= $batchSize) {
+            $store->append($batchedEvents);
+            $batchedEvents = [];
+        }
+    }
+
+    if ([] !== $batchedEvents) {
+        $store->append($batchedEvents);
+    }
+
+    $hotCourse = $courses[$courseIndexesByBand['hot'][0]];
+    $warmCourse = $courses[$courseIndexesByBand['warm'][0]];
+    $lifecycleCourse = $courses[$courseIndexesByBand['hot'][min(1, count($courseIndexesByBand['hot']) - 1)]];
+    $pairCourse = $hotCourse;
+    if (null === $pairCourse['sampleStudentId']) {
+        foreach ($courses as $course) {
+            if (null !== $course['sampleStudentId']) {
+                $pairCourse = $course;
+
+                break;
+            }
+        }
+    }
+
+    $dashboardCourseIndexes = array_slice($courseIndexesByBand['warm'], 0, min(4, count($courseIndexesByBand['warm'])));
+    if ([] === $dashboardCourseIndexes) {
+        $dashboardCourseIndexes = array_slice($courseIndexesByBand['hot'], 0, min(4, count($courseIndexesByBand['hot'])));
     }
 
     $totalSeconds = elapsedSeconds($startedAt);
+    $dashboardEventCount = 0;
+    $dashboardCourseIds = [];
+    foreach ($dashboardCourseIndexes as $courseIndex) {
+        $dashboardCourseIds[] = $courses[$courseIndex]['courseId'];
+        $dashboardEventCount += $courses[$courseIndex]['capacityChangeCount'];
+    }
 
     return [
         'operations' => $seedEvents,
@@ -223,6 +386,126 @@ function seedReadDataset(PostgresEventStore $store, int $seedEvents, int $batchS
         'totalSeconds' => $totalSeconds,
         'opsPerSecond' => ratePerSecond($seedEvents, $totalSeconds),
         'eventsPerSecond' => ratePerSecond($seedEvents, $totalSeconds),
+        'profile' => [
+            'facultyCount' => $facultyCount,
+            'courseCount' => $courseCount,
+            'courseCountsByBand' => [
+                'hot' => $hotCourseCount,
+                'warm' => $warmCourseCount,
+                'cold' => $coldCourseCount,
+            ],
+            'eventCounts' => [
+                'course.created' => $courseCreatedCount,
+                'course.capacity_changed' => $capacityChangeCount,
+                'student.subscribed' => $studentSubscribedCount,
+            ],
+            'samples' => [
+                'hotCourse' => [
+                    'courseId' => $hotCourse['courseId'],
+                    'subscriptionCount' => $hotCourse['subscriptionCount'],
+                ],
+                'warmCourse' => [
+                    'courseId' => $warmCourse['courseId'],
+                    'subscriptionCount' => $warmCourse['subscriptionCount'],
+                ],
+                'lifecycleCourse' => [
+                    'courseId' => $lifecycleCourse['courseId'],
+                    'eventCount' => 1 + $lifecycleCourse['capacityChangeCount'],
+                ],
+                'pairLookup' => [
+                    'courseId' => $pairCourse['courseId'],
+                    'studentId' => (string) $pairCourse['sampleStudentId'],
+                ],
+                'dashboard' => [
+                    'courseIds' => $dashboardCourseIds,
+                    'eventCount' => $dashboardEventCount,
+                ],
+            ],
+        ],
+    ];
+}
+
+/**
+ * @param array{
+ *     facultyCount: int,
+ *     courseCount: int,
+ *     courseCountsByBand: array{hot: int, warm: int, cold: int},
+ *     eventCounts: array{course.created: int, course.capacity_changed: int, student.subscribed: int},
+ *     samples: array{
+ *         hotCourse: array{courseId: string, subscriptionCount: int},
+ *         warmCourse: array{courseId: string, subscriptionCount: int},
+ *         lifecycleCourse: array{courseId: string, eventCount: int},
+ *         pairLookup: array{courseId: string, studentId: string},
+ *         dashboard: array{courseIds: list<string>, eventCount: int}
+ *     }
+ * } $profile
+ *
+ * @return list<array{label: string, description: string, query: StreamQuery}>
+ */
+function buildReadScenarios(array $profile): array
+{
+    $dashboardBranches = array_map(
+        static fn (string $courseId): StreamQuery => StreamQuery::forStream(
+            new DomainIdentifier('courseId', $courseId),
+        )->ofTypes('course.capacity_changed'),
+        $profile['samples']['dashboard']['courseIds'],
+    );
+
+    return [
+        [
+            'label' => 'Read: Hot course subscriptions',
+            'description' => sprintf(
+                'courseId=%s | student.subscribed | ~%s events',
+                $profile['samples']['hotCourse']['courseId'],
+                formatInteger($profile['samples']['hotCourse']['subscriptionCount']),
+            ),
+            'query' => StreamQuery::forStream(
+                new DomainIdentifier('courseId', $profile['samples']['hotCourse']['courseId']),
+            )->ofTypes('student.subscribed'),
+        ],
+        [
+            'label' => 'Read: Warm course subscriptions',
+            'description' => sprintf(
+                'courseId=%s | student.subscribed | ~%s events',
+                $profile['samples']['warmCourse']['courseId'],
+                formatInteger($profile['samples']['warmCourse']['subscriptionCount']),
+            ),
+            'query' => StreamQuery::forStream(
+                new DomainIdentifier('courseId', $profile['samples']['warmCourse']['courseId']),
+            )->ofTypes('student.subscribed'),
+        ],
+        [
+            'label' => 'Read: Course lifecycle',
+            'description' => sprintf(
+                'courseId=%s | course.created + course.capacity_changed | ~%s events',
+                $profile['samples']['lifecycleCourse']['courseId'],
+                formatInteger($profile['samples']['lifecycleCourse']['eventCount']),
+            ),
+            'query' => StreamQuery::forStream(
+                new DomainIdentifier('courseId', $profile['samples']['lifecycleCourse']['courseId']),
+            )->ofTypes('course.created', 'course.capacity_changed'),
+        ],
+        [
+            'label' => 'Read: Course and student pair',
+            'description' => sprintf(
+                'courseId=%s + studentId=%s | student.subscribed | 1 event',
+                $profile['samples']['pairLookup']['courseId'],
+                $profile['samples']['pairLookup']['studentId'],
+            ),
+            'query' => StreamQuery::forStream(
+                new DomainIdentifier('courseId', $profile['samples']['pairLookup']['courseId']),
+                new DomainIdentifier('studentId', $profile['samples']['pairLookup']['studentId']),
+            )->ofTypes('student.subscribed'),
+        ],
+        [
+            'label' => 'Read: Dashboard course changes',
+            'description' => sprintf(
+                '%s branches | course.capacity_changed | ~%s events',
+                formatInteger(count($profile['samples']['dashboard']['courseIds'])),
+                formatInteger($profile['samples']['dashboard']['eventCount']),
+            ),
+            'query' => StreamQuery::anyOf(...$dashboardBranches),
+        ],
     ];
 }
 
@@ -292,26 +575,55 @@ function benchmarkReads(PostgresEventStore $store, StreamQuery $query, int $iter
     }
 
     $durationsMs = [];
-    $eventsPerOperation = 0;
+    $totalEventsLoaded = 0;
     $startedAt = hrtime(true);
 
     for ($iteration = 0; $iteration < $iterations; ++$iteration) {
         $operationStartedAt = hrtime(true);
         $result = $store->load($query);
         $durationsMs[] = elapsedMilliseconds($operationStartedAt);
-        $eventsPerOperation = count($result->events);
+        $totalEventsLoaded += count($result->events);
     }
 
     $totalSeconds = elapsedSeconds($startedAt);
 
     return [
         'operations' => $iterations,
-        'eventsPerOperation' => $eventsPerOperation,
+        'eventsPerOperation' => 0 === $iterations ? 0 : (int) round($totalEventsLoaded / $iterations),
         'totalSeconds' => $totalSeconds,
         'opsPerSecond' => ratePerSecond($iterations, $totalSeconds),
-        'eventsPerSecond' => ratePerSecond($iterations * $eventsPerOperation, $totalSeconds),
+        'eventsPerSecond' => ratePerSecond($totalEventsLoaded, $totalSeconds),
         'latencyMs' => summarizeDurations($durationsMs),
     ];
+}
+
+function courseCreatedEvent(string $courseId, string $facultyId, int $sequence): AppendableEvent
+{
+    return new AppendableEvent(
+        eventType: 'course.created',
+        payload: [
+            'sequence' => $sequence,
+            'facultyId' => $facultyId,
+            'name' => sprintf('Course %s', $courseId),
+        ],
+        domainIds: [
+            'courseId' => $courseId,
+        ],
+    );
+}
+
+function courseCapacityChangedEvent(string $courseId, int $capacity, int $sequence): AppendableEvent
+{
+    return new AppendableEvent(
+        eventType: 'course.capacity_changed',
+        payload: [
+            'sequence' => $sequence,
+            'capacity' => $capacity,
+        ],
+        domainIds: [
+            'courseId' => $courseId,
+        ],
+    );
 }
 
 function studentSubscribedEvent(string $courseId, string $facultyId, string $studentId, int $sequence): AppendableEvent
@@ -387,6 +699,11 @@ function ratePerSecond(int $units, float $seconds): float
     return $units / $seconds;
 }
 
+function analyzeEventStore(Connection $connection, string $tablePrefix): void
+{
+    $connection->executeStatement(sprintf('ANALYZE %sevents', $tablePrefix));
+}
+
 /**
  * @param array{
  *     dsnSource: string,
@@ -405,7 +722,7 @@ function printHeader(array $config, string $prefix): void
     printLine(str_repeat('=', 30));
     printLine(sprintf('Connection source: %s', $config['dsnSource']));
     printLine(sprintf('Schema prefix: %s', $prefix));
-    printLine(sprintf('Seed events in hot read stream: %s', formatInteger($config['seedEvents'])));
+    printLine(sprintf('Seed events: %s', formatInteger($config['seedEvents'])));
     printLine(sprintf('Seed batch size: %s', formatInteger($config['seedBatchSize'])));
     printLine(sprintf('Write operations: %s', formatInteger($config['writeOperations'])));
     printLine(sprintf('Write batch size: %s', formatInteger($config['writeBatchSize'])));
@@ -416,7 +733,24 @@ function printHeader(array $config, string $prefix): void
 }
 
 /**
- * @param array{operations: int, totalSeconds: float, eventsPerSecond: float} $result
+ * @param array{
+ *     operations: int,
+ *     totalSeconds: float,
+ *     eventsPerSecond: float,
+ *     profile: array{
+ *         facultyCount: int,
+ *         courseCount: int,
+ *         courseCountsByBand: array{hot: int, warm: int, cold: int},
+ *         eventCounts: array{course.created: int, course.capacity_changed: int, student.subscribed: int},
+ *         samples: array{
+ *             hotCourse: array{courseId: string, subscriptionCount: int},
+ *             warmCourse: array{courseId: string, subscriptionCount: int},
+ *             lifecycleCourse: array{courseId: string, eventCount: int},
+ *             pairLookup: array{courseId: string, studentId: string},
+ *             dashboard: array{courseIds: list<string>, eventCount: int}
+ *         }
+ *     }
+ * } $result
  */
 function printSeedResult(array $result): void
 {
@@ -425,6 +759,27 @@ function printSeedResult(array $result): void
         formatInteger($result['operations']),
         formatSeconds($result['totalSeconds']),
         formatRate($result['eventsPerSecond']),
+    ));
+    printLine(sprintf(
+        '  Catalog: %s faculties | %s courses (%s hot, %s warm, %s cold)',
+        formatInteger($result['profile']['facultyCount']),
+        formatInteger($result['profile']['courseCount']),
+        formatInteger($result['profile']['courseCountsByBand']['hot']),
+        formatInteger($result['profile']['courseCountsByBand']['warm']),
+        formatInteger($result['profile']['courseCountsByBand']['cold']),
+    ));
+    printLine(sprintf(
+        '  Event mix: %s course.created | %s course.capacity_changed | %s student.subscribed',
+        formatInteger($result['profile']['eventCounts']['course.created']),
+        formatInteger($result['profile']['eventCounts']['course.capacity_changed']),
+        formatInteger($result['profile']['eventCounts']['student.subscribed']),
+    ));
+    printLine(sprintf(
+        '  Sample streams: hot=%s events | warm=%s events | lifecycle=%s events | dashboard=%s events',
+        formatInteger($result['profile']['samples']['hotCourse']['subscriptionCount']),
+        formatInteger($result['profile']['samples']['warmCourse']['subscriptionCount']),
+        formatInteger($result['profile']['samples']['lifecycleCourse']['eventCount']),
+        formatInteger($result['profile']['samples']['dashboard']['eventCount']),
     ));
 }
 
@@ -441,6 +796,38 @@ function printSeedResult(array $result): void
 function printBenchmarkResult(string $label, array $result): void
 {
     printLine($label);
+    printLine(sprintf('  Operations: %s', formatInteger($result['operations'])));
+    printLine(sprintf('  Events per operation: %s', formatInteger($result['eventsPerOperation'])));
+    printLine(sprintf('  Total time: %s', formatSeconds($result['totalSeconds'])));
+    printLine(sprintf(
+        '  Throughput: %s ops/s | %s events/s',
+        formatRate($result['opsPerSecond']),
+        formatRate($result['eventsPerSecond']),
+    ));
+    printLine(sprintf(
+        '  Latency: avg %s | p50 %s | p95 %s | min %s | max %s',
+        formatMilliseconds($result['latencyMs']['avg']),
+        formatMilliseconds($result['latencyMs']['p50']),
+        formatMilliseconds($result['latencyMs']['p95']),
+        formatMilliseconds($result['latencyMs']['min']),
+        formatMilliseconds($result['latencyMs']['max']),
+    ));
+}
+
+/**
+ * @param array{
+ *     operations: int,
+ *     eventsPerOperation: int,
+ *     totalSeconds: float,
+ *     opsPerSecond: float,
+ *     eventsPerSecond: float,
+ *     latencyMs: array{avg: float, min: float, p50: float, p95: float, max: float}
+ * } $result
+ */
+function printReadBenchmarkResult(string $label, string $description, array $result): void
+{
+    printLine($label);
+    printLine(sprintf('  Scenario: %s', $description));
     printLine(sprintf('  Operations: %s', formatInteger($result['operations'])));
     printLine(sprintf('  Events per operation: %s', formatInteger($result['eventsPerOperation'])));
     printLine(sprintf('  Total time: %s', formatSeconds($result['totalSeconds'])));
