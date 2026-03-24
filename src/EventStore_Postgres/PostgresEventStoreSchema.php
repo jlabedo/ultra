@@ -7,7 +7,7 @@ namespace Ultra\EventStore_Postgres;
 /**
  * Generates the PostgreSQL DDL required by `PostgresEventStore`.
  */
-final readonly class PostgresEventStoreSchema
+final readonly class PostgresEventStoreSchema implements PostgresEventStoreSchemaDefinition
 {
     public function __construct(
         private string $tablePrefix = 'event_store_',

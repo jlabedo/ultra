@@ -8,8 +8,12 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Tools\DsnParser;
 use Ultra\EventStore\EventTopology;
+use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore_Postgres\PostgresEventStore;
+use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
+use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
+use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
 use Ultra\EventStore_Postgres\PostgresEventStoreSchema;
 
 function postgresTestConnection(string $dsn): Connection
@@ -46,6 +50,49 @@ function postgresTestStore(Connection $connection, string $tablePrefix): Postgre
 function postgresTestSchema(string $tablePrefix): PostgresEventStoreSchema
 {
     return new PostgresEventStoreSchema($tablePrefix);
+}
+
+/**
+ * @return list<string>
+ */
+function postgresTestSupportedImplementations(): array
+{
+    return ['hstore', 'query-streams'];
+}
+
+/**
+ * @return PostgresEventStore|PostgresEventStoreQueryStreams
+ */
+function postgresTestStoreForImplementation(Connection $connection, string $tablePrefix, string $implementation): EventStore
+{
+    return match ($implementation) {
+        'hstore' => new PostgresEventStore(
+            connection: $connection,
+            topologyProvider: postgresTestTopologyProvider(),
+            tablePrefix: $tablePrefix,
+        ),
+        'query-streams' => new PostgresEventStoreQueryStreams(
+            connection: $connection,
+            topologyProvider: postgresTestTopologyProvider(),
+            tablePrefix: $tablePrefix,
+        ),
+        default => throw new \InvalidArgumentException(sprintf(
+            'Unsupported Postgres event store implementation "%s". Expected one of: hstore, query-streams.',
+            $implementation,
+        )),
+    };
+}
+
+function postgresTestSchemaForImplementation(string $tablePrefix, string $implementation): PostgresEventStoreSchemaDefinition
+{
+    return match ($implementation) {
+        'hstore' => new PostgresEventStoreSchema($tablePrefix),
+        'query-streams' => new PostgresEventStoreQueryStreamsSchema($tablePrefix),
+        default => throw new \InvalidArgumentException(sprintf(
+            'Unsupported Postgres event store implementation "%s". Expected one of: hstore, query-streams.',
+            $implementation,
+        )),
+    };
 }
 
 function postgresTestUniquePrefix(): string

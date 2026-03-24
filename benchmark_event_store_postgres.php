@@ -8,12 +8,13 @@ require_once __DIR__.'/src/EventStore_Postgres/Tests/PostgresTestSupport.php';
 use Doctrine\DBAL\Connection;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore_Postgres\PostgresEventStore;
-use Ultra\EventStore_Postgres\PostgresEventStoreSchema;
+use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
 use function Ultra\EventStore_Postgres\Tests\postgresTestConnection;
-use function Ultra\EventStore_Postgres\Tests\postgresTestSchema;
-use function Ultra\EventStore_Postgres\Tests\postgresTestStore;
+use function Ultra\EventStore_Postgres\Tests\postgresTestSchemaForImplementation;
+use function Ultra\EventStore_Postgres\Tests\postgresTestStoreForImplementation;
+use function Ultra\EventStore_Postgres\Tests\postgresTestSupportedImplementations;
 
 exit(main());
 
@@ -25,12 +26,12 @@ function main(): int
     $config = benchmarkConfig();
     $connection = postgresTestConnection($config['dsn']);
     $prefix = benchmarkTablePrefix();
-    $schema = postgresTestSchema($prefix);
+    $schema = postgresTestSchemaForImplementation($prefix, $config['implementation']);
 
     try {
         createSchema($connection, $schema);
 
-        $store = postgresTestStore($connection, $prefix);
+        $store = postgresTestStoreForImplementation($connection, $prefix, $config['implementation']);
 
         printHeader($config, $prefix);
         printLine('Seeding read dataset...');
@@ -49,7 +50,7 @@ function main(): int
 
         printLine();
         printLine('Refreshing planner stats...');
-        analyzeEventStore($connection, $prefix);
+        analyzeEventStore($connection, $prefix, $config['implementation']);
 
         $readResults = [];
         printLine();
@@ -109,6 +110,7 @@ function main(): int
  * @return array{
  *     dsn: string,
  *     dsnSource: string,
+ *     implementation: string,
  *     saveResult: null|string,
  *     compareTo: null|string,
  *     seedEvents: int,
@@ -124,6 +126,7 @@ function benchmarkConfig(): array
 {
     $options = getopt('', [
         'dsn::',
+        'implementation::',
         'save-result::',
         'compare-to::',
         'seed-events::',
@@ -149,6 +152,7 @@ function benchmarkConfig(): array
         'dsnSource' => isset($options['dsn'])
             ? '--dsn'
             : (false !== $envDsn && '' !== $envDsn ? 'ULTRA_TEST_POSTGRES_DSN' : 'docker-compose default'),
+        'implementation' => resolveImplementationOption($options),
         'saveResult' => resolveNullableStringOption($options, 'save-result'),
         'compareTo' => resolveNullableStringOption($options, 'compare-to'),
         'seedEvents' => $seedEvents,
@@ -159,6 +163,24 @@ function benchmarkConfig(): array
         'readIterations' => resolvePositiveIntOption($options, 'read-iterations', 50),
         'readWarmupIterations' => resolvePositiveIntOption($options, 'read-warmup-iterations', 25),
     ];
+}
+
+/**
+ * @param array<string, mixed> $options
+ */
+function resolveImplementationOption(array $options): string
+{
+    $implementation = strtolower(trim(resolveStringOption($options, 'implementation', 'hstore')));
+    $supportedImplementations = postgresTestSupportedImplementations();
+
+    if (! in_array($implementation, $supportedImplementations, true)) {
+        throw new \InvalidArgumentException(sprintf(
+            'Option "--implementation" must be one of: %s.',
+            implode(', ', $supportedImplementations),
+        ));
+    }
+
+    return $implementation;
 }
 
 /**
@@ -234,14 +256,14 @@ function benchmarkTablePrefix(): string
     return 'ultra_event_store_bench_'.bin2hex(random_bytes(4)).'_';
 }
 
-function createSchema(Connection $connection, PostgresEventStoreSchema $schema): void
+function createSchema(Connection $connection, PostgresEventStoreSchemaDefinition $schema): void
 {
     foreach ($schema->createStatements() as $statement) {
         $connection->executeStatement($statement);
     }
 }
 
-function dropSchema(Connection $connection, PostgresEventStoreSchema $schema): void
+function dropSchema(Connection $connection, PostgresEventStoreSchemaDefinition $schema): void
 {
     foreach ($schema->dropStatements() as $statement) {
         $connection->executeStatement($statement);
@@ -270,7 +292,7 @@ function dropSchema(Connection $connection, PostgresEventStoreSchema $schema): v
  *     }
  * }
  */
-function seedReadDataset(PostgresEventStore $store, int $seedEvents, int $batchSize): array
+function seedReadDataset(EventStore $store, int $seedEvents, int $batchSize): array
 {
     $courseCount = max(6, min(240, max(6, intdiv($seedEvents, 50))));
     $courseCount = min($courseCount, $seedEvents - 1);
@@ -572,7 +594,7 @@ function buildReadScenarios(array $profile): array
  *     latencyMs: array{avg: float, min: float, p50: float, p95: float, max: float}
  * }
  */
-function benchmarkWrites(PostgresEventStore $store, int $operations, int $batchSize, int $streamCount): array
+function benchmarkWrites(EventStore $store, int $operations, int $batchSize, int $streamCount): array
 {
     $durationsMs = [];
     $startedAt = hrtime(true);
@@ -621,7 +643,7 @@ function benchmarkWrites(PostgresEventStore $store, int $operations, int $batchS
  *     latencyMs: array{avg: float, min: float, p50: float, p95: float, max: float}
  * }
  */
-function benchmarkReads(PostgresEventStore $store, StreamQuery $query, int $iterations, int $warmupIterations): array
+function benchmarkReads(EventStore $store, StreamQuery $query, int $iterations, int $warmupIterations): array
 {
     for ($iteration = 0; $iteration < $warmupIterations; ++$iteration) {
         $store->load($query);
@@ -752,14 +774,19 @@ function ratePerSecond(int $units, float $seconds): float
     return $units / $seconds;
 }
 
-function analyzeEventStore(Connection $connection, string $tablePrefix): void
+function analyzeEventStore(Connection $connection, string $tablePrefix, string $implementation): void
 {
     $connection->executeStatement(sprintf('ANALYZE %sevents', $tablePrefix));
+
+    if ('query-streams' === $implementation) {
+        $connection->executeStatement(sprintf('ANALYZE %sevent_query_streams', $tablePrefix));
+    }
 }
 
 /**
  * @param array{
  *     dsnSource: string,
+ *     implementation: string,
  *     saveResult: null|string,
  *     compareTo: null|string,
  *     seedEvents: int,
@@ -821,7 +848,7 @@ function buildBenchmarkSnapshot(
     Connection $connection,
 ): array {
     return [
-        'schemaVersion' => 1,
+        'schemaVersion' => 2,
         'createdAt' => (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format(DATE_ATOM),
         'runtime' => [
             'phpVersion' => PHP_VERSION,
@@ -830,6 +857,7 @@ function buildBenchmarkSnapshot(
         ],
         'config' => [
             'dsnSource' => $config['dsnSource'],
+            'implementation' => $config['implementation'],
             'seedEvents' => $config['seedEvents'],
             'seedBatchSize' => $config['seedBatchSize'],
             'writeOperations' => $config['writeOperations'],
@@ -957,6 +985,7 @@ function benchmarkConfigDifferences(array $baseline, array $current): array
 {
     $differences = [];
     foreach ([
+        'implementation',
         'seedEvents',
         'seedBatchSize',
         'writeOperations',
@@ -1093,6 +1122,7 @@ function gitHeadCommit(): string
 /**
  * @param array{
  *     dsnSource: string,
+ *     implementation: string,
  *     saveResult: null|string,
  *     compareTo: null|string,
  *     seedEvents: int,
@@ -1109,6 +1139,7 @@ function printHeader(array $config, string $prefix): void
     printLine('Postgres Event Store Benchmark');
     printLine(str_repeat('=', 30));
     printLine(sprintf('Connection source: %s', $config['dsnSource']));
+    printLine(sprintf('Implementation: %s', $config['implementation']));
     if (null !== $config['compareTo']) {
         printLine(sprintf('Compare to: %s', $config['compareTo']));
     }
