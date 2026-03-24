@@ -143,10 +143,13 @@ final class PostgresEventStoreQueryStreams implements EventStore
     {
         $rows = $this->connection->executeQuery(
             sprintf(
-                'SELECT DISTINCT e.event_id, e.event_type, e.payload, e.domain_ids, e.recorded_at
+                'SELECT e.event_id, e.event_type, e.payload, e.domain_ids, e.recorded_at
                  FROM %1$s e
-                 INNER JOIN %2$s eqs ON eqs.event_id = e.event_id
-                 WHERE eqs.query_stream_key IN (?)
+                 WHERE e.event_id IN (
+                     SELECT event_id
+                     FROM %2$s
+                     WHERE query_stream_key IN (?)
+                 )
                  ORDER BY e.event_id ASC',
                 $this->eventsTable(),
                 $this->eventQueryStreamsTable(),

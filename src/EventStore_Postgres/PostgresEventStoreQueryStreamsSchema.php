@@ -31,14 +31,10 @@ final readonly class PostgresEventStoreQueryStreamsSchema implements PostgresEve
             ),
             sprintf(
                 'CREATE TABLE %1$sevent_query_streams (
-                    event_id BIGINT NOT NULL REFERENCES %1$sevents(event_id) ON DELETE CASCADE,
+                    event_id BIGINT NOT NULL,
                     query_stream_key BYTEA NOT NULL,
-                    PRIMARY KEY (event_id, query_stream_key)
+                    PRIMARY KEY (query_stream_key, event_id)
                 )',
-                $this->tablePrefix,
-            ),
-            sprintf(
-                'CREATE INDEX %1$sevent_query_streams_query_stream_key_idx ON %1$sevent_query_streams (query_stream_key, event_id)',
                 $this->tablePrefix,
             ),
             sprintf(
