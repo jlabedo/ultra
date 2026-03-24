@@ -51,6 +51,7 @@ function main(): int
         printLine('Refreshing planner stats...');
         analyzeEventStore($connection, $prefix);
 
+        $readResults = [];
         printLine();
         printLine('Benchmarking reads...');
         foreach (buildReadScenarios($seedResult['profile']) as $scenario) {
@@ -60,7 +61,32 @@ function main(): int
                 iterations: $config['readIterations'],
                 warmupIterations: $config['readWarmupIterations'],
             );
+            $readResults[] = [
+                'label' => $scenario['label'],
+                'description' => $scenario['description'],
+                'result' => $readResult,
+            ];
             printReadBenchmarkResult($scenario['label'], $scenario['description'], $readResult);
+            printLine();
+        }
+
+        $snapshot = buildBenchmarkSnapshot(
+            $config,
+            $seedResult,
+            $writeResult,
+            $readResults,
+            $connection,
+        );
+
+        if (null !== $config['compareTo']) {
+            printLine('Comparing against saved benchmark...');
+            printBenchmarkComparison(loadBenchmarkSnapshot($config['compareTo']), $snapshot, $config['compareTo']);
+            printLine();
+        }
+
+        if (null !== $config['saveResult']) {
+            saveBenchmarkSnapshot($config['saveResult'], $snapshot);
+            printLine(sprintf('Saved benchmark snapshot to %s', $config['saveResult']));
             printLine();
         }
 
@@ -83,6 +109,8 @@ function main(): int
  * @return array{
  *     dsn: string,
  *     dsnSource: string,
+ *     saveResult: null|string,
+ *     compareTo: null|string,
  *     seedEvents: int,
  *     seedBatchSize: int,
  *     writeOperations: int,
@@ -96,6 +124,8 @@ function benchmarkConfig(): array
 {
     $options = getopt('', [
         'dsn::',
+        'save-result::',
+        'compare-to::',
         'seed-events::',
         'seed-batch-size::',
         'write-operations::',
@@ -119,6 +149,8 @@ function benchmarkConfig(): array
         'dsnSource' => isset($options['dsn'])
             ? '--dsn'
             : (false !== $envDsn && '' !== $envDsn ? 'ULTRA_TEST_POSTGRES_DSN' : 'docker-compose default'),
+        'saveResult' => resolveNullableStringOption($options, 'save-result'),
+        'compareTo' => resolveNullableStringOption($options, 'compare-to'),
         'seedEvents' => $seedEvents,
         'seedBatchSize' => resolvePositiveIntOption($options, 'seed-batch-size', 100),
         'writeOperations' => resolvePositiveIntOption($options, 'write-operations', 5_000),
@@ -148,6 +180,27 @@ function resolveStringOption(array $options, string $name, string $default): str
     }
 
     return $value;
+}
+
+/**
+ * @param array<string, mixed> $options
+ */
+function resolveNullableStringOption(array $options, string $name): ?string
+{
+    if (! array_key_exists($name, $options)) {
+        return null;
+    }
+
+    $value = $options[$name];
+    if (is_array($value)) {
+        $value = end($value);
+    }
+
+    if (false === $value || null === $value || '' === trim((string) $value)) {
+        throw new \InvalidArgumentException(sprintf('Option "--%s" must be a non-empty string.', $name));
+    }
+
+    return trim((string) $value);
 }
 
 /**
@@ -707,6 +760,341 @@ function analyzeEventStore(Connection $connection, string $tablePrefix): void
 /**
  * @param array{
  *     dsnSource: string,
+ *     saveResult: null|string,
+ *     compareTo: null|string,
+ *     seedEvents: int,
+ *     seedBatchSize: int,
+ *     writeOperations: int,
+ *     writeBatchSize: int,
+ *     writeStreamCount: int,
+ *     readIterations: int,
+ *     readWarmupIterations: int
+ * } $config
+ * @param array{
+ *     operations: int,
+ *     eventsPerOperation: int,
+ *     totalSeconds: float,
+ *     opsPerSecond: float,
+ *     eventsPerSecond: float,
+ *     profile: array{
+ *         facultyCount: int,
+ *         courseCount: int,
+ *         courseCountsByBand: array{hot: int, warm: int, cold: int},
+ *         eventCounts: array{course.created: int, course.capacity_changed: int, student.subscribed: int},
+ *         samples: array{
+ *             hotCourse: array{courseId: string, subscriptionCount: int},
+ *             warmCourse: array{courseId: string, subscriptionCount: int},
+ *             lifecycleCourse: array{courseId: string, eventCount: int},
+ *             pairLookup: array{courseId: string, studentId: string},
+ *             dashboard: array{courseIds: list<string>, eventCount: int}
+ *         }
+ *     }
+ * } $seedResult
+ * @param array{
+ *     operations: int,
+ *     eventsPerOperation: int,
+ *     totalSeconds: float,
+ *     opsPerSecond: float,
+ *     eventsPerSecond: float,
+ *     latencyMs: array{avg: float, min: float, p50: float, p95: float, max: float}
+ * } $writeResult
+ * @param list<array{
+ *     label: string,
+ *     description: string,
+ *     result: array{
+ *         operations: int,
+ *         eventsPerOperation: int,
+ *         totalSeconds: float,
+ *         opsPerSecond: float,
+ *         eventsPerSecond: float,
+ *         latencyMs: array{avg: float, min: float, p50: float, p95: float, max: float}
+ *     }
+ * }> $readResults
+ *
+ * @return array<string, mixed>
+ */
+function buildBenchmarkSnapshot(
+    array $config,
+    array $seedResult,
+    array $writeResult,
+    array $readResults,
+    Connection $connection,
+): array {
+    return [
+        'schemaVersion' => 1,
+        'createdAt' => (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format(DATE_ATOM),
+        'runtime' => [
+            'phpVersion' => PHP_VERSION,
+            'postgresVersion' => (string) $connection->fetchOne('SHOW server_version'),
+            'gitCommit' => gitHeadCommit(),
+        ],
+        'config' => [
+            'dsnSource' => $config['dsnSource'],
+            'seedEvents' => $config['seedEvents'],
+            'seedBatchSize' => $config['seedBatchSize'],
+            'writeOperations' => $config['writeOperations'],
+            'writeBatchSize' => $config['writeBatchSize'],
+            'writeStreamCount' => $config['writeStreamCount'],
+            'readIterations' => $config['readIterations'],
+            'readWarmupIterations' => $config['readWarmupIterations'],
+        ],
+        'seed' => $seedResult,
+        'results' => [
+            'write' => $writeResult,
+            'reads' => $readResults,
+        ],
+    ];
+}
+
+/**
+ * @return array<string, mixed>
+ */
+function loadBenchmarkSnapshot(string $path): array
+{
+    if (! is_file($path)) {
+        throw new \InvalidArgumentException(sprintf('Benchmark snapshot file not found: %s', $path));
+    }
+
+    $contents = file_get_contents($path);
+    if (false === $contents) {
+        throw new \RuntimeException(sprintf('Unable to read benchmark snapshot file: %s', $path));
+    }
+
+    $snapshot = json_decode($contents, true, 512, JSON_THROW_ON_ERROR);
+    if (! is_array($snapshot)) {
+        throw new \RuntimeException(sprintf('Benchmark snapshot must decode to an object: %s', $path));
+    }
+
+    return $snapshot;
+}
+
+/**
+ * @param array<string, mixed> $snapshot
+ */
+function saveBenchmarkSnapshot(string $path, array $snapshot): void
+{
+    $directory = dirname($path);
+    if ('.' !== $directory && ! is_dir($directory) && ! mkdir($directory, 0777, true) && ! is_dir($directory)) {
+        throw new \RuntimeException(sprintf('Unable to create benchmark snapshot directory: %s', $directory));
+    }
+
+    $encoded = json_encode($snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
+    if (false === file_put_contents($path, $encoded.PHP_EOL)) {
+        throw new \RuntimeException(sprintf('Unable to write benchmark snapshot file: %s', $path));
+    }
+}
+
+/**
+ * @param array<string, mixed> $baseline
+ * @param array<string, mixed> $current
+ */
+function printBenchmarkComparison(array $baseline, array $current, string $baselinePath): void
+{
+    printLine(sprintf('  Baseline file: %s', $baselinePath));
+    printLine(sprintf(
+        '  Baseline run: %s | PHP %s | Postgres %s | git %s',
+        (string) ($baseline['createdAt'] ?? 'unknown'),
+        (string) ($baseline['runtime']['phpVersion'] ?? 'unknown'),
+        (string) ($baseline['runtime']['postgresVersion'] ?? 'unknown'),
+        (string) ($baseline['runtime']['gitCommit'] ?? 'unknown'),
+    ));
+    printLine(sprintf(
+        '  Current run: %s | PHP %s | Postgres %s | git %s',
+        (string) ($current['createdAt'] ?? 'unknown'),
+        (string) ($current['runtime']['phpVersion'] ?? 'unknown'),
+        (string) ($current['runtime']['postgresVersion'] ?? 'unknown'),
+        (string) ($current['runtime']['gitCommit'] ?? 'unknown'),
+    ));
+
+    $configDifferences = benchmarkConfigDifferences(
+        is_array($baseline['config'] ?? null) ? $baseline['config'] : [],
+        is_array($current['config'] ?? null) ? $current['config'] : [],
+    );
+    if ([] !== $configDifferences) {
+        printLine(sprintf('  Config differences: %s', implode(' | ', $configDifferences)));
+    }
+
+    $seedDifferences = benchmarkSeedDifferences(
+        is_array($baseline['seed']['profile'] ?? null) ? $baseline['seed']['profile'] : [],
+        is_array($current['seed']['profile'] ?? null) ? $current['seed']['profile'] : [],
+    );
+    if ([] !== $seedDifferences) {
+        printLine(sprintf('  Seed profile differences: %s', implode(' | ', $seedDifferences)));
+    }
+
+    printLine();
+    printMetricComparison(
+        '  Writes',
+        is_array($baseline['results']['write'] ?? null) ? $baseline['results']['write'] : [],
+        is_array($current['results']['write'] ?? null) ? $current['results']['write'] : [],
+    );
+
+    $baselineReads = indexReadResultsByLabel(is_array($baseline['results']['reads'] ?? null) ? $baseline['results']['reads'] : []);
+    $currentReads = indexReadResultsByLabel(is_array($current['results']['reads'] ?? null) ? $current['results']['reads'] : []);
+
+    foreach ($currentReads as $label => $readResult) {
+        if (! isset($baselineReads[$label])) {
+            printLine(sprintf('  %s: no matching baseline scenario', $label));
+
+            continue;
+        }
+
+        printMetricComparison(sprintf('  %s', $label), $baselineReads[$label], $readResult);
+    }
+
+    foreach (array_diff(array_keys($baselineReads), array_keys($currentReads)) as $label) {
+        printLine(sprintf('  %s: present in baseline only', $label));
+    }
+}
+
+/**
+ * @param array<string, mixed> $baseline
+ * @param array<string, mixed> $current
+ *
+ * @return list<string>
+ */
+function benchmarkConfigDifferences(array $baseline, array $current): array
+{
+    $differences = [];
+    foreach ([
+        'seedEvents',
+        'seedBatchSize',
+        'writeOperations',
+        'writeBatchSize',
+        'writeStreamCount',
+        'readIterations',
+        'readWarmupIterations',
+    ] as $key) {
+        if (($baseline[$key] ?? null) === ($current[$key] ?? null)) {
+            continue;
+        }
+
+        $differences[] = sprintf('%s %s -> %s', $key, (string) ($baseline[$key] ?? 'n/a'), (string) ($current[$key] ?? 'n/a'));
+    }
+
+    return $differences;
+}
+
+/**
+ * @param array<string, mixed> $baseline
+ * @param array<string, mixed> $current
+ *
+ * @return list<string>
+ */
+function benchmarkSeedDifferences(array $baseline, array $current): array
+{
+    $differences = [];
+
+    foreach ([
+        'facultyCount',
+        'courseCount',
+    ] as $key) {
+        if (($baseline[$key] ?? null) !== ($current[$key] ?? null)) {
+            $differences[] = sprintf('%s %s -> %s', $key, (string) ($baseline[$key] ?? 'n/a'), (string) ($current[$key] ?? 'n/a'));
+        }
+    }
+
+    foreach ([
+        'courseCountsByBand',
+        'eventCounts',
+    ] as $group) {
+        $baselineGroup = is_array($baseline[$group] ?? null) ? $baseline[$group] : [];
+        $currentGroup = is_array($current[$group] ?? null) ? $current[$group] : [];
+        foreach (array_unique([...array_keys($baselineGroup), ...array_keys($currentGroup)]) as $key) {
+            if (($baselineGroup[$key] ?? null) === ($currentGroup[$key] ?? null)) {
+                continue;
+            }
+
+            $differences[] = sprintf(
+                '%s.%s %s -> %s',
+                $group,
+                (string) $key,
+                (string) ($baselineGroup[$key] ?? 'n/a'),
+                (string) ($currentGroup[$key] ?? 'n/a'),
+            );
+        }
+    }
+
+    return $differences;
+}
+
+/**
+ * @param list<mixed> $readResults
+ *
+ * @return array<string, array<string, mixed>>
+ */
+function indexReadResultsByLabel(array $readResults): array
+{
+    $indexed = [];
+    foreach ($readResults as $entry) {
+        if (! is_array($entry) || ! isset($entry['label']) || ! is_string($entry['label']) || ! is_array($entry['result'] ?? null)) {
+            continue;
+        }
+
+        $indexed[$entry['label']] = $entry['result'];
+    }
+
+    return $indexed;
+}
+
+/**
+ * @param array<string, mixed> $baseline
+ * @param array<string, mixed> $current
+ */
+function printMetricComparison(string $label, array $baseline, array $current): void
+{
+    printLine($label);
+
+    if (($baseline['eventsPerOperation'] ?? null) !== ($current['eventsPerOperation'] ?? null)) {
+        printLine(sprintf(
+            '    Events per operation: %s -> %s',
+            formatInteger((int) ($baseline['eventsPerOperation'] ?? 0)),
+            formatInteger((int) ($current['eventsPerOperation'] ?? 0)),
+        ));
+    }
+
+    printLine(sprintf(
+        '    Ops/s: %s -> %s (%s)',
+        formatRate((float) ($baseline['opsPerSecond'] ?? 0.0)),
+        formatRate((float) ($current['opsPerSecond'] ?? 0.0)),
+        formatDelta((float) ($baseline['opsPerSecond'] ?? 0.0), (float) ($current['opsPerSecond'] ?? 0.0), true),
+    ));
+    printLine(sprintf(
+        '    Events/s: %s -> %s (%s)',
+        formatRate((float) ($baseline['eventsPerSecond'] ?? 0.0)),
+        formatRate((float) ($current['eventsPerSecond'] ?? 0.0)),
+        formatDelta((float) ($baseline['eventsPerSecond'] ?? 0.0), (float) ($current['eventsPerSecond'] ?? 0.0), true),
+    ));
+
+    $baselineLatency = is_array($baseline['latencyMs'] ?? null) ? $baseline['latencyMs'] : [];
+    $currentLatency = is_array($current['latencyMs'] ?? null) ? $current['latencyMs'] : [];
+
+    printLine(sprintf(
+        '    Avg latency: %s -> %s (%s)',
+        formatMilliseconds((float) ($baselineLatency['avg'] ?? 0.0)),
+        formatMilliseconds((float) ($currentLatency['avg'] ?? 0.0)),
+        formatDelta((float) ($baselineLatency['avg'] ?? 0.0), (float) ($currentLatency['avg'] ?? 0.0), false),
+    ));
+    printLine(sprintf(
+        '    P95 latency: %s -> %s (%s)',
+        formatMilliseconds((float) ($baselineLatency['p95'] ?? 0.0)),
+        formatMilliseconds((float) ($currentLatency['p95'] ?? 0.0)),
+        formatDelta((float) ($baselineLatency['p95'] ?? 0.0), (float) ($currentLatency['p95'] ?? 0.0), false),
+    ));
+}
+
+function gitHeadCommit(): string
+{
+    $output = shell_exec('git rev-parse --short HEAD 2>/dev/null');
+
+    return is_string($output) && '' !== trim($output) ? trim($output) : 'unknown';
+}
+
+/**
+ * @param array{
+ *     dsnSource: string,
+ *     saveResult: null|string,
+ *     compareTo: null|string,
  *     seedEvents: int,
  *     seedBatchSize: int,
  *     writeOperations: int,
@@ -721,6 +1109,12 @@ function printHeader(array $config, string $prefix): void
     printLine('Postgres Event Store Benchmark');
     printLine(str_repeat('=', 30));
     printLine(sprintf('Connection source: %s', $config['dsnSource']));
+    if (null !== $config['compareTo']) {
+        printLine(sprintf('Compare to: %s', $config['compareTo']));
+    }
+    if (null !== $config['saveResult']) {
+        printLine(sprintf('Save result: %s', $config['saveResult']));
+    }
     printLine(sprintf('Schema prefix: %s', $prefix));
     printLine(sprintf('Seed events: %s', formatInteger($config['seedEvents'])));
     printLine(sprintf('Seed batch size: %s', formatInteger($config['seedBatchSize'])));
@@ -869,4 +1263,20 @@ function formatMilliseconds(float $value): string
 function formatRate(float $value): string
 {
     return number_format($value, 1);
+}
+
+function formatDelta(float $baseline, float $current, bool $higherIsBetter): string
+{
+    if (0.0 === $baseline) {
+        return 0.0 === $current ? 'flat' : 'n/a';
+    }
+
+    $percent = (($current - $baseline) / $baseline) * 100;
+    if (abs($percent) < 0.05) {
+        return 'flat';
+    }
+
+    $improved = $higherIsBetter ? $current > $baseline : $current < $baseline;
+
+    return sprintf('%+.1f%% %s', $percent, $improved ? 'better' : 'worse');
 }

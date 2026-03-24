@@ -1,0 +1,175 @@
+{
+    "schemaVersion": 1,
+    "createdAt": "2026-03-24T09:49:33+00:00",
+    "runtime": {
+        "phpVersion": "8.5.3",
+        "postgresVersion": "18.3",
+        "gitCommit": "ca1f9ad"
+    },
+    "config": {
+        "dsnSource": "docker-compose default",
+        "seedEvents": 20000,
+        "seedBatchSize": 100,
+        "writeOperations": 5000,
+        "writeBatchSize": 1,
+        "writeStreamCount": 200,
+        "readIterations": 50,
+        "readWarmupIterations": 25
+    },
+    "seed": {
+        "operations": 20000,
+        "eventsPerOperation": 1,
+        "totalSeconds": 1.908888791,
+        "opsPerSecond": 10477.299722380736,
+        "eventsPerSecond": 10477.299722380736,
+        "profile": {
+            "facultyCount": 24,
+            "courseCount": 240,
+            "courseCountsByBand": {
+                "hot": 8,
+                "warm": 32,
+                "cold": 200
+            },
+            "eventCounts": {
+                "course.created": 240,
+                "course.capacity_changed": 1666,
+                "student.subscribed": 18094
+            },
+            "samples": {
+                "hotCourse": {
+                    "courseId": "course-read-000",
+                    "subscriptionCount": 1245
+                },
+                "warmCourse": {
+                    "courseId": "course-read-008",
+                    "subscriptionCount": 170
+                },
+                "lifecycleCourse": {
+                    "courseId": "course-read-001",
+                    "eventCount": 8
+                },
+                "pairLookup": {
+                    "courseId": "course-read-000",
+                    "studentId": "student-read-000-00000"
+                },
+                "dashboard": {
+                    "courseIds": [
+                        "course-read-008",
+                        "course-read-009",
+                        "course-read-010",
+                        "course-read-011"
+                    ],
+                    "eventCount": 28
+                }
+            }
+        }
+    },
+    "results": {
+        "write": {
+            "operations": 5000,
+            "eventsPerOperation": 1,
+            "totalSeconds": 5.637268167,
+            "opsPerSecond": 886.9544346443364,
+            "eventsPerSecond": 886.9544346443364,
+            "latencyMs": {
+                "avg": 1.126502550399998,
+                "min": 0.802916,
+                "p50": 1.030958,
+                "p95": 1.579167,
+                "max": 69.684625
+            }
+        },
+        "reads": [
+            {
+                "label": "Read: Hot course subscriptions",
+                "description": "courseId=course-read-000 | student.subscribed | ~1,245 events",
+                "result": {
+                    "operations": 50,
+                    "eventsPerOperation": 1245,
+                    "totalSeconds": 0.441034375,
+                    "opsPerSecond": 113.36984787183539,
+                    "eventsPerSecond": 141145.46060043506,
+                    "latencyMs": {
+                        "avg": 8.81922496,
+                        "min": 7.873875000000001,
+                        "p50": 8.70725,
+                        "p95": 10.090541,
+                        "max": 10.92075
+                    }
+                }
+            },
+            {
+                "label": "Read: Warm course subscriptions",
+                "description": "courseId=course-read-008 | student.subscribed | ~170 events",
+                "result": {
+                    "operations": 50,
+                    "eventsPerOperation": 170,
+                    "totalSeconds": 0.162141791,
+                    "opsPerSecond": 308.3720717011199,
+                    "eventsPerSecond": 52423.25218919038,
+                    "latencyMs": {
+                        "avg": 3.2419683800000003,
+                        "min": 2.869208,
+                        "p50": 3.120791,
+                        "p95": 3.876709,
+                        "max": 3.9723750000000004
+                    }
+                }
+            },
+            {
+                "label": "Read: Course lifecycle",
+                "description": "courseId=course-read-001 | course.created + course.capacity_changed | ~8 events",
+                "result": {
+                    "operations": 50,
+                    "eventsPerOperation": 8,
+                    "totalSeconds": 0.061016792,
+                    "opsPerSecond": 819.4465549745715,
+                    "eventsPerSecond": 6555.572439796572,
+                    "latencyMs": {
+                        "avg": 1.2197908799999997,
+                        "min": 0.976083,
+                        "p50": 1.105959,
+                        "p95": 2.045375,
+                        "max": 2.134167
+                    }
+                }
+            },
+            {
+                "label": "Read: Course and student pair",
+                "description": "courseId=course-read-000 + studentId=student-read-000-00000 | student.subscribed | 1 event",
+                "result": {
+                    "operations": 50,
+                    "eventsPerOperation": 1,
+                    "totalSeconds": 0.147370375,
+                    "opsPerSecond": 339.2812157803086,
+                    "eventsPerSecond": 339.2812157803086,
+                    "latencyMs": {
+                        "avg": 2.94666584,
+                        "min": 2.66725,
+                        "p50": 2.8467499999999997,
+                        "p95": 3.487458,
+                        "max": 4.076
+                    }
+                }
+            },
+            {
+                "label": "Read: Dashboard course changes",
+                "description": "4 branches | course.capacity_changed | ~28 events",
+                "result": {
+                    "operations": 50,
+                    "eventsPerOperation": 28,
+                    "totalSeconds": 0.074121416,
+                    "opsPerSecond": 674.5688722406491,
+                    "eventsPerSecond": 18887.928422738176,
+                    "latencyMs": {
+                        "avg": 1.4819157599999997,
+                        "min": 1.34325,
+                        "p50": 1.427792,
+                        "p95": 1.762666,
+                        "max": 2.695916
+                    }
+                }
+            }
+        ]
+    }
+}
