@@ -123,8 +123,8 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
         $state = $repository->fetchStateRow($plan->name(), $plan->version(), 'direct');
 
         expect($rows)->toBe([
-            ['course_id' => 'course-1', 'name' => 'Math 101', 'last_event_id' => '1'],
-            ['course_id' => 'course-2', 'name' => 'Physics 201', 'last_event_id' => '2'],
+            ['course_id' => 'course-1', 'name' => 'Math 101', 'last_event_id' => 1],
+            ['course_id' => 'course-2', 'name' => 'Physics 201', 'last_event_id' => 2],
         ])
             ->and($state)->toBe([
                 'last_event_id' => 2,
@@ -216,10 +216,10 @@ test('router and partition workers process each partition in order while sharing
         ));
 
         expect($rows)->toBe([
-            ['student_id' => 'student-1', 'event_id' => '1', 'slot' => 1],
-            ['student_id' => 'student-1', 'event_id' => '3', 'slot' => 2],
-            ['student_id' => 'student-2', 'event_id' => '2', 'slot' => 1],
-            ['student_id' => 'student-2', 'event_id' => '4', 'slot' => 2],
+            ['student_id' => 'student-1', 'event_id' => 1, 'slot' => 1],
+            ['student_id' => 'student-1', 'event_id' => 3, 'slot' => 2],
+            ['student_id' => 'student-2', 'event_id' => 2, 'slot' => 1],
+            ['student_id' => 'student-2', 'event_id' => 4, 'slot' => 2],
         ])
             ->and($repository->fetchStateRow($plan->name(), $plan->version(), 'router'))->toBe([
                 'last_event_id' => 4,

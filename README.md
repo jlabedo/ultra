@@ -30,6 +30,11 @@ Run all tests:
 composer test
 ```
 
+Run Postgres integration tests against the local development database:
+```bash
+ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' composer test
+```
+
 Run tests with coverage:
 ```bash
 composer test:coverage
