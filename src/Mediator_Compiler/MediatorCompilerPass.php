@@ -173,11 +173,11 @@ final class MediatorCompilerPass implements CompilerPassInterface
                 renderer: new DispatchPlanRenderer([
                     new DecoratingDependencyExpressionResolver(
                         'Ultra\\EventBus\\EventBusInterface',
-                        'Ultra\\MessageHandling\\ContextPropagatingEventBus',
+                        'Ultra\\EventBus\\ContextPropagatingEventBus',
                     ),
                     new DecoratingDependencyExpressionResolver(
                         MediatorInterface::class,
-                        'Ultra\\MessageHandling\\ContextPropagatingMediator',
+                        'Ultra\\Mediator\\ContextPropagatingMediator',
                     ),
                 ]),
             ),

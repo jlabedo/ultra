@@ -10,7 +10,8 @@
         }
     ],
     "require": {
-        "php": ">=8.5"
+        "php": ">=8.5",
+        "ultra/message-handling": "^0.1"
     },
     "autoload": {
         "psr-4": {

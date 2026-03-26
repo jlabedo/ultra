@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling;
+namespace Ultra\EventBus;
 
-use Ultra\EventBus\EventBusInterface;
+use Ultra\MessageHandling\MessageContext;
 
 final readonly class ContextPropagatingEventBus implements EventBusInterface
 {

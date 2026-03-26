@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling;
+namespace Ultra\Mediator;
 
-use Ultra\Mediator\MediatorInterface;
+use Ultra\MessageHandling\MessageContext;
 
 final readonly class ContextPropagatingMediator implements MediatorInterface
 {

@@ -14,6 +14,7 @@
         "psr/container": "^2.0",
         "ultra/event-bus": "^0.1",
         "ultra/event-store": "^0.1",
+        "ultra/message-handling": "^0.1",
         "ultra/mapper": "^0.1",
         "ultra/mediator": "*"
     },

@@ -134,11 +134,11 @@ final class EventBusCompilerPass implements CompilerPassInterface
                 renderer: new DispatchPlanRenderer([
                     new DecoratingDependencyExpressionResolver(
                         EventBusInterface::class,
-                        'Ultra\\MessageHandling\\ContextPropagatingEventBus',
+                        'Ultra\\EventBus\\ContextPropagatingEventBus',
                     ),
                     new DecoratingDependencyExpressionResolver(
                         'Ultra\\Mediator\\MediatorInterface',
-                        'Ultra\\MessageHandling\\ContextPropagatingMediator',
+                        'Ultra\\Mediator\\ContextPropagatingMediator',
                     ),
                 ]),
             ),

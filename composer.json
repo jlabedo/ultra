@@ -36,6 +36,8 @@
         "ultra/event-store-postgres": "self.version",
         "ultra/mapper": "self.version",
         "ultra/mapper-compiler": "self.version",
+        "ultra/message-handling": "self.version",
+        "ultra/message-handling-compiler": "self.version",
         "ultra/mediator": "self.version",
         "ultra/mediator-bundle": "self.version",
         "ultra/mediator-compiler": "self.version"
