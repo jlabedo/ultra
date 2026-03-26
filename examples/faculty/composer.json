@@ -18,6 +18,7 @@
         "php": ">=8.4",
         "ext-ctype": "*",
         "doctrine/dbal": "^4.3",
+        "doctrine/doctrine-bundle": "^3.2",
         "ext-iconv": "*",
         "symfony/console": "8.0.*",
         "symfony/dotenv": "8.0.*",

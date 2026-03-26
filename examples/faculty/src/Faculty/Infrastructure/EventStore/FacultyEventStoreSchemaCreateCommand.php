@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Faculty\Infrastructure\EventStore;
 
-use Doctrine\DBAL\DriverManager;
+use Doctrine\DBAL\Connection;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -14,21 +14,28 @@ use Ultra\EventStore_Postgres\PostgresEventStoreSchema;
 #[AsCommand(name: 'faculty:event-store:schema:create', description: 'Create the optional Postgres schema for the faculty example event store.')]
 final class FacultyEventStoreSchemaCreateCommand extends Command
 {
+    public function __construct(
+        private readonly ?Connection $connection = null,
+    ) {
+        parent::__construct();
+    }
+
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
-        $databaseUrl = trim((string) ($_ENV['FACULTY_DATABASE_URL'] ?? $_SERVER['FACULTY_DATABASE_URL'] ?? ''));
-        if ('' === $databaseUrl) {
-            $output->writeln('<error>Set FACULTY_DATABASE_URL before creating the Postgres schema.</error>');
+        if (null === $this->connection) {
+            $output->writeln('<error>Doctrine DBAL is not configured.</error>');
 
             return self::FAILURE;
         }
 
-        $connection = DriverManager::getConnection([
-            'url' => $databaseUrl,
-        ]);
+        if (! $this->connection->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
+            $output->writeln('<error>The faculty event store schema command requires a PostgreSQL DATABASE_URL.</error>');
+
+            return self::FAILURE;
+        }
 
         foreach ((new PostgresEventStoreSchema(FacultyEventStoreFactory::TABLE_PREFIX))->createStatements() as $statement) {
-            $connection->executeStatement($statement);
+            $this->connection->executeStatement($statement);
         }
 
         $output->writeln('<info>Faculty event store schema is ready.</info>');

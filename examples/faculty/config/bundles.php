@@ -5,4 +5,5 @@ return [
     Ultra\EventBus_Bundle\EventBusBundle::class => ['all' => true],
     Ultra\Mapper_Bundle\MapperBundle::class => ['all' => true],
     Ultra\Mediator_Bundle\MediatorBundle::class => ['all' => true],
+    Doctrine\Bundle\DoctrineBundle\DoctrineBundle::class => ['all' => true],
 ];

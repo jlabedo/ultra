@@ -1,8 +1,5 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<phpunit bootstrap="vendor/autoload.php"
-         cacheDirectory=".phpunit.cache"
-         colors="true"
-         executionOrder="depends,defects">
+<phpunit bootstrap="tests/bootstrap.php" cacheDirectory=".phpunit.cache" colors="true" executionOrder="depends,defects">
     <testsuites>
         <testsuite name="Faculty Example">
             <directory>tests</directory>
