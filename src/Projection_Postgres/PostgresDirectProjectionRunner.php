@@ -7,7 +7,6 @@ namespace Ultra\Projection_Postgres;
 use Doctrine\DBAL\Connection;
 use Ultra\Projection\DirectDelivery;
 use Ultra\Projection\EventFeed;
-use Ultra\Projection\ProjectionEnvelopeFactory;
 use Ultra\Projection\ProjectionPlan;
 use Ultra\Projection\ProjectionPlanValidator;
 
@@ -18,7 +17,6 @@ final readonly class PostgresDirectProjectionRunner
     public function __construct(
         private Connection $connection,
         private EventFeed $eventFeed,
-        private ProjectionEnvelopeFactory $envelopeFactory,
         private PostgresProjectionRuntimeRepository $repository,
         private ?ProjectionPlanValidator $validator = null,
     ) {}
@@ -47,7 +45,7 @@ final readonly class PostgresDirectProjectionRunner
             }
 
             foreach ($events as $event) {
-                $plan->projection->apply($this->envelopeFactory->fromStoredEvent($event));
+                $plan->apply($event);
             }
 
             $this->repository->advanceState(

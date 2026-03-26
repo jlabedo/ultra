@@ -4,11 +4,19 @@ declare(strict_types=1);
 
 namespace Ultra\Projection;
 
-interface Projection
+#[\Attribute(\Attribute::TARGET_CLASS)]
+final readonly class Projection
 {
-    public function name(): string;
+    public function __construct(
+        public string $name,
+        public int $version = 1,
+    ) {
+        if ('' === $this->name) {
+            throw new \InvalidArgumentException('Projection names must be non-empty strings.');
+        }
 
-    public function version(): int;
-
-    public function apply(ProjectionEnvelope $event): void;
+        if ($this->version < 1) {
+            throw new \InvalidArgumentException('Projection versions must be greater than or equal to 1.');
+        }
+    }
 }

@@ -7,7 +7,6 @@ namespace Ultra\Projection_Postgres;
 use Doctrine\DBAL\Connection;
 use Ultra\Projection\EventFeed;
 use Ultra\Projection\PartitionedDelivery;
-use Ultra\Projection\ProjectionEnvelopeFactory;
 use Ultra\Projection\ProjectionPlan;
 use Ultra\Projection\ProjectionPlanValidator;
 
@@ -16,7 +15,6 @@ final readonly class PostgresInboxPartitionWorker
     public function __construct(
         private Connection $connection,
         private EventFeed $eventFeed,
-        private ProjectionEnvelopeFactory $envelopeFactory,
         private PostgresProjectionRuntimeRepository $repository,
         private ?ProjectionPlanValidator $validator = null,
     ) {}
@@ -69,7 +67,7 @@ final readonly class PostgresInboxPartitionWorker
             }
 
             foreach ($events as $event) {
-                $plan->projection->apply($this->envelopeFactory->fromStoredEvent($event));
+                $plan->apply($event);
             }
 
             $lastEventId = $events[array_key_last($events)]->eventId;

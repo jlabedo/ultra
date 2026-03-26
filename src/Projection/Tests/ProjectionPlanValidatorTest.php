@@ -7,25 +7,26 @@ namespace Ultra\Projection\Tests;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore\StoredEvent;
+use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\PartitionStrategy;
 use Ultra\Projection\Projection;
-use Ultra\Projection\ProjectionEnvelope;
 use Ultra\Projection\ProjectionPlan;
 use Ultra\Projection\ProjectionPlanValidator;
 
-final class TestProjection implements Projection
+#[Projection('test_projection')]
+final class TestProjection
 {
-    public function name(): string
+    #[ProjectionHandler('student.subscribed')]
+    public function onStudentSubscribed(StoredEvent $event): void
     {
-        return 'test_projection';
     }
+}
 
-    public function version(): int
-    {
-        return 1;
-    }
-
-    public function apply(ProjectionEnvelope $event): void
+#[Projection('course_projection')]
+final class CourseProjection
+{
+    #[ProjectionHandler('course.created')]
+    public function onCourseCreated(StoredEvent $event): void
     {
     }
 }
@@ -45,7 +46,6 @@ test('domain-id partition strategy produces a stable composite key', function ()
 test('validator accepts partitioned plans when all event types expose the partition dimensions', function () {
     $plan = new ProjectionPlan(
         new TestProjection(),
-        ['student.subscribed'],
         \Ultra\Projection\DeliveryMode::partitioned(PartitionStrategy::byDomainId('studentId')),
     );
 
@@ -58,8 +58,7 @@ test('validator accepts partitioned plans when all event types expose the partit
 
 test('validator rejects partitioned plans when an event type does not expose the partition dimensions', function () {
     $plan = new ProjectionPlan(
-        new TestProjection(),
-        ['course.created'],
+        new CourseProjection(),
         \Ultra\Projection\DeliveryMode::partitioned(PartitionStrategy::byDomainId('studentId')),
     );
 

@@ -5,18 +5,15 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
-use Ultra\EventBus\CompiledEventRegistry;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\EventStore;
+use Ultra\EventStore\StoredEvent;
 use Ultra\EventStore_Postgres\Tests;
-use Ultra\Mapper\UltraNormalizer;
-use Ultra\MessageHandling\Attribute\Event;
+use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\DeliveryMode;
 use Ultra\Projection\EventFeed;
 use Ultra\Projection\PartitionStrategy;
 use Ultra\Projection\Projection;
-use Ultra\Projection\ProjectionEnvelope;
-use Ultra\Projection\ProjectionEnvelopeFactory;
 use Ultra\Projection\ProjectionPlan;
 use Ultra\Projection\ProjectionPlanValidator;
 use Ultra\Projection_Postgres\PostgresDirectProjectionRunner;
@@ -27,47 +24,17 @@ use Ultra\Projection_Postgres\PostgresProjectionRuntimeRepository;
 require_once __DIR__.'/PostgresProjectionTestSupport.php';
 require_once __DIR__.'/../../EventStore_Postgres/Tests/PostgresTestSupport.php';
 
-#[Event('course.created')]
-final readonly class ProjectionCourseCreated
-{
-    public function __construct(
-        public string $courseId,
-        public string $name,
-    ) {}
-}
-
-#[Event('student.subscribed')]
-final readonly class ProjectionStudentSubscribed
-{
-    public function __construct(
-        public string $studentId,
-        public string $courseId,
-        public int $slot,
-    ) {}
-}
-
-final class CourseNamesProjection implements Projection
+#[Projection('course_names')]
+final class CourseNamesProjection
 {
     public function __construct(
         private readonly Connection $connection,
         private readonly string $tableName,
     ) {}
 
-    public function name(): string
+    #[ProjectionHandler('course.created')]
+    public function onCourseCreated(StoredEvent $event): void
     {
-        return 'course_names';
-    }
-
-    public function version(): int
-    {
-        return 1;
-    }
-
-    public function apply(ProjectionEnvelope $event): void
-    {
-        /** @var ProjectionCourseCreated $payload */
-        $payload = $event->event;
-
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (course_id, name, last_event_id)
@@ -76,40 +43,29 @@ final class CourseNamesProjection implements Projection
                  SET name = EXCLUDED.name, last_event_id = EXCLUDED.last_event_id',
                 $this->tableName,
             ),
-            [$payload->courseId, $payload->name, $event->eventId],
+            [$event->payload['courseId'], $event->payload['name'], $event->eventId],
         );
     }
 }
 
-final class StudentActivityProjection implements Projection
+#[Projection('student_activity')]
+final class StudentActivityProjection
 {
     public function __construct(
         private readonly Connection $connection,
         private readonly string $tableName,
     ) {}
 
-    public function name(): string
+    #[ProjectionHandler('student.subscribed')]
+    public function onStudentSubscribed(StoredEvent $event): void
     {
-        return 'student_activity';
-    }
-
-    public function version(): int
-    {
-        return 1;
-    }
-
-    public function apply(ProjectionEnvelope $event): void
-    {
-        /** @var ProjectionStudentSubscribed $payload */
-        $payload = $event->event;
-
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (student_id, event_id, slot)
                  VALUES (?, ?, ?)',
                 $this->tableName,
             ),
-            [$payload->studentId, $event->eventId, $payload->slot],
+            [$event->payload['studentId'], $event->eventId, $event->payload['slot']],
         );
     }
 }
@@ -148,18 +104,11 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
 
         $plan = new ProjectionPlan(
             new CourseNamesProjection($connection, $tableName),
-            ['course.created'],
         );
 
         $runner = new PostgresDirectProjectionRunner(
             connection: $connection,
             eventFeed: $feed,
-            envelopeFactory: new ProjectionEnvelopeFactory(
-                new CompiledEventRegistry([
-                    'course.created' => ProjectionCourseCreated::class,
-                ]),
-                new UltraNormalizer(sys_get_temp_dir().'/projection-normalizer-'.bin2hex(random_bytes(4))),
-            ),
             repository: $repository,
             validator: new ProjectionPlanValidator(Tests\postgresTestTopologyProvider()),
         );
@@ -229,16 +178,9 @@ test('router and partition workers process each partition in order while sharing
 
         $plan = new ProjectionPlan(
             new StudentActivityProjection($connection, $tableName),
-            ['student.subscribed'],
             DeliveryMode::partitioned(PartitionStrategy::byDomainId('studentId')),
         );
 
-        $envelopeFactory = new ProjectionEnvelopeFactory(
-            new CompiledEventRegistry([
-                'student.subscribed' => ProjectionStudentSubscribed::class,
-            ]),
-            new UltraNormalizer(sys_get_temp_dir().'/projection-normalizer-'.bin2hex(random_bytes(4))),
-        );
         $validator = new ProjectionPlanValidator(Tests\postgresTestTopologyProvider());
 
         $router = new PostgresProjectionRouter(
@@ -250,7 +192,6 @@ test('router and partition workers process each partition in order while sharing
         $worker = new PostgresInboxPartitionWorker(
             connection: $connection,
             eventFeed: $feed,
-            envelopeFactory: $envelopeFactory,
             repository: $repository,
             validator: $validator,
         );
