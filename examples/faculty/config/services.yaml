@@ -7,6 +7,7 @@
 # Put parameters here that don't need to change on each machine where the app is deployed
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
+    app.faculty_id: 'faculty'
 
 services:
     # default configuration for services in *this* file
@@ -18,6 +19,39 @@ services:
     # this creates a service per class whose id is the fully-qualified class name
     App\:
         resource: '../src/'
+        exclude:
+            - '../src/Kernel.php'
+            - '../src/Faculty/Event/'
+            - '../src/Faculty/Infrastructure/Notification/Notification.php'
+            - '../src/Faculty/Query/'
+            - '../src/Faculty/Read/Model/'
+            - '../src/Faculty/State/'
+            - '../src/Faculty/Write/'
+
+    App\Faculty\Event\:
+        resource: '../src/Faculty/Event/*'
+        autowire: false
+        autoconfigure: true
+
+    App\Faculty\Write\:
+        resource: '../src/Faculty/Write/*/*Command.php'
+        autowire: false
+        autoconfigure: false
+        tags:
+            - 'ultra_mediator.self_handler'
+
+    Ultra\DecisionEngine\Aspect\DecisionEngineAspect: ~
+
+    Ultra\DecisionEngine\Engine\EventRouter: ~
+
+    Ultra\EventStore\EventTopologyProvider:
+        alias: App\Faculty\Infrastructure\EventStore\FacultyEventTopologyProvider
+
+    Ultra\EventStore\EventStore:
+        factory: ['@App\Faculty\Infrastructure\EventStore\FacultyEventStoreFactory', 'create']
+
+    App\Faculty\Infrastructure\Notification\NotificationService:
+        alias: App\Faculty\Infrastructure\Notification\RecordingNotificationService
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
