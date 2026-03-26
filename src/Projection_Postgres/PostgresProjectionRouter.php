@@ -6,6 +6,7 @@ namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
 use Ultra\Projection\EventFeed;
+use Ultra\Projection\ProjectionPlan;
 
 final readonly class PostgresProjectionRouter
 {
@@ -15,20 +16,10 @@ final readonly class PostgresProjectionRouter
         private Connection $connection,
         private EventFeed $eventFeed,
         private PostgresProjectionRuntimeRepository $repository,
-        private ?ProjectionPlanValidator $validator = null,
     ) {}
 
-    public function routeOnce(PostgresProjectionPlan $plan, int $limit = 100): int
+    public function routeOnce(ProjectionPlan $plan, PartitionStrategy $partitionStrategy, int $limit = 100): int
     {
-        if (! $plan->delivery instanceof PartitionedDelivery) {
-            throw new \InvalidArgumentException(sprintf(
-                'Projection "%s" uses direct delivery and must not be run by the router.',
-                $plan->name(),
-            ));
-        }
-
-        $this->validator?->validate($plan);
-
         $state = null;
         $this->connection->beginTransaction();
 
@@ -38,7 +29,7 @@ final readonly class PostgresProjectionRouter
                 $plan->initializeProjection();
             }
 
-            $events = $this->eventFeed->readAfter($state->lastEventId, $limit, $plan->eventTypes());
+            $events = $this->eventFeed->readAfter($state->lastEventId, $limit, $plan->eventTypes);
 
             if ([] === $events) {
                 $this->connection->commit();
@@ -48,7 +39,7 @@ final readonly class PostgresProjectionRouter
 
             $rows = [];
             foreach ($events as $event) {
-                $partitionKey = $plan->delivery->strategy->keyFor($event);
+                $partitionKey = $partitionStrategy->keyFor($event);
                 $createdPartitionState = $this->repository->createPartitionStateIfMissing(
                     $plan->name(),
                     $plan->version(),
@@ -77,7 +68,7 @@ final readonly class PostgresProjectionRouter
         }
     }
 
-    private function recordProjectionErrorBestEffort(PostgresProjectionPlan $plan, ?ProjectionState $state, \Throwable $exception): void
+    private function recordProjectionErrorBestEffort(ProjectionPlan $plan, ?ProjectionState $state, \Throwable $exception): void
     {
         try {
             $this->repository->recordProjectionError(

@@ -8,20 +8,17 @@ use Doctrine\DBAL\Connection;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StoredEvent;
-use Ultra\EventStore_Postgres\Tests;
 use Ultra\Projection\Attribute\PartitionInitializer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\EventFeed;
-use Ultra\Projection_Postgres\DeliveryMode;
+use Ultra\Projection\ProjectionPlan;
 use Ultra\Projection_Postgres\PartitionStrategy;
 use Ultra\Projection_Postgres\PostgresDirectProjectionRunner;
 use Ultra\Projection_Postgres\PostgresInboxPartitionWorker;
-use Ultra\Projection_Postgres\PostgresProjectionPlan;
 use Ultra\Projection_Postgres\PostgresProjectionRouter;
 use Ultra\Projection_Postgres\PostgresProjectionRuntimeRepository;
-use Ultra\Projection_Postgres\ProjectionPlanValidator;
 
 require_once __DIR__.'/PostgresProjectionTestSupport.php';
 require_once __DIR__.'/../../EventStore_Postgres/Tests/PostgresTestSupport.php';
@@ -145,7 +142,7 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
             ),
         ]);
 
-        $plan = new PostgresProjectionPlan(
+        $plan = new ProjectionPlan(
             new CourseNamesProjection($connection, $tableName),
         );
 
@@ -153,7 +150,6 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
             connection: $connection,
             eventFeed: $feed,
             repository: $repository,
-            validator: new ProjectionPlanValidator(Tests\postgresTestTopologyProvider()),
         );
 
         expect($runner->runOnce($plan, 100))->toBe(2)
@@ -211,27 +207,23 @@ test('router and partition workers process each partition in order while sharing
             ),
         ]);
 
-        $plan = new PostgresProjectionPlan(
+        $plan = new ProjectionPlan(
             new StudentActivityProjection($connection, $tableName, $partitionRegistryTable),
-            DeliveryMode::partitioned(PartitionStrategy::byDomainId('studentId')),
         );
-
-        $validator = new ProjectionPlanValidator(Tests\postgresTestTopologyProvider());
+        $partitionStrategy = PartitionStrategy::byDomainId('studentId');
 
         $router = new PostgresProjectionRouter(
             connection: $connection,
             eventFeed: $feed,
             repository: $repository,
-            validator: $validator,
         );
         $worker = new PostgresInboxPartitionWorker(
             connection: $connection,
             eventFeed: $feed,
             repository: $repository,
-            validator: $validator,
         );
 
-        expect($router->routeOnce($plan, 100))->toBe(4);
+        expect($router->routeOnce($plan, $partitionStrategy, 100))->toBe(4);
 
         $inboxRows = $repository->fetchInboxRows($plan->name(), $plan->version());
         expect($inboxRows)->toBe([

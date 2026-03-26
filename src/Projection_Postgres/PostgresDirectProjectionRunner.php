@@ -6,6 +6,7 @@ namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
 use Ultra\Projection\EventFeed;
+use Ultra\Projection\ProjectionPlan;
 
 final readonly class PostgresDirectProjectionRunner
 {
@@ -15,20 +16,10 @@ final readonly class PostgresDirectProjectionRunner
         private Connection $connection,
         private EventFeed $eventFeed,
         private PostgresProjectionRuntimeRepository $repository,
-        private ?ProjectionPlanValidator $validator = null,
     ) {}
 
-    public function runOnce(PostgresProjectionPlan $plan, int $limit = 100): int
+    public function runOnce(ProjectionPlan $plan, int $limit = 100): int
     {
-        if (! $plan->delivery instanceof DirectDelivery) {
-            throw new \InvalidArgumentException(sprintf(
-                'Projection "%s" uses partitioned delivery and must not be run by the direct runner.',
-                $plan->name(),
-            ));
-        }
-
-        $this->validator?->validate($plan);
-
         $state = null;
         $this->connection->beginTransaction();
 
@@ -38,7 +29,7 @@ final readonly class PostgresDirectProjectionRunner
                 $plan->initializeProjection();
             }
 
-            $events = $this->eventFeed->readAfter($state->lastEventId, $limit, $plan->eventTypes());
+            $events = $this->eventFeed->readAfter($state->lastEventId, $limit, $plan->eventTypes);
 
             if ([] === $events) {
                 $this->connection->commit();
@@ -66,7 +57,7 @@ final readonly class PostgresDirectProjectionRunner
         }
     }
 
-    private function recordProjectionErrorBestEffort(PostgresProjectionPlan $plan, ?ProjectionState $state, \Throwable $exception): void
+    private function recordProjectionErrorBestEffort(ProjectionPlan $plan, ?ProjectionState $state, \Throwable $exception): void
     {
         try {
             $this->repository->recordProjectionError(
