@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection;
+namespace Ultra\Projection_Postgres;
 
 use Ultra\EventStore\EventTopologyProvider;
 
@@ -12,7 +12,7 @@ final readonly class ProjectionPlanValidator
         private EventTopologyProvider $topologyProvider,
     ) {}
 
-    public function validate(ProjectionPlan $plan): void
+    public function validate(PostgresProjectionPlan $plan): void
     {
         if (! $plan->isPartitioned()) {
             return;
@@ -23,7 +23,7 @@ final readonly class ProjectionPlanValidator
             return;
         }
 
-        foreach ($plan->eventTypes as $eventType) {
+        foreach ($plan->eventTypes() as $eventType) {
             $topology = $this->topologyProvider->get($eventType);
             if (null === $topology) {
                 throw new \LogicException(sprintf(

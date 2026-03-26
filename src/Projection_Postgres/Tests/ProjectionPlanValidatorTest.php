@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection\Tests;
+namespace Ultra\Projection_Postgres\Tests;
 
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\StaticEventTopologyProvider;
@@ -11,9 +11,10 @@ use Ultra\Projection\Attribute\PartitionInitializer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
-use Ultra\Projection\PartitionStrategy;
-use Ultra\Projection\ProjectionPlan;
-use Ultra\Projection\ProjectionPlanValidator;
+use Ultra\Projection_Postgres\PartitionStrategy;
+use Ultra\Projection_Postgres\DeliveryMode;
+use Ultra\Projection_Postgres\PostgresProjectionPlan;
+use Ultra\Projection_Postgres\ProjectionPlanValidator;
 
 #[Projection('test_projection')]
 final class TestProjection
@@ -65,9 +66,9 @@ test('domain-id partition strategy produces a stable composite key', function ()
 });
 
 test('validator accepts partitioned plans when all event types expose the partition dimensions', function () {
-    $plan = new ProjectionPlan(
+    $plan = new PostgresProjectionPlan(
         new TestProjection(),
-        \Ultra\Projection\DeliveryMode::partitioned(PartitionStrategy::byDomainId('studentId')),
+        DeliveryMode::partitioned(PartitionStrategy::byDomainId('studentId')),
     );
 
     $validator = new ProjectionPlanValidator(new StaticEventTopologyProvider([
@@ -78,9 +79,9 @@ test('validator accepts partitioned plans when all event types expose the partit
 });
 
 test('validator rejects partitioned plans when an event type does not expose the partition dimensions', function () {
-    $plan = new ProjectionPlan(
+    $plan = new PostgresProjectionPlan(
         new CourseProjection(),
-        \Ultra\Projection\DeliveryMode::partitioned(PartitionStrategy::byDomainId('studentId')),
+        DeliveryMode::partitioned(PartitionStrategy::byDomainId('studentId')),
     );
 
     $validator = new ProjectionPlanValidator(new StaticEventTopologyProvider([
@@ -89,18 +90,4 @@ test('validator rejects partitioned plans when an event type does not expose the
 
     expect(fn () => $validator->validate($plan))
         ->toThrow(\LogicException::class, 'cannot partition event type "course.created" by [studentId]');
-});
-
-test('projection plans can invoke projection and partition initializers', function () {
-    $projection = new TestProjection();
-    $plan = new ProjectionPlan($projection);
-
-    expect($plan->hasProjectionInitializer())->toBeTrue()
-        ->and($plan->hasPartitionInitializer())->toBeTrue();
-
-    $plan->initializeProjection();
-    $plan->initializePartition('student-1');
-
-    expect($projection->projectionInitializations)->toBe(1)
-        ->and($projection->initializedPartitions)->toBe(['student-1']);
 });

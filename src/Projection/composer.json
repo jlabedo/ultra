@@ -1,6 +1,6 @@
 {
     "name": "ultra/projection",
-    "description": "Ultra Framework - Projection Runtime Contracts",
+    "description": "Ultra Framework - Projection Definitions",
     "type": "library",
     "license": "MIT",
     "authors": [

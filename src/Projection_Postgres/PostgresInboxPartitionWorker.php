@@ -6,9 +6,6 @@ namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
 use Ultra\Projection\EventFeed;
-use Ultra\Projection\PartitionedDelivery;
-use Ultra\Projection\ProjectionPlan;
-use Ultra\Projection\ProjectionPlanValidator;
 
 final readonly class PostgresInboxPartitionWorker
 {
@@ -21,7 +18,7 @@ final readonly class PostgresInboxPartitionWorker
         private ?ProjectionPlanValidator $validator = null,
     ) {}
 
-    public function runOnce(ProjectionPlan $plan, int $limit = 100): int
+    public function runOnce(PostgresProjectionPlan $plan, int $limit = 100): int
     {
         if (! $plan->delivery instanceof PartitionedDelivery) {
             throw new \InvalidArgumentException(sprintf(
@@ -110,7 +107,7 @@ final readonly class PostgresInboxPartitionWorker
         }
     }
 
-    private function recordProjectionErrorBestEffort(ProjectionPlan $plan, string $lane, \Throwable $exception): void
+    private function recordProjectionErrorBestEffort(PostgresProjectionPlan $plan, string $lane, \Throwable $exception): void
     {
         try {
             $this->repository->recordProjectionError(

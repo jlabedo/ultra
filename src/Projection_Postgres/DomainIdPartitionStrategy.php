@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection;
+namespace Ultra\Projection_Postgres;
 
 use Ultra\EventStore\StoredEvent;
 
@@ -23,6 +23,7 @@ final class DomainIdPartitionStrategy extends PartitionStrategy
             if (! is_string($dimension) || '' === $dimension) {
                 throw new \InvalidArgumentException('Partition dimensions must be non-empty strings.');
             }
+
             $normalized[$dimension] = true;
         }
 
@@ -52,6 +53,7 @@ final class DomainIdPartitionStrategy extends PartitionStrategy
                     $dimension,
                 ));
             }
+
             $values[$dimension] = $value;
         }
 

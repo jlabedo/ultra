@@ -5,10 +5,7 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
-use Ultra\Projection\DirectDelivery;
 use Ultra\Projection\EventFeed;
-use Ultra\Projection\ProjectionPlan;
-use Ultra\Projection\ProjectionPlanValidator;
 
 final readonly class PostgresDirectProjectionRunner
 {
@@ -21,7 +18,7 @@ final readonly class PostgresDirectProjectionRunner
         private ?ProjectionPlanValidator $validator = null,
     ) {}
 
-    public function runOnce(ProjectionPlan $plan, int $limit = 100): int
+    public function runOnce(PostgresProjectionPlan $plan, int $limit = 100): int
     {
         if (! $plan->delivery instanceof DirectDelivery) {
             throw new \InvalidArgumentException(sprintf(
@@ -41,7 +38,7 @@ final readonly class PostgresDirectProjectionRunner
                 $plan->initializeProjection();
             }
 
-            $events = $this->eventFeed->readAfter($state->lastEventId, $limit, $plan->eventTypes);
+            $events = $this->eventFeed->readAfter($state->lastEventId, $limit, $plan->eventTypes());
 
             if ([] === $events) {
                 $this->connection->commit();
@@ -69,7 +66,7 @@ final readonly class PostgresDirectProjectionRunner
         }
     }
 
-    private function recordProjectionErrorBestEffort(ProjectionPlan $plan, ?ProjectionState $state, \Throwable $exception): void
+    private function recordProjectionErrorBestEffort(PostgresProjectionPlan $plan, ?ProjectionState $state, \Throwable $exception): void
     {
         try {
             $this->repository->recordProjectionError(

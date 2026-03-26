@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection;
+namespace Ultra\Projection_Postgres;
 
 use Ultra\EventStore\StoredEvent;
 

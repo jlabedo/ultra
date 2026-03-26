@@ -26,11 +26,8 @@ readonly class ProjectionPlan
 
     private ?string $partitionInitializerMethod;
 
-    public DeliveryMode $delivery;
-
     public function __construct(
         public object $projection,
-        ?DeliveryMode $delivery = null,
     ) {
         $reflection = new \ReflectionObject($projection);
         $attributes = $reflection->getAttributes(Projection::class);
@@ -155,7 +152,6 @@ readonly class ProjectionPlan
         $this->handlerMethods = $handlerMethods;
         $this->projectionInitializerMethod = $projectionInitializerMethod;
         $this->partitionInitializerMethod = $partitionInitializerMethod;
-        $this->delivery = $delivery ?? DeliveryMode::direct();
     }
 
     public string $name;
@@ -208,19 +204,5 @@ readonly class ProjectionPlan
         }
 
         $this->projection->{$this->partitionInitializerMethod}($partitionKey);
-    }
-
-    public function isPartitioned(): bool
-    {
-        return $this->delivery instanceof PartitionedDelivery;
-    }
-
-    public function partitionStrategy(): ?PartitionStrategy
-    {
-        if (! $this->delivery instanceof PartitionedDelivery) {
-            return null;
-        }
-
-        return $this->delivery->strategy;
     }
 }

@@ -6,9 +6,6 @@ namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
 use Ultra\Projection\EventFeed;
-use Ultra\Projection\PartitionedDelivery;
-use Ultra\Projection\ProjectionPlan;
-use Ultra\Projection\ProjectionPlanValidator;
 
 final readonly class PostgresProjectionRouter
 {
@@ -21,7 +18,7 @@ final readonly class PostgresProjectionRouter
         private ?ProjectionPlanValidator $validator = null,
     ) {}
 
-    public function routeOnce(ProjectionPlan $plan, int $limit = 100): int
+    public function routeOnce(PostgresProjectionPlan $plan, int $limit = 100): int
     {
         if (! $plan->delivery instanceof PartitionedDelivery) {
             throw new \InvalidArgumentException(sprintf(
@@ -41,7 +38,7 @@ final readonly class PostgresProjectionRouter
                 $plan->initializeProjection();
             }
 
-            $events = $this->eventFeed->readAfter($state->lastEventId, $limit, $plan->eventTypes);
+            $events = $this->eventFeed->readAfter($state->lastEventId, $limit, $plan->eventTypes());
 
             if ([] === $events) {
                 $this->connection->commit();
@@ -80,7 +77,7 @@ final readonly class PostgresProjectionRouter
         }
     }
 
-    private function recordProjectionErrorBestEffort(ProjectionPlan $plan, ?ProjectionState $state, \Throwable $exception): void
+    private function recordProjectionErrorBestEffort(PostgresProjectionPlan $plan, ?ProjectionState $state, \Throwable $exception): void
     {
         try {
             $this->repository->recordProjectionError(

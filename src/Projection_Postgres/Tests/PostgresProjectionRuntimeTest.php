@@ -13,15 +13,15 @@ use Ultra\Projection\Attribute\PartitionInitializer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
-use Ultra\Projection\DeliveryMode;
 use Ultra\Projection\EventFeed;
-use Ultra\Projection\PartitionStrategy;
-use Ultra\Projection\ProjectionPlan;
-use Ultra\Projection\ProjectionPlanValidator;
+use Ultra\Projection_Postgres\DeliveryMode;
+use Ultra\Projection_Postgres\PartitionStrategy;
 use Ultra\Projection_Postgres\PostgresDirectProjectionRunner;
 use Ultra\Projection_Postgres\PostgresInboxPartitionWorker;
+use Ultra\Projection_Postgres\PostgresProjectionPlan;
 use Ultra\Projection_Postgres\PostgresProjectionRouter;
 use Ultra\Projection_Postgres\PostgresProjectionRuntimeRepository;
+use Ultra\Projection_Postgres\ProjectionPlanValidator;
 
 require_once __DIR__.'/PostgresProjectionTestSupport.php';
 require_once __DIR__.'/../../EventStore_Postgres/Tests/PostgresTestSupport.php';
@@ -145,7 +145,7 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
             ),
         ]);
 
-        $plan = new ProjectionPlan(
+        $plan = new PostgresProjectionPlan(
             new CourseNamesProjection($connection, $tableName),
         );
 
@@ -211,7 +211,7 @@ test('router and partition workers process each partition in order while sharing
             ),
         ]);
 
-        $plan = new ProjectionPlan(
+        $plan = new PostgresProjectionPlan(
             new StudentActivityProjection($connection, $tableName, $partitionRegistryTable),
             DeliveryMode::partitioned(PartitionStrategy::byDomainId('studentId')),
         );
