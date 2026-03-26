@@ -20,6 +20,7 @@ use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
 use Ultra\EventBus\CompiledEventRegistry;
+use Ultra\EventBus\EventBusInterface;
 use Ultra\EventBus\EventRegistryInterface;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopology;
@@ -32,6 +33,7 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
+use Ultra\MessageHandling\MessageContext;
 
 /** Test command with service dependency (Clock) */
 final class CommandWithClockDependency
@@ -53,6 +55,20 @@ final class CommandWithClockDependency
         }
 
         return [new CourseCreated($this->courseId, $this->name, $this->maxCapacity)];
+    }
+}
+
+final class RecordingEventBus implements EventBusInterface
+{
+    /** @var list<array{event: object, context: array}> */
+    public array $calls = [];
+
+    public function publish(object $event, array|MessageContext $context = []): void
+    {
+        $this->calls[] = [
+            'event' => $event,
+            'context' => MessageContext::coerce($context)->all(),
+        ];
     }
 }
 
@@ -127,6 +143,7 @@ function createMediator(array $serviceDefinitions = []): array
     return [
         'mediator' => $container->get(MediatorInterface::class),
         'store' => $container->get(InMemoryEventStore::class),
+        'container' => $container,
     ];
 }
 
@@ -302,4 +319,19 @@ test('events are correctly routed to multiple streams', function () {
     expect($courseStream->events)->toHaveCount(2);
     expect($studentStream->events)->toHaveCount(1);
     expect($studentStream->events[0]->eventType)->toBe('student.subscribed');
+});
+
+test('decision engine publishes emitted events to the event bus when available', function () {
+    ['mediator' => $mediator, 'container' => $container] = createMediator([
+        EventBusInterface::class => (new Definition(RecordingEventBus::class))
+            ->setPublic(true),
+    ]);
+    $eventBus = $container->get(EventBusInterface::class);
+
+    $events = $mediator->send(new CreateCourseCommand('math-101', 'Math', 10), ['traceId' => 'trace-123']);
+
+    expect($events)->toHaveCount(1)
+        ->and($eventBus->calls)->toHaveCount(1)
+        ->and($eventBus->calls[0]['event'])->toEqual($events[0])
+        ->and($eventBus->calls[0]['context']['traceId'])->toBe('trace-123');
 });

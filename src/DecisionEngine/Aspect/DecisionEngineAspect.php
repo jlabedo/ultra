@@ -10,6 +10,7 @@ use Ultra\DecisionEngine\Attribute\DomainIdentifier;
 use Ultra\DecisionEngine\Engine\EventRouter;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\DecisionEngine\Exception\StreamNotFoundException;
+use Ultra\EventBus\EventBusInterface;
 use Ultra\DecisionEngine\ReducerTrait;
 use Ultra\EventBus\EventRegistryInterface;
 use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
@@ -31,6 +32,7 @@ final class DecisionEngineAspect
         private readonly EventRouter $eventRouter,
         private readonly EventRegistryInterface $eventClassRegistry,
         private readonly UltraNormalizer $normalizer,
+        private readonly ?EventBusInterface $eventBus = null,
     ) {}
 
     #[Around(static function (\ReflectionMethod $method): ?MatchResult {
@@ -152,6 +154,9 @@ final class DecisionEngineAspect
 
         $appendableEvents = $this->eventRouter->toAppendableEvents($emittedEvents);
         $this->eventStore->append($appendableEvents, $loadResult->queryVersion);
+        foreach ($emittedEvents as $emittedEvent) {
+            $this->eventBus?->publish($emittedEvent, $context);
+        }
 
         return $emittedEvents;
     }
