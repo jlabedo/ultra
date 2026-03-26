@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection;
+namespace Ultra\Projection\Attribute;
 
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class Projection

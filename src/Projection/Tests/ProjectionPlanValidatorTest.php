@@ -7,9 +7,9 @@ namespace Ultra\Projection\Tests;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore\StoredEvent;
+use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\PartitionStrategy;
-use Ultra\Projection\Projection;
 use Ultra\Projection\ProjectionPlan;
 use Ultra\Projection\ProjectionPlanValidator;
 
