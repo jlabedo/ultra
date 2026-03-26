@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\Projection_Postgres;
 
-use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 
@@ -15,38 +14,33 @@ final readonly class PostgresProjectionRuntimeRepository
         private string $tablePrefix = 'projection_',
     ) {}
 
-    public function ensureStateRow(string $projectionName, int $projectionVersion, string $lane): void
+    public function lockProjectionState(string $projectionName, int $projectionVersion, string $lane): ProjectionState
     {
-        $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (projection_name, projection_version, lane)
-                 VALUES (?, ?, ?)
-                 ON CONFLICT (projection_name, projection_version, lane) DO NOTHING',
-                $this->stateTable(),
-            ),
-            [$projectionName, $projectionVersion, $lane],
-            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
+        $wasCreated = $this->createProjectionStateIfMissing($projectionName, $projectionVersion, $lane);
+        $lastEventId = $wasCreated
+            ? 0
+            : (int) $this->connection->executeQuery(
+                sprintf(
+                    'SELECT last_event_id
+                     FROM %s
+                     WHERE projection_name = ? AND projection_version = ? AND lane = ?
+                     FOR UPDATE',
+                    $this->stateTable(),
+                ),
+                [$projectionName, $projectionVersion, $lane],
+                [ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
+            )->fetchOne();
+
+        return new ProjectionState(
+            projectionName: $projectionName,
+            projectionVersion: $projectionVersion,
+            lane: $lane,
+            lastEventId: $lastEventId,
+            wasCreated: $wasCreated,
         );
     }
 
-    public function lockStateLastEventId(string $projectionName, int $projectionVersion, string $lane): int
-    {
-        $this->ensureStateRow($projectionName, $projectionVersion, $lane);
-
-        return (int) $this->connection->executeQuery(
-            sprintf(
-                'SELECT last_event_id
-                 FROM %s
-                 WHERE projection_name = ? AND projection_version = ? AND lane = ?
-                 FOR UPDATE',
-                $this->stateTable(),
-            ),
-            [$projectionName, $projectionVersion, $lane],
-            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
-        )->fetchOne();
-    }
-
-    public function advanceState(string $projectionName, int $projectionVersion, string $lane, int $lastEventId): void
+    public function advanceProjectionState(ProjectionState $state, int $lastEventId): void
     {
         $this->connection->executeStatement(
             sprintf(
@@ -55,30 +49,31 @@ final readonly class PostgresProjectionRuntimeRepository
                  WHERE projection_name = ? AND projection_version = ? AND lane = ?',
                 $this->stateTable(),
             ),
-            [$lastEventId, $projectionName, $projectionVersion, $lane],
+            [$lastEventId, $state->projectionName, $state->projectionVersion, $state->lane],
             [ParameterType::INTEGER, ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
         );
     }
 
-    public function recordStateError(string $projectionName, int $projectionVersion, string $lane, \Throwable $exception): void
+    public function recordProjectionError(ProjectionState $state, \Throwable $exception): void
     {
-        $this->ensureStateRow($projectionName, $projectionVersion, $lane);
-
         $this->connection->executeStatement(
             sprintf(
-                'UPDATE %s
-                 SET last_error = ?, updated_at = statement_timestamp()
-                 WHERE projection_name = ? AND projection_version = ? AND lane = ?',
+                'INSERT INTO %s (projection_name, projection_version, lane, last_error)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT (projection_name, projection_version, lane)
+                 DO UPDATE SET
+                     last_error = EXCLUDED.last_error,
+                     updated_at = statement_timestamp()',
                 $this->stateTable(),
             ),
-            [$this->formatError($exception), $projectionName, $projectionVersion, $lane],
-            [ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
+            [$state->projectionName, $state->projectionVersion, $state->lane, $this->formatError($exception)],
+            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING],
         );
     }
 
-    public function ensurePartitionRow(string $projectionName, int $projectionVersion, string $partitionKey): void
+    public function createPartitionStateIfMissing(string $projectionName, int $projectionVersion, string $partitionKey): bool
     {
-        $this->connection->executeStatement(
+        return 1 === $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (projection_name, projection_version, partition_key)
                  VALUES (?, ?, ?)
@@ -124,7 +119,7 @@ final readonly class PostgresProjectionRuntimeRepository
         );
     }
 
-    public function claimNextPartition(string $projectionName, int $projectionVersion): ?ClaimedPartition
+    public function claimNextPartition(string $projectionName, int $projectionVersion): ?PartitionState
     {
         $row = $this->connection->executeQuery(
             sprintf(
@@ -154,7 +149,7 @@ final readonly class PostgresProjectionRuntimeRepository
             return null;
         }
 
-        return new ClaimedPartition(
+        return new PartitionState(
             partitionKey: $row['partition_key'],
             lastEventId: (int) $row['last_event_id'],
         );
@@ -190,7 +185,7 @@ final readonly class PostgresProjectionRuntimeRepository
         return array_map(static fn (mixed $eventId): int => (int) $eventId, $eventIds);
     }
 
-    public function advancePartition(string $projectionName, int $projectionVersion, string $partitionKey, int $lastEventId): void
+    public function advancePartitionState(string $projectionName, int $projectionVersion, string $partitionKey, int $lastEventId): void
     {
         $this->connection->executeStatement(
             sprintf(
@@ -222,17 +217,18 @@ final readonly class PostgresProjectionRuntimeRepository
 
     public function recordPartitionError(string $projectionName, int $projectionVersion, string $partitionKey, \Throwable $exception): void
     {
-        $this->ensurePartitionRow($projectionName, $projectionVersion, $partitionKey);
-
         $this->connection->executeStatement(
             sprintf(
-                'UPDATE %s
-                 SET last_error = ?, updated_at = statement_timestamp()
-                 WHERE projection_name = ? AND projection_version = ? AND partition_key = ?',
+                'INSERT INTO %s (projection_name, projection_version, partition_key, last_error)
+                 VALUES (?, ?, ?, ?)
+                 ON CONFLICT (projection_name, projection_version, partition_key)
+                 DO UPDATE SET
+                     last_error = EXCLUDED.last_error,
+                     updated_at = statement_timestamp()',
                 $this->partitionsTable(),
             ),
-            [$this->formatError($exception), $projectionName, $projectionVersion, $partitionKey],
-            [ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
+            [$projectionName, $projectionVersion, $partitionKey, $this->formatError($exception)],
+            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING],
         );
     }
 
@@ -310,6 +306,20 @@ final readonly class PostgresProjectionRuntimeRepository
             'partition_key' => (string) $row['partition_key'],
             'event_id' => (int) $row['event_id'],
         ], $rows);
+    }
+
+    private function createProjectionStateIfMissing(string $projectionName, int $projectionVersion, string $lane): bool
+    {
+        return 1 === $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (projection_name, projection_version, lane)
+                 VALUES (?, ?, ?)
+                 ON CONFLICT (projection_name, projection_version, lane) DO NOTHING',
+                $this->stateTable(),
+            ),
+            [$projectionName, $projectionVersion, $lane],
+            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
+        );
     }
 
     private function formatError(\Throwable $exception): string

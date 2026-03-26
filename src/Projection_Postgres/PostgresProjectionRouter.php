@@ -32,11 +32,16 @@ final readonly class PostgresProjectionRouter
 
         $this->validator?->validate($plan);
 
+        $state = null;
         $this->connection->beginTransaction();
 
         try {
-            $lastEventId = $this->repository->lockStateLastEventId($plan->name(), $plan->version(), self::LANE);
-            $events = $this->eventFeed->readAfter($lastEventId, $limit, $plan->eventTypes);
+            $state = $this->repository->lockProjectionState($plan->name(), $plan->version(), self::LANE);
+            if ($state->wasCreated && $plan->hasProjectionInitializer()) {
+                $plan->initializeProjection();
+            }
+
+            $events = $this->eventFeed->readAfter($state->lastEventId, $limit, $plan->eventTypes);
 
             if ([] === $events) {
                 $this->connection->commit();
@@ -47,17 +52,19 @@ final readonly class PostgresProjectionRouter
             $rows = [];
             foreach ($events as $event) {
                 $partitionKey = $plan->delivery->strategy->keyFor($event);
-                $this->repository->ensurePartitionRow($plan->name(), $plan->version(), $partitionKey);
+                $createdPartitionState = $this->repository->createPartitionStateIfMissing(
+                    $plan->name(),
+                    $plan->version(),
+                    $partitionKey,
+                );
+                if ($createdPartitionState && $plan->hasPartitionInitializer()) {
+                    $plan->initializePartition($partitionKey);
+                }
                 $rows[] = [$partitionKey, $event->eventId];
             }
 
             $this->repository->enqueueEvents($plan->name(), $plan->version(), $rows);
-            $this->repository->advanceState(
-                $plan->name(),
-                $plan->version(),
-                self::LANE,
-                $events[array_key_last($events)]->eventId,
-            );
+            $this->repository->advanceProjectionState($state, $events[array_key_last($events)]->eventId);
 
             $this->connection->commit();
 
@@ -67,9 +74,21 @@ final readonly class PostgresProjectionRouter
                 $this->connection->rollBack();
             }
 
-            $this->repository->recordStateError($plan->name(), $plan->version(), self::LANE, $exception);
+            $this->recordProjectionErrorBestEffort($plan, $state, $exception);
 
             throw $exception;
+        }
+    }
+
+    private function recordProjectionErrorBestEffort(ProjectionPlan $plan, ?ProjectionState $state, \Throwable $exception): void
+    {
+        try {
+            $this->repository->recordProjectionError(
+                $state ?? new ProjectionState($plan->name(), $plan->version(), self::LANE, 0, false),
+                $exception,
+            );
+        } catch (\Throwable) {
+            // Preserve the original failure if the post-rollback error write also fails.
         }
     }
 }

@@ -12,6 +12,8 @@ use Ultra\Projection\ProjectionPlanValidator;
 
 final readonly class PostgresInboxPartitionWorker
 {
+    private const WORKER_LANE = 'partition_worker';
+
     public function __construct(
         private Connection $connection,
         private EventFeed $eventFeed,
@@ -30,22 +32,23 @@ final readonly class PostgresInboxPartitionWorker
 
         $this->validator?->validate($plan);
 
-        $claimedPartition = null;
         $this->connection->beginTransaction();
 
         try {
-            $claimedPartition = $this->repository->claimNextPartition($plan->name(), $plan->version());
-            if (null === $claimedPartition) {
+            $errorScope = ['type' => 'state', 'key' => self::WORKER_LANE];
+            $partitionState = $this->repository->claimNextPartition($plan->name(), $plan->version());
+            if (null === $partitionState) {
                 $this->connection->commit();
 
                 return 0;
             }
 
+            $errorScope = ['type' => 'partition', 'key' => $partitionState->partitionKey];
             $eventIds = $this->repository->pendingEventIds(
                 $plan->name(),
                 $plan->version(),
-                $claimedPartition->partitionKey,
-                $claimedPartition->lastEventId,
+                $partitionState->partitionKey,
+                $partitionState->lastEventId,
                 $limit,
             );
 
@@ -61,7 +64,7 @@ final readonly class PostgresInboxPartitionWorker
                     'Projection "%s" expected %d events for partition %s but only loaded %d.',
                     $plan->name(),
                     count($eventIds),
-                    $claimedPartition->partitionKey,
+                    $partitionState->partitionKey,
                     count($events),
                 ));
             }
@@ -71,16 +74,16 @@ final readonly class PostgresInboxPartitionWorker
             }
 
             $lastEventId = $events[array_key_last($events)]->eventId;
-            $this->repository->advancePartition(
+            $this->repository->advancePartitionState(
                 $plan->name(),
                 $plan->version(),
-                $claimedPartition->partitionKey,
+                $partitionState->partitionKey,
                 $lastEventId,
             );
             $this->repository->deleteInboxThrough(
                 $plan->name(),
                 $plan->version(),
-                $claimedPartition->partitionKey,
+                $partitionState->partitionKey,
                 $lastEventId,
             );
 
@@ -92,16 +95,30 @@ final readonly class PostgresInboxPartitionWorker
                 $this->connection->rollBack();
             }
 
-            if (null !== $claimedPartition) {
+            if ('partition' === $errorScope['type']) {
                 $this->repository->recordPartitionError(
                     $plan->name(),
                     $plan->version(),
-                    $claimedPartition->partitionKey,
+                    $errorScope['key'],
                     $exception,
                 );
+            } else {
+                $this->recordProjectionErrorBestEffort($plan, $errorScope['key'], $exception);
             }
 
             throw $exception;
+        }
+    }
+
+    private function recordProjectionErrorBestEffort(ProjectionPlan $plan, string $lane, \Throwable $exception): void
+    {
+        try {
+            $this->repository->recordProjectionError(
+                new ProjectionState($plan->name(), $plan->version(), $lane, 0, false),
+                $exception,
+            );
+        } catch (\Throwable) {
+            // Preserve the original failure if the post-rollback error write also fails.
         }
     }
 }

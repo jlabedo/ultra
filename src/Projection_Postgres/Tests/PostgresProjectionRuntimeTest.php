@@ -9,8 +9,10 @@ use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StoredEvent;
 use Ultra\EventStore_Postgres\Tests;
+use Ultra\Projection\Attribute\PartitionInitializer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
+use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\DeliveryMode;
 use Ultra\Projection\EventFeed;
 use Ultra\Projection\PartitionStrategy;
@@ -31,6 +33,19 @@ final class CourseNamesProjection
         private readonly Connection $connection,
         private readonly string $tableName,
     ) {}
+
+    #[ProjectionInitializer]
+    public function initialize(): void
+    {
+        $this->connection->executeStatement(sprintf(
+            'CREATE TABLE IF NOT EXISTS %s (
+                course_id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                last_event_id BIGINT NOT NULL
+            )',
+            $this->tableName,
+        ));
+    }
 
     #[ProjectionHandler('course.created')]
     public function onCourseCreated(StoredEvent $event): void
@@ -54,7 +69,43 @@ final class StudentActivityProjection
     public function __construct(
         private readonly Connection $connection,
         private readonly string $tableName,
+        private readonly string $partitionRegistryTable,
     ) {}
+
+    #[ProjectionInitializer]
+    public function initialize(): void
+    {
+        $this->connection->executeStatement(sprintf(
+            'CREATE TABLE IF NOT EXISTS %s (
+                student_id TEXT NOT NULL,
+                event_id BIGINT NOT NULL,
+                slot INTEGER NOT NULL,
+                PRIMARY KEY (student_id, event_id)
+            )',
+            $this->tableName,
+        ));
+
+        $this->connection->executeStatement(sprintf(
+            'CREATE TABLE IF NOT EXISTS %s (
+                partition_key TEXT PRIMARY KEY
+            )',
+            $this->partitionRegistryTable,
+        ));
+    }
+
+    #[PartitionInitializer]
+    public function initializePartition(string $partitionKey): void
+    {
+        $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (partition_key)
+                 VALUES (?)
+                 ON CONFLICT (partition_key) DO NOTHING',
+                $this->partitionRegistryTable,
+            ),
+            [$partitionKey],
+        );
+    }
 
     #[ProjectionHandler('student.subscribed')]
     public function onStudentSubscribed(StoredEvent $event): void
@@ -80,14 +131,6 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
         string $projectionPrefix,
     ): void {
         $tableName = $projectionPrefix.'course_names_view';
-        $connection->executeStatement(sprintf(
-            'CREATE TABLE %s (
-                course_id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                last_event_id BIGINT NOT NULL
-            )',
-            $tableName,
-        ));
 
         $store->append([
             new AppendableEvent(
@@ -143,15 +186,7 @@ test('router and partition workers process each partition in order while sharing
         string $projectionPrefix,
     ): void {
         $tableName = $projectionPrefix.'student_activity_view';
-        $connection->executeStatement(sprintf(
-            'CREATE TABLE %s (
-                student_id TEXT NOT NULL,
-                event_id BIGINT NOT NULL,
-                slot INTEGER NOT NULL,
-                PRIMARY KEY (student_id, event_id)
-            )',
-            $tableName,
-        ));
+        $partitionRegistryTable = $projectionPrefix.'student_activity_partitions';
 
         $store->append([
             new AppendableEvent(
@@ -177,7 +212,7 @@ test('router and partition workers process each partition in order while sharing
         ]);
 
         $plan = new ProjectionPlan(
-            new StudentActivityProjection($connection, $tableName),
+            new StudentActivityProjection($connection, $tableName, $partitionRegistryTable),
             DeliveryMode::partitioned(PartitionStrategy::byDomainId('studentId')),
         );
 
@@ -214,13 +249,21 @@ test('router and partition workers process each partition in order while sharing
             'SELECT student_id, event_id, slot FROM %s ORDER BY student_id ASC, event_id ASC',
             $tableName,
         ));
+        $initializedPartitions = $connection->fetchFirstColumn(sprintf(
+            'SELECT partition_key FROM %s ORDER BY partition_key ASC',
+            $partitionRegistryTable,
+        ));
 
         expect($rows)->toBe([
             ['student_id' => 'student-1', 'event_id' => 1, 'slot' => 1],
             ['student_id' => 'student-1', 'event_id' => 3, 'slot' => 2],
             ['student_id' => 'student-2', 'event_id' => 2, 'slot' => 1],
             ['student_id' => 'student-2', 'event_id' => 4, 'slot' => 2],
-        ])
+            ])
+            ->and($initializedPartitions)->toBe([
+                '{"studentId":"student-1"}',
+                '{"studentId":"student-2"}',
+            ])
             ->and($repository->fetchStateRow($plan->name(), $plan->version(), 'router'))->toBe([
                 'last_event_id' => 4,
                 'last_error' => null,
