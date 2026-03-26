@@ -66,6 +66,7 @@
     "scripts": {
         "bench:event-store-postgres": "php benchmark_event_store_postgres.php",
         "test": "pest",
+        "test:event-store-concurrency": "pest --all --group event-store-concurrency",
         "test:coverage": "pest --coverage",
         "cs-fix": "php-cs-fixer fix"
     }

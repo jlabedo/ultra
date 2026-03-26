@@ -13,6 +13,8 @@ use Ultra\EventStore\StreamQuery;
 
 require_once __DIR__.'/PostgresTestSupport.php';
 
+uses()->group('slow', 'event-store-concurrency');
+
 final class ConcurrencyWorker
 {
     private string $stdout = '';
