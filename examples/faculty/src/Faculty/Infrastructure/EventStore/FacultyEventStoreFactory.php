@@ -26,10 +26,6 @@ final readonly class FacultyEventStoreFactory
             return new InMemoryEventStore($this->topologyProvider);
         }
 
-        if (null === $this->connection) {
-            throw new \LogicException('Doctrine DBAL connection is not available.');
-        }
-
         return new PostgresEventStore(
             $this->connection,
             $this->topologyProvider,
@@ -39,8 +35,10 @@ final readonly class FacultyEventStoreFactory
 
     private function shouldUsePostgres(): bool
     {
-        $databaseUrl = strtolower(trim((string) ($_ENV['DATABASE_URL'] ?? $_SERVER['DATABASE_URL'] ?? '')));
+        if (null === $this->connection) {
+            return false;
+        }
 
-        return str_starts_with($databaseUrl, 'pgsql://') || str_starts_with($databaseUrl, 'postgresql://');
+        return $this->connection->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform;
     }
 }
