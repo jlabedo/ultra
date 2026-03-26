@@ -16,6 +16,7 @@ final class FacultyEventStoreSchemaCreateCommand extends Command
 {
     public function __construct(
         private readonly ?Connection $connection = null,
+        private readonly string $tablePrefix = FacultyEventStoreFactory::DEFAULT_TABLE_PREFIX,
     ) {
         parent::__construct();
     }
@@ -34,7 +35,7 @@ final class FacultyEventStoreSchemaCreateCommand extends Command
             return self::FAILURE;
         }
 
-        foreach ((new PostgresEventStoreSchema(FacultyEventStoreFactory::TABLE_PREFIX))->createStatements() as $statement) {
+        foreach ((new PostgresEventStoreSchema($this->tablePrefix))->createStatements() as $statement) {
             $this->connection->executeStatement($statement);
         }
 

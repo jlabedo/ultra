@@ -12,11 +12,12 @@ use Ultra\EventStore_Postgres\PostgresEventStore;
 
 final readonly class FacultyEventStoreFactory
 {
-    public const TABLE_PREFIX = 'faculty_';
+    public const DEFAULT_TABLE_PREFIX = 'faculty_';
 
     public function __construct(
         private EventTopologyProvider $topologyProvider,
         private ?Connection $connection = null,
+        private string $tablePrefix = self::DEFAULT_TABLE_PREFIX,
     ) {}
 
     public function create(): EventStore
@@ -32,7 +33,7 @@ final readonly class FacultyEventStoreFactory
         return new PostgresEventStore(
             $this->connection,
             $this->topologyProvider,
-            self::TABLE_PREFIX,
+            $this->tablePrefix,
         );
     }
 

@@ -11,24 +11,11 @@ use App\Faculty\Query\GetStudentProfileByIdQuery;
 use App\Faculty\Write\CreateCourse\CreateCourseCommand;
 use App\Faculty\Write\EnrollStudent\EnrollStudentInFacultyCommand;
 use App\Faculty\Write\SubscribeStudentToCourse\SubscribeStudentToCourseCommand;
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
 use Ultra\Mediator\MediatorInterface;
 
-final class FacultyFlowTest extends KernelTestCase
+final class FacultyFlowTest extends FacultyKernelTestCase
 {
-    protected static function getKernelClass(): string
-    {
-        return \App\Kernel::class;
-    }
-
-    protected function tearDown(): void
-    {
-        parent::tearDown();
-
-        restore_exception_handler();
-    }
-
     public function testItEnrollsStudentsCreatesCoursesAndBuildsReadModels(): void
     {
         self::bootKernel();

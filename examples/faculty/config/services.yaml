@@ -8,6 +8,8 @@
 # https://symfony.com/doc/current/best_practices.html#use-parameters-for-application-configuration
 parameters:
     app.faculty_id: 'faculty'
+    app.default_faculty_event_store_table_prefix: 'faculty_'
+    app.faculty_event_store_table_prefix: '%env(default:app.default_faculty_event_store_table_prefix:FACULTY_EVENT_STORE_TABLE_PREFIX)%'
 
 services:
     # default configuration for services in *this* file
@@ -49,6 +51,14 @@ services:
 
     Ultra\EventStore\EventStore:
         factory: ['@App\Faculty\Infrastructure\EventStore\FacultyEventStoreFactory', 'create']
+
+    App\Faculty\Infrastructure\EventStore\FacultyEventStoreFactory:
+        arguments:
+            $tablePrefix: '%app.faculty_event_store_table_prefix%'
+
+    App\Faculty\Infrastructure\EventStore\FacultyEventStoreSchemaCreateCommand:
+        arguments:
+            $tablePrefix: '%app.faculty_event_store_table_prefix%'
 
     App\Faculty\Infrastructure\Notification\NotificationService:
         alias: App\Faculty\Infrastructure\Notification\RecordingNotificationService
