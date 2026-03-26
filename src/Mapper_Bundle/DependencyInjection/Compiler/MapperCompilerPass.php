@@ -40,7 +40,7 @@ final class MapperCompilerPass implements CompilerPassInterface
             $classes = [];
         }
 
-        foreach ($container->findTaggedServiceIds(TagNames::NORMALIZABLE) as $id => $tags) {
+        foreach ($container->findTaggedResourceIds(TagNames::NORMALIZABLE) as $id => $tags) {
             $definition = $container->findDefinition($id);
             foreach ($tags as $tag) {
                 $class = $tag['class'] ?? $definition->getClass();

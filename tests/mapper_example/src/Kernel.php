@@ -45,6 +45,7 @@ final class Kernel extends BaseKernel
         $services->set(UserRegistered::class)
             ->autowire(false)
             ->autoconfigure(false)
-            ->tag(TagNames::NORMALIZABLE);
+            ->tag(TagNames::NORMALIZABLE)
+            ->tag('container.excluded');
     }
 }
