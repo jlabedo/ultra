@@ -70,15 +70,15 @@ final class InMemoryEventStore implements EventStore
 
     private function buildQueryVersion(CanonicalQuery $canonicalQuery): QueryVersion
     {
-        $lastEventId = 0;
+        $version = 0;
         foreach ($this->events as $event) {
             if (! $canonicalQuery->query->matches($event)) {
                 continue;
             }
 
-            $lastEventId = $event->eventId;
+            ++$version;
         }
 
-        return new QueryVersion($lastEventId, $canonicalQuery->query);
+        return new QueryVersion($version, $canonicalQuery->query);
     }
 }

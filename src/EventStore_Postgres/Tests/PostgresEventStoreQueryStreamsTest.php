@@ -39,14 +39,14 @@ function withPostgresQueryStreamsStore(callable $callback): void
     }
 }
 
-test('query-streams implementation returns db generated recorded_at and query last event id', function () {
+test('query-streams implementation returns db generated recorded_at and query version', function () {
     withPostgresQueryStreamsStore(function (EventStore $store): void {
         $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
             ->ofTypes('course.created')
         ;
 
         $empty = $store->load($query);
-        expect($empty->queryVersion->lastEventId)->toBe(0);
+        expect($empty->queryVersion->version)->toBe(0);
 
         $store->append([
             new AppendableEvent(
@@ -60,7 +60,7 @@ test('query-streams implementation returns db generated recorded_at and query la
 
         expect($result->events)->toHaveCount(1);
         expect($result->events[0]->recordedAt)->toBeInstanceOf(\DateTimeImmutable::class);
-        expect($result->queryVersion->lastEventId)->toBe(1);
+        expect($result->queryVersion->version)->toBe(1);
     });
 });
 
@@ -95,7 +95,7 @@ test('query-streams implementation inserts batched events and query streams in o
         expect($courseResult->events[1]->eventId)->toBe(2);
         expect($pairResult->events)->toHaveCount(1);
         expect($pairResult->events[0]->domainIds['studentId'])->toBe('student-2');
-        expect($pairResult->queryVersion->lastEventId)->toBe(2);
+        expect($pairResult->queryVersion->version)->toBe(1);
     });
 });
 
@@ -139,6 +139,6 @@ test('query-streams implementation does not duplicate events for overlapping OR 
 
         expect($result->events)->toHaveCount(1);
         expect($result->events[0]->eventType)->toBe('student.subscribed');
-        expect($result->queryVersion->lastEventId)->toBe(1);
+        expect($result->queryVersion->version)->toBe(1);
     });
 });

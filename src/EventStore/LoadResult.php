@@ -9,7 +9,7 @@ namespace Ultra\EventStore;
  *
  * The returned events are the materialized snapshot used by the caller, while `queryVersion` is the
  * optimistic-concurrency token that must be passed back to `append()` if the caller wants a replayed
- * last-event-id check.
+ * version check.
  */
 readonly class LoadResult
 {

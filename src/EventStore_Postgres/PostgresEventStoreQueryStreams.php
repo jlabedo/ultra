@@ -22,8 +22,8 @@ use Ultra\EventStore\StreamQuery;
  * Events are stored once in the `events` table, while `event_query_streams` materializes membership in the
  * canonical singleton/pair keys used by supported queries. Those query-stream keys are persisted as fixed-width
  * binary SHA-256 digests to keep the table and index entries compact. `load()` is lock-free. `append()`
- * acquires transaction-scoped advisory locks, replays the expected query to compare its last event id, and only
- * then inserts new events.
+ * acquires transaction-scoped advisory locks, replays the expected query to compare its version, and
+ * only then inserts new events.
  */
 final class PostgresEventStoreQueryStreams implements EventStore
 {
@@ -46,9 +46,8 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
         $keys = $canonicalQuery->allKeys();
         $events = [] === $keys ? [] : $this->fetchEvents($keys);
-        $lastEventId = [] === $events ? 0 : $events[array_key_last($events)]->eventId;
 
-        return new LoadResult($events, new QueryVersion($lastEventId, $query));
+        return new LoadResult($events, new QueryVersion(count($events), $query));
     }
 
     public function append(array $events, ?QueryVersion $expectedVersion = null): void
@@ -77,10 +76,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
             $this->acquireAdvisoryLocks($readKeys, array_keys($writeKeys));
 
             if (null !== $expectedVersion) {
-                $currentVersion = new QueryVersion(
-                    $this->fetchLastEventId($readKeys),
-                    $expectedVersion->query,
-                );
+                $currentVersion = new QueryVersion($this->fetchQueryVersion($readKeys), $expectedVersion->query);
                 $currentVersion->assertMatches($expectedVersion);
             }
 
@@ -116,7 +112,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
     /**
      * @param list<string> $queryStreamKeys
      */
-    private function fetchLastEventId(array $queryStreamKeys): int
+    private function fetchQueryVersion(array $queryStreamKeys): int
     {
         if ([] === $queryStreamKeys) {
             return 0;
@@ -124,7 +120,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
         return (int) $this->connection->executeQuery(
             sprintf(
-                'SELECT COALESCE(MAX(event_id), 0)
+                'SELECT COUNT(DISTINCT event_id)
                  FROM %s
                  WHERE query_stream_key IN (?)',
                 $this->eventQueryStreamsTable(),

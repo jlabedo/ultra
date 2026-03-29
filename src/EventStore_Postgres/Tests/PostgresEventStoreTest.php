@@ -39,14 +39,14 @@ function withPostgresStore(callable $callback): void
     }
 }
 
-test('load returns db generated recorded_at and query last event id', function () {
+test('load returns db generated recorded_at and query version', function () {
     withPostgresStore(function (PostgresEventStore $store): void {
         $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
             ->ofTypes('course.created')
         ;
 
         $empty = $store->load($query);
-        expect($empty->queryVersion->lastEventId)->toBe(0);
+        expect($empty->queryVersion->version)->toBe(0);
 
         $store->append([
             new AppendableEvent(
@@ -60,7 +60,7 @@ test('load returns db generated recorded_at and query last event id', function (
 
         expect($result->events)->toHaveCount(1);
         expect($result->events[0]->recordedAt)->toBeInstanceOf(\DateTimeImmutable::class);
-        expect($result->queryVersion->lastEventId)->toBe(1);
+        expect($result->queryVersion->version)->toBe(1);
     });
 });
 
@@ -88,7 +88,7 @@ test('append inserts multiple events in one batch', function () {
         expect($result->events)->toHaveCount(2);
         expect($result->events[0]->eventId)->toBe(1);
         expect($result->events[1]->eventId)->toBe(2);
-        expect($result->queryVersion->lastEventId)->toBe(2);
+        expect($result->queryVersion->version)->toBe(2);
     });
 });
 
@@ -135,7 +135,7 @@ test('load does not duplicate events for overlapping OR branches', function () {
 
         expect($result->events)->toHaveCount(1);
         expect($result->events[0]->eventType)->toBe('student.subscribed');
-        expect($result->queryVersion->lastEventId)->toBe(1);
+        expect($result->queryVersion->version)->toBe(1);
     });
 });
 

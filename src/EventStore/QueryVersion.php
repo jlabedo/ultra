@@ -9,13 +9,13 @@ use Ultra\EventStore\Exception\ConcurrencyException;
 /**
  * Opaque optimistic-concurrency token for a previously loaded query.
  *
- * The token is query-scoped: it stores the original `StreamQuery` plus the last event id observed when that
- * query was loaded. `0` means the query returned no events.
+ * The token is query-scoped: it stores the original `StreamQuery` plus the number of matching events
+ * visible in that snapshot. `0` means the query returned no events.
  */
 readonly class QueryVersion
 {
     public function __construct(
-        public int $lastEventId,
+        public int $version,
         public StreamQuery $query,
     ) {}
 
@@ -33,11 +33,11 @@ readonly class QueryVersion
      */
     public function assertMatches(self $expected): void
     {
-        if ($this->lastEventId !== $expected->lastEventId) {
+        if ($this->version !== $expected->version) {
             throw new ConcurrencyException(
                 self::describeQuery($expected->query),
-                $expected->lastEventId,
-                $this->lastEventId,
+                $expected->version,
+                $this->version,
             );
         }
     }

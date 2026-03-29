@@ -21,8 +21,8 @@ use Ultra\EventStore\StreamQuery;
  * Events are stored once in the `events` table, with `domain_ids` persisted directly as `hstore`. Queries are
  * resolved against the typed event type and indexed `domain_ids` containment, while canonical singleton/pair
  * keys remain the units used by optimistic-concurrency locks. `load()` is lock-free. `append()` acquires
- * transaction-scoped advisory locks, replays the expected query to compare its last event id, and only then
- * inserts new events.
+ * transaction-scoped advisory locks, replays the expected query to compare its version, and only
+ * then inserts new events.
  */
 final class PostgresEventStore implements EventStore
 {
@@ -47,9 +47,8 @@ final class PostgresEventStore implements EventStore
 
         $canonicalQuery = $this->queryKeyFactory->resolveQuery($query);
         $events = [] === $canonicalQuery->branches ? [] : $this->fetchEvents($canonicalQuery);
-        $lastEventId = [] === $events ? 0 : $events[array_key_last($events)]->eventId;
 
-        return new LoadResult($events, new QueryVersion($lastEventId, $query));
+        return new LoadResult($events, new QueryVersion(count($events), $query));
     }
 
     /**
@@ -83,10 +82,7 @@ final class PostgresEventStore implements EventStore
             $this->acquireAdvisoryLocks($readKeys, array_keys($writeKeys));
 
             if (null !== $expectedVersion) {
-                $currentVersion = new QueryVersion(
-                    $this->fetchLastEventId($expectedCanonicalQuery),
-                    $expectedVersion->query,
-                );
+                $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedCanonicalQuery), $expectedVersion->query);
                 $currentVersion->assertMatches($expectedVersion);
             }
 
@@ -107,9 +103,9 @@ final class PostgresEventStore implements EventStore
     }
 
     /**
-     * Return the last event id visible for the canonical query. `0` means no matching events.
+     * Return the visible version for the canonical query.
      */
-    private function fetchLastEventId(?CanonicalQuery $canonicalQuery): int
+    private function fetchQueryVersion(?CanonicalQuery $canonicalQuery): int
     {
         if (null === $canonicalQuery || [] === $canonicalQuery->branches) {
             return 0;
@@ -119,7 +115,7 @@ final class PostgresEventStore implements EventStore
 
         return (int) $this->connection->executeQuery(
             sprintf(
-                'SELECT COALESCE(MAX(event_id), 0)
+                'SELECT COUNT(*)
                  FROM %s
                  WHERE %s',
                 $this->eventsTable(),

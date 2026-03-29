@@ -9,6 +9,8 @@ use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\Exception\ConcurrencyException;
+use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
 
 require_once __DIR__.'/PostgresTestSupport.php';
@@ -216,6 +218,17 @@ function streamQueryToArray(StreamQuery $query): array
     ];
 }
 
+/**
+ * @return array<string, mixed>
+ */
+function queryVersionToWorkerConfig(QueryVersion $queryVersion, StreamQuery $query): array
+{
+    return [
+        'query' => streamQueryToArray($query),
+        'version' => $queryVersion->version,
+    ];
+}
+
 test('concurrent append from another process waits for the lock and then fails with concurrency exception', function () {
     $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
     if (false === $dsn || '' === $dsn) {
@@ -253,8 +266,7 @@ test('concurrent append from another process waits for the lock and then fails w
             'dsn' => $dsn,
             'tablePrefix' => $prefix,
             'mode' => 'hold_then_commit',
-            'query' => streamQueryToArray($query),
-            'lastEventId' => $staleVersion->lastEventId,
+            ...queryVersionToWorkerConfig($staleVersion, $query),
             'event' => [
                 'eventType' => $event->eventType,
                 'payload' => $event->payload,
@@ -268,8 +280,7 @@ test('concurrent append from another process waits for the lock and then fails w
             'dsn' => $dsn,
             'tablePrefix' => $prefix,
             'mode' => 'append_once',
-            'query' => streamQueryToArray($query),
-            'lastEventId' => $staleVersion->lastEventId,
+            ...queryVersionToWorkerConfig($staleVersion, $query),
             'event' => [
                 'eventType' => $event->eventType,
                 'payload' => $event->payload,
@@ -355,8 +366,7 @@ test('concurrent append for the same course and another student waits and then s
             'dsn' => $dsn,
             'tablePrefix' => $prefix,
             'mode' => 'hold_then_commit',
-            'query' => streamQueryToArray($studentOneQuery),
-            'lastEventId' => $staleVersion->lastEventId,
+            ...queryVersionToWorkerConfig($staleVersion, $studentOneQuery),
             'event' => [
                 'eventType' => $studentOneEvent->eventType,
                 'payload' => $studentOneEvent->payload,
@@ -405,3 +415,116 @@ test('concurrent append for the same course and another student waits and then s
         }
     }
 });
+
+foreach (postgresTestSupportedImplementations() as $implementation) {
+    test(sprintf(
+        '%s implementation rejects a stale multi-branch query version when a lower event id becomes visible later',
+        $implementation,
+    ), function () use ($implementation) {
+        $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
+        if (false === $dsn || '' === $dsn) {
+            test()->markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres event-store integration tests.');
+        }
+
+        $connection = postgresTestConnection($dsn);
+        $prefix = postgresTestUniquePrefix();
+        $schema = postgresTestSchemaForImplementation($prefix, $implementation);
+
+        $workerA = null;
+        $workerB = null;
+
+        try {
+            foreach ($schema->createStatements() as $statement) {
+                $connection->executeStatement($statement);
+            }
+
+            $store = postgresTestStoreForImplementation($connection, $prefix, $implementation);
+            $courseQuery = StreamQuery::forStream(
+                new DomainIdentifier('courseId', 'course-123'),
+            )->ofTypes('course.created');
+            $studentQuery = StreamQuery::forStream(
+                new DomainIdentifier('courseId', 'course-123'),
+                new DomainIdentifier('studentId', 'student-2'),
+            )->ofTypes('student.subscribed');
+            $combinedQuery = StreamQuery::anyOf($courseQuery, $studentQuery);
+
+            $courseCreatedEvent = new AppendableEvent(
+                eventType: 'course.created',
+                payload: ['name' => 'Math 101'],
+                domainIds: ['courseId' => 'course-123'],
+            );
+            $studentSubscribedEvent = new AppendableEvent(
+                eventType: 'student.subscribed',
+                payload: ['slot' => 2],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
+            );
+            $followUpEvent = new AppendableEvent(
+                eventType: 'student.subscribed',
+                payload: ['slot' => 3],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
+            );
+
+            $workerA = startConcurrencyWorker([
+                'dsn' => $dsn,
+                'tablePrefix' => $prefix,
+                'implementation' => $implementation,
+                'mode' => 'hold_then_commit',
+                'event' => [
+                    'eventType' => $courseCreatedEvent->eventType,
+                    'payload' => $courseCreatedEvent->payload,
+                    'domainIds' => $courseCreatedEvent->domainIds,
+                ],
+            ], true);
+
+            $workerA->waitForEvent('ready', 5_000);
+
+            $workerB = startConcurrencyWorker([
+                'dsn' => $dsn,
+                'tablePrefix' => $prefix,
+                'implementation' => $implementation,
+                'mode' => 'append_once',
+                'event' => [
+                    'eventType' => $studentSubscribedEvent->eventType,
+                    'payload' => $studentSubscribedEvent->payload,
+                    'domainIds' => $studentSubscribedEvent->domainIds,
+                ],
+                'lockTimeoutMs' => 5_000,
+            ]);
+
+            $workerBResult = $workerB->waitForResult(5_000);
+            $workerB = null;
+
+            expect($workerBResult['exitCode'])->toBe(0, $workerBResult['stderr']);
+            expect($workerBResult['status'])->toBe('ok');
+
+            $staleVersion = $store->load($combinedQuery)->queryVersion;
+            expect($staleVersion->version)->toBe(1);
+
+            $workerA->send('release', true);
+            $workerAResult = $workerA->waitForResult(5_000);
+            $workerA = null;
+
+            expect($workerAResult['exitCode'])->toBe(0);
+            expect($workerAResult['status'])->toBe('ok');
+
+            expect(fn () => $store->append([$followUpEvent], $staleVersion))->toThrow(ConcurrencyException::class);
+
+            $result = $store->load($combinedQuery);
+            expect($result->events)->toHaveCount(2);
+            expect($result->queryVersion->version)->toBe(2);
+        } finally {
+            if (null !== $workerA) {
+                $workerA->stop();
+            }
+            if (null !== $workerB) {
+                $workerB->stop();
+            }
+
+            foreach ($schema->dropStatements() as $statement) {
+                $connection->executeStatement($statement);
+            }
+
+            $connection->close();
+        }
+    });
+}

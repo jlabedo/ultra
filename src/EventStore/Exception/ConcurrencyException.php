@@ -8,16 +8,16 @@ class ConcurrencyException extends \RuntimeException
 {
     public function __construct(
         string $subject,
-        int $expectedEventId,
-        int $actualEventId,
+        int $expectedVersion,
+        int $actualVersion,
         ?\Throwable $previous = null,
     ) {
         parent::__construct(
             sprintf(
-                'Version conflict on "%s": expected last eventId %d, actual last eventId %d.',
+                'Version conflict on "%s": expected version %d, actual version %d.',
                 $subject,
-                $expectedEventId,
-                $actualEventId,
+                $expectedVersion,
+                $actualVersion,
             ),
             0,
             $previous,

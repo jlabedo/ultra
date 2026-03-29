@@ -8,7 +8,7 @@ use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
 
 use function Ultra\EventStore_Postgres\Tests\postgresTestConnection;
-use function Ultra\EventStore_Postgres\Tests\postgresTestStore;
+use function Ultra\EventStore_Postgres\Tests\postgresTestStoreForImplementation;
 
 require_once __DIR__.'/../../../../vendor/autoload.php';
 require_once __DIR__.'/../PostgresTestSupport.php';
@@ -38,16 +38,16 @@ if (false === $decoded) {
 
 $config = json_decode($decoded, true, 512, JSON_THROW_ON_ERROR);
 $connection = postgresTestConnection($config['dsn']);
-$store = postgresTestStore($connection, $config['tablePrefix']);
+$store = postgresTestStoreForImplementation($connection, $config['tablePrefix'], $config['implementation'] ?? 'hstore');
 $expectedVersion = null;
-if (isset($config['lastEventId'], $config['query'])) {
+if (isset($config['version'], $config['query'])) {
     $query = new StreamQuery(
         domainIdentifiers: $config['query']['domainIdentifiers'],
         eventNames: $config['query']['eventNames'],
         orCriteria: $config['query']['orCriteria'],
         orBranchEventNames: $config['query']['orBranchEventNames'],
     );
-    $expectedVersion = new QueryVersion((int) $config['lastEventId'], $query);
+    $expectedVersion = new QueryVersion((int) $config['version'], $query);
 }
 $event = new AppendableEvent(
     eventType: $config['event']['eventType'],
