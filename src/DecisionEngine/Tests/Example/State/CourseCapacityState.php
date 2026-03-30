@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests\Example\State;
 
-use Ultra\DecisionEngine\Attribute\DomainIdentifier;
 use Ultra\DecisionEngine\ReducerTrait;
 use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
+use Ultra\Events\Attribute\DomainIdentifier;
 
 class CourseCapacityState
 {

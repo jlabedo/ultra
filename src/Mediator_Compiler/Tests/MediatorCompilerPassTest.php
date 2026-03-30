@@ -700,12 +700,13 @@ test('compiler pass adds aspect service IDs to the service locator', function ()
 
 test('generated mediator routes messages to the correct handler method', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(SalutationHandler::class, new Definition(SalutationHandler::class)->addTag('mediator.handler'));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E1'));
     $container->compile();
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = $container->get('test.mediator');
 
     expect($mediator->send(new HelloMessage('Alice')))->toBe('Hi, Alice')
         ->and($mediator->send(new GoodbyeMessage('Bob')))->toBe('Bye, Bob')
@@ -714,25 +715,27 @@ test('generated mediator routes messages to the correct handler method', functio
 
 test('generated mediator injects services from the locator into handler methods', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(GreetWithServiceHandler::class, new Definition(GreetWithServiceHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(GreeterService::class, new Definition(GreeterService::class));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E2'));
     $container->compile();
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = $container->get('test.mediator');
 
     expect($mediator->send(new PingMessage()))->toBe('Hello, pong!');
 });
 
 test('generated mediator throws NoHandlerFound for unregistered messages', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(SalutationHandler::class, new Definition(SalutationHandler::class)->addTag('mediator.handler'));
 
     $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E3'));
     $container->compile();
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = $container->get('test.mediator');
 
     expect(fn () => $mediator->send(new PingMessage()))
         ->toThrow(NoHandlerFound::class)

@@ -9,11 +9,10 @@ use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 use Ultra\EventBus_Bundle\EventBusBundle;
+use Ultra\Events\EventsBundle;
+use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Bundle\MediatorBundle;
 use Ultra\Mediator_Bundle\TagNames;
-use Ultra\Mediator_Example\OrderProcessing\Domain\OrderPlaced;
-use Ultra\Mediator_Example\OrderProcessing\Infrastructure\PublishedEvents;
-use Ultra\Mediator_Example\OrderProcessing\Infrastructure\SelfHandlingTracker;
 use Ultra\Mediator_Example\OrderProcessing\Message\SelfHandledPing;
 
 final class Kernel extends BaseKernel
@@ -25,34 +24,31 @@ final class Kernel extends BaseKernel
         yield new FrameworkBundle();
         yield new MediatorBundle();
         yield new EventBusBundle();
+        yield new EventsBundle();
     }
 
     protected function configureContainer(ContainerConfigurator $container): void
     {
-        $services = $container->services();
-
         $container->extension('framework', [
             'test' => true,
             'secret' => 'mediator-example',
         ]);
 
+        $services = $container->services();
         $services->defaults()
             ->autowire()
             ->autoconfigure()
-            ->public();
+        ;
+        $services->load(__NAMESPACE__.'\\', __DIR__.'/');
 
-        $services->load(__NAMESPACE__ . '\\', __DIR__ . '/')
-            ->exclude([
-                __DIR__ . '/Kernel.php',
-                __DIR__ . '/Domain/',
-            ]);
+        $services->load(__NAMESPACE__.'\Infrastructure\\', __DIR__.'/Infrastructure/')
+            ->public()
+        ;
 
+        $services->alias('test.mediator', MediatorInterface::class)->public();
         $services->set(SelfHandledPing::class)
             ->autoconfigure(false)
-            ->tag(TagNames::SELF_HANDLER);
-
-        $services->set(OrderPlaced::class);
-        $services->set(SelfHandlingTracker::class);
-        $services->set(PublishedEvents::class);
+            ->tag(TagNames::SELF_HANDLER)
+        ;
     }
 }

@@ -6,7 +6,10 @@ namespace Ultra\Mediator_Bundle;
 
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Mediator\EmptyMediator;
+use Ultra\Mediator\MediatorInterface;
 use Ultra\MessageHandling\Attribute\Advice;
 use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
@@ -43,12 +46,14 @@ final class MediatorBundle extends Bundle
         $outputDir = $buildDir.'/mediator';
         $generatedClass = (string) $container->getParameter('ultra_mediator.generated_class');
 
+        $container->setDefinition(MediatorInterface::class, new Definition(EmptyMediator::class));
+
         $container->addCompilerPass(new MediatorCompilerPass(
             $outputDir,
             $generatedClass,
             TagNames::HANDLER,
             TagNames::ASPECT,
             TagNames::SELF_HANDLER,
-        ), priority: -100);
+        ));
     }
 }

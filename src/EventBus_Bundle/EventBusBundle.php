@@ -9,7 +9,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\EventBus\Attribute\EventHandler;
 use Ultra\EventBus_Compiler\EventBusCompilerPass;
-use Ultra\MessageHandling\Attribute\Event;
+use Ultra\Events\Attribute\Event;
 use Ultra\MessageHandling\Attribute\Advice;
 
 final class EventBusBundle extends Bundle
@@ -26,7 +26,7 @@ final class EventBusBundle extends Bundle
             EventHandler::class,
             static function (ChildDefinition $definition, EventHandler $attribute, \Reflector $reflector): void {
                 if ($reflector instanceof \ReflectionMethod) {
-                    $definition->addTag(TagNames::HANDLER);
+                    $definition->addTag(TagNames::HANDLER, ['method' => $reflector->getName()]);
                 }
             }
         );
@@ -36,15 +36,6 @@ final class EventBusBundle extends Bundle
             static function (ChildDefinition $definition, Advice $attribute, \Reflector $reflector): void {
                 if ($reflector instanceof \ReflectionMethod) {
                     $definition->addTag(TagNames::ASPECT);
-                }
-            }
-        );
-
-        $container->registerAttributeForAutoconfiguration(
-            Event::class,
-            static function (ChildDefinition $definition, Event $attribute, \Reflector $reflector): void {
-                if ($reflector instanceof \ReflectionClass) {
-                    $definition->addResourceTag(TagNames::EVENT);
                 }
             }
         );
@@ -59,6 +50,6 @@ final class EventBusBundle extends Bundle
             TagNames::HANDLER,
             TagNames::ASPECT,
             TagNames::EVENT,
-        ), priority: -90);
+        ));
     }
 }

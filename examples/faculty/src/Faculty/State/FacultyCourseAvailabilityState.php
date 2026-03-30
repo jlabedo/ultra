@@ -8,8 +8,8 @@ use App\Faculty\Event\CourseCapacityChanged;
 use App\Faculty\Event\CourseCreated;
 use App\Faculty\Event\StudentSubscribedToCourse;
 use App\Faculty\Event\StudentUnsubscribedFromCourse;
-use Ultra\DecisionEngine\Attribute\DomainIdentifier;
 use Ultra\DecisionEngine\ReducerTrait;
+use Ultra\Events\Attribute\DomainIdentifier;
 
 final class FacultyCourseAvailabilityState
 {

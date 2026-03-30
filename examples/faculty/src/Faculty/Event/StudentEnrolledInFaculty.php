@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Faculty\Event;
 
 use App\Faculty\Support\EventTypes;
-use Ultra\DecisionEngine\Attribute\DomainIdentifier;
-use Ultra\MessageHandling\Attribute\Event;
+use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\Events\Attribute\Event;
 
 #[Event(EventTypes::STUDENT_ENROLLED_IN_FACULTY)]
 final readonly class StudentEnrolledInFaculty

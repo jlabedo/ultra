@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine_Compiler\Tests;
 
-use Ultra\DecisionEngine\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 use Ultra\DecisionEngine\Attribute\MatchTag;
@@ -16,7 +15,8 @@ use Ultra\DecisionEngine\Exception\MissingTypeHintError;
 use Ultra\DecisionEngine\Exception\NoTagOverlapError;
 use Ultra\DecisionEngine\Exception\UnnecessaryMatchTagError;
 use Ultra\DecisionEngine_Compiler\EventSourcedEntityAnalyzer;
-use Ultra\MessageHandling\Attribute\Event;
+use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
+use Ultra\Events\Attribute\Event;
 
 #[Event('analyzer.no_overlap')]
 final readonly class AnalyzerNoOverlapEvent

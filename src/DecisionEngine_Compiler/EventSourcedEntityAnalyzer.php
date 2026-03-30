@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine_Compiler;
 
-use Ultra\DecisionEngine\Attribute\DomainIdentifier;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 use Ultra\DecisionEngine\Attribute\MatchTag;
@@ -15,7 +14,8 @@ use Ultra\DecisionEngine\Exception\MissingEventSourcingHandlerError;
 use Ultra\DecisionEngine\Exception\MissingTypeHintError;
 use Ultra\DecisionEngine\Exception\NoTagOverlapError;
 use Ultra\DecisionEngine\Exception\UnnecessaryMatchTagError;
-use Ultra\MessageHandling\Attribute\Event;
+use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\Events\Attribute\Event;
 
 final class EventSourcedEntityAnalyzer
 {

@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Faculty\Support;
 
-use Ultra\EventBus\EventRegistryInterface;
+use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StoredEvent;

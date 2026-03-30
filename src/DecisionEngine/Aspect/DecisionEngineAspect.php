@@ -6,13 +6,13 @@ namespace Ultra\DecisionEngine\Aspect;
 
 use Ultra\DecisionEngine\Attribute\BindTo;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Attribute\DomainIdentifier;
 use Ultra\DecisionEngine\Engine\EventRouter;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\DecisionEngine\Exception\StreamNotFoundException;
-use Ultra\EventBus\EventBusInterface;
 use Ultra\DecisionEngine\ReducerTrait;
-use Ultra\EventBus\EventRegistryInterface;
+use Ultra\EventBus\EventBusInterface;
+use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StoredEvent;

@@ -19,9 +19,9 @@ use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
-use Ultra\EventBus\CompiledEventRegistry;
 use Ultra\EventBus\EventBusInterface;
-use Ultra\EventBus\EventRegistryInterface;
+use Ultra\Events\CompiledEventRegistry;
+use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\EventTopologyProvider;
@@ -75,6 +75,7 @@ final class RecordingEventBus implements EventBusInterface
 function createMediator(array $serviceDefinitions = []): array
 {
     $container = new ContainerBuilder();
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $outputDir = sys_get_temp_dir().'/decision-mediator-'.bin2hex(random_bytes(4));
     if (! is_dir($outputDir)) {
         mkdir($outputDir, 0o777, true);
@@ -141,7 +142,7 @@ function createMediator(array $serviceDefinitions = []): array
     $container->compile();
 
     return [
-        'mediator' => $container->get(MediatorInterface::class),
+        'mediator' => $container->get('test.mediator'),
         'store' => $container->get(InMemoryEventStore::class),
         'container' => $container,
     ];

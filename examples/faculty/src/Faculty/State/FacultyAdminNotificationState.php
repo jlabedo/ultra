@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Faculty\State;
 
 use App\Faculty\Event\AllCoursesFullyBookedNotificationSent;
-use Ultra\DecisionEngine\Attribute\DomainIdentifier;
 use Ultra\DecisionEngine\ReducerTrait;
+use Ultra\Events\Attribute\DomainIdentifier;
 
 final class FacultyAdminNotificationState
 {

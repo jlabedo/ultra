@@ -56,14 +56,14 @@ use Ultra\MessageHandling_Compiler\LocatorReferenceCollector;
  *
  * The container loads the generated file automatically via Definition::setFile().
  */
-final class MediatorCompilerPass implements CompilerPassInterface
+final readonly class MediatorCompilerPass implements CompilerPassInterface
 {
     public function __construct(
-        private readonly string $outputDir,
-        private readonly string $generatedClass = 'CompiledMediator',
-        private readonly string $handlerTag = 'mediator.handler',
-        private readonly string $aspectTag = 'mediator.aspect',
-        private readonly string $selfHandlerTag = 'mediator.self-handler',
+        private string $outputDir,
+        private string $generatedClass = 'CompiledMediator',
+        private string $handlerTag = 'mediator.handler',
+        private string $aspectTag = 'mediator.aspect',
+        private string $selfHandlerTag = 'mediator.self-handler',
     ) {}
 
     public function process(ContainerBuilder $container): void
@@ -187,7 +187,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
             new ServiceLocatorArgument($this->serviceLocatorReferences($locatorReferences->all())),
             new Reference(MessageContextPropagatorInterface::class),
         ]);
-        $mediatorDef->setFile($filePath)->setPublic(true);
+        $mediatorDef->setFile($filePath);
         $container->setDefinition(MediatorInterface::class, $mediatorDef);
     }
 
@@ -213,7 +213,7 @@ final class MediatorCompilerPass implements CompilerPassInterface
 
         $container->setDefinition(
             MessageContextPropagatorInterface::class,
-            (new Definition(MessageContextPropagator::class))->setPublic(true),
+            (new Definition(MessageContextPropagator::class)),
         );
     }
 }

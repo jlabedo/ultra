@@ -36,6 +36,7 @@
         "ultra/event-bus-compiler": "self.version",
         "ultra/event-store": "self.version",
         "ultra/event-store-postgres": "self.version",
+        "ultra/events": "self.version",
         "ultra/mapper": "self.version",
         "ultra/mapper-compiler": "self.version",
         "ultra/message-handling": "self.version",

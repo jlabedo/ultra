@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling\Attribute;
+namespace Ultra\Events\Attribute;
 
 #[\Attribute(\Attribute::TARGET_CLASS)]
 final readonly class Event

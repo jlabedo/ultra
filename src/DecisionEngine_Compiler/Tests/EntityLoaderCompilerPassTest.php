@@ -6,7 +6,6 @@ namespace Ultra\DecisionEngine_Compiler\Tests;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
-use Ultra\DecisionEngine\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 use Ultra\DecisionEngine\Attribute\MatchTag;
@@ -16,6 +15,8 @@ use Ultra\DecisionEngine\Exception\MissingTagValueException;
 use Ultra\DecisionEngine\Exception\UnexpectedTagValueException;
 use Ultra\DecisionEngine\Exception\UnknownEventSourcedEntityException;
 use Ultra\DecisionEngine_Compiler\EntityLoaderCompilerPass;
+use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
+use Ultra\Events\Attribute\Event;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
@@ -24,7 +25,6 @@ use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\MessageHandling\Attribute\Event;
 
 const ENTITY_LOADER_TEST_OUTPUT_DIR = __DIR__.'/../../../var/decision_engine_compiler_tests';
 

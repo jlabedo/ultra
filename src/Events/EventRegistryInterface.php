@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventBus;
+namespace Ultra\Events;
 
 interface EventRegistryInterface
 {

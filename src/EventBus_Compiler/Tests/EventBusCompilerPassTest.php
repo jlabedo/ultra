@@ -8,18 +8,20 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Ultra\EventBus\Attribute\EventHandler;
 use Ultra\EventBus\EventBusInterface;
-use Ultra\EventBus\EventRegistryInterface;
 use Ultra\EventBus\Exception\UnknownEvent;
 use Ultra\EventBus_Compiler\EventBusCompilerPass;
+use Ultra\Events\Attribute\Event;
+use Ultra\Events\EventRegistryInterface;
+use Ultra\Events\EventsBundle;
 use Ultra\Mapper_Bundle\DependencyInjection\Compiler\MapperCompilerPass;
-use Ultra\MessageHandling\MessageContext;
-use Ultra\MessageHandling\MessageContextKeys;
-use Ultra\MessageHandling\MessageContextPropagatorInterface;
+use Ultra\Mediator\MediatorInterface;
 use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
 use Ultra\MessageHandling\Attribute\MatchResult;
-use Ultra\Mediator\MediatorInterface;
+use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\MessageContextKeys;
+use Ultra\MessageHandling\MessageContextPropagatorInterface;
 
 const TEST_OUTPUT_DIR = __DIR__.'/../../../var/event_bus_compiler_tests';
 
@@ -249,20 +251,18 @@ final class EventContextRecorder
 function createEventBusContainer(string $className, array $definitions = [], bool $withMapper = false): ContainerBuilder
 {
     $container = new ContainerBuilder();
+    new EventsBundle()->build($container);
 
     if ($withMapper) {
         $container->setParameter('ultra_mapper.normalizable_classes', []);
         $container->addCompilerPass(new MapperCompilerPass(), priority: -100);
     }
 
-    $definitions = array_merge([
+    $container->addDefinitions($definitions);
+    $container->addDefinitions([
         TestOrderCreated::class => createEventDefinition(TestOrderCreated::class),
         TestOrderCancelled::class => createEventDefinition(TestOrderCancelled::class),
-    ], $definitions);
-
-    foreach ($definitions as $id => $definition) {
-        $container->setDefinition($id, $definition);
-    }
+    ]);
 
     $container->addCompilerPass(new EventBusCompilerPass(TEST_OUTPUT_DIR, $className));
     $container->compile();
@@ -276,18 +276,13 @@ function createEventDefinition(string $class): Definition
         ->addResourceTag('event_bus.event');
 }
 
-test('compiler pass registers event bus and registry even with no handlers', function () {
+test('compiler pass registers event bus even with no handlers', function () {
     $container = createEventBusContainer('CompiledEventBusEmpty');
 
-    expect($container->hasDefinition(EventBusInterface::class))->toBeTrue()
-        ->and($container->hasDefinition(EventRegistryInterface::class))->toBeTrue();
+    expect($container->hasDefinition(EventBusInterface::class))->toBeTrue();
 
     $bus = $container->get(EventBusInterface::class);
     $bus->publish(new TestOrderCreated('o-1'));
-
-    $registry = $container->get(EventRegistryInterface::class);
-    expect($registry->getClass('event-bus.order-created'))->toBe(TestOrderCreated::class)
-        ->and($registry->getName(TestOrderCancelled::class))->toBe('event-bus.order-cancelled');
 });
 
 test('event bus routes known events polymorphically in deterministic priority order', function () {
@@ -443,69 +438,4 @@ test('event bus propagates message context to mediator injected into handlers', 
         ->and($mediator->calls[0]['context']['traceId'])->toBe('trace-med')
         ->and($mediator->calls[0]['context'])->toHaveKey(MessageContextKeys::MESSAGE_ID)
         ->and($mediator->calls[0]['context'])->toHaveKey(MessageContextKeys::CORRELATION_ID);
-});
-
-test('event discovery contributes known events to mapper cache warming', function () {
-    $container = createEventBusContainer('CompiledEventBusMapper', [], withMapper: true);
-
-    $classes = $container->getParameter('ultra_mapper.normalizable_classes');
-
-    expect($classes)
-        ->toContain(TestOrderCreated::class)
-        ->toContain(TestOrderCancelled::class);
-});
-
-test('compiler pass rejects duplicate event names', function () {
-    $tmpDir = dirname(__DIR__).'/Tmp';
-    if (! is_dir($tmpDir)) {
-        mkdir($tmpDir, 0o777, true);
-    }
-
-    // Keep duplicate-event fixtures ephemeral so they do not poison unrelated
-    // compiler runs in the rest of the suite.
-    $fileA = $tmpDir.'/DuplicateEventA.php';
-    $fileB = $tmpDir.'/DuplicateEventB.php';
-
-    file_put_contents($fileA, <<<'PHP'
-    <?php
-
-    declare(strict_types=1);
-
-    namespace Ultra\EventBus_Compiler\Tmp;
-
-    use Ultra\MessageHandling\Attribute\Event;
-
-    #[Event('event-bus.duplicate')]
-    final readonly class DuplicateEventA
-    {
-        public function __construct(public string $id) {}
-    }
-    PHP);
-
-    file_put_contents($fileB, <<<'PHP'
-    <?php
-
-    declare(strict_types=1);
-
-    namespace Ultra\EventBus_Compiler\Tmp;
-
-    use Ultra\MessageHandling\Attribute\Event;
-
-    #[Event('event-bus.duplicate')]
-    final readonly class DuplicateEventB
-    {
-        public function __construct(public string $id) {}
-    }
-    PHP);
-
-    try {
-        expect(fn () => createEventBusContainer('CompiledEventBusDuplicate', [
-            'Ultra\\EventBus_Compiler\\Tmp\\DuplicateEventA' => createEventDefinition('Ultra\\EventBus_Compiler\\Tmp\\DuplicateEventA'),
-            'Ultra\\EventBus_Compiler\\Tmp\\DuplicateEventB' => createEventDefinition('Ultra\\EventBus_Compiler\\Tmp\\DuplicateEventB'),
-        ]))
-            ->toThrow(\LogicException::class, 'Duplicate #[Event] name');
-    } finally {
-        @unlink($fileA);
-        @unlink($fileB);
-    }
 });

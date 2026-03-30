@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests;
 
-use Ultra\DecisionEngine\Attribute\DomainIdentifier;
 use Ultra\DecisionEngine\Engine\EventRouter;
-use Ultra\EventBus\CompiledEventRegistry;
-use Ultra\MessageHandling\Attribute\Event;
+use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\Events\Attribute\Event;
+use Ultra\Events\CompiledEventRegistry;
 use Ultra\Mapper\UltraNormalizer;
 
 #[Event('decision.parameter_tagged')]

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Engine;
 
-use Ultra\DecisionEngine\Attribute\DomainIdentifier;
-use Ultra\EventBus\EventRegistryInterface;
+use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\Mapper\UltraNormalizer;
 

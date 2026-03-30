@@ -245,6 +245,7 @@ final class ContextObservingInnerAspect
 test('priority ordering places before/around/after in the correct onion layers', function () {
     $log = new OrderingLog();
     $container = new ContainerBuilder();
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(
         OrderingHandler::class,
         new Definition(OrderingHandler::class, [$log])->addTag('mediator.handler')
@@ -257,7 +258,7 @@ test('priority ordering places before/around/after in the correct onion layers',
     $container->addCompilerPass(new MediatorCompilerPass(dirname(__DIR__, 3).'/var/mediator_compiler_tests', 'CompiledMediatorOrdering1'));
     $container->compile();
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = $container->get('test.mediator');
     $mediator->send(new OrderingMessage('ok'));
 
     expect($log->entries)->toBe([
@@ -272,6 +273,7 @@ test('priority ordering places before/around/after in the correct onion layers',
 test('same priority follows before → around → handler → after returning → after throwing → after', function () {
     $log = new OrderingLog();
     $container = new ContainerBuilder();
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(
         OrderingHandler::class,
         new Definition(OrderingHandler::class, [$log])->addTag('mediator.handler')
@@ -284,7 +286,7 @@ test('same priority follows before → around → handler → after returning �
     $container->addCompilerPass(new MediatorCompilerPass(dirname(__DIR__, 3).'/var/mediator_compiler_tests', 'CompiledMediatorOrdering2'));
     $container->compile();
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = $container->get('test.mediator');
     $mediator->send(new OrderingMessage('ok'));
 
     expect($log->entries)->toBe([
@@ -300,6 +302,7 @@ test('same priority follows before → around → handler → after returning �
 test('same priority runs afterThrowing before after', function () {
     $log = new OrderingLog();
     $container = new ContainerBuilder();
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(
         OrderingThrowingHandler::class,
         new Definition(OrderingThrowingHandler::class, [$log])->addTag('mediator.handler')
@@ -312,7 +315,7 @@ test('same priority runs afterThrowing before after', function () {
     $container->addCompilerPass(new MediatorCompilerPass(dirname(__DIR__, 3).'/var/mediator_compiler_tests', 'CompiledMediatorOrdering3'));
     $container->compile();
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = $container->get('test.mediator');
 
     expect(fn () => $mediator->send(new OrderingMessage('fail')))->toThrow(\RuntimeException::class, 'boom');
 
@@ -328,6 +331,7 @@ test('same priority runs afterThrowing before after', function () {
 test('interleaved priorities nest correctly across layers', function () {
     $log = new OrderingLog();
     $container = new ContainerBuilder();
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(
         OrderingHandler::class,
         new Definition(OrderingHandler::class, [$log])->addTag('mediator.handler')
@@ -352,7 +356,7 @@ test('interleaved priorities nest correctly across layers', function () {
     $container->addCompilerPass(new MediatorCompilerPass(dirname(__DIR__, 3).'/var/mediator_compiler_tests', 'CompiledMediatorOrdering4'));
     $container->compile();
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = $container->get('test.mediator');
     $mediator->send(new OrderingMessage('ok'));
 
     expect($log->entries)->toBe([
@@ -369,6 +373,7 @@ test('interleaved priorities nest correctly across layers', function () {
 test('same type and priority are ordered by class name', function () {
     $log = new OrderingLog();
     $container = new ContainerBuilder();
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(
         OrderingHandler::class,
         new Definition(OrderingHandler::class, [$log])->addTag('mediator.handler')
@@ -385,7 +390,7 @@ test('same type and priority are ordered by class name', function () {
     $container->addCompilerPass(new MediatorCompilerPass(dirname(__DIR__, 3).'/var/mediator_compiler_tests', 'CompiledMediatorOrdering5'));
     $container->compile();
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = $container->get('test.mediator');
     $mediator->send(new OrderingMessage('ok'));
 
     expect($log->entries)->toBe([
@@ -398,6 +403,7 @@ test('same type and priority are ordered by class name', function () {
 test('interleaved priorities place afterThrowing inside outer after', function () {
     $log = new OrderingLog();
     $container = new ContainerBuilder();
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(
         OrderingThrowingHandler::class,
         new Definition(OrderingThrowingHandler::class, [$log])->addTag('mediator.handler')
@@ -418,7 +424,7 @@ test('interleaved priorities place afterThrowing inside outer after', function (
     $container->addCompilerPass(new MediatorCompilerPass(dirname(__DIR__, 3).'/var/mediator_compiler_tests', 'CompiledMediatorOrdering6'));
     $container->compile();
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = $container->get('test.mediator');
 
     expect(fn () => $mediator->send(new OrderingMessage('fail')))->toThrow(\RuntimeException::class, 'boom');
 
@@ -433,6 +439,7 @@ test('interleaved priorities place afterThrowing inside outer after', function (
 test('around advices can pass a derived immutable context down the chain', function () {
     $log = new OrderingLog();
     $container = new ContainerBuilder();
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(
         OrderingHandler::class,
         new Definition(OrderingHandler::class, [$log])->addTag('mediator.handler')
@@ -449,7 +456,7 @@ test('around advices can pass a derived immutable context down the chain', funct
     $container->addCompilerPass(new MediatorCompilerPass(dirname(__DIR__, 3).'/var/mediator_compiler_tests', 'CompiledMediatorOrdering7'));
     $container->compile();
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = $container->get('test.mediator');
     $mediator->send(new OrderingMessage('ok'));
 
     expect($log->entries)->toBe([

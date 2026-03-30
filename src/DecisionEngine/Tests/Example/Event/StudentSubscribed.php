@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests\Example\Event;
 
-use Ultra\DecisionEngine\Attribute\DomainIdentifier;
-use Ultra\MessageHandling\Attribute\Event;
+use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\Events\Attribute\Event;
 
 #[Event('student.subscribed')]
 readonly class StudentSubscribed

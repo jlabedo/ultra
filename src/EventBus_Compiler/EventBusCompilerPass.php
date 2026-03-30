@@ -10,12 +10,9 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\EventBus\Attribute\EventHandler;
-use Ultra\EventBus\CompiledEventRegistry;
 use Ultra\EventBus\EventBusInterface;
-use Ultra\EventBus\EventRegistryInterface;
 use Ultra\MessageHandling\MessageContextPropagator;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
-use Ultra\MessageHandling\Attribute\Event;
 use Ultra\MessageHandling_Compiler\AdviceCollector;
 use Ultra\MessageHandling_Compiler\DecoratingDependencyExpressionResolver;
 use Ultra\MessageHandling_Compiler\DispatchPlanRenderer;
@@ -38,7 +35,6 @@ final class EventBusCompilerPass implements CompilerPassInterface
     {
         $this->ensureMessageContextPropagator($container);
 
-        $eventMap = $this->discoverEvents($container);
         $adviceCollector = new AdviceCollector($this->aspectTag);
         $descriptorFactory = new HandlerDescriptorFactory();
         $locatorReferences = new LocatorReferenceCollector();
@@ -93,7 +89,8 @@ final class EventBusCompilerPass implements CompilerPassInterface
 
         /** @var array<class-string, list<HandlerDescriptor>> $routes */
         $routes = [];
-        foreach ($eventMap as $eventName => $eventClass) {
+        foreach ($container->findTaggedResourceIds($this->eventTag) as $serviceId => $_) {
+            $eventClass = $container->getDefinition($serviceId)->getClass();
             $matchedHandlers = [];
             foreach ($subscriptions as $subscriptionType => $entries) {
                 if (! is_a($eventClass, $subscriptionType, true)) {
@@ -125,24 +122,21 @@ final class EventBusCompilerPass implements CompilerPassInterface
             $routes[$eventClass] = $matchedHandlers;
         }
 
-        $this->registerEventRegistry($container, $eventMap);
-        $this->registerNormalizableEvents($container, array_values($eventMap));
-
         $filePath = rtrim($this->outputDir, '/').'/'.$this->generatedClass.'.php';
-        (new EventBusGenerator(
+        new EventBusGenerator(
             new HandlerMethodGenerator(
                 renderer: new DispatchPlanRenderer([
                     new DecoratingDependencyExpressionResolver(
                         EventBusInterface::class,
-                        'Ultra\\EventBus\\ContextPropagatingEventBus',
+                        'Ultra\EventBus\ContextPropagatingEventBus',
                     ),
                     new DecoratingDependencyExpressionResolver(
-                        'Ultra\\Mediator\\MediatorInterface',
-                        'Ultra\\Mediator\\ContextPropagatingMediator',
+                        'Ultra\Mediator\MediatorInterface',
+                        'Ultra\Mediator\ContextPropagatingMediator',
                     ),
                 ]),
             ),
-        ))->generate($this->generatedClass, $routes, $filePath);
+        )->generate($this->generatedClass, $routes, $filePath);
 
         $eventBusDef = new Definition($this->generatedClass, [
             new ServiceLocatorArgument($this->serviceLocatorReferences($locatorReferences->all())),
@@ -153,79 +147,8 @@ final class EventBusCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * @return array<string, class-string>
-     */
-    private function discoverEvents(ContainerBuilder $container): array
-    {
-        $events = [];
-
-        foreach (array_keys($container->findTaggedResourceIds($this->eventTag)) as $serviceId) {
-            $definition = $container->getDefinition($serviceId);
-            $class = $definition->getClass() ?? $serviceId;
-
-            if (! class_exists($class)) {
-                continue;
-            }
-
-            $ref = new \ReflectionClass($class);
-            if ($ref->isAbstract()) {
-                continue;
-            }
-
-            $attributes = $ref->getAttributes(Event::class);
-            if ([] === $attributes) {
-                continue;
-            }
-
-            /** @var Event $attribute */
-            $attribute = $attributes[0]->newInstance();
-            if (isset($events[$attribute->name]) && $events[$attribute->name] !== $class) {
-                throw new \LogicException(sprintf(
-                    'Duplicate #[Event] name "%s": "%s" and "%s".',
-                    $attribute->name,
-                    $events[$attribute->name],
-                    $class,
-                ));
-            }
-
-            $events[$attribute->name] = $class;
-        }
-
-        ksort($events);
-
-        return $events;
-    }
-
-    /**
-     * @param array<string, class-string> $eventMap
-     */
-    private function registerEventRegistry(ContainerBuilder $container, array $eventMap): void
-    {
-        $definition = new Definition(CompiledEventRegistry::class, [$eventMap]);
-        $definition->setPublic(true);
-        $container->setDefinition(EventRegistryInterface::class, $definition);
-    }
-
-    /**
-     * @param list<class-string> $eventClasses
-     */
-    private function registerNormalizableEvents(ContainerBuilder $container, array $eventClasses): void
-    {
-        $existing = $container->hasParameter('ultra_mapper.normalizable_classes')
-            ? $container->getParameter('ultra_mapper.normalizable_classes')
-            : [];
-
-        if (! is_array($existing)) {
-            $existing = [];
-        }
-
-        $merged = array_values(array_unique(array_merge($existing, $eventClasses)));
-        sort($merged);
-        $container->setParameter('ultra_mapper.normalizable_classes', $merged);
-    }
-
-    /**
      * @param list<string> $serviceIds
+     *
      * @return array<string, Reference>
      */
     private function serviceLocatorReferences(array $serviceIds): array
@@ -246,7 +169,7 @@ final class EventBusCompilerPass implements CompilerPassInterface
 
         $container->setDefinition(
             MessageContextPropagatorInterface::class,
-            (new Definition(MessageContextPropagator::class))->setPublic(true),
+            new Definition(MessageContextPropagator::class),
         );
     }
 }

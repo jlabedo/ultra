@@ -51,7 +51,7 @@ final class OrderProcessingTest extends KernelTestCase
         $payments->shouldFail = false;
 
         /** @var MediatorInterface $mediator */
-        $mediator = $container->get(MediatorInterface::class);
+        $mediator = $container->get('test.mediator');
 
         $command = new PlaceOrder('order-1', 1500, 'user-1');
         $result = $mediator->send($command, ['traceId' => 't-1']);
@@ -100,7 +100,7 @@ final class OrderProcessingTest extends KernelTestCase
         $payments->shouldFail = true;
 
         /** @var MediatorInterface $mediator */
-        $mediator = $container->get(MediatorInterface::class);
+        $mediator = $container->get('test.mediator');
 
         $command = new PlaceOrder('order-2', 500, 'user-2');
 
@@ -141,7 +141,7 @@ final class OrderProcessingTest extends KernelTestCase
         $container = self::$kernel->getContainer();
 
         /** @var MediatorInterface $mediator */
-        $mediator = $container->get(MediatorInterface::class);
+        $mediator = $container->get('test.mediator');
 
         /** @var SelfHandlingTracker $tracker */
         $tracker = $container->get(SelfHandlingTracker::class);
