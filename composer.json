@@ -29,6 +29,8 @@
     "replace": {
         "ultra/aop": "self.version",
         "ultra/decision-engine": "self.version",
+        "ultra/decision-engine-bundle": "self.version",
+        "ultra/decision-engine-compiler": "self.version",
         "ultra/event-bus": "self.version",
         "ultra/event-bus-bundle": "self.version",
         "ultra/event-bus-compiler": "self.version",

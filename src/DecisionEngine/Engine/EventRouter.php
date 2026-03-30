@@ -61,17 +61,24 @@ final class EventRouter
     private function getDomainIds(\ReflectionClass $ref, object $event): array
     {
         $domainIds = [];
+
+        $constructor = $ref->getConstructor();
+        if (null !== $constructor) {
+            foreach ($constructor->getParameters() as $parameter) {
+                foreach ($parameter->getAttributes(DomainIdentifier::class) as $attr) {
+                    $name = $attr->newInstance()->name;
+                    $value = $this->readPropertyValue($ref, $event, $parameter->getName());
+                    if (is_string($value)) {
+                        $domainIds[$name] = $value;
+                    }
+                }
+            }
+        }
+
         foreach ($ref->getProperties() as $property) {
             foreach ($property->getAttributes(DomainIdentifier::class) as $attr) {
                 $name = $attr->newInstance()->name;
-                if ($property->isPublic()) {
-                    $value = $property->getValue($event);
-                } else {
-                    $getter = static function (string $prop): mixed {
-                        return $this->{$prop};
-                    };
-                    $value = $getter->call($event, $property->getName());
-                }
+                $value = $this->readPropertyValue($ref, $event, $property->getName());
                 if (is_string($value)) {
                     $domainIds[$name] = $value;
                 }
@@ -83,6 +90,28 @@ final class EventRouter
         }
 
         return $domainIds;
+    }
+
+    private function readPropertyValue(\ReflectionClass $ref, object $event, string $property): mixed
+    {
+        if (! $ref->hasProperty($property)) {
+            throw new \LogicException(sprintf(
+                'Event class %s declares #[DomainIdentifier] on "%s" but has no matching property.',
+                $ref->getName(),
+                $property,
+            ));
+        }
+
+        $refProperty = $ref->getProperty($property);
+        if ($refProperty->isPublic()) {
+            return $refProperty->getValue($event);
+        }
+
+        $getter = static function (string $prop): mixed {
+            return $this->{$prop};
+        };
+
+        return $getter->call($event, $property);
     }
 
     /**
