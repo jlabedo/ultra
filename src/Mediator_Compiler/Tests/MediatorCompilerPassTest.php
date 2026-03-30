@@ -50,6 +50,21 @@ function assertMessageFlowContexts(array $entries, string $firstMessage, string 
         ->and($entries[1]['context'][MessageContextKeys::CAUSATION_ID])->toBe($entries[0]['context'][MessageContextKeys::MESSAGE_ID]);
 }
 
+function compileMediatorTestContainer(ContainerBuilder $container, string $testOutputDir, string $compiledClassName): void
+{
+    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
+    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, $compiledClassName));
+    $container->compile();
+}
+
+function getTestMediator(ContainerBuilder $container): MediatorInterface
+{
+    /** @var MediatorInterface $mediator */
+    $mediator = $container->get('test.mediator');
+
+    return $mediator;
+}
+
 // ---------------------------------------------------------------------------
 // Message fixtures
 // ---------------------------------------------------------------------------
@@ -700,13 +715,11 @@ test('compiler pass adds aspect service IDs to the service locator', function ()
 
 test('generated mediator routes messages to the correct handler method', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(SalutationHandler::class, new Definition(SalutationHandler::class)->addTag('mediator.handler'));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E1'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorE2E1');
 
-    $mediator = $container->get('test.mediator');
+    $mediator = getTestMediator($container);
 
     expect($mediator->send(new HelloMessage('Alice')))->toBe('Hi, Alice')
         ->and($mediator->send(new GoodbyeMessage('Bob')))->toBe('Bye, Bob')
@@ -715,27 +728,23 @@ test('generated mediator routes messages to the correct handler method', functio
 
 test('generated mediator injects services from the locator into handler methods', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(GreetWithServiceHandler::class, new Definition(GreetWithServiceHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(GreeterService::class, new Definition(GreeterService::class));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E2'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorE2E2');
 
-    $mediator = $container->get('test.mediator');
+    $mediator = getTestMediator($container);
 
     expect($mediator->send(new PingMessage()))->toBe('Hello, pong!');
 });
 
 test('generated mediator throws NoHandlerFound for unregistered messages', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
-    $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $container->setDefinition(SalutationHandler::class, new Definition(SalutationHandler::class)->addTag('mediator.handler'));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorE2E3'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorE2E3');
 
-    $mediator = $container->get('test.mediator');
+    $mediator = getTestMediator($container);
 
     expect(fn () => $mediator->send(new PingMessage()))
         ->toThrow(NoHandlerFound::class)
@@ -747,12 +756,11 @@ test('generated mediator calls before-advice then invokes the handler', function
     $container->setDefinition(AuditedHandler::class, new Definition(AuditedHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(TestLogger::class, new Definition(TestLogger::class)->addTag('mediator.aspect')->setPublic(true));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop1'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorAop1');
 
     $logger = $container->get(TestLogger::class);
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $message = new AuditedMessage('test');
     $result = $mediator->send($message);
 
@@ -767,11 +775,10 @@ test('generated mediator calls around-advice wrapping the handler', function () 
     $container->setDefinition(WrappedHandler::class, new Definition(WrappedHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(TestTransactionManager::class, new Definition(TestTransactionManager::class)->addTag('mediator.aspect')->setPublic(true));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop2'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorAop2');
 
     $txManager = $container->get(TestTransactionManager::class);
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $result = $mediator->send(new WrappedMessage('test'));
 
     expect($result)->toBe('wrapped: test')
@@ -785,12 +792,11 @@ test('generated mediator executes multiple around-advices ordered by priority', 
     $container->setDefinition(OuterAspectService::class, new Definition(OuterAspectService::class)->addTag('mediator.aspect')->setPublic(true));
     $container->setDefinition(InnerAspectService::class, new Definition(InnerAspectService::class)->addTag('mediator.aspect')->setPublic(true));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAop3'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorAop3');
 
     $outer = $container->get(OuterAspectService::class);
     $inner = $container->get(InnerAspectService::class);
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $result = $mediator->send(new DoubleWrappedMessage('test'));
 
     expect($result)->toBe('double: test')
@@ -807,10 +813,9 @@ test('generated mediator propagates message context through nested send calls fr
     $container->setDefinition(ChildHandler::class, new Definition(ChildHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(MessageContextRecorder::class, new Definition(MessageContextRecorder::class)->addTag('mediator.aspect')->setPublic(true));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorNestedSendContext'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorNestedSendContext');
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $recorder = $container->get(MessageContextRecorder::class);
 
     expect($mediator->send(new ParentMessage('nested'), ['traceId' => 'trace-456']))->toBe('child: nested');
@@ -823,10 +828,9 @@ test('generated mediator accepts MessageContext objects at the public send bound
     $container->setDefinition(ChildHandler::class, new Definition(ChildHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(MessageContextRecorder::class, new Definition(MessageContextRecorder::class)->addTag('mediator.aspect')->setPublic(true));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMessageContextInput'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorMessageContextInput');
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $recorder = $container->get(MessageContextRecorder::class);
 
     expect($mediator->send(new ParentMessage('typed'), MessageContext::coerce(['traceId' => 'trace-typed'])))->toBe('child: typed');
@@ -840,10 +844,9 @@ test('generated mediator uses the configured message context propagator service'
     $container->setDefinition(MessageContextRecorder::class, new Definition(MessageContextRecorder::class)->addTag('mediator.aspect')->setPublic(true));
     $container->setDefinition(MessageContextPropagatorInterface::class, (new Definition(FixedMessageContextPropagator::class))->setPublic(true));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorCustomPropagator'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorCustomPropagator');
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $recorder = $container->get(MessageContextRecorder::class);
 
     expect($mediator->send(new ParentMessage('custom'), ['traceId' => 'trace-custom']))->toBe('child: custom')
@@ -860,10 +863,9 @@ test('generated mediator propagates message context to event bus injected into h
     $container->setDefinition(RecordingEventBus::class, new Definition(RecordingEventBus::class)->setPublic(true));
     $container->setAlias(EventBusInterface::class, RecordingEventBus::class)->setPublic(true);
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorEventBusContext'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorEventBusContext');
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $eventBus = $container->get(RecordingEventBus::class);
 
     expect($mediator->send(new PublishedFromMediatorMessage('bridge'), ['traceId' => 'trace-eb']))->toBe('published: bridge')
@@ -902,12 +904,11 @@ test('generated mediator uses parameter-providing aspect to inject and save enti
         ])->addTag('mediator.aspect')->setPublic(true)
     );
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorParamProviding1'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorParamProviding1');
 
     // TestEntity is NOT in the mediator locator — LoadAndSaveAspect provides it
     $repo = $container->get(TestEntityRepository::class);
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $result = $mediator->send(new ProcessEntityMessage('entity-123'));
 
     expect($result)->toBe('entity-123')
@@ -925,10 +926,9 @@ test('one parameter-providing aspect can claim multiple handler parameters at on
             ->addTag('mediator.aspect')->setPublic(true)
     );
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam1'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorMultiParam1');
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $result = $mediator->send(new MultiEntityMessage('a-1', 'b-2'));
 
     expect($result)->toBe('a-1+b-2');
@@ -951,11 +951,10 @@ test('two #[Around] on the same aspect method each claim a different parameter a
         ])->addTag('mediator.aspect')->setPublic(true)
     );
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorMultiParam2'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorMultiParam2');
 
     // Neither EntityA nor EntityB is in the mediator locator — LoadAspect provides both
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $result = $mediator->send(new SeparateEntitiesMessage('a-1', 'b-2'));
 
     // EntityA from priority-0 advice (outer), EntityB from priority-10 advice (inner);
@@ -973,12 +972,11 @@ test('#[Around] closure discovers #[Entity] parameters at compile time and deleg
             ->addTag('mediator.aspect')->setPublic(true)
     );
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorEm'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorEm');
 
     // Neither EntityA nor EntityB is in the mediator locator — EntityManagerAspect provides both
     $em = $container->get(TestEntityManager::class);
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $result = $mediator->send(new ProcessEntitiesMessage('a-1', 'b-2'));
 
     expect($result)->toBe('a-1+b-2')
@@ -1070,11 +1068,10 @@ test('AfterReturning advice receives the handler return value', function () use 
     $container->setDefinition(ObservedHandler::class, new Definition(ObservedHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(ResultInspector::class, new Definition(ResultInspector::class)->addTag('mediator.aspect')->setPublic(true));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfterReturning1'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorAfterReturning1');
 
     $inspector = $container->get(ResultInspector::class);
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $result = $mediator->send(new ObservedMessage('hello'));
 
     expect($result)->toBe('observed: hello')
@@ -1087,11 +1084,10 @@ test('AfterThrowing advice is called when handler throws and exception still pro
     $container->setDefinition(FailingHandler::class, new Definition(FailingHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(ErrorRecorder::class, new Definition(ErrorRecorder::class)->addTag('mediator.aspect')->setPublic(true));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfterThrowing1'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorAfterThrowing1');
 
     $recorder = $container->get(ErrorRecorder::class);
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
 
     expect(fn () => $mediator->send(new FailingMessage()))->toThrow(\RuntimeException::class, 'handler failed')
         ->and($recorder->caught)->toBeInstanceOf(\RuntimeException::class)
@@ -1103,11 +1099,10 @@ test('After advice runs after a successful handler invocation', function () use 
     $container->setDefinition(ObservedHandler::class, new Definition(ObservedHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(Cleaner::class, new Definition(Cleaner::class)->addTag('mediator.aspect')->setPublic(true));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfter1'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorAfter1');
 
     $cleaner = $container->get(Cleaner::class);
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $result = $mediator->send(new ObservedMessage('world'));
 
     expect($result)->toBe('observed: world')
@@ -1120,11 +1115,10 @@ test('After advice runs even when handler throws', function () use ($testOutputD
     $container->setDefinition(FailingHandler::class, new Definition(FailingHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(Cleaner::class, new Definition(Cleaner::class)->addTag('mediator.aspect')->setPublic(true));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorAfter2'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorAfter2');
 
     $cleaner = $container->get(Cleaner::class);
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
 
     expect(fn () => $mediator->send(new FailingMessage()))->toThrow(\RuntimeException::class)
         ->and($cleaner->calls)->toBe(1)
@@ -1201,10 +1195,9 @@ test('generated mediator dispatches to a no-dep self-handler method', function (
         new Definition(SelfGreetMessage::class)->addTag('mediator.self-handler'),
     );
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorSelfHandler1'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorSelfHandler1');
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
 
     expect($mediator->send(new SelfGreetMessage('Alice')))->toBe('Hi, Alice (self)');
 });
@@ -1217,10 +1210,9 @@ test('generated mediator injects deps from locator into a self-handler method', 
     );
     $container->setDefinition(GreeterService::class, new Definition(GreeterService::class));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorSelfHandler2'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorSelfHandler2');
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
 
     expect($mediator->send(new SelfGreetWithServiceMessage('Bob')))->toBe('Hello, Bob!');
 });
@@ -1233,10 +1225,9 @@ test('self-handler and regular handler can coexist in the same container', funct
         new Definition(SelfGreetMessage::class)->addTag('mediator.self-handler'),
     );
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorSelfHandler3'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorSelfHandler3');
 
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
 
     expect($mediator->send(new HelloMessage('Alice')))->toBe('Hi, Alice')
         ->and($mediator->send(new SelfGreetMessage('Bob')))->toBe('Hi, Bob (self)')
@@ -1251,11 +1242,10 @@ test('before-advice applies to self-handler method', function () use ($testOutpu
     );
     $container->setDefinition(TestLogger::class, new Definition(TestLogger::class)->addTag('mediator.aspect')->setPublic(true));
 
-    $container->addCompilerPass(new MediatorCompilerPass($testOutputDir, 'CompiledMediatorSelfHandler4'));
-    $container->compile();
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorSelfHandler4');
 
     $logger = $container->get(TestLogger::class);
-    $mediator = $container->get(MediatorInterface::class);
+    $mediator = getTestMediator($container);
     $message = new SelfGreetMessage('Carol');
     $result = $mediator->send($message);
 
