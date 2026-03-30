@@ -24,8 +24,8 @@ final class EventsBundle extends Bundle
                 if ($reflector instanceof \ReflectionClass) {
                     $tags = [];
                     foreach ($reflector->getProperties() as $property) {
-                        foreach ($property->getAttributes(DomainIdentifier::class) as $attribute) {
-                            $tags[$attribute->newInstance()->name] = $property->getName();
+                        foreach ($property->getAttributes(DomainIdentifier::class) as $domainIdentifierAttribute) {
+                            $tags[$domainIdentifierAttribute->newInstance()->name] = $property->getName();
                         }
                     }
                     $definition->addTag('ultra_event_bus.event');

@@ -15,16 +15,18 @@ class EventRegistryCompilerPass implements CompilerPassInterface
         $eventMap = [];
         foreach ($container->findTaggedResourceIds(EventsBundle::EVENT_TAG) as $serviceId => $tags) {
             $class = $container->getDefinition($serviceId)->getClass();
-            $name = $tags['name'] ?? $class;
-            if (isset($eventMap[$name]) && $eventMap[$name] !== $class) {
-                throw new \LogicException(sprintf(
-                    'Duplicate #[Event] name "%s": "%s" and "%s".',
-                    $name,
-                    $eventMap[$name],
-                    $class,
-                ));
+            foreach ($tags as $tag) {
+                $name = $tag['name'] ?? $class;
+                if (isset($eventMap[$name]) && $eventMap[$name] !== $class) {
+                    throw new \LogicException(sprintf(
+                        'Duplicate #[Event] name "%s": "%s" and "%s".',
+                        $name,
+                        $eventMap[$name],
+                        $class,
+                    ));
+                }
+                $eventMap[$name] = $class;
             }
-            $eventMap[$name] = $class;
         }
 
         $container->setDefinition(EventRegistryInterface::class, new Definition(
