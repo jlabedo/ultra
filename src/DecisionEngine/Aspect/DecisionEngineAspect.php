@@ -6,13 +6,13 @@ namespace Ultra\DecisionEngine\Aspect;
 
 use Ultra\DecisionEngine\Attribute\BindTo;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Engine\EventRouter;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\DecisionEngine\Exception\StreamNotFoundException;
 use Ultra\DecisionEngine\ReducerTrait;
 use Ultra\EventBus\EventBusInterface;
 use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\EventRegistryInterface;
+use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StoredEvent;
@@ -29,7 +29,6 @@ final class DecisionEngineAspect
 
     public function __construct(
         private readonly EventStore $eventStore,
-        private readonly EventRouter $eventRouter,
         private readonly EventRegistryInterface $eventClassRegistry,
         private readonly UltraNormalizer $normalizer,
         private readonly ?EventBusInterface $eventBus = null,
@@ -65,11 +64,11 @@ final class DecisionEngineAspect
             }
             $commandProperty = null !== $bindTo
                 ? $bindTo->property
-                : $domainIdentifierName.'Id';
+                : $domainIdentifierName . 'Id';
             if (! $commandRef->hasProperty($commandProperty)) {
                 throw new \LogicException(sprintf(
                     'Command %s has no property "%s" required for decision handler parameter "%s" (domain identifier "%s"). '
-                    .'Either add the property or use #[BindTo("propertyName")] to bind to a different command property.',
+                        . 'Either add the property or use #[BindTo("propertyName")] to bind to a different command property.',
                     $commandClass,
                     $commandProperty,
                     $parameter->getName(),
@@ -152,7 +151,7 @@ final class DecisionEngineAspect
             $emittedEvents = [];
         }
 
-        $appendableEvents = $this->eventRouter->toAppendableEvents($emittedEvents);
+        $appendableEvents = $this->toAppendableEvents($emittedEvents);
         $this->eventStore->append($appendableEvents, $loadResult->queryVersion);
         foreach ($emittedEvents as $emittedEvent) {
             $this->eventBus?->publish($emittedEvent, $context);
@@ -221,6 +220,43 @@ final class DecisionEngineAspect
     private function storedEventToDto(StoredEvent $stored, string $eventClass): object
     {
         return $this->normalizer->fromScalar($stored->payload, $eventClass);
+    }
+
+    /**
+     * @param list<object> $events
+     *
+     * @return list<AppendableEvent>
+     */
+    private function toAppendableEvents(array $events): array
+    {
+        return array_map(
+            $this->toAppendableEvent(...),
+            $events,
+        );
+    }
+
+    private function toAppendableEvent(object $event): AppendableEvent
+    {
+        $eventType = $this->eventClassRegistry->getName($event::class);
+        if (null === $eventType) {
+            throw new \LogicException(sprintf('Event class %s has no #[Event] attribute.', $event::class));
+        }
+
+        $domainIds = $this->eventClassRegistry->getDomainIdentifiers($event);
+        if ([] === $domainIds) {
+            throw new \LogicException(sprintf('Event class %s has no properties with #[DomainIdentifier].', $event::class));
+        }
+
+        $payload = $this->normalizer->toScalar($event);
+        if (! is_array($payload)) {
+            throw new \LogicException(sprintf('Event %s normalized payload must be an array, got %s.', $event::class, get_debug_type($payload)));
+        }
+
+        return new AppendableEvent(
+            eventType: $eventType,
+            payload: $payload,
+            domainIds: $domainIds,
+        );
     }
 
     /**

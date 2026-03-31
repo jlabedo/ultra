@@ -9,7 +9,6 @@ use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\DecisionEngine\Aspect\DecisionEngineAspect;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Engine\EventRouter;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
 use Ultra\DecisionEngine\Tests\Example\Command\CreateCourseCommand;
@@ -22,6 +21,7 @@ use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
 use Ultra\EventBus\EventBusInterface;
 use Ultra\Events\CompiledEventRegistry;
 use Ultra\Events\EventRegistryInterface;
+use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\EventTopologyProvider;
@@ -126,7 +126,6 @@ function createMediator(array $serviceDefinitions = []): array
     ;
     $container->setAlias(EventRegistryInterface::class, CompiledEventRegistry::class)->setPublic(true);
 
-    $container->register(EventRouter::class, EventRouter::class)->setAutowired(true);
     $container->register(DecisionEngineAspect::class, DecisionEngineAspect::class)
         ->setAutowired(true)
         ->addTag('mediator.aspect')
@@ -308,16 +307,26 @@ test('concurrency: appending with stale version throws', function () {
     ]));
     $staleVersion = $result->queryVersion;
 
-    $normalizer = new UltraNormalizer(sys_get_temp_dir().'/decision-normalizer-'.bin2hex(random_bytes(4)));
-    $router = new EventRouter($normalizer, new CompiledEventRegistry([
-        'course.created' => CourseCreated::class,
-        'student.subscribed' => StudentSubscribed::class,
-        'student.unsubscribed' => StudentUnsubscribed::class,
-    ], compiledEventRegistryDomainIdentifiers()));
-    $extraEvent = $router->toAppendableEvent(new CourseCreated('math-101', 'Other', 5));
+    $extraEvent = new AppendableEvent(
+        eventType: 'course.created',
+        payload: [
+            'courseId' => 'math-101',
+            'name' => 'Other',
+            'maxCapacity' => 5,
+        ],
+        domainIds: ['course' => 'math-101'],
+    );
     $store->append([$extraEvent], null);
 
-    $anotherEvent = $router->toAppendableEvent(new CourseCreated('math-101', 'Yet Another', 3));
+    $anotherEvent = new AppendableEvent(
+        eventType: 'course.created',
+        payload: [
+            'courseId' => 'math-101',
+            'name' => 'Yet Another',
+            'maxCapacity' => 3,
+        ],
+        domainIds: ['course' => 'math-101'],
+    );
     expect(fn () => $store->append([$anotherEvent], $staleVersion))->toThrow(ConcurrencyException::class);
 });
 
