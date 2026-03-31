@@ -11,7 +11,7 @@
     ],
     "require": {
         "php": ">=8.5",
-        "symfony/framework-bundle": "7.*|8.*",
+        "symfony/dependency-injection": "7.*|8.*",
         "ultra/decision-engine": "*",
         "ultra/decision-engine-compiler": "*"
     },
