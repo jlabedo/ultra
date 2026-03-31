@@ -11,10 +11,11 @@
     ],
     "require": {
         "php": ">=8.5",
-        "ultra/message-handling": "^0.1"
+        "ultra/message-handling": "*"
     },
     "suggest": {
-        "ultra/mediator-compiler": "Symfony DI compiler for zero-overhead compiled mediator"
+        "ultra/mediator-compiler": "Symfony DI compiler for zero-overhead compiled mediator",
+        "ultra/mediator-bundle": "Symfony bundle for easy integration of the mediator into Symfony applications"
     },
     "autoload": {
         "psr-4": {

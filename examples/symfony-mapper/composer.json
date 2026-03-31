@@ -17,8 +17,6 @@
         "ext-ctype": "*",
         "ext-iconv": "*",
         "symfony/console": "8.0.*",
-        "symfony/dotenv": "8.0.*",
-        "symfony/flex": "^2.10",
         "symfony/framework-bundle": "8.0.*",
         "symfony/runtime": "8.0.*",
         "symfony/yaml": "8.0.*",
@@ -60,17 +58,7 @@
         "symfony/polyfill-php84": "*"
     },
     "scripts": {
-        "auto-scripts": {
-            "cache:clear": "symfony-cmd",
-            "assets:install %PUBLIC_DIR%": "symfony-cmd"
-        },
-        "post-install-cmd": [
-            "@auto-scripts"
-        ],
-        "post-update-cmd": [
-            "@auto-scripts"
-        ],
-        "test": "composer update -W --no-scripts && bin/console -e dev c:w && composer install --no-dev --no-scripts && echo 'Start running...\n' && bin/console app:run"
+        "test": "composer update -W && APP_ENV=prod APP_DEBUG=0 bin/console cache:warmup && composer install --no-dev && echo 'Start running...\n' && APP_ENV=prod APP_DEBUG=0 bin/console app:run"
     },
     "conflict": {
         "symfony/symfony": "*"

@@ -1,5 +1,6 @@
-/vendor/
-/var/
+**/vendor/
+**/var/
+**/config/reference.php
 composer.lock
 .phpunit.result.cache
 .php-cs-fixer.cache

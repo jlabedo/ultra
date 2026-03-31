@@ -48,6 +48,10 @@ final class MediatorBundle extends Bundle
 
         $container->setDefinition(MediatorInterface::class, new Definition(EmptyMediator::class));
 
+        if (! class_exists(MediatorCompilerPass::class)) {
+            throw new \RuntimeException('Cannot compile the mediator container because ultra/mediator-compiler is not installed.');
+        }
+
         $container->addCompilerPass(new MediatorCompilerPass(
             $outputDir,
             $generatedClass,

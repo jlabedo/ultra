@@ -12,8 +12,8 @@
     "require": {
         "php": ">=8.5",
         "symfony/framework-bundle": "7.*|8.*",
-        "ultra/decision-engine": "^0.1",
-        "ultra/decision-engine-compiler": "^0.1"
+        "ultra/decision-engine": "*",
+        "ultra/decision-engine-compiler": "*"
     },
     "autoload": {
         "psr-4": {

@@ -12,9 +12,9 @@
     "require": {
         "php": ">=8.5",
         "psr/container": "^2.0",
-        "ultra/mediator": "^0.1",
-        "ultra/message-handling": "^0.1",
-        "ultra/message-handling-compiler": "^0.1",
+        "ultra/mediator": "*",
+        "ultra/message-handling": "*",
+        "ultra/message-handling-compiler": "*",
         "symfony/dependency-injection": "7.*|8.*"
     },
     "autoload": {

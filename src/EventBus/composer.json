@@ -11,7 +11,7 @@
     ],
     "require": {
         "php": ">=8.5",
-        "ultra/message-handling": "^0.1"
+        "ultra/message-handling": "*"
     },
     "autoload": {
         "psr-4": {
