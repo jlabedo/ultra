@@ -28,8 +28,8 @@ final class EventsBundle extends Bundle
                             $tags[$domainIdentifierAttribute->newInstance()->name] = $property->getName();
                         }
                     }
-                    $definition->addTag('ultra_event_bus.event');
-                    $definition->addTag('ultra_mapper.normalizable');
+                    $definition->addResourceTag('ultra_event_bus.event');
+                    $definition->addResourceTag('ultra_mapper.normalizable');
                     $definition->addResourceTag(self::EVENT_TAG, ['name' => $attribute->name, 'tags' => $tags]);
                 }
             }

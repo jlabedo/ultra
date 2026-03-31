@@ -9,7 +9,6 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\EventBus\Attribute\EventHandler;
 use Ultra\EventBus_Compiler\EventBusCompilerPass;
-use Ultra\Events\Attribute\Event;
 use Ultra\MessageHandling\Attribute\Advice;
 
 final class EventBusBundle extends Bundle
@@ -43,6 +42,10 @@ final class EventBusBundle extends Bundle
         $buildDir = (string) $container->getParameter('kernel.build_dir');
         $outputDir = $buildDir.'/event_bus';
         $generatedClass = (string) $container->getParameter('ultra_event_bus.generated_class');
+
+        if (! class_exists(EventBusCompilerPass::class)) {
+            throw new \RuntimeException('Cannot compile the event bus container because ultra/event-bus-compiler is not installed.');
+        }
 
         $container->addCompilerPass(new EventBusCompilerPass(
             $outputDir,
