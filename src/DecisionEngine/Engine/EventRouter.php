@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Engine;
 
-use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\Mapper\UltraNormalizer;
@@ -18,9 +17,11 @@ final class EventRouter
 
     public function toAppendableEvent(object $event): AppendableEvent
     {
-        $ref = new \ReflectionClass($event);
-        $eventType = $this->getEventType($ref);
-        $domainIds = $this->getDomainIds($ref, $event);
+        $eventType = $this->getEventType($event);
+        $domainIds = $this->eventRegistry->getDomainIdentifiers($event);
+        if ([] === $domainIds) {
+            throw new \LogicException(sprintf('Event class %s has no properties with #[DomainIdentifier].', $event::class));
+        }
         $payload = $this->getPayload($event);
 
         return new AppendableEvent(
@@ -45,73 +46,14 @@ final class EventRouter
         return $result;
     }
 
-    private function getEventType(\ReflectionClass $ref): string
+    private function getEventType(object $event): string
     {
-        $eventType = $this->eventRegistry->getName($ref->getName());
+        $eventType = $this->eventRegistry->getName($event::class);
         if (null !== $eventType) {
             return $eventType;
         }
 
-        throw new \LogicException(sprintf('Event class %s has no #[Event] attribute.', $ref->getName()));
-    }
-
-    /**
-     * @return array<string, string>
-     */
-    private function getDomainIds(\ReflectionClass $ref, object $event): array
-    {
-        $domainIds = [];
-
-        $constructor = $ref->getConstructor();
-        if (null !== $constructor) {
-            foreach ($constructor->getParameters() as $parameter) {
-                foreach ($parameter->getAttributes(DomainIdentifier::class) as $attr) {
-                    $name = $attr->newInstance()->name;
-                    $value = $this->readPropertyValue($ref, $event, $parameter->getName());
-                    if (is_string($value)) {
-                        $domainIds[$name] = $value;
-                    }
-                }
-            }
-        }
-
-        foreach ($ref->getProperties() as $property) {
-            foreach ($property->getAttributes(DomainIdentifier::class) as $attr) {
-                $name = $attr->newInstance()->name;
-                $value = $this->readPropertyValue($ref, $event, $property->getName());
-                if (is_string($value)) {
-                    $domainIds[$name] = $value;
-                }
-            }
-        }
-
-        if ([] === $domainIds) {
-            throw new \LogicException(sprintf('Event class %s has no properties with #[DomainIdentifier].', $ref->getName()));
-        }
-
-        return $domainIds;
-    }
-
-    private function readPropertyValue(\ReflectionClass $ref, object $event, string $property): mixed
-    {
-        if (! $ref->hasProperty($property)) {
-            throw new \LogicException(sprintf(
-                'Event class %s declares #[DomainIdentifier] on "%s" but has no matching property.',
-                $ref->getName(),
-                $property,
-            ));
-        }
-
-        $refProperty = $ref->getProperty($property);
-        if ($refProperty->isPublic()) {
-            return $refProperty->getValue($event);
-        }
-
-        $getter = static function (string $prop): mixed {
-            return $this->{$prop};
-        };
-
-        return $getter->call($event, $property);
+        throw new \LogicException(sprintf('Event class %s has no #[Event] attribute.', $event::class));
     }
 
     /**

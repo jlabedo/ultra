@@ -7,12 +7,15 @@ namespace Ultra\Events;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Ultra\Events\Attribute\DomainIdentifier;
 
 class EventRegistryCompilerPass implements CompilerPassInterface
 {
     public function process(ContainerBuilder $container): void
     {
         $eventMap = [];
+        $domainIdentifierMap = [];
+        $domainIdentifierRequiresScope = [];
         foreach ($container->findTaggedResourceIds(EventsBundle::EVENT_TAG) as $serviceId => $tags) {
             $class = $container->getDefinition($serviceId)->getClass();
             foreach ($tags as $tag) {
@@ -27,11 +30,39 @@ class EventRegistryCompilerPass implements CompilerPassInterface
                 }
                 $eventMap[$name] = $class;
             }
+
+            $compiledDomainIdentifiers = $this->compileDomainIdentifiers($class);
+            if ([] !== $compiledDomainIdentifiers['identifiers']) {
+                $domainIdentifierMap[$class] = $compiledDomainIdentifiers['identifiers'];
+                $domainIdentifierRequiresScope[$class] = $compiledDomainIdentifiers['requiresScope'];
+            }
         }
 
         $container->setDefinition(EventRegistryInterface::class, new Definition(
             CompiledEventRegistry::class,
-            [$eventMap]
+            [$eventMap, $domainIdentifierMap, $domainIdentifierRequiresScope]
         ));
+    }
+
+    /**
+     * @return array{identifiers: array<string, string>, requiresScope: bool}
+     */
+    private function compileDomainIdentifiers(string $eventClass): array
+    {
+        $eventRef = new \ReflectionClass($eventClass);
+        $domainIdentifiers = [];
+        $requiresScope = false;
+
+        foreach ($eventRef->getProperties() as $property) {
+            foreach ($property->getAttributes(DomainIdentifier::class) as $attribute) {
+                $domainIdentifiers[$attribute->newInstance()->name] = $property->getName();
+                $requiresScope = $requiresScope || ! $property->isPublic();
+            }
+        }
+
+        return [
+            'identifiers' => $domainIdentifiers,
+            'requiresScope' => $requiresScope,
+        ];
     }
 }

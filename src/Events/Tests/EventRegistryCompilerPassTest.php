@@ -24,6 +24,18 @@ final readonly class EventRegistryBundleTaggedEvent
     ) {}
 }
 
+#[Event('faculty.course_archived')]
+final class EventRegistryPrivateTaggedEvent
+{
+    #[DomainIdentifier('faculty')]
+    private string $facultyId;
+
+    public function __construct(string $facultyId)
+    {
+        $this->facultyId = $facultyId;
+    }
+}
+
 test('compiler pass registers event names from tagged resource metadata', function () {
     $container = new ContainerBuilder();
     $container->setDefinition(
@@ -38,7 +50,11 @@ test('compiler pass registers event names from tagged resource metadata', functi
         ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(0))
         ->toBe([
             'faculty.course_created' => EventRegistryCompilerPassTestEvent::class,
-        ]);
+        ])
+        ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(1))
+        ->toBe([])
+        ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(2))
+        ->toBe([]);
 });
 
 test('event bundle autoconfiguration preserves the event name when collecting domain identifiers', function () {
@@ -57,4 +73,26 @@ test('event bundle autoconfiguration preserves the event name when collecting do
         'name' => 'faculty.course_created',
         'tags' => ['faculty' => 'facultyId'],
     ]]);
+});
+
+test('compiler pass injects visibility-aware domain identifier metadata', function () {
+    $container = new ContainerBuilder();
+    $container->setDefinition(
+        EventRegistryPrivateTaggedEvent::class,
+        (new Definition(EventRegistryPrivateTaggedEvent::class))
+            ->addResourceTag(EventsBundle::EVENT_TAG, ['name' => 'faculty.course_archived'])
+    );
+
+    (new EventRegistryCompilerPass())->process($container);
+
+    expect($container->getDefinition(EventRegistryInterface::class)->getArgument(1))
+        ->toBe([
+            EventRegistryPrivateTaggedEvent::class => [
+                'faculty' => 'facultyId',
+            ],
+        ])
+        ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(2))
+        ->toBe([
+            EventRegistryPrivateTaggedEvent::class => true,
+        ]);
 });

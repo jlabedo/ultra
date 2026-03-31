@@ -72,6 +72,26 @@ final class RecordingEventBus implements EventBusInterface
     }
 }
 
+/**
+ * @return array<class-string, array<string, string>>
+ */
+function compiledEventRegistryDomainIdentifiers(): array
+{
+    return [
+        CourseCreated::class => [
+            'course' => 'courseId',
+        ],
+        StudentSubscribed::class => [
+            'course' => 'courseId',
+            'student' => 'studentId',
+        ],
+        StudentUnsubscribed::class => [
+            'course' => 'courseId',
+            'student' => 'studentId',
+        ],
+    ];
+}
+
 function createMediator(array $serviceDefinitions = []): array
 {
     $container = new ContainerBuilder();
@@ -102,7 +122,7 @@ function createMediator(array $serviceDefinitions = []): array
             'course.created' => CourseCreated::class,
             'student.subscribed' => StudentSubscribed::class,
             'student.unsubscribed' => StudentUnsubscribed::class,
-        ]])
+        ], compiledEventRegistryDomainIdentifiers()])
     ;
     $container->setAlias(EventRegistryInterface::class, CompiledEventRegistry::class)->setPublic(true);
 
@@ -293,7 +313,7 @@ test('concurrency: appending with stale version throws', function () {
         'course.created' => CourseCreated::class,
         'student.subscribed' => StudentSubscribed::class,
         'student.unsubscribed' => StudentUnsubscribed::class,
-    ]));
+    ], compiledEventRegistryDomainIdentifiers()));
     $extraEvent = $router->toAppendableEvent(new CourseCreated('math-101', 'Other', 5));
     $store->append([$extraEvent], null);
 

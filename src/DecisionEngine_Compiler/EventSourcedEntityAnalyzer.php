@@ -181,15 +181,6 @@ final class EventSourcedEntityAnalyzer
         $eventRef = new \ReflectionClass($eventClass);
         $tags = [];
 
-        $constructor = $eventRef->getConstructor();
-        if (null !== $constructor) {
-            foreach ($constructor->getParameters() as $parameter) {
-                foreach ($parameter->getAttributes(DomainIdentifier::class) as $attribute) {
-                    $tags[$attribute->newInstance()->name] = true;
-                }
-            }
-        }
-
         foreach ($eventRef->getProperties() as $property) {
             foreach ($property->getAttributes(DomainIdentifier::class) as $attribute) {
                 $tags[$attribute->newInstance()->name] = true;

@@ -11,6 +11,11 @@ interface EventRegistryInterface
     public function getName(string $eventClass): ?string;
 
     /**
+     * @return array<string, string>
+     */
+    public function getDomainIdentifiers(object $event): array;
+
+    /**
      * @return array<string, class-string>
      */
     public function all(): array;
