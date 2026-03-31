@@ -16,7 +16,7 @@
     },
     "autoload": {
         "psr-4": {
-            "Ultra\\Mapper\\": ""
+            "Ultra\\Mapper_Compiler\\": ""
         },
         "exclude-from-classmap": [
             "/Tests/"

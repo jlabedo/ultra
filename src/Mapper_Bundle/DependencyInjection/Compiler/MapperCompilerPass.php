@@ -15,9 +15,6 @@ final class MapperCompilerPass implements CompilerPassInterface
     public function process(ContainerBuilder $container): void
     {
         $classes = $this->collectTaggedClasses($container);
-        if ([] === $classes) {
-            return;
-        }
 
         $runtimeTypes = $this->collectRuntimeNormalizedTypes($container);
 
@@ -41,9 +38,8 @@ final class MapperCompilerPass implements CompilerPassInterface
         }
 
         foreach ($container->findTaggedResourceIds(TagNames::NORMALIZABLE) as $id => $tags) {
-            $definition = $container->findDefinition($id);
             foreach ($tags as $tag) {
-                $class = $tag['class'] ?? $definition->getClass();
+                $class = $tag['class'] ?? $container->findDefinition($id)->getClass();
                 if (null === $class) {
                     throw new \LogicException(sprintf(
                         'Service "%s" tagged "%s" has no class; use tag attribute "class" to specify one.',
@@ -51,7 +47,7 @@ final class MapperCompilerPass implements CompilerPassInterface
                         TagNames::NORMALIZABLE,
                     ));
                 }
-                $classes[] = $container->getParameterBag()->resolveValue($class);
+                $classes[] = $class;
             }
         }
 
