@@ -11,13 +11,13 @@ use Ultra\MessageHandling_Compiler\HandlerMethodGenerator;
  * Generates a compiled mediator PHP class from a resolved handler map.
  *
  * The generated class implements MediatorInterface via:
- *  - a send() method with a hardcoded match expression that delegates to a private
- *    dispatch method per message type;
+ *  - a send() method with a hardcoded ROUTES lookup table that delegates to a
+ *    private dispatch method per message type;
  *  - one private dispatchXxx() method per message type, which inlines all AOP advice
  *    (before calls, around chain) and the handler call with its service dependencies.
  *
  * Everything is resolved lazily from a Psr\Container\ContainerInterface at runtime.
- * No reflection, no dispatch table — pure generated PHP.
+ * No reflection, no runtime route building — pure generated PHP.
  *
  * Handler map format:
  *   array<class-string, HandlerDescriptor>
@@ -56,16 +56,16 @@ final class MediatorGenerator
      */
     public function buildCode(string $className, array $handlers): string
     {
-        $matchArms = [];
+        $routeEntries = [];
         $dispatchMethods = [];
 
         foreach ($handlers as $messageClass => $handler) {
             $dispatchName = $this->dispatchMethodName($messageClass);
 
-            $matchArms[] = sprintf(
-                '            \%s::class => $this->%s($message, $messageContext),',
+            $routeEntries[] = sprintf(
+                '        \%s::class => %s,',
                 ltrim($messageClass, '\\'),
-                $dispatchName,
+                $this->exportString($dispatchName),
             );
 
             $dispatchMethods[] = $this->buildDispatchMethod(
@@ -74,7 +74,9 @@ final class MediatorGenerator
             );
         }
 
-        $matchArmsCode = implode("\n", $matchArms)."\n";
+        $routesCode = [] !== $routeEntries
+            ? implode("\n", $routeEntries)."\n"
+            : '';
         $dispatchMethodsCode = implode("\n\n", $dispatchMethods);
 
         return <<<PHP
@@ -84,6 +86,9 @@ final class MediatorGenerator
 
             final class {$className} implements \\Ultra\\Mediator\\MediatorInterface
             {
+                private const ROUTES = [
+            {$routesCode}    ];
+
                 public function __construct(
                     private \\Psr\\Container\\ContainerInterface \$locator,
                     private \\Ultra\\MessageHandling\\MessageContextPropagatorInterface \$messageContextPropagator,
@@ -93,9 +98,12 @@ final class MediatorGenerator
                 {
                     \$messageContext = \$this->messageContextPropagator
                         ->createDispatchContext(\\Ultra\\MessageHandling\\MessageContext::coerce(\$context));
-                    return match (\$message::class) {
-            {$matchArmsCode}            default => throw new \\Ultra\\Mediator\\Exception\\NoHandlerFound(\$message::class),
-                    };
+                    \$method = self::ROUTES[\$message::class] ?? null;
+                    if (null === \$method) {
+                        throw new \\Ultra\\Mediator\\Exception\\NoHandlerFound(\$message::class);
+                    }
+
+                    return \$this->{\$method}(\$message, \$messageContext);
                 }
 
             {$dispatchMethodsCode}
@@ -122,5 +130,10 @@ final class MediatorGenerator
         $short = substr($messageClass, strrpos($messageClass, '\\') + 1);
 
         return 'dispatch'.$short.'_'.substr(md5($messageClass), 0, 6);
+    }
+
+    private function exportString(string $value): string
+    {
+        return var_export($value, true);
     }
 }

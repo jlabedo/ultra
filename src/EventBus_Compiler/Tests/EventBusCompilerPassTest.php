@@ -302,6 +302,28 @@ test('event bus routes known events polymorphically in deterministic priority or
     ]);
 });
 
+test('event bus uses a constant route table and loops over ordered handler methods', function () {
+    $log = new EventLog();
+    $container = createEventBusContainer('CompiledEventBusRouteTable', [
+        ExactCreatedHandler::class => (new Definition(ExactCreatedHandler::class, [$log]))->addTag('event_bus.handler'),
+        LaterCreatedHandler::class => (new Definition(LaterCreatedHandler::class, [$log]))->addTag('event_bus.handler'),
+    ]);
+
+    $code = file_get_contents(TEST_OUTPUT_DIR.'/CompiledEventBusRouteTable.php');
+
+    expect($container->get(EventBusInterface::class))->toBeInstanceOf(EventBusInterface::class)
+        ->and($code)->toBeString()
+        ->and($code)->toContain('private const ROUTES = [')
+        ->and($code)->toContain('\\'.TestOrderCreated::class.'::class => [')
+        ->and($code)->toContain("'invokeTestOrderCreated_0_")
+        ->and($code)->toContain("'invokeTestOrderCreated_1_")
+        ->and($code)->toContain('$methods = self::ROUTES[$event::class] ?? null;')
+        ->and($code)->toContain('foreach ($methods as $method) {')
+        ->and($code)->toContain('$this->{$method}($event, $messageContext);')
+        ->and($code)->not->toContain('match ($event::class)')
+        ->and($code)->not->toContain('private function publishTestOrderCreated_');
+});
+
 test('event bus treats known events with zero handlers as a no-op', function () {
     $container = createEventBusContainer('CompiledEventBusNoop');
 

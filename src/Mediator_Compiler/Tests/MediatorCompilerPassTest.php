@@ -726,6 +726,25 @@ test('generated mediator routes messages to the correct handler method', functio
     ;
 });
 
+test('generated mediator uses a constant route table instead of a match expression', function () use ($testOutputDir) {
+    $container = new ContainerBuilder();
+    $container->setDefinition(SalutationHandler::class, new Definition(SalutationHandler::class)->addTag('mediator.handler'));
+
+    compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorRouteTable');
+
+    $code = file_get_contents($testOutputDir.'/CompiledMediatorRouteTable.php');
+
+    expect($code)->toBeString()
+        ->toContain('private const ROUTES = [')
+        ->toContain('\\'.HelloMessage::class.'::class')
+        ->toContain('\\'.GoodbyeMessage::class.'::class')
+        ->toContain("'dispatchHelloMessage_")
+        ->toContain("'dispatchGoodbyeMessage_")
+        ->toContain('$method = self::ROUTES[$message::class] ?? null;')
+        ->toContain('return $this->{$method}($message, $messageContext);')
+        ->not->toContain('return match ($message::class)');
+});
+
 test('generated mediator injects services from the locator into handler methods', function () use ($testOutputDir) {
     $container = new ContainerBuilder();
     $container->setDefinition(GreetWithServiceHandler::class, new Definition(GreetWithServiceHandler::class)->addTag('mediator.handler'));

@@ -31,41 +31,24 @@ final class EventBusGenerator
      */
     public function buildCode(string $className, array $routes): string
     {
-        $matchArms = [];
-        $publishMethods = [];
+        $routeEntries = [];
         $invokeMethods = [];
 
         foreach ($routes as $eventClass => $handlers) {
-            $publishMethod = $this->publishMethodName($eventClass);
-            $matchArms[] = sprintf(
-                '            \\%s::class => $this->%s($event, $messageContext),',
-                ltrim($eventClass, '\\'),
-                $publishMethod,
-            );
-
-            $calls = [];
+            $invokeMethodNames = [];
             foreach ($handlers as $index => $handler) {
                 $invokeMethod = $this->invokeMethodName($eventClass, $index);
                 $invokeMethods[] = $this->methodGenerator->generate($invokeMethod, $handler);
-                $calls[] = sprintf('        $this->%s($event, $context);', $invokeMethod);
+                $invokeMethodNames[] = $invokeMethod;
             }
 
-            $body = implode("\n", $calls);
-            if ('' !== $body) {
-                $body .= "\n";
-            }
-
-            $publishMethods[] = <<<PHP
-                private function {$publishMethod}(object \$event, \\Ultra\\MessageHandling\\MessageContext \$context): void
-                {
-            {$body}    }
-            PHP;
+            $routeEntries[] = $this->buildRouteEntry($eventClass, $invokeMethodNames);
         }
 
-        $matchArmsCode = [] !== $matchArms
-            ? implode("\n", $matchArms)."\n"
+        $routesCode = [] !== $routeEntries
+            ? implode("\n", $routeEntries)."\n"
             : '';
-        $publishMethodsCode = implode("\n\n", array_merge($publishMethods, $invokeMethods));
+        $invokeMethodsCode = implode("\n\n", $invokeMethods);
 
         return <<<PHP
             <?php
@@ -74,6 +57,9 @@ final class EventBusGenerator
 
             final class {$className} implements \\Ultra\\EventBus\\EventBusInterface
             {
+                private const ROUTES = [
+            {$routesCode}    ];
+
                 public function __construct(
                     private \\Psr\\Container\\ContainerInterface \$locator,
                     private \\Ultra\\MessageHandling\\MessageContextPropagatorInterface \$messageContextPropagator,
@@ -83,21 +69,45 @@ final class EventBusGenerator
                 {
                     \$messageContext = \$this->messageContextPropagator
                         ->createDispatchContext(\\Ultra\\MessageHandling\\MessageContext::coerce(\$context));
-                    match (\$event::class) {
-            {$matchArmsCode}            default => throw new \\Ultra\\EventBus\\Exception\\UnknownEvent(\$event::class),
-                    };
+                    \$methods = self::ROUTES[\$event::class] ?? null;
+                    if (null === \$methods) {
+                        throw new \\Ultra\\EventBus\\Exception\\UnknownEvent(\$event::class);
+                    }
+
+                    foreach (\$methods as \$method) {
+                        \$this->{\$method}(\$event, \$messageContext);
+                    }
                 }
 
-            {$publishMethodsCode}
+            {$invokeMethodsCode}
             }
             PHP;
     }
 
-    private function publishMethodName(string $eventClass): string
+    /**
+     * @param list<string> $methodNames
+     */
+    private function buildRouteEntry(string $eventClass, array $methodNames): string
     {
-        $short = substr($eventClass, strrpos($eventClass, '\\') + 1);
+        if ([] === $methodNames) {
+            return sprintf(
+                '        \\%s::class => [],',
+                ltrim($eventClass, '\\'),
+            );
+        }
 
-        return 'publish'.$short.'_'.substr(md5($eventClass), 0, 6);
+        $lines = [
+            sprintf(
+                '        \\%s::class => [',
+                ltrim($eventClass, '\\'),
+            ),
+        ];
+        foreach ($methodNames as $methodName) {
+            $lines[] = sprintf('            %s,', $this->exportString($methodName));
+        }
+        $lines[] = '        ],';
+
+        return implode("\n", $lines);
     }
 
     private function invokeMethodName(string $eventClass, int $index): string
@@ -105,5 +115,10 @@ final class EventBusGenerator
         $short = substr($eventClass, strrpos($eventClass, '\\') + 1);
 
         return 'invoke'.$short.'_'.$index.'_'.substr(md5($eventClass.'#'.$index), 0, 6);
+    }
+
+    private function exportString(string $value): string
+    {
+        return var_export($value, true);
     }
 }
