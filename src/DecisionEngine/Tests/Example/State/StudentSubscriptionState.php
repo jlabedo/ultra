@@ -4,16 +4,14 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests\Example\State;
 
-use Ultra\DecisionEngine\ReducerTrait;
+use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
+use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
-use Ultra\Events\Attribute\DomainIdentifier;
 
+#[EventSourcedEntity(tags: ['student'])]
 class StudentSubscriptionState
 {
-    use ReducerTrait;
-
-    #[DomainIdentifier('student')]
     private string $studentId = '';
 
     /** @var array<string, true> */
@@ -24,13 +22,15 @@ class StudentSubscriptionState
         return isset($this->subscribedCourseIds[$courseId]);
     }
 
-    private function onStudentSubscribed(StudentSubscribed $event): void
+    #[EventSourcingHandler]
+    public function onStudentSubscribed(StudentSubscribed $event): void
     {
         $this->studentId = $event->studentId;
         $this->subscribedCourseIds[$event->courseId] = true;
     }
 
-    private function onStudentUnsubscribed(StudentUnsubscribed $event): void
+    #[EventSourcingHandler]
+    public function onStudentUnsubscribed(StudentUnsubscribed $event): void
     {
         unset($this->subscribedCourseIds[$event->courseId]);
     }

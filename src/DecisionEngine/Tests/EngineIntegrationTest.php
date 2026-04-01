@@ -18,6 +18,8 @@ use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
+use Ultra\DecisionEngine\Tests\Example\State\StudentSubscriptionState;
+use Ultra\DecisionEngine_Compiler\EntityLoaderCompilerPass;
 use Ultra\EventBus\EventBusInterface;
 use Ultra\Events\CompiledEventRegistry;
 use Ultra\Events\EventRegistryInterface;
@@ -47,10 +49,10 @@ final class CommandWithClockDependency
     #[Handles]
     #[DecisionHandler]
     public function decide(
-        ?CourseCapacityState $course,
+        CourseCapacityState $course,
         \DateTimeInterface $clock,
     ): array {
-        if (null !== $course) {
+        if ($course->exists()) {
             throw new \InvalidArgumentException('Course already exists');
         }
 
@@ -147,6 +149,16 @@ function createMediator(array $serviceDefinitions = []): array
         ;
     }
 
+    foreach ([
+        CourseCapacityState::class,
+        StudentSubscriptionState::class,
+    ] as $stateClass) {
+        $container->register($stateClass, $stateClass)
+            ->setAutoconfigured(false)
+            ->addResourceTag('decision_engine.entity')
+        ;
+    }
+
     foreach ($serviceDefinitions as $id => $definition) {
         if ($definition instanceof Definition) {
             $container->setDefinition($id, $definition);
@@ -157,6 +169,7 @@ function createMediator(array $serviceDefinitions = []): array
     }
 
     $generatedClass = 'CompiledDecisionMediator_'.bin2hex(random_bytes(4));
+    $container->addCompilerPass(new EntityLoaderCompilerPass($outputDir.'/decision_engine'));
     $container->addCompilerPass(new MediatorCompilerPass($outputDir, $generatedClass));
     $container->compile();
 
@@ -220,13 +233,28 @@ test('handle throws when creating course that already exists', function () {
     ;
 });
 
-test('handle passes null for nullable state when stream is empty', function () {
+test('handle hydrates an empty state object when the stream is empty', function () {
     ['mediator' => $mediator] = createMediator();
 
     $events = $mediator->send(new CreateCourseCommand('new-course', 'New', 20));
 
     expect($events)->toHaveCount(1);
     expect($events[0]->courseId)->toBe('new-course');
+});
+
+test('handle returns a course.not_found violation when subscribing before course creation', function () {
+    ['mediator' => $mediator] = createMediator();
+
+    expect(fn () => $mediator->send(new SubscribeStudentToCourseCommand('missing-course', 'alice')))
+        ->toThrow(InvariantViolation::class)
+    ;
+
+    $violations = $mediator->send(new SubscribeStudentToCourseCommand('missing-course', 'alice'), [
+        'decision_mode' => 'check',
+    ]);
+
+    expect($violations)->toHaveCount(1);
+    expect($violations[0]->code)->toBe('course.not_found');
 });
 
 test('handle allows multiple commands in sequence', function () {

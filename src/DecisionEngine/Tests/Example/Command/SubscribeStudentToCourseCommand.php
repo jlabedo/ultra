@@ -24,16 +24,19 @@ readonly class SubscribeStudentToCourseCommand
      */
     public function check(
         CourseCapacityState $course,
-        ?StudentSubscriptionState $student,
+        StudentSubscriptionState $student,
     ): array {
-        return array_filter([
+        return array_values(array_filter([
+            ! $course->exists()
+                ? new Violation('course.not_found', 'Course does not exist')
+                : null,
             $course->isFull()
                 ? new Violation('course.full', 'Course has reached maximum capacity')
                 : null,
-            null !== $student && $student->isSubscribedTo($this->courseId)
+            $student->isSubscribedTo($this->courseId)
                 ? new Violation('student.already_subscribed', 'Student is already subscribed')
                 : null,
-        ]);
+        ]));
     }
 
     /**
@@ -43,7 +46,7 @@ readonly class SubscribeStudentToCourseCommand
     #[DecisionHandler]
     public function decide(
         CourseCapacityState $course,
-        ?StudentSubscriptionState $student,
+        StudentSubscriptionState $student,
     ): array {
         $violations = $this->check($course, $student);
 

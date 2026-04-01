@@ -23,9 +23,9 @@ readonly class CreateCourseCommand
     #[Handles]
     #[DecisionHandler]
     public function decide(
-        ?CourseCapacityState $course,
+        CourseCapacityState $course,
     ): array {
-        if (null !== $course) {
+        if ($course->exists()) {
             throw new \InvalidArgumentException('Course already exists: '.$this->courseId);
         }
 

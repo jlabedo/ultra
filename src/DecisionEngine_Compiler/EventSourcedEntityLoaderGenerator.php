@@ -33,11 +33,10 @@ final class EventSourcedEntityLoaderGenerator
             final class {$className} implements \\Ultra\\DecisionEngine\\EventSourcedEntityLoader
             {
                 public function __construct(
-                    private \\Ultra\\EventStore\\EventStore \$eventStore,
                     private \\Ultra\\Mapper\\UltraNormalizer \$normalizer,
                 ) {}
 
-                public function load(\\Ultra\\EventStore\\DomainIdentifier ...\$identifiers): {$entityClassName}
+                public function query(\\Ultra\\EventStore\\DomainIdentifier ...\$identifiers): \\Ultra\\EventStore\\StreamQuery
                 {
                     \$tagValues = \\Ultra\\DecisionEngine\\EventSourcedTagValueResolver::resolve(
                         {$entityClassLiteral},
@@ -47,11 +46,19 @@ final class EventSourcedEntityLoaderGenerator
 
             {$tagExtractionCode}
 
-                    \$query = {$queryCode};
+                    return {$queryCode};
+                }
+
+                public function hydrate(array \$storedEvents, \\Ultra\\EventStore\\DomainIdentifier ...\$identifiers): {$entityClassName}
+                {
+                    \$query = \$this->query(...\$identifiers);
                     \$state = new \\{$definition->entityClass}();
-                    \$storedEvents = \$this->eventStore->load(\$query)->events;
 
                     foreach (\$storedEvents as \$storedEvent) {
+                        if (! \$query->matches(\$storedEvent)) {
+                            continue;
+                        }
+
             {$dispatchCode}
                     }
 

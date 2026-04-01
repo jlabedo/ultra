@@ -9,32 +9,37 @@ use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
 
-test('fromEvents correctly tracks capacity and count', function () {
-    $state = CourseCapacityState::fromEvents([
-        new CourseCreated('math-101', 'Math', maxCapacity: 10),
-        new StudentSubscribed('math-101', 'alice'),
-        new StudentSubscribed('math-101', 'bob'),
-    ]);
+test('new state reports that the course does not exist yet', function () {
+    $state = new CourseCapacityState();
 
+    expect($state->exists())->toBeFalse();
+    expect($state->isFull())->toBeFalse();
+});
+
+test('handlers correctly track capacity and count', function () {
+    $state = new CourseCapacityState();
+    $state->onCourseCreated(new CourseCreated('math-101', 'Math', maxCapacity: 10));
+    $state->onStudentSubscribed(new StudentSubscribed('math-101', 'alice'));
+    $state->onStudentSubscribed(new StudentSubscribed('math-101', 'bob'));
+
+    expect($state->exists())->toBeTrue();
     expect($state->isFull())->toBeFalse();
 });
 
 test('isFull returns true at capacity', function () {
-    $state = CourseCapacityState::fromEvents([
-        new CourseCreated('math-101', 'Math', maxCapacity: 2),
-        new StudentSubscribed('math-101', 'alice'),
-        new StudentSubscribed('math-101', 'bob'),
-    ]);
+    $state = new CourseCapacityState();
+    $state->onCourseCreated(new CourseCreated('math-101', 'Math', maxCapacity: 2));
+    $state->onStudentSubscribed(new StudentSubscribed('math-101', 'alice'));
+    $state->onStudentSubscribed(new StudentSubscribed('math-101', 'bob'));
 
     expect($state->isFull())->toBeTrue();
 });
 
 test('isFull returns false after unsubscribe', function () {
-    $state = CourseCapacityState::fromEvents([
-        new CourseCreated('math-101', 'Math', maxCapacity: 1),
-        new StudentSubscribed('math-101', 'alice'),
-        new StudentUnsubscribed('math-101', 'alice'),
-    ]);
+    $state = new CourseCapacityState();
+    $state->onCourseCreated(new CourseCreated('math-101', 'Math', maxCapacity: 1));
+    $state->onStudentSubscribed(new StudentSubscribed('math-101', 'alice'));
+    $state->onStudentUnsubscribed(new StudentUnsubscribed('math-101', 'alice'));
 
     expect($state->isFull())->toBeFalse();
 });

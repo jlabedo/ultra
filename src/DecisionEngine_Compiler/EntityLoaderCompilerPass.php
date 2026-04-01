@@ -49,7 +49,6 @@ final class EntityLoaderCompilerPass implements CompilerPassInterface
 
             $loaderServiceId = 'ultra.decision_engine.loader.'.substr(md5($entityClass), 0, 12);
             $loaderDefinition = new Definition($loaderClass, [
-                new Reference(EventStore::class),
                 new Reference(UltraNormalizer::class),
             ]);
             $loaderDefinition->setFile($filePath)->setPublic(false);
@@ -57,7 +56,10 @@ final class EntityLoaderCompilerPass implements CompilerPassInterface
             $loaderReferences[$entityClass] = new Reference($loaderServiceId);
         }
 
-        $engineDefinition = new Definition(Engine::class, [$loaderReferences]);
+        $engineDefinition = new Definition(Engine::class, [
+            $loaderReferences,
+            new Reference(EventStore::class),
+        ]);
         $engineDefinition->setPublic(true);
         $container->setDefinition(Engine::class, $engineDefinition);
     }

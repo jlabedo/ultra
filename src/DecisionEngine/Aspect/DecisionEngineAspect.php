@@ -6,16 +6,15 @@ namespace Ultra\DecisionEngine\Aspect;
 
 use Ultra\DecisionEngine\Attribute\BindTo;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
+use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
+use Ultra\DecisionEngine\Engine;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
-use Ultra\DecisionEngine\Exception\StreamNotFoundException;
-use Ultra\DecisionEngine\ReducerTrait;
+use Ultra\DecisionEngine\EventSourcedEntityLoader;
 use Ultra\EventBus\EventBusInterface;
-use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\StoredEvent;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\Around;
@@ -28,6 +27,7 @@ final class DecisionEngineAspect
     private const MODE_CHECK = 'check';
 
     public function __construct(
+        private readonly Engine $engine,
         private readonly EventStore $eventStore,
         private readonly EventRegistryInterface $eventClassRegistry,
         private readonly UltraNormalizer $normalizer,
@@ -81,7 +81,6 @@ final class DecisionEngineAspect
                 'stateClass' => $typeClass,
                 'domainIdentifierName' => $domainIdentifierName,
                 'commandProperty' => $commandProperty,
-                'isNullable' => $type->allowsNull(),
             ];
             $provides[] = $index;
         }
@@ -106,30 +105,23 @@ final class DecisionEngineAspect
     public function around(callable $proceed, object $message, MessageContext $context, array $config): mixed
     {
         $stateParams = $config['stateParams'] ?? [];
-        $loadResult = $this->eventStore->load($this->buildStreamQuery($message, $stateParams));
+        $preparedStates = $this->prepareStates($message, $stateParams);
+        $loadResult = $this->eventStore->load(StreamQuery::anyOf(...array_column($preparedStates, 'query')));
 
         $states = [];
         $stateByName = [];
 
-        foreach ($stateParams as $stateParam) {
-            $streamValue = $this->getCommandPropertyValue($message, $stateParam['commandProperty']);
-            $streamEvents = $this->eventsForStream($loadResult->events, $stateParam, $streamValue);
-
-            if ([] === $streamEvents) {
-                if ($stateParam['isNullable']) {
-                    $state = null;
-                } else {
-                    throw new StreamNotFoundException(
-                        $stateParam['domainIdentifierName'],
-                        $streamValue,
-                    );
-                }
-            } else {
-                $state = $stateParam['stateClass']::fromEvents($streamEvents);
-            }
+        foreach ($preparedStates as $preparedState) {
+            $state = $preparedState['loader']->hydrate(
+                $loadResult->events,
+                new EventStoreDomainIdentifier(
+                    $preparedState['domainIdentifierName'],
+                    $preparedState['streamValue'],
+                ),
+            );
 
             $states[] = $state;
-            $stateByName[$stateParam['parameterName']] = $state;
+            $stateByName[$preparedState['parameterName']] = $state;
         }
 
         if (self::MODE_CHECK === $context->get(self::CONTEXT_DECISION_MODE)) {
@@ -151,75 +143,14 @@ final class DecisionEngineAspect
             $emittedEvents = [];
         }
 
-        $appendableEvents = $this->toAppendableEvents($emittedEvents);
-        $this->eventStore->append($appendableEvents, $loadResult->queryVersion);
-        foreach ($emittedEvents as $emittedEvent) {
-            $this->eventBus?->publish($emittedEvent, $context);
+        $this->eventStore->append($this->toAppendableEvents($emittedEvents), $loadResult->queryVersion);
+        if (null !== $this->eventBus) {
+            foreach ($emittedEvents as $emittedEvent) {
+                $this->eventBus->publish($emittedEvent, $context);
+            }
         }
 
         return $emittedEvents;
-    }
-
-    /**
-     * @param list<array<string, mixed>> $stateParams
-     */
-    private function buildStreamQuery(object $command, array $stateParams): StreamQuery
-    {
-        $branches = [];
-        foreach ($stateParams as $stateParam) {
-            $value = $this->getCommandPropertyValue($command, $stateParam['commandProperty']);
-            $branches[] = StreamQuery::forStream(new EventStoreDomainIdentifier(
-                $stateParam['domainIdentifierName'],
-                $value,
-            ))->ofTypes(...$this->handledEventNames($stateParam['stateClass']));
-        }
-
-        return StreamQuery::anyOf(...$branches);
-    }
-
-    /**
-     * @param list<StoredEvent>    $events
-     * @param array<string, mixed> $stateParam
-     *
-     * @return list<object>
-     */
-    private function eventsForStream(array $events, array $stateParam, string $streamValue): array
-    {
-        $dimension = $stateParam['domainIdentifierName'];
-        $filtered = [];
-        foreach ($events as $stored) {
-            if (($stored->domainIds[$dimension] ?? null) !== $streamValue) {
-                continue;
-            }
-            $filtered[] = $stored;
-        }
-
-        return $this->storedEventsToObjects($filtered, $stateParam['stateClass']);
-    }
-
-    /**
-     * @param list<StoredEvent> $events
-     *
-     * @return list<object>
-     */
-    private function storedEventsToObjects(array $events, string $stateClass): array
-    {
-        $handledTypes = $stateClass::handledEventTypes();
-        $objects = [];
-        foreach ($events as $stored) {
-            $eventClass = $this->eventClassRegistry->getClass($stored->eventType);
-            if (null === $eventClass || ! in_array($eventClass, $handledTypes, true)) {
-                continue;
-            }
-            $objects[] = $this->storedEventToDto($stored, $eventClass);
-        }
-
-        return $objects;
-    }
-
-    private function storedEventToDto(StoredEvent $stored, string $eventClass): object
-    {
-        return $this->normalizer->fromScalar($stored->payload, $eventClass);
     }
 
     /**
@@ -260,24 +191,31 @@ final class DecisionEngineAspect
     }
 
     /**
-     * @return list<string>
+     * @param list<array<string, mixed>> $stateParams
+     *
+     * @return list<array{parameterName: string, domainIdentifierName: string, streamValue: string, loader: EventSourcedEntityLoader, query: StreamQuery}>
      */
-    private function handledEventNames(string $stateClass): array
+    private function prepareStates(object $command, array $stateParams): array
     {
-        $names = [];
-        foreach ($stateClass::handledEventTypes() as $eventClass) {
-            $eventName = $this->eventClassRegistry->getName($eventClass);
-            if (null === $eventName) {
-                throw new \LogicException(sprintf(
-                    'State class %s handles event class %s but it is not registered.',
-                    $stateClass,
-                    $eventClass,
-                ));
-            }
-            $names[] = $eventName;
+        $preparedStates = [];
+        foreach ($stateParams as $stateParam) {
+            $streamValue = $this->getCommandPropertyValue($command, $stateParam['commandProperty']);
+            $loader = $this->engine->loader($stateParam['stateClass']);
+            $identifier = new EventStoreDomainIdentifier(
+                $stateParam['domainIdentifierName'],
+                $streamValue,
+            );
+
+            $preparedStates[] = [
+                'parameterName' => $stateParam['parameterName'],
+                'domainIdentifierName' => $stateParam['domainIdentifierName'],
+                'streamValue' => $streamValue,
+                'loader' => $loader,
+                'query' => $loader->query($identifier),
+            ];
         }
 
-        return array_values(array_unique($names));
+        return $preparedStates;
     }
 
     private function getCommandPropertyValue(object $command, string $property): string
@@ -298,33 +236,31 @@ final class DecisionEngineAspect
         if (! class_exists($class)) {
             return false;
         }
-        $ref = new \ReflectionClass($class);
 
-        if ([] !== $ref->getTraitNames() && in_array(ReducerTrait::class, $ref->getTraitNames(), true)) {
-            return true;
-        }
-
-        foreach ($ref->getProperties() as $property) {
-            foreach ($property->getAttributes(DomainIdentifier::class) as $attr) {
-                return true;
-            }
-        }
-
-        return false;
+        return [] !== (new \ReflectionClass($class))->getAttributes(EventSourcedEntity::class);
     }
 
     private static function getDomainIdentifierName(string $stateClass): string
     {
         $ref = new \ReflectionClass($stateClass);
-        foreach ($ref->getProperties() as $property) {
-            foreach ($property->getAttributes(DomainIdentifier::class) as $attr) {
-                return $attr->newInstance()->name;
-            }
+        $attributes = $ref->getAttributes(EventSourcedEntity::class);
+        if ([] === $attributes) {
+            throw new \LogicException(sprintf(
+                'State class %s is not marked with #[EventSourcedEntity].',
+                $stateClass,
+            ));
         }
 
-        throw new \LogicException(sprintf(
-            'State class %s has no property with #[DomainIdentifier].',
-            $stateClass,
-        ));
+        /** @var EventSourcedEntity $entity */
+        $entity = $attributes[0]->newInstance();
+        if (1 !== count($entity->tags)) {
+            throw new \LogicException(sprintf(
+                'Decision handler state class %s must declare exactly one event-sourced tag.',
+                $stateClass,
+            ));
+        }
+
+        return $entity->tags[0];
     }
+
 }
