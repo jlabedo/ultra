@@ -133,7 +133,7 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
                 }
 
                 $registeredIds[$alias] = $primaryId;
-                $container->setAlias($alias, $primaryId)->setPublic(true);
+                $container->setAlias($alias, $primaryId);
             }
 
             $primaryServices[$primaryId] = $service;
