@@ -8,19 +8,23 @@ use App\Faculty\Event\CourseCapacityChanged;
 use App\Faculty\Event\CourseCreated;
 use App\Faculty\Event\StudentSubscribedToCourse;
 use App\Faculty\Event\StudentUnsubscribedFromCourse;
-use Ultra\DecisionEngine\ReducerTrait;
-use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
+use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 
+#[EventSourcedEntity(tags: ['course'])]
 final class CourseState
 {
-    use ReducerTrait;
-
-    #[DomainIdentifier('course')]
+    private bool $exists = false;
     private string $courseId = '';
 
     private string $name = '';
     private int $capacity = 0;
     private int $subscribedStudents = 0;
+
+    public function exists(): bool
+    {
+        return $this->exists;
+    }
 
     public function capacity(): int
     {
@@ -39,27 +43,32 @@ final class CourseState
 
     public function isFull(): bool
     {
-        return $this->subscribedStudents >= $this->capacity;
+        return $this->exists && $this->subscribedStudents >= $this->capacity;
     }
 
-    private function onCourseCreated(CourseCreated $event): void
+    #[EventSourcingHandler]
+    public function onCourseCreated(CourseCreated $event): void
     {
+        $this->exists = true;
         $this->courseId = $event->courseId;
         $this->name = $event->name;
         $this->capacity = $event->capacity;
     }
 
-    private function onCourseCapacityChanged(CourseCapacityChanged $event): void
+    #[EventSourcingHandler]
+    public function onCourseCapacityChanged(CourseCapacityChanged $event): void
     {
         $this->capacity = $event->capacity;
     }
 
-    private function onStudentSubscribedToCourse(StudentSubscribedToCourse $event): void
+    #[EventSourcingHandler]
+    public function onStudentSubscribedToCourse(StudentSubscribedToCourse $event): void
     {
         ++$this->subscribedStudents;
     }
 
-    private function onStudentUnsubscribedFromCourse(StudentUnsubscribedFromCourse $event): void
+    #[EventSourcingHandler]
+    public function onStudentUnsubscribedFromCourse(StudentUnsubscribedFromCourse $event): void
     {
         $this->subscribedStudents = max(0, $this->subscribedStudents - 1);
     }

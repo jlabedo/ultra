@@ -9,7 +9,7 @@ use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\DecisionEngine\Exception\StreamNotFoundException;
+use Ultra\DecisionEngine\Violation;
 
 final class ApiExceptionSubscriber implements EventSubscriberInterface
 {
@@ -25,24 +25,21 @@ final class ApiExceptionSubscriber implements EventSubscriberInterface
         $throwable = $event->getThrowable();
 
         if ($throwable instanceof InvariantViolation) {
+            $violations = array_map(
+                static fn (Violation $violation): array => [
+                    'code' => $violation->code,
+                    'message' => $violation->message,
+                ],
+                $throwable->violations,
+            );
+            $statusCode = 1 === count($throwable->violations) && str_ends_with($throwable->violations[0]->code, '.not_found')
+                ? JsonResponse::HTTP_NOT_FOUND
+                : JsonResponse::HTTP_UNPROCESSABLE_ENTITY;
+
             $event->setResponse(new JsonResponse([
                 'error' => $throwable->getMessage(),
-                'violations' => array_map(
-                    static fn (\Ultra\DecisionEngine\Violation $violation): array => [
-                        'code' => $violation->code,
-                        'message' => $violation->message,
-                    ],
-                    $throwable->violations,
-                ),
-            ], JsonResponse::HTTP_UNPROCESSABLE_ENTITY));
-
-            return;
-        }
-
-        if ($throwable instanceof StreamNotFoundException) {
-            $event->setResponse(new JsonResponse([
-                'error' => $throwable->getMessage(),
-            ], JsonResponse::HTTP_NOT_FOUND));
+                'violations' => $violations,
+            ], $statusCode));
 
             return;
         }

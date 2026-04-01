@@ -23,14 +23,13 @@ final readonly class SendAllCoursesFullyBookedNotificationCommand
     #[Handles]
     #[DecisionHandler]
     public function decide(
-        ?FacultyCourseAvailabilityState $faculty,
-        ?FacultyAdminNotificationState $notifications,
+        FacultyCourseAvailabilityState $faculty,
+        FacultyAdminNotificationState $notifications,
     ): array {
         if (
-            null === $faculty
-            || ! $faculty->hasCourses()
+            ! $faculty->hasCourses()
             || ! $faculty->allCoursesFullyBooked()
-            || (null !== $notifications && $notifications->hasSentAllCoursesFullyBookedNotification())
+            || $notifications->hasSentAllCoursesFullyBookedNotification()
         ) {
             return [];
         }

@@ -1,6 +1,7 @@
 <?php
 
 return [
+    Ultra\DecisionEngine_Bundle\DecisionEngineBundle::class => ['all' => true],
     Symfony\Bundle\FrameworkBundle\FrameworkBundle::class => ['all' => true],
     Ultra\EventBus_Bundle\EventBusBundle::class => ['all' => true],
     Ultra\Events\EventsBundle::class => ['all' => true],

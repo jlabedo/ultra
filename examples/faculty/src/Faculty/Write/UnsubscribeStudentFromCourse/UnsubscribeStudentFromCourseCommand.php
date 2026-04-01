@@ -23,13 +23,16 @@ final readonly class UnsubscribeStudentFromCourseCommand
     /**
      * @return list<Violation>
      */
-    public function check(CourseState $course, ?StudentState $student): array
+    public function check(CourseState $course, StudentState $student): array
     {
         return array_values(array_filter([
-            null === $student || ! $student->isEnrolled()
+            ! $course->exists()
+                ? new Violation('course.not_found', 'Course does not exist.')
+                : null,
+            ! $student->isEnrolled()
                 ? new Violation('student.not_enrolled', 'Student must be enrolled in the faculty before unsubscribing from a course.')
                 : null,
-            null !== $student && ! $student->isSubscribedTo($this->courseId)
+            ! $student->isSubscribedTo($this->courseId)
                 ? new Violation('student.not_subscribed', 'Student is not subscribed to this course.')
                 : null,
         ]));
@@ -40,7 +43,7 @@ final readonly class UnsubscribeStudentFromCourseCommand
      */
     #[Handles]
     #[DecisionHandler]
-    public function decide(CourseState $course, ?StudentState $student): array
+    public function decide(CourseState $course, StudentState $student): array
     {
         $violations = $this->check($course, $student);
         if ([] !== $violations) {

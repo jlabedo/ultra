@@ -23,9 +23,9 @@ final readonly class EnrollStudentInFacultyCommand
      */
     #[Handles]
     #[DecisionHandler]
-    public function decide(?StudentState $student): array
+    public function decide(StudentState $student): array
     {
-        if (null !== $student && $student->isEnrolled()) {
+        if ($student->isEnrolled()) {
             throw new \InvalidArgumentException('Student already enrolled: '.$this->studentId);
         }
 

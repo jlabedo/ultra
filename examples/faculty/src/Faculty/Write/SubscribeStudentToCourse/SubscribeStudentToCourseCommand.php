@@ -24,19 +24,22 @@ final readonly class SubscribeStudentToCourseCommand
     /**
      * @return list<Violation>
      */
-    public function check(CourseState $course, ?StudentState $student): array
+    public function check(CourseState $course, StudentState $student): array
     {
         return array_values(array_filter([
-            null === $student || ! $student->isEnrolled()
+            ! $course->exists()
+                ? new Violation('course.not_found', 'Course does not exist.')
+                : null,
+            ! $student->isEnrolled()
                 ? new Violation('student.not_enrolled', 'Student must be enrolled in the faculty before subscribing to a course.')
                 : null,
             $course->isFull()
                 ? new Violation('course.full', 'Course has reached its maximum capacity.')
                 : null,
-            null !== $student && $student->isSubscribedTo($this->courseId)
+            $student->isSubscribedTo($this->courseId)
                 ? new Violation('student.already_subscribed', 'Student is already subscribed to this course.')
                 : null,
-            null !== $student && $student->subscriptionCount() >= SubscriptionPolicy::MAX_COURSES_PER_STUDENT
+            $student->subscriptionCount() >= SubscriptionPolicy::MAX_COURSES_PER_STUDENT
                 ? new Violation(
                     'student.subscription_limit_reached',
                     sprintf('A student can subscribe to at most %d courses.', SubscriptionPolicy::MAX_COURSES_PER_STUDENT),
@@ -50,7 +53,7 @@ final readonly class SubscribeStudentToCourseCommand
      */
     #[Handles]
     #[DecisionHandler]
-    public function decide(CourseState $course, ?StudentState $student): array
+    public function decide(CourseState $course, StudentState $student): array
     {
         $violations = $this->check($course, $student);
         if ([] !== $violations) {

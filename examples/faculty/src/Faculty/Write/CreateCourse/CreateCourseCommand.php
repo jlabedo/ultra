@@ -23,9 +23,9 @@ final readonly class CreateCourseCommand
      */
     #[Handles]
     #[DecisionHandler]
-    public function decide(?CourseState $course): array
+    public function decide(CourseState $course): array
     {
-        if (null !== $course) {
+        if ($course->exists()) {
             throw new \InvalidArgumentException('Course already exists: '.$this->courseId);
         }
 

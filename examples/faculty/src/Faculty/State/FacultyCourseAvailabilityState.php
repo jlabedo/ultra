@@ -8,14 +8,12 @@ use App\Faculty\Event\CourseCapacityChanged;
 use App\Faculty\Event\CourseCreated;
 use App\Faculty\Event\StudentSubscribedToCourse;
 use App\Faculty\Event\StudentUnsubscribedFromCourse;
-use Ultra\DecisionEngine\ReducerTrait;
-use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
+use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 
+#[EventSourcedEntity(tags: ['faculty'])]
 final class FacultyCourseAvailabilityState
 {
-    use ReducerTrait;
-
-    #[DomainIdentifier('faculty')]
     private string $facultyId = '';
 
     /** @var array<string, array{capacity: int, students: int}> */
@@ -41,7 +39,8 @@ final class FacultyCourseAvailabilityState
         return [] !== $this->courses;
     }
 
-    private function onCourseCreated(CourseCreated $event): void
+    #[EventSourcingHandler]
+    public function onCourseCreated(CourseCreated $event): void
     {
         $this->facultyId = $event->facultyId;
         $this->courses[$event->courseId] = [
@@ -50,7 +49,8 @@ final class FacultyCourseAvailabilityState
         ];
     }
 
-    private function onCourseCapacityChanged(CourseCapacityChanged $event): void
+    #[EventSourcingHandler]
+    public function onCourseCapacityChanged(CourseCapacityChanged $event): void
     {
         if (! isset($this->courses[$event->courseId])) {
             return;
@@ -59,7 +59,8 @@ final class FacultyCourseAvailabilityState
         $this->courses[$event->courseId]['capacity'] = $event->capacity;
     }
 
-    private function onStudentSubscribedToCourse(StudentSubscribedToCourse $event): void
+    #[EventSourcingHandler]
+    public function onStudentSubscribedToCourse(StudentSubscribedToCourse $event): void
     {
         if (! isset($this->courses[$event->courseId])) {
             return;
@@ -68,7 +69,8 @@ final class FacultyCourseAvailabilityState
         ++$this->courses[$event->courseId]['students'];
     }
 
-    private function onStudentUnsubscribedFromCourse(StudentUnsubscribedFromCourse $event): void
+    #[EventSourcingHandler]
+    public function onStudentUnsubscribedFromCourse(StudentUnsubscribedFromCourse $event): void
     {
         if (! isset($this->courses[$event->courseId])) {
             return;

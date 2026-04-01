@@ -7,14 +7,12 @@ namespace App\Faculty\State;
 use App\Faculty\Event\StudentEnrolledInFaculty;
 use App\Faculty\Event\StudentSubscribedToCourse;
 use App\Faculty\Event\StudentUnsubscribedFromCourse;
-use Ultra\DecisionEngine\ReducerTrait;
-use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
+use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 
+#[EventSourcedEntity(tags: ['student'])]
 final class StudentState
 {
-    use ReducerTrait;
-
-    #[DomainIdentifier('student')]
     private string $studentId = '';
 
     private bool $enrolled = false;
@@ -60,7 +58,8 @@ final class StudentState
         return $courseIds;
     }
 
-    private function onStudentEnrolledInFaculty(StudentEnrolledInFaculty $event): void
+    #[EventSourcingHandler]
+    public function onStudentEnrolledInFaculty(StudentEnrolledInFaculty $event): void
     {
         $this->studentId = $event->studentId;
         $this->firstName = $event->firstName;
@@ -68,12 +67,14 @@ final class StudentState
         $this->enrolled = true;
     }
 
-    private function onStudentSubscribedToCourse(StudentSubscribedToCourse $event): void
+    #[EventSourcingHandler]
+    public function onStudentSubscribedToCourse(StudentSubscribedToCourse $event): void
     {
         $this->subscribedCourseIds[$event->courseId] = true;
     }
 
-    private function onStudentUnsubscribedFromCourse(StudentUnsubscribedFromCourse $event): void
+    #[EventSourcingHandler]
+    public function onStudentUnsubscribedFromCourse(StudentUnsubscribedFromCourse $event): void
     {
         unset($this->subscribedCourseIds[$event->courseId]);
     }

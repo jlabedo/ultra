@@ -35,6 +35,11 @@ services:
         autowire: false
         autoconfigure: true
 
+    App\Faculty\State\:
+        resource: '../src/Faculty/State/*'
+        autowire: false
+        autoconfigure: true
+
     App\Faculty\Write\:
         resource: '../src/Faculty/Write/*/*Command.php'
         autowire: false
@@ -43,8 +48,6 @@ services:
             - 'ultra_mediator.self_handler'
 
     Ultra\DecisionEngine\Aspect\DecisionEngineAspect: ~
-
-    Ultra\DecisionEngine\Engine\EventRouter: ~
 
     Ultra\EventStore\EventTopologyProvider:
         alias: App\Faculty\Infrastructure\EventStore\FacultyEventTopologyProvider

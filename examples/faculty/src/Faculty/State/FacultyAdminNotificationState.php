@@ -5,14 +5,12 @@ declare(strict_types=1);
 namespace App\Faculty\State;
 
 use App\Faculty\Event\AllCoursesFullyBookedNotificationSent;
-use Ultra\DecisionEngine\ReducerTrait;
-use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
+use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 
+#[EventSourcedEntity(tags: ['faculty'])]
 final class FacultyAdminNotificationState
 {
-    use ReducerTrait;
-
-    #[DomainIdentifier('faculty')]
     private string $facultyId = '';
 
     private bool $sentAllCoursesFullyBookedNotification = false;
@@ -22,7 +20,8 @@ final class FacultyAdminNotificationState
         return $this->sentAllCoursesFullyBookedNotification;
     }
 
-    private function onAllCoursesFullyBookedNotificationSent(AllCoursesFullyBookedNotificationSent $event): void
+    #[EventSourcingHandler]
+    public function onAllCoursesFullyBookedNotificationSent(AllCoursesFullyBookedNotificationSent $event): void
     {
         $this->facultyId = $event->facultyId;
         $this->sentAllCoursesFullyBookedNotification = true;
