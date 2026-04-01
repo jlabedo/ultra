@@ -8,7 +8,7 @@ use App\Faculty\Event\CourseCreated;
 use App\Faculty\State\CourseState;
 use App\Faculty\Support\FacultyIds;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
 
 final readonly class CreateCourseCommand
 {
@@ -21,12 +21,12 @@ final readonly class CreateCourseCommand
     /**
      * @return list<CourseCreated>
      */
-    #[Handles]
+    #[SelfHandler]
     #[DecisionHandler]
     public function decide(CourseState $course): array
     {
         if ($course->exists()) {
-            throw new \InvalidArgumentException('Course already exists: '.$this->courseId);
+            throw new \InvalidArgumentException('Course already exists: ' . $this->courseId);
         }
 
         if ('' === trim($this->name)) {

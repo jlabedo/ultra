@@ -12,7 +12,7 @@ use App\Faculty\Support\SubscriptionPolicy;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
 use Ultra\DecisionEngine\Violation;
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
 
 final readonly class SubscribeStudentToCourseCommand
 {
@@ -51,7 +51,7 @@ final readonly class SubscribeStudentToCourseCommand
     /**
      * @return list<StudentSubscribedToCourse>
      */
-    #[Handles]
+    #[SelfHandler]
     #[DecisionHandler]
     public function decide(CourseState $course, StudentState $student): array
     {

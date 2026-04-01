@@ -11,7 +11,7 @@ use App\Faculty\Support\FacultyIds;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
 use Ultra\DecisionEngine\Violation;
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
 
 final readonly class UnsubscribeStudentFromCourseCommand
 {
@@ -41,7 +41,7 @@ final readonly class UnsubscribeStudentFromCourseCommand
     /**
      * @return list<StudentUnsubscribedFromCourse>
      */
-    #[Handles]
+    #[SelfHandler]
     #[DecisionHandler]
     public function decide(CourseState $course, StudentState $student): array
     {

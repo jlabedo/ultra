@@ -8,7 +8,7 @@ use App\Faculty\Event\StudentEnrolledInFaculty;
 use App\Faculty\State\StudentState;
 use App\Faculty\Support\FacultyIds;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
 
 final readonly class EnrollStudentInFacultyCommand
 {
@@ -21,12 +21,12 @@ final readonly class EnrollStudentInFacultyCommand
     /**
      * @return list<StudentEnrolledInFaculty>
      */
-    #[Handles]
+    #[SelfHandler]
     #[DecisionHandler]
     public function decide(StudentState $student): array
     {
         if ($student->isEnrolled()) {
-            throw new \InvalidArgumentException('Student already enrolled: '.$this->studentId);
+            throw new \InvalidArgumentException('Student already enrolled: ' . $this->studentId);
         }
 
         if ('' === trim($this->firstName) || '' === trim($this->lastName)) {

@@ -9,7 +9,7 @@ use App\Faculty\State\FacultyAdminNotificationState;
 use App\Faculty\State\FacultyCourseAvailabilityState;
 use App\Faculty\Support\FacultyIds;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
 
 final readonly class SendAllCoursesFullyBookedNotificationCommand
 {
@@ -20,7 +20,7 @@ final readonly class SendAllCoursesFullyBookedNotificationCommand
     /**
      * @return list<AllCoursesFullyBookedNotificationSent>
      */
-    #[Handles]
+    #[SelfHandler]
     #[DecisionHandler]
     public function decide(
         FacultyCourseAvailabilityState $faculty,
