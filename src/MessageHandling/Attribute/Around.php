@@ -7,7 +7,7 @@ namespace Ultra\MessageHandling\Attribute;
 /**
  * Marks an aspect service method as an around advice.
  *
- * The $matcher closure is called at compile time for every #[Handles] method
+ * The $matcher closure is called at compile time for every discovered handler method
  * in the container. It receives the handler's ReflectionMethod and must return:
  *  - null                    — this aspect does not apply to that handler
  *  - MatchResult::apply(...) — this aspect applies, with optional runtime config

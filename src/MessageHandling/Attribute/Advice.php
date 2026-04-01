@@ -11,7 +11,7 @@ namespace Ultra\MessageHandling\Attribute;
  * Each subclass is a PHP attribute targeting methods. This base class holds
  * the two properties shared by every advice:
  *
- *  $matcher  — compile-time closure invoked once per #[Handles] method.
+ *  $matcher  — compile-time closure invoked once per discovered handler method.
  *              Returns MatchResult::apply(...) to attach the advice, null to skip.
  *              Defaults to "match all" (Pointcut::all(...)).
  *  $priority — execution order when multiple advices match the same handler.

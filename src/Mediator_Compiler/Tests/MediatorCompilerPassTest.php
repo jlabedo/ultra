@@ -9,20 +9,21 @@ use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Ultra\MessageHandling\MessageContext;
-use Ultra\MessageHandling\MessageContextKeys;
-use Ultra\MessageHandling\MessageContextPropagatorInterface;
+use Ultra\EventBus\EventBusInterface;
+use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
+use Ultra\Mediator\Exception\NoHandlerFound;
+use Ultra\Mediator\MediatorInterface;
+use Ultra\Mediator_Compiler\MediatorCompilerPass;
 use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Before;
-use Ultra\EventBus\EventBusInterface;
-use Ultra\Mediator\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
-use Ultra\Mediator\Exception\NoHandlerFound;
-use Ultra\Mediator\MediatorInterface;
-use Ultra\Mediator_Compiler\MediatorCompilerPass;
+use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\MessageContextKeys;
+use Ultra\MessageHandling\MessageContextPropagatorInterface;
 
 // ---------------------------------------------------------------------------
 // Shared temp directory for this test run
@@ -47,7 +48,8 @@ function assertMessageFlowContexts(array $entries, string $firstMessage, string 
         ->and($entries[1]['context'])->toHaveKey(MessageContextKeys::CAUSATION_ID)
         ->and($entries[0]['context'][MessageContextKeys::CORRELATION_ID])->toBe($entries[0]['context'][MessageContextKeys::MESSAGE_ID])
         ->and($entries[1]['context'][MessageContextKeys::CORRELATION_ID])->toBe($entries[0]['context'][MessageContextKeys::CORRELATION_ID])
-        ->and($entries[1]['context'][MessageContextKeys::CAUSATION_ID])->toBe($entries[0]['context'][MessageContextKeys::MESSAGE_ID]);
+        ->and($entries[1]['context'][MessageContextKeys::CAUSATION_ID])->toBe($entries[0]['context'][MessageContextKeys::MESSAGE_ID])
+    ;
 }
 
 function compileMediatorTestContainer(ContainerBuilder $container, string $testOutputDir, string $compiledClassName): void
@@ -60,9 +62,7 @@ function compileMediatorTestContainer(ContainerBuilder $container, string $testO
 function getTestMediator(ContainerBuilder $container): MediatorInterface
 {
     /** @var MediatorInterface $mediator */
-    $mediator = $container->get('test.mediator');
-
-    return $mediator;
+    return $container->get('test.mediator');
 }
 
 // ---------------------------------------------------------------------------
@@ -150,12 +150,14 @@ final class FixedMessageContextPropagator implements MessageContextPropagatorInt
             return $context
                 ->with(MessageContextKeys::MESSAGE_ID, 'fixed-child')
                 ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation')
-                ->with(MessageContextKeys::CAUSATION_ID, 'fixed-root');
+                ->with(MessageContextKeys::CAUSATION_ID, 'fixed-root')
+            ;
         }
 
         return $context
             ->with(MessageContextKeys::MESSAGE_ID, 'fixed-root')
-            ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation');
+            ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation')
+        ;
     }
 }
 
@@ -742,7 +744,8 @@ test('generated mediator uses a constant route table instead of a match expressi
         ->toContain("'dispatchGoodbyeMessage_")
         ->toContain('$method = self::ROUTES[$message::class] ?? null;')
         ->toContain('return $this->{$method}($message, $messageContext);')
-        ->not->toContain('return match ($message::class)');
+        ->not->toContain('return match ($message::class)')
+    ;
 });
 
 test('generated mediator injects services from the locator into handler methods', function () use ($testOutputDir) {
@@ -861,7 +864,7 @@ test('generated mediator uses the configured message context propagator service'
     $container->setDefinition(ParentHandler::class, new Definition(ParentHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(ChildHandler::class, new Definition(ChildHandler::class)->addTag('mediator.handler'));
     $container->setDefinition(MessageContextRecorder::class, new Definition(MessageContextRecorder::class)->addTag('mediator.aspect')->setPublic(true));
-    $container->setDefinition(MessageContextPropagatorInterface::class, (new Definition(FixedMessageContextPropagator::class))->setPublic(true));
+    $container->setDefinition(MessageContextPropagatorInterface::class, new Definition(FixedMessageContextPropagator::class)->setPublic(true));
 
     compileMediatorTestContainer($container, $testOutputDir, 'CompiledMediatorCustomPropagator');
 
@@ -873,7 +876,8 @@ test('generated mediator uses the configured message context propagator service'
         ->and($recorder->entries[0]['context'][MessageContextKeys::CORRELATION_ID])->toBe('fixed-correlation')
         ->and($recorder->entries[1]['context'][MessageContextKeys::MESSAGE_ID])->toBe('fixed-child')
         ->and($recorder->entries[1]['context'][MessageContextKeys::CORRELATION_ID])->toBe('fixed-correlation')
-        ->and($recorder->entries[1]['context'][MessageContextKeys::CAUSATION_ID])->toBe('fixed-root');
+        ->and($recorder->entries[1]['context'][MessageContextKeys::CAUSATION_ID])->toBe('fixed-root')
+    ;
 });
 
 test('generated mediator propagates message context to event bus injected into handlers', function () use ($testOutputDir) {
@@ -892,7 +896,8 @@ test('generated mediator propagates message context to event bus injected into h
         ->and($eventBus->calls[0]['event'])->toBeInstanceOf(RecordedEvent::class)
         ->and($eventBus->calls[0]['context']['traceId'])->toBe('trace-eb')
         ->and($eventBus->calls[0]['context'])->toHaveKey(MessageContextKeys::MESSAGE_ID)
-        ->and($eventBus->calls[0]['context'])->toHaveKey(MessageContextKeys::CORRELATION_ID);
+        ->and($eventBus->calls[0]['context'])->toHaveKey(MessageContextKeys::CORRELATION_ID)
+    ;
 });
 
 test('compiler pass excludes claimed dep types from the service locator', function () use ($testOutputDir) {
@@ -1169,7 +1174,7 @@ test('compiler pass throws when an after-type advice returns provides', function
 
 // ---------------------------------------------------------------------------
 // Self-handler fixtures
-// Message classes that handle themselves: #[Handles] method has only dep params
+// Message classes that handle themselves: #[SelfHandler] method has only dep params
 // ($this is the message — no message param in the method signature).
 // ---------------------------------------------------------------------------
 
@@ -1177,7 +1182,7 @@ final class SelfGreetMessage
 {
     public function __construct(public readonly string $name) {}
 
-    #[Handles]
+    #[SelfHandler]
     public function greet(): string
     {
         return 'Hi, '.$this->name.' (self)';
@@ -1188,7 +1193,7 @@ final class SelfGreetWithServiceMessage
 {
     public function __construct(public readonly string $name) {}
 
-    #[Handles]
+    #[SelfHandler]
     public function greet(GreeterService $greeter): string
     {
         return $greeter->greet($this->name);

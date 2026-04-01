@@ -15,7 +15,7 @@ Event-sourcing decision pipeline built on the mediator. Commands declare their c
 | Attribute | Target | Purpose |
 |-----------|--------|---------|
 | `#[DecisionHandler]` | Method | Marks a method as a decision handler for the aspect. |
-| `#[Handles]` | Method | Mediator handler marker (required for discovery). |
+| `#[SelfHandler]` | Method | Mediator self-handler marker for commands that handle themselves. |
 | `#[EventSourcedEntity(tags: ['name'])]` | Class | Marks a decision state / entity and declares the stream tags it can be loaded from. Decision handlers currently require exactly one tag. |
 | `#[EventSourcingHandler]` | Method | Marks a public event replay handler on a state / entity. |
 | `#[Event('type.name')]` | Class | Event type name for storage and routing. |
@@ -42,11 +42,11 @@ Decision commands are self-handling messages:
 
 ```php
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
 
 final class CreateCourseCommand
 {
-    #[Handles]
+    #[SelfHandler]
     #[DecisionHandler]
     public function decide(CourseCapacityState $course): array
     {

@@ -32,7 +32,7 @@ use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
 use Ultra\MessageHandling\MessageContext;
@@ -46,7 +46,7 @@ final class CommandWithClockDependency
         public int $maxCapacity,
     ) {}
 
-    #[Handles]
+    #[SelfHandler]
     #[DecisionHandler]
     public function decide(
         CourseCapacityState $course,
@@ -381,7 +381,7 @@ test('events are correctly routed to multiple streams', function () {
 
 test('decision engine publishes emitted events to the event bus when available', function () {
     ['mediator' => $mediator, 'container' => $container] = createMediator([
-        EventBusInterface::class => (new Definition(RecordingEventBus::class))
+        EventBusInterface::class => new Definition(RecordingEventBus::class)
             ->setPublic(true),
     ]);
     $eventBus = $container->get(EventBusInterface::class);
@@ -391,5 +391,6 @@ test('decision engine publishes emitted events to the event bus when available',
     expect($events)->toHaveCount(1)
         ->and($eventBus->calls)->toHaveCount(1)
         ->and($eventBus->calls[0]['event'])->toEqual($events[0])
-        ->and($eventBus->calls[0]['context']['traceId'])->toBe('trace-123');
+        ->and($eventBus->calls[0]['context']['traceId'])->toBe('trace-123')
+    ;
 });

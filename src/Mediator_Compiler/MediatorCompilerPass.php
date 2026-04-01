@@ -10,6 +10,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\MessageHandling\MessageContextPropagator;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
@@ -33,7 +34,7 @@ use Ultra\MessageHandling_Compiler\LocatorReferenceCollector;
  *
  *  Phase 1b — Self-handler discovery:
  *    Find all services tagged with $selfHandlerTag (default: "mediator.self-handler").
- *    These are message classes that handle themselves: the #[Handles] method is on the
+ *    These are message classes that handle themselves: the #[SelfHandler] method is on the
  *    message class itself, takes only dep params (no message param — $this is the message),
  *    and is invoked as $message->method(...deps) at runtime. The message class is not added
  *    to the service locator. The service ID sentinel '@self' signals the generator.
@@ -123,14 +124,14 @@ final readonly class MediatorCompilerPass implements CompilerPassInterface
         }
 
         // ── Phase 1b: discover self-handler message classes ───────────────────
-        // The message class IS the handler: #[Handles] method has only dep params
+        // The message class IS the handler: #[SelfHandler] method has only dep params
         // (no message param — $this is the message). Generated code: $message->method(...deps).
         foreach (array_keys($taggedSelfHandlers) as $serviceId) {
             $definition = $container->getDefinition($serviceId);
             $class = $definition->getClass() ?? $serviceId;
 
             foreach (new \ReflectionClass($class)->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-                if ([] === $method->getAttributes(Handles::class)) {
+                if ([] === $method->getAttributes(SelfHandler::class)) {
                     continue;
                 }
 
@@ -168,20 +169,20 @@ final readonly class MediatorCompilerPass implements CompilerPassInterface
 
         // ── Phase 3: generate and register ───────────────────────────────────
         $filePath = rtrim($this->outputDir, '/').'/'.$this->generatedClass.'.php';
-        (new MediatorGenerator(
+        new MediatorGenerator(
             new HandlerMethodGenerator(
                 renderer: new DispatchPlanRenderer([
                     new DecoratingDependencyExpressionResolver(
-                        'Ultra\\EventBus\\EventBusInterface',
-                        'Ultra\\EventBus\\ContextPropagatingEventBus',
+                        'Ultra\EventBus\EventBusInterface',
+                        'Ultra\EventBus\ContextPropagatingEventBus',
                     ),
                     new DecoratingDependencyExpressionResolver(
                         MediatorInterface::class,
-                        'Ultra\\Mediator\\ContextPropagatingMediator',
+                        'Ultra\Mediator\ContextPropagatingMediator',
                     ),
                 ]),
             ),
-        ))->generate($this->generatedClass, $handlers, $filePath);
+        )->generate($this->generatedClass, $handlers, $filePath);
 
         $mediatorDef = new Definition($this->generatedClass, [
             new ServiceLocatorArgument($this->serviceLocatorReferences($locatorReferences->all())),
@@ -193,6 +194,7 @@ final readonly class MediatorCompilerPass implements CompilerPassInterface
 
     /**
      * @param list<string> $serviceIds
+     *
      * @return array<string, Reference>
      */
     private function serviceLocatorReferences(array $serviceIds): array
@@ -213,7 +215,7 @@ final readonly class MediatorCompilerPass implements CompilerPassInterface
 
         $container->setDefinition(
             MessageContextPropagatorInterface::class,
-            (new Definition(MessageContextPropagator::class)),
+            new Definition(MessageContextPropagator::class),
         );
     }
 }

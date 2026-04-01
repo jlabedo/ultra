@@ -10,7 +10,7 @@ use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
 use Ultra\DecisionEngine\Tests\Example\State\StudentSubscriptionState;
 use Ultra\DecisionEngine\Violation;
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
 
 readonly class SubscribeStudentToCourseCommand
 {
@@ -42,7 +42,7 @@ readonly class SubscribeStudentToCourseCommand
     /**
      * @return list<StudentSubscribed>
      */
-    #[Handles]
+    #[SelfHandler]
     #[DecisionHandler]
     public function decide(
         CourseCapacityState $course,

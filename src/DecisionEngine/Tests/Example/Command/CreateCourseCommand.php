@@ -7,7 +7,7 @@ namespace Ultra\DecisionEngine\Tests\Example\Command;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
 
 readonly class CreateCourseCommand
 {
@@ -20,7 +20,7 @@ readonly class CreateCourseCommand
     /**
      * @return list<CourseCreated>
      */
-    #[Handles]
+    #[SelfHandler]
     #[DecisionHandler]
     public function decide(
         CourseCapacityState $course,
