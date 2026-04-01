@@ -5,18 +5,26 @@ declare(strict_types=1);
 namespace App\Faculty\Read\Handler;
 
 use App\Faculty\Query\GetStudentProfileByIdQuery;
-use App\Faculty\Read\FacultyReadModelBuilder;
+use App\Faculty\State\FacultyReadModelState;
+use App\Faculty\Support\FacultyIds;
+use Ultra\DecisionEngine\Engine;
+use Ultra\EventStore\DomainIdentifier;
 use Ultra\Mediator\Attribute\Handles;
 
 final readonly class GetStudentProfileByIdHandler
 {
     public function __construct(
-        private FacultyReadModelBuilder $builder,
+        private Engine $engine,
     ) {}
 
     #[Handles]
     public function handle(GetStudentProfileByIdQuery $query): mixed
     {
-        return $this->builder->student($query->studentId);
+        $state = $this->engine->load(
+            FacultyReadModelState::class,
+            new DomainIdentifier('faculty', FacultyIds::DEFAULT),
+        );
+
+        return $state->student($query->studentId);
     }
 }

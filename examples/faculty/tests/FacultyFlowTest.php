@@ -5,14 +5,21 @@ declare(strict_types=1);
 namespace App\Tests;
 
 use App\Faculty\Infrastructure\Notification\RecordingNotificationService;
+use App\Faculty\Query\ListCourseStatsQuery;
+use App\Faculty\Query\ListStudentProfilesQuery;
+use App\Faculty\Support\EventTypes;
+use App\Faculty\Support\FacultyIds;
 use App\Faculty\Query\GetCourseStatsByIdQuery;
 use App\Faculty\Query\GetFacultyOverviewQuery;
 use App\Faculty\Query\GetStudentProfileByIdQuery;
 use App\Faculty\Write\CreateCourse\CreateCourseCommand;
+use App\Faculty\Write\UnsubscribeStudentFromCourse\UnsubscribeStudentFromCourseCommand;
 use App\Faculty\Write\EnrollStudent\EnrollStudentInFacultyCommand;
 use App\Faculty\Write\SubscribeStudentToCourse\SubscribeStudentToCourseCommand;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
 use Ultra\Mediator\MediatorInterface;
+use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\EventStore;
 
 final class FacultyFlowTest extends FacultyKernelTestCase
 {
@@ -90,5 +97,133 @@ final class FacultyFlowTest extends FacultyKernelTestCase
             static fn ($notification): bool => 'admin' === $notification->recipientId
                 && 'All courses are fully booked now.' === $notification->message,
         ));
+    }
+
+    public function testItReturnsNullForMissingCourseAndStudentReadModels(): void
+    {
+        self::bootKernel();
+
+        /** @var MediatorInterface $mediator */
+        $mediator = static::getContainer()->get(MediatorInterface::class);
+
+        self::assertNull($mediator->send(new GetCourseStatsByIdQuery('missing-course')));
+        self::assertNull($mediator->send(new GetStudentProfileByIdQuery('missing-student')));
+    }
+
+    public function testItKeepsSortedListsAndUpdatesReadModelsAfterUnsubscribe(): void
+    {
+        self::bootKernel();
+
+        /** @var MediatorInterface $mediator */
+        $mediator = static::getContainer()->get(MediatorInterface::class);
+
+        $mediator->send(new CreateCourseCommand('course-b', 'DDD', 2));
+        $mediator->send(new CreateCourseCommand('course-a', 'Axon', 2));
+        $mediator->send(new EnrollStudentInFacultyCommand('student-b', 'Grace', 'Hopper'));
+        $mediator->send(new EnrollStudentInFacultyCommand('student-a', 'Ada', 'Lovelace'));
+        $mediator->send(new SubscribeStudentToCourseCommand('course-b', 'student-b'));
+        $mediator->send(new SubscribeStudentToCourseCommand('course-a', 'student-a'));
+        $mediator->send(new UnsubscribeStudentFromCourseCommand('course-b', 'student-b'));
+
+        $courses = $mediator->send(new ListCourseStatsQuery());
+        $students = $mediator->send(new ListStudentProfilesQuery());
+        $overview = $mediator->send(new GetFacultyOverviewQuery());
+
+        self::assertSame(['course-a', 'course-b'], array_map(
+            static fn ($course): string => $course->courseId,
+            $courses,
+        ));
+        self::assertSame([1, 0], array_map(
+            static fn ($course): int => $course->subscribedStudents,
+            $courses,
+        ));
+        self::assertSame(['student-a', 'student-b'], array_map(
+            static fn ($student): string => $student->studentId,
+            $students,
+        ));
+        self::assertSame([['course-a'], []], array_map(
+            static fn ($student): array => $student->subscribedCourseIds,
+            $students,
+        ));
+        self::assertSame(['course-a', 'course-b'], array_map(
+            static fn ($course): string => $course->courseId,
+            $overview->courses,
+        ));
+        self::assertSame(['student-a', 'student-b'], array_map(
+            static fn ($student): string => $student->studentId,
+            $overview->students,
+        ));
+    }
+
+    public function testItPreservesTrackedSubscriptionsWhenStudentEnrollmentReplays(): void
+    {
+        self::bootKernel();
+
+        /** @var EventStore $eventStore */
+        $eventStore = static::getContainer()->get(EventStore::class);
+        /** @var MediatorInterface $mediator */
+        $mediator = static::getContainer()->get(MediatorInterface::class);
+
+        $eventStore->append([
+            new AppendableEvent(
+                EventTypes::COURSE_CREATED,
+                [
+                    'facultyId' => FacultyIds::DEFAULT,
+                    'courseId' => 'course-1',
+                    'name' => 'Event Sourcing',
+                    'capacity' => 3,
+                ],
+                [
+                    'faculty' => FacultyIds::DEFAULT,
+                    'course' => 'course-1',
+                ],
+            ),
+            new AppendableEvent(
+                EventTypes::STUDENT_ENROLLED_IN_FACULTY,
+                [
+                    'facultyId' => FacultyIds::DEFAULT,
+                    'studentId' => 'student-1',
+                    'firstName' => 'Ada',
+                    'lastName' => 'Lovelace',
+                ],
+                [
+                    'faculty' => FacultyIds::DEFAULT,
+                    'student' => 'student-1',
+                ],
+            ),
+            new AppendableEvent(
+                EventTypes::STUDENT_SUBSCRIBED_TO_COURSE,
+                [
+                    'facultyId' => FacultyIds::DEFAULT,
+                    'courseId' => 'course-1',
+                    'studentId' => 'student-1',
+                ],
+                [
+                    'faculty' => FacultyIds::DEFAULT,
+                    'course' => 'course-1',
+                    'student' => 'student-1',
+                ],
+            ),
+            new AppendableEvent(
+                EventTypes::STUDENT_ENROLLED_IN_FACULTY,
+                [
+                    'facultyId' => FacultyIds::DEFAULT,
+                    'studentId' => 'student-1',
+                    'firstName' => 'Augusta Ada',
+                    'lastName' => 'King',
+                ],
+                [
+                    'faculty' => FacultyIds::DEFAULT,
+                    'student' => 'student-1',
+                ],
+            ),
+        ]);
+
+        $student = $mediator->send(new GetStudentProfileByIdQuery('student-1'));
+
+        self::assertNotNull($student);
+        self::assertSame('Augusta Ada', $student->firstName);
+        self::assertSame('King', $student->lastName);
+        self::assertSame(['course-1'], $student->subscribedCourseIds);
     }
 }

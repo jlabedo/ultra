@@ -19,7 +19,9 @@ final readonly class Engine
     ) {}
 
     /**
-     * @param class-string $entityClass
+     * @template T of object
+     * @param class-string<T> $entityClass
+     * @return T
      */
     public function load(string $entityClass, DomainIdentifier ...$identifiers): object
     {
