@@ -7,8 +7,10 @@ namespace Ultra\DecisionEngine_Bundle;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\DecisionEngine\Aspect\DecisionEngineAspect;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine_Compiler\EntityLoaderCompilerPass;
+use Ultra\Mediator_Bundle\TagNames as MediatorTagNames;
 
 final class DecisionEngineBundle extends Bundle
 {
@@ -25,8 +27,13 @@ final class DecisionEngineBundle extends Bundle
             }
         );
 
+        $container->register(DecisionEngineAspect::class)
+            ->setAutoconfigured(true)
+            ->setAutowired(true)
+            ->addTag(MediatorTagNames::ASPECT);
+
         $buildDir = (string) $container->getParameter('kernel.build_dir');
-        $outputDir = $buildDir.'/decision_engine';
+        $outputDir = $buildDir . '/decision_engine';
 
         $container->addCompilerPass(new EntityLoaderCompilerPass(
             $outputDir,

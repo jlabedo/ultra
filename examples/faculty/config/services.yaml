@@ -23,31 +23,6 @@ services:
         resource: '../src/'
         exclude:
             - '../src/Kernel.php'
-            - '../src/Faculty/Event/'
-            - '../src/Faculty/Infrastructure/Notification/Notification.php'
-            - '../src/Faculty/Query/'
-            - '../src/Faculty/Read/Model/'
-            - '../src/Faculty/State/'
-            - '../src/Faculty/Write/'
-
-    App\Faculty\Event\:
-        resource: '../src/Faculty/Event/*'
-        autowire: false
-        autoconfigure: true
-
-    App\Faculty\State\:
-        resource: '../src/Faculty/State/*'
-        autowire: false
-        autoconfigure: true
-
-    App\Faculty\Write\:
-        resource: '../src/Faculty/Write/*/*Command.php'
-        autowire: false
-        autoconfigure: false
-        tags:
-            - 'ultra_mediator.self_handler'
-
-    Ultra\DecisionEngine\Aspect\DecisionEngineAspect: ~
 
     Ultra\EventStore\EventTopologyProvider:
         alias: App\Faculty\Infrastructure\EventStore\FacultyEventTopologyProvider
