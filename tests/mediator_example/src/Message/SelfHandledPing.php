@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Example\OrderProcessing\Message;
 
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\Mediator\Attribute\SelfHandler;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\SelfHandlingTracker;
 
 final class SelfHandledPing
@@ -13,7 +13,7 @@ final class SelfHandledPing
     {
     }
 
-    #[Handles]
+    #[SelfHandler]
     public function handle(SelfHandlingTracker $tracker): string
     {
         $tracker->record($this->payload);

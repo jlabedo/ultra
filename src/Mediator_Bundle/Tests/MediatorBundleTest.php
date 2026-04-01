@@ -99,3 +99,37 @@ test('mediator bundle autodiscovers autoconfigured self handlers', function () {
 
     expect($mediator->send(new BundledSelfGreetingMessage('Alice')))->toBe('Hello, Alice!');
 });
+
+test('mediator bundle uses a unique generated class per build dir', function () {
+    $first = new ContainerBuilder();
+    $first->setParameter('kernel.build_dir', dirname(__DIR__, 3).'/var/mediator_bundle_tests_a');
+    new MediatorBundle()->build($first);
+    $first->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
+    $first->register(BundledSelfGreetingMessage::class, BundledSelfGreetingMessage::class)
+        ->setAutoconfigured(true)
+    ;
+    $first->register(MediatorBundleTestGreeter::class, MediatorBundleTestGreeter::class);
+    $first->compile();
+
+    $second = new ContainerBuilder();
+    $second->setParameter('kernel.build_dir', dirname(__DIR__, 3).'/var/mediator_bundle_tests_b');
+    new MediatorBundle()->build($second);
+    $second->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
+    $second->register(BundledSelfGreetingMessage::class, BundledSelfGreetingMessage::class)
+        ->setAutoconfigured(true)
+    ;
+    $second->register(MediatorBundleTestGreeter::class, MediatorBundleTestGreeter::class);
+    $second->compile();
+
+    expect($first->getParameter('ultra_mediator.generated_class'))
+        ->not->toBe($second->getParameter('ultra_mediator.generated_class'));
+
+    /** @var MediatorInterface $firstMediator */
+    $firstMediator = $first->get('test.mediator');
+    /** @var MediatorInterface $secondMediator */
+    $secondMediator = $second->get('test.mediator');
+
+    expect($firstMediator->send(new BundledSelfGreetingMessage('Alice')))->toBe('Hello, Alice!')
+        ->and($secondMediator->send(new BundledSelfGreetingMessage('Bob')))->toBe('Hello, Bob!')
+    ;
+});

@@ -21,8 +21,10 @@ final class MediatorBundle extends Bundle
     {
         parent::build($container);
 
+        $buildDir = (string) $container->getParameter('kernel.build_dir');
+
         if (! $container->hasParameter('ultra_mediator.generated_class')) {
-            $container->setParameter('ultra_mediator.generated_class', 'CompiledMediator');
+            $container->setParameter('ultra_mediator.generated_class', self::defaultGeneratedClass($buildDir));
         }
 
         $container->registerAttributeForAutoconfiguration(
@@ -52,7 +54,6 @@ final class MediatorBundle extends Bundle
             }
         );
 
-        $buildDir = (string) $container->getParameter('kernel.build_dir');
         $outputDir = $buildDir.'/mediator';
         $generatedClass = (string) $container->getParameter('ultra_mediator.generated_class');
 
@@ -69,5 +70,10 @@ final class MediatorBundle extends Bundle
             TagNames::ASPECT,
             TagNames::SELF_HANDLER,
         ));
+    }
+
+    private static function defaultGeneratedClass(string $buildDir): string
+    {
+        return 'CompiledMediator_'.substr(sha1($buildDir), 0, 12);
     }
 }
