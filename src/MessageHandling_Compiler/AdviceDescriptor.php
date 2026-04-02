@@ -37,36 +37,11 @@ final readonly class AdviceDescriptor
      */
     public function __construct(
         public AdviceType $type,
-        public string $serviceId,
+        public int $priority,
+        public string $className,
         public string $method,
-        public int $priority = 0,
-        public string $className = '',
+        public string $serviceId,
         public array $claimedDepIndices = [],
         public array $runtimeConfig = [],
     ) {}
-
-    public static function before(string $serviceId, string $method): self
-    {
-        return new self(AdviceType::Before, $serviceId, $method);
-    }
-
-    public static function around(string $serviceId, string $method): self
-    {
-        return new self(AdviceType::Around, $serviceId, $method);
-    }
-
-    public static function afterReturning(string $serviceId, string $method): self
-    {
-        return new self(AdviceType::AfterReturning, $serviceId, $method);
-    }
-
-    public static function afterThrowing(string $serviceId, string $method): self
-    {
-        return new self(AdviceType::AfterThrowing, $serviceId, $method);
-    }
-
-    public static function after(string $serviceId, string $method): self
-    {
-        return new self(AdviceType::After, $serviceId, $method);
-    }
 }

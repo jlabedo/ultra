@@ -9,8 +9,8 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\MessageHandling\Attribute\Advice;
 use Ultra\MessageHandling\Attribute\MultiDispatch;
-use Ultra\MessageHandling\Attribute\RouteMatch;
 use Ultra\MessageHandling\Attribute\SingleDispatch;
 use Ultra\MessageHandling\MessageContextPropagator;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
@@ -102,7 +102,7 @@ final class MessageRouterCompilerPass implements CompilerPassInterface
                 continue;
             }
 
-            foreach ((new \ReflectionClass($class))->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            foreach (new \ReflectionClass($class)->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
                 $handlerPool[] = [
                     'serviceId' => $serviceId,
                     'class' => $class,
@@ -116,7 +116,8 @@ final class MessageRouterCompilerPass implements CompilerPassInterface
         $resolver = new ContextAwareRouterDependencyResolver(array_keys($resolverInterfaces));
 
         // ── Steps 3 + 5: Match handlers, generate, register ───────────────────
-        $adviceCollector = new AdviceCollector($this->aspectTag);
+        $adviceDefinitions = $this->collectAdviceDefinitions($container);
+        $adviceCollector = new AdviceCollector($adviceDefinitions);
         $descriptorFactory = new HandlerDescriptorFactory();
         $methodGenerator = new HandlerMethodGenerator(
             renderer: new DispatchPlanRenderer([$resolver]),
@@ -143,6 +144,34 @@ final class MessageRouterCompilerPass implements CompilerPassInterface
             $routerDef->setFile($filePath)->setPublic(true);
             $container->setDefinition($interfaceName, $routerDef);
         }
+    }
+
+    /**
+     * @return list<AdviceDefinition>
+     */
+    private function collectAdviceDefinitions(ContainerBuilder $container): array
+    {
+        $adviceDefinitions = [];
+        foreach ($container->findTaggedServiceIds($this->aspectTag) as $aspectServiceId => $tags) {
+            $class = $container->getDefinition($aspectServiceId)->getClass();
+            $refClass = $container->getReflectionClass($class);
+            foreach ($refClass->getMethods(\ReflectionMethod::IS_PUBLIC) as $methodRef) {
+                foreach ($methodRef->getAttributes(Advice::class, \ReflectionAttribute::IS_INSTANCEOF) as $attr) {
+                    /** @var Advice $advice */
+                    $advice = $attr->newInstance();
+                    $adviceDefinitions[] = new AdviceDefinition(
+                        AdviceType::fromAttribute($advice),
+                        $advice->priority,
+                        $class,
+                        $methodRef->getName(),
+                        $aspectServiceId,
+                        $advice->matcher,
+                    );
+                }
+            }
+        }
+
+        return $adviceDefinitions;
     }
 
     /**
@@ -375,11 +404,12 @@ final class MessageRouterCompilerPass implements CompilerPassInterface
                 // For single dispatch we need to reflect on the handler's method
                 $reflection = null;
                 if ('@self' !== $handler->serviceId) {
-                    $reflection = (new \ReflectionClass($handler->className ?: $handler->serviceId))
-                        ->getMethod($handler->method);
+                    $reflection = new \ReflectionClass($handler->className ?: $handler->serviceId)
+                        ->getMethod($handler->method)
+                    ;
                 } else {
                     // Self handler: method is on the message class itself
-                    $reflection = (new \ReflectionClass($messageClass))->getMethod($handler->method);
+                    $reflection = new \ReflectionClass($messageClass)->getMethod($handler->method);
                 }
 
                 $advices = $adviceCollector->collect($reflection, $container);
@@ -426,6 +456,7 @@ final class MessageRouterCompilerPass implements CompilerPassInterface
                     if ([] !== $method->getAttributes(SingleDispatch::class)
                         || [] !== $method->getAttributes(MultiDispatch::class)) {
                         $interfaces[$class] = true;
+
                         break;
                     }
                 }
@@ -440,6 +471,7 @@ final class MessageRouterCompilerPass implements CompilerPassInterface
                     if ([] !== $method->getAttributes(SingleDispatch::class)
                         || [] !== $method->getAttributes(MultiDispatch::class)) {
                         $interfaces[$ifaceName] = true;
+
                         break;
                     }
                 }
@@ -454,11 +486,13 @@ final class MessageRouterCompilerPass implements CompilerPassInterface
             if (isset($interfaces[$aliasId])) {
                 continue;
             }
+
             try {
-                foreach ((new \ReflectionClass($aliasId))->getMethods() as $method) {
+                foreach (new \ReflectionClass($aliasId)->getMethods() as $method) {
                     if ([] !== $method->getAttributes(SingleDispatch::class)
                         || [] !== $method->getAttributes(MultiDispatch::class)) {
                         $interfaces[$aliasId] = true;
+
                         break;
                     }
                 }

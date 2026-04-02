@@ -298,9 +298,7 @@ final class DispatchPlanRenderer
      */
     private function renderProceedCallable(AdviceDescriptor $advice, array $innerLines, array $claimedVarNames): string
     {
-        $owner = '' !== $advice->className
-            ? $advice->className.'::'.$advice->method
-            : $advice->serviceId.'::'.$advice->method;
+        $owner = $advice->className.'::'.$advice->method;
 
         $captures = ['$m', '$c'];
         foreach ($claimedVarNames as $varName) {
