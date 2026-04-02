@@ -9,8 +9,8 @@ use App\Faculty\Event\CourseCreated;
 use App\Faculty\Event\StudentSubscribedToCourse;
 use App\Faculty\Event\StudentUnsubscribedFromCourse;
 use App\Faculty\Write\SendAllCoursesFullyBookedNotification\SendAllCoursesFullyBookedNotificationCommand;
-use Ultra\EventBus\Attribute\EventHandler;
-use Ultra\Mediator\MediatorInterface;
+use Ultra\MessageHandling\Attribute\EventHandler;
+use Ultra\MessageHandling\MediatorInterface;
 
 final readonly class WhenCourseAvailabilityChangesThenMaybeSendNotification
 {

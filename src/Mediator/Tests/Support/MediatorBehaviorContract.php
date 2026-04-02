@@ -4,18 +4,18 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator\Tests\Support;
 
-use Ultra\EventBus\EventBusInterface;
-use Ultra\Mediator\Attribute\Handles;
-use Ultra\Mediator\MediatorInterface;
-use Ultra\Mediator\Attribute\SelfHandler;
-use Ultra\Mediator\Exception\NoHandlerFound;
 use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Before;
+use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\ContextAwareRouterInterface;
+use Ultra\MessageHandling\EventBusInterface;
+use Ultra\MessageHandling\Exception\NoHandlerFound;
+use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\MessageContextKeys;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;

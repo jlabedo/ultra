@@ -10,7 +10,7 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\DecisionEngine\Aspect\DecisionEngineAspect;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine_Compiler\EntityLoaderCompilerPass;
-use Ultra\MessageHandling_Bundle\TagNames as MessageHandlingTagNames;
+use Ultra\MessageHandling\TagNames as MessageHandlingTagNames;
 
 final class DecisionEngineBundle extends Bundle
 {

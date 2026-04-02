@@ -2,12 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventBus;
+namespace Ultra\MessageHandling;
 
-use Ultra\EventBus\Attribute\EventHandler;
+use Ultra\MessageHandling\Attribute\EventHandler;
 use Ultra\MessageHandling\Attribute\MultiDispatch;
 use Ultra\MessageHandling\Attribute\RouteMatch;
-use Ultra\MessageHandling\MessageContext;
 
 interface EventBusInterface
 {
@@ -21,7 +20,7 @@ interface EventBusInterface
             return RouteMatch::for(priority: $attrs[0]->newInstance()->priority);
         },
         messageTag: 'ultra_event_bus.event',
-        noHandlerExceptionClass: \Ultra\EventBus\Exception\UnknownEvent::class,
+        noHandlerExceptionClass: Exception\UnknownEvent::class,
     )]
     public function publish(object $event, array|MessageContext $context = []): void;
 }

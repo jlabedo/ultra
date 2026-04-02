@@ -10,7 +10,7 @@ use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
 use Ultra\DecisionEngine\Tests\Example\State\StudentSubscriptionState;
 use Ultra\DecisionEngine\Violation;
-use Ultra\Mediator\Attribute\SelfHandler;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 
 readonly class UnsubscribeStudentFromCourseCommand
 {

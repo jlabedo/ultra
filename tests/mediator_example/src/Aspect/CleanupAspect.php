@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Example\OrderProcessing\Aspect;
 
+use Ultra\Mediator_Example\OrderProcessing\Infrastructure\CleanupTracker;
 use Ultra\MessageHandling\Attribute\After;
+use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
-use Ultra\Mediator\Attribute\Handles;
-use Ultra\Mediator_Example\OrderProcessing\Infrastructure\CleanupTracker;
 
 final class CleanupAspect
 {

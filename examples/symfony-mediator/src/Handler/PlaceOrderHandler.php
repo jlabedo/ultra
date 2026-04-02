@@ -6,7 +6,7 @@ namespace App\Handler;
 
 use App\Infrastructure\OrderRepository;
 use App\Message\PlaceOrder;
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\MessageHandling\Attribute\Handles;
 
 final class PlaceOrderHandler
 {

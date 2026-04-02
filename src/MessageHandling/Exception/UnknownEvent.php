@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventBus\Exception;
+namespace Ultra\MessageHandling\Exception;
 
 final class UnknownEvent extends \RuntimeException
 {

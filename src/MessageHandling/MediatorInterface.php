@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mediator;
+namespace Ultra\MessageHandling;
 
-use Ultra\Mediator\Attribute\Handles;
-use Ultra\Mediator\Attribute\SelfHandler;
+use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\RouteMatch;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\Attribute\SingleDispatch;
-use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\Exception\NoHandlerFound;
 
 interface MediatorInterface
 {
@@ -23,7 +23,7 @@ interface MediatorInterface
 
             return null;
         },
-        noHandlerExceptionClass: \Ultra\Mediator\Exception\NoHandlerFound::class,
+        noHandlerExceptionClass: NoHandlerFound::class,
     )]
     public function send(object $message, array|MessageContext $context = []): mixed;
 }

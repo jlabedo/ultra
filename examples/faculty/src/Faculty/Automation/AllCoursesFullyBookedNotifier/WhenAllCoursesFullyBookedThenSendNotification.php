@@ -8,7 +8,7 @@ use App\Faculty\Event\AllCoursesFullyBookedNotificationSent;
 use App\Faculty\Infrastructure\Notification\Notification;
 use App\Faculty\Infrastructure\Notification\NotificationService;
 use App\Faculty\Support\FacultyIds;
-use Ultra\EventBus\Attribute\EventHandler;
+use Ultra\MessageHandling\Attribute\EventHandler;
 
 final readonly class WhenAllCoursesFullyBookedThenSendNotification
 {

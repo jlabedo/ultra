@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventBus\Attribute;
+namespace Ultra\MessageHandling\Attribute;
 
 #[\Attribute(\Attribute::TARGET_METHOD)]
 final readonly class EventHandler

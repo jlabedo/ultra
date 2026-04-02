@@ -6,7 +6,7 @@ namespace App\EventHandler;
 
 use App\Event\OrderPlaced;
 use App\Infrastructure\OrderProjection;
-use Ultra\EventBus\Attribute\EventHandler;
+use Ultra\MessageHandling\Attribute\EventHandler;
 
 final class RecordOrderPlaced
 {

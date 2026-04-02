@@ -14,6 +14,7 @@ use Ultra\MessageHandling\Attribute\MultiDispatch;
 use Ultra\MessageHandling\Attribute\SingleDispatch;
 use Ultra\MessageHandling\MessageContextPropagator;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
+use Ultra\MessageHandling\TagNames;
 
 /**
  * Unified Symfony DI compiler pass that generates compiled router classes for
@@ -37,18 +38,13 @@ use Ultra\MessageHandling\MessageContextPropagatorInterface;
  *
  *  5. For each router, collect aspects (global $aspectTag), generate class, register service.
  */
-final class MessageRouterCompilerPass implements CompilerPassInterface
+final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 {
-    /**
-     * @param array<string, string> $classNameOverrides Map of interface FQCN => generated class name.
-     *                                                  Useful in tests to ensure unique class names across scenarios.
-     */
     public function __construct(
-        private readonly string $outputDir,
-        private readonly string $routerTag = 'ultra.message_router',
-        private readonly string $handlerTag = 'ultra.message_handler',
-        private readonly string $aspectTag = 'ultra.message_aspect',
-        private readonly array $classNameOverrides = [],
+        private string $outputDir,
+        private string $routerTag = 'ultra.message_router',
+        private string $handlerTag = 'ultra.message_handler',
+        private string $aspectTag = 'ultra.message_aspect',
     ) {}
 
     public function process(ContainerBuilder $container): void
@@ -73,9 +69,8 @@ final class MessageRouterCompilerPass implements CompilerPassInterface
                 }
 
                 $shortName = substr($interfaceName, strrpos($interfaceName, '\\') + 1);
-                $hash = substr(sha1($interfaceName), 0, 8);
-                $generatedClass = $this->classNameOverrides[$interfaceName]
-                    ?? 'Compiled'.$shortName.'_'.$hash;
+                $hash = substr(sha1($interfaceName.$this->outputDir), 0, 8);
+                $generatedClass = 'Compiled'.$shortName.'_'.$hash;
                 $routerOutputDir = rtrim($this->outputDir, '/').'/'.$shortName;
 
                 $routers[$interfaceName] = [
@@ -434,18 +429,11 @@ final class MessageRouterCompilerPass implements CompilerPassInterface
     {
         $interfaces = [];
 
-        foreach ($container->getDefinitions() as $definition) {
-            $class = $definition->getClass();
-            if (null === $class) {
-                continue;
-            }
-
-            if (! class_exists($class) && ! interface_exists($class)) {
-                continue;
-            }
+        foreach ($container->findTaggedServiceIds(TagNames::ROUTER) as $serviceId => $tags) {
+            $class = $container->getDefinition($serviceId)->getClass();
 
             try {
-                $reflection = new \ReflectionClass($class);
+                $reflection = $container->getReflectionClass($class);
             } catch (\ReflectionException) {
                 continue;
             }
@@ -475,29 +463,6 @@ final class MessageRouterCompilerPass implements CompilerPassInterface
                         break;
                     }
                 }
-            }
-        }
-
-        // Also check aliases
-        foreach ($container->getAliases() as $aliasId => $alias) {
-            if (! interface_exists($aliasId)) {
-                continue;
-            }
-            if (isset($interfaces[$aliasId])) {
-                continue;
-            }
-
-            try {
-                foreach (new \ReflectionClass($aliasId)->getMethods() as $method) {
-                    if ([] !== $method->getAttributes(SingleDispatch::class)
-                        || [] !== $method->getAttributes(MultiDispatch::class)) {
-                        $interfaces[$aliasId] = true;
-
-                        break;
-                    }
-                }
-            } catch (\ReflectionException) {
-                // skip
             }
         }
 

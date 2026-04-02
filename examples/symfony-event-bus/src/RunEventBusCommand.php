@@ -10,8 +10,8 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Ultra\EventBus\EventBusInterface;
 use Ultra\EventBus_Compiler\EventBusCompilerPass;
+use Ultra\MessageHandling\EventBusInterface;
 
 #[AsCommand(name: 'app:run')]
 final readonly class RunEventBusCommand

@@ -5,21 +5,21 @@ declare(strict_types=1);
 namespace App\Tests;
 
 use App\Faculty\Infrastructure\Notification\RecordingNotificationService;
+use App\Faculty\Query\GetCourseStatsByIdQuery;
+use App\Faculty\Query\GetFacultyOverviewQuery;
+use App\Faculty\Query\GetStudentProfileByIdQuery;
 use App\Faculty\Query\ListCourseStatsQuery;
 use App\Faculty\Query\ListStudentProfilesQuery;
 use App\Faculty\Support\EventTypes;
 use App\Faculty\Support\FacultyIds;
-use App\Faculty\Query\GetCourseStatsByIdQuery;
-use App\Faculty\Query\GetFacultyOverviewQuery;
-use App\Faculty\Query\GetStudentProfileByIdQuery;
 use App\Faculty\Write\CreateCourse\CreateCourseCommand;
-use App\Faculty\Write\UnsubscribeStudentFromCourse\UnsubscribeStudentFromCourseCommand;
 use App\Faculty\Write\EnrollStudent\EnrollStudentInFacultyCommand;
 use App\Faculty\Write\SubscribeStudentToCourse\SubscribeStudentToCourseCommand;
+use App\Faculty\Write\UnsubscribeStudentFromCourse\UnsubscribeStudentFromCourseCommand;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\Mediator\MediatorInterface;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\EventStore;
+use Ultra\MessageHandling\MediatorInterface;
 
 final class FacultyFlowTest extends FacultyKernelTestCase
 {

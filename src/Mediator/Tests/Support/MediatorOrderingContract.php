@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator\Tests\Support;
 
-use Ultra\Mediator\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Before;
+use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\MessageContext;
 
 final readonly class OrderingMessage

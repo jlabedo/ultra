@@ -8,9 +8,9 @@ use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
-use Ultra\EventBus\Attribute\EventHandler;
-use Ultra\EventBus\EventBusInterface;
-use Ultra\MessageHandling_Bundle\TagNames as MessageHandlingTagNames;
+use Ultra\MessageHandling\Attribute\EventHandler;
+use Ultra\MessageHandling\EventBusInterface;
+use Ultra\MessageHandling\TagNames as MessageHandlingTagNames;
 
 final class EventBusBundle extends Bundle
 {

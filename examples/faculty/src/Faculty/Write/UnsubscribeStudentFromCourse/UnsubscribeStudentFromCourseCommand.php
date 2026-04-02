@@ -11,7 +11,7 @@ use App\Faculty\Support\FacultyIds;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
 use Ultra\DecisionEngine\Violation;
-use Ultra\Mediator\Attribute\SelfHandler;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final readonly class UnsubscribeStudentFromCourseCommand
 {

@@ -10,8 +10,8 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Compiler\MediatorCompilerPass;
+use Ultra\MessageHandling\MediatorInterface;
 
 #[AsCommand(name: 'app:run')]
 final readonly class RunMediatorCommand

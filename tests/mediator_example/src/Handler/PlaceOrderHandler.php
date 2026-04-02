@@ -4,13 +4,13 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Example\OrderProcessing\Handler;
 
-use Ultra\EventBus\EventBusInterface;
-use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator_Example\OrderProcessing\Domain\Order;
 use Ultra\Mediator_Example\OrderProcessing\Domain\OrderPlaced;
 use Ultra\Mediator_Example\OrderProcessing\Domain\PlaceOrder;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\OrderRepository;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\PaymentGateway;
+use Ultra\MessageHandling\Attribute\Handles;
+use Ultra\MessageHandling\EventBusInterface;
 
 final class PlaceOrderHandler
 {

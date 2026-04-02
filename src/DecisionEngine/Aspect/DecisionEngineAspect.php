@@ -8,9 +8,8 @@ use Ultra\DecisionEngine\Attribute\BindTo;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine\Engine;
-use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\DecisionEngine\EventSourcedEntityLoader;
-use Ultra\EventBus\EventBusInterface;
+use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
@@ -19,6 +18,7 @@ use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\MatchResult;
+use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
 
 final class DecisionEngineAspect

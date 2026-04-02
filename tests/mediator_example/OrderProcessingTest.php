@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ultra\Mediator_Example\OrderProcessing\Tests;
 
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
-use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Example\OrderProcessing\Domain\OrderPlaced;
 use Ultra\Mediator_Example\OrderProcessing\Domain\PlaceOrder;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\AuditLog;
@@ -18,6 +17,7 @@ use Ultra\Mediator_Example\OrderProcessing\Infrastructure\SelfHandlingTracker;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\TransactionManager;
 use Ultra\Mediator_Example\OrderProcessing\Kernel;
 use Ultra\Mediator_Example\OrderProcessing\Message\SelfHandledPing;
+use Ultra\MessageHandling\MediatorInterface;
 
 final class OrderProcessingTest extends KernelTestCase
 {

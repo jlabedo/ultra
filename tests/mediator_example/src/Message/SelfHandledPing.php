@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Example\OrderProcessing\Message;
 
-use Ultra\Mediator\Attribute\SelfHandler;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\SelfHandlingTracker;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final class SelfHandledPing
 {

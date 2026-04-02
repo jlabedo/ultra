@@ -18,7 +18,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\Routing\Attribute\Route;
-use Ultra\Mediator\MediatorInterface;
+use Ultra\MessageHandling\MediatorInterface;
 
 final class FacultyController extends AbstractController
 {

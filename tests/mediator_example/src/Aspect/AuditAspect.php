@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Example\OrderProcessing\Aspect;
 
-use Ultra\MessageHandling\Attribute\MatchResult;
-use Ultra\MessageHandling\Attribute\Before;
-use Ultra\MessageHandling\MessageContext;
-use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\AuditLog;
+use Ultra\MessageHandling\Attribute\Before;
+use Ultra\MessageHandling\Attribute\Handles;
+use Ultra\MessageHandling\Attribute\MatchResult;
+use Ultra\MessageHandling\MessageContext;
 
 final class AuditAspect
 {

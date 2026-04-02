@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator\Tests\Support;
 
-use Ultra\Mediator\MediatorInterface;
+use Ultra\MessageHandling\MediatorInterface;
 
 interface MediatorFactoryInterface
 {

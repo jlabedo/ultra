@@ -41,8 +41,7 @@ $events = $mediator->send($command);  // returns emitted event DTOs
 Decision commands are self-handling messages:
 
 ```php
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\Mediator\Attribute\SelfHandler;
+use Ultra\DecisionEngine\Attribute\DecisionHandler;use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final class CreateCourseCommand
 {

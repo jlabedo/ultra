@@ -6,11 +6,11 @@ namespace Ultra\Mediator_Compiler\Tests;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
-use Ultra\Mediator\Attribute\Handles;
-use Ultra\Mediator\MediatorInterface;
-use Ultra\Mediator\Attribute\SelfHandler;
 use Ultra\Mediator\Tests\Support\MediatorFactoryInterface;
 use Ultra\MessageHandling\Attribute\Advice;
+use Ultra\MessageHandling\Attribute\Handles;
+use Ultra\MessageHandling\Attribute\SelfHandler;
+use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling_Compiler\MessageRouterCompilerPass;
 use function Ultra\Mediator\Tests\Support\registerMediatorBehaviorContractTests;
 use function Ultra\Mediator\Tests\Support\registerMediatorOrderingContractTests;
@@ -29,10 +29,7 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
         $this->registerDiscoverableClasses($container, $classes);
         $this->registerMediatorRouter($container);
         $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
-        $container->addCompilerPass(new MessageRouterCompilerPass(
-            $this->testOutputDir,
-            classNameOverrides: [MediatorInterface::class => $this->compiledContractClassName($scenario)],
-        ));
+        $container->addCompilerPass(new MessageRouterCompilerPass($this->testOutputDir . '/' . $this->sanitizeScenarioName($scenario)));
         $container->compile();
 
         foreach ($primaryServices as $id => $service) {
@@ -53,11 +50,11 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
         );
     }
 
-    private function compiledContractClassName(string $scenario): string
+    private function sanitizeScenarioName(string $scenario): string
     {
         $sanitized = preg_replace('/[^A-Za-z0-9]+/', '', $scenario);
 
-        return 'CompiledMediatorContract' . ('' === $sanitized ? 'Scenario' : $sanitized);
+        return '' === $sanitized ? 'Scenario' : $sanitized;
     }
 
     /**

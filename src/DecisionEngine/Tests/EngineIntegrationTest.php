@@ -20,7 +20,6 @@ use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
 use Ultra\DecisionEngine\Tests\Example\State\StudentSubscriptionState;
 use Ultra\DecisionEngine_Compiler\EntityLoaderCompilerPass;
-use Ultra\EventBus\EventBusInterface;
 use Ultra\Events\CompiledEventRegistry;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\AppendableEvent;
@@ -32,10 +31,11 @@ use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\Mediator\Attribute\SelfHandler;
-use Ultra\Mediator\MediatorInterface;
-use Ultra\MessageHandling_Compiler\MessageRouterCompilerPass;
+use Ultra\MessageHandling\Attribute\SelfHandler;
+use Ultra\MessageHandling\EventBusInterface;
+use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling_Compiler\MessageRouterCompilerPass;
 
 /** Test command with service dependency (Clock) */
 final class CommandWithClockDependency
@@ -168,7 +168,6 @@ function createMediator(array $serviceDefinitions = []): array
         $container->set($id, $definition);
     }
 
-    $generatedClass = 'CompiledDecisionMediator_'.bin2hex(random_bytes(4));
     $container->setDefinition(
         MediatorInterface::class,
         (new Definition(MediatorInterface::class))
@@ -176,10 +175,7 @@ function createMediator(array $serviceDefinitions = []): array
             ->setAbstract(true),
     );
     $container->addCompilerPass(new EntityLoaderCompilerPass($outputDir.'/decision_engine'));
-    $container->addCompilerPass(new MessageRouterCompilerPass(
-        $outputDir,
-        classNameOverrides: [MediatorInterface::class => $generatedClass],
-    ));
+    $container->addCompilerPass(new MessageRouterCompilerPass($outputDir));
     $container->compile();
 
     return [

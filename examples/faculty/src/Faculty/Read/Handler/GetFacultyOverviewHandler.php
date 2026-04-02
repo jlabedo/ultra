@@ -9,7 +9,7 @@ use App\Faculty\State\FacultyReadModelState;
 use App\Faculty\Support\FacultyIds;
 use Ultra\DecisionEngine\Engine;
 use Ultra\EventStore\DomainIdentifier;
-use Ultra\Mediator\Attribute\Handles;
+use Ultra\MessageHandling\Attribute\Handles;
 
 final readonly class GetFacultyOverviewHandler
 {

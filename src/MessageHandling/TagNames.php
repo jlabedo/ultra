@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling_Bundle;
+namespace Ultra\MessageHandling;
 
 final class TagNames
 {

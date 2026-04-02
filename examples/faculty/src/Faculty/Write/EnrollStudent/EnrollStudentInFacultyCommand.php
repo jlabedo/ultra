@@ -8,7 +8,7 @@ use App\Faculty\Event\StudentEnrolledInFaculty;
 use App\Faculty\State\StudentState;
 use App\Faculty\Support\FacultyIds;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\Mediator\Attribute\SelfHandler;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final readonly class EnrollStudentInFacultyCommand
 {

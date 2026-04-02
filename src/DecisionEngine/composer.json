@@ -12,11 +12,9 @@
     "require": {
         "php": ">=8.5",
         "psr/container": "^2.0",
-        "ultra/event-bus": "*",
         "ultra/event-store": "*",
         "ultra/message-handling": "*",
-        "ultra/mapper": "*",
-        "ultra/mediator": "*"
+        "ultra/mapper": "*"
     },
     "autoload": {
         "psr-4": {

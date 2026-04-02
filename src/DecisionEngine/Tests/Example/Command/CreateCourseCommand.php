@@ -7,7 +7,7 @@ namespace Ultra\DecisionEngine\Tests\Example\Command;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
-use Ultra\Mediator\Attribute\SelfHandler;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 
 readonly class CreateCourseCommand
 {

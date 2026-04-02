@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Example\OrderProcessing\Aspect;
 
+use Ultra\Mediator_Example\OrderProcessing\Infrastructure\Metrics;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
+use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
-use Ultra\Mediator\Attribute\Handles;
-use Ultra\Mediator_Example\OrderProcessing\Infrastructure\Metrics;
 
 final class MetricsAspect
 {

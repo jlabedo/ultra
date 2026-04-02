@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mediator\Exception;
+namespace Ultra\MessageHandling\Exception;
 
 final class NoHandlerFound extends \RuntimeException
 {

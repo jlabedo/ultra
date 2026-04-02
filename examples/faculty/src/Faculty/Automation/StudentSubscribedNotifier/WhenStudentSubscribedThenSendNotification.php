@@ -7,7 +7,7 @@ namespace App\Faculty\Automation\StudentSubscribedNotifier;
 use App\Faculty\Event\StudentSubscribedToCourse;
 use App\Faculty\Infrastructure\Notification\Notification;
 use App\Faculty\Infrastructure\Notification\NotificationService;
-use Ultra\EventBus\Attribute\EventHandler;
+use Ultra\MessageHandling\Attribute\EventHandler;
 
 final readonly class WhenStudentSubscribedThenSendNotification
 {

@@ -10,11 +10,11 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 use Ultra\EventBus_Bundle\EventBusBundle;
 use Ultra\Events\EventsBundle;
-use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Bundle\MediatorBundle;
-use Ultra\MessageHandling_Bundle\MessageHandlingBundle;
-use Ultra\MessageHandling_Bundle\TagNames;
 use Ultra\Mediator_Example\OrderProcessing\Message\SelfHandledPing;
+use Ultra\MessageHandling\MediatorInterface;
+use Ultra\MessageHandling\MessageHandlingBundle;
+use Ultra\MessageHandling\TagNames;
 
 final class Kernel extends BaseKernel
 {
@@ -23,8 +23,6 @@ final class Kernel extends BaseKernel
     public function registerBundles(): iterable
     {
         yield new FrameworkBundle();
-        yield new MediatorBundle();
-        yield new EventBusBundle();
         yield new EventsBundle();
         yield new MessageHandlingBundle();
     }
