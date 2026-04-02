@@ -9,9 +9,11 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\Routing\RouterInterface;
 use Ultra\MessageHandling\Attribute\Advice;
 use Ultra\MessageHandling\Attribute\MultiDispatch;
 use Ultra\MessageHandling\Attribute\SingleDispatch;
+use Ultra\MessageHandling\ContextAwareRouterInterface;
 use Ultra\MessageHandling\MessageContextPropagator;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling\TagNames;
@@ -40,12 +42,7 @@ use Ultra\MessageHandling\TagNames;
  */
 final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 {
-    public function __construct(
-        private string $outputDir,
-        private string $routerTag = 'ultra.message_router',
-        private string $handlerTag = 'ultra.message_handler',
-        private string $aspectTag = 'ultra.message_aspect',
-    ) {}
+    public function __construct(private string $outputDir) {}
 
     public function process(ContainerBuilder $container): void
     {
@@ -55,7 +52,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         /** @var array<string, array{descriptor: RouterDescriptor, generatedClass: string, outputDir: string}> $routers */
         $routers = [];
 
-        foreach ($container->findTaggedServiceIds($this->routerTag) as $serviceId => $tags) {
+        foreach ($container->findTaggedServiceIds(TagNames::ROUTER) as $serviceId => $tags) {
             foreach ($tags as $tagAttributes) {
                 $interfaceName = $tagAttributes['interface'] ?? $serviceId;
 
@@ -73,7 +70,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                 $generatedClass = 'Compiled'.$shortName.'_'.$hash;
                 $routerOutputDir = rtrim($this->outputDir, '/').'/'.$shortName;
 
-                $routers[$interfaceName] = [
+                $routers[$serviceId] = [
                     'descriptor' => $descriptor,
                     'generatedClass' => $generatedClass,
                     'outputDir' => $routerOutputDir,
@@ -89,7 +86,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         /** @var list<array{serviceId: string, class: string, method: \ReflectionMethod}> $handlerPool */
         $handlerPool = [];
 
-        foreach (array_keys($container->findTaggedServiceIds($this->handlerTag)) as $serviceId) {
+        foreach (array_keys($container->findTaggedServiceIds(TagNames::HANDLER)) as $serviceId) {
             $definition = $container->getDefinition($serviceId);
             $class = $definition->getClass() ?? $serviceId;
 
@@ -119,7 +116,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         );
         $generator = new MessageRouterGenerator($methodGenerator);
 
-        foreach ($routers as $interfaceName => ['descriptor' => $descriptor, 'generatedClass' => $generatedClass, 'outputDir' => $routerOutputDir]) {
+        foreach ($routers as $serviceId => ['descriptor' => $descriptor, 'generatedClass' => $generatedClass, 'outputDir' => $routerOutputDir]) {
             $locatorReferences = new LocatorReferenceCollector();
 
             $routes = $descriptor->isSingleDispatch
@@ -137,7 +134,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                 new Reference(MessageContextPropagatorInterface::class),
             ]);
             $routerDef->setFile($filePath)->setPublic(true);
-            $container->setDefinition($interfaceName, $routerDef);
+            $container->setDefinition($serviceId, $routerDef);
         }
     }
 
@@ -147,7 +144,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     private function collectAdviceDefinitions(ContainerBuilder $container): array
     {
         $adviceDefinitions = [];
-        foreach ($container->findTaggedServiceIds($this->aspectTag) as $aspectServiceId => $tags) {
+        foreach ($container->findTaggedServiceIds(TagNames::ASPECT) as $aspectServiceId => $tags) {
             $class = $container->getDefinition($aspectServiceId)->getClass();
             $refClass = $container->getReflectionClass($class);
             foreach ($refClass->getMethods(\ReflectionMethod::IS_PUBLIC) as $methodRef) {
@@ -429,40 +426,14 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     {
         $interfaces = [];
 
-        foreach ($container->findTaggedServiceIds(TagNames::ROUTER) as $serviceId => $tags) {
-            $class = $container->getDefinition($serviceId)->getClass();
+        foreach ($container->findTaggedServiceIds(TagNames::CONTEXT_AWARE) as $serviceId => $tags) {
+            $interfaces[$serviceId] = true;
+        }
 
-            try {
-                $reflection = $container->getReflectionClass($class);
-            } catch (\ReflectionException) {
-                continue;
-            }
-
-            // Check the class itself if it's an interface
-            if ($reflection->isInterface()) {
-                foreach ($reflection->getMethods() as $method) {
-                    if ([] !== $method->getAttributes(SingleDispatch::class)
-                        || [] !== $method->getAttributes(MultiDispatch::class)) {
-                        $interfaces[$class] = true;
-
-                        break;
-                    }
-                }
-            }
-
-            // Check all implemented interfaces
-            foreach ($reflection->getInterfaces() as $ifaceName => $iface) {
-                if (isset($interfaces[$ifaceName])) {
-                    continue;
-                }
-                foreach ($iface->getMethods() as $method) {
-                    if ([] !== $method->getAttributes(SingleDispatch::class)
-                        || [] !== $method->getAttributes(MultiDispatch::class)) {
-                        $interfaces[$ifaceName] = true;
-
-                        break;
-                    }
-                }
+        // Also check aliases
+        foreach ($container->getAliases() as $aliasId => $alias) {
+            if (isset($interfaces[(string) $alias])) {
+                $interfaces[$aliasId] = true;
             }
         }
 

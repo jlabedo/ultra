@@ -785,7 +785,7 @@ function registerMediatorBehaviorContractTests(MediatorFactoryInterface $factory
             new ParentHandler(),
             new ChildHandler(),
             $recorder,
-            new FixedMessageContextPropagator(),
+            MessageContextPropagatorInterface::class => new FixedMessageContextPropagator(),
         ], [], 'CustomPropagator');
 
         expect($mediator->send(new ParentMessage('custom'), ['traceId' => 'trace-custom']))->toBe('child: custom')
@@ -801,7 +801,7 @@ function registerMediatorBehaviorContractTests(MediatorFactoryInterface $factory
         $eventBus = new RecordingEventBus();
         $mediator = $factory->createMediator([
             new EventPublishingHandler(),
-            $eventBus,
+            EventBusInterface::class => $eventBus,
         ], [], 'EventBusContext');
 
         expect($mediator->send(new PublishedFromMediatorMessage('bridge'), ['traceId' => 'trace-eb']))->toBe('published: bridge')

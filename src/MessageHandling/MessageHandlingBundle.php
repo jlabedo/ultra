@@ -55,15 +55,25 @@ final class MessageHandlingBundle extends Bundle
             }
         );
 
-        $container->register(MediatorInterface::class)
-            ->addTag(TagNames::ROUTER, ['interface' => MediatorInterface::class])
-            ->setAbstract(true)
+        $container->registerForAutoconfiguration(ContextAwareRouterInterface::class)
+            ->addTag(TagNames::CONTEXT_AWARE)
         ;
 
-        $container->register(EventBusInterface::class)
-            ->addTag(TagNames::ROUTER, ['interface' => EventBusInterface::class])
-            ->setAbstract(true)
-        ;
+        if (! $container->hasDefinition(MediatorInterface::class)) {
+            $container->register(MediatorInterface::class)
+                ->addTag(TagNames::ROUTER, ['interface' => MediatorInterface::class])
+                ->addTag(TagNames::CONTEXT_AWARE)
+                ->setAbstract(true)
+            ;
+        }
+
+        if (! $container->hasDefinition(EventBusInterface::class)) {
+            $container->register( EventBusInterface::class)
+                ->addTag(TagNames::ROUTER, ['interface' => EventBusInterface::class])
+                ->addTag(TagNames::CONTEXT_AWARE)
+                ->setAbstract(true)
+            ;
+        }
 
         $buildDir = (string) $container->getParameter('kernel.build_dir');
         $outputDir = $buildDir.'/message_handling';

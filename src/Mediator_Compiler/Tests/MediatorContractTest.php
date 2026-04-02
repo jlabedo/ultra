@@ -11,6 +11,7 @@ use Ultra\MessageHandling\Attribute\Advice;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\MediatorInterface;
+use Ultra\MessageHandling\MessageHandlingBundle;
 use Ultra\MessageHandling_Compiler\MessageRouterCompilerPass;
 use function Ultra\Mediator\Tests\Support\registerMediatorBehaviorContractTests;
 use function Ultra\Mediator\Tests\Support\registerMediatorOrderingContractTests;
@@ -25,11 +26,11 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
     public function createMediator(array $services, array $classes, string $scenario): MediatorInterface
     {
         $container = new ContainerBuilder();
+        $container->setParameter('kernel.build_dir', $this->testOutputDir . '/' . $this->sanitizeScenarioName($scenario));
         $primaryServices = $this->registerProvidedServices($container, $services);
         $this->registerDiscoverableClasses($container, $classes);
-        $this->registerMediatorRouter($container);
         $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
-        $container->addCompilerPass(new MessageRouterCompilerPass($this->testOutputDir . '/' . $this->sanitizeScenarioName($scenario)));
+        new MessageHandlingBundle()->build($container);
         $container->compile();
 
         foreach ($primaryServices as $id => $service) {
@@ -40,16 +41,6 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
         return $container->get('test.mediator');
     }
 
-    private function registerMediatorRouter(ContainerBuilder $container): void
-    {
-        $container->setDefinition(
-            MediatorInterface::class,
-            (new Definition(MediatorInterface::class))
-                ->addTag('ultra.message_router', ['interface' => MediatorInterface::class])
-                ->setAbstract(true),
-        );
-    }
-
     private function sanitizeScenarioName(string $scenario): string
     {
         $sanitized = preg_replace('/[^A-Za-z0-9]+/', '', $scenario);
@@ -58,99 +49,24 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
     }
 
     /**
-     * @return array<string, string> map of tag name => true for the service
-     */
-    private function mediatorDiscoveryTags(string $class): array
-    {
-        $tags = [];
-        $reflection = new \ReflectionClass($class);
-
-        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-            if ([] !== $method->getAttributes(Handles::class)) {
-                $tags['ultra.message_handler'] = true;
-            }
-
-            if ([] !== $method->getAttributes(SelfHandler::class)) {
-                $tags['ultra.message_handler'] = true;
-            }
-
-            if ([] !== $method->getAttributes(Advice::class, \ReflectionAttribute::IS_INSTANCEOF)) {
-                $tags['ultra.message_aspect'] = true;
-            }
-        }
-
-        return array_keys($tags);
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function mediatorServiceAliases(object $service): array
-    {
-        $reflection = new \ReflectionClass($service);
-        $parents = [];
-        $parent = $reflection->getParentClass();
-        while (false !== $parent) {
-            $parents[] = $parent->getName();
-            $parent = $parent->getParentClass();
-        }
-
-        return [
-            ...array_keys($reflection->getInterfaces()),
-            ...$parents,
-        ];
-    }
-
-    /**
-     * @param list<object> $services
+     * @param array<mixed, object> $services
      *
      * @return array<string, object>
      */
     private function registerProvidedServices(ContainerBuilder $container, array $services): array
     {
         $primaryServices = [];
-        $registeredIds = [];
 
-        foreach ($services as $service) {
-            $primaryId = $service::class;
+        foreach ($services as $serviceId => $service) {
+            $primaryId = is_string($serviceId) ? $serviceId : $service::class;
             if (isset($primaryServices[$primaryId])) {
                 throw new \InvalidArgumentException(\sprintf('Mediator contract services must be unique by class; "%s" was provided more than once.', $primaryId));
             }
 
-            $container->setDefinition(
-                $primaryId,
-                (new Definition($service::class))
-                    ->setSynthetic(true)
-            );
-
-            foreach ($this->mediatorDiscoveryTags($primaryId) as $tag) {
-                $container->getDefinition($primaryId)->addTag($tag);
-            }
-
-            $registeredIds[$primaryId] = $primaryId;
-
-            foreach ($this->mediatorServiceAliases($service) as $alias) {
-                if ($alias === $primaryId) {
-                    continue;
-                }
-
-                // Don't alias over MediatorInterface — we manage that via registerMediatorRouter()
-                if (MediatorInterface::class === $alias) {
-                    continue;
-                }
-
-                if (isset($registeredIds[$alias]) && $registeredIds[$alias] !== $primaryId) {
-                    throw new \InvalidArgumentException(\sprintf(
-                        'Mediator contract services "%s" and "%s" both expose "%s"; the shared contract requires unique service types.',
-                        $registeredIds[$alias],
-                        $primaryId,
-                        $alias,
-                    ));
-                }
-
-                $registeredIds[$alias] = $primaryId;
-                $container->setAlias($alias, $primaryId);
-            }
+            $container->register($primaryId, $service::class)
+                ->setAutoconfigured(true)
+                ->setSynthetic(true)
+            ;
 
             $primaryServices[$primaryId] = $service;
         }
@@ -164,21 +80,10 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
     private function registerDiscoverableClasses(ContainerBuilder $container, array $classes): void
     {
         foreach ($classes as $class) {
-            if ($container->hasDefinition($class) || $container->hasAlias($class)) {
-                throw new \InvalidArgumentException(\sprintf(
-                    'Discoverable class "%s" was also registered as a service. Only non-service classes belong in the contract class list.',
-                    $class,
-                ));
-            }
-
-            $definition = (new Definition($class))
-                ->setAutowired(false);
-
-            foreach ($this->mediatorDiscoveryTags($class) as $tag) {
-                $definition->addTag($tag);
-            }
-
-            $container->setDefinition($class, $definition);
+            $container->register($class)
+                ->setAutoconfigured(true)
+                ->setAutowired(false)
+            ;
         }
     }
 }

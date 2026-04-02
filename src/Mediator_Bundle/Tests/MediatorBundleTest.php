@@ -46,9 +46,7 @@ test('mediator bundle generates unique class names for different scenarios', fun
         ->setAutoconfigured(true)
     ;
     $first->register(MediatorBundleTestGreeter::class, MediatorBundleTestGreeter::class);
-    $first->addCompilerPass(new MessageRouterCompilerPass(
-        MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/a',
-    ));
+    $first->addCompilerPass(new MessageRouterCompilerPass(MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/a'));
     $first->compile();
 
     $second = new ContainerBuilder();
@@ -59,9 +57,7 @@ test('mediator bundle generates unique class names for different scenarios', fun
         ->setAutoconfigured(true)
     ;
     $second->register(MediatorBundleTestGreeter::class, MediatorBundleTestGreeter::class);
-    $second->addCompilerPass(new MessageRouterCompilerPass(
-        MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/b',
-    ));
+    $second->addCompilerPass(new MessageRouterCompilerPass(MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/b'));
     $second->compile();
 
     /** @var MediatorInterface $firstMediator */
