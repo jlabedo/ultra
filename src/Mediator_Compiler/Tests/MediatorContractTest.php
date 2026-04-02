@@ -10,8 +10,8 @@ use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator\Attribute\SelfHandler;
 use Ultra\Mediator\Tests\Support\MediatorFactoryInterface;
-use Ultra\Mediator_Compiler\MediatorCompilerPass;
 use Ultra\MessageHandling\Attribute\Advice;
+use Ultra\MessageHandling_Compiler\MessageRouterCompilerPass;
 use function Ultra\Mediator\Tests\Support\registerMediatorBehaviorContractTests;
 use function Ultra\Mediator\Tests\Support\registerMediatorOrderingContractTests;
 
@@ -27,8 +27,12 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
         $container = new ContainerBuilder();
         $primaryServices = $this->registerProvidedServices($container, $services);
         $this->registerDiscoverableClasses($container, $classes);
+        $this->registerMediatorRouter($container);
         $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
-        $container->addCompilerPass(new MediatorCompilerPass($this->testOutputDir, $this->compiledContractClassName($scenario)));
+        $container->addCompilerPass(new MessageRouterCompilerPass(
+            $this->testOutputDir,
+            classNameOverrides: [MediatorInterface::class => $this->compiledContractClassName($scenario)],
+        ));
         $container->compile();
 
         foreach ($primaryServices as $id => $service) {
@@ -39,6 +43,16 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
         return $container->get('test.mediator');
     }
 
+    private function registerMediatorRouter(ContainerBuilder $container): void
+    {
+        $container->setDefinition(
+            MediatorInterface::class,
+            (new Definition(MediatorInterface::class))
+                ->addTag('ultra.message_router', ['interface' => MediatorInterface::class])
+                ->setAbstract(true),
+        );
+    }
+
     private function compiledContractClassName(string $scenario): string
     {
         $sanitized = preg_replace('/[^A-Za-z0-9]+/', '', $scenario);
@@ -47,7 +61,7 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
     }
 
     /**
-     * @return list<string>
+     * @return array<string, string> map of tag name => true for the service
      */
     private function mediatorDiscoveryTags(string $class): array
     {
@@ -56,15 +70,15 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
 
         foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
             if ([] !== $method->getAttributes(Handles::class)) {
-                $tags['mediator.handler'] = true;
+                $tags['ultra.message_handler'] = true;
             }
 
             if ([] !== $method->getAttributes(SelfHandler::class)) {
-                $tags['mediator.self-handler'] = true;
+                $tags['ultra.message_handler'] = true;
             }
 
             if ([] !== $method->getAttributes(Advice::class, \ReflectionAttribute::IS_INSTANCEOF)) {
-                $tags['mediator.aspect'] = true;
+                $tags['ultra.message_aspect'] = true;
             }
         }
 
@@ -120,6 +134,11 @@ final readonly class MediatorCompilerContractFactory implements MediatorFactoryI
 
             foreach ($this->mediatorServiceAliases($service) as $alias) {
                 if ($alias === $primaryId) {
+                    continue;
+                }
+
+                // Don't alias over MediatorInterface — we manage that via registerMediatorRouter()
+                if (MediatorInterface::class === $alias) {
                     continue;
                 }
 

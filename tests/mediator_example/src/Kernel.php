@@ -12,7 +12,8 @@ use Ultra\EventBus_Bundle\EventBusBundle;
 use Ultra\Events\EventsBundle;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Bundle\MediatorBundle;
-use Ultra\Mediator_Bundle\TagNames;
+use Ultra\MessageHandling_Bundle\MessageHandlingBundle;
+use Ultra\MessageHandling_Bundle\TagNames;
 use Ultra\Mediator_Example\OrderProcessing\Message\SelfHandledPing;
 
 final class Kernel extends BaseKernel
@@ -25,6 +26,7 @@ final class Kernel extends BaseKernel
         yield new MediatorBundle();
         yield new EventBusBundle();
         yield new EventsBundle();
+        yield new MessageHandlingBundle();
     }
 
     protected function configureContainer(ContainerConfigurator $container): void
@@ -48,7 +50,7 @@ final class Kernel extends BaseKernel
         $services->alias('test.mediator', MediatorInterface::class)->public();
         $services->set(SelfHandledPing::class)
             ->autoconfigure(false)
-            ->tag(TagNames::SELF_HANDLER)
+            ->tag(TagNames::HANDLER)
         ;
     }
 }

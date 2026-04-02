@@ -10,7 +10,10 @@ use Ultra\Mediator\Attribute\Handles;
 use Ultra\Mediator\Attribute\SelfHandler;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\Mediator_Bundle\MediatorBundle;
-use Ultra\Mediator_Bundle\TagNames;
+use Ultra\MessageHandling_Bundle\TagNames;
+use Ultra\MessageHandling_Compiler\MessageRouterCompilerPass;
+
+const MEDIATOR_BUNDLE_TEST_OUTPUT_DIR = __DIR__.'/../../../var/mediator_bundle_tests';
 
 final class MediatorBundleTestGreeter
 {
@@ -45,9 +48,9 @@ final class BundledRegularGreetingHandler
     }
 }
 
-test('mediator bundle tags SelfHandler methods as self handlers', function () {
+test('mediator bundle tags SelfHandler methods with the unified handler tag', function () {
     $container = new ContainerBuilder();
-    $container->setParameter('kernel.build_dir', dirname(__DIR__, 3).'/var/mediator_bundle_tests');
+    $container->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR);
     new MediatorBundle()->build($container);
 
     $definition = new ChildDefinition('');
@@ -58,14 +61,14 @@ test('mediator bundle tags SelfHandler methods as self handlers', function () {
         new \ReflectionMethod(BundledSelfGreetingMessage::class, 'greet'),
     );
 
-    expect($definition->getTag(TagNames::SELF_HANDLER))->toBe([[]])
-        ->and($definition->getTag(TagNames::HANDLER))->toBe([])
+    expect($definition->getTag(TagNames::HANDLER))->toBe([[]])
+        ->and($definition->getTag(TagNames::ASPECT))->toBe([])
     ;
 });
 
-test('mediator bundle keeps regular Handles methods on the regular handler tag', function () {
+test('mediator bundle tags Handles methods with the unified handler tag', function () {
     $container = new ContainerBuilder();
-    $container->setParameter('kernel.build_dir', dirname(__DIR__, 3).'/var/mediator_bundle_tests');
+    $container->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR);
     new MediatorBundle()->build($container);
 
     $definition = new ChildDefinition('');
@@ -77,13 +80,13 @@ test('mediator bundle keeps regular Handles methods on the regular handler tag',
     );
 
     expect($definition->getTag(TagNames::HANDLER))->toBe([[]])
-        ->and($definition->getTag(TagNames::SELF_HANDLER))->toBe([])
+        ->and($definition->getTag(TagNames::ASPECT))->toBe([])
     ;
 });
 
 test('mediator bundle autodiscovers autoconfigured self handlers', function () {
     $container = new ContainerBuilder();
-    $container->setParameter('kernel.build_dir', dirname(__DIR__, 3).'/var/mediator_bundle_tests');
+    $container->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR);
     new MediatorBundle()->build($container);
 
     $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
@@ -92,6 +95,10 @@ test('mediator bundle autodiscovers autoconfigured self handlers', function () {
     ;
     $container->register(MediatorBundleTestGreeter::class, MediatorBundleTestGreeter::class);
 
+    $container->addCompilerPass(new MessageRouterCompilerPass(
+        MEDIATOR_BUNDLE_TEST_OUTPUT_DIR,
+        classNameOverrides: [MediatorInterface::class => 'CompiledMediatorBundleSelfHandler'],
+    ));
     $container->compile();
 
     /** @var MediatorInterface $mediator */
@@ -100,29 +107,34 @@ test('mediator bundle autodiscovers autoconfigured self handlers', function () {
     expect($mediator->send(new BundledSelfGreetingMessage('Alice')))->toBe('Hello, Alice!');
 });
 
-test('mediator bundle uses a unique generated class per build dir', function () {
+test('mediator bundle generates unique class names for different scenarios', function () {
     $first = new ContainerBuilder();
-    $first->setParameter('kernel.build_dir', dirname(__DIR__, 3).'/var/mediator_bundle_tests_a');
+    $first->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/a');
     new MediatorBundle()->build($first);
     $first->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $first->register(BundledSelfGreetingMessage::class, BundledSelfGreetingMessage::class)
         ->setAutoconfigured(true)
     ;
     $first->register(MediatorBundleTestGreeter::class, MediatorBundleTestGreeter::class);
+    $first->addCompilerPass(new MessageRouterCompilerPass(
+        MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/a',
+        classNameOverrides: [MediatorInterface::class => 'CompiledMediatorBundleScenarioA'],
+    ));
     $first->compile();
 
     $second = new ContainerBuilder();
-    $second->setParameter('kernel.build_dir', dirname(__DIR__, 3).'/var/mediator_bundle_tests_b');
+    $second->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/b');
     new MediatorBundle()->build($second);
     $second->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $second->register(BundledSelfGreetingMessage::class, BundledSelfGreetingMessage::class)
         ->setAutoconfigured(true)
     ;
     $second->register(MediatorBundleTestGreeter::class, MediatorBundleTestGreeter::class);
+    $second->addCompilerPass(new MessageRouterCompilerPass(
+        MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/b',
+        classNameOverrides: [MediatorInterface::class => 'CompiledMediatorBundleScenarioB'],
+    ));
     $second->compile();
-
-    expect($first->getParameter('ultra_mediator.generated_class'))
-        ->not->toBe($second->getParameter('ultra_mediator.generated_class'));
 
     /** @var MediatorInterface $firstMediator */
     $firstMediator = $first->get('test.mediator');

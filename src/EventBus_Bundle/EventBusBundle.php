@@ -6,10 +6,11 @@ namespace Ultra\EventBus_Bundle;
 
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\EventBus\Attribute\EventHandler;
-use Ultra\EventBus_Compiler\EventBusCompilerPass;
-use Ultra\MessageHandling\Attribute\Advice;
+use Ultra\EventBus\EventBusInterface;
+use Ultra\MessageHandling_Bundle\TagNames as MessageHandlingTagNames;
 
 final class EventBusBundle extends Bundle
 {
@@ -17,42 +18,21 @@ final class EventBusBundle extends Bundle
     {
         parent::build($container);
 
-        if (! $container->hasParameter('ultra_event_bus.generated_class')) {
-            $container->setParameter('ultra_event_bus.generated_class', 'CompiledEventBus');
-        }
-
         $container->registerAttributeForAutoconfiguration(
             EventHandler::class,
             static function (ChildDefinition $definition, EventHandler $attribute, \Reflector $reflector): void {
                 if ($reflector instanceof \ReflectionMethod) {
-                    $definition->addTag(TagNames::HANDLER, ['method' => $reflector->getName()]);
+                    $definition->addTag(MessageHandlingTagNames::HANDLER);
                 }
             }
         );
 
-        $container->registerAttributeForAutoconfiguration(
-            Advice::class,
-            static function (ChildDefinition $definition, Advice $attribute, \Reflector $reflector): void {
-                if ($reflector instanceof \ReflectionMethod) {
-                    $definition->addTag(TagNames::ASPECT);
-                }
-            }
+        // Register EventBusInterface as a router so MessageRouterCompilerPass can discover it
+        $container->setDefinition(
+            EventBusInterface::class,
+            (new Definition(EventBusInterface::class))
+                ->addTag(MessageHandlingTagNames::ROUTER, ['interface' => EventBusInterface::class])
+                ->setAbstract(true),
         );
-
-        $buildDir = (string) $container->getParameter('kernel.build_dir');
-        $outputDir = $buildDir.'/event_bus';
-        $generatedClass = (string) $container->getParameter('ultra_event_bus.generated_class');
-
-        if (! class_exists(EventBusCompilerPass::class)) {
-            throw new \RuntimeException('Cannot compile the event bus container because ultra/event-bus-compiler is not installed.');
-        }
-
-        $container->addCompilerPass(new EventBusCompilerPass(
-            $outputDir,
-            $generatedClass,
-            TagNames::HANDLER,
-            TagNames::ASPECT,
-            TagNames::EVENT,
-        ));
     }
 }

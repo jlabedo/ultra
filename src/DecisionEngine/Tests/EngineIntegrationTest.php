@@ -34,7 +34,7 @@ use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mediator\Attribute\SelfHandler;
 use Ultra\Mediator\MediatorInterface;
-use Ultra\Mediator_Compiler\MediatorCompilerPass;
+use Ultra\MessageHandling_Compiler\MessageRouterCompilerPass;
 use Ultra\MessageHandling\MessageContext;
 
 /** Test command with service dependency (Clock) */
@@ -130,7 +130,7 @@ function createMediator(array $serviceDefinitions = []): array
 
     $container->register(DecisionEngineAspect::class, DecisionEngineAspect::class)
         ->setAutowired(true)
-        ->addTag('mediator.aspect')
+        ->addTag('ultra.message_aspect')
     ;
 
     $container->register(\DateTimeInterface::class, \DateTimeImmutable::class)
@@ -145,7 +145,7 @@ function createMediator(array $serviceDefinitions = []): array
     ] as $commandClass) {
         $container->register($commandClass, $commandClass)
             ->setAutoconfigured(false)
-            ->addTag('mediator.self-handler')
+            ->addTag('ultra.message_handler')
         ;
     }
 
@@ -169,8 +169,17 @@ function createMediator(array $serviceDefinitions = []): array
     }
 
     $generatedClass = 'CompiledDecisionMediator_'.bin2hex(random_bytes(4));
+    $container->setDefinition(
+        MediatorInterface::class,
+        (new Definition(MediatorInterface::class))
+            ->addTag('ultra.message_router', ['interface' => MediatorInterface::class])
+            ->setAbstract(true),
+    );
     $container->addCompilerPass(new EntityLoaderCompilerPass($outputDir.'/decision_engine'));
-    $container->addCompilerPass(new MediatorCompilerPass($outputDir, $generatedClass));
+    $container->addCompilerPass(new MessageRouterCompilerPass(
+        $outputDir,
+        classNameOverrides: [MediatorInterface::class => $generatedClass],
+    ));
     $container->compile();
 
     return [

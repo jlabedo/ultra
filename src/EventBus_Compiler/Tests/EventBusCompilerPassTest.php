@@ -9,19 +9,17 @@ use Symfony\Component\DependencyInjection\Definition;
 use Ultra\EventBus\Attribute\EventHandler;
 use Ultra\EventBus\EventBusInterface;
 use Ultra\EventBus\Exception\UnknownEvent;
-use Ultra\EventBus_Compiler\EventBusCompilerPass;
-use Ultra\Events\Attribute\Event;
-use Ultra\Events\EventRegistryInterface;
 use Ultra\Events\EventsBundle;
-use Ultra\Mapper_Bundle\DependencyInjection\Compiler\MapperCompilerPass;
 use Ultra\Mediator\MediatorInterface;
 use Ultra\MessageHandling\Attribute\After;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
 use Ultra\MessageHandling\Attribute\MatchResult;
+use Ultra\MessageHandling\ContextAwareRouterInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\MessageContextKeys;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
+use Ultra\MessageHandling_Compiler\MessageRouterCompilerPass;
 
 const TEST_OUTPUT_DIR = __DIR__.'/../../../var/event_bus_compiler_tests';
 
@@ -68,16 +66,27 @@ final class EventLog
     public array $entries = [];
 }
 
-final class RecordingMediator implements MediatorInterface
+final class RecordingMediator implements MediatorInterface, ContextAwareRouterInterface
 {
     /** @var list<array{message: object, context: array}> */
     public array $calls = [];
 
+    private ?MessageContext $parentContext = null;
+
+    public function withContext(MessageContext $context): static
+    {
+        $this->parentContext = $context;
+
+        return $this;
+    }
+
     public function send(object $message, array|MessageContext $context = []): mixed
     {
+        $coerced = MessageContext::coerce($context);
+        $merged = null !== $this->parentContext ? $this->parentContext->merge($coerced) : $coerced;
         $this->calls[] = [
             'message' => $message,
-            'context' => MessageContext::coerce($context)->all(),
+            'context' => $merged->all(),
         ];
 
         return 'sent';
@@ -248,15 +257,10 @@ final class EventContextRecorder
     }
 }
 
-function createEventBusContainer(string $className, array $definitions = [], bool $withMapper = false): ContainerBuilder
+function createEventBusContainer(string $className, array $definitions = []): ContainerBuilder
 {
     $container = new ContainerBuilder();
     new EventsBundle()->build($container);
-
-    if ($withMapper) {
-        $container->setParameter('ultra_mapper.normalizable_classes', []);
-        $container->addCompilerPass(new MapperCompilerPass(), priority: -100);
-    }
 
     $container->addDefinitions($definitions);
     $container->addDefinitions([
@@ -264,16 +268,30 @@ function createEventBusContainer(string $className, array $definitions = [], boo
         TestOrderCancelled::class => createEventDefinition(TestOrderCancelled::class),
     ]);
 
-    $container->addCompilerPass(new EventBusCompilerPass(TEST_OUTPUT_DIR, $className));
+    registerEventBusRouter($container);
+    $container->addCompilerPass(new MessageRouterCompilerPass(
+        TEST_OUTPUT_DIR,
+        classNameOverrides: [EventBusInterface::class => $className],
+    ));
     $container->compile();
 
     return $container;
 }
 
+function registerEventBusRouter(ContainerBuilder $container): void
+{
+    $container->setDefinition(
+        EventBusInterface::class,
+        (new Definition(EventBusInterface::class))
+            ->addTag('ultra.message_router', ['interface' => EventBusInterface::class])
+            ->setAbstract(true),
+    );
+}
+
 function createEventDefinition(string $class): Definition
 {
     return (new Definition($class))
-        ->addResourceTag('event_bus.event');
+        ->addResourceTag('ultra_event_bus.event');
 }
 
 test('compiler pass registers event bus even with no handlers', function () {
@@ -288,9 +306,9 @@ test('compiler pass registers event bus even with no handlers', function () {
 test('event bus routes known events polymorphically in deterministic priority order', function () {
     $log = new EventLog();
     $container = createEventBusContainer('CompiledEventBusRouting', [
-        ExactCreatedHandler::class => (new Definition(ExactCreatedHandler::class, [$log]))->addTag('event_bus.handler'),
-        BaseEventHandler::class => (new Definition(BaseEventHandler::class, [$log]))->addTag('event_bus.handler'),
-        InterfaceEventHandler::class => (new Definition(InterfaceEventHandler::class, [$log]))->addTag('event_bus.handler'),
+        ExactCreatedHandler::class => (new Definition(ExactCreatedHandler::class, [$log]))->addTag('ultra.message_handler'),
+        BaseEventHandler::class => (new Definition(BaseEventHandler::class, [$log]))->addTag('ultra.message_handler'),
+        InterfaceEventHandler::class => (new Definition(InterfaceEventHandler::class, [$log]))->addTag('ultra.message_handler'),
     ]);
 
     $container->get(EventBusInterface::class)->publish(new TestOrderCreated('o-2'));
@@ -305,11 +323,11 @@ test('event bus routes known events polymorphically in deterministic priority or
 test('event bus uses a constant route table and loops over ordered handler methods', function () {
     $log = new EventLog();
     $container = createEventBusContainer('CompiledEventBusRouteTable', [
-        ExactCreatedHandler::class => (new Definition(ExactCreatedHandler::class, [$log]))->addTag('event_bus.handler'),
-        LaterCreatedHandler::class => (new Definition(LaterCreatedHandler::class, [$log]))->addTag('event_bus.handler'),
+        ExactCreatedHandler::class => (new Definition(ExactCreatedHandler::class, [$log]))->addTag('ultra.message_handler'),
+        LaterCreatedHandler::class => (new Definition(LaterCreatedHandler::class, [$log]))->addTag('ultra.message_handler'),
     ]);
 
-    $code = file_get_contents(TEST_OUTPUT_DIR.'/CompiledEventBusRouteTable.php');
+    $code = file_get_contents(TEST_OUTPUT_DIR.'/EventBusInterface/CompiledEventBusRouteTable.php');
 
     expect($container->get(EventBusInterface::class))->toBeInstanceOf(EventBusInterface::class)
         ->and($code)->toBeString()
@@ -318,8 +336,8 @@ test('event bus uses a constant route table and loops over ordered handler metho
         ->and($code)->toContain("'invokeTestOrderCreated_0_")
         ->and($code)->toContain("'invokeTestOrderCreated_1_")
         ->and($code)->toContain('$methods = self::ROUTES[$event::class] ?? null;')
-        ->and($code)->toContain('foreach ($methods as $method) {')
-        ->and($code)->toContain('$this->{$method}($event, $messageContext);')
+        ->and($code)->toContain('foreach ($methods as $m) {')
+        ->and($code)->toContain('$this->{$m}($event, $messageContext);')
         ->and($code)->not->toContain('match ($event::class)')
         ->and($code)->not->toContain('private function publishTestOrderCreated_');
 });
@@ -342,9 +360,9 @@ test('event bus throws for unknown unannotated events', function () {
 test('event bus stops on first failing handler and rethrows the exception', function () {
     $log = new EventLog();
     $container = createEventBusContainer('CompiledEventBusFailure', [
-        ThrowingCreatedHandler::class => (new Definition(ThrowingCreatedHandler::class, [$log]))->addTag('event_bus.handler'),
-        ExactCreatedHandler::class => (new Definition(ExactCreatedHandler::class, [$log]))->addTag('event_bus.handler'),
-        LaterCreatedHandler::class => (new Definition(LaterCreatedHandler::class, [$log]))->addTag('event_bus.handler'),
+        ThrowingCreatedHandler::class => (new Definition(ThrowingCreatedHandler::class, [$log]))->addTag('ultra.message_handler'),
+        ExactCreatedHandler::class => (new Definition(ExactCreatedHandler::class, [$log]))->addTag('ultra.message_handler'),
+        LaterCreatedHandler::class => (new Definition(LaterCreatedHandler::class, [$log]))->addTag('ultra.message_handler'),
     ]);
 
     expect(fn () => $container->get(EventBusInterface::class)->publish(new TestOrderCreated('o-5')))
@@ -358,8 +376,8 @@ test('event bus stops on first failing handler and rethrows the exception', func
 test('AfterReturning receives null for successful void event handlers', function () {
     $log = new EventLog();
     $container = createEventBusContainer('CompiledEventBusAfterReturning', [
-        ExactCreatedHandler::class => (new Definition(ExactCreatedHandler::class, [$log]))->addTag('event_bus.handler'),
-        AfterReturningRecorder::class => (new Definition(AfterReturningRecorder::class))->addTag('event_bus.aspect')->setPublic(true),
+        ExactCreatedHandler::class => (new Definition(ExactCreatedHandler::class, [$log]))->addTag('ultra.message_handler'),
+        AfterReturningRecorder::class => (new Definition(AfterReturningRecorder::class))->addTag('ultra.message_aspect')->setPublic(true),
     ]);
 
     $container->get(EventBusInterface::class)->publish(new TestOrderCreated('o-6'));
@@ -371,8 +389,8 @@ test('AfterReturning receives null for successful void event handlers', function
 test('AfterThrowing and After apply to event handlers', function () {
     $log = new EventLog();
     $container = createEventBusContainer('CompiledEventBusAfterFailure', [
-        ThrowingCreatedHandler::class => (new Definition(ThrowingCreatedHandler::class, [$log]))->addTag('event_bus.handler'),
-        FailureRecorder::class => (new Definition(FailureRecorder::class))->addTag('event_bus.aspect')->setPublic(true),
+        ThrowingCreatedHandler::class => (new Definition(ThrowingCreatedHandler::class, [$log]))->addTag('ultra.message_handler'),
+        FailureRecorder::class => (new Definition(FailureRecorder::class))->addTag('ultra.message_aspect')->setPublic(true),
     ]);
 
     expect(fn () => $container->get(EventBusInterface::class)->publish(new TestOrderCreated('o-7')))
@@ -386,9 +404,9 @@ test('AfterThrowing and After apply to event handlers', function () {
 test('event bus propagates message context through nested publish calls from handlers', function () {
     $log = new EventLog();
     $container = createEventBusContainer('CompiledEventBusNestedPublishContext', [
-        NestedPublishingCreatedHandler::class => (new Definition(NestedPublishingCreatedHandler::class))->addTag('event_bus.handler'),
-        CancelledEventHandler::class => (new Definition(CancelledEventHandler::class, [$log]))->addTag('event_bus.handler'),
-        EventContextRecorder::class => (new Definition(EventContextRecorder::class))->addTag('event_bus.aspect')->setPublic(true),
+        NestedPublishingCreatedHandler::class => (new Definition(NestedPublishingCreatedHandler::class))->addTag('ultra.message_handler'),
+        CancelledEventHandler::class => (new Definition(CancelledEventHandler::class, [$log]))->addTag('ultra.message_handler'),
+        EventContextRecorder::class => (new Definition(EventContextRecorder::class))->addTag('ultra.message_aspect')->setPublic(true),
     ]);
 
     $container->get(EventBusInterface::class)->publish(new TestOrderCreated('o-ctx'), ['traceId' => 'trace-123']);
@@ -402,9 +420,9 @@ test('event bus propagates message context through nested publish calls from han
 test('event bus accepts MessageContext objects at the public publish boundary', function () {
     $log = new EventLog();
     $container = createEventBusContainer('CompiledEventBusMessageContextInput', [
-        NestedPublishingCreatedHandler::class => (new Definition(NestedPublishingCreatedHandler::class))->addTag('event_bus.handler'),
-        CancelledEventHandler::class => (new Definition(CancelledEventHandler::class, [$log]))->addTag('event_bus.handler'),
-        EventContextRecorder::class => (new Definition(EventContextRecorder::class))->addTag('event_bus.aspect')->setPublic(true),
+        NestedPublishingCreatedHandler::class => (new Definition(NestedPublishingCreatedHandler::class))->addTag('ultra.message_handler'),
+        CancelledEventHandler::class => (new Definition(CancelledEventHandler::class, [$log]))->addTag('ultra.message_handler'),
+        EventContextRecorder::class => (new Definition(EventContextRecorder::class))->addTag('ultra.message_aspect')->setPublic(true),
     ]);
 
     $container->get(EventBusInterface::class)->publish(
@@ -421,13 +439,18 @@ test('event bus accepts MessageContext objects at the public publish boundary', 
 test('event bus uses the configured message context propagator service', function () {
     $log = new EventLog();
     $container = new ContainerBuilder();
+    new EventsBundle()->build($container);
     $container->setDefinition(TestOrderCreated::class, createEventDefinition(TestOrderCreated::class));
     $container->setDefinition(TestOrderCancelled::class, createEventDefinition(TestOrderCancelled::class));
-    $container->setDefinition(NestedPublishingCreatedHandler::class, (new Definition(NestedPublishingCreatedHandler::class))->addTag('event_bus.handler'));
-    $container->setDefinition(CancelledEventHandler::class, (new Definition(CancelledEventHandler::class, [$log]))->addTag('event_bus.handler'));
-    $container->setDefinition(EventContextRecorder::class, (new Definition(EventContextRecorder::class))->addTag('event_bus.aspect')->setPublic(true));
+    $container->setDefinition(NestedPublishingCreatedHandler::class, (new Definition(NestedPublishingCreatedHandler::class))->addTag('ultra.message_handler'));
+    $container->setDefinition(CancelledEventHandler::class, (new Definition(CancelledEventHandler::class, [$log]))->addTag('ultra.message_handler'));
+    $container->setDefinition(EventContextRecorder::class, (new Definition(EventContextRecorder::class))->addTag('ultra.message_aspect')->setPublic(true));
     $container->setDefinition(MessageContextPropagatorInterface::class, (new Definition(FixedMessageContextPropagator::class))->setPublic(true));
-    $container->addCompilerPass(new EventBusCompilerPass(TEST_OUTPUT_DIR, 'CompiledEventBusCustomPropagator'));
+    registerEventBusRouter($container);
+    $container->addCompilerPass(new MessageRouterCompilerPass(
+        TEST_OUTPUT_DIR,
+        classNameOverrides: [EventBusInterface::class => 'CompiledEventBusCustomPropagator'],
+    ));
     $container->compile();
 
     $container->get(EventBusInterface::class)->publish(new TestOrderCreated('o-custom'), ['traceId' => 'trace-custom']);
@@ -444,11 +467,16 @@ test('event bus uses the configured message context propagator service', functio
 
 test('event bus propagates message context to mediator injected into handlers', function () {
     $container = new ContainerBuilder();
+    new EventsBundle()->build($container);
     $container->setDefinition(TestOrderCreated::class, createEventDefinition(TestOrderCreated::class));
-    $container->setDefinition(MediatingCreatedHandler::class, (new Definition(MediatingCreatedHandler::class))->addTag('event_bus.handler'));
+    $container->setDefinition(MediatingCreatedHandler::class, (new Definition(MediatingCreatedHandler::class))->addTag('ultra.message_handler'));
     $container->setDefinition(RecordingMediator::class, (new Definition(RecordingMediator::class))->setPublic(true));
     $container->setAlias(MediatorInterface::class, RecordingMediator::class)->setPublic(true);
-    $container->addCompilerPass(new EventBusCompilerPass(TEST_OUTPUT_DIR, 'CompiledEventBusMediatorContext'));
+    registerEventBusRouter($container);
+    $container->addCompilerPass(new MessageRouterCompilerPass(
+        TEST_OUTPUT_DIR,
+        classNameOverrides: [EventBusInterface::class => 'CompiledEventBusMediatorContext'],
+    ));
     $container->compile();
 
     $container->get(EventBusInterface::class)->publish(new TestOrderCreated('o-med'), ['traceId' => 'trace-med']);

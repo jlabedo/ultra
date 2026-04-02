@@ -10,7 +10,7 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\DecisionEngine\Aspect\DecisionEngineAspect;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine_Compiler\EntityLoaderCompilerPass;
-use Ultra\Mediator_Bundle\TagNames as MediatorTagNames;
+use Ultra\MessageHandling_Bundle\TagNames as MessageHandlingTagNames;
 
 final class DecisionEngineBundle extends Bundle
 {
@@ -30,7 +30,7 @@ final class DecisionEngineBundle extends Bundle
         $container->register(DecisionEngineAspect::class)
             ->setAutoconfigured(true)
             ->setAutowired(true)
-            ->addTag(MediatorTagNames::ASPECT);
+            ->addTag(MessageHandlingTagNames::ASPECT);
 
         $buildDir = (string) $container->getParameter('kernel.build_dir');
         $outputDir = $buildDir . '/decision_engine';
