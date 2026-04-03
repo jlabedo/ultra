@@ -47,9 +47,9 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         $this->ensureMessageContextPropagator($container);
 
         // ── Step 1: Discover router interfaces ────────────────────────────────
-        /** @var array<string, array{descriptor: RouterDescriptor, generatedClass: string, outputDir: string}> $routers */
+        /** @var array<string, array{descriptor: RouterDescriptor, baseName: string, outputDir: string}> $routers */
         $routers = [];
-        /** @var array<string, array{descriptor: RouterDescriptor, generatedClass: string}> $interfaceDescriptors keyed by interface FQCN */
+        /** @var array<string, array{descriptor: RouterDescriptor, baseName: string, wrapperClass: string}> $interfaceDescriptors keyed by interface FQCN */
         $interfaceDescriptors = [];
 
         foreach ($container->findTaggedServiceIds(TagNames::ROUTER) as $serviceId => $tags) {
@@ -67,19 +67,18 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                     }
 
                     $shortName = substr($interfaceName, strrpos($interfaceName, '\\') + 1);
-                    $hash = substr(sha1($interfaceName.$this->outputDir), 0, 8);
-                    $generatedClass = 'Compiled'.$shortName.'_'.$hash;
 
                     $interfaceDescriptors[$interfaceName] = [
                         'descriptor' => $descriptor,
-                        'generatedClass' => $generatedClass,
+                        'baseName' => 'Compiled'.$shortName,
+                        'wrapperClass' => MessageRouterGenerator::wrapperClassName($interfaceName, $this->outputDir),
                     ];
                 }
 
                 $routerOutputDir = rtrim($this->outputDir, '/').'/'.substr($interfaceName, strrpos($interfaceName, '\\') + 1);
                 $routers[$serviceId] = [
                     'descriptor' => $interfaceDescriptors[$interfaceName]['descriptor'],
-                    'generatedClass' => $interfaceDescriptors[$interfaceName]['generatedClass'],
+                    'baseName' => $interfaceDescriptors[$interfaceName]['baseName'],
                     'outputDir' => $routerOutputDir,
                 ];
             }
@@ -126,7 +125,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         // Generate shared contextual wrapper classes file
         $wrappersFilePath = $this->generateWrappersFile($generator, $interfaceDescriptors);
 
-        foreach ($routers as $serviceId => ['descriptor' => $descriptor, 'generatedClass' => $generatedClass, 'outputDir' => $routerOutputDir]) {
+        foreach ($routers as $serviceId => ['descriptor' => $descriptor, 'baseName' => $baseName, 'outputDir' => $routerOutputDir]) {
             // Skip compilation for synthetic services (e.g. test doubles).
             // Their wrapper is still generated via the shared wrappers file,
             // but the service itself is not replaced.
@@ -144,8 +143,9 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             // Collect aspects and attach to handlers
             $routes = $this->attachAspects($routes, $adviceCollector, $locatorReferences, $container, $descriptor->isSingleDispatch);
 
-            $filePath = rtrim($routerOutputDir, '/').'/'.$generatedClass.'.php';
-            $generator->generate($generatedClass, $descriptor, $routes, $filePath, $wrappersFilePath);
+            ['className' => $generatedClass, 'filePath' => $filePath] = $generator->generate(
+                $baseName, $descriptor, $routes, $routerOutputDir, $wrappersFilePath,
+            );
 
             $routerDef = new Definition($generatedClass, [
                 new ServiceLocatorArgument($this->buildLocatorReferences($locatorReferences->all())),
@@ -439,13 +439,12 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
      * Each compiled router file will require_once this file so the wrappers
      * are available when handler methods reference them.
      *
-     * @param array<string, array{descriptor: RouterDescriptor, generatedClass: string}> $interfaceDescriptors
+     * @param array<string, array{descriptor: RouterDescriptor, baseName: string, wrapperClass: string}> $interfaceDescriptors
      */
     private function generateWrappersFile(MessageRouterGenerator $generator, array $interfaceDescriptors): string
     {
         $wrapperClassToDescriptor = [];
-        foreach ($interfaceDescriptors as ['descriptor' => $descriptor, 'generatedClass' => $generatedClass]) {
-            $wrapperClass = MessageRouterGenerator::wrapperClassName($generatedClass);
+        foreach ($interfaceDescriptors as ['descriptor' => $descriptor, 'wrapperClass' => $wrapperClass]) {
             $wrapperClassToDescriptor[$wrapperClass] = $descriptor;
         }
 
@@ -464,8 +463,8 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
      * interface descriptors to also cover services registered under a router
      * interface FQCN without the ROUTER tag (e.g. synthetic test doubles).
      *
-     * @param array<string, array{descriptor: RouterDescriptor, generatedClass: string, outputDir: string}> $routers
-     * @param array<string, array{descriptor: RouterDescriptor, generatedClass: string}> $interfaceDescriptors
+     * @param array<string, array{descriptor: RouterDescriptor, baseName: string, outputDir: string}> $routers
+     * @param array<string, array{descriptor: RouterDescriptor, baseName: string, wrapperClass: string}> $interfaceDescriptors
      *
      * @return array<string, string>
      */
@@ -473,8 +472,8 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     {
         // Build a lookup from interface FQCN → wrapper class name
         $wrapperByInterface = [];
-        foreach ($interfaceDescriptors as $interfaceName => ['generatedClass' => $generatedClass]) {
-            $wrapperByInterface[$interfaceName] = MessageRouterGenerator::wrapperClassName($generatedClass);
+        foreach ($interfaceDescriptors as $interfaceName => ['wrapperClass' => $wrapperClass]) {
+            $wrapperByInterface[$interfaceName] = $wrapperClass;
         }
 
         $mapping = [];

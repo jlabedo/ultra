@@ -12,13 +12,13 @@ use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageHandlingBundle;
 use Ultra\MessageHandling_Compiler\MessageRouterCompilerPass;
 
-const MEDIATOR_BUNDLE_TEST_OUTPUT_DIR = __DIR__.'/../../../var/mediator_bundle_tests';
+const MEDIATOR_BUNDLE_TEST_OUTPUT_DIR = __DIR__ . '/../../../var/mediator_bundle_tests';
 
 final class MediatorBundleTestGreeter
 {
     public function greet(string $name): string
     {
-        return 'Hello, '.$name.'!';
+        return 'Hello, ' . $name . '!';
     }
 }
 
@@ -40,25 +40,25 @@ final readonly class BundledRegularGreetingMessage
 
 test('mediator bundle generates unique class names for different scenarios', function () {
     $first = new ContainerBuilder();
-    $first->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/a');
+    $first->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR . '/a');
     new MessageHandlingBundle()->build($first);
     $first->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $first->register(BundledSelfGreetingMessage::class, BundledSelfGreetingMessage::class)
         ->setAutoconfigured(true)
     ;
     $first->register(MediatorBundleTestGreeter::class, MediatorBundleTestGreeter::class);
-    $first->addCompilerPass(new MessageRouterCompilerPass(MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/a'));
+    $first->addCompilerPass(new MessageRouterCompilerPass(MEDIATOR_BUNDLE_TEST_OUTPUT_DIR . '/a'));
     $first->compile();
 
     $second = new ContainerBuilder();
-    $second->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/b');
+    $second->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR . '/b');
     new MessageHandlingBundle()->build($second);
     $second->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
     $second->register(BundledSelfGreetingMessage::class, BundledSelfGreetingMessage::class)
         ->setAutoconfigured(true)
     ;
     $second->register(MediatorBundleTestGreeter::class, MediatorBundleTestGreeter::class);
-    $second->addCompilerPass(new MessageRouterCompilerPass(MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/b'));
+    $second->addCompilerPass(new MessageRouterCompilerPass(MEDIATOR_BUNDLE_TEST_OUTPUT_DIR . '/b'));
     $second->compile();
 
     /** @var MediatorInterface $firstMediator */
@@ -108,7 +108,7 @@ readonly class UltraLight
     public function boot(): Container
     {
         $container = new ContainerBuilder();
-        $container->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/a');
+        $container->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR . '/a');
         foreach ($this->classesToDiscover as $class) {
             $container->register($class)
                 ->setAutoconfigured(true)
@@ -158,11 +158,11 @@ readonly class UltraLight
 
 
 test('it can resolve anonymous classes', function () {
-    $handler = new class () {
+    $handler = new class() {
         #[Handles]
         public function handle(BundledRegularGreetingMessage $message): string
         {
-            return 'Hello, '.$message->name.'!';
+            return 'Hello, ' . $message->name . '!';
         }
     };
 

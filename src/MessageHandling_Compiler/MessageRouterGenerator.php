@@ -34,21 +34,39 @@ final class MessageRouterGenerator
     /**
      * Generate the PHP source and write it to disk.
      *
+     * The class name is derived from a content hash of the generated code:
+     * the code is first built with a placeholder, hashed, and the placeholder
+     * is replaced with the final name ({baseName}_{hash}). This ensures the
+     * filename changes when the generated code changes (cache invalidation)
+     * and stays stable when it doesn't.
+     *
      * @param array<class-string, list<HandlerDescriptor>> $routes
+     *
+     * @return array{className: string, filePath: string}
      */
     public function generate(
-        string $className,
+        string $baseName,
         RouterDescriptor $descriptor,
         array $routes,
-        string $filePath,
+        string $outputDir,
         ?string $wrappersFilePath = null,
-    ): void {
+    ): array {
+        $placeholder = '__ULTRA_COMPILED_CLASS__';
+        $code = $this->buildCode($placeholder, $descriptor, $routes, $wrappersFilePath);
+
+        $hash = substr(sha1($code), 0, 8);
+        $className = $baseName.'_'.$hash;
+        $code = str_replace($placeholder, $className, $code);
+
+        $filePath = rtrim($outputDir, '/').'/'.$className.'.php';
         $dir = dirname($filePath);
         if (! is_dir($dir)) {
             mkdir($dir, 0o777, true);
         }
 
-        file_put_contents($filePath, $this->buildCode($className, $descriptor, $routes, $wrappersFilePath));
+        file_put_contents($filePath, $code);
+
+        return ['className' => $className, 'filePath' => $filePath];
     }
 
     /**
@@ -189,16 +207,17 @@ final class MessageRouterGenerator
     }
 
     /**
-     * Derive the contextual wrapper class name from the compiled router class name.
+     * Compute the contextual wrapper class name from the router interface name.
+     *
+     * Uses a static hash (interface + outputDir) so the wrapper name is known
+     * before code generation, independently of the compiled router's content hash.
      */
-    public static function wrapperClassName(string $compiledClassName): string
+    public static function wrapperClassName(string $interfaceName, string $outputDir): string
     {
-        // CompiledMediatorInterface_abc123 → ContextualMediatorInterface_abc123
-        if (str_starts_with($compiledClassName, 'Compiled')) {
-            return 'Contextual'.substr($compiledClassName, strlen('Compiled'));
-        }
+        $shortName = substr($interfaceName, strrpos($interfaceName, '\\') + 1);
+        $hash = substr(sha1($interfaceName.$outputDir), 0, 8);
 
-        return 'Contextual'.$compiledClassName;
+        return 'Contextual'.$shortName.'_'.$hash;
     }
 
     private function buildSingleDispatchMethod(RouterDescriptor $descriptor): string
