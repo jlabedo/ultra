@@ -16,32 +16,7 @@ final readonly class FarewellMessage
     public function __construct(public string $name) {}
 }
 
-final readonly class PingMessage {}
-
-final readonly class AuditedMessage
-{
-    public function __construct(public string $payload) {}
-}
-
-final readonly class WrappedMessage
-{
-    public function __construct(public string $payload) {}
-}
-
-final readonly class NestedParentMessage
-{
-    public function __construct(public string $payload) {}
-}
-
-final readonly class NestedChildMessage
-{
-    public function __construct(public string $payload) {}
-}
-
-final readonly class EventPublishingMessage
-{
-    public function __construct(public string $payload) {}
-}
+final readonly class EmptyMessage {}
 
 final readonly class RecordedEvent
 {
@@ -59,18 +34,6 @@ final readonly class ProcessPairMessage
         public string $leftId,
         public string $rightId,
     ) {}
-}
-
-final readonly class ObservedMessage
-{
-    public function __construct(public string $payload) {}
-}
-
-final readonly class FailingMessage {}
-
-final readonly class OrderedMessage
-{
-    public function __construct(public string $payload) {}
 }
 
 final readonly class SelfGreetingMessage

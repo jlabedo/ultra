@@ -11,7 +11,7 @@ use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Before;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\MessageContext;
-use Ultra\MessageHandling_Compiler\Tests\Fixtures\OrderedMessage;
+use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
 final class AdviceOrderingLog
@@ -54,11 +54,11 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
-                public function handle(OrderedMessage $message): string
+                public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->payload;
+                    $this->log->entries[] = 'handler:' . $message->name;
 
-                    return $message->payload;
+                    return $message->name;
                 }
             })
             ->withService(new class($log) {
@@ -89,7 +89,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
             ->mediator()
         ;
 
-        self::assertSame('ok', $mediator->send(new OrderedMessage('ok')));
+        self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
         self::assertSame([
             'around:10:before',
             'before:20',
@@ -109,11 +109,11 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
-                public function handle(OrderedMessage $message): string
+                public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->payload;
+                    $this->log->entries[] = 'handler:' . $message->name;
 
-                    return $message->payload;
+                    return $message->name;
                 }
             })
             ->withService(new class($log) {
@@ -150,7 +150,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
             ->mediator()
         ;
 
-        self::assertSame('ok', $mediator->send(new OrderedMessage('ok')));
+        self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
         self::assertSame([
             'before:10',
             'around:10:before',
@@ -171,9 +171,9 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
-                public function handle(OrderedMessage $message): string
+                public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->payload;
+                    $this->log->entries[] = 'handler:' . $message->name;
 
                     throw new \RuntimeException('boom');
                 }
@@ -211,7 +211,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
         ;
 
         try {
-            $mediator->send(new OrderedMessage('fail'));
+            $mediator->send(new GreetingMessage('fail'));
             self::fail('Expected handler exception to be rethrown.');
         } catch (\RuntimeException $exception) {
             self::assertSame('boom', $exception->getMessage());
@@ -236,11 +236,11 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
-                public function handle(OrderedMessage $message): string
+                public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->payload;
+                    $this->log->entries[] = 'handler:' . $message->name;
 
-                    return $message->payload;
+                    return $message->name;
                 }
             })
             ->withService(new class($log) {
@@ -290,7 +290,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
             ->mediator()
         ;
 
-        self::assertSame('ok', $mediator->send(new OrderedMessage('ok')));
+        self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
         self::assertSame([
             'around:0:before',
             'before:10',
@@ -312,11 +312,11 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
-                public function handle(OrderedMessage $message): string
+                public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->payload;
+                    $this->log->entries[] = 'handler:' . $message->name;
 
-                    return $message->payload;
+                    return $message->name;
                 }
             })
             ->withService(new AdviceOrderingAlphabeticalBeforeB($log))
@@ -324,7 +324,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
             ->mediator()
         ;
 
-        self::assertSame('ok', $mediator->send(new OrderedMessage('ok')));
+        self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
         self::assertSame([
             'before:A',
             'before:B',
@@ -342,9 +342,9 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
-                public function handle(OrderedMessage $message): string
+                public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->payload;
+                    $this->log->entries[] = 'handler:' . $message->name;
 
                     throw new \RuntimeException('boom');
                 }
@@ -382,7 +382,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
         ;
 
         try {
-            $mediator->send(new OrderedMessage('fail'));
+            $mediator->send(new GreetingMessage('fail'));
             self::fail('Expected handler exception to be rethrown.');
         } catch (\RuntimeException $exception) {
             self::assertSame('boom', $exception->getMessage());
@@ -406,11 +406,11 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
-                public function handle(OrderedMessage $message): string
+                public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->payload;
+                    $this->log->entries[] = 'handler:' . $message->name;
 
-                    return $message->payload;
+                    return $message->name;
                 }
             })
             ->withService(new class($log) {
@@ -442,7 +442,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
             ->mediator()
         ;
 
-        self::assertSame('ok', $mediator->send(new OrderedMessage('ok')));
+        self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
         self::assertSame([
             'outer-before:none',
             'inner-before:propagated',

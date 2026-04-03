@@ -8,7 +8,7 @@ use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Exception\NoHandlerFound;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\FarewellMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
-use Ultra\MessageHandling_Compiler\Tests\Fixtures\PingMessage;
+use Ultra\MessageHandling_Compiler\Tests\Fixtures\EmptyMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
 final class MediatorDispatchTest extends MessageHandlingCompilerTestCase
@@ -51,6 +51,6 @@ final class MediatorDispatchTest extends MessageHandlingCompilerTestCase
 
         $this->expectException(NoHandlerFound::class);
 
-        $mediator->send(new PingMessage());
+        $mediator->send(new EmptyMessage());
     }
 }

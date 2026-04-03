@@ -12,25 +12,23 @@ use Ultra\MessageHandling\Attribute\Before;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
-use Ultra\MessageHandling_Compiler\Tests\Fixtures\AuditedMessage;
-use Ultra\MessageHandling_Compiler\Tests\Fixtures\FailingMessage;
-use Ultra\MessageHandling_Compiler\Tests\Fixtures\ObservedMessage;
-use Ultra\MessageHandling_Compiler\Tests\Fixtures\WrappedMessage;
+use Ultra\MessageHandling_Compiler\Tests\Fixtures\EmptyMessage;
+use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
 final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
 {
     public function test_it_runs_before_advice_before_the_handler(): void
     {
-        $handledMessage = new AuditedMessage('payload');
+        $handledMessage = new GreetingMessage('payload');
         $logged = [];
 
         $mediator = $this->ultraLight()
             ->withService(new class() {
                 #[Handles]
-                public function handle(AuditedMessage $message): string
+                public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->payload;
+                    return 'handled: ' . $message->name;
                 }
             })
             ->withService(new class($logged) {
@@ -67,9 +65,9 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $mediator = $this->ultraLight()
             ->withService(new class() {
                 #[Handles]
-                public function handle(WrappedMessage $message): string
+                public function handle(GreetingMessage $message): string
                 {
-                    return 'wrapped: ' . $message->payload;
+                    return 'wrapped: ' . $message->name;
                 }
             })
             ->withService(new class($calls) {
@@ -93,7 +91,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
             ->mediator()
         ;
 
-        self::assertSame('wrapped: value', $mediator->send(new WrappedMessage('value')));
+        self::assertSame('wrapped: value', $mediator->send(new GreetingMessage('value')));
         self::assertSame(1, $calls);
     }
 
@@ -104,9 +102,9 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $mediator = $this->ultraLight()
             ->withService(new class() {
                 #[Handles]
-                public function handle(ObservedMessage $message): string
+                public function handle(GreetingMessage $message): string
                 {
-                    return 'observed: ' . $message->payload;
+                    return 'observed: ' . $message->name;
                 }
             })
             ->withService(new class($captured) {
@@ -128,7 +126,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
             ->mediator()
         ;
 
-        self::assertSame('observed: hello', $mediator->send(new ObservedMessage('hello')));
+        self::assertSame('observed: hello', $mediator->send(new GreetingMessage('hello')));
         self::assertSame('observed: hello', $captured);
     }
 
@@ -139,7 +137,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $mediator = $this->ultraLight()
             ->withService(new class() {
                 #[Handles]
-                public function handle(FailingMessage $message): string
+                public function handle(EmptyMessage $message): string
                 {
                     throw new \RuntimeException('handler failed');
                 }
@@ -164,7 +162,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         ;
 
         try {
-            $mediator->send(new FailingMessage());
+            $mediator->send(new EmptyMessage());
             self::fail('Expected handler exception to be rethrown.');
         } catch (\RuntimeException $exception) {
             self::assertSame('handler failed', $exception->getMessage());
@@ -197,21 +195,21 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $successfulMediator = $this->ultraLight()
             ->withService(new class() {
                 #[Handles]
-                public function handle(ObservedMessage $message): string
+                public function handle(GreetingMessage $message): string
                 {
-                    return 'observed: ' . $message->payload;
+                    return 'observed: ' . $message->name;
                 }
             })
             ->withService($cleaner)
             ->mediator()
         ;
 
-        self::assertSame('observed: world', $successfulMediator->send(new ObservedMessage('world')));
+        self::assertSame('observed: world', $successfulMediator->send(new GreetingMessage('world')));
 
         $failingMediator = $this->ultraLight()
             ->withService(new class() {
                 #[Handles]
-                public function handle(FailingMessage $message): string
+                public function handle(EmptyMessage $message): string
                 {
                     throw new \RuntimeException('boom');
                 }
@@ -224,7 +222,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $this->expectExceptionMessage('boom');
 
         try {
-            $failingMediator->send(new FailingMessage());
+            $failingMediator->send(new EmptyMessage());
         } finally {
             self::assertSame(2, $calls);
         }

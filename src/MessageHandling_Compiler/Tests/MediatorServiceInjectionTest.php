@@ -8,7 +8,7 @@ use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
-use Ultra\MessageHandling_Compiler\Tests\Fixtures\PingMessage;
+use Ultra\MessageHandling_Compiler\Tests\Fixtures\EmptyMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\ProcessEntityMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\ProcessPairMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
@@ -125,7 +125,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
             ->withService(new MediatorServiceInjectionGreeter())
             ->withService(new class() {
                 #[Handles]
-                public function handle(PingMessage $message, MediatorServiceInjectionGreeter $greeter): string
+                public function handle(EmptyMessage $message, MediatorServiceInjectionGreeter $greeter): string
                 {
                     return $greeter->greet('pong');
                 }
@@ -133,7 +133,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
             ->mediator()
         ;
 
-        self::assertSame('Hello, pong!', $mediator->send(new PingMessage()));
+        self::assertSame('Hello, pong!', $mediator->send(new EmptyMessage()));
     }
 
     public function test_it_lets_around_advice_provide_a_handler_dependency(): void

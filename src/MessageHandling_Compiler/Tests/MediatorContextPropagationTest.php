@@ -12,9 +12,8 @@ use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\MessageContextKeys;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
-use Ultra\MessageHandling_Compiler\Tests\Fixtures\EventPublishingMessage;
-use Ultra\MessageHandling_Compiler\Tests\Fixtures\NestedChildMessage;
-use Ultra\MessageHandling_Compiler\Tests\Fixtures\NestedParentMessage;
+use Ultra\MessageHandling_Compiler\Tests\Fixtures\FarewellMessage;
+use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\RecordedEvent;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
@@ -67,16 +66,16 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
             ->withService($contexts)
             ->withService(new class() {
                 #[Handles]
-                public function handle(NestedParentMessage $message, MediatorInterface $mediator): string
+                public function handle(GreetingMessage $message, MediatorInterface $mediator): string
                 {
-                    return $mediator->send(new NestedChildMessage($message->payload));
+                    return $mediator->send(new FarewellMessage($message->name));
                 }
             })
             ->withService(new class() {
                 #[Handles]
-                public function handle(NestedChildMessage $message): string
+                public function handle(FarewellMessage $message): string
                 {
-                    return 'child: ' . $message->payload;
+                    return 'child: ' . $message->name;
                 }
             })
             ->withService(new class($contexts) {
@@ -98,13 +97,13 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
 
         self::assertSame(
             'child: nested',
-            $mediator->send(new NestedParentMessage('nested'), ['traceId' => 'trace-456']),
+            $mediator->send(new GreetingMessage('nested'), ['traceId' => 'trace-456']),
         );
 
         $this->assertMessageFlowContexts(
             $contexts->entries,
-            NestedParentMessage::class,
-            NestedChildMessage::class,
+            GreetingMessage::class,
+            FarewellMessage::class,
             'trace-456',
         );
     }
@@ -117,16 +116,16 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
             ->withService($contexts)
             ->withService(new class() {
                 #[Handles]
-                public function handle(NestedParentMessage $message, MediatorInterface $mediator): string
+                public function handle(GreetingMessage $message, MediatorInterface $mediator): string
                 {
-                    return $mediator->send(new NestedChildMessage($message->payload));
+                    return $mediator->send(new FarewellMessage($message->name));
                 }
             })
             ->withService(new class() {
                 #[Handles]
-                public function handle(NestedChildMessage $message): string
+                public function handle(FarewellMessage $message): string
                 {
-                    return 'child: ' . $message->payload;
+                    return 'child: ' . $message->name;
                 }
             })
             ->withService(new class($contexts) {
@@ -149,15 +148,15 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
         self::assertSame(
             'child: typed',
             $mediator->send(
-                new NestedParentMessage('typed'),
+                new GreetingMessage('typed'),
                 MessageContext::coerce(['traceId' => 'trace-typed']),
             ),
         );
 
         $this->assertMessageFlowContexts(
             $contexts->entries,
-            NestedParentMessage::class,
-            NestedChildMessage::class,
+            GreetingMessage::class,
+            FarewellMessage::class,
             'trace-typed',
         );
     }
@@ -171,16 +170,16 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
             ->withService($contexts)
             ->withService(new class() {
                 #[Handles]
-                public function handle(NestedParentMessage $message, MediatorInterface $mediator): string
+                public function handle(GreetingMessage $message, MediatorInterface $mediator): string
                 {
-                    return $mediator->send(new NestedChildMessage($message->payload));
+                    return $mediator->send(new FarewellMessage($message->name));
                 }
             })
             ->withService(new class() {
                 #[Handles]
-                public function handle(NestedChildMessage $message): string
+                public function handle(FarewellMessage $message): string
                 {
-                    return 'child: ' . $message->payload;
+                    return 'child: ' . $message->name;
                 }
             })
             ->withService(new class($contexts) {
@@ -202,7 +201,7 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
 
         self::assertSame(
             'child: custom',
-            $mediator->send(new NestedParentMessage('custom'), ['traceId' => 'trace-custom']),
+            $mediator->send(new GreetingMessage('custom'), ['traceId' => 'trace-custom']),
         );
         self::assertSame('fixed-root', $contexts->entries[0]['context'][MessageContextKeys::MESSAGE_ID]);
         self::assertSame(
@@ -225,11 +224,11 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
             ->withService($eventBus, EventBusInterface::class)
             ->withService(new class() {
                 #[Handles]
-                public function handle(EventPublishingMessage $message, EventBusInterface $eventBus): string
+                public function handle(GreetingMessage $message, EventBusInterface $eventBus): string
                 {
-                    $eventBus->publish(new RecordedEvent($message->payload));
+                    $eventBus->publish(new RecordedEvent($message->name));
 
-                    return 'published: ' . $message->payload;
+                    return 'published: ' . $message->name;
                 }
             })
             ->mediator()
@@ -237,7 +236,7 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
 
         self::assertSame(
             'published: bridge',
-            $mediator->send(new EventPublishingMessage('bridge'), ['traceId' => 'trace-eb']),
+            $mediator->send(new GreetingMessage('bridge'), ['traceId' => 'trace-eb']),
         );
         self::assertCount(1, $eventBus->calls);
         self::assertInstanceOf(RecordedEvent::class, $eventBus->calls[0]['event']);
