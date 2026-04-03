@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\Handler;
+namespace App\Mediator\Handler;
 
-use App\Infrastructure\OrderRepository;
-use App\Message\PlaceOrder;
+use App\Mediator\Infrastructure\OrderRepository;
+use App\Mediator\Message\PlaceOrder;
 use Ultra\MessageHandling\Attribute\Handles;
 
 final class PlaceOrderHandler

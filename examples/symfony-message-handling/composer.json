@@ -20,11 +20,11 @@
         "symfony/framework-bundle": "8.0.*",
         "symfony/runtime": "8.0.*",
         "symfony/yaml": "8.0.*",
-        "ultra/event-bus-bundle": "*",
+        "ultra/message-handling": "*",
         "ultra/events": "*"
     },
     "require-dev": {
-        "ultra/event-bus-compiler": "*"
+        "ultra/message-handling-compiler": "*"
     },
     "config": {
         "allow-plugins": {

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure;
+namespace App\EventBus\Infrastructure;
 
 final class OrderProjection
 {

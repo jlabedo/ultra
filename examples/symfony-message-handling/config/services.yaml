@@ -20,7 +20,11 @@ services:
         resource: '../src/'
         exclude:
             - '../src/Kernel.php'
-            - '../src/Message/'
+
+    App\EventBus\Event\:
+        resource: '../src/EventBus/Event/*'
+        autowire: false
+        autoconfigure: true
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones

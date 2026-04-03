@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Event;
+namespace App\EventBus\Event;
 
 use Ultra\Events\Attribute\Event;
 

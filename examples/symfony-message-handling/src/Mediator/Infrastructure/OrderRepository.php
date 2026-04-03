@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Infrastructure;
+namespace App\Mediator\Infrastructure;
 
 final class OrderRepository
 {

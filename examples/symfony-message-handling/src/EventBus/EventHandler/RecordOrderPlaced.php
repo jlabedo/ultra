@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace App\EventHandler;
+namespace App\EventBus\EventHandler;
 
-use App\Event\OrderPlaced;
-use App\Infrastructure\OrderProjection;
+use App\EventBus\Event\OrderPlaced;
+use App\EventBus\Infrastructure\OrderProjection;
 use Ultra\MessageHandling\Attribute\EventHandler;
 
 final class RecordOrderPlaced

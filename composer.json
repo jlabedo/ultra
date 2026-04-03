@@ -27,23 +27,16 @@
         "symfony/process": "7.*|8.*"
     },
     "replace": {
-        "ultra/aop": "self.version",
         "ultra/decision-engine": "self.version",
         "ultra/decision-engine-bundle": "self.version",
         "ultra/decision-engine-compiler": "self.version",
-        "ultra/event-bus": "self.version",
-        "ultra/event-bus-bundle": "self.version",
-        "ultra/event-bus-compiler": "self.version",
         "ultra/event-store": "self.version",
         "ultra/event-store-postgres": "self.version",
         "ultra/events": "self.version",
         "ultra/mapper": "self.version",
         "ultra/mapper-compiler": "self.version",
         "ultra/message-handling": "self.version",
-        "ultra/message-handling-compiler": "self.version",
-        "ultra/mediator": "self.version",
-        "ultra/mediator-bundle": "self.version",
-        "ultra/mediator-compiler": "self.version"
+        "ultra/message-handling-compiler": "self.version"
     },
     "minimum-stability": "dev",
     "prefer-stable": true,
