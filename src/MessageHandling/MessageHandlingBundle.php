@@ -55,29 +55,36 @@ final class MessageHandlingBundle extends Bundle
             }
         );
 
-        $container->registerForAutoconfiguration(ContextAwareRouterInterface::class)
-            ->addTag(TagNames::CONTEXT_AWARE)
-        ;
-
-        if (! $container->hasDefinition(MediatorInterface::class)) {
-            $container->register(MediatorInterface::class)
-                ->addTag(TagNames::ROUTER, ['interface' => MediatorInterface::class])
-                ->addTag(TagNames::CONTEXT_AWARE)
-                ->setAbstract(true)
-            ;
-        }
-
-        if (! $container->hasDefinition(EventBusInterface::class)) {
-            $container->register( EventBusInterface::class)
-                ->addTag(TagNames::ROUTER, ['interface' => EventBusInterface::class])
-                ->addTag(TagNames::CONTEXT_AWARE)
-                ->setAbstract(true)
-            ;
-        }
+        $this->ensureRouterDefinition($container, MediatorInterface::class);
+        $this->ensureRouterDefinition($container, EventBusInterface::class);
 
         $buildDir = (string) $container->getParameter('kernel.build_dir');
         $outputDir = $buildDir.'/message_handling';
 
         $container->addCompilerPass(new MessageRouterCompilerPass($outputDir));
+    }
+
+    /**
+     * Ensure a router interface has a definition with the ROUTER tag.
+     *
+     * If the definition already exists (e.g. a synthetic test double), the ROUTER
+     * tag is added to enable wrapper generation for that interface. If it doesn't
+     * exist, a new abstract definition is created.
+     */
+    private function ensureRouterDefinition(ContainerBuilder $container, string $interfaceClass): void
+    {
+        if ($container->hasDefinition($interfaceClass)) {
+            $definition = $container->getDefinition($interfaceClass);
+            if (! $definition->hasTag(TagNames::ROUTER)) {
+                $definition->addTag(TagNames::ROUTER, ['interface' => $interfaceClass]);
+            }
+
+            return;
+        }
+
+        $container->register($interfaceClass)
+            ->addTag(TagNames::ROUTER, ['interface' => $interfaceClass])
+            ->setAbstract(true)
+        ;
     }
 }

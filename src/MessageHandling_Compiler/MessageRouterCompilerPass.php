@@ -9,11 +9,9 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Component\Routing\RouterInterface;
 use Ultra\MessageHandling\Attribute\Advice;
 use Ultra\MessageHandling\Attribute\MultiDispatch;
 use Ultra\MessageHandling\Attribute\SingleDispatch;
-use Ultra\MessageHandling\ContextAwareRouterInterface;
 use Ultra\MessageHandling\MessageContextPropagator;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling\TagNames;
@@ -35,8 +33,8 @@ use Ultra\MessageHandling\TagNames;
  *     - MultiDispatch: collect subscriptions, resolve via is_a() against known message classes,
  *       sort by priority
  *
- *  4. Build ContextAwareRouterDependencyResolver from all known router interface names
- *     (discovered from tags AND from scanning all service interfaces for dispatch attributes).
+ *  4. Build ContextualRouterDependencyResolver from the discovered routers, mapping each
+ *     router service ID (and its aliases) to its generated contextual wrapper class name.
  *
  *  5. For each router, collect aspects (global $aspectTag), generate class, register service.
  */
@@ -51,6 +49,8 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         // ── Step 1: Discover router interfaces ────────────────────────────────
         /** @var array<string, array{descriptor: RouterDescriptor, generatedClass: string, outputDir: string}> $routers */
         $routers = [];
+        /** @var array<string, array{descriptor: RouterDescriptor, generatedClass: string}> $interfaceDescriptors keyed by interface FQCN */
+        $interfaceDescriptors = [];
 
         foreach ($container->findTaggedServiceIds(TagNames::ROUTER) as $serviceId => $tags) {
             foreach ($tags as $tagAttributes) {
@@ -60,19 +60,26 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                     continue;
                 }
 
-                $descriptor = $this->buildRouterDescriptor($interfaceName);
-                if (null === $descriptor) {
-                    continue;
+                if (! isset($interfaceDescriptors[$interfaceName])) {
+                    $descriptor = $this->buildRouterDescriptor($interfaceName);
+                    if (null === $descriptor) {
+                        continue;
+                    }
+
+                    $shortName = substr($interfaceName, strrpos($interfaceName, '\\') + 1);
+                    $hash = substr(sha1($interfaceName.$this->outputDir), 0, 8);
+                    $generatedClass = 'Compiled'.$shortName.'_'.$hash;
+
+                    $interfaceDescriptors[$interfaceName] = [
+                        'descriptor' => $descriptor,
+                        'generatedClass' => $generatedClass,
+                    ];
                 }
 
-                $shortName = substr($interfaceName, strrpos($interfaceName, '\\') + 1);
-                $hash = substr(sha1($interfaceName.$this->outputDir), 0, 8);
-                $generatedClass = 'Compiled'.$shortName.'_'.$hash;
-                $routerOutputDir = rtrim($this->outputDir, '/').'/'.$shortName;
-
+                $routerOutputDir = rtrim($this->outputDir, '/').'/'.substr($interfaceName, strrpos($interfaceName, '\\') + 1);
                 $routers[$serviceId] = [
-                    'descriptor' => $descriptor,
-                    'generatedClass' => $generatedClass,
+                    'descriptor' => $interfaceDescriptors[$interfaceName]['descriptor'],
+                    'generatedClass' => $interfaceDescriptors[$interfaceName]['generatedClass'],
                     'outputDir' => $routerOutputDir,
                 ];
             }
@@ -103,9 +110,9 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             }
         }
 
-        // ── Step 4 (early): Build resolver from ALL known router interfaces ─────
-        $resolverInterfaces = $this->discoverAllRouterInterfaces($container);
-        $resolver = new ContextAwareRouterDependencyResolver(array_keys($resolverInterfaces));
+        // ── Step 4 (early): Build contextual wrapper mapping for all routers ─────
+        $wrapperClassByServiceId = $this->buildWrapperClassMapping($routers, $interfaceDescriptors, $container);
+        $resolver = new ContextualRouterDependencyResolver($wrapperClassByServiceId);
 
         // ── Steps 3 + 5: Match handlers, generate, register ───────────────────
         $adviceDefinitions = $this->collectAdviceDefinitions($container);
@@ -116,7 +123,18 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         );
         $generator = new MessageRouterGenerator($methodGenerator);
 
+        // Generate shared contextual wrapper classes file
+        $wrappersFilePath = $this->generateWrappersFile($generator, $interfaceDescriptors);
+
         foreach ($routers as $serviceId => ['descriptor' => $descriptor, 'generatedClass' => $generatedClass, 'outputDir' => $routerOutputDir]) {
+            // Skip compilation for synthetic services (e.g. test doubles).
+            // Their wrapper is still generated via the shared wrappers file,
+            // but the service itself is not replaced.
+            $existingDef = $container->hasDefinition($serviceId) ? $container->getDefinition($serviceId) : null;
+            if (null !== $existingDef && $existingDef->isSynthetic()) {
+                continue;
+            }
+
             $locatorReferences = new LocatorReferenceCollector();
 
             $routes = $descriptor->isSingleDispatch
@@ -127,7 +145,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             $routes = $this->attachAspects($routes, $adviceCollector, $locatorReferences, $container, $descriptor->isSingleDispatch);
 
             $filePath = rtrim($routerOutputDir, '/').'/'.$generatedClass.'.php';
-            $generator->generate($generatedClass, $descriptor, $routes, $filePath);
+            $generator->generate($generatedClass, $descriptor, $routes, $filePath, $wrappersFilePath);
 
             $routerDef = new Definition($generatedClass, [
                 new ServiceLocatorArgument($this->buildLocatorReferences($locatorReferences->all())),
@@ -416,28 +434,74 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * Scan ALL container definitions for interfaces with dispatch attributes.
-     * This ensures we generate ->withContext() for any router dependency,
-     * even non-compiled ones (e.g. test doubles, aliases).
+     * Generate a shared PHP file containing all contextual wrapper classes.
      *
-     * @return array<string, true>
+     * Each compiled router file will require_once this file so the wrappers
+     * are available when handler methods reference them.
+     *
+     * @param array<string, array{descriptor: RouterDescriptor, generatedClass: string}> $interfaceDescriptors
      */
-    private function discoverAllRouterInterfaces(ContainerBuilder $container): array
+    private function generateWrappersFile(MessageRouterGenerator $generator, array $interfaceDescriptors): string
     {
-        $interfaces = [];
-
-        foreach ($container->findTaggedServiceIds(TagNames::CONTEXT_AWARE) as $serviceId => $tags) {
-            $interfaces[$serviceId] = true;
+        $wrapperClassToDescriptor = [];
+        foreach ($interfaceDescriptors as ['descriptor' => $descriptor, 'generatedClass' => $generatedClass]) {
+            $wrapperClass = MessageRouterGenerator::wrapperClassName($generatedClass);
+            $wrapperClassToDescriptor[$wrapperClass] = $descriptor;
         }
 
-        // Also check aliases
-        foreach ($container->getAliases() as $aliasId => $alias) {
-            if (isset($interfaces[(string) $alias])) {
-                $interfaces[$aliasId] = true;
+        $filePath = rtrim($this->outputDir, '/').'/_contextual_wrappers.php';
+        $generator->generateWrappersFile($wrapperClassToDescriptor, $filePath);
+
+        return $filePath;
+    }
+
+    /**
+     * Build a mapping from router service IDs (and their aliases) to contextual
+     * wrapper class names. This is used by the dependency resolver to wrap
+     * router dependencies with context propagation at the call site.
+     *
+     * Uses both the compiled routers (from $routers) and the full set of known
+     * interface descriptors to also cover services registered under a router
+     * interface FQCN without the ROUTER tag (e.g. synthetic test doubles).
+     *
+     * @param array<string, array{descriptor: RouterDescriptor, generatedClass: string, outputDir: string}> $routers
+     * @param array<string, array{descriptor: RouterDescriptor, generatedClass: string}> $interfaceDescriptors
+     *
+     * @return array<string, string>
+     */
+    private function buildWrapperClassMapping(array $routers, array $interfaceDescriptors, ContainerBuilder $container): array
+    {
+        // Build a lookup from interface FQCN → wrapper class name
+        $wrapperByInterface = [];
+        foreach ($interfaceDescriptors as $interfaceName => ['generatedClass' => $generatedClass]) {
+            $wrapperByInterface[$interfaceName] = MessageRouterGenerator::wrapperClassName($generatedClass);
+        }
+
+        $mapping = [];
+
+        // Map compiled router service IDs
+        foreach ($routers as $serviceId => ['descriptor' => $descriptor]) {
+            $mapping[$serviceId] = $wrapperByInterface[$descriptor->interfaceName];
+        }
+
+        // Map any service whose ID matches a known router interface FQCN.
+        // This covers cases where a test double or decorator is registered
+        // directly under the interface name without the ROUTER tag.
+        foreach ($container->getDefinitions() as $defId => $definition) {
+            if (! isset($mapping[$defId]) && isset($wrapperByInterface[$defId])) {
+                $mapping[$defId] = $wrapperByInterface[$defId];
             }
         }
 
-        return $interfaces;
+        // Also map aliases that point to known router services or interface names
+        foreach ($container->getAliases() as $aliasId => $alias) {
+            $target = (string) $alias;
+            if (isset($mapping[$target]) && ! isset($mapping[$aliasId])) {
+                $mapping[$aliasId] = $mapping[$target];
+            }
+        }
+
+        return $mapping;
     }
 
     /**

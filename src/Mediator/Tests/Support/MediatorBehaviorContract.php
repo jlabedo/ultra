@@ -12,7 +12,6 @@ use Ultra\MessageHandling\Attribute\Before;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\Attribute\SelfHandler;
-use Ultra\MessageHandling\ContextAwareRouterInterface;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\Exception\NoHandlerFound;
 use Ultra\MessageHandling\MediatorInterface;
@@ -96,27 +95,16 @@ final class GreeterService
     }
 }
 
-final class RecordingEventBus implements EventBusInterface, ContextAwareRouterInterface
+final class RecordingEventBus implements EventBusInterface
 {
     /** @var list<array{event: object, context: array}> */
     public array $calls = [];
 
-    private ?MessageContext $parentContext = null;
-
-    public function withContext(MessageContext $context): static
-    {
-        $this->parentContext = $context;
-
-        return $this;
-    }
-
     public function publish(object $event, array|MessageContext $context = []): void
     {
-        $coerced = MessageContext::coerce($context);
-        $merged = null !== $this->parentContext ? $this->parentContext->merge($coerced) : $coerced;
         $this->calls[] = [
             'event' => $event,
-            'context' => $merged->all(),
+            'context' => MessageContext::coerce($context)->all(),
         ];
     }
 }

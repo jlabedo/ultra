@@ -7,7 +7,6 @@ namespace Ultra\MessageHandling;
 final class TagNames
 {
     public const ROUTER = 'ultra.message_router';
-    public const CONTEXT_AWARE = 'ultra.context_aware';
     public const HANDLER = 'ultra.message_handler';
     public const ASPECT = 'ultra.message_aspect';
 }
