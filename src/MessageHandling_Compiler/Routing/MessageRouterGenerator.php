@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling_Compiler;
+namespace Ultra\MessageHandling_Compiler\Routing;
+
+use Ultra\MessageHandling_Compiler\Handler\HandlerDescriptor;
+use Ultra\MessageHandling_Compiler\Handler\HandlerMethodGenerator;
 
 /**
  * Generates a compiled router PHP class from a resolved handler map.

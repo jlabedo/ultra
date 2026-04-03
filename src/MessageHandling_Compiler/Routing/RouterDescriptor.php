@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling_Compiler;
+namespace Ultra\MessageHandling_Compiler\Routing;
 
 /**
  * Describes a discovered router interface for code generation.

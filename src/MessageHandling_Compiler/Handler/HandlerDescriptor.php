@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling_Compiler;
+namespace Ultra\MessageHandling_Compiler\Handler;
 
 /**
  * Immutable description of a message handler for code generation.

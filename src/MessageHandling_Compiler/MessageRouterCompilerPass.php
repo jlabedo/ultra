@@ -15,6 +15,16 @@ use Ultra\MessageHandling\Attribute\SingleDispatch;
 use Ultra\MessageHandling\MessageContextPropagator;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling\TagNames;
+use Ultra\MessageHandling_Compiler\Handler\AdviceCollector;
+use Ultra\MessageHandling_Compiler\Handler\AdviceDefinition;
+use Ultra\MessageHandling_Compiler\Handler\AdviceType;
+use Ultra\MessageHandling_Compiler\Handler\DispatchPlanRenderer;
+use Ultra\MessageHandling_Compiler\Handler\HandlerDescriptor;
+use Ultra\MessageHandling_Compiler\Handler\HandlerDescriptorFactory;
+use Ultra\MessageHandling_Compiler\Handler\HandlerMethodGenerator;
+use Ultra\MessageHandling_Compiler\Routing\ContextualRouterDependencyResolver;
+use Ultra\MessageHandling_Compiler\Routing\MessageRouterGenerator;
+use Ultra\MessageHandling_Compiler\Routing\RouterDescriptor;
 
 /**
  * Unified Symfony DI compiler pass that generates compiled router classes for

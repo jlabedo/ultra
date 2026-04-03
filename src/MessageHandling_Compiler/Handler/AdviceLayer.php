@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling_Compiler;
+namespace Ultra\MessageHandling_Compiler\Handler;
 
 /**
  * Represents a single priority "layer" in the advice onion.

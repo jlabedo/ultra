@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler;
 
+use Ultra\MessageHandling_Compiler\Handler\AdviceDescriptor;
+use Ultra\MessageHandling_Compiler\Handler\HandlerDescriptor;
+
 final class LocatorReferenceCollector
 {
     /** @var array<string, true> */

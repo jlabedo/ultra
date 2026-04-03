@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling_Compiler;
+namespace Ultra\MessageHandling_Compiler\Handler;
+
+use Ultra\MessageHandling_Compiler\HandlerDependencyExpressionResolverInterface;
 
 final class DispatchPlanRenderer
 {
