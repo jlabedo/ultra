@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Bundle\Tests;
 
+use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\SelfHandler;
@@ -68,4 +69,104 @@ test('mediator bundle generates unique class names for different scenarios', fun
     expect($firstMediator->send(new BundledSelfGreetingMessage('Alice')))->toBe('Hello, Alice!')
         ->and($secondMediator->send(new BundledSelfGreetingMessage('Bob')))->toBe('Hello, Bob!')
     ;
+});
+
+readonly class UltraLight
+{
+    /**
+     * @param array<int|string, object> $services
+     * @param list<class-string>        $classesToDiscover
+     * @param array<string, string>     $publicAliases
+     */
+    public function __construct(
+        private array $services = [],
+        private array $classesToDiscover = [],
+        private array $publicAliases = [],
+    ) {}
+
+    public function withClass(string ...$classesToDiscover): self
+    {
+        return clone($this, [
+            'classesToDiscover' => [...$this->classesToDiscover, ...$classesToDiscover],
+        ]);
+    }
+
+    public function withService(object ...$services): self
+    {
+        return clone($this, [
+            'services' => [...$this->services, ...$services],
+        ]);
+    }
+
+    public function withAlias(string $alias, string $serviceId): self
+    {
+        return clone($this, [
+            'publicAliases' => [...$this->publicAliases, $alias => $serviceId],
+        ]);
+    }
+
+    public function boot(): Container
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.build_dir', MEDIATOR_BUNDLE_TEST_OUTPUT_DIR.'/a');
+        foreach ($this->classesToDiscover as $class) {
+            $container->register($class)
+                ->setAutoconfigured(true)
+                ->setAutowired(false)
+            ;
+        }
+        $primaryServices = $this->registerProvidedServices($container);
+        foreach ($this->publicAliases as $alias => $serviceId) {
+            $container->setAlias($alias, $serviceId)->setPublic(true);
+        }
+        new MessageHandlingBundle()->build($container);
+        $container->compile();
+
+        foreach ($primaryServices as $id => $service) {
+            $container->set($id, $service);
+        }
+
+        return $container;
+    }
+
+    /**
+     * @return array<string, object>
+     */
+    private function registerProvidedServices(ContainerBuilder $container): array
+    {
+        $primaryServices = [];
+
+        foreach ($this->services as $serviceId => $service) {
+            $primaryId = is_string($serviceId) ? $serviceId : \str_replace("\0", '', $service::class);
+            if (isset($primaryServices[$primaryId])) {
+                throw new \InvalidArgumentException(
+                    \sprintf(': %s is already registered as %s', $service::class, $primaryId)
+                );
+            }
+
+            $container->register($primaryId, $service::class)
+                ->setAutoconfigured(true)
+                ->setSynthetic(true)
+            ;
+
+            $primaryServices[$primaryId] = $service;
+        }
+
+        return $primaryServices;
+    }
+}
+
+
+test('it can resolve anonymous classes', function () {
+    $handler = new class () {
+        #[Handles]
+        public function handle(BundledRegularGreetingMessage $message): string
+        {
+            return 'Hello, '.$message->name.'!';
+        }
+    };
+
+    $ultra = new UltraLight()->withService($handler)->withAlias('test.mediator', MediatorInterface::class)->boot();
+    $mediator = $ultra->get('test.mediator');
+    expect($mediator->send(new BundledRegularGreetingMessage('Alice')))->toBe('Hello, Alice!');
 });

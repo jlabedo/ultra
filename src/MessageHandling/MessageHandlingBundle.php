@@ -21,37 +21,29 @@ final class MessageHandlingBundle extends Bundle
 
         $container->registerAttributeForAutoconfiguration(
             Advice::class,
-            static function (ChildDefinition $definition, Advice $attribute, \Reflector $reflector): void {
-                if ($reflector instanceof \ReflectionMethod) {
-                    $definition->addTag(TagNames::ASPECT);
-                }
+            static function (ChildDefinition $definition, Advice $attribute, \ReflectionMethod $reflector): void {
+                $definition->addTag(TagNames::ASPECT);
             }
         );
 
         $container->registerAttributeForAutoconfiguration(
             EventHandler::class,
-            static function (ChildDefinition $definition, EventHandler $attribute, \Reflector $reflector): void {
-                if ($reflector instanceof \ReflectionMethod) {
-                    $definition->addTag(TagNames::HANDLER);
-                }
+            static function (ChildDefinition $definition, EventHandler $attribute, \ReflectionMethod $reflector): void {
+                $definition->addTag(TagNames::HANDLER);
             }
         );
 
         $container->registerAttributeForAutoconfiguration(
             Handles::class,
-            static function (ChildDefinition $definition, Handles $attribute, \Reflector $reflector): void {
-                if ($reflector instanceof \ReflectionMethod) {
-                    $definition->addTag(TagNames::HANDLER);
-                }
+            static function (ChildDefinition $definition, Handles $attribute, \ReflectionMethod $reflector): void {
+                $definition->addTag(TagNames::HANDLER);
             }
         );
 
         $container->registerAttributeForAutoconfiguration(
             SelfHandler::class,
-            static function (ChildDefinition $definition, SelfHandler $attribute, \Reflector $reflector): void {
-                if ($reflector instanceof \ReflectionMethod) {
-                    $definition->addTag(TagNames::HANDLER);
-                }
+            static function (ChildDefinition $definition, SelfHandler $attribute, \ReflectionMethod $reflector): void {
+                $definition->addTag(TagNames::HANDLER);
             }
         );
 
