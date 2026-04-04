@@ -66,7 +66,7 @@ final class DispatchPlanRenderer
         array $claimedVarNames,
         string $messageVar,
     ): string {
-        $isSelf = '@self' === $serviceId;
+        $isSelf = HandlerDescriptor::SELF_SERVICE_ID === $serviceId;
 
         $args = [];
         if (! $isSelf) {

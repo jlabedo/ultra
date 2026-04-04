@@ -37,16 +37,16 @@ final class Kernel extends BaseKernel
             ->autowire()
             ->autoconfigure()
         ;
-        $services->load(__NAMESPACE__.'\\', __DIR__.'/');
+        $services->load(__NAMESPACE__ . '\\', __DIR__ . '/');
 
-        $services->load(__NAMESPACE__.'\Infrastructure\\', __DIR__.'/Infrastructure/')
+        $services->load(__NAMESPACE__ . '\Infrastructure\\', __DIR__ . '/Infrastructure/')
             ->public()
         ;
 
         $services->alias('test.mediator', MediatorInterface::class)->public();
         $services->set(SelfHandledPing::class)
             ->autoconfigure(false)
-            ->tag(TagNames::HANDLER)
+            ->resourceTag(TagNames::SELF_HANDLER, ['method' => 'handle'])
         ;
     }
 }

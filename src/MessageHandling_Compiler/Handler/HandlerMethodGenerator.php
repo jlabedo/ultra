@@ -15,7 +15,7 @@ final class HandlerMethodGenerator
     {
         $plan = $this->planBuilder->build(
             $handler->serviceId,
-            $handler->method,
+            $handler->method->getName(),
             $handler->depServiceIds,
             $handler->advices,
             $handler->returnsVoid,

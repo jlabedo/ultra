@@ -6,19 +6,53 @@ namespace Ultra\MessageHandling_Compiler\Handler;
 
 final class HandlerDescriptorFactory
 {
-    public function create(
+    public function __construct(private AdviceCollector $adviceCollector) {}
+
+    public function createServiceHandler(
         string $serviceId,
         string $className,
         \ReflectionMethod $method,
-        bool $skipFirstParameter = true,
-        int $priority = 0,
+    ): ?HandlerDescriptor {
+        $messageClass = $this->resolveMessageClass($method);
+        if (null === $messageClass) {
+            return null;
+        }
+
+        return $this->create($serviceId, $className, $method, $messageClass, skipFirstParameter: true);
+    }
+
+    public function createSelfHandler(
+        string $className,
+        \ReflectionMethod $method,
+    ): HandlerDescriptor {
+        return $this->create(
+            HandlerDescriptor::SELF_SERVICE_ID,
+            $className,
+            $method,
+            $className,
+            skipFirstParameter: false,
+        );
+    }
+
+    private function create(
+        string $serviceId,
+        string $className,
+        \ReflectionMethod $method,
+        string $messageClass,
+        bool $skipFirstParameter,
     ): HandlerDescriptor {
         $depServiceIds = $this->resolveDepServiceIds($method, $skipFirstParameter);
+        $advices = $this->adviceCollector->collect($method);
 
-        return (new HandlerDescriptor($serviceId, $method->getName(), $depServiceIds))
-            ->withClassName($className)
-            ->withPriority($priority)
-            ->withReturnsVoid($this->returnsVoid($method));
+        return new HandlerDescriptor(
+            serviceId: $serviceId,
+            method: $method,
+            depServiceIds: $depServiceIds,
+            advices: $advices,
+            className: $className,
+            returnsVoid: $this->returnsVoid($method),
+            messageClass: $messageClass,
+        );
     }
 
     /**
@@ -48,5 +82,20 @@ final class HandlerDescriptorFactory
         $returnType = $method->getReturnType();
 
         return $returnType instanceof \ReflectionNamedType && 'void' === $returnType->getName();
+    }
+
+    private function resolveMessageClass(\ReflectionMethod $method): ?string
+    {
+        $params = $method->getParameters();
+        if ([] === $params) {
+            return null;
+        }
+
+        $firstType = $params[0]->getType();
+        if (! $firstType instanceof \ReflectionNamedType || $firstType->isBuiltin()) {
+            return null;
+        }
+
+        return $firstType->getName();
     }
 }

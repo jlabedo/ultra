@@ -9,34 +9,22 @@ namespace Ultra\MessageHandling_Compiler\Handler;
  */
 final readonly class HandlerDescriptor
 {
+    public const SELF_SERVICE_ID = '@self';
+
     /**
      * @param list<string>           $depServiceIds
      * @param list<AdviceDescriptor> $advices
      */
     public function __construct(
         public string $serviceId,
-        public string $method,
+        public \ReflectionMethod $method,
         public array $depServiceIds,
         public array $advices = [],
         public int $priority = 0,
         public string $className = '',
         public bool $returnsVoid = false,
+        public string $messageClass = '',
     ) {}
-
-    public function withMethod(string $method): self
-    {
-        return clone($this, [
-            'method' => $method,
-        ]);
-    }
-
-    /** @param list<string> $depServiceIds */
-    public function withDepServiceIds(array $depServiceIds): self
-    {
-        return clone($this, [
-            'depServiceIds' => $depServiceIds,
-        ]);
-    }
 
     /** @param list<AdviceDescriptor> $advices */
     public function withAdvices(array $advices): self
@@ -50,20 +38,6 @@ final readonly class HandlerDescriptor
     {
         return clone($this, [
             'priority' => $priority,
-        ]);
-    }
-
-    public function withClassName(string $className): self
-    {
-        return clone($this, [
-            'className' => $className,
-        ]);
-    }
-
-    public function withReturnsVoid(bool $returnsVoid): self
-    {
-        return clone($this, [
-            'returnsVoid' => $returnsVoid,
         ]);
     }
 }

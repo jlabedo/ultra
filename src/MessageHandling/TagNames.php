@@ -8,5 +8,6 @@ final class TagNames
 {
     public const ROUTER = 'ultra.message_router';
     public const HANDLER = 'ultra.message_handler';
+    public const SELF_HANDLER = 'ultra.message_self_handler';
     public const ASPECT = 'ultra.message_aspect';
 }

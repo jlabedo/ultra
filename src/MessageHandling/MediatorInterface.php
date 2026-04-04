@@ -14,11 +14,11 @@ interface MediatorInterface
 {
     #[SingleDispatch(
         matcher: static function (\ReflectionMethod $m): ?RouteMatch {
-            if ([] !== $m->getAttributes(Handles::class)) {
+            if (
+                [] !== $m->getAttributes(Handles::class)
+                || [] !== $m->getAttributes(SelfHandler::class)
+            ) {
                 return RouteMatch::for();
-            }
-            if ([] !== $m->getAttributes(SelfHandler::class)) {
-                return RouteMatch::selfHandler();
             }
 
             return null;

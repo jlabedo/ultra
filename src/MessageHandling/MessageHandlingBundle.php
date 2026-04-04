@@ -29,21 +29,21 @@ final class MessageHandlingBundle extends Bundle
         $container->registerAttributeForAutoconfiguration(
             EventHandler::class,
             static function (ChildDefinition $definition, EventHandler $attribute, \ReflectionMethod $reflector): void {
-                $definition->addTag(TagNames::HANDLER);
+                $definition->addTag(TagNames::HANDLER, ['method' => $reflector->getName()]);
             }
         );
 
         $container->registerAttributeForAutoconfiguration(
             Handles::class,
             static function (ChildDefinition $definition, Handles $attribute, \ReflectionMethod $reflector): void {
-                $definition->addTag(TagNames::HANDLER);
+                $definition->addTag(TagNames::HANDLER, ['method' => $reflector->getName()]);
             }
         );
 
         $container->registerAttributeForAutoconfiguration(
             SelfHandler::class,
             static function (ChildDefinition $definition, SelfHandler $attribute, \ReflectionMethod $reflector): void {
-                $definition->addTag(TagNames::HANDLER);
+                $definition->addResourceTag(TagNames::SELF_HANDLER, ['method' => $reflector->getName()]);
             }
         );
 
@@ -51,7 +51,7 @@ final class MessageHandlingBundle extends Bundle
         $this->ensureRouterDefinition($container, EventBusInterface::class);
 
         $buildDir = (string) $container->getParameter('kernel.build_dir');
-        $outputDir = $buildDir.'/message_handling';
+        $outputDir = $buildDir . '/message_handling';
 
         $container->addCompilerPass(new MessageRouterCompilerPass($outputDir));
     }

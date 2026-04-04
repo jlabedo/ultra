@@ -35,11 +35,12 @@ use Ultra\MessageHandling_Compiler\Routing\RouterDescriptor;
  *     Reflect on the interface to find #[SingleDispatch] or #[MultiDispatch] on a method.
  *     Build RouterDescriptor list.
  *
- *  2. Discover handlers: find all services tagged $handlerTag. Reflect on public methods.
- *     Build a flat pool of (serviceId, class, ReflectionMethod) tuples.
+ *  2. Discover handlers: find all services/resources tagged $handlerTag. Service-tagged
+ *     definitions are regular handlers, resource-tagged definitions are self handlers.
+ *     Build a flat pool of handler descriptors and their reflection methods.
  *
  *  3. For each router, match handlers via the descriptor's matcher closure:
- *     - SingleDispatch: enforce one handler per message class; @self for self-handlers
+ *     - SingleDispatch: enforce one handler per message class
  *     - MultiDispatch: collect subscriptions, resolve via is_a() against known message classes,
  *       sort by priority
  *
@@ -98,27 +99,6 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             return;
         }
 
-        // ── Step 2: Discover handlers ──────────────────────────────────────────
-        /** @var list<array{serviceId: string, class: string, method: \ReflectionMethod}> $handlerPool */
-        $handlerPool = [];
-
-        foreach (array_keys($container->findTaggedServiceIds(TagNames::HANDLER)) as $serviceId) {
-            $definition = $container->getDefinition($serviceId);
-            $class = $definition->getClass() ?? $serviceId;
-
-            if (! class_exists($class)) {
-                continue;
-            }
-
-            foreach (new \ReflectionClass($class)->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-                $handlerPool[] = [
-                    'serviceId' => $serviceId,
-                    'class' => $class,
-                    'method' => $method,
-                ];
-            }
-        }
-
         // ── Step 4 (early): Build contextual wrapper mapping for all routers ─────
         $wrapperClassByServiceId = $this->buildWrapperClassMapping($routers, $interfaceDescriptors, $container);
         $resolver = new ContextualRouterDependencyResolver($wrapperClassByServiceId);
@@ -126,7 +106,8 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         // ── Steps 3 + 5: Match handlers, generate, register ───────────────────
         $adviceDefinitions = $this->collectAdviceDefinitions($container);
         $adviceCollector = new AdviceCollector($adviceDefinitions);
-        $descriptorFactory = new HandlerDescriptorFactory();
+        $descriptorFactory = new HandlerDescriptorFactory($adviceCollector);
+        $handlerPool = $this->buildHandlerPool($container, $descriptorFactory);
         $methodGenerator = new HandlerMethodGenerator(
             renderer: new DispatchPlanRenderer([$resolver]),
         );
@@ -147,11 +128,11 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             $locatorReferences = new LocatorReferenceCollector();
 
             $routes = $descriptor->isSingleDispatch
-                ? $this->matchSingleDispatch($descriptor, $handlerPool, $descriptorFactory, $locatorReferences)
-                : $this->matchMultiDispatch($descriptor, $handlerPool, $descriptorFactory, $locatorReferences, $container);
+                ? $this->matchSingleDispatch($descriptor, $handlerPool, $locatorReferences)
+                : $this->matchMultiDispatch($descriptor, $handlerPool, $locatorReferences, $container);
 
             // Collect aspects and attach to handlers
-            $routes = $this->attachAspects($routes, $adviceCollector, $locatorReferences, $container);
+            // $routes = $this->attachAspects($routes, $adviceCollector, $locatorReferences, $container);
 
             ['className' => $generatedClass, 'filePath' => $filePath] = $generator->generate(
                 $baseName,
@@ -168,6 +149,83 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             $routerDef->setFile($filePath)->setPublic(true);
             $container->setDefinition($serviceId, $routerDef);
         }
+    }
+
+    /**
+     * @return list<array{handler: HandlerDescriptor, method: \ReflectionMethod}>
+     */
+    private function buildHandlerPool(ContainerBuilder $container, HandlerDescriptorFactory $descriptorFactory): array
+    {
+        $handlerPool = [];
+
+        foreach ($container->findTaggedServiceIds(TagNames::HANDLER) as $serviceId => $tags) {
+            $class = $container->getDefinition($serviceId)->getClass() ?? $serviceId;
+
+            if (! class_exists($class)) {
+                continue;
+            }
+
+            foreach ($tags as $tag) {
+                $methodName = $tag['method'] ?? null;
+                if (! $methodName || ! is_string($methodName)) {
+                    throw new \LogicException(sprintf(
+                        'Service "%s" tagged as "%s" must have a "method" attribute.',
+                        $serviceId,
+                        TagNames::HANDLER,
+                    ));
+                }
+                $method = $container->getReflectionClass($class)->getMethod($methodName);
+                $handler = $descriptorFactory->createServiceHandler($serviceId, $class, $method);
+                if (null === $handler) {
+                    continue;
+                }
+                $handlerPool[] = $handler;
+            }
+        }
+
+        foreach ($container->findTaggedResourceIds(TagNames::SELF_HANDLER) as $serviceId => $tags) {
+            $definition = $container->getDefinition($serviceId);
+            $class = $definition->getClass() ?? $serviceId;
+
+            if (! class_exists($class)) {
+                continue;
+            }
+
+            foreach ($this->taggedHandlerMethods(new \ReflectionClass($class), $tags) as $method) {
+                $handlerPool[] = $descriptorFactory->createSelfHandler($class, $method);
+            }
+        }
+
+        return $handlerPool;
+    }
+
+    /**
+     * @param list<array<string, mixed>> $tags
+     *
+     * @return list<\ReflectionMethod>
+     */
+    private function taggedHandlerMethods(\ReflectionClass $class, array $tags): array
+    {
+        $methodNames = [];
+        foreach ($tags as $tag) {
+            if (isset($tag['method']) && is_string($tag['method'])) {
+                $methodNames[$tag['method']] = true;
+            }
+        }
+
+        $methods = [];
+        foreach (array_keys($methodNames) as $methodName) {
+            if (! $class->hasMethod($methodName)) {
+                continue;
+            }
+
+            $method = $class->getMethod($methodName);
+            if ($method->isPublic()) {
+                $methods[] = $method;
+            }
+        }
+
+        return $methods;
     }
 
     /**
@@ -253,116 +311,65 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
      * Match handlers for SingleDispatch routers.
      * Returns array<class-string, list<HandlerDescriptor>> where each list has exactly one element.
      *
-     * @param list<array{serviceId: string, class: string, method: \ReflectionMethod}> $handlerPool
+     * @param list<HandlerDescriptor> $handlerPool
      *
-     * @return array<class-string, list<HandlerDescriptor>>
+     * @return array<class-string, array{0: HandlerDescriptor}>
      */
     private function matchSingleDispatch(
         RouterDescriptor $descriptor,
         array $handlerPool,
-        HandlerDescriptorFactory $descriptorFactory,
         LocatorReferenceCollector $locatorReferences,
     ): array {
-        /** @var array<class-string, HandlerDescriptor> $handlers */
+        /** @var array<class-string, array{0: HandlerDescriptor}> $handlers */
         $handlers = [];
 
-        foreach ($handlerPool as ['serviceId' => $serviceId, 'class' => $class, 'method' => $method]) {
-            $match = ($descriptor->matcher)($method);
+        foreach ($handlerPool as $handler) {
+            $match = ($descriptor->matcher)($handler->method);
             if (null === $match) {
                 continue;
             }
 
-            if ($match->isSelfHandler) {
-                // Self-handler: the message class handles itself, no message param
-                $messageClass = $class;
-
-                if (isset($handlers[$messageClass])) {
-                    throw new \LogicException(sprintf(
-                        'Duplicate handler for message "%s": already registered by service "%s", cannot also register "%s" as a self-handler.',
-                        $messageClass,
-                        $handlers[$messageClass][0]->serviceId,
-                        $serviceId,
-                    ));
-                }
-
-                $handlers[$messageClass] = $descriptorFactory->create('@self', $class, $method, skipFirstParameter: false);
-                // Message class is NOT added to the locator
-            } else {
-                $params = $method->getParameters();
-                if ([] === $params) {
-                    continue;
-                }
-
-                $firstType = $params[0]->getType();
-                if (! $firstType instanceof \ReflectionNamedType || $firstType->isBuiltin()) {
-                    continue;
-                }
-
-                $messageClass = $firstType->getName();
-
-                if (isset($handlers[$messageClass])) {
-                    throw new \LogicException(sprintf(
-                        'Duplicate handler for message "%s": already registered by service "%s", cannot also register "%s".',
-                        $messageClass,
-                        $handlers[$messageClass]->serviceId,
-                        $serviceId,
-                    ));
-                }
-
-                $handlers[$messageClass] = $descriptorFactory->create($serviceId, $class, $method);
-                $locatorReferences->addService($serviceId);
+            $messageClass = $handler->messageClass;
+            if (isset($handlers[$messageClass])) {
+                throw new \LogicException(sprintf(
+                    'Duplicate handler for message "%s": already registered by service "%s", cannot also register "%s".',
+                    $messageClass,
+                    $handlers[$messageClass][0]->serviceId,
+                    $handler->serviceId,
+                ));
             }
-        }
 
-        // Wrap each HandlerDescriptor in a list<> for unified format
-        $routes = [];
-        foreach ($handlers as $messageClass => $handler) {
-            $routes[$messageClass] = [$handler];
+            $handlers[$messageClass] = [$handler->withPriority($match->priority)];
+            $locatorReferences->addHandlerDependencies($handler);
         }
-
-        return $routes;
+        return $handlers;
     }
 
     /**
      * Match handlers for MultiDispatch routers using is_a() polymorphic routing.
      *
-     * @param list<array{serviceId: string, class: string, method: \ReflectionMethod}> $handlerPool
+     * @param list<HandlerDescriptor> $handlerPool
      *
      * @return array<class-string, list<HandlerDescriptor>>
      */
     private function matchMultiDispatch(
         RouterDescriptor $descriptor,
         array $handlerPool,
-        HandlerDescriptorFactory $descriptorFactory,
         LocatorReferenceCollector $locatorReferences,
         ContainerBuilder $container,
     ): array {
         /** @var array<string, list<array{handler: HandlerDescriptor, method: \ReflectionMethod}>> $subscriptions */
         $subscriptions = [];
 
-        foreach ($handlerPool as ['serviceId' => $serviceId, 'class' => $class, 'method' => $method]) {
-            $match = ($descriptor->matcher)($method);
+        foreach ($handlerPool as $handler) {
+            $match = ($descriptor->matcher)($handler->method);
             if (null === $match) {
                 continue;
             }
 
-            $params = $method->getParameters();
-            if ([] === $params) {
-                continue;
-            }
-
-            $firstType = $params[0]->getType();
-            if (! $firstType instanceof \ReflectionNamedType || $firstType->isBuiltin()) {
-                continue;
-            }
-
-            $subscriptionType = $firstType->getName();
-            $handler = $descriptorFactory->create($serviceId, $class, $method, priority: $match->priority);
-            $subscriptions[$subscriptionType][] = [
-                'handler' => $handler,
-                'method' => $method,
-            ];
-            $locatorReferences->addService($serviceId);
+            $subscriptionType = $handler->messageClass;
+            $subscriptions[$subscriptionType][] = $handler->withPriority($match->priority);
+            $locatorReferences->addHandlerDependencies($handler);
         }
 
         /** @var array<class-string, list<HandlerDescriptor>> $routes */
@@ -381,7 +388,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                 }
 
                 foreach ($entries as $entry) {
-                    $matchedHandlers[] = $entry['handler'];
+                    $matchedHandlers[] = $entry;
                 }
             }
 
@@ -403,45 +410,6 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         }
 
         return $routes;
-    }
-
-    /**
-     * Attach aspects to all handlers in the routes map.
-     *
-     * @param array<class-string, list<HandlerDescriptor>> $routes
-     *
-     * @return array<class-string, list<HandlerDescriptor>>
-     */
-    private function attachAspects(
-        array $routes,
-        AdviceCollector $adviceCollector,
-        LocatorReferenceCollector $locatorReferences,
-        ContainerBuilder $container,
-    ): array {
-        $result = [];
-
-        foreach ($routes as $messageClass => $handlers) {
-            $withAdvices = [];
-            foreach ($handlers as $handler) {
-                // For single dispatch we need to reflect on the handler's method
-                $reflection = null;
-                if ('@self' !== $handler->serviceId) {
-                    $reflection = new \ReflectionClass($handler->className ?: $handler->serviceId)
-                        ->getMethod($handler->method);
-                } else {
-                    // Self handler: method is on the message class itself
-                    $reflection = new \ReflectionClass($messageClass)->getMethod($handler->method);
-                }
-
-                $advices = $adviceCollector->collect($reflection, $container);
-                $handlerWithAdvices = $handler->withAdvices($advices);
-                $locatorReferences->addHandlerDependencies($handlerWithAdvices);
-                $withAdvices[] = $handlerWithAdvices;
-            }
-            $result[$messageClass] = $withAdvices;
-        }
-
-        return $result;
     }
 
     /**

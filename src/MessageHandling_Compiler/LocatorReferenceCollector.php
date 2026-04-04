@@ -12,16 +12,15 @@ final class LocatorReferenceCollector
     /** @var array<string, true> */
     private array $serviceIds = [];
 
-    public function addService(string $serviceId): void
-    {
-        $this->serviceIds[$serviceId] = true;
-    }
-
     /**
      * @param list<AdviceDescriptor> $advices
      */
     public function addHandlerDependencies(HandlerDescriptor $handler): void
     {
+        if (HandlerDescriptor::SELF_SERVICE_ID !== $handler->serviceId) {
+            $this->addService($handler->serviceId);
+        }
+
         $claimedIndices = [];
         foreach ($handler->advices as $advice) {
             foreach ($advice->claimedDepIndices as $index) {
@@ -43,5 +42,10 @@ final class LocatorReferenceCollector
     public function all(): array
     {
         return array_keys($this->serviceIds);
+    }
+
+    private function addService(string $serviceId): void
+    {
+        $this->serviceIds[$serviceId] = true;
     }
 }
