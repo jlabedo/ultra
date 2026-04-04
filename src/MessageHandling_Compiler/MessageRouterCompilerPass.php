@@ -80,12 +80,12 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
                     $interfaceDescriptors[$interfaceName] = [
                         'descriptor' => $descriptor,
-                        'baseName' => 'Compiled'.$shortName,
+                        'baseName' => 'Compiled' . $shortName,
                         'wrapperClass' => MessageRouterGenerator::wrapperClassName($interfaceName, $this->outputDir),
                     ];
                 }
 
-                $routerOutputDir = rtrim($this->outputDir, '/').'/'.substr($interfaceName, strrpos($interfaceName, '\\') + 1);
+                $routerOutputDir = rtrim($this->outputDir, '/') . '/' . substr($interfaceName, strrpos($interfaceName, '\\') + 1);
                 $routers[$serviceId] = [
                     'descriptor' => $interfaceDescriptors[$interfaceName]['descriptor'],
                     'baseName' => $interfaceDescriptors[$interfaceName]['baseName'],
@@ -147,14 +147,18 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             $locatorReferences = new LocatorReferenceCollector();
 
             $routes = $descriptor->isSingleDispatch
-                ? $this->matchSingleDispatch($descriptor, $handlerPool, $descriptorFactory, $locatorReferences, $container)
+                ? $this->matchSingleDispatch($descriptor, $handlerPool, $descriptorFactory, $locatorReferences)
                 : $this->matchMultiDispatch($descriptor, $handlerPool, $descriptorFactory, $locatorReferences, $container);
 
             // Collect aspects and attach to handlers
-            $routes = $this->attachAspects($routes, $adviceCollector, $locatorReferences, $container, $descriptor->isSingleDispatch);
+            $routes = $this->attachAspects($routes, $adviceCollector, $locatorReferences, $container);
 
             ['className' => $generatedClass, 'filePath' => $filePath] = $generator->generate(
-                $baseName, $descriptor, $routes, $routerOutputDir, $wrappersFilePath,
+                $baseName,
+                $descriptor,
+                $routes,
+                $routerOutputDir,
+                $wrappersFilePath,
             );
 
             $routerDef = new Definition($generatedClass, [
@@ -258,7 +262,6 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         array $handlerPool,
         HandlerDescriptorFactory $descriptorFactory,
         LocatorReferenceCollector $locatorReferences,
-        ContainerBuilder $container,
     ): array {
         /** @var array<class-string, HandlerDescriptor> $handlers */
         $handlers = [];
@@ -414,7 +417,6 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         AdviceCollector $adviceCollector,
         LocatorReferenceCollector $locatorReferences,
         ContainerBuilder $container,
-        bool $isSingleDispatch,
     ): array {
         $result = [];
 
@@ -425,8 +427,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                 $reflection = null;
                 if ('@self' !== $handler->serviceId) {
                     $reflection = new \ReflectionClass($handler->className ?: $handler->serviceId)
-                        ->getMethod($handler->method)
-                    ;
+                        ->getMethod($handler->method);
                 } else {
                     // Self handler: method is on the message class itself
                     $reflection = new \ReflectionClass($messageClass)->getMethod($handler->method);
@@ -434,7 +435,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
                 $advices = $adviceCollector->collect($reflection, $container);
                 $handlerWithAdvices = $handler->withAdvices($advices);
-                $locatorReferences->addHandlerDependencies($handler, $advices);
+                $locatorReferences->addHandlerDependencies($handlerWithAdvices);
                 $withAdvices[] = $handlerWithAdvices;
             }
             $result[$messageClass] = $withAdvices;
@@ -458,7 +459,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             $wrapperClassToDescriptor[$wrapperClass] = $descriptor;
         }
 
-        $filePath = rtrim($this->outputDir, '/').'/_contextual_wrappers.php';
+        $filePath = rtrim($this->outputDir, '/') . '/_contextual_wrappers.php';
         $generator->generateWrappersFile($wrapperClassToDescriptor, $filePath);
 
         return $filePath;

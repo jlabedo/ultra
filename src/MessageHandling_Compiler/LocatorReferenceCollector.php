@@ -20,10 +20,10 @@ final class LocatorReferenceCollector
     /**
      * @param list<AdviceDescriptor> $advices
      */
-    public function addHandlerDependencies(HandlerDescriptor $handler, array $advices): void
+    public function addHandlerDependencies(HandlerDescriptor $handler): void
     {
         $claimedIndices = [];
-        foreach ($advices as $advice) {
+        foreach ($handler->advices as $advice) {
             foreach ($advice->claimedDepIndices as $index) {
                 $claimedIndices[$index] = true;
             }
