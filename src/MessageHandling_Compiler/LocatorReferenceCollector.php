@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler;
 
+use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MessageHandling_Compiler\Handler\AdviceDescriptor;
 use Ultra\MessageHandling_Compiler\Handler\HandlerDescriptor;
 
@@ -37,11 +38,16 @@ final class LocatorReferenceCollector
     }
 
     /**
-     * @return list<string>
+     * @return array<string, Reference>
      */
-    public function all(): array
+    public function toLocatorReferences(): array
     {
-        return array_keys($this->serviceIds);
+        $references = [];
+        foreach ($this->serviceIds as $serviceId => $_) {
+            $references[$serviceId] = new Reference($serviceId);
+        }
+
+        return $references;
     }
 
     private function addService(string $serviceId): void

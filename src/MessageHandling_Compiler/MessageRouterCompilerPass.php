@@ -143,7 +143,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             );
 
             $routerDef = new Definition($generatedClass, [
-                new ServiceLocatorArgument($this->buildLocatorReferences($locatorReferences->all())),
+                new ServiceLocatorArgument($locatorReferences->toLocatorReferences()),
                 new Reference(MessageContextPropagatorInterface::class),
             ]);
             $routerDef->setFile($filePath)->setPublic(true);
@@ -190,35 +190,6 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         }
 
         return $handlerPool;
-    }
-
-    /**
-     * @param list<array<string, mixed>> $tags
-     *
-     * @return list<\ReflectionMethod>
-     */
-    private function taggedHandlerMethods(\ReflectionClass $class, array $tags): array
-    {
-        $methodNames = [];
-        foreach ($tags as $tag) {
-            if (isset($tag['method']) && is_string($tag['method'])) {
-                $methodNames[$tag['method']] = true;
-            }
-        }
-
-        $methods = [];
-        foreach (array_keys($methodNames) as $methodName) {
-            if (! $class->hasMethod($methodName)) {
-                continue;
-            }
-
-            $method = $class->getMethod($methodName);
-            if ($method->isPublic()) {
-                $methods[] = $method;
-            }
-        }
-
-        return $methods;
     }
 
     /**
@@ -473,21 +444,6 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         }
 
         return $mapping;
-    }
-
-    /**
-     * @param list<string> $serviceIds
-     *
-     * @return array<string, Reference>
-     */
-    private function buildLocatorReferences(array $serviceIds): array
-    {
-        $references = [];
-        foreach ($serviceIds as $serviceId) {
-            $references[$serviceId] = new Reference($serviceId);
-        }
-
-        return $references;
     }
 
     private function ensureMessageContextPropagator(ContainerBuilder $container): void
