@@ -72,7 +72,8 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                 }
 
                 if (! isset($interfaceDescriptors[$interfaceName])) {
-                    $descriptor = $this->buildRouterDescriptor($interfaceName);
+                    $classRef = $container->getReflectionClass($interfaceName); // trigger class loading for better error messages
+                    $descriptor = $this->buildRouterDescriptor($classRef);
                     if (null === $descriptor) {
                         continue;
                     }
@@ -104,9 +105,9 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         $resolver = new ContextualRouterDependencyResolver($wrapperClassByServiceId);
 
         // ── Steps 3 + 5: Match handlers, generate, register ───────────────────
-        $adviceDefinitions = $this->collectAdviceDefinitions($container);
-        $adviceCollector = new AdviceCollector($adviceDefinitions);
-        $descriptorFactory = new HandlerDescriptorFactory($adviceCollector);
+        $descriptorFactory = new HandlerDescriptorFactory(
+            new AdviceCollector($this->collectAdviceDefinitions($container))
+        );
         $handlerPool = $this->buildHandlerPool($container, $descriptorFactory);
         $methodGenerator = new HandlerMethodGenerator(
             renderer: new DispatchPlanRenderer([$resolver]),
@@ -223,10 +224,8 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     /**
      * Reflect on an interface to find #[SingleDispatch] or #[MultiDispatch] on a method.
      */
-    private function buildRouterDescriptor(string $interfaceName): ?RouterDescriptor
+    private function buildRouterDescriptor(\ReflectionClass $reflection): ?RouterDescriptor
     {
-        $reflection = new \ReflectionClass($interfaceName);
-
         foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
             $singleAttrs = $method->getAttributes(SingleDispatch::class);
             $multiAttrs = $method->getAttributes(MultiDispatch::class);
@@ -238,7 +237,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                 $firstParam = $params[0] ?? null;
 
                 return new RouterDescriptor(
-                    interfaceName: $interfaceName,
+                    interfaceName: $reflection->getName(),
                     methodName: $method->getName(),
                     firstParamName: $firstParam?->getName() ?? 'message',
                     returnsVoid: $this->methodReturnsVoid($method),
@@ -256,7 +255,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                 $firstParam = $params[0] ?? null;
 
                 return new RouterDescriptor(
-                    interfaceName: $interfaceName,
+                    interfaceName: $reflection->getName(),
                     methodName: $method->getName(),
                     firstParamName: $firstParam?->getName() ?? 'event',
                     returnsVoid: $this->methodReturnsVoid($method),
