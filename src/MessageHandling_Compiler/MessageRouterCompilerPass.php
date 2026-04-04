@@ -157,13 +157,17 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     private function buildHandlerPool(ContainerBuilder $container, HandlerDescriptorFactory $descriptorFactory): array
     {
         $handlerPool = [];
+        $taggedClasses = $container->findTaggedServiceIds(TagNames::HANDLER) + $container->findTaggedResourceIds(TagNames::SELF_HANDLER);
 
-        foreach ($container->findTaggedServiceIds(TagNames::HANDLER) as $serviceId => $tags) {
-            $class = $container->getDefinition($serviceId)->getClass() ?? $serviceId;
+        foreach ($taggedClasses as $serviceId => $tags) {
+            $definition = $container->getDefinition($serviceId);
+            $class = $definition->getClass() ?? $serviceId;
 
             if (! class_exists($class)) {
                 continue;
             }
+
+            $isSelfHandler = $definition->hasTag(TagNames::SELF_HANDLER);
 
             foreach ($tags as $tag) {
                 $methodName = $tag['method'] ?? null;
@@ -175,24 +179,13 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                     ));
                 }
                 $method = $container->getReflectionClass($class)->getMethod($methodName);
-                $handler = $descriptorFactory->createServiceHandler($serviceId, $class, $method);
+                $handler = $isSelfHandler ?
+                    $descriptorFactory->createSelfHandler($class, $method) :
+                    $descriptorFactory->createServiceHandler($serviceId, $class, $method);
                 if (null === $handler) {
                     continue;
                 }
                 $handlerPool[] = $handler;
-            }
-        }
-
-        foreach ($container->findTaggedResourceIds(TagNames::SELF_HANDLER) as $serviceId => $tags) {
-            $definition = $container->getDefinition($serviceId);
-            $class = $definition->getClass() ?? $serviceId;
-
-            if (! class_exists($class)) {
-                continue;
-            }
-
-            foreach ($this->taggedHandlerMethods(new \ReflectionClass($class), $tags) as $method) {
-                $handlerPool[] = $descriptorFactory->createSelfHandler($class, $method);
             }
         }
 
