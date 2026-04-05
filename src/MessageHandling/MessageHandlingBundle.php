@@ -8,7 +8,6 @@ use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\MessageHandling\Attribute\Advice;
-use Ultra\MessageHandling\Attribute\Asynchronous;
 use Ultra\MessageHandling\Attribute\EventHandler;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\SelfHandler;
@@ -45,13 +44,6 @@ final class MessageHandlingBundle extends Bundle
             SelfHandler::class,
             static function (ChildDefinition $definition, SelfHandler $attribute, \ReflectionMethod $reflector): void {
                 $definition->addResourceTag(TagNames::SELF_HANDLER, ['method' => $reflector->getName()]);
-            }
-        );
-
-        $container->registerAttributeForAutoconfiguration(
-            Asynchronous::class,
-            static function (ChildDefinition $definition, Asynchronous $attribute, \ReflectionMethod $reflector): void {
-                $definition->addTag(TagNames::HANDLER);
             }
         );
 
