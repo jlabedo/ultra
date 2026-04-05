@@ -9,6 +9,10 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\MessageHandling\Async\AsyncHandlerProxy;
+use Ultra\MessageHandling\Async\AsyncQueueInterface;
+use Ultra\MessageHandling\Async\InMemoryQueue;
+use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\Attribute\Advice;
 use Ultra\MessageHandling\Attribute\MultiDispatch;
 use Ultra\MessageHandling\Attribute\SingleDispatch;
@@ -19,9 +23,9 @@ use Ultra\MessageHandling_Compiler\Handler\AdviceCollector;
 use Ultra\MessageHandling_Compiler\Handler\AdviceDefinition;
 use Ultra\MessageHandling_Compiler\Handler\AdviceType;
 use Ultra\MessageHandling_Compiler\Handler\DispatchPlanRenderer;
+use Ultra\MessageHandling_Compiler\Handler\HandlerClassGenerator;
 use Ultra\MessageHandling_Compiler\Handler\HandlerDescriptor;
 use Ultra\MessageHandling_Compiler\Handler\HandlerDescriptorFactory;
-use Ultra\MessageHandling_Compiler\Handler\HandlerMethodGenerator;
 use Ultra\MessageHandling_Compiler\Routing\ContextualRouterDependencyResolver;
 use Ultra\MessageHandling_Compiler\Routing\MessageRouterGenerator;
 use Ultra\MessageHandling_Compiler\Routing\RouterDescriptor;
@@ -47,7 +51,8 @@ use Ultra\MessageHandling_Compiler\Routing\RouterDescriptor;
  *  4. Build ContextualRouterDependencyResolver from the discovered routers, mapping each
  *     router service ID (and its aliases) to its generated contextual wrapper class name.
  *
- *  5. For each router, collect aspects (global $aspectTag), generate class, register service.
+ *  5. For each router, generate per-handler service classes,
+ *     generate thin router class, register services.
  */
 final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 {
@@ -56,6 +61,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     public function process(ContainerBuilder $container): void
     {
         $this->ensureMessageContextPropagator($container);
+        $this->ensureAsyncQueue($container);
 
         // ── Step 1: Discover router interfaces ────────────────────────────────
         /** @var array<string, array{descriptor: RouterDescriptor, baseName: string, outputDir: string}> $routers */
@@ -104,18 +110,18 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         $wrapperClassByServiceId = $this->buildWrapperClassMapping($routers, $interfaceDescriptors, $container);
         $resolver = new ContextualRouterDependencyResolver($wrapperClassByServiceId);
 
-        // ── Steps 3 + 5: Match handlers, generate, register ───────────────────
+        // ── Steps 3 + 5: Match handlers, generate per-handler services + router ──
         $descriptorFactory = new HandlerDescriptorFactory(
             new AdviceCollector($this->collectAdviceDefinitions($container))
         );
         $handlerPool = $this->buildHandlerPool($container, $descriptorFactory);
-        $methodGenerator = new HandlerMethodGenerator(
+        $handlerClassGenerator = new HandlerClassGenerator(
             renderer: new DispatchPlanRenderer([$resolver]),
         );
-        $generator = new MessageRouterGenerator($methodGenerator);
+        $routerGenerator = new MessageRouterGenerator();
 
         // Generate shared contextual wrapper classes file
-        $wrappersFilePath = $this->generateWrappersFile($generator, $interfaceDescriptors);
+        $wrappersFilePath = $this->generateWrappersFile($routerGenerator, $interfaceDescriptors);
 
         foreach ($routers as $serviceId => ['descriptor' => $descriptor, 'baseName' => $baseName, 'outputDir' => $routerOutputDir]) {
             // Skip compilation for synthetic services (e.g. test doubles).
@@ -126,25 +132,56 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                 continue;
             }
 
-            $locatorReferences = new LocatorReferenceCollector();
-
             $routes = $descriptor->isSingleDispatch
-                ? $this->matchSingleDispatch($descriptor, $handlerPool, $locatorReferences)
-                : $this->matchMultiDispatch($descriptor, $handlerPool, $locatorReferences, $container);
+                ? $this->matchSingleDispatch($descriptor, $handlerPool)
+                : $this->matchMultiDispatch($descriptor, $handlerPool, $container);
 
-            // Collect aspects and attach to handlers
-            // $routes = $this->attachAspects($routes, $adviceCollector, $locatorReferences, $container);
+            // Generate per-handler service classes and build simplified route map
+            $handlerOutputDir = $routerOutputDir . '/handlers';
+            /** @var array<class-string, string|list<string>> $routeMap */
+            $routeMap = [];
+            /** @var array<string, Reference> $routerLocatorRefs handler service IDs for router's locator */
+            $routerLocatorRefs = [];
+            /** @var array<string, string> $generatedHandlers dedup key => handler service ID */
+            $generatedHandlers = [];
 
-            ['className' => $generatedClass, 'filePath' => $filePath] = $generator->generate(
-                $baseName,
-                $descriptor,
-                $routes,
-                $routerOutputDir,
-                $wrappersFilePath,
+            foreach ($routes as $messageClass => $handlers) {
+                $handlerServiceIds = [];
+                foreach ($handlers as $handler) {
+                    // For self-handlers, include the message class in the key
+                    // since multiple commands can share serviceId='@self' + same method name.
+                    $handlerKey = HandlerDescriptor::SELF_SERVICE_ID === $handler->serviceId
+                        ? $messageClass . '::@self::' . $handler->method->getName()
+                        : $handler->serviceId . '::' . $handler->method->getName();
+
+                    if (! isset($generatedHandlers[$handlerKey])) {
+                        $handlerServiceId = $this->generateHandlerService(
+                            $handler, $handlerClassGenerator, $handlerOutputDir, $wrappersFilePath, $container,
+                        );
+                        $generatedHandlers[$handlerKey] = $handlerServiceId;
+                    }
+
+                    $handlerServiceIds[] = $generatedHandlers[$handlerKey];
+                }
+
+                if ($descriptor->isSingleDispatch) {
+                    $routeMap[$messageClass] = $handlerServiceIds[0];
+                } else {
+                    $routeMap[$messageClass] = $handlerServiceIds;
+                }
+            }
+
+            // Collect all handler service IDs into the router's locator
+            foreach ($generatedHandlers as $handlerServiceId) {
+                $routerLocatorRefs[$handlerServiceId] = new Reference($handlerServiceId);
+            }
+
+            ['className' => $generatedClass, 'filePath' => $filePath] = $routerGenerator->generate(
+                $baseName, $descriptor, $routeMap, $routerOutputDir,
             );
 
             $routerDef = new Definition($generatedClass, [
-                new ServiceLocatorArgument($locatorReferences->toLocatorReferences()),
+                new ServiceLocatorArgument($routerLocatorRefs),
                 new Reference(MessageContextPropagatorInterface::class),
             ]);
             $routerDef->setFile($filePath)->setPublic(true);
@@ -153,7 +190,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * @return list<array{handler: HandlerDescriptor, method: \ReflectionMethod}>
+     * @return list<HandlerDescriptor>
      */
     private function buildHandlerPool(ContainerBuilder $container, HandlerDescriptorFactory $descriptorFactory): array
     {
@@ -191,6 +228,55 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         }
 
         return $handlerPool;
+    }
+
+    /**
+     * Generate a handler service class and register it in the container.
+     *
+     * @return string The handler service ID
+     */
+    private function generateHandlerService(
+        HandlerDescriptor $handler,
+        HandlerClassGenerator $handlerClassGenerator,
+        string $outputDir,
+        string $wrappersFilePath,
+        ContainerBuilder $container,
+    ): string {
+        $baseName = 'Handler_' . preg_replace('/[^A-Za-z0-9_]/', '_', $handler->serviceId) . '_' . $handler->method->getName();
+
+        ['className' => $className, 'filePath' => $filePath] = $handlerClassGenerator->generate(
+            $baseName, $handler, $outputDir, $wrappersFilePath,
+        );
+
+        // Build per-handler locator references
+        $handlerLocator = new LocatorReferenceCollector();
+        $handlerLocator->addHandlerDependencies($handler);
+
+        $handlerServiceId = 'ultra.handler.' . $className;
+
+        $handlerDef = new Definition($className, [
+            new ServiceLocatorArgument($handlerLocator->toLocatorReferences()),
+        ]);
+        $handlerDef->setFile($filePath)->setPublic(false);
+
+        if ($handler->isAsync) {
+            // Register the real handler under a ".original" ID
+            $originalServiceId = $handlerServiceId . '.original';
+            $handlerDef->setPublic(true); // QueueWorker needs to fetch it
+            $container->setDefinition($originalServiceId, $handlerDef);
+
+            // Register an AsyncHandlerProxy under the handler service ID
+            $proxyDef = new Definition(AsyncHandlerProxy::class, [
+                new Reference(AsyncQueueInterface::class),
+                $originalServiceId,
+            ]);
+            $proxyDef->setPublic(false);
+            $container->setDefinition($handlerServiceId, $proxyDef);
+        } else {
+            $container->setDefinition($handlerServiceId, $handlerDef);
+        }
+
+        return $handlerServiceId;
     }
 
     /**
@@ -272,7 +358,6 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
     /**
      * Match handlers for SingleDispatch routers.
-     * Returns array<class-string, list<HandlerDescriptor>> where each list has exactly one element.
      *
      * @param list<HandlerDescriptor> $handlerPool
      *
@@ -281,7 +366,6 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     private function matchSingleDispatch(
         RouterDescriptor $descriptor,
         array $handlerPool,
-        LocatorReferenceCollector $locatorReferences,
     ): array {
         /** @var array<class-string, array{0: HandlerDescriptor}> $handlers */
         $handlers = [];
@@ -303,8 +387,8 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             }
 
             $handlers[$messageClass] = [$handler->withPriority($match->priority)];
-            $locatorReferences->addHandlerDependencies($handler);
         }
+
         return $handlers;
     }
 
@@ -318,10 +402,9 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     private function matchMultiDispatch(
         RouterDescriptor $descriptor,
         array $handlerPool,
-        LocatorReferenceCollector $locatorReferences,
         ContainerBuilder $container,
     ): array {
-        /** @var array<string, list<array{handler: HandlerDescriptor, method: \ReflectionMethod}>> $subscriptions */
+        /** @var array<string, list<HandlerDescriptor>> $subscriptions */
         $subscriptions = [];
 
         foreach ($handlerPool as $handler) {
@@ -332,7 +415,6 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
             $subscriptionType = $handler->messageClass;
             $subscriptions[$subscriptionType][] = $handler->withPriority($match->priority);
-            $locatorReferences->addHandlerDependencies($handler);
         }
 
         /** @var array<class-string, list<HandlerDescriptor>> $routes */
@@ -366,7 +448,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                     return $service;
                 }
 
-                return $left->method <=> $right->method;
+                return $left->method->getName() <=> $right->method->getName();
             });
 
             $routes[$messageClass] = $matchedHandlers;
@@ -378,7 +460,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     /**
      * Generate a shared PHP file containing all contextual wrapper classes.
      *
-     * Each compiled router file will require_once this file so the wrappers
+     * Each handler class file will require_once this file so the wrappers
      * are available when handler methods reference them.
      *
      * @param array<string, array{descriptor: RouterDescriptor, baseName: string, wrapperClass: string}> $interfaceDescriptors
@@ -443,6 +525,25 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         }
 
         return $mapping;
+    }
+
+    private function ensureAsyncQueue(ContainerBuilder $container): void
+    {
+        if (! $container->has(AsyncQueueInterface::class)) {
+            $container->setDefinition(
+                AsyncQueueInterface::class,
+                (new Definition(InMemoryQueue::class))->setPublic(true),
+            );
+        }
+
+        if (! $container->has(QueueWorker::class)) {
+            $workerDef = new Definition(QueueWorker::class, [
+                new Reference(AsyncQueueInterface::class),
+                new Reference('service_container'),
+            ]);
+            $workerDef->setPublic(true);
+            $container->setDefinition(QueueWorker::class, $workerDef);
+        }
     }
 
     private function ensureMessageContextPropagator(ContainerBuilder $container): void

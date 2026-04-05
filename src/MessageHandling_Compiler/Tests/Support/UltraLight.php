@@ -6,6 +6,8 @@ namespace Ultra\MessageHandling_Compiler\Tests\Support;
 
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Ultra\MessageHandling\Async\AsyncQueueInterface;
+use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageHandlingBundle;
@@ -27,6 +29,8 @@ final readonly class UltraLight
         private array $publicAliases = [
             'test.event_bus' => EventBusInterface::class,
             'test.mediator' => MediatorInterface::class,
+            'test.async_queue' => AsyncQueueInterface::class,
+            'test.queue_worker' => QueueWorker::class,
         ],
     ) {}
 
@@ -132,6 +136,22 @@ final readonly class UltraLight
         $eventBus = $this->boot()->get('test.event_bus');
 
         return $eventBus;
+    }
+
+    public function asyncQueue(): AsyncQueueInterface
+    {
+        /** @var AsyncQueueInterface $queue */
+        $queue = $this->boot()->get('test.async_queue');
+
+        return $queue;
+    }
+
+    public function queueWorker(): QueueWorker
+    {
+        /** @var QueueWorker $worker */
+        $worker = $this->boot()->get('test.queue_worker');
+
+        return $worker;
     }
 
     /**

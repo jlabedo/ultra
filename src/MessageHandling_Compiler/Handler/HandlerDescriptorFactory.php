@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Handler;
 
+use Ultra\MessageHandling\Attribute\Asynchronous;
+
 final class HandlerDescriptorFactory
 {
     public function __construct(private AdviceCollector $adviceCollector) {}
@@ -43,6 +45,7 @@ final class HandlerDescriptorFactory
     ): HandlerDescriptor {
         $depServiceIds = $this->resolveDepServiceIds($method, $skipFirstParameter);
         $advices = $this->adviceCollector->collect($method);
+        $isAsync = [] !== $method->getAttributes(Asynchronous::class);
 
         return new HandlerDescriptor(
             serviceId: $serviceId,
@@ -52,6 +55,7 @@ final class HandlerDescriptorFactory
             className: $className,
             returnsVoid: $this->returnsVoid($method),
             messageClass: $messageClass,
+            isAsync: $isAsync,
         );
     }
 
