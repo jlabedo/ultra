@@ -14,14 +14,17 @@ use Ultra\MessageHandling\Async\AsyncQueueInterface;
 use Ultra\MessageHandling\Async\InMemoryQueue;
 use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\Attribute\Advice;
+use Ultra\MessageHandling\Attribute\AdvicePhase;
 use Ultra\MessageHandling\Attribute\MultiDispatch;
 use Ultra\MessageHandling\Attribute\SingleDispatch;
+use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\MessageContextPropagator;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling\TagNames;
 use Ultra\MessageHandling_Compiler\Handler\AdviceCollector;
 use Ultra\MessageHandling_Compiler\Handler\AdviceDefinition;
 use Ultra\MessageHandling_Compiler\Handler\AdviceType;
+use Ultra\MessageHandling_Compiler\Handler\CompileTimeHandlerMatchContext;
 use Ultra\MessageHandling_Compiler\Handler\DispatchPlanRenderer;
 use Ultra\MessageHandling_Compiler\Handler\HandlerClassGenerator;
 use Ultra\MessageHandling_Compiler\Handler\HandlerDescriptor;
@@ -111,12 +114,12 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         $resolver = new ContextualRouterDependencyResolver($wrapperClassByServiceId);
 
         // ── Steps 3 + 5: Match handlers, generate per-handler services + router ──
-        $descriptorFactory = new HandlerDescriptorFactory(
-            new AdviceCollector($this->collectAdviceDefinitions($container))
-        );
+        $adviceCollector = new AdviceCollector($this->collectAdviceDefinitions($container));
+        $descriptorFactory = new HandlerDescriptorFactory($adviceCollector);
         $handlerPool = $this->buildHandlerPool($container, $descriptorFactory);
+        $expressionResolvers = [$resolver, new Handler\MessageContextDependencyResolver()];
         $handlerClassGenerator = new HandlerClassGenerator(
-            renderer: new DispatchPlanRenderer([$resolver]),
+            renderer: new DispatchPlanRenderer($expressionResolvers),
         );
         $routerGenerator = new MessageRouterGenerator();
 
@@ -156,7 +159,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
                     if (! isset($generatedHandlers[$handlerKey])) {
                         $handlerServiceId = $this->generateHandlerService(
-                            $handler, $handlerClassGenerator, $handlerOutputDir, $wrappersFilePath, $container,
+                            $handler, $handlerClassGenerator, $adviceCollector, $expressionResolvers, $handlerOutputDir, $wrappersFilePath, $container,
                         );
                         $generatedHandlers[$handlerKey] = $handlerServiceId;
                     }
@@ -235,9 +238,14 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
      *
      * @return string The handler service ID
      */
+    /**
+     * @param list<HandlerDependencyExpressionResolverInterface> $expressionResolvers
+     */
     private function generateHandlerService(
         HandlerDescriptor $handler,
         HandlerClassGenerator $handlerClassGenerator,
+        AdviceCollector $adviceCollector,
+        array $expressionResolvers,
         string $outputDir,
         string $wrappersFilePath,
         ContainerBuilder $container,
@@ -260,18 +268,63 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         $handlerDef->setFile($filePath)->setPublic(false);
 
         if ($handler->isAsync) {
-            // Register the real handler under a ".original" ID
+            // Register the real handler (execute-phase advices) under a ".original" ID
             $originalServiceId = $handlerServiceId . '.original';
             $handlerDef->setPublic(true); // QueueWorker needs to fetch it
             $container->setDefinition($originalServiceId, $handlerDef);
 
-            // Register an AsyncHandlerProxy under the handler service ID
+            // Register the proxy under a ".proxy" ID
+            $proxyServiceId = $handlerServiceId . '.proxy';
             $proxyDef = new Definition(AsyncHandlerProxy::class, [
                 new Reference(AsyncQueueInterface::class),
                 $originalServiceId,
             ]);
             $proxyDef->setPublic(false);
-            $container->setDefinition($handlerServiceId, $proxyDef);
+            $container->setDefinition($proxyServiceId, $proxyDef);
+
+            // Collect dispatch-phase advices for this handler
+            $dispatchContext = new CompileTimeHandlerMatchContext(
+                $handler->method,
+                $handler->messageClass,
+                true,
+                HandlerDescriptor::SELF_SERVICE_ID === $handler->serviceId,
+                AdvicePhase::Dispatch,
+            );
+            $dispatchAdvices = $adviceCollector->collect($dispatchContext);
+
+            if ([] !== $dispatchAdvices) {
+                // Generate an advised dispatch handler wrapping the proxy.
+                // The proxy's __invoke(object $message, MessageContext $context)
+                // takes the context as a dep — resolved to $c by MessageContextDependencyResolver.
+                $proxyMethod = new \ReflectionMethod(AsyncHandlerProxy::class, '__invoke');
+                $dispatchHandler = new HandlerDescriptor(
+                    serviceId: $proxyServiceId,
+                    method: $proxyMethod,
+                    depServiceIds: [MessageContext::class],
+                    advices: $dispatchAdvices,
+                    className: AsyncHandlerProxy::class,
+                    returnsVoid: true,
+                    messageClass: $handler->messageClass,
+                    isAsync: false,
+                );
+
+                $dispatchBaseName = $baseName . '_dispatch';
+                ['className' => $dispatchClassName, 'filePath' => $dispatchFilePath] = $handlerClassGenerator->generate(
+                    $dispatchBaseName, $dispatchHandler, $outputDir, $wrappersFilePath,
+                );
+
+                $dispatchLocator = new LocatorReferenceCollector($expressionResolvers);
+                $dispatchLocator->addHandlerDependencies($dispatchHandler);
+
+                $dispatchDef = new Definition($dispatchClassName, [
+                    new ServiceLocatorArgument($dispatchLocator->toLocatorReferences()),
+                ]);
+                $dispatchDef->setFile($dispatchFilePath)->setPublic(false);
+                $container->setDefinition($handlerServiceId, $dispatchDef);
+            } else {
+                // No dispatch advices: use the bare proxy directly
+                $container->setDefinition($handlerServiceId, $proxyDef);
+            }
         } else {
             $container->setDefinition($handlerServiceId, $handlerDef);
         }

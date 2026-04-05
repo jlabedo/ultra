@@ -43,7 +43,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->logged = &$logged;
                 }
 
-                #[Before(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function log(object $message, MessageContext $context): void
@@ -78,7 +78,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->calls = &$calls;
                 }
 
-                #[Around(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function execute(callable $proceed, object $message, MessageContext $context): mixed
@@ -115,7 +115,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->captured = &$captured;
                 }
 
-                #[AfterReturning(static function (\ReflectionMethod $method): ?MatchResult {
+                #[AfterReturning(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function inspect(object $message, MessageContext $context, mixed $returnValue): void
@@ -150,7 +150,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->caught = &$caught;
                 }
 
-                #[AfterThrowing(static function (\ReflectionMethod $method): ?MatchResult {
+                #[AfterThrowing(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function record(object $message, MessageContext $context, \Throwable $throwable): void
@@ -183,7 +183,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                 $this->calls = &$calls;
             }
 
-            #[After(static function (\ReflectionMethod $method): ?MatchResult {
+            #[After(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                 return MatchResult::apply();
             })]
             public function cleanup(object $message, MessageContext $context): void

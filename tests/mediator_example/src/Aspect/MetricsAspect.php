@@ -7,6 +7,7 @@ namespace Ultra\Mediator_Example\OrderProcessing\Aspect;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\Metrics;
 use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
+use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
@@ -17,7 +18,8 @@ final class MetricsAspect
     {
     }
 
-    #[AfterReturning(static function (\ReflectionMethod $method): ?MatchResult {
+    #[AfterReturning(static function (HandlerMatchContext $ctx): ?MatchResult {
+        $method = $ctx->method();
         return [] !== $method->getAttributes(Handles::class)
             ? MatchResult::apply()
             : null;
@@ -27,7 +29,8 @@ final class MetricsAspect
         $this->metrics->recordSuccess();
     }
 
-    #[AfterThrowing(static function (\ReflectionMethod $method): ?MatchResult {
+    #[AfterThrowing(static function (HandlerMatchContext $ctx): ?MatchResult {
+        $method = $ctx->method();
         return [] !== $method->getAttributes(Handles::class)
             ? MatchResult::apply()
             : null;

@@ -6,6 +6,7 @@ namespace Ultra\Mediator_Example\OrderProcessing\Aspect;
 
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\CleanupTracker;
 use Ultra\MessageHandling\Attribute\After;
+use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
@@ -16,7 +17,8 @@ final class CleanupAspect
     {
     }
 
-    #[After(static function (\ReflectionMethod $method): ?MatchResult {
+    #[After(static function (HandlerMatchContext $ctx): ?MatchResult {
+        $method = $ctx->method();
         return [] !== $method->getAttributes(Handles::class)
             ? MatchResult::apply()
             : null;

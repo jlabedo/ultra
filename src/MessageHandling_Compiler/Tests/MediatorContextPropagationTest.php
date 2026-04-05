@@ -81,7 +81,7 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
             ->withService(new class($contexts) {
                 public function __construct(private readonly RecordedMessageContexts $contexts) {}
 
-                #[Before(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function record(object $message, MessageContext $context): void
@@ -131,7 +131,7 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
             ->withService(new class($contexts) {
                 public function __construct(private readonly RecordedMessageContexts $contexts) {}
 
-                #[Before(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function record(object $message, MessageContext $context): void
@@ -185,7 +185,7 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
             ->withService(new class($contexts) {
                 public function __construct(private readonly RecordedMessageContexts $contexts) {}
 
-                #[Before(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function record(object $message, MessageContext $context): void

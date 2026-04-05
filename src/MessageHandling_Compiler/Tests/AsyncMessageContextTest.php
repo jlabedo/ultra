@@ -30,7 +30,7 @@ final class AsyncMessageContextTest extends MessageHandlingCompilerTestCase
                     $this->captured = &$captured;
                 }
 
-                #[Around(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function captureContext(callable $proceed, object $message, MessageContext $context): mixed

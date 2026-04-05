@@ -86,7 +86,7 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
                     $this->log = &$log;
                 }
 
-                #[Before(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function record(object $message, MessageContext $context): void

@@ -14,8 +14,12 @@ final class LocatorReferenceCollector
     private array $serviceIds = [];
 
     /**
-     * @param list<AdviceDescriptor> $advices
+     * @param list<HandlerDependencyExpressionResolverInterface> $expressionResolvers
      */
+    public function __construct(
+        private readonly array $expressionResolvers = [],
+    ) {}
+
     public function addHandlerDependencies(HandlerDescriptor $handler): void
     {
         if (HandlerDescriptor::SELF_SERVICE_ID !== $handler->serviceId) {
@@ -31,7 +35,7 @@ final class LocatorReferenceCollector
         }
 
         foreach ($handler->depServiceIds as $index => $depId) {
-            if (! isset($claimedIndices[$index])) {
+            if (! isset($claimedIndices[$index]) && ! $this->isExpressionResolved($depId)) {
                 $this->addService($depId);
             }
         }
@@ -53,5 +57,16 @@ final class LocatorReferenceCollector
     private function addService(string $serviceId): void
     {
         $this->serviceIds[$serviceId] = true;
+    }
+
+    private function isExpressionResolved(string $serviceId): bool
+    {
+        foreach ($this->expressionResolvers as $resolver) {
+            if (null !== $resolver->resolve($serviceId, '$c')) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

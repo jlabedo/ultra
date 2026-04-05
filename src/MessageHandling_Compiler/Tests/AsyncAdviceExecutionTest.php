@@ -39,7 +39,7 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->calls = &$calls;
                 }
 
-                #[Before(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function log(object $message, MessageContext $context): void
@@ -55,7 +55,7 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->calls = &$calls;
                 }
 
-                #[Around(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function wrap(callable $proceed, object $message, MessageContext $context): mixed

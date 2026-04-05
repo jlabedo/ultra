@@ -6,6 +6,7 @@ namespace Ultra\Mediator_Example\OrderProcessing\Aspect;
 
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\TransactionManager;
 use Ultra\MessageHandling\Attribute\Around;
+use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
@@ -16,7 +17,8 @@ final class TransactionAspect
     {
     }
 
-    #[Around(static function (\ReflectionMethod $method): ?MatchResult {
+    #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
+        $method = $ctx->method();
         return [] !== $method->getAttributes(Handles::class)
             ? MatchResult::apply()
             : null;

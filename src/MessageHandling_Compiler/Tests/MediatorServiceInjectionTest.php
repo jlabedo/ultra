@@ -156,7 +156,8 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     private readonly MediatorServiceInjectionEntityRepository $repository,
                 ) {}
 
-                #[Around(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                    $method = $ctx->method();
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
                         $type = $parameter->getType();
                         if (
@@ -200,7 +201,8 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                 }
             })
             ->withService(new class() {
-                #[Around(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                    $method = $ctx->method();
                     $indices = [];
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
                         $type = $parameter->getType();
@@ -259,7 +261,8 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     private readonly MediatorServiceInjectionRightRepository $rightRepository,
                 ) {}
 
-                #[Around(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                    $method = $ctx->method();
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
                         $type = $parameter->getType();
                         if (
@@ -272,7 +275,8 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
                     return null;
                 }, priority: 0)]
-                #[Around(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                    $method = $ctx->method();
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
                         $type = $parameter->getType();
                         if (
@@ -324,7 +328,8 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
             ->withService(new class($entityManager) {
                 public function __construct(private readonly MediatorServiceInjectionEntityManager $entityManager) {}
 
-                #[Around(static function (\ReflectionMethod $method): ?MatchResult {
+                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                    $method = $ctx->method();
                     $indices = [];
                     $entities = [];
 

@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Handler;
 
+use Ultra\MessageHandling\Attribute\AdvicePhase;
+use Ultra\MessageHandling\Attribute\HandlerMatchContext;
+
 final readonly class AdviceCollector
 {
     /**
@@ -15,13 +18,21 @@ final readonly class AdviceCollector
      * @return list<AdviceDescriptor>
      */
     public function collect(
-        \ReflectionMethod $handlerMethod,
+        HandlerMatchContext $context,
     ): array {
         $advices = [];
 
         foreach ($this->adviceDefinitions as $adviceDefinition) {
-            $result = ($adviceDefinition->matcher)($handlerMethod);
+            $result = ($adviceDefinition->matcher)($context);
             if (null === $result) {
+                continue;
+            }
+
+            // Phase filtering:
+            // - For sync handlers (Execute phase): both Dispatch and Execute phases match,
+            //   since dispatch and execute are unified for sync.
+            // - For async handlers: only the specific phase must be in the result's phases.
+            if (! $this->matchesPhase($context, $result->phases)) {
                 continue;
             }
 
@@ -47,5 +58,22 @@ final readonly class AdviceCollector
         }
 
         return $advices;
+    }
+
+    /**
+     * @param list<AdvicePhase> $resultPhases
+     */
+    private function matchesPhase(HandlerMatchContext $context, array $resultPhases): bool
+    {
+        $currentPhase = $context->phase();
+
+        if (! $context->isAsync()) {
+            // Sync handler: Execute is the only phase, and it represents both
+            // dispatch and execute. Accept advices for either phase.
+            return [] !== $resultPhases;
+        }
+
+        // Async handler: strict phase matching.
+        return in_array($currentPhase, $resultPhases, true);
     }
 }
