@@ -10,6 +10,221 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 final class PostgresMappedTableTest extends PostgresMappedTableTestCase
 {
+    public function testFlushDeletesRow(): void
+    {
+        $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => 'A1',
+                'version_b' => 'B1',
+            ]);
+
+            $table->withId('row-1')
+                ->delete();
+
+            $connection->beginTransaction();
+            try {
+                $table->flush();
+                $connection->commit();
+            } catch (\Throwable $exception) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+
+                throw $exception;
+            }
+
+            self::assertFalse($this->fetchRow($connection, $tableName, 'row-1'));
+        });
+    }
+
+    public function testFlushThrowsWhenDeleteExpectedColumnsDoNotMatch(): void
+    {
+        $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => 'A1',
+                'version_b' => 'B1',
+            ]);
+
+            $table->withId('row-1')
+                ->expectColumnValue('version_a', 'A2')
+                ->delete();
+
+            $connection->beginTransaction();
+
+            try {
+                $table->flush();
+                self::fail('Expected ConcurrencyException to be thrown.');
+            } catch (ConcurrencyException $exception) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+
+                self::assertNotFalse($this->fetchRow($connection, $tableName, 'row-1'));
+            }
+        });
+    }
+
+    public function testFlushMergesDeleteWithPriorBufferedUpdatesForTheSameRow(): void
+    {
+        $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => 'A1',
+                'version_b' => 'B1',
+            ]);
+
+            $table->withId('row-1')
+                ->expectColumnValue('version_a', 'A1')
+                ->setColumn('status', 'active');
+
+            $table->withId('row-1')
+                ->expectColumnValue('version_a', 'A1')
+                ->delete();
+
+            $connection->beginTransaction();
+            try {
+                $table->flush();
+                $connection->commit();
+            } catch (\Throwable $exception) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+
+                throw $exception;
+            }
+
+            self::assertFalse($this->fetchRow($connection, $tableName, 'row-1'));
+        });
+    }
+
+    public function testDeleteCancelsPendingInsertForTheSameRow(): void
+    {
+        $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
+            $table->withId('row-1')
+                ->insert()
+                ->setColumn('status', 'pending');
+
+            $table->withId('row-1')
+                ->delete();
+
+            $connection->beginTransaction();
+            try {
+                $table->flush();
+                $connection->commit();
+            } catch (\Throwable $exception) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+
+                throw $exception;
+            }
+
+            self::assertFalse($this->fetchRow($connection, $tableName, 'row-1'));
+        });
+    }
+
+    public function testInsertAfterDeleteReplacesRowAndKeepsItsInitialExpectation(): void
+    {
+        $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => 'A1',
+                'version_b' => 'B1',
+            ]);
+
+            $table->withId('row-1')
+                ->expectColumnValue('version_a', 'A1')
+                ->delete();
+
+            $table->withId('row-1')
+                ->insert()
+                ->setColumn('status', 'recreated')
+                ->setColumn('note', 'fresh')
+                ->setColumn('version_a', 'A2');
+
+            $connection->beginTransaction();
+            try {
+                $table->flush();
+                $connection->commit();
+            } catch (\Throwable $exception) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+
+                throw $exception;
+            }
+
+            self::assertSame([
+                'id' => 'row-1',
+                'status' => 'recreated',
+                'note' => 'fresh',
+                'version_a' => 'A2',
+                'version_b' => null,
+            ], $this->fetchRow($connection, $tableName, 'row-1'));
+        });
+    }
+
+    public function testInsertAfterDeleteFailsWhenTheInitialExpectationIsStale(): void
+    {
+        $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => 'A2',
+                'version_b' => 'B1',
+            ]);
+
+            $table->withId('row-1')
+                ->expectColumnValue('version_a', 'A1')
+                ->delete();
+
+            $table->withId('row-1')
+                ->insert()
+                ->setColumn('status', 'recreated');
+
+            $connection->beginTransaction();
+
+            try {
+                $table->flush();
+                self::fail('Expected ConcurrencyException to be thrown.');
+            } catch (ConcurrencyException $exception) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+
+                self::assertSame([
+                    'id' => 'row-1',
+                    'status' => 'pending',
+                    'note' => 'draft',
+                    'version_a' => 'A2',
+                    'version_b' => 'B1',
+                ], $this->fetchRow($connection, $tableName, 'row-1'));
+            }
+        });
+    }
+
+    public function testDeleteRejectsSubsequentColumnUpdates(): void
+    {
+        $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
+            $this->expectException(ConcurrencyException::class);
+
+            $table->withId('row-1')
+                ->delete()
+                ->setColumn('status', 'pending');
+        });
+    }
+
     public function testFlushInsertsRow(): void
     {
         $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {

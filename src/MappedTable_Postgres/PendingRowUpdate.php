@@ -18,28 +18,58 @@ final readonly class PendingRowUpdate
 
     public function insert(): self
     {
-        if ([] !== $this->update->expectedColumns) {
+        if (BufferedRowUpdate::EXPECTED_PRESENT === $this->update->expectedPresence) {
+            if (BufferedRowUpdate::MODE_DELETE === $this->update->mode) {
+                $this->update->mode = BufferedRowUpdate::MODE_REPLACE;
+
+                return $this;
+            }
+
             throw new ConcurrencyException(sprintf(
-                'Cannot mark table "%s", row "%s" for insert after expected column values were registered.',
+                'Cannot mark table "%s", row "%s" for insert because the row is already expected to exist.',
                 $this->tableName,
                 (string) $this->update->id,
             ));
         }
 
-        $this->update->insert = true;
+        $this->update->expectedPresence = BufferedRowUpdate::EXPECTED_ABSENT;
+        $this->update->mode = BufferedRowUpdate::MODE_INSERT;
+
+        return $this;
+    }
+
+    public function delete(): self
+    {
+        if (
+            BufferedRowUpdate::MODE_INSERT === $this->update->mode
+            && BufferedRowUpdate::EXPECTED_ABSENT === $this->update->expectedPresence
+        ) {
+            // Inserting and then deleting the same row before flush is a no-op.
+            $this->update->mode = null;
+            $this->update->expectedColumns = [];
+            $this->update->setColumns = [];
+
+            return $this;
+        }
+
+        $this->update->expectedPresence ??= BufferedRowUpdate::EXPECTED_PRESENT;
+        $this->update->mode = BufferedRowUpdate::MODE_DELETE;
+        $this->update->setColumns = [];
 
         return $this;
     }
 
     public function expectColumnValue(string $column, mixed $value): self
     {
-        if ($this->update->insert) {
+        if (BufferedRowUpdate::EXPECTED_ABSENT === $this->update->expectedPresence) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register expected column values for table "%s", row "%s" because it is already marked for insert.',
                 $this->tableName,
                 (string) $this->update->id,
             ));
         }
+
+        $this->update->expectedPresence = BufferedRowUpdate::EXPECTED_PRESENT;
 
         if (
             array_key_exists($column, $this->update->expectedColumns)
@@ -72,6 +102,16 @@ final readonly class PendingRowUpdate
 
     public function setColumn(string $column, mixed $value): self
     {
+        if (BufferedRowUpdate::MODE_DELETE === $this->update->mode) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot register column updates for table "%s", row "%s" because it is already marked for delete.',
+                $this->tableName,
+                (string) $this->update->id,
+            ));
+        }
+
+        $this->update->mode ??= BufferedRowUpdate::MODE_UPDATE;
+
         $this->update->setColumns[$column] = $value;
 
         return $this;

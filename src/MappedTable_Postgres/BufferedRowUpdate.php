@@ -11,7 +11,17 @@ namespace Ultra\MappedTable_Postgres;
  */
 final class BufferedRowUpdate
 {
-    public bool $insert = false;
+    public const EXPECTED_PRESENT = 'present';
+    public const EXPECTED_ABSENT = 'absent';
+
+    public const MODE_UPDATE = 'update';
+    public const MODE_INSERT = 'insert';
+    public const MODE_DELETE = 'delete';
+    public const MODE_REPLACE = 'replace';
+
+    public ?string $expectedPresence = null;
+
+    public ?string $mode = null;
 
     /** @var array<string, mixed> */
     public array $expectedColumns = [];
