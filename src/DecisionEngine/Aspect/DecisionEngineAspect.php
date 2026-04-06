@@ -17,6 +17,7 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\Around;
+use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
@@ -34,7 +35,8 @@ final class DecisionEngineAspect
         private readonly ?EventBusInterface $eventBus = null,
     ) {}
 
-    #[Around(static function (\ReflectionMethod $method): ?MatchResult {
+    #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
+        $method = $ctx->method();
         if ([] === $method->getAttributes(DecisionHandler::class)) {
             return null;
         }

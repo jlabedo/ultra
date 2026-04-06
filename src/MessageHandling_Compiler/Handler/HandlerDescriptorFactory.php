@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Handler;
 
+use Ultra\MessageHandling\Attribute\AdvicePhase;
+use Ultra\MessageHandling\Attribute\Asynchronous;
+
 final class HandlerDescriptorFactory
 {
     public function __construct(private AdviceCollector $adviceCollector) {}
@@ -42,7 +45,20 @@ final class HandlerDescriptorFactory
         bool $skipFirstParameter,
     ): HandlerDescriptor {
         $depServiceIds = $this->resolveDepServiceIds($method, $skipFirstParameter);
-        $advices = $this->adviceCollector->collect($method);
+        $isAsync = [] !== $method->getAttributes(Asynchronous::class);
+        $isSelfHandler = HandlerDescriptor::SELF_SERVICE_ID === $serviceId;
+
+        // For sync handlers, Execute is the only phase (dispatch = execute).
+        // For async handlers, we collect Execute-phase advices here;
+        // Dispatch-phase advices are collected separately in the compiler pass.
+        $context = new CompileTimeHandlerMatchContext(
+            $method,
+            $messageClass,
+            $isAsync,
+            $isSelfHandler,
+            AdvicePhase::Execute,
+        );
+        $advices = $this->adviceCollector->collect($context);
 
         return new HandlerDescriptor(
             serviceId: $serviceId,
@@ -52,6 +68,7 @@ final class HandlerDescriptorFactory
             className: $className,
             returnsVoid: $this->returnsVoid($method),
             messageClass: $messageClass,
+            isAsync: $isAsync,
         );
     }
 

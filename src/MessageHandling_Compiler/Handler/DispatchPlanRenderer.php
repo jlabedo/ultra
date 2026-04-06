@@ -19,6 +19,18 @@ final class DispatchPlanRenderer
 
     public function renderDispatchMethod(string $dispatchName, DispatchPlan $plan): string
     {
+        $body = $this->renderBody($plan);
+
+        return <<<PHP
+                private function {$dispatchName}(object \$message, \\Ultra\\MessageHandling\\MessageContext \$context): mixed
+                {
+            {$body}
+                }
+            PHP;
+    }
+
+    public function renderBody(DispatchPlan $plan): string
+    {
         $bodyLines = [
             $this->indent(2).'$m = $message;',
             $this->indent(2).'$c = $context;',
@@ -45,14 +57,7 @@ final class DispatchPlanRenderer
             ),
         ];
 
-        $body = implode("\n", $bodyLines);
-
-        return <<<PHP
-                private function {$dispatchName}(object \$message, \\Ultra\\MessageHandling\\MessageContext \$context): mixed
-                {
-            {$body}
-                }
-            PHP;
+        return implode("\n", $bodyLines);
     }
 
     /**

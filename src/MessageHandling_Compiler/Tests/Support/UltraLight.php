@@ -6,9 +6,16 @@ namespace Ultra\MessageHandling_Compiler\Tests\Support;
 
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Ultra\MessageHandling\Async\AsyncQueueInterface;
+use Ultra\MessageHandling\Async\QueueWorker;
+use Ultra\MessageHandling\Attribute\Advice;
+use Ultra\MessageHandling\Attribute\EventHandler;
+use Ultra\MessageHandling\Attribute\Handles;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageHandlingBundle;
+use Ultra\MessageHandling\TagNames;
 
 const ULTRA_LIGHT_BUILD_DIR = __DIR__ . '/../../../../var/message_handling_compiler_tests';
 
@@ -27,6 +34,8 @@ final readonly class UltraLight
         private array $publicAliases = [
             'test.event_bus' => EventBusInterface::class,
             'test.mediator' => MediatorInterface::class,
+            'test.async_queue' => AsyncQueueInterface::class,
+            'test.queue_worker' => QueueWorker::class,
         ],
     ) {}
 
@@ -89,10 +98,15 @@ final readonly class UltraLight
         $container->setParameter('kernel.build_dir', ULTRA_LIGHT_BUILD_DIR);
 
         foreach ($this->classesToDiscover as $class) {
-            $container->register($this->serviceIdForClass($class), $class)
-                ->setAutoconfigured(true)
+            $definition = $container->register($this->serviceIdForClass($class), $class)
                 ->setAutowired(false)
             ;
+
+            if (str_contains($class, "\0")) {
+                $this->addTagsFromAttributes($definition, $class);
+            } else {
+                $definition->setAutoconfigured(true);
+            }
         }
 
         foreach ($this->eventClasses as $eventClass) {
@@ -134,6 +148,22 @@ final readonly class UltraLight
         return $eventBus;
     }
 
+    public function asyncQueue(): AsyncQueueInterface
+    {
+        /** @var AsyncQueueInterface $queue */
+        $queue = $this->boot()->get('test.async_queue');
+
+        return $queue;
+    }
+
+    public function queueWorker(): QueueWorker
+    {
+        /** @var QueueWorker $worker */
+        $worker = $this->boot()->get('test.queue_worker');
+
+        return $worker;
+    }
+
     /**
      * @return array<string, object>
      */
@@ -154,15 +184,57 @@ final readonly class UltraLight
                 ));
             }
 
-            $container->register($primaryId, $service::class)
-                ->setAutoconfigured(true)
+            $definition = $container->register($primaryId, $service::class)
                 ->setSynthetic(true)
             ;
+
+            // Anonymous classes in PHP 8.5 have \0 in their names. Using
+            // setAutoconfigured(true) would cause Symfony to create
+            // ".instanceof." child definitions with the raw class name,
+            // which fails validation. Instead, manually detect attributes
+            // and add tags directly.
+            if (str_contains($service::class, "\0")) {
+                $this->addTagsFromAttributes($definition, $service::class);
+            } else {
+                $definition->setAutoconfigured(true);
+            }
 
             $primaryServices[$primaryId] = $service;
         }
 
         return $primaryServices;
+    }
+
+    /**
+     * Manually discover handler/aspect attributes on a class and add
+     * the corresponding DI tags, bypassing autoconfiguration.
+     *
+     * @param class-string $class
+     */
+    private function addTagsFromAttributes(
+        \Symfony\Component\DependencyInjection\Definition $definition,
+        string $class,
+    ): void {
+        $ref = new \ReflectionClass($class);
+        $hasAspect = false;
+
+        foreach ($ref->getMethods() as $method) {
+            if ([] !== $method->getAttributes(Handles::class)
+                || [] !== $method->getAttributes(EventHandler::class)
+            ) {
+                $definition->addTag(TagNames::HANDLER, ['method' => $method->getName()]);
+            }
+            if ([] !== $method->getAttributes(SelfHandler::class)) {
+                $definition->addResourceTag(TagNames::SELF_HANDLER, ['method' => $method->getName()]);
+            }
+            if (! $hasAspect && [] !== $method->getAttributes(Advice::class, \ReflectionAttribute::IS_INSTANCEOF)) {
+                $hasAspect = true;
+            }
+        }
+
+        if ($hasAspect) {
+            $definition->addTag(TagNames::ASPECT);
+        }
     }
 
     /**
