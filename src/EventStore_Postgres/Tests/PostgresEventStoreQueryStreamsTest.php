@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore_Postgres\Tests;
 
-use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
@@ -49,7 +49,7 @@ test('query-streams implementation returns db generated recorded_at and query ve
         expect($empty->queryVersion->version)->toBe(0);
 
         $store->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 101'],
                 domainIds: ['courseId' => 'course-123'],
@@ -75,12 +75,12 @@ test('query-streams implementation inserts batched events and query streams in o
         )->ofTypes('student.subscribed');
 
         $store->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'student.subscribed',
                 payload: ['slot' => 1],
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
             ),
-            new AppendableEvent(
+            new Event(
                 eventType: 'student.subscribed',
                 payload: ['slot' => 2],
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
@@ -91,8 +91,8 @@ test('query-streams implementation inserts batched events and query streams in o
         $pairResult = $store->load($pairQuery);
 
         expect($courseResult->events)->toHaveCount(2);
-        expect($courseResult->events[0]->eventId)->toBe(1);
-        expect($courseResult->events[1]->eventId)->toBe(2);
+        expect($courseResult->events[0]->payload['slot'])->toBe(1);
+        expect($courseResult->events[1]->payload['slot'])->toBe(2);
         expect($pairResult->events)->toHaveCount(1);
         expect($pairResult->events[0]->domainIds['studentId'])->toBe('student-2');
         expect($pairResult->queryVersion->version)->toBe(1);
@@ -102,7 +102,7 @@ test('query-streams implementation inserts batched events and query streams in o
 test('query-streams implementation stores fixed-width binary digests for query stream keys', function () {
     withPostgresQueryStreamsStore(function (EventStore $store, \Doctrine\DBAL\Connection $connection, string $prefix): void {
         $store->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'student.subscribed',
                 payload: ['slot' => 1],
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
@@ -128,7 +128,7 @@ test('query-streams implementation does not duplicate events for overlapping OR 
         );
 
         $store->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'student.subscribed',
                 payload: [],
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],

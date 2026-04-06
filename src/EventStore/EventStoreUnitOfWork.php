@@ -21,7 +21,7 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
     public function load(StreamQuery $query): LoadResult
     {
         $baseResult = $this->inner->load($query);
-        $pendingEvents = $this->pendingEventsMatching($query, $this->nextSyntheticEventId($baseResult->events));
+        $pendingEvents = $this->pendingEventsMatching($query);
 
         if ([] === $pendingEvents) {
             return $baseResult;
@@ -62,40 +62,19 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
     }
 
     /**
-     * @param list<StoredEvent> $persistedEvents
+     * @return list<Event>
      */
-    private function nextSyntheticEventId(array $persistedEvents): int
-    {
-        if ([] === $persistedEvents) {
-            return 1;
-        }
-
-        return $persistedEvents[array_key_last($persistedEvents)]->eventId + 1;
-    }
-
-    /**
-     * @return list<StoredEvent>
-     */
-    private function pendingEventsMatching(StreamQuery $query, int $nextEventId): array
+    private function pendingEventsMatching(StreamQuery $query): array
     {
         $pendingEvents = [];
 
         foreach ($this->bufferedAppends as $append) {
             foreach ($append->events as $event) {
-                $storedEvent = new StoredEvent(
-                    eventId: $nextEventId,
-                    eventType: $event->eventType,
-                    payload: $event->payload,
-                    domainIds: $event->domainIds,
-                );
-
-                ++$nextEventId;
-
-                if (! $query->matches($storedEvent)) {
+                if (! $query->matches($event)) {
                     continue;
                 }
 
-                $pendingEvents[] = $storedEvent;
+                $pendingEvents[] = $event;
             }
         }
 

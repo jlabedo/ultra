@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
@@ -49,7 +49,7 @@ if (isset($config['version'], $config['query'])) {
     );
     $expectedVersion = new QueryVersion((int) $config['version'], $query);
 }
-$event = new AppendableEvent(
+$event = new Event(
     eventType: $config['event']['eventType'],
     payload: $config['event']['payload'],
     domainIds: $config['event']['domainIds'],

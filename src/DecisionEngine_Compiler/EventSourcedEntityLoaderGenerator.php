@@ -49,13 +49,13 @@ final class EventSourcedEntityLoaderGenerator
                     return {$queryCode};
                 }
 
-                public function hydrate(array \$storedEvents, \\Ultra\\EventStore\\DomainIdentifier ...\$identifiers): {$entityClassName}
+                public function hydrate(array \$events, \\Ultra\\EventStore\\DomainIdentifier ...\$identifiers): {$entityClassName}
                 {
                     \$query = \$this->query(...\$identifiers);
                     \$state = new \\{$definition->entityClass}();
 
-                    foreach (\$storedEvents as \$storedEvent) {
-                        if (! \$query->matches(\$storedEvent)) {
+                    foreach (\$events as \$event) {
+                        if (! \$query->matches(\$event)) {
                             continue;
                         }
 
@@ -117,7 +117,7 @@ final class EventSourcedEntityLoaderGenerator
 
         foreach ($definition->dispatchEntries as $entry) {
             $cases[] = sprintf(
-                "                %s => \$state->%s(\$this->normalizer->fromScalar(\$storedEvent->payload, \\%s::class)),",
+                "                %s => \$state->%s(\$this->normalizer->fromScalar(\$event->payload, \\%s::class)),",
                 var_export($entry->eventName, true),
                 $entry->method,
                 ltrim($entry->eventClass, '\\'),
@@ -125,11 +125,11 @@ final class EventSourcedEntityLoaderGenerator
         }
 
         $defaultCase = sprintf(
-            '                default => throw new \Ultra\DecisionEngine\Exception\UnhandledEventException($storedEvent->eventType, \%s::class),',
+            '                default => throw new \Ultra\DecisionEngine\Exception\UnhandledEventException($event->eventType, \%s::class),',
             ltrim($definition->entityClass, '\\'),
         );
 
-        return "            match (\$storedEvent->eventType) {\n"
+        return "            match (\$event->eventType) {\n"
             .implode("\n", $cases)
             ."\n{$defaultCase}\n"
             .'            };';

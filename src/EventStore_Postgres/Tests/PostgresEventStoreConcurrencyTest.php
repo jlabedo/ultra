@@ -7,7 +7,7 @@ namespace Ultra\EventStore_Postgres\Tests;
 use Symfony\Component\Process\Exception\ProcessTimedOutException;
 use Symfony\Component\Process\InputStream;
 use Symfony\Component\Process\Process;
-use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\QueryVersion;
@@ -253,7 +253,7 @@ test('concurrent append from another process waits for the lock and then fails w
             new DomainIdentifier('studentId', 'student-1'),
         )->ofTypes('student.subscribed');
 
-        $event = new AppendableEvent(
+        $event = new Event(
             eventType: 'student.subscribed',
             payload: [],
             domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
@@ -348,12 +348,12 @@ test('concurrent append for the same course and another student waits and then s
             new DomainIdentifier('studentId', 'student-2'),
         )->ofTypes('student.subscribed');
 
-        $studentOneEvent = new AppendableEvent(
+        $studentOneEvent = new Event(
             eventType: 'student.subscribed',
             payload: [],
             domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
         );
-        $studentTwoEvent = new AppendableEvent(
+        $studentTwoEvent = new Event(
             eventType: 'student.subscribed',
             payload: [],
             domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
@@ -448,17 +448,17 @@ foreach (postgresTestSupportedImplementations() as $implementation) {
             )->ofTypes('student.subscribed');
             $combinedQuery = StreamQuery::anyOf($courseQuery, $studentQuery);
 
-            $courseCreatedEvent = new AppendableEvent(
+            $courseCreatedEvent = new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 101'],
                 domainIds: ['courseId' => 'course-123'],
             );
-            $studentSubscribedEvent = new AppendableEvent(
+            $studentSubscribedEvent = new Event(
                 eventType: 'student.subscribed',
                 payload: ['slot' => 2],
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
             );
-            $followUpEvent = new AppendableEvent(
+            $followUpEvent = new Event(
                 eventType: 'student.subscribed',
                 payload: ['slot' => 3],
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],

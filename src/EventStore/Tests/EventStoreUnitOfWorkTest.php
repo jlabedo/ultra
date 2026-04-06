@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\EventTopology;
@@ -25,7 +25,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
         )->ofTypes('course.created');
 
         $uow->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 101'],
                 domainIds: ['courseId' => 'course-123'],
@@ -50,7 +50,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
         $staleVersion = $uow->load($query)->queryVersion;
 
         $uow->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 101'],
                 domainIds: ['courseId' => 'course-123'],
@@ -60,7 +60,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
         $this->expectException(ConcurrencyException::class);
 
         $uow->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 102'],
                 domainIds: ['courseId' => 'course-123'],
@@ -78,7 +78,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
 
         $firstVersion = $uow->load($query)->queryVersion;
         $uow->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 101'],
                 domainIds: ['courseId' => 'course-123'],
@@ -87,7 +87,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
 
         $secondVersion = $uow->load($query)->queryVersion;
         $uow->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 102'],
                 domainIds: ['courseId' => 'course-123'],
@@ -112,7 +112,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
         )->ofTypes('course.created');
 
         $uow->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 101'],
                 domainIds: ['courseId' => 'course-123'],

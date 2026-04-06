@@ -11,8 +11,8 @@ use Ultra\DecisionEngine\Engine;
 use Ultra\DecisionEngine\EventSourcedEntityLoader;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\Events\EventRegistryInterface;
-use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
@@ -145,7 +145,7 @@ final class DecisionEngineAspect
             $emittedEvents = [];
         }
 
-        $this->eventStore->append($this->toAppendableEvents($emittedEvents), $loadResult->queryVersion);
+        $this->eventStore->append($this->toEvents($emittedEvents), $loadResult->queryVersion);
         if (null !== $this->eventBus) {
             foreach ($emittedEvents as $emittedEvent) {
                 $this->eventBus->publish($emittedEvent, $context);
@@ -158,17 +158,17 @@ final class DecisionEngineAspect
     /**
      * @param list<object> $events
      *
-     * @return list<AppendableEvent>
+     * @return list<Event>
      */
-    private function toAppendableEvents(array $events): array
+    private function toEvents(array $events): array
     {
         return array_map(
-            $this->toAppendableEvent(...),
+            $this->toEvent(...),
             $events,
         );
     }
 
-    private function toAppendableEvent(object $event): AppendableEvent
+    private function toEvent(object $event): Event
     {
         $eventType = $this->eventClassRegistry->getName($event::class);
         if (null === $eventType) {
@@ -185,7 +185,7 @@ final class DecisionEngineAspect
             throw new \LogicException(sprintf('Event %s normalized payload must be an array, got %s.', $event::class, get_debug_type($payload)));
         }
 
-        return new AppendableEvent(
+        return new Event(
             eventType: $eventType,
             payload: $payload,
             domainIds: $domainIds,

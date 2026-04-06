@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ultra\EventStore_Postgres\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\StreamQuery;
@@ -39,7 +39,7 @@ final class PostgresEventStoreUnitOfWorkTest extends TestCase
 
             $firstVersion = $uow->load($query)->queryVersion;
             $uow->append([
-                new AppendableEvent(
+                new Event(
                     eventType: 'course.created',
                     payload: ['name' => 'Math 101'],
                     domainIds: ['courseId' => 'course-123'],
@@ -48,7 +48,7 @@ final class PostgresEventStoreUnitOfWorkTest extends TestCase
 
             $secondVersion = $uow->load($query)->queryVersion;
             $uow->append([
-                new AppendableEvent(
+                new Event(
                     eventType: 'course.created',
                     payload: ['name' => 'Math 102'],
                     domainIds: ['courseId' => 'course-123'],

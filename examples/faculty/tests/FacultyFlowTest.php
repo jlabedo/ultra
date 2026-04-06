@@ -17,7 +17,7 @@ use App\Faculty\Write\EnrollStudent\EnrollStudentInFacultyCommand;
 use App\Faculty\Write\SubscribeStudentToCourse\SubscribeStudentToCourseCommand;
 use App\Faculty\Write\UnsubscribeStudentFromCourse\UnsubscribeStudentFromCourseCommand;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\MessageHandling\MediatorInterface;
 
@@ -165,7 +165,7 @@ final class FacultyFlowTest extends FacultyKernelTestCase
         $mediator = static::getContainer()->get(MediatorInterface::class);
 
         $eventStore->append([
-            new AppendableEvent(
+            new Event(
                 EventTypes::COURSE_CREATED,
                 [
                     'facultyId' => FacultyIds::DEFAULT,
@@ -178,7 +178,7 @@ final class FacultyFlowTest extends FacultyKernelTestCase
                     'course' => 'course-1',
                 ],
             ),
-            new AppendableEvent(
+            new Event(
                 EventTypes::STUDENT_ENROLLED_IN_FACULTY,
                 [
                     'facultyId' => FacultyIds::DEFAULT,
@@ -191,7 +191,7 @@ final class FacultyFlowTest extends FacultyKernelTestCase
                     'student' => 'student-1',
                 ],
             ),
-            new AppendableEvent(
+            new Event(
                 EventTypes::STUDENT_SUBSCRIBED_TO_COURSE,
                 [
                     'facultyId' => FacultyIds::DEFAULT,
@@ -204,7 +204,7 @@ final class FacultyFlowTest extends FacultyKernelTestCase
                     'student' => 'student-1',
                 ],
             ),
-            new AppendableEvent(
+            new Event(
                 EventTypes::STUDENT_ENROLLED_IN_FACULTY,
                 [
                     'facultyId' => FacultyIds::DEFAULT,

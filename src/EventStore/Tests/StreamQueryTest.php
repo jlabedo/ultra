@@ -5,13 +5,12 @@ declare(strict_types=1);
 namespace Ultra\EventStore\Tests;
 
 use Ultra\EventStore\DomainIdentifier;
-use Ultra\EventStore\StoredEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\StreamQuery;
 
-function storedEvent(array $domainIds, string $eventType = 'test.event'): StoredEvent
+function storedEvent(array $domainIds, string $eventType = 'test.event'): Event
 {
-    return new StoredEvent(
-        eventId: 1,
+    return new Event(
         eventType: $eventType,
         payload: [],
         domainIds: $domainIds,

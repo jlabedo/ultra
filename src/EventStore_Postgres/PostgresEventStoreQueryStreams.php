@@ -7,13 +7,12 @@ namespace Ultra\EventStore_Postgres;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
-use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\CanonicalQueryKeyFactory;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
-use Ultra\EventStore\StoredEvent;
 use Ultra\EventStore\StreamQuery;
 
 /**
@@ -82,7 +81,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
             if ([] !== $eventsWithKeys) {
                 $eventIds = $this->insertEvents(array_map(
-                    static fn (array $eventWithKeys): AppendableEvent => $eventWithKeys[0],
+                    static fn (array $eventWithKeys): Event => $eventWithKeys[0],
                     $eventsWithKeys,
                 ));
 
@@ -133,7 +132,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
     /**
      * @param list<string> $queryStreamKeys
      *
-     * @return list<StoredEvent>
+     * @return list<Event>
      */
     private function fetchEvents(array $queryStreamKeys): array
     {
@@ -156,8 +155,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
         $events = [];
         foreach ($rows as $row) {
-            $events[] = new StoredEvent(
-                eventId: (int) $row['event_id'],
+            $events[] = new Event(
                 eventType: $row['event_type'],
                 payload: json_decode($row['payload'], true, 512, JSON_THROW_ON_ERROR),
                 domainIds: json_decode($row['domain_ids'], true, 512, JSON_THROW_ON_ERROR),
@@ -169,7 +167,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
     }
 
     /**
-     * @param list<AppendableEvent> $events
+     * @param list<Event> $events
      *
      * @return list<int>
      */

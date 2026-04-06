@@ -26,7 +26,7 @@ Event-sourcing decision pipeline built on the mediator. Commands declare their c
 
 - **Violation** – `code` + `message` for invariant failures.
 - **InvariantViolation** – Exception carrying `list<Violation>` (thrown by commands when `check()` fails).
-- **EventSourcedEntityLoader** – Pre-compiled loader that builds the typed query for an entity and rehydrates it from a shared batch of stored events.
+- **EventSourcedEntityLoader** – Pre-compiled loader that builds the typed query for an entity and rehydrates it from a shared batch of loaded events.
 
 ## Usage
 
@@ -60,7 +60,7 @@ final class CreateCourseCommand
 2. Load all needed events in a single query and hydrate each state by replaying its `#[EventSourcingHandler]` methods over the shared batch.
 3. Always pass a state object, even when the stream has no events yet.
 4. Resolve service parameters from the container.
-5. Call the decision handler and route returned events to `AppendableEvent`.
+5. Call the decision handler and route returned events to `Event`.
 6. Append with an expected version (optimistic concurrency).
 
 ### Read-only validation

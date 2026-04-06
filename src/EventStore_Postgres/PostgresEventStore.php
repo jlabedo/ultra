@@ -5,14 +5,13 @@ declare(strict_types=1);
 namespace Ultra\EventStore_Postgres;
 
 use Doctrine\DBAL\Connection;
-use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\CanonicalQuery;
 use Ultra\EventStore\CanonicalQueryKeyFactory;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
-use Ultra\EventStore\StoredEvent;
 use Ultra\EventStore\StreamQuery;
 
 /**
@@ -126,7 +125,7 @@ final class PostgresEventStore implements EventStore
     }
 
     /**
-     * @return list<StoredEvent>
+     * @return list<Event>
      */
     private function fetchEvents(CanonicalQuery $canonicalQuery): array
     {
@@ -146,8 +145,7 @@ final class PostgresEventStore implements EventStore
 
         $events = [];
         foreach ($rows as $row) {
-            $events[] = new StoredEvent(
-                eventId: (int) $row['event_id'],
+            $events[] = new Event(
                 eventType: $row['event_type'],
                 payload: json_decode($row['payload'], true, 512, JSON_THROW_ON_ERROR),
                 domainIds: json_decode($row['domain_ids'], true, 512, JSON_THROW_ON_ERROR),
@@ -159,7 +157,7 @@ final class PostgresEventStore implements EventStore
     }
 
     /**
-     * @param list<AppendableEvent> $events
+     * @param list<Event> $events
      */
     private function insertEvents(array $events): void
     {

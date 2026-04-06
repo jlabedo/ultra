@@ -17,8 +17,8 @@ use Ultra\DecisionEngine\Exception\UnknownEventSourcedEntityException;
 use Ultra\DecisionEngine_Compiler\EntityLoaderCompilerPass;
 use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\Events\Attribute\Event;
-use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\EventTopologyProvider;
@@ -207,7 +207,7 @@ function createEngineContainer(string $suffix, array $definitions = []): Contain
     return $container;
 }
 
-function appendEvent(ContainerBuilder $container, AppendableEvent ...$events): void
+function appendEvent(ContainerBuilder $container, StoredEvent ...$events): void
 {
     $container->get(InMemoryEventStore::class)->append($events);
 }
@@ -218,11 +218,11 @@ test('compiler pass generates loaders and engine hydrates OR-matched entities', 
 
     appendEvent(
         $container,
-        new AppendableEvent('entity.course_created', ['courseId' => 'course-1', 'capacity' => 10], ['course' => 'course-1']),
-        new AppendableEvent('entity.student_enrolled', ['studentId' => 'student-1'], ['student' => 'student-1']),
-        new AppendableEvent('entity.student_subscribed', ['courseId' => 'course-1', 'studentId' => 'student-1'], ['course' => 'course-1', 'student' => 'student-1']),
-        new AppendableEvent('entity.course_capacity_changed', ['courseId' => 'course-1', 'capacity' => 25], ['course' => 'course-1']),
-        new AppendableEvent('entity.student_unsubscribed', ['courseId' => 'course-1', 'studentId' => 'student-1'], ['course' => 'course-1', 'student' => 'student-1']),
+        new StoredEvent('entity.course_created', ['courseId' => 'course-1', 'capacity' => 10], ['course' => 'course-1']),
+        new StoredEvent('entity.student_enrolled', ['studentId' => 'student-1'], ['student' => 'student-1']),
+        new StoredEvent('entity.student_subscribed', ['courseId' => 'course-1', 'studentId' => 'student-1'], ['course' => 'course-1', 'student' => 'student-1']),
+        new StoredEvent('entity.course_capacity_changed', ['courseId' => 'course-1', 'capacity' => 25], ['course' => 'course-1']),
+        new StoredEvent('entity.student_unsubscribed', ['courseId' => 'course-1', 'studentId' => 'student-1'], ['course' => 'course-1', 'student' => 'student-1']),
     );
 
     $engine = $container->get(Engine::class);
@@ -255,8 +255,8 @@ test('compiler pass generates AND criteria groups for multi-tag match clauses', 
 
     appendEvent(
         $container,
-        new AppendableEvent('entity.pair_confirmed', ['courseId' => 'course-1', 'studentId' => 'student-1', 'status' => 'matched'], ['course' => 'course-1', 'student' => 'student-1']),
-        new AppendableEvent('entity.pair_confirmed', ['courseId' => 'course-1', 'studentId' => 'student-2', 'status' => 'other-student'], ['course' => 'course-1', 'student' => 'student-2']),
+        new StoredEvent('entity.pair_confirmed', ['courseId' => 'course-1', 'studentId' => 'student-1', 'status' => 'matched'], ['course' => 'course-1', 'student' => 'student-1']),
+        new StoredEvent('entity.pair_confirmed', ['courseId' => 'course-1', 'studentId' => 'student-2', 'status' => 'other-student'], ['course' => 'course-1', 'student' => 'student-2']),
     );
 
     $engine = $container->get(Engine::class);
@@ -269,8 +269,8 @@ test('compiler pass generates AND criteria groups for multi-tag match clauses', 
     expect($generatedLoaderFiles)->not->toBeFalse();
     expect($generatedLoaderFiles)->toHaveCount(1);
     expect(file_get_contents($generatedLoaderFiles[0]))
-        ->toContain("'entity.pair_confirmed' => \$state->onPairConfirmed(\$this->normalizer->fromScalar(\$storedEvent->payload, \\Ultra\\DecisionEngine_Compiler\\Tests\\EntityPairConfirmed::class))")
-        ->not->toContain('(function () use ($state, $storedEvent): void {');
+        ->toContain("'entity.pair_confirmed' => \$state->onPairConfirmed(\$this->normalizer->fromScalar(\$event->payload, \\Ultra\\DecisionEngine_Compiler\\Tests\\EntityPairConfirmed::class))")
+        ->not->toContain('(function () use ($state, $event): void {');
 
     expect($state)->toBeInstanceOf(ExactSubscriptionState::class)
         ->and($state->statuses)->toBe(['matched']);

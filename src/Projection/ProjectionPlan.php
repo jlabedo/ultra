@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\Projection;
 
-use Ultra\EventStore\StoredEvent;
 use Ultra\Projection\Attribute\PartitionInitializer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;

@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests;
 
-use Ultra\EventStore\StoredEvent;
 use Ultra\Projection\Attribute\PartitionInitializer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\ProjectionPlan;
+use Ultra\Projection\StoredEvent;
 
 #[Projection('test_projection')]
 final class TestProjection

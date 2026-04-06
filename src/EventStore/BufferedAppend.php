@@ -10,7 +10,7 @@ namespace Ultra\EventStore;
 final readonly class BufferedAppend
 {
     /**
-     * @param list<AppendableEvent> $events
+     * @param list<Event> $events
      */
     public function __construct(
         public array $events,

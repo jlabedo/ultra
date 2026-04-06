@@ -98,7 +98,7 @@ readonly class StreamQuery
     /**
      * Return true if the stored event matches this query (domain identifiers and optional event type filter).
      */
-    public function matches(StoredEvent $event): bool
+    public function matches(Event $event): bool
     {
         if ($this->isEmpty()) {
             return false;

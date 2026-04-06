@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Projection_Postgres\Tests;
 
-use Ultra\EventStore\StoredEvent;
+use Ultra\Projection\StoredEvent;
 use Ultra\Projection_Postgres\PartitionStrategy;
 
 test('domain-id partition strategy produces a stable composite key', function () {

@@ -27,10 +27,10 @@ interface EventStore
      * Append events to the store.
      *
      * If `expectedVersion` is provided, the store validates that replaying that exact query still yields the
-     * same version. If not, a `ConcurrencyException` is thrown and nothing should be considered
-     * committed by the caller.
+     * same version. If not, a `ConcurrencyException` is thrown and nothing should be considered committed by
+     * the caller.
      *
-     * @param list<AppendableEvent> $events
+     * @param list<Event> $events
      *
      * @throws ConcurrencyException when expectedVersion is provided and the query snapshot has changed
      */
