@@ -38,6 +38,34 @@ final readonly class PendingRowUpdate
         return $this;
     }
 
+    public function upsert(): self
+    {
+        if (BufferedRowUpdate::EXPECTED_PRESENT === $this->update->expectedPresence) {
+            if (BufferedRowUpdate::MODE_DELETE === $this->update->mode) {
+                $this->update->mode = BufferedRowUpdate::MODE_REPLACE;
+
+                return $this;
+            }
+
+            $this->update->mode ??= BufferedRowUpdate::MODE_UPDATE;
+
+            return $this;
+        }
+
+        if (BufferedRowUpdate::EXPECTED_ABSENT === $this->update->expectedPresence) {
+            $this->update->mode ??= BufferedRowUpdate::MODE_INSERT;
+            if (BufferedRowUpdate::MODE_UPDATE === $this->update->mode) {
+                $this->update->mode = BufferedRowUpdate::MODE_INSERT;
+            }
+
+            return $this;
+        }
+
+        $this->update->mode = BufferedRowUpdate::MODE_UPSERT;
+
+        return $this;
+    }
+
     public function delete(): self
     {
         if (
@@ -70,6 +98,9 @@ final readonly class PendingRowUpdate
         }
 
         $this->update->expectedPresence = BufferedRowUpdate::EXPECTED_PRESENT;
+        if (BufferedRowUpdate::MODE_UPSERT === $this->update->mode) {
+            $this->update->mode = BufferedRowUpdate::MODE_UPDATE;
+        }
 
         if (
             array_key_exists($column, $this->update->expectedColumns)

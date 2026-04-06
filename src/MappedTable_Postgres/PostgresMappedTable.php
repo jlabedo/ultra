@@ -52,6 +52,10 @@ final class PostgresMappedTable implements UnitOfWork
                     $this->flushReplace($update);
                     break;
 
+                case BufferedRowUpdate::MODE_UPSERT:
+                    $this->flushUpsert($update);
+                    break;
+
                 case BufferedRowUpdate::MODE_UPDATE:
                     if ([] !== $update->setColumns) {
                         $this->flushUpdate($update);
@@ -142,6 +146,55 @@ final class PostgresMappedTable implements UnitOfWork
     {
         $this->flushDelete($update);
         $this->flushInsert($update);
+    }
+
+    private function flushUpsert(BufferedRowUpdate $update): void
+    {
+        $columns = [$this->idColumn];
+        $params = [$update->id];
+
+        foreach ($update->setColumns as $column => $value) {
+            $columns[] = $column;
+            $params[] = $value;
+        }
+
+        $quotedColumns = array_map(
+            $this->connection->quoteSingleIdentifier(...),
+            $columns,
+        );
+
+        if ([] === $update->setColumns) {
+            $this->connection->executeStatement(
+                sprintf(
+                    'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
+                    $this->connection->quoteSingleIdentifier($this->tableName),
+                    implode(', ', $quotedColumns),
+                    implode(', ', array_fill(0, count($columns), '?')),
+                    $this->connection->quoteSingleIdentifier($this->idColumn),
+                ),
+                $params,
+            );
+
+            return;
+        }
+
+        $assignments = [];
+        foreach (array_slice($columns, 1) as $column) {
+            $quotedColumn = $this->connection->quoteSingleIdentifier($column);
+            $assignments[] = sprintf('%1$s = EXCLUDED.%1$s', $quotedColumn);
+        }
+
+        $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                implode(', ', $quotedColumns),
+                implode(', ', array_fill(0, count($columns), '?')),
+                $this->connection->quoteSingleIdentifier($this->idColumn),
+                implode(', ', $assignments),
+            ),
+            $params,
+        );
     }
 
     private function flushUpdate(BufferedRowUpdate $update): void

@@ -18,6 +18,7 @@ final class BufferedRowUpdate
     public const MODE_INSERT = 'insert';
     public const MODE_DELETE = 'delete';
     public const MODE_REPLACE = 'replace';
+    public const MODE_UPSERT = 'upsert';
 
     public ?string $expectedPresence = null;
 

@@ -225,6 +225,147 @@ final class PostgresMappedTableTest extends PostgresMappedTableTestCase
         });
     }
 
+    public function testFlushUpsertsRowByInsertingWhenAbsent(): void
+    {
+        $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
+            $table->withId('row-1')
+                ->upsert()
+                ->setColumn('status', 'pending')
+                ->setColumn('note', 'draft')
+                ->setColumn('version_a', 'A1');
+
+            $connection->beginTransaction();
+            try {
+                $table->flush();
+                $connection->commit();
+            } catch (\Throwable $exception) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+
+                throw $exception;
+            }
+
+            self::assertSame([
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => 'A1',
+                'version_b' => null,
+            ], $this->fetchRow($connection, $tableName, 'row-1'));
+        });
+    }
+
+    public function testFlushUpsertsRowByUpdatingWhenPresent(): void
+    {
+        $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-1',
+                'status' => 'existing',
+                'note' => 'current',
+                'version_a' => 'A1',
+                'version_b' => 'B1',
+            ]);
+
+            $table->withId('row-1')
+                ->upsert()
+                ->setColumn('status', 'updated')
+                ->setColumn('note', 'fresh');
+
+            $connection->beginTransaction();
+            try {
+                $table->flush();
+                $connection->commit();
+            } catch (\Throwable $exception) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+
+                throw $exception;
+            }
+
+            self::assertSame([
+                'id' => 'row-1',
+                'status' => 'updated',
+                'note' => 'fresh',
+                'version_a' => 'A1',
+                'version_b' => 'B1',
+            ], $this->fetchRow($connection, $tableName, 'row-1'));
+        });
+    }
+
+    public function testUpsertWorksWhenCalledAfterSetColumn(): void
+    {
+        $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
+            $table->withId('row-1')
+                ->setColumn('status', 'pending')
+                ->setColumn('note', 'draft')
+                ->upsert();
+
+            $connection->beginTransaction();
+            try {
+                $table->flush();
+                $connection->commit();
+            } catch (\Throwable $exception) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+
+                throw $exception;
+            }
+
+            self::assertSame([
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => null,
+                'version_b' => null,
+            ], $this->fetchRow($connection, $tableName, 'row-1'));
+        });
+    }
+
+    public function testUpsertAfterDeleteReplacesRowAndKeepsItsInitialExpectation(): void
+    {
+        $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => 'A1',
+                'version_b' => 'B1',
+            ]);
+
+            $table->withId('row-1')
+                ->expectColumnValue('version_a', 'A1')
+                ->delete();
+
+            $table->withId('row-1')
+                ->upsert()
+                ->setColumn('status', 'upserted')
+                ->setColumn('version_a', 'A2');
+
+            $connection->beginTransaction();
+            try {
+                $table->flush();
+                $connection->commit();
+            } catch (\Throwable $exception) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+
+                throw $exception;
+            }
+
+            self::assertSame([
+                'id' => 'row-1',
+                'status' => 'upserted',
+                'note' => null,
+                'version_a' => 'A2',
+                'version_b' => null,
+            ], $this->fetchRow($connection, $tableName, 'row-1'));
+        });
+    }
+
     public function testFlushInsertsRow(): void
     {
         $this->withMappedTable(function (Connection $connection, PostgresMappedTable $table, string $tableName): void {
