@@ -37,7 +37,8 @@
         "ultra/mapper": "self.version",
         "ultra/mapper-compiler": "self.version",
         "ultra/message-handling": "self.version",
-        "ultra/message-handling-compiler": "self.version"
+        "ultra/message-handling-compiler": "self.version",
+        "ultra/unit-of-work": "self.version"
     },
     "minimum-stability": "dev",
     "prefer-stable": true,
