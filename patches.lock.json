@@ -1,0 +1,17 @@
+{
+    "_hash": "58d62dc13238951668622791366f956c32d432db2bb0fdf6e331ac5f6a6034af",
+    "patches": {
+        "symfony/dependency-injection": [
+            {
+                "package": "symfony/dependency-injection",
+                "description": "Sanitize null bytes in instanceof parent service ids",
+                "url": "patches/symfony-dependency-injection-instanceof-parent-id.patch",
+                "sha256": "c0da34d91c224a8a53bcbf473687663c8179730e1f1adfea76797c1f08728ca8",
+                "depth": 1,
+                "extra": {
+                    "provenance": "patches-file:patches.json"
+                }
+            }
+        ]
+    }
+}
