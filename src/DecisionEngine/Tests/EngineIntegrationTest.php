@@ -351,7 +351,7 @@ test('concurrency: appending with stale version throws', function () {
         ],
         domainIds: ['course' => 'math-101'],
     );
-    $store->append([$extraEvent], null);
+    $store->append([$extraEvent]);
 
     $anotherEvent = new Event(
         eventType: 'course.created',

@@ -54,6 +54,7 @@ $event = new Event(
     payload: $config['event']['payload'],
     domainIds: $config['event']['domainIds'],
 );
+$expectedVersions = null === $expectedVersion ? [] : [$expectedVersion];
 
 try {
     if (isset($config['lockTimeoutMs'])) {
@@ -62,7 +63,7 @@ try {
 
     if ('hold_then_commit' === $config['mode']) {
         $connection->beginTransaction();
-        $store->append([$event], $expectedVersion);
+        $store->append([$event], ...$expectedVersions);
         emitMessage([
             'type' => 'event',
             'name' => 'ready',
@@ -87,7 +88,7 @@ try {
         'name' => 'attempting',
     ]);
 
-    $store->append([$event], $expectedVersion);
+    $store->append([$event], ...$expectedVersions);
     emitMessage([
         'type' => 'result',
         'status' => 'ok',

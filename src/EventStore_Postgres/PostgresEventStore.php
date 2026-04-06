@@ -51,9 +51,9 @@ final class PostgresEventStore implements EventStore
     }
 
     /**
-     * Append events and, when requested, verify the expected query under transaction-scoped advisory locks.
+     * Append events and, when requested, verify the expected queries under transaction-scoped advisory locks.
      */
-    public function append(array $events, ?QueryVersion $expectedVersion = null): void
+    public function append(array $events, QueryVersion ...$expectedVersions): void
     {
         $ownsTransaction = ! $this->connection->isTransactionActive();
         if ($ownsTransaction) {
@@ -61,11 +61,14 @@ final class PostgresEventStore implements EventStore
         }
 
         try {
+            $expectedQueries = [];
             $readKeys = [];
-            $expectedCanonicalQuery = null;
-            if (null !== $expectedVersion) {
+            foreach ($expectedVersions as $expectedVersion) {
                 $expectedCanonicalQuery = $this->queryKeyFactory->resolveQuery($expectedVersion->query);
-                $readKeys = $expectedCanonicalQuery->allKeys();
+                $expectedQueries[] = [$expectedVersion, $expectedCanonicalQuery];
+                foreach ($expectedCanonicalQuery->allKeys() as $readKey) {
+                    $readKeys[$readKey] = true;
+                }
             }
 
             $eventsToInsert = [];
@@ -78,9 +81,9 @@ final class PostgresEventStore implements EventStore
                 }
             }
 
-            $this->acquireAdvisoryLocks($readKeys, array_keys($writeKeys));
+            $this->acquireAdvisoryLocks(array_keys($readKeys), array_keys($writeKeys));
 
-            if (null !== $expectedVersion) {
+            foreach ($expectedQueries as [$expectedVersion, $expectedCanonicalQuery]) {
                 $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedCanonicalQuery), $expectedVersion->query);
                 $currentVersion->assertMatches($expectedVersion);
             }

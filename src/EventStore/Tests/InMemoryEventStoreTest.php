@@ -97,6 +97,31 @@ test('append with stale singleton query version throws concurrency exception', f
     ], $staleVersion);
 })->throws(ConcurrencyException::class);
 
+test('append validates all expected query versions', function () {
+    $store = store();
+    $courseQuery = StreamQuery::forStream(
+        new DomainIdentifier('courseId', 'course-123'),
+    )->ofTypes('student.subscribed');
+    $pairQuery = StreamQuery::forStream(
+        new DomainIdentifier('courseId', 'course-123'),
+        new DomainIdentifier('studentId', 'student-1'),
+    )->ofTypes('student.subscribed');
+
+    $courseVersion = $store->load($courseQuery)->queryVersion;
+    $pairVersion = $store->load($pairQuery)->queryVersion;
+
+    $store->append([
+        new Event(
+            eventType: 'student.subscribed',
+            payload: [],
+            domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
+        ),
+    ], $courseVersion, $pairVersion);
+
+    expect($store->load($courseQuery)->events)->toHaveCount(1);
+    expect($store->load($pairQuery)->events)->toHaveCount(1);
+});
+
 test('canonical pair query does not conflict for same course and different student', function () {
     $store = store();
     $query = StreamQuery::forStream(

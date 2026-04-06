@@ -21,7 +21,7 @@ use Ultra\EventStore\StreamQuery;
  * Events are stored once in the `events` table, while `event_query_streams` materializes membership in the
  * canonical singleton/pair keys used by supported queries. Those query-stream keys are persisted as fixed-width
  * binary SHA-256 digests to keep the table and index entries compact. `load()` is lock-free. `append()`
- * acquires transaction-scoped advisory locks, replays the expected query to compare its version, and
+ * acquires transaction-scoped advisory locks, replays each expected query to compare its version, and
  * only then inserts new events.
  */
 final class PostgresEventStoreQueryStreams implements EventStore
@@ -49,7 +49,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
         return new LoadResult($events, new QueryVersion(count($events), $query));
     }
 
-    public function append(array $events, ?QueryVersion $expectedVersion = null): void
+    public function append(array $events, QueryVersion ...$expectedVersions): void
     {
         $ownsTransaction = ! $this->connection->isTransactionActive();
         if ($ownsTransaction) {
@@ -58,8 +58,13 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
         try {
             $readKeys = [];
-            if (null !== $expectedVersion) {
-                $readKeys = $this->queryKeyFactory->resolveQuery($expectedVersion->query)->allKeys();
+            $expectedQueries = [];
+            foreach ($expectedVersions as $expectedVersion) {
+                $expectedReadKeys = $this->queryKeyFactory->resolveQuery($expectedVersion->query)->allKeys();
+                $expectedQueries[] = [$expectedVersion, $expectedReadKeys];
+                foreach ($expectedReadKeys as $readKey) {
+                    $readKeys[$readKey] = true;
+                }
             }
 
             $eventsWithKeys = [];
@@ -72,10 +77,10 @@ final class PostgresEventStoreQueryStreams implements EventStore
                 }
             }
 
-            $this->acquireAdvisoryLocks($readKeys, array_keys($writeKeys));
+            $this->acquireAdvisoryLocks(array_keys($readKeys), array_keys($writeKeys));
 
-            if (null !== $expectedVersion) {
-                $currentVersion = new QueryVersion($this->fetchQueryVersion($readKeys), $expectedVersion->query);
+            foreach ($expectedQueries as [$expectedVersion, $expectedReadKeys]) {
+                $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedReadKeys), $expectedVersion->query);
                 $currentVersion->assertMatches($expectedVersion);
             }
 

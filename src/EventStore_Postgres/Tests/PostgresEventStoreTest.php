@@ -92,6 +92,32 @@ test('append inserts multiple events in one batch', function () {
     });
 });
 
+test('append validates multiple expected query versions', function () {
+    withPostgresStore(function (PostgresEventStore $store): void {
+        $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+            ->ofTypes('student.subscribed')
+        ;
+        $pairQuery = StreamQuery::forStream(
+            new DomainIdentifier('courseId', 'course-123'),
+            new DomainIdentifier('studentId', 'student-1'),
+        )->ofTypes('student.subscribed');
+
+        $courseVersion = $store->load($courseQuery)->queryVersion;
+        $pairVersion = $store->load($pairQuery)->queryVersion;
+
+        $store->append([
+            new Event(
+                eventType: 'student.subscribed',
+                payload: ['slot' => 1],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
+            ),
+        ], $courseVersion, $pairVersion);
+
+        expect($store->load($courseQuery)->events)->toHaveCount(1);
+        expect($store->load($pairQuery)->events)->toHaveCount(1);
+    });
+});
+
 test('load round-trips hstore domain identifiers', function () {
     withPostgresStore(function (PostgresEventStore $store): void {
         $domainIds = ['courseId' => 'course-"123"\\example'];

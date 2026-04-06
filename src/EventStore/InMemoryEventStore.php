@@ -36,9 +36,9 @@ final class InMemoryEventStore implements EventStore
         return new LoadResult($result, $queryVersion);
     }
 
-    public function append(array $events, ?QueryVersion $expectedVersion = null): void
+    public function append(array $events, QueryVersion ...$expectedVersions): void
     {
-        if (null !== $expectedVersion) {
+        foreach ($expectedVersions as $expectedVersion) {
             $currentVersion = $this->buildQueryVersion($this->queryKeyFactory->resolveQuery($expectedVersion->query));
             $currentVersion->assertMatches($expectedVersion);
         }

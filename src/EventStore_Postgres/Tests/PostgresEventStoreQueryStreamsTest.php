@@ -99,6 +99,32 @@ test('query-streams implementation inserts batched events and query streams in o
     });
 });
 
+test('query-streams implementation validates multiple expected query versions', function () {
+    withPostgresQueryStreamsStore(function (EventStore $store): void {
+        $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+            ->ofTypes('student.subscribed')
+        ;
+        $pairQuery = StreamQuery::forStream(
+            new DomainIdentifier('courseId', 'course-123'),
+            new DomainIdentifier('studentId', 'student-1'),
+        )->ofTypes('student.subscribed');
+
+        $courseVersion = $store->load($courseQuery)->queryVersion;
+        $pairVersion = $store->load($pairQuery)->queryVersion;
+
+        $store->append([
+            new Event(
+                eventType: 'student.subscribed',
+                payload: ['slot' => 1],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
+            ),
+        ], $courseVersion, $pairVersion);
+
+        expect($store->load($courseQuery)->events)->toHaveCount(1);
+        expect($store->load($pairQuery)->events)->toHaveCount(1);
+    });
+});
+
 test('query-streams implementation stores fixed-width binary digests for query stream keys', function () {
     withPostgresQueryStreamsStore(function (EventStore $store, \Doctrine\DBAL\Connection $connection, string $prefix): void {
         $store->append([

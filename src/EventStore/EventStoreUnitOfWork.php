@@ -8,11 +8,17 @@ use Ultra\UnitOfWork\UnitOfWork;
 
 /**
  * Buffers event-store appends while preserving read-your-own-pending-writes semantics through the EventStore API.
+ *
+ * The visible event list includes pending writes, while the `QueryVersion` remains the token from the wrapped
+ * store so optimistic concurrency stays aligned with the underlying transaction resource.
  */
 final class EventStoreUnitOfWork implements EventStore, UnitOfWork
 {
-    /** @var list<BufferedAppend> */
-    private array $bufferedAppends = [];
+    /** @var list<Event> */
+    private array $bufferedEvents = [];
+
+    /** @var list<QueryVersion> */
+    private array $expectedVersions = [];
 
     public function __construct(
         private readonly EventStore $inner,
@@ -29,36 +35,33 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
 
         return new LoadResult(
             [...$baseResult->events, ...$pendingEvents],
-            new QueryVersion(
-                $baseResult->queryVersion->version + count($pendingEvents),
-                $query,
-            ),
+            $baseResult->queryVersion,
         );
     }
 
-    public function append(array $events, ?QueryVersion $expectedVersion = null): void
+    public function append(array $events, QueryVersion ...$expectedVersions): void
     {
         if ([] === $events) {
             return;
         }
 
-        if (null !== $expectedVersion) {
-            $this->load($expectedVersion->query)->queryVersion->assertMatches($expectedVersion);
-        }
-
-        $this->bufferedAppends[] = new BufferedAppend($events, $expectedVersion);
+        array_push($this->bufferedEvents, ...$events);
+        array_push($this->expectedVersions, ...$expectedVersions);
     }
 
     public function flush(): void
     {
-        foreach ($this->bufferedAppends as $append) {
-            $this->inner->append($append->events, $append->expectedVersion);
+        if ([] === $this->bufferedEvents) {
+            return;
         }
+
+        $this->inner->append($this->bufferedEvents, ...$this->expectedVersions);
     }
 
     public function clear(): void
     {
-        $this->bufferedAppends = [];
+        $this->bufferedEvents = [];
+        $this->expectedVersions = [];
     }
 
     /**
@@ -68,14 +71,12 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
     {
         $pendingEvents = [];
 
-        foreach ($this->bufferedAppends as $append) {
-            foreach ($append->events as $event) {
-                if (! $query->matches($event)) {
-                    continue;
-                }
-
-                $pendingEvents[] = $event;
+        foreach ($this->bufferedEvents as $event) {
+            if (! $query->matches($event)) {
+                continue;
             }
+
+            $pendingEvents[] = $event;
         }
 
         return $pendingEvents;
