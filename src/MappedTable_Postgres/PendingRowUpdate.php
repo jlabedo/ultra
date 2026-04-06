@@ -7,7 +7,7 @@ namespace Ultra\MappedTable_Postgres;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /**
- * Fluent handle used to configure the optimistic preconditions and column updates for one row.
+ * Fluent handle used to configure the pending row change buffered by the table unit of work.
  */
 final readonly class PendingRowUpdate
 {
@@ -16,8 +16,31 @@ final readonly class PendingRowUpdate
         private string $tableName,
     ) {}
 
+    public function insert(): self
+    {
+        if ([] !== $this->update->expectedColumns) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot mark table "%s", row "%s" for insert after expected column values were registered.',
+                $this->tableName,
+                (string) $this->update->id,
+            ));
+        }
+
+        $this->update->insert = true;
+
+        return $this;
+    }
+
     public function expectColumnValue(string $column, mixed $value): self
     {
+        if ($this->update->insert) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot register expected column values for table "%s", row "%s" because it is already marked for insert.',
+                $this->tableName,
+                (string) $this->update->id,
+            ));
+        }
+
         if (
             array_key_exists($column, $this->update->expectedColumns)
             && $this->update->expectedColumns[$column] !== $value

@@ -9,7 +9,7 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\UnitOfWork;
 
 /**
- * Per-table unit of work that buffers conditional row updates and flushes them inside an external transaction.
+ * Per-table unit of work that buffers conditional row changes and flushes them inside an external transaction.
  */
 final class PostgresMappedTable implements UnitOfWork
 {
@@ -36,6 +36,12 @@ final class PostgresMappedTable implements UnitOfWork
         usort($updates, static fn (BufferedRowUpdate $left, BufferedRowUpdate $right): int => self::compareIds($left->id, $right->id));
 
         foreach ($updates as $update) {
+            if ($update->insert) {
+                $this->flushInsert($update);
+
+                continue;
+            }
+
             if ([] === $update->setColumns) {
                 continue;
             }
@@ -47,6 +53,41 @@ final class PostgresMappedTable implements UnitOfWork
     public function clear(): void
     {
         $this->updates = [];
+    }
+
+    private function flushInsert(BufferedRowUpdate $update): void
+    {
+        $columns = [$this->idColumn];
+        $params = [$update->id];
+
+        foreach ($update->setColumns as $column => $value) {
+            $columns[] = $column;
+            $params[] = $value;
+        }
+
+        $quotedColumns = array_map(
+            $this->connection->quoteSingleIdentifier(...),
+            $columns,
+        );
+
+        $affectedRows = $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                implode(', ', $quotedColumns),
+                implode(', ', array_fill(0, count($columns), '?')),
+                $this->connection->quoteSingleIdentifier($this->idColumn),
+            ),
+            $params,
+        );
+
+        if (1 !== $affectedRows) {
+            throw new ConcurrencyException(sprintf(
+                'Insert failed for table "%s" and row "%s" because the row already exists.',
+                $this->tableName,
+                (string) $update->id,
+            ));
+        }
     }
 
     private function flushUpdate(BufferedRowUpdate $update): void

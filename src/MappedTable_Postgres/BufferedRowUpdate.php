@@ -11,6 +11,8 @@ namespace Ultra\MappedTable_Postgres;
  */
 final class BufferedRowUpdate
 {
+    public bool $insert = false;
+
     /** @var array<string, mixed> */
     public array $expectedColumns = [];
 
