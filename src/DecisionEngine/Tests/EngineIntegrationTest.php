@@ -99,7 +99,7 @@ function createMediator(array $serviceDefinitions = []): array
 {
     $container = new ContainerBuilder();
     $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
-    $outputDir = sys_get_temp_dir() . '/decision-mediator-' . bin2hex(random_bytes(4));
+    $outputDir = dirname(__DIR__, 3) . '/var/decision-mediator';
     if (! is_dir($outputDir)) {
         mkdir($outputDir, 0o777, true);
     }
