@@ -22,7 +22,7 @@ use Ultra\DecisionEngine\Tests\Example\State\StudentSubscriptionState;
 use Ultra\DecisionEngine_Compiler\EntityLoaderCompilerPass;
 use Ultra\Events\CompiledEventRegistry;
 use Ultra\Events\EventRegistryInterface;
-use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\EventTopologyProvider;
@@ -342,7 +342,7 @@ test('concurrency: appending with stale version throws', function () {
     ]));
     $staleVersion = $result->queryVersion;
 
-    $extraEvent = new AppendableEvent(
+    $extraEvent = new Event(
         eventType: 'course.created',
         payload: [
             'courseId' => 'math-101',
@@ -351,9 +351,9 @@ test('concurrency: appending with stale version throws', function () {
         ],
         domainIds: ['course' => 'math-101'],
     );
-    $store->append([$extraEvent], null);
+    $store->append([$extraEvent]);
 
-    $anotherEvent = new AppendableEvent(
+    $anotherEvent = new Event(
         eventType: 'course.created',
         payload: [
             'courseId' => 'math-101',

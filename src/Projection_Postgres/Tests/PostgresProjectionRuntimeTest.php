@@ -5,15 +5,15 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
-use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\StoredEvent;
 use Ultra\Projection\Attribute\PartitionInitializer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\EventFeed;
 use Ultra\Projection\ProjectionPlan;
+use Ultra\Projection\StoredEvent;
 use Ultra\Projection_Postgres\PartitionStrategy;
 use Ultra\Projection_Postgres\PostgresDirectProjectionRunner;
 use Ultra\Projection_Postgres\PostgresInboxPartitionWorker;
@@ -130,12 +130,12 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
         $tableName = $projectionPrefix.'course_names_view';
 
         $store->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'course.created',
                 payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
                 domainIds: ['courseId' => 'course-1'],
             ),
-            new AppendableEvent(
+            new Event(
                 eventType: 'course.created',
                 payload: ['courseId' => 'course-2', 'name' => 'Physics 201'],
                 domainIds: ['courseId' => 'course-2'],
@@ -185,22 +185,22 @@ test('router and partition workers process each partition in order while sharing
         $partitionRegistryTable = $projectionPrefix.'student_activity_partitions';
 
         $store->append([
-            new AppendableEvent(
+            new Event(
                 eventType: 'student.subscribed',
                 payload: ['studentId' => 'student-1', 'courseId' => 'course-1', 'slot' => 1],
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-1', 'studentId' => 'student-1'],
             ),
-            new AppendableEvent(
+            new Event(
                 eventType: 'student.subscribed',
                 payload: ['studentId' => 'student-2', 'courseId' => 'course-1', 'slot' => 1],
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-1', 'studentId' => 'student-2'],
             ),
-            new AppendableEvent(
+            new Event(
                 eventType: 'student.subscribed',
                 payload: ['studentId' => 'student-1', 'courseId' => 'course-2', 'slot' => 2],
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-2', 'studentId' => 'student-1'],
             ),
-            new AppendableEvent(
+            new Event(
                 eventType: 'student.subscribed',
                 payload: ['studentId' => 'student-2', 'courseId' => 'course-2', 'slot' => 2],
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-2', 'studentId' => 'student-2'],

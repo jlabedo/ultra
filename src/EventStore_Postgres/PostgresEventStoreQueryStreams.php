@@ -7,13 +7,12 @@ namespace Ultra\EventStore_Postgres;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
-use Ultra\EventStore\AppendableEvent;
 use Ultra\EventStore\CanonicalQueryKeyFactory;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
-use Ultra\EventStore\StoredEvent;
 use Ultra\EventStore\StreamQuery;
 
 /**
@@ -22,7 +21,7 @@ use Ultra\EventStore\StreamQuery;
  * Events are stored once in the `events` table, while `event_query_streams` materializes membership in the
  * canonical singleton/pair keys used by supported queries. Those query-stream keys are persisted as fixed-width
  * binary SHA-256 digests to keep the table and index entries compact. `load()` is lock-free. `append()`
- * acquires transaction-scoped advisory locks, replays the expected query to compare its version, and
+ * acquires transaction-scoped advisory locks, replays each expected query to compare its version, and
  * only then inserts new events.
  */
 final class PostgresEventStoreQueryStreams implements EventStore
@@ -50,7 +49,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
         return new LoadResult($events, new QueryVersion(count($events), $query));
     }
 
-    public function append(array $events, ?QueryVersion $expectedVersion = null): void
+    public function append(array $events, QueryVersion ...$expectedVersions): void
     {
         $ownsTransaction = ! $this->connection->isTransactionActive();
         if ($ownsTransaction) {
@@ -59,8 +58,13 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
         try {
             $readKeys = [];
-            if (null !== $expectedVersion) {
-                $readKeys = $this->queryKeyFactory->resolveQuery($expectedVersion->query)->allKeys();
+            $expectedQueries = [];
+            foreach ($expectedVersions as $expectedVersion) {
+                $expectedReadKeys = $this->queryKeyFactory->resolveQuery($expectedVersion->query)->allKeys();
+                $expectedQueries[] = [$expectedVersion, $expectedReadKeys];
+                foreach ($expectedReadKeys as $readKey) {
+                    $readKeys[$readKey] = true;
+                }
             }
 
             $eventsWithKeys = [];
@@ -73,16 +77,16 @@ final class PostgresEventStoreQueryStreams implements EventStore
                 }
             }
 
-            $this->acquireAdvisoryLocks($readKeys, array_keys($writeKeys));
+            $this->acquireAdvisoryLocks(array_keys($readKeys), array_keys($writeKeys));
 
-            if (null !== $expectedVersion) {
-                $currentVersion = new QueryVersion($this->fetchQueryVersion($readKeys), $expectedVersion->query);
+            foreach ($expectedQueries as [$expectedVersion, $expectedReadKeys]) {
+                $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedReadKeys), $expectedVersion->query);
                 $currentVersion->assertMatches($expectedVersion);
             }
 
             if ([] !== $eventsWithKeys) {
                 $eventIds = $this->insertEvents(array_map(
-                    static fn (array $eventWithKeys): AppendableEvent => $eventWithKeys[0],
+                    static fn (array $eventWithKeys): Event => $eventWithKeys[0],
                     $eventsWithKeys,
                 ));
 
@@ -133,7 +137,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
     /**
      * @param list<string> $queryStreamKeys
      *
-     * @return list<StoredEvent>
+     * @return list<Event>
      */
     private function fetchEvents(array $queryStreamKeys): array
     {
@@ -156,8 +160,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
         $events = [];
         foreach ($rows as $row) {
-            $events[] = new StoredEvent(
-                eventId: (int) $row['event_id'],
+            $events[] = new Event(
                 eventType: $row['event_type'],
                 payload: json_decode($row['payload'], true, 512, JSON_THROW_ON_ERROR),
                 domainIds: json_decode($row['domain_ids'], true, 512, JSON_THROW_ON_ERROR),
@@ -169,7 +172,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
     }
 
     /**
-     * @param list<AppendableEvent> $events
+     * @param list<Event> $events
      *
      * @return list<int>
      */

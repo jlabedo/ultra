@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
@@ -49,11 +49,12 @@ if (isset($config['version'], $config['query'])) {
     );
     $expectedVersion = new QueryVersion((int) $config['version'], $query);
 }
-$event = new AppendableEvent(
+$event = new Event(
     eventType: $config['event']['eventType'],
     payload: $config['event']['payload'],
     domainIds: $config['event']['domainIds'],
 );
+$expectedVersions = null === $expectedVersion ? [] : [$expectedVersion];
 
 try {
     if (isset($config['lockTimeoutMs'])) {
@@ -62,7 +63,7 @@ try {
 
     if ('hold_then_commit' === $config['mode']) {
         $connection->beginTransaction();
-        $store->append([$event], $expectedVersion);
+        $store->append([$event], ...$expectedVersions);
         emitMessage([
             'type' => 'event',
             'name' => 'ready',
@@ -87,7 +88,7 @@ try {
         'name' => 'attempting',
     ]);
 
-    $store->append([$event], $expectedVersion);
+    $store->append([$event], ...$expectedVersions);
     emitMessage([
         'type' => 'result',
         'status' => 'ok',

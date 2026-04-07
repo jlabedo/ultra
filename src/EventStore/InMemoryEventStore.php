@@ -6,10 +6,8 @@ namespace Ultra\EventStore;
 
 final class InMemoryEventStore implements EventStore
 {
-    /** @var list<StoredEvent> */
+    /** @var list<Event> */
     private array $events = [];
-
-    private int $nextEventId = 1;
 
     private CanonicalQueryKeyFactory $queryKeyFactory;
 
@@ -33,16 +31,14 @@ final class InMemoryEventStore implements EventStore
             $result[] = $event;
         }
 
-        usort($result, static fn (StoredEvent $a, StoredEvent $b): int => $a->eventId <=> $b->eventId);
-
         $queryVersion = $this->buildQueryVersion($canonicalQuery);
 
         return new LoadResult($result, $queryVersion);
     }
 
-    public function append(array $events, ?QueryVersion $expectedVersion = null): void
+    public function append(array $events, QueryVersion ...$expectedVersions): void
     {
-        if (null !== $expectedVersion) {
+        foreach ($expectedVersions as $expectedVersion) {
             $currentVersion = $this->buildQueryVersion($this->queryKeyFactory->resolveQuery($expectedVersion->query));
             $currentVersion->assertMatches($expectedVersion);
         }
@@ -52,20 +48,15 @@ final class InMemoryEventStore implements EventStore
         }
     }
 
-    private function appendOne(AppendableEvent $event): void
+    private function appendOne(Event $event): void
     {
         $this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds);
-
-        $eventId = $this->nextEventId++;
-
-        $stored = new StoredEvent(
-            eventId: $eventId,
+        $this->events[] = new Event(
             eventType: $event->eventType,
             payload: $event->payload,
             domainIds: $event->domainIds,
             recordedAt: new \DateTimeImmutable(),
         );
-        $this->events[] = $stored;
     }
 
     private function buildQueryVersion(CanonicalQuery $canonicalQuery): QueryVersion

@@ -7,8 +7,8 @@ namespace Ultra\Projection_Postgres;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
-use Ultra\EventStore\StoredEvent;
 use Ultra\Projection\EventFeed;
+use Ultra\Projection\StoredEvent;
 
 final readonly class PostgresEventFeed implements EventFeed
 {

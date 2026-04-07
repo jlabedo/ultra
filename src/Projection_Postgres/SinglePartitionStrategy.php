@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Projection_Postgres;
 
-use Ultra\EventStore\StoredEvent;
+use Ultra\Projection\StoredEvent;
 
 final class SinglePartitionStrategy extends PartitionStrategy
 {

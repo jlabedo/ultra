@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore\Tests;
 
-use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\Exception\ConcurrencyException;
@@ -55,7 +55,7 @@ test('typed singleton query loads matching events and returns versions', functio
     expect(queryVersionValue($empty->queryVersion))->toBe(0);
 
     $store->append([
-        new AppendableEvent(
+        new Event(
             eventType: 'course.created',
             payload: ['name' => 'Math 101'],
             domainIds: ['courseId' => 'course-123'],
@@ -67,8 +67,8 @@ test('typed singleton query loads matching events and returns versions', functio
     )->ofTypes('course.created'));
 
     expect($result->events)->toHaveCount(1);
-    expect($result->events[0]->eventId)->toBe(1);
     expect($result->events[0]->eventType)->toBe('course.created');
+    expect($result->events[0]->payload['name'])->toBe('Math 101');
     expect(queryVersionValue($result->queryVersion))->toBe(1);
 });
 
@@ -81,7 +81,7 @@ test('append with stale singleton query version throws concurrency exception', f
     $staleVersion = $store->load($query)->queryVersion;
 
     $store->append([
-        new AppendableEvent(
+        new Event(
             eventType: 'course.capacity_changed',
             payload: ['capacity' => 30],
             domainIds: ['courseId' => 'course-123'],
@@ -89,13 +89,38 @@ test('append with stale singleton query version throws concurrency exception', f
     ]);
 
     $store->append([
-        new AppendableEvent(
+        new Event(
             eventType: 'course.capacity_changed',
             payload: ['capacity' => 31],
             domainIds: ['courseId' => 'course-123'],
         ),
     ], $staleVersion);
 })->throws(ConcurrencyException::class);
+
+test('append validates all expected query versions', function () {
+    $store = store();
+    $courseQuery = StreamQuery::forStream(
+        new DomainIdentifier('courseId', 'course-123'),
+    )->ofTypes('student.subscribed');
+    $pairQuery = StreamQuery::forStream(
+        new DomainIdentifier('courseId', 'course-123'),
+        new DomainIdentifier('studentId', 'student-1'),
+    )->ofTypes('student.subscribed');
+
+    $courseVersion = $store->load($courseQuery)->queryVersion;
+    $pairVersion = $store->load($pairQuery)->queryVersion;
+
+    $store->append([
+        new Event(
+            eventType: 'student.subscribed',
+            payload: [],
+            domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
+        ),
+    ], $courseVersion, $pairVersion);
+
+    expect($store->load($courseQuery)->events)->toHaveCount(1);
+    expect($store->load($pairQuery)->events)->toHaveCount(1);
+});
 
 test('canonical pair query does not conflict for same course and different student', function () {
     $store = store();
@@ -105,7 +130,7 @@ test('canonical pair query does not conflict for same course and different stude
     )->ofTypes('student.subscribed');
 
     $store->append([
-        new AppendableEvent(
+        new Event(
             eventType: 'student.subscribed',
             payload: [],
             domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
@@ -115,7 +140,7 @@ test('canonical pair query does not conflict for same course and different stude
     $staleVersion = $store->load($query)->queryVersion;
 
     $store->append([
-        new AppendableEvent(
+        new Event(
             eventType: 'student.subscribed',
             payload: [],
             domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
@@ -123,7 +148,7 @@ test('canonical pair query does not conflict for same course and different stude
     ]);
 
     $store->append([
-        new AppendableEvent(
+        new Event(
             eventType: 'student.subscribed',
             payload: [],
             domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
@@ -142,7 +167,7 @@ test('canonical pair query conflicts for the same pair', function () {
     )->ofTypes('student.subscribed');
 
     $store->append([
-        new AppendableEvent(
+        new Event(
             eventType: 'student.subscribed',
             payload: [],
             domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
@@ -152,7 +177,7 @@ test('canonical pair query conflicts for the same pair', function () {
     $staleVersion = $store->load($query)->queryVersion;
 
     $store->append([
-        new AppendableEvent(
+        new Event(
             eventType: 'student.subscribed',
             payload: [],
             domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
@@ -160,7 +185,7 @@ test('canonical pair query conflicts for the same pair', function () {
     ]);
 
     $store->append([
-        new AppendableEvent(
+        new Event(
             eventType: 'student.subscribed',
             payload: [],
             domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
