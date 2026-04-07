@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\MessageHandling_Compiler;
 
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling_Compiler\Handler\AdviceDescriptor;
 use Ultra\MessageHandling_Compiler\Handler\HandlerDescriptor;
 
@@ -35,7 +36,7 @@ final class LocatorReferenceCollector
         }
 
         foreach ($handler->depServiceIds as $index => $depId) {
-            if (! isset($claimedIndices[$index]) && ! $this->isExpressionResolved($depId)) {
+            if (! isset($claimedIndices[$index]) && ! $this->isRuntimeOnlyResolvedDependency($depId)) {
                 $this->addService($depId);
             }
         }
@@ -57,6 +58,11 @@ final class LocatorReferenceCollector
     private function addService(string $serviceId): void
     {
         $this->serviceIds[$serviceId] = true;
+    }
+
+    private function isRuntimeOnlyResolvedDependency(string $serviceId): bool
+    {
+        return MessageContext::class === $serviceId && $this->isExpressionResolved($serviceId);
     }
 
     private function isExpressionResolved(string $serviceId): bool

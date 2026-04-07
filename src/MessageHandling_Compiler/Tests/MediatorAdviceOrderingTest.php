@@ -11,6 +11,7 @@ use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Before;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\ProceedResult;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
@@ -71,7 +72,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 }
 
                 #[Around(priority: 10)]
-                public function around(callable $proceed, object $message, MessageContext $context): mixed
+                public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
                     $this->log->entries[] = 'around:10:before';
                     $result = $proceed();
@@ -126,7 +127,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 }
 
                 #[Around(priority: 10)]
-                public function around(callable $proceed, object $message, MessageContext $context): mixed
+                public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
                     $this->log->entries[] = 'around:10:before';
                     $result = $proceed();
@@ -188,7 +189,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 }
 
                 #[Around(priority: 10)]
-                public function around(callable $proceed, object $message, MessageContext $context): mixed
+                public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
                     $this->log->entries[] = 'around:10:before';
 
@@ -247,7 +248,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Around(priority: 0)]
-                public function around(callable $proceed, object $message, MessageContext $context): mixed
+                public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
                     $this->log->entries[] = 'around:0:before';
                     $result = $proceed();
@@ -269,7 +270,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Around(priority: 20)]
-                public function around(callable $proceed, object $message, MessageContext $context): mixed
+                public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
                     $this->log->entries[] = 'around:20:before';
                     $result = $proceed();
@@ -353,7 +354,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Around(priority: 0)]
-                public function around(callable $proceed, object $message, MessageContext $context): mixed
+                public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
                     $this->log->entries[] = 'around:0:before';
 
@@ -417,7 +418,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Around(priority: 0)]
-                public function around(callable $proceed, object $message, MessageContext $context): mixed
+                public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
                     $this->log->entries[] = 'outer-before:' . $context->get('trace', 'none');
                     $result = $proceed(context: $context->with('trace', 'propagated'));
@@ -430,7 +431,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Around(priority: 10)]
-                public function around(callable $proceed, object $message, MessageContext $context): mixed
+                public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
                     $this->log->entries[] = 'inner-before:' . $context->get('trace', 'none');
                     $result = $proceed();
@@ -449,6 +450,86 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
             'handler:ok',
             'inner-after:propagated',
             'outer-after:none',
+        ], $log->entries);
+    }
+
+    public function test_it_propagates_failure_context_changes_across_around_boundaries(): void
+    {
+        $log = new AdviceOrderingLog();
+
+        $mediator = $this->ultraLight()
+            ->withService($log)
+            ->withService(new class() {
+                #[Handles]
+                public function handle(GreetingMessage $message): string
+                {
+                    throw new \RuntimeException('boom');
+                }
+            })
+            ->withService(new class() {
+                #[Around(priority: 10)]
+                public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
+                {
+                    return $proceed();
+                }
+            })
+            ->withService(new class() {
+                #[Before(priority: 20)]
+                public function before(object $message, MessageContext $context): array
+                {
+                    return ['before' => 'yes'];
+                }
+
+                #[AfterThrowing(priority: 20)]
+                public function afterThrowing(object $message, MessageContext $context, \Throwable $throwable): array
+                {
+                    return ['afterThrowing' => $throwable->getMessage()];
+                }
+
+                #[After(priority: 20)]
+                public function after(object $message, MessageContext $context): array
+                {
+                    return ['after' => 'done'];
+                }
+            })
+            ->withService(new class($log) {
+                public function __construct(private readonly AdviceOrderingLog $log) {}
+
+                #[AfterThrowing(priority: 0)]
+                public function afterThrowing(object $message, MessageContext $context, \Throwable $throwable): void
+                {
+                    $this->log->entries[] = sprintf(
+                        'outer-afterThrowing:%s:%s:%s',
+                        $context->get('before', 'none'),
+                        $context->get('afterThrowing', 'none'),
+                        $context->get('after', 'none'),
+                    );
+                }
+
+                #[After(priority: 0)]
+                public function after(object $message, MessageContext $context): void
+                {
+                    $this->log->entries[] = sprintf(
+                        'outer-after:%s:%s:%s',
+                        $context->get('before', 'none'),
+                        $context->get('afterThrowing', 'none'),
+                        $context->get('after', 'none'),
+                    );
+                }
+            })
+            ->mediator()
+        ;
+
+        try {
+            $mediator->send(new GreetingMessage('fail'));
+            self::fail('Expected handler exception to be rethrown.');
+        } catch (\RuntimeException $exception) {
+            self::assertSame('boom', $exception->getMessage());
+        }
+
+        self::assertSame([
+            'outer-afterThrowing:yes:boom:done',
+            'outer-after:yes:boom:done',
         ], $log->entries);
     }
 }

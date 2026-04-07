@@ -12,9 +12,17 @@ namespace Ultra\MessageHandling\Attribute;
  *
  * Expected runtime method signature:
  *   method(object $message, \Ultra\MessageHandling\MessageContext $context): void
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context): array
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context): ?array
  *
  * If the matcher returns a MatchResult with a non-empty config:
  *   method(object $message, \Ultra\MessageHandling\MessageContext $context, array $config): void
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context, array $config): array
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context, array $config): ?array
+ *
+ * Returning an array shallow-merges that patch into the current context seen by
+ * later after advices and, on success, the final ProceedResult returned to outer
+ * around advices.
  *
  * The matcher defaults to Pointcut::all(...), so #[After] applies to every handler.
  *

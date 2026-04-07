@@ -12,6 +12,7 @@ use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\ProceedResult;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
@@ -58,7 +59,7 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                 #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
-                public function wrap(callable $proceed, object $message, MessageContext $context): mixed
+                public function wrap(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
                     ++$this->calls;
 

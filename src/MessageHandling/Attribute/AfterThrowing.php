@@ -12,9 +12,16 @@ namespace Ultra\MessageHandling\Attribute;
  *
  * Expected runtime method signature:
  *   method(object $message, \Ultra\MessageHandling\MessageContext $context, \Throwable $e): void
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context, \Throwable $e): array
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context, \Throwable $e): ?array
  *
  * If the matcher returns a MatchResult with a non-empty config:
  *   method(object $message, \Ultra\MessageHandling\MessageContext $context, \Throwable $e, array $config): void
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context, \Throwable $e, array $config): array
+ *   method(object $message, \Ultra\MessageHandling\MessageContext $context, \Throwable $e, array $config): ?array
+ *
+ * Returning an array shallow-merges that patch into the current context seen by
+ * later failure-path advices.
  *
  * The matcher defaults to Pointcut::all(...), so #[AfterThrowing] applies to every handler.
  *

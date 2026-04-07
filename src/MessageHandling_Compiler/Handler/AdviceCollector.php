@@ -54,6 +54,7 @@ final readonly class AdviceCollector
                 $adviceDefinition->serviceId,
                 $result->provides,
                 $result->config,
+                $adviceDefinition->returnsContextPatch,
             );
         }
 
