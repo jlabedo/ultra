@@ -147,7 +147,7 @@ final class DecisionEngineAspect
         $proceedResult = $proceed(provided: $states);
         $emittedEvents = $proceedResult->value;
         if (! is_array($emittedEvents)) {
-            $emittedEvents = [];
+            return $proceedResult;
         }
 
         $this->eventStore->append($this->toEvents($emittedEvents), $loadResult->queryVersion);
@@ -157,7 +157,7 @@ final class DecisionEngineAspect
             }
         }
 
-        return $proceedResult->withValue($emittedEvents);
+        return $proceedResult;
     }
 
     /**
@@ -269,5 +269,4 @@ final class DecisionEngineAspect
 
         return $entity->tags[0];
     }
-
 }
