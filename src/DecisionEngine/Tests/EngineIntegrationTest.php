@@ -32,9 +32,11 @@ use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\SelfHandler;
+use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\ProceedResult;
 use Ultra\MessageHandling\TagNames;
 use Ultra\MessageHandling_Compiler\MessageRouterCompilerPass;
 
@@ -72,6 +74,15 @@ final class RecordingEventBus implements EventBusInterface
             'event' => $event,
             'context' => MessageContext::coerce($context)->all(),
         ];
+    }
+}
+
+final class PublishingContextAspect
+{
+    #[Around(priority: 10)]
+    public function addPublishingContext(callable $proceed, object $message, MessageContext $context): ProceedResult
+    {
+        return $proceed(context: $context->with('publishedBy', 'inner-advice'));
     }
 }
 
@@ -399,5 +410,25 @@ test('decision engine publishes emitted events to the event bus when available',
         ->and($eventBus->calls)->toHaveCount(1)
         ->and($eventBus->calls[0]['event'])->toEqual($events[0])
         ->and($eventBus->calls[0]['context']['traceId'])->toBe('trace-123')
+    ;
+});
+
+test('decision engine publishes emitted events with the final context from inner around advices', function () {
+    ['mediator' => $mediator, 'container' => $container] = createMediator([
+        EventBusInterface::class => new Definition(RecordingEventBus::class)
+            ->setPublic(true),
+        PublishingContextAspect::class => (new Definition(PublishingContextAspect::class))
+            ->setAutowired(true)
+            ->addTag(TagNames::ASPECT),
+    ]);
+    $eventBus = $container->get(EventBusInterface::class);
+
+    $events = $mediator->send(new CreateCourseCommand('history-101', 'History', 10), ['traceId' => 'trace-ctx']);
+
+    expect($events)->toHaveCount(1)
+        ->and($eventBus->calls)->toHaveCount(1)
+        ->and($eventBus->calls[0]['event'])->toEqual($events[0])
+        ->and($eventBus->calls[0]['context']['traceId'])->toBe('trace-ctx')
+        ->and($eventBus->calls[0]['context']['publishedBy'])->toBe('inner-advice')
     ;
 });

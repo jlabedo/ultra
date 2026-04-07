@@ -31,6 +31,7 @@ final class DispatchPlanRenderer
 
     public function renderBody(DispatchPlan $plan): string
     {
+        $wrapResults = $this->planHasArounds($plan);
         $bodyLines = [
             $this->indent(2).'$m = $message;',
             $this->indent(2).'$c = $context;',
@@ -54,8 +55,13 @@ final class DispatchPlanRenderer
                 $plan->claimedVarNames,
                 $plan->returnsVoid,
                 2,
+                $wrapResults ? '$__result' : null,
+                $wrapResults,
             ),
         ];
+        if ($wrapResults) {
+            $bodyLines[] = $this->indent(2).'return $__result->value;';
+        }
 
         return implode("\n", $bodyLines);
     }
@@ -116,20 +122,27 @@ final class DispatchPlanRenderer
         bool $returnsVoid,
         int $indentLevel,
         ?string $resultVar = null,
+        bool $wrapResults = true,
     ): array {
         if ($layerIndex >= count($layers)) {
-            return $this->renderTerminalExecutionLines($handlerExpr, $returnsVoid, $indentLevel, $resultVar);
+            return $this->renderTerminalExecutionLines($handlerExpr, $returnsVoid, $indentLevel, $resultVar, $wrapResults);
         }
 
         $layer = $layers[$layerIndex];
         $lines = [];
 
-        foreach ($layer->befores as $advice) {
+        foreach ($layer->befores as $beforeIndex => $advice) {
             $args = ['$m', '$c'];
             if ([] !== $advice->runtimeConfig) {
                 $args[] = $this->exportValue($advice->runtimeConfig);
             }
-            $lines[] = $this->indent($indentLevel).$this->renderServiceMethodCall($advice->serviceId, $advice->method, $args).';';
+            $this->appendAdviceCall(
+                $lines,
+                $indentLevel,
+                $advice,
+                $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args),
+                '$__context'.$layerIndex.'_before'.$beforeIndex,
+            );
         }
 
         $needsAfterReturning = [] !== $layer->afterReturnings;
@@ -149,6 +162,7 @@ final class DispatchPlanRenderer
                         $returnsVoid,
                         $indentLevel,
                         $resultVar,
+                        $wrapResults,
                     ),
                 ];
             }
@@ -162,18 +176,25 @@ final class DispatchPlanRenderer
                     $claimedVarNames,
                     $returnsVoid,
                     1,
+                    null,
+                    true,
                 ),
                 $claimedVarNames,
             );
 
             $prefix = null === $resultVar ? 'return ' : $resultVar.' = ';
             $this->appendExpression($lines, $indentLevel, $prefix, $aroundExpr, ';');
+            if (null !== $resultVar) {
+                $lines[] = $this->indent($indentLevel).'$c = '.$resultVar.'->context;';
+            }
 
             return $lines;
         }
 
         $resultTmp = '$__result'.$layerIndex;
         $errorTmp = '$__e'.$layerIndex;
+        $syncResultContextAfterReturning = $wrapResults && $this->hasContextPatchReturningAdvice($layer->afterReturnings);
+        $syncResultContextAfterFinally = $wrapResults && $this->hasContextPatchReturningAdvice($layer->afters);
 
         if (! $needsCatch && ! $needsFinally) {
             if ($hasArounds) {
@@ -186,10 +207,15 @@ final class DispatchPlanRenderer
                         $claimedVarNames,
                         $returnsVoid,
                         1,
+                        null,
+                        true,
                     ),
                     $claimedVarNames,
                 );
                 $this->appendExpression($lines, $indentLevel, $resultTmp.' = ', $aroundExpr, ';');
+                if ($wrapResults) {
+                    $lines[] = $this->indent($indentLevel).'$c = '.$resultTmp.'->context;';
+                }
             } else {
                 $lines = [
                     ...$lines,
@@ -201,12 +227,23 @@ final class DispatchPlanRenderer
                         $returnsVoid,
                         $indentLevel,
                         $resultTmp,
+                        $wrapResults,
                     ),
                 ];
             }
 
-            foreach ($layer->afterReturnings as $advice) {
-                $lines[] = $this->indent($indentLevel).$this->renderAfterReturningCall($advice, '$m', '$c', $resultTmp);
+            foreach ($layer->afterReturnings as $afterReturningIndex => $advice) {
+                $resultValueExpr = $wrapResults ? $resultTmp.'->value' : $resultTmp;
+                $this->appendAdviceCall(
+                    $lines,
+                    $indentLevel,
+                    $advice,
+                    $this->renderAfterReturningCallExpression($advice, '$m', '$c', $resultValueExpr),
+                    '$__context'.$layerIndex.'_afterReturning'.$afterReturningIndex,
+                );
+            }
+            if ($syncResultContextAfterReturning) {
+                $lines[] = $this->indent($indentLevel).$resultTmp.' = '.$resultTmp.'->withContext($c);';
             }
 
             $lines[] = $this->indent($indentLevel).(null === $resultVar ? 'return '.$resultTmp.';' : $resultVar.' = '.$resultTmp.';');
@@ -226,10 +263,15 @@ final class DispatchPlanRenderer
                     $claimedVarNames,
                     $returnsVoid,
                     1,
+                    null,
+                    true,
                 ),
                 $claimedVarNames,
             );
             $this->appendExpression($lines, $indentLevel + 1, $resultTmp.' = ', $aroundExpr, ';');
+            if ($wrapResults) {
+                $lines[] = $this->indent($indentLevel + 1).'$c = '.$resultTmp.'->context;';
+            }
         } else {
             $lines = [
                 ...$lines,
@@ -241,32 +283,59 @@ final class DispatchPlanRenderer
                     $returnsVoid,
                     $indentLevel + 1,
                     $resultTmp,
+                    $wrapResults,
                 ),
             ];
         }
 
-        foreach ($layer->afterReturnings as $advice) {
-            $lines[] = $this->indent($indentLevel + 1).$this->renderAfterReturningCall($advice, '$m', '$c', $resultTmp);
+        foreach ($layer->afterReturnings as $afterReturningIndex => $advice) {
+            $resultValueExpr = $wrapResults ? $resultTmp.'->value' : $resultTmp;
+            $this->appendAdviceCall(
+                $lines,
+                $indentLevel + 1,
+                $advice,
+                $this->renderAfterReturningCallExpression($advice, '$m', '$c', $resultValueExpr),
+                '$__context'.$layerIndex.'_afterReturning'.$afterReturningIndex,
+            );
         }
-
-        $lines[] = $this->indent($indentLevel + 1).(null === $resultVar ? 'return '.$resultTmp.';' : $resultVar.' = '.$resultTmp.';');
+        if ($syncResultContextAfterReturning) {
+            $lines[] = $this->indent($indentLevel + 1).$resultTmp.' = '.$resultTmp.'->withContext($c);';
+        }
 
         if ($needsCatch) {
             $lines[] = $this->indent($indentLevel).'} catch (\Throwable '.$errorTmp.') {';
-            foreach ($layer->afterThrowings as $advice) {
-                $lines[] = $this->indent($indentLevel + 1).$this->renderAfterThrowingCall($advice, '$m', '$c', $errorTmp);
+            foreach ($layer->afterThrowings as $afterThrowingIndex => $advice) {
+                $this->appendAdviceCall(
+                    $lines,
+                    $indentLevel + 1,
+                    $advice,
+                    $this->renderAfterThrowingCallExpression($advice, '$m', '$c', $errorTmp),
+                    '$__context'.$layerIndex.'_afterThrowing'.$afterThrowingIndex,
+                );
             }
             $lines[] = $this->indent($indentLevel + 1).'throw '.$errorTmp.';';
         }
 
         if ($needsFinally) {
             $lines[] = $this->indent($indentLevel).'} finally {';
-            foreach ($layer->afters as $advice) {
-                $lines[] = $this->indent($indentLevel + 1).$this->renderAfterCall($advice, '$m', '$c');
+            foreach ($layer->afters as $afterIndex => $advice) {
+                $this->appendAdviceCall(
+                    $lines,
+                    $indentLevel + 1,
+                    $advice,
+                    $this->renderAfterCallExpression($advice, '$m', '$c'),
+                    '$__context'.$layerIndex.'_after'.$afterIndex,
+                );
+            }
+            if ($syncResultContextAfterFinally) {
+                $lines[] = $this->indent($indentLevel + 1).'if (isset('.$resultTmp.')) {';
+                $lines[] = $this->indent($indentLevel + 2).$resultTmp.' = '.$resultTmp.'->withContext($c);';
+                $lines[] = $this->indent($indentLevel + 1).'}';
             }
         }
 
         $lines[] = $this->indent($indentLevel).'}';
+        $lines[] = $this->indent($indentLevel).(null === $resultVar ? 'return '.$resultTmp.';' : $resultVar.' = '.$resultTmp.';');
 
         return $lines;
     }
@@ -313,7 +382,9 @@ final class DispatchPlanRenderer
         }
         $captures = array_values(array_unique($captures));
 
-        $lines = ['function (?\\Ultra\\MessageHandling\\MessageContext $context = null, array $provided = []) use ('.implode(', ', $captures).') {'];
+        $captures[1] = '&$c';
+
+        $lines = ['function (?\\Ultra\\MessageHandling\\MessageContext $context = null, array $provided = []) use ('.implode(', ', $captures).') : \\Ultra\\MessageHandling\\ProceedResult {'];
         $lines[] = $this->indent(1).'if (count($provided) !== '.count($advice->claimedDepIndices).') {';
         $lines[] = $this->indent(2).'throw new \\LogicException(sprintf('
             .$this->exportString($owner.' must call $proceed() with exactly '.count($advice->claimedDepIndices).' provided value(s); received %d.')
@@ -339,19 +410,48 @@ final class DispatchPlanRenderer
         bool $returnsVoid,
         int $indentLevel,
         ?string $resultVar = null,
+        bool $wrapResults = true,
     ): array {
+        if (! $wrapResults) {
+            if (! $returnsVoid) {
+                $lines = [];
+                $prefix = null === $resultVar ? 'return ' : $resultVar.' = ';
+                $this->appendExpression($lines, $indentLevel, $prefix, $handlerExpr, ';');
+
+                return $lines;
+            }
+
+            $lines = [$this->indent($indentLevel).$handlerExpr.';'];
+            $lines[] = $this->indent($indentLevel).(null === $resultVar ? 'return null;' : $resultVar.' = null;');
+
+            return $lines;
+        }
+
         if (! $returnsVoid) {
             $lines = [];
-            $prefix = null === $resultVar ? 'return ' : $resultVar.' = ';
-            $this->appendExpression($lines, $indentLevel, $prefix, $handlerExpr, ';');
+            $prefix = null === $resultVar ? 'return new \\Ultra\\MessageHandling\\ProceedResult(' : $resultVar.' = new \\Ultra\\MessageHandling\\ProceedResult(';
+            $this->appendExpression($lines, $indentLevel, $prefix, $handlerExpr.', $c)', ';');
 
             return $lines;
         }
 
         $lines = [$this->indent($indentLevel).$handlerExpr.';'];
-        $lines[] = $this->indent($indentLevel).(null === $resultVar ? 'return null;' : $resultVar.' = null;');
+        $lines[] = $this->indent($indentLevel).(null === $resultVar
+            ? 'return new \\Ultra\\MessageHandling\\ProceedResult(null, $c);'
+            : $resultVar.' = new \\Ultra\\MessageHandling\\ProceedResult(null, $c);');
 
         return $lines;
+    }
+
+    private function planHasArounds(DispatchPlan $plan): bool
+    {
+        foreach ($plan->layers as $layer) {
+            if ([] !== $layer->arounds) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -367,21 +467,21 @@ final class DispatchPlanRenderer
         );
     }
 
-    private function renderAfterReturningCall(
+    private function renderAfterReturningCallExpression(
         AdviceDescriptor $advice,
         string $messageVar,
         string $contextVar,
-        string $resultVar,
+        string $resultValueExpr,
     ): string {
-        $args = [$messageVar, $contextVar, $resultVar];
+        $args = [$messageVar, $contextVar, $resultValueExpr];
         if ([] !== $advice->runtimeConfig) {
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
 
-        return $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args).';';
+        return $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args);
     }
 
-    private function renderAfterThrowingCall(
+    private function renderAfterThrowingCallExpression(
         AdviceDescriptor $advice,
         string $messageVar,
         string $contextVar,
@@ -392,10 +492,10 @@ final class DispatchPlanRenderer
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
 
-        return $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args).';';
+        return $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args);
     }
 
-    private function renderAfterCall(
+    private function renderAfterCallExpression(
         AdviceDescriptor $advice,
         string $messageVar,
         string $contextVar,
@@ -405,7 +505,43 @@ final class DispatchPlanRenderer
             $args[] = $this->exportValue($advice->runtimeConfig);
         }
 
-        return $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args).';';
+        return $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args);
+    }
+
+    /**
+     * @param list<string> $lines
+     */
+    private function appendAdviceCall(
+        array &$lines,
+        int $indentLevel,
+        AdviceDescriptor $advice,
+        string $expression,
+        string $contextTmpVar,
+    ): void {
+        if (! $advice->returnsContextPatch) {
+            $lines[] = $this->indent($indentLevel).$expression.';';
+
+            return;
+        }
+
+        $lines[] = $this->indent($indentLevel).$contextTmpVar.' = '.$expression.';';
+        $lines[] = $this->indent($indentLevel).'if (null !== '.$contextTmpVar.') {';
+        $lines[] = $this->indent($indentLevel + 1).'$c = $c->merge('.$contextTmpVar.');';
+        $lines[] = $this->indent($indentLevel).'}';
+    }
+
+    /**
+     * @param list<AdviceDescriptor> $advices
+     */
+    private function hasContextPatchReturningAdvice(array $advices): bool
+    {
+        foreach ($advices as $advice) {
+            if ($advice->returnsContextPatch) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function indent(int $level): string

@@ -20,6 +20,7 @@ use Ultra\MessageHandling\Attribute\SingleDispatch;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\MessageContextPropagator;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
+use Ultra\MessageHandling\ProceedResult;
 use Ultra\MessageHandling\TagNames;
 use Ultra\MessageHandling_Compiler\Handler\AdviceCollector;
 use Ultra\MessageHandling_Compiler\Handler\AdviceDefinition;
@@ -159,7 +160,13 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
                     if (! isset($generatedHandlers[$handlerKey])) {
                         $handlerServiceId = $this->generateHandlerService(
-                            $handler, $handlerClassGenerator, $adviceCollector, $expressionResolvers, $handlerOutputDir, $wrappersFilePath, $container,
+                            $handler,
+                            $handlerClassGenerator,
+                            $adviceCollector,
+                            $expressionResolvers,
+                            $handlerOutputDir,
+                            $wrappersFilePath,
+                            $container,
                         );
                         $generatedHandlers[$handlerKey] = $handlerServiceId;
                     }
@@ -180,7 +187,10 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             }
 
             ['className' => $generatedClass, 'filePath' => $filePath] = $routerGenerator->generate(
-                $baseName, $descriptor, $routeMap, $routerOutputDir,
+                $baseName,
+                $descriptor,
+                $routeMap,
+                $routerOutputDir,
             );
 
             $routerDef = new Definition($generatedClass, [
@@ -253,11 +263,14 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         $baseName = 'Handler_' . preg_replace('/[^A-Za-z0-9_]/', '_', $handler->serviceId) . '_' . $handler->method->getName();
 
         ['className' => $className, 'filePath' => $filePath] = $handlerClassGenerator->generate(
-            $baseName, $handler, $outputDir, $wrappersFilePath,
+            $baseName,
+            $handler,
+            $outputDir,
+            $wrappersFilePath,
         );
 
         // Build per-handler locator references
-        $handlerLocator = new LocatorReferenceCollector();
+        $handlerLocator = new LocatorReferenceCollector($expressionResolvers);
         $handlerLocator->addHandlerDependencies($handler);
 
         $handlerServiceId = 'ultra.handler.' . $className;
@@ -310,7 +323,10 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
                 $dispatchBaseName = $baseName . '_dispatch';
                 ['className' => $dispatchClassName, 'filePath' => $dispatchFilePath] = $handlerClassGenerator->generate(
-                    $dispatchBaseName, $dispatchHandler, $outputDir, $wrappersFilePath,
+                    $dispatchBaseName,
+                    $dispatchHandler,
+                    $outputDir,
+                    $wrappersFilePath,
                 );
 
                 $dispatchLocator = new LocatorReferenceCollector($expressionResolvers);
@@ -345,19 +361,122 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                 foreach ($methodRef->getAttributes(Advice::class, \ReflectionAttribute::IS_INSTANCEOF) as $attr) {
                     /** @var Advice $advice */
                     $advice = $attr->newInstance();
+                    $adviceType = AdviceType::fromAttribute($advice);
+                    $returnsContextPatch = $this->assertValidAdviceMethod($class, $methodRef, $adviceType);
                     $adviceDefinitions[] = new AdviceDefinition(
-                        AdviceType::fromAttribute($advice),
+                        $adviceType,
                         $advice->priority,
                         $class,
                         $methodRef->getName(),
                         $aspectServiceId,
                         $advice->matcher,
+                        $returnsContextPatch,
                     );
                 }
             }
         }
 
         return $adviceDefinitions;
+    }
+
+    private function assertValidAdviceMethod(string $class, \ReflectionMethod $methodRef, AdviceType $type): bool
+    {
+        $returnType = $methodRef->getReturnType();
+
+        if (AdviceType::Around === $type) {
+            if (
+                ! $returnType instanceof \ReflectionNamedType
+                || $returnType->isBuiltin()
+                || ProceedResult::class !== $returnType->getName()
+            ) {
+                throw new \LogicException(sprintf(
+                    'Around advice "%s::%s" must declare return type "%s".',
+                    $class,
+                    $methodRef->getName(),
+                    ProceedResult::class,
+                ));
+            }
+
+            return false;
+        }
+
+        if (null === $returnType) {
+            return false;
+        }
+
+        if ($returnType instanceof \ReflectionNamedType) {
+            if ($returnType->isBuiltin()) {
+                return match ($returnType->getName()) {
+                    'void' => false,
+                    'array' => true,
+                    default => throw new \LogicException(sprintf(
+                        '%s advice "%s::%s" must declare no return type, "void", or return type "array" (optionally nullable).',
+                        $type->name,
+                        $class,
+                        $methodRef->getName(),
+                    )),
+                };
+            }
+
+            throw new \LogicException(sprintf(
+                '%s advice "%s::%s" must declare no return type, "void", or return type "array" (optionally nullable).',
+                $type->name,
+                $class,
+                $methodRef->getName(),
+            ));
+        }
+
+        if ($returnType instanceof \ReflectionUnionType) {
+            $hasArray = false;
+
+            foreach ($returnType->getTypes() as $namedType) {
+                if (! $namedType instanceof \ReflectionNamedType) {
+                    throw new \LogicException(sprintf(
+                        '%s advice "%s::%s" must declare no return type, "void", or return type "array" (optionally nullable).',
+                        $type->name,
+                        $class,
+                        $methodRef->getName(),
+                    ));
+                }
+
+                if ($namedType->isBuiltin()) {
+                    if ('array' === $namedType->getName()) {
+                        $hasArray = true;
+
+                        continue;
+                    }
+
+                    if ('null' !== $namedType->getName()) {
+                        throw new \LogicException(sprintf(
+                            '%s advice "%s::%s" must declare no return type, "void", or return type "array" (optionally nullable).',
+                            $type->name,
+                            $class,
+                            $methodRef->getName(),
+                        ));
+                    }
+                }
+
+                if (! $namedType->isBuiltin()) {
+                    throw new \LogicException(sprintf(
+                        '%s advice "%s::%s" must declare no return type, "void", or return type "array" (optionally nullable).',
+                        $type->name,
+                        $class,
+                        $methodRef->getName(),
+                    ));
+                }
+            }
+
+            if ($hasArray) {
+                return true;
+            }
+        }
+
+        throw new \LogicException(sprintf(
+            '%s advice "%s::%s" must declare no return type, "void", or return type "array" (optionally nullable).',
+            $type->name,
+            $class,
+            $methodRef->getName(),
+        ));
     }
 
     /**

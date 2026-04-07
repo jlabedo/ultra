@@ -21,6 +21,7 @@ use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\ProceedResult;
 
 final class DecisionEngineAspect
 {
@@ -104,7 +105,7 @@ final class DecisionEngineAspect
             provides: $provides,
         );
     })]
-    public function around(callable $proceed, object $message, MessageContext $context, array $config): mixed
+    public function around(callable $proceed, object $message, MessageContext $context, array $config): ProceedResult
     {
         $stateParams = $config['stateParams'] ?? [];
         $preparedStates = $this->prepareStates($message, $stateParams);
@@ -137,10 +138,14 @@ final class DecisionEngineAspect
             }
             $violations = $message->check(...$checkArgs);
 
-            return is_array($violations) ? $violations : [];
+            return new ProceedResult(
+                is_array($violations) ? $violations : [],
+                $context,
+            );
         }
 
-        $emittedEvents = $proceed(provided: $states);
+        $proceedResult = $proceed(provided: $states);
+        $emittedEvents = $proceedResult->value;
         if (! is_array($emittedEvents)) {
             $emittedEvents = [];
         }
@@ -148,11 +153,11 @@ final class DecisionEngineAspect
         $this->eventStore->append($this->toEvents($emittedEvents), $loadResult->queryVersion);
         if (null !== $this->eventBus) {
             foreach ($emittedEvents as $emittedEvent) {
-                $this->eventBus->publish($emittedEvent, $context);
+                $this->eventBus->publish($emittedEvent, $proceedResult->context);
             }
         }
 
-        return $emittedEvents;
+        return $proceedResult->withValue($emittedEvents);
     }
 
     /**

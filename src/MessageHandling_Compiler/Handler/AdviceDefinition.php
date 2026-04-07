@@ -16,5 +16,6 @@ readonly class AdviceDefinition
         public string $methodName,
         public string $serviceId,
         public \Closure $matcher,
+        public bool $returnsContextPatch = false,
     ) {}
 }

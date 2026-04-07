@@ -8,6 +8,7 @@ use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\ProceedResult;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\EmptyMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\ProcessEntityMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\ProcessPairMessage;
@@ -170,7 +171,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
                     return null;
                 })]
-                public function execute(callable $proceed, object $message, MessageContext $context): mixed
+                public function execute(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
                     $entity = $this->repository->load($message);
                     $result = $proceed(provided: [$entity]);
@@ -223,7 +224,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
                     return [] === $indices ? null : MatchResult::apply(provides: $indices);
                 })]
-                public function execute(callable $proceed, ProcessPairMessage $message, MessageContext $context): mixed
+                public function execute(callable $proceed, ProcessPairMessage $message, MessageContext $context): ProceedResult
                 {
                     return $proceed(provided: [
                         new MediatorServiceInjectionLeftRepository()->load($message),
@@ -294,7 +295,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     ProcessPairMessage $message,
                     MessageContext $context,
                     array $config,
-                ): mixed {
+                ): ProceedResult {
                     $entity = match ($config['side']) {
                         'left' => $this->leftRepository->load($message),
                         'right' => $this->rightRepository->load($message),
@@ -362,7 +363,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     ProcessPairMessage $message,
                     MessageContext $context,
                     array $config,
-                ): mixed {
+                ): ProceedResult {
                     $entities = [];
 
                     foreach ($config['entities'] as ['class' => $class, 'idProperty' => $idProperty]) {

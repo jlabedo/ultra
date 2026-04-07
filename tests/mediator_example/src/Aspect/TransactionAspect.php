@@ -10,12 +10,11 @@ use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\ProceedResult;
 
 final class TransactionAspect
 {
-    public function __construct(private readonly TransactionManager $tx)
-    {
-    }
+    public function __construct(private readonly TransactionManager $tx) {}
 
     #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
         $method = $ctx->method();
@@ -23,7 +22,7 @@ final class TransactionAspect
             ? MatchResult::apply()
             : null;
     })]
-    public function wrap(callable $proceed, object $message, MessageContext $context): mixed
+    public function wrap(callable $proceed, object $message, MessageContext $context): ProceedResult
     {
         $this->tx->begin();
         try {

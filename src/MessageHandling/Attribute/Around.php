@@ -28,17 +28,22 @@ namespace Ultra\MessageHandling\Attribute;
  *
  * Examples:
  *   #[Around]
- *   public function execute(callable $proceed, object $message, \Ultra\MessageHandling\MessageContext $context): mixed
+ *   public function execute(callable $proceed, object $message, \Ultra\MessageHandling\MessageContext $context): \Ultra\MessageHandling\ProceedResult
  *
  *   #[Around(static function(\ReflectionMethod $m): ?MatchResult {
  *       // inspect $m->getParameters(), return MatchResult::apply(...) or null
  *   }, priority: 0)]
- *   public function execute(callable $proceed, object $message, \Ultra\MessageHandling\MessageContext $context, array $config): mixed
+ *   public function execute(callable $proceed, object $message, \Ultra\MessageHandling\MessageContext $context, array $config): \Ultra\MessageHandling\ProceedResult
  *
  * Continue execution with:
  *   $proceed()
  *   $proceed(context: $context->with('key', 'value'))
  *   $proceed(provided: [$resolvedDependency])
+ *
+ * Inspect or replace the business result via ProceedResult:
+ *   $result = $proceed()
+ *   $result->value
+ *   $result->withValue($newValue)
  *
  * The message object itself cannot be replaced through $proceed; only the context
  * and any values for claimed dep-param slots may be supplied.
