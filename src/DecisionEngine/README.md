@@ -26,7 +26,7 @@ Event-sourcing decision pipeline built on the mediator. Commands declare their c
 
 - **Violation** – `code` + `message` for invariant failures.
 - **InvariantViolation** – Exception carrying `list<Violation>` (thrown by commands when `check()` fails).
-- **EventSourcedEntityLoader** – Pre-compiled loader that builds the typed query for an entity and rehydrates it from a shared batch of loaded events.
+- **EventSourcedEntityLoader** – Pre-compiled loader that builds the typed query for an entity and rehydrates it from a shared batch of loaded `Ultra\EventStore\Event` values.
 
 ## Usage
 
@@ -41,7 +41,8 @@ $events = $mediator->send($command);  // returns emitted event DTOs
 Decision commands are self-handling messages:
 
 ```php
-use Ultra\DecisionEngine\Attribute\DecisionHandler;use Ultra\MessageHandling\Attribute\SelfHandler;
+use Ultra\DecisionEngine\Attribute\DecisionHandler;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final class CreateCourseCommand
 {
@@ -61,7 +62,7 @@ final class CreateCourseCommand
 3. Always pass a state object, even when the stream has no events yet.
 4. Resolve service parameters from the container.
 5. Call the decision handler and route returned events to `Event`.
-6. Append with an expected version (optimistic concurrency).
+6. Append with an expected query version (optimistic concurrency).
 
 ### Read-only validation
 
@@ -90,7 +91,12 @@ A full course/student subscription example (events, states, commands, and tests)
 
 ## Dependencies
 
-- **Event store**: `Ultra\EventStore\EventStore` (load by `StreamQuery`, append with optional `StreamVersion`). Build queries with the fluent API: `StreamQuery::forStream(DomainIdentifier ...)->ofTypes(...)` for one branch; `StreamQuery::anyOf(StreamQuery ...$branches)` for OR of branches.
+- **Event store**: `Ultra\EventStore\EventStore` (load by `StreamQuery`, append with zero-to-many `QueryVersion` tokens). Build queries with the fluent API: `StreamQuery::forStream(DomainIdentifier ...)->ofTypes(...)` for one branch; `StreamQuery::anyOf(StreamQuery ...$branches)` for OR of branches.
 - **PSR-11 container** for service parameters.
-- **EventRegistryInterface**: maps event type strings (from `#[Event]`) to DTO class names so the engine can rehydrate events when building state from stored events.
-- **UltraNormalizer**: normalizes event DTOs into payload arrays and rehydrates events from stored payloads (codegen-backed).
+- **EventRegistryInterface**: maps event type strings (from `#[Event]`) to DTO class names so the engine can rehydrate events when building state from loaded events.
+- **UltraNormalizer**: normalizes event DTOs into payload arrays and rehydrates events from loaded payloads (codegen-backed).
+
+## Notes
+
+- Decision-state hydration works on `Ultra\EventStore\Event`, not projection-side persisted events with `eventId`.
+- If you wrap the store with `Ultra\EventStore\EventStoreUnitOfWork`, states can observe pending in-process events through `load()`, while optimistic concurrency still stays tied to the wrapped store’s persisted `QueryVersion`.
