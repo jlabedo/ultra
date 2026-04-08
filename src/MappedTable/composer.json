@@ -1,6 +1,6 @@
 {
-    "name": "ultra/mapped-table-postgres",
-    "description": "Ultra Framework - Postgres mapped table unit of work",
+    "name": "ultra/mapped-table",
+    "description": "Ultra Framework - Adapter-backed mapped table unit of work",
     "type": "library",
     "license": "MIT",
     "authors": [
@@ -11,12 +11,14 @@
     ],
     "require": {
         "php": ">=8.5",
-        "doctrine/dbal": "^4.0",
         "ultra/unit-of-work": "*"
+    },
+    "suggest": {
+        "doctrine/dbal": "Required to use the PostgresMappedTableAdapter."
     },
     "autoload": {
         "psr-4": {
-            "Ultra\\MappedTable_Postgres\\": ""
+            "Ultra\\MappedTable\\": ""
         },
         "exclude-from-classmap": [
             "/Tests/"

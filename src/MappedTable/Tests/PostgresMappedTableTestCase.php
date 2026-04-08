@@ -2,13 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable_Postgres\Tests;
+namespace Ultra\MappedTable\Tests;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Tools\DsnParser;
 use PHPUnit\Framework\TestCase;
-use Ultra\MappedTable_Postgres\PostgresMappedTable;
+use Ultra\MappedTable\MappedTable;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 
 abstract class PostgresMappedTableTestCase extends TestCase
 {
@@ -40,7 +41,7 @@ abstract class PostgresMappedTableTestCase extends TestCase
                 $connection->quoteSingleIdentifier($tableName),
             ));
 
-            $callback($connection, new PostgresMappedTable($connection, $tableName), $tableName);
+            $callback($connection, new MappedTable(new PostgresMappedTableAdapter($connection), $tableName), $tableName);
         } finally {
             $connection->executeStatement(sprintf(
                 'DROP TABLE IF EXISTS %s',

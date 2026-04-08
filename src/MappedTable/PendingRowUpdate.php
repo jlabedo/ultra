@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable_Postgres;
+namespace Ultra\MappedTable;
 
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
@@ -18,9 +18,9 @@ final readonly class PendingRowUpdate
 
     public function insert(): self
     {
-        if (BufferedRowUpdate::EXPECTED_PRESENT === $this->update->expectedPresence) {
-            if (BufferedRowUpdate::MODE_DELETE === $this->update->mode) {
-                $this->update->mode = BufferedRowUpdate::MODE_REPLACE;
+        if (RowUpdatePlan::EXPECTED_PRESENT === $this->update->expectedPresence) {
+            if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+                $this->update->mode = RowUpdatePlan::MODE_REPLACE;
 
                 return $this;
             }
@@ -32,36 +32,36 @@ final readonly class PendingRowUpdate
             ));
         }
 
-        $this->update->expectedPresence = BufferedRowUpdate::EXPECTED_ABSENT;
-        $this->update->mode = BufferedRowUpdate::MODE_INSERT;
+        $this->update->expectedPresence = RowUpdatePlan::EXPECTED_ABSENT;
+        $this->update->mode = RowUpdatePlan::MODE_INSERT;
 
         return $this;
     }
 
     public function upsert(): self
     {
-        if (BufferedRowUpdate::EXPECTED_PRESENT === $this->update->expectedPresence) {
-            if (BufferedRowUpdate::MODE_DELETE === $this->update->mode) {
-                $this->update->mode = BufferedRowUpdate::MODE_REPLACE;
+        if (RowUpdatePlan::EXPECTED_PRESENT === $this->update->expectedPresence) {
+            if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+                $this->update->mode = RowUpdatePlan::MODE_REPLACE;
 
                 return $this;
             }
 
-            $this->update->mode ??= BufferedRowUpdate::MODE_UPDATE;
+            $this->update->mode ??= RowUpdatePlan::MODE_UPDATE;
 
             return $this;
         }
 
-        if (BufferedRowUpdate::EXPECTED_ABSENT === $this->update->expectedPresence) {
-            $this->update->mode ??= BufferedRowUpdate::MODE_INSERT;
-            if (BufferedRowUpdate::MODE_UPDATE === $this->update->mode) {
-                $this->update->mode = BufferedRowUpdate::MODE_INSERT;
+        if (RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence) {
+            $this->update->mode ??= RowUpdatePlan::MODE_INSERT;
+            if (RowUpdatePlan::MODE_UPDATE === $this->update->mode) {
+                $this->update->mode = RowUpdatePlan::MODE_INSERT;
             }
 
             return $this;
         }
 
-        $this->update->mode = BufferedRowUpdate::MODE_UPSERT;
+        $this->update->mode = RowUpdatePlan::MODE_UPSERT;
 
         return $this;
     }
@@ -69,8 +69,8 @@ final readonly class PendingRowUpdate
     public function delete(): self
     {
         if (
-            BufferedRowUpdate::MODE_INSERT === $this->update->mode
-            && BufferedRowUpdate::EXPECTED_ABSENT === $this->update->expectedPresence
+            RowUpdatePlan::MODE_INSERT === $this->update->mode
+            && RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence
         ) {
             // Inserting and then deleting the same row before flush is a no-op.
             $this->update->mode = null;
@@ -80,8 +80,8 @@ final readonly class PendingRowUpdate
             return $this;
         }
 
-        $this->update->expectedPresence ??= BufferedRowUpdate::EXPECTED_PRESENT;
-        $this->update->mode = BufferedRowUpdate::MODE_DELETE;
+        $this->update->expectedPresence ??= RowUpdatePlan::EXPECTED_PRESENT;
+        $this->update->mode = RowUpdatePlan::MODE_DELETE;
         $this->update->setColumns = [];
 
         return $this;
@@ -89,7 +89,7 @@ final readonly class PendingRowUpdate
 
     public function expectColumnValue(string $column, mixed $value): self
     {
-        if (BufferedRowUpdate::EXPECTED_ABSENT === $this->update->expectedPresence) {
+        if (RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register expected column values for table "%s", row "%s" because it is already marked for insert.',
                 $this->tableName,
@@ -97,9 +97,9 @@ final readonly class PendingRowUpdate
             ));
         }
 
-        $this->update->expectedPresence = BufferedRowUpdate::EXPECTED_PRESENT;
-        if (BufferedRowUpdate::MODE_UPSERT === $this->update->mode) {
-            $this->update->mode = BufferedRowUpdate::MODE_UPDATE;
+        $this->update->expectedPresence = RowUpdatePlan::EXPECTED_PRESENT;
+        if (RowUpdatePlan::MODE_UPSERT === $this->update->mode) {
+            $this->update->mode = RowUpdatePlan::MODE_UPDATE;
         }
 
         if (
@@ -133,7 +133,7 @@ final readonly class PendingRowUpdate
 
     public function setColumn(string $column, mixed $value): self
     {
-        if (BufferedRowUpdate::MODE_DELETE === $this->update->mode) {
+        if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register column updates for table "%s", row "%s" because it is already marked for delete.',
                 $this->tableName,
@@ -141,7 +141,7 @@ final readonly class PendingRowUpdate
             ));
         }
 
-        $this->update->mode ??= BufferedRowUpdate::MODE_UPDATE;
+        $this->update->mode ??= RowUpdatePlan::MODE_UPDATE;
 
         $this->update->setColumns[$column] = $value;
 

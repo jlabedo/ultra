@@ -2,85 +2,55 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable_Postgres;
+namespace Ultra\MappedTable;
 
 use Doctrine\DBAL\Connection;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
-use Ultra\UnitOfWork\UnitOfWork;
 
-/**
- * Per-table unit of work that buffers conditional row changes and flushes them inside an external transaction.
- */
-final class PostgresMappedTable implements UnitOfWork
+final class PostgresMappedTableAdapter implements MappedTableAdapter
 {
-    /** @var array<string, BufferedRowUpdate> */
-    private array $updates = [];
-
     public function __construct(
         private readonly Connection $connection,
-        private readonly string $tableName,
-        private readonly string $idColumn = 'id',
     ) {}
 
-    public function withId(string|int $id): PendingRowUpdate
+    public function apply(string $tableName, string $idColumn, array $rowUpdates): void
     {
-        $updateKey = self::updateKey($id);
-        $update = $this->updates[$updateKey] ??= new BufferedRowUpdate($id);
-
-        return new PendingRowUpdate($update, $this->tableName);
-    }
-
-    public function flush(): void
-    {
-        $updates = array_values($this->updates);
-        usort($updates, static fn (BufferedRowUpdate $left, BufferedRowUpdate $right): int => self::compareIds($left->id, $right->id));
-
-        foreach ($updates as $update) {
-            switch ($update->mode) {
-                case null:
+        foreach ($rowUpdates as $rowUpdate) {
+            switch ($rowUpdate->mode) {
+                case RowUpdatePlan::MODE_DELETE:
+                    $this->flushDelete($tableName, $idColumn, $rowUpdate);
                     break;
 
-                case BufferedRowUpdate::MODE_DELETE:
-                    $this->flushDelete($update);
+                case RowUpdatePlan::MODE_INSERT:
+                    $this->flushInsert($tableName, $idColumn, $rowUpdate);
                     break;
 
-                case BufferedRowUpdate::MODE_INSERT:
-                    $this->flushInsert($update);
+                case RowUpdatePlan::MODE_REPLACE:
+                    $this->flushReplace($tableName, $idColumn, $rowUpdate);
                     break;
 
-                case BufferedRowUpdate::MODE_REPLACE:
-                    $this->flushReplace($update);
+                case RowUpdatePlan::MODE_UPSERT:
+                    $this->flushUpsert($tableName, $idColumn, $rowUpdate);
                     break;
 
-                case BufferedRowUpdate::MODE_UPSERT:
-                    $this->flushUpsert($update);
-                    break;
-
-                case BufferedRowUpdate::MODE_UPDATE:
-                    if ([] !== $update->setColumns) {
-                        $this->flushUpdate($update);
-                    }
+                case RowUpdatePlan::MODE_UPDATE:
+                    $this->flushUpdate($tableName, $idColumn, $rowUpdate);
                     break;
 
                 default:
                     throw new \LogicException(sprintf(
                         'Unsupported row update mode "%s" for table "%s".',
-                        (string) $update->mode,
-                        $this->tableName,
+                        $rowUpdate->mode,
+                        $tableName,
                     ));
             }
         }
     }
 
-    public function clear(): void
-    {
-        $this->updates = [];
-    }
-
-    private function flushDelete(BufferedRowUpdate $update): void
+    private function flushDelete(string $tableName, string $idColumn, RowUpdatePlan $update): void
     {
         $whereClauses = [
-            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($this->idColumn)),
+            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($idColumn)),
         ];
         $params = [$update->id];
 
@@ -92,7 +62,7 @@ final class PostgresMappedTable implements UnitOfWork
         $affectedRows = $this->connection->executeStatement(
             sprintf(
                 'DELETE FROM %s WHERE %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
+                $this->connection->quoteSingleIdentifier($tableName),
                 implode(' AND ', $whereClauses),
             ),
             $params,
@@ -101,15 +71,15 @@ final class PostgresMappedTable implements UnitOfWork
         if (1 !== $affectedRows) {
             throw new ConcurrencyException(sprintf(
                 'Conditional delete failed for table "%s" and row "%s".',
-                $this->tableName,
+                $tableName,
                 (string) $update->id,
             ));
         }
     }
 
-    private function flushInsert(BufferedRowUpdate $update): void
+    private function flushInsert(string $tableName, string $idColumn, RowUpdatePlan $update): void
     {
-        $columns = [$this->idColumn];
+        $columns = [$idColumn];
         $params = [$update->id];
 
         foreach ($update->setColumns as $column => $value) {
@@ -125,10 +95,10 @@ final class PostgresMappedTable implements UnitOfWork
         $affectedRows = $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
-                $this->connection->quoteSingleIdentifier($this->tableName),
+                $this->connection->quoteSingleIdentifier($tableName),
                 implode(', ', $quotedColumns),
                 implode(', ', array_fill(0, count($columns), '?')),
-                $this->connection->quoteSingleIdentifier($this->idColumn),
+                $this->connection->quoteSingleIdentifier($idColumn),
             ),
             $params,
         );
@@ -136,21 +106,21 @@ final class PostgresMappedTable implements UnitOfWork
         if (1 !== $affectedRows) {
             throw new ConcurrencyException(sprintf(
                 'Insert failed for table "%s" and row "%s" because the row already exists.',
-                $this->tableName,
+                $tableName,
                 (string) $update->id,
             ));
         }
     }
 
-    private function flushReplace(BufferedRowUpdate $update): void
+    private function flushReplace(string $tableName, string $idColumn, RowUpdatePlan $update): void
     {
-        $this->flushDelete($update);
-        $this->flushInsert($update);
+        $this->flushDelete($tableName, $idColumn, $update);
+        $this->flushInsert($tableName, $idColumn, $update);
     }
 
-    private function flushUpsert(BufferedRowUpdate $update): void
+    private function flushUpsert(string $tableName, string $idColumn, RowUpdatePlan $update): void
     {
-        $columns = [$this->idColumn];
+        $columns = [$idColumn];
         $params = [$update->id];
 
         foreach ($update->setColumns as $column => $value) {
@@ -167,10 +137,10 @@ final class PostgresMappedTable implements UnitOfWork
             $this->connection->executeStatement(
                 sprintf(
                     'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
-                    $this->connection->quoteSingleIdentifier($this->tableName),
+                    $this->connection->quoteSingleIdentifier($tableName),
                     implode(', ', $quotedColumns),
                     implode(', ', array_fill(0, count($columns), '?')),
-                    $this->connection->quoteSingleIdentifier($this->idColumn),
+                    $this->connection->quoteSingleIdentifier($idColumn),
                 ),
                 $params,
             );
@@ -187,17 +157,17 @@ final class PostgresMappedTable implements UnitOfWork
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
+                $this->connection->quoteSingleIdentifier($tableName),
                 implode(', ', $quotedColumns),
                 implode(', ', array_fill(0, count($columns), '?')),
-                $this->connection->quoteSingleIdentifier($this->idColumn),
+                $this->connection->quoteSingleIdentifier($idColumn),
                 implode(', ', $assignments),
             ),
             $params,
         );
     }
 
-    private function flushUpdate(BufferedRowUpdate $update): void
+    private function flushUpdate(string $tableName, string $idColumn, RowUpdatePlan $update): void
     {
         $setClauses = [];
         $params = [];
@@ -208,7 +178,7 @@ final class PostgresMappedTable implements UnitOfWork
         }
 
         $whereClauses = [
-            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($this->idColumn)),
+            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($idColumn)),
         ];
         $params[] = $update->id;
 
@@ -220,7 +190,7 @@ final class PostgresMappedTable implements UnitOfWork
         $affectedRows = $this->connection->executeStatement(
             sprintf(
                 'UPDATE %s SET %s WHERE %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
+                $this->connection->quoteSingleIdentifier($tableName),
                 implode(', ', $setClauses),
                 implode(' AND ', $whereClauses),
             ),
@@ -230,23 +200,9 @@ final class PostgresMappedTable implements UnitOfWork
         if (1 !== $affectedRows) {
             throw new ConcurrencyException(sprintf(
                 'Conditional update failed for table "%s" and row "%s".',
-                $this->tableName,
+                $tableName,
                 (string) $update->id,
             ));
         }
-    }
-
-    private static function compareIds(string|int $left, string|int $right): int
-    {
-        if (is_int($left) && is_int($right)) {
-            return $left <=> $right;
-        }
-
-        return (string) $left <=> (string) $right;
-    }
-
-    private static function updateKey(string|int $id): string
-    {
-        return (string) $id;
     }
 }
