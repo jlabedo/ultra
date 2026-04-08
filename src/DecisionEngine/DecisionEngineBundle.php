@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine_Bundle;
+namespace Ultra\DecisionEngine;
 
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;

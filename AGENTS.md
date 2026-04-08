@@ -11,8 +11,7 @@ This file is for coding agents working in the Ultra monorepo.
 
 ## Package map
 
-- `DecisionEngine`: Event-sourced decision pipeline built on the mediator; loads state, invokes decision handlers, and appends emitted events.
-- `DecisionEngine_Bundle`: Symfony bundle wiring for the decision engine, including autoconfiguration and loader compilation.
+- `DecisionEngine`: Event-sourced decision pipeline built on the mediator; loads state, invokes decision handlers, appends emitted events, and now owns its Symfony bundle wiring.
 - `DecisionEngine_Compiler`: Compiler support that analyzes event-sourced entities and generates typed entity loaders.
 - `EventStore`: Core event store contracts, stream queries, stored-event types, and optimistic concurrency primitives.
 - `EventStore_Postgres`: Postgres-backed event store implementation.

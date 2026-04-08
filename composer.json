@@ -29,7 +29,6 @@
     },
     "replace": {
         "ultra/decision-engine": "self.version",
-        "ultra/decision-engine-bundle": "self.version",
         "ultra/decision-engine-compiler": "self.version",
         "ultra/event-store": "self.version",
         "ultra/event-store-postgres": "self.version",

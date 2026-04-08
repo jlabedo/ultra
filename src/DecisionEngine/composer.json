@@ -16,6 +16,10 @@
         "ultra/message-handling": "*",
         "ultra/mapper": "*"
     },
+    "suggest": {
+        "symfony/dependency-injection": "Required to use Ultra\\DecisionEngine\\DecisionEngineBundle.",
+        "ultra/decision-engine-compiler": "Compiles event-sourced entity loaders for the Symfony bundle."
+    },
     "autoload": {
         "psr-4": {
             "Ultra\\DecisionEngine\\": ""

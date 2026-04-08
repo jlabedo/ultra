@@ -96,6 +96,10 @@ A full course/student subscription example (events, states, commands, and tests)
 - **EventRegistryInterface**: maps event type strings (from `#[Event]`) to DTO class names so the engine can rehydrate events when building state from loaded events.
 - **UltraNormalizer**: normalizes event DTOs into payload arrays and rehydrates events from loaded payloads (codegen-backed).
 
+## Symfony
+
+When using Symfony, register `Ultra\DecisionEngine\DecisionEngineBundle`. The package suggests `symfony/dependency-injection` and `ultra/decision-engine-compiler` because the bundle uses Symfony DI autoconfiguration plus compiled entity loaders.
+
 ## Notes
 
 - Decision-state hydration works on `Ultra\EventStore\Event`, not projection-side persisted events with `eventId`.

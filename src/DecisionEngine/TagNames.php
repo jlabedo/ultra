@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine_Bundle;
+namespace Ultra\DecisionEngine;
 
 final class TagNames
 {
