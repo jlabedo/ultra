@@ -5,241 +5,217 @@ declare(strict_types=1);
 namespace Ultra\EventStore_Postgres\Tests;
 
 use Ultra\EventStore\DomainIdentifier;
-use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\Exception\UnsupportedQueryException;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\PostgresEventStore;
+use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
-require_once __DIR__.'/PostgresTestSupport.php';
-
-function withPostgresStore(callable $callback): void
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
+final class PostgresEventStoreTest extends PostgresEventStoreTestCase
 {
-    $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
-    if (false === $dsn || '' === $dsn) {
-        test()->markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres event-store integration tests.');
+    public function test_load_returns_db_generated_recorded_at_and_query_version(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStore $store): void {
+            $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+                ->ofTypes('course.created');
+
+            $empty = $store->load($query);
+            self::assertSame(0, $empty->queryVersion->version);
+
+            $store->append([
+                self::event(
+                    'course.created',
+                    ['name' => 'Math 101'],
+                    ['courseId' => 'course-123'],
+                ),
+            ]);
+
+            $result = $store->load($query);
+
+            self::assertCount(1, $result->events);
+            self::assertInstanceOf(\DateTimeImmutable::class, $result->events[0]->recordedAt);
+            self::assertSame(1, $result->queryVersion->version);
+        });
     }
 
-    $connection = postgresTestConnection($dsn);
-    $prefix = postgresTestUniquePrefix();
-    $schema = postgresTestSchema($prefix);
+    public function test_append_inserts_multiple_events_in_one_batch(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStore $store): void {
+            $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+                ->ofTypes('course.created');
 
-    try {
-        foreach ($schema->createStatements() as $statement) {
-            $connection->executeStatement($statement);
-        }
+            $store->append([
+                self::event('course.created', ['name' => 'Math 101'], ['courseId' => 'course-123']),
+                self::event('course.created', ['name' => 'Math 101 v2'], ['courseId' => 'course-123']),
+            ]);
 
-        $store = postgresTestStore($connection, $prefix);
+            $result = $store->load($query);
 
-        $callback($store, $connection);
-    } finally {
-        foreach ($schema->dropStatements() as $statement) {
-            $connection->executeStatement($statement);
-        }
+            self::assertCount(2, $result->events);
+            self::assertSame('Math 101', $result->events[0]->payload['name']);
+            self::assertSame('Math 101 v2', $result->events[1]->payload['name']);
+            self::assertSame(2, $result->queryVersion->version);
+        });
+    }
+
+    public function test_append_validates_multiple_expected_query_versions(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStore $store): void {
+            $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+                ->ofTypes('student.subscribed');
+            $pairQuery = StreamQuery::forStream(
+                new DomainIdentifier('courseId', 'course-123'),
+                new DomainIdentifier('studentId', 'student-1'),
+            )->ofTypes('student.subscribed');
+
+            $courseVersion = $store->load($courseQuery)->queryVersion;
+            $pairVersion = $store->load($pairQuery)->queryVersion;
+
+            $store->append([
+                self::event('student.subscribed', ['slot' => 1], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+            ], $courseVersion, $pairVersion);
+
+            self::assertCount(1, $store->load($courseQuery)->events);
+            self::assertCount(1, $store->load($pairQuery)->events);
+        });
+    }
+
+    public function test_load_round_trips_hstore_domain_identifiers(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStore $store): void {
+            $domainIds = ['courseId' => 'course-"123"\\example'];
+            $query = StreamQuery::forStream(new DomainIdentifier('courseId', $domainIds['courseId']))
+                ->ofTypes('course.created');
+
+            $store->append([
+                self::event('course.created', ['name' => 'Math 101'], $domainIds),
+            ]);
+
+            $result = $store->load($query);
+
+            self::assertCount(1, $result->events);
+            self::assertSame($domainIds, $result->events[0]->domainIds);
+        });
+    }
+
+    public function test_load_does_not_duplicate_events_for_overlapping_or_branches(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStore $store): void {
+            $courseId = new DomainIdentifier('courseId', 'course-123');
+            $studentId = new DomainIdentifier('studentId', 'student-1');
+            $query = StreamQuery::anyOf(
+                StreamQuery::forStream($courseId)->ofTypes('student.subscribed'),
+                StreamQuery::forStream($courseId, $studentId)->ofTypes('student.subscribed'),
+            );
+
+            $store->append([
+                self::event('student.subscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+            ]);
+
+            $result = $store->load($query);
+
+            self::assertCount(1, $result->events);
+            self::assertSame('student.subscribed', $result->events[0]->eventType);
+            self::assertSame(1, $result->queryVersion->version);
+        });
+    }
+
+    public function test_canonical_pair_does_not_conflict_for_same_course_and_different_student(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStore $store): void {
+            $query = StreamQuery::forStream(
+                new DomainIdentifier('courseId', 'course-123'),
+                new DomainIdentifier('studentId', 'student-1'),
+            )->ofTypes('student.subscribed');
+
+            $store->append([
+                self::event('student.subscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+            ]);
+            $staleVersion = $store->load($query)->queryVersion;
+
+            $store->append([
+                self::event('student.subscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-2',
+                ]),
+            ]);
+
+            $store->append([
+                self::event('student.subscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+            ], $staleVersion);
+
+            self::assertCount(2, $store->load($query)->events);
+        });
+    }
+
+    public function test_canonical_pair_conflicts_for_same_pair(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStore $store): void {
+            $query = StreamQuery::forStream(
+                new DomainIdentifier('courseId', 'course-123'),
+                new DomainIdentifier('studentId', 'student-1'),
+            )->ofTypes('student.subscribed');
+
+            $store->append([
+                self::event('student.subscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+            ]);
+            $staleVersion = $store->load($query)->queryVersion;
+
+            $store->append([
+                self::event('student.subscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+            ]);
+
+            $this->expectException(ConcurrencyException::class);
+
+            $store->append([
+                self::event('student.subscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+            ], $staleVersion);
+        });
+    }
+
+    public function test_unsupported_query_shapes_throw_before_hitting_the_database(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStore $store): void {
+            $this->expectException(UnsupportedQueryException::class);
+
+            $store->load(StreamQuery::forStream(
+                new DomainIdentifier('facultyId', 'faculty-1'),
+                new DomainIdentifier('courseId', 'course-123'),
+            )->ofTypes('student.subscribed'));
+        });
     }
 }
-
-test('load returns db generated recorded_at and query version', function () {
-    withPostgresStore(function (PostgresEventStore $store): void {
-        $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
-            ->ofTypes('course.created')
-        ;
-
-        $empty = $store->load($query);
-        expect($empty->queryVersion->version)->toBe(0);
-
-        $store->append([
-            new Event(
-                eventType: 'course.created',
-                payload: ['name' => 'Math 101'],
-                domainIds: ['courseId' => 'course-123'],
-            ),
-        ]);
-
-        $result = $store->load($query);
-
-        expect($result->events)->toHaveCount(1);
-        expect($result->events[0]->recordedAt)->toBeInstanceOf(\DateTimeImmutable::class);
-        expect($result->queryVersion->version)->toBe(1);
-    });
-});
-
-test('append inserts multiple events in one batch', function () {
-    withPostgresStore(function (PostgresEventStore $store): void {
-        $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
-            ->ofTypes('course.created')
-        ;
-
-        $store->append([
-            new Event(
-                eventType: 'course.created',
-                payload: ['name' => 'Math 101'],
-                domainIds: ['courseId' => 'course-123'],
-            ),
-            new Event(
-                eventType: 'course.created',
-                payload: ['name' => 'Math 101 v2'],
-                domainIds: ['courseId' => 'course-123'],
-            ),
-        ]);
-
-        $result = $store->load($query);
-
-        expect($result->events)->toHaveCount(2);
-        expect($result->events[0]->payload['name'])->toBe('Math 101');
-        expect($result->events[1]->payload['name'])->toBe('Math 101 v2');
-        expect($result->queryVersion->version)->toBe(2);
-    });
-});
-
-test('append validates multiple expected query versions', function () {
-    withPostgresStore(function (PostgresEventStore $store): void {
-        $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
-            ->ofTypes('student.subscribed')
-        ;
-        $pairQuery = StreamQuery::forStream(
-            new DomainIdentifier('courseId', 'course-123'),
-            new DomainIdentifier('studentId', 'student-1'),
-        )->ofTypes('student.subscribed');
-
-        $courseVersion = $store->load($courseQuery)->queryVersion;
-        $pairVersion = $store->load($pairQuery)->queryVersion;
-
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: ['slot' => 1],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            ),
-        ], $courseVersion, $pairVersion);
-
-        expect($store->load($courseQuery)->events)->toHaveCount(1);
-        expect($store->load($pairQuery)->events)->toHaveCount(1);
-    });
-});
-
-test('load round-trips hstore domain identifiers', function () {
-    withPostgresStore(function (PostgresEventStore $store): void {
-        $domainIds = ['courseId' => 'course-"123"\example'];
-        $query = StreamQuery::forStream(new DomainIdentifier('courseId', $domainIds['courseId']))
-            ->ofTypes('course.created')
-        ;
-
-        $store->append([
-            new Event(
-                eventType: 'course.created',
-                payload: ['name' => 'Math 101'],
-                domainIds: $domainIds,
-            ),
-        ]);
-
-        $result = $store->load($query);
-
-        expect($result->events)->toHaveCount(1);
-        expect($result->events[0]->domainIds)->toBe($domainIds);
-    });
-});
-
-test('load does not duplicate events for overlapping OR branches', function () {
-    withPostgresStore(function (PostgresEventStore $store): void {
-        $courseId = new DomainIdentifier('courseId', 'course-123');
-        $studentId = new DomainIdentifier('studentId', 'student-1');
-        $query = StreamQuery::anyOf(
-            StreamQuery::forStream($courseId)->ofTypes('student.subscribed'),
-            StreamQuery::forStream($courseId, $studentId)->ofTypes('student.subscribed'),
-        );
-
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: [],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            ),
-        ]);
-
-        $result = $store->load($query);
-
-        expect($result->events)->toHaveCount(1);
-        expect($result->events[0]->eventType)->toBe('student.subscribed');
-        expect($result->queryVersion->version)->toBe(1);
-    });
-});
-
-test('canonical pair does not conflict for same course and different student', function () {
-    withPostgresStore(function (PostgresEventStore $store): void {
-        $query = StreamQuery::forStream(
-            new DomainIdentifier('courseId', 'course-123'),
-            new DomainIdentifier('studentId', 'student-1'),
-        )->ofTypes('student.subscribed');
-
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: [],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            ),
-        ]);
-        $staleVersion = $store->load($query)->queryVersion;
-
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: [],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
-            ),
-        ]);
-
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: [],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            ),
-        ], $staleVersion);
-
-        expect($store->load($query)->events)->toHaveCount(2);
-    });
-});
-
-test('canonical pair conflicts for same pair', function () {
-    withPostgresStore(function (PostgresEventStore $store): void {
-        $query = StreamQuery::forStream(
-            new DomainIdentifier('courseId', 'course-123'),
-            new DomainIdentifier('studentId', 'student-1'),
-        )->ofTypes('student.subscribed');
-
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: [],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            ),
-        ]);
-        $staleVersion = $store->load($query)->queryVersion;
-
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: [],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            ),
-        ]);
-
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: [],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            ),
-        ], $staleVersion);
-    });
-})->throws(ConcurrencyException::class);
-
-test('unsupported query shapes throw before hitting the database', function () {
-    withPostgresStore(function (PostgresEventStore $store): void {
-        $store->load(StreamQuery::forStream(
-            new DomainIdentifier('facultyId', 'faculty-1'),
-            new DomainIdentifier('courseId', 'course-123'),
-        )->ofTypes('student.subscribed'));
-    });
-})->throws(UnsupportedQueryException::class);

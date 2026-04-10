@@ -4,38 +4,23 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore_Postgres\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Doctrine\DBAL\Connection;
 use Ultra\EventStore\DomainIdentifier;
-use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\StreamQuery;
-
-require_once __DIR__.'/PostgresTestSupport.php';
+use Ultra\EventStore_Postgres\PostgresEventStore;
+use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
 /**
  * @internal
  *
  * @coversNothing
  */
-final class PostgresEventStoreUnitOfWorkTest extends TestCase
+final class PostgresEventStoreUnitOfWorkTest extends PostgresEventStoreTestCase
 {
     public function test_flush_persists_appends_that_depend_on_earlier_buffered_events(): void
     {
-        $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
-        if (false === $dsn || '' === $dsn) {
-            self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres event-store integration tests.');
-        }
-
-        $connection = postgresTestConnection($dsn);
-        $prefix = postgresTestUniquePrefix();
-        $schema = postgresTestSchema($prefix);
-
-        try {
-            foreach ($schema->createStatements() as $statement) {
-                $connection->executeStatement($statement);
-            }
-
-            $store = postgresTestStore($connection, $prefix);
+        $this->withPostgresStore(function (PostgresEventStore $store, Connection $connection): void {
             $uow = new EventStoreUnitOfWork($store);
             $query = StreamQuery::forStream(
                 new DomainIdentifier('courseId', 'course-123'),
@@ -43,19 +28,19 @@ final class PostgresEventStoreUnitOfWorkTest extends TestCase
 
             $firstVersion = $uow->load($query)->queryVersion;
             $uow->append([
-                new Event(
-                    eventType: 'course.created',
-                    payload: ['name' => 'Math 101'],
-                    domainIds: ['courseId' => 'course-123'],
+                self::event(
+                    'course.created',
+                    ['name' => 'Math 101'],
+                    ['courseId' => 'course-123'],
                 ),
             ], $firstVersion);
 
             $secondVersion = $uow->load($query)->queryVersion;
             $uow->append([
-                new Event(
-                    eventType: 'course.created',
-                    payload: ['name' => 'Math 102'],
-                    domainIds: ['courseId' => 'course-123'],
+                self::event(
+                    'course.created',
+                    ['name' => 'Math 102'],
+                    ['courseId' => 'course-123'],
                 ),
             ], $secondVersion);
 
@@ -76,12 +61,6 @@ final class PostgresEventStoreUnitOfWorkTest extends TestCase
             self::assertCount(2, $persisted->events);
             self::assertSame('Math 101', $persisted->events[0]->payload['name']);
             self::assertSame('Math 102', $persisted->events[1]->payload['name']);
-        } finally {
-            foreach ($schema->dropStatements() as $statement) {
-                $connection->executeStatement($statement);
-            }
-
-            $connection->close();
-        }
+        });
     }
 }

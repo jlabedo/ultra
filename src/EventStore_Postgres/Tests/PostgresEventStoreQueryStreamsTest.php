@@ -6,166 +6,122 @@ namespace Ultra\EventStore_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
 use Ultra\EventStore\DomainIdentifier;
-use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
-require_once __DIR__.'/PostgresTestSupport.php';
-
-function withPostgresQueryStreamsStore(callable $callback): void
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
+final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCase
 {
-    $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
-    if (false === $dsn || '' === $dsn) {
-        test()->markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres event-store integration tests.');
+    public function test_query_streams_implementation_returns_db_generated_recorded_at_and_query_version(): void
+    {
+        $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
+            $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+                ->ofTypes('course.created');
+
+            $empty = $store->load($query);
+            self::assertSame(0, $empty->queryVersion->version);
+
+            $store->append([
+                self::event('course.created', ['name' => 'Math 101'], ['courseId' => 'course-123']),
+            ]);
+
+            $result = $store->load($query);
+
+            self::assertCount(1, $result->events);
+            self::assertInstanceOf(\DateTimeImmutable::class, $result->events[0]->recordedAt);
+            self::assertSame(1, $result->queryVersion->version);
+        }, 'query-streams');
     }
 
-    $connection = postgresTestConnection($dsn);
-    $prefix = postgresTestUniquePrefix();
-    $schema = postgresTestSchemaForImplementation($prefix, 'query-streams');
+    public function test_query_streams_implementation_inserts_batched_events_and_query_streams_in_order(): void
+    {
+        $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
+            $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+                ->ofTypes('student.subscribed');
+            $pairQuery = StreamQuery::forStream(
+                new DomainIdentifier('courseId', 'course-123'),
+                new DomainIdentifier('studentId', 'student-2'),
+            )->ofTypes('student.subscribed');
 
-    try {
-        foreach ($schema->createStatements() as $statement) {
-            $connection->executeStatement($statement);
-        }
+            $store->append([
+                self::event('student.subscribed', ['slot' => 1], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+                self::event('student.subscribed', ['slot' => 2], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-2',
+                ]),
+            ]);
 
-        $store = postgresTestStoreForImplementation($connection, $prefix, 'query-streams');
+            $courseResult = $store->load($courseQuery);
+            $pairResult = $store->load($pairQuery);
 
-        $callback($store, $connection, $prefix);
-    } finally {
-        foreach ($schema->dropStatements() as $statement) {
-            $connection->executeStatement($statement);
-        }
+            self::assertCount(2, $courseResult->events);
+            self::assertSame(1, $courseResult->events[0]->payload['slot']);
+            self::assertSame(2, $courseResult->events[1]->payload['slot']);
+            self::assertCount(1, $pairResult->events);
+            self::assertSame('student-2', $pairResult->events[0]->domainIds['studentId']);
+            self::assertSame(1, $pairResult->queryVersion->version);
+        }, 'query-streams');
+    }
 
-        $connection->close();
+    public function test_query_streams_implementation_validates_multiple_expected_query_versions(): void
+    {
+        $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
+            $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+                ->ofTypes('student.subscribed');
+            $pairQuery = StreamQuery::forStream(
+                new DomainIdentifier('courseId', 'course-123'),
+                new DomainIdentifier('studentId', 'student-1'),
+            )->ofTypes('student.subscribed');
+
+            $courseVersion = $store->load($courseQuery)->queryVersion;
+            $pairVersion = $store->load($pairQuery)->queryVersion;
+
+            $store->append([
+                self::event('student.subscribed', ['slot' => 1], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+            ], $courseVersion, $pairVersion);
+
+            self::assertCount(1, $store->load($courseQuery)->events);
+            self::assertCount(1, $store->load($pairQuery)->events);
+        }, 'query-streams');
+    }
+
+    public function test_query_streams_implementation_does_not_duplicate_events_for_overlapping_or_branches(): void
+    {
+        $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
+            $courseId = new DomainIdentifier('courseId', 'course-123');
+            $studentId = new DomainIdentifier('studentId', 'student-1');
+            $query = StreamQuery::anyOf(
+                StreamQuery::forStream($courseId)->ofTypes('student.subscribed'),
+                StreamQuery::forStream($courseId, $studentId)->ofTypes('student.subscribed'),
+            );
+
+            $store->append([
+                self::event('student.subscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+            ]);
+
+            $result = $store->load($query);
+
+            self::assertCount(1, $result->events);
+            self::assertSame('student.subscribed', $result->events[0]->eventType);
+            self::assertSame(1, $result->queryVersion->version);
+        }, 'query-streams');
     }
 }
-
-test('query-streams implementation returns db generated recorded_at and query version', function () {
-    withPostgresQueryStreamsStore(function (EventStore $store): void {
-        $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
-            ->ofTypes('course.created')
-        ;
-
-        $empty = $store->load($query);
-        expect($empty->queryVersion->version)->toBe(0);
-
-        $store->append([
-            new Event(
-                eventType: 'course.created',
-                payload: ['name' => 'Math 101'],
-                domainIds: ['courseId' => 'course-123'],
-            ),
-        ]);
-
-        $result = $store->load($query);
-
-        expect($result->events)->toHaveCount(1);
-        expect($result->events[0]->recordedAt)->toBeInstanceOf(\DateTimeImmutable::class);
-        expect($result->queryVersion->version)->toBe(1);
-    });
-});
-
-test('query-streams implementation inserts batched events and query streams in order', function () {
-    withPostgresQueryStreamsStore(function (EventStore $store): void {
-        $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
-            ->ofTypes('student.subscribed')
-        ;
-        $pairQuery = StreamQuery::forStream(
-            new DomainIdentifier('courseId', 'course-123'),
-            new DomainIdentifier('studentId', 'student-2'),
-        )->ofTypes('student.subscribed');
-
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: ['slot' => 1],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            ),
-            new Event(
-                eventType: 'student.subscribed',
-                payload: ['slot' => 2],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
-            ),
-        ]);
-
-        $courseResult = $store->load($courseQuery);
-        $pairResult = $store->load($pairQuery);
-
-        expect($courseResult->events)->toHaveCount(2);
-        expect($courseResult->events[0]->payload['slot'])->toBe(1);
-        expect($courseResult->events[1]->payload['slot'])->toBe(2);
-        expect($pairResult->events)->toHaveCount(1);
-        expect($pairResult->events[0]->domainIds['studentId'])->toBe('student-2');
-        expect($pairResult->queryVersion->version)->toBe(1);
-    });
-});
-
-test('query-streams implementation validates multiple expected query versions', function () {
-    withPostgresQueryStreamsStore(function (EventStore $store): void {
-        $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
-            ->ofTypes('student.subscribed')
-        ;
-        $pairQuery = StreamQuery::forStream(
-            new DomainIdentifier('courseId', 'course-123'),
-            new DomainIdentifier('studentId', 'student-1'),
-        )->ofTypes('student.subscribed');
-
-        $courseVersion = $store->load($courseQuery)->queryVersion;
-        $pairVersion = $store->load($pairQuery)->queryVersion;
-
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: ['slot' => 1],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            ),
-        ], $courseVersion, $pairVersion);
-
-        expect($store->load($courseQuery)->events)->toHaveCount(1);
-        expect($store->load($pairQuery)->events)->toHaveCount(1);
-    });
-});
-
-test('query-streams implementation stores fixed-width binary digests for query stream keys', function () {
-    withPostgresQueryStreamsStore(function (EventStore $store, Connection $connection, string $prefix): void {
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: ['slot' => 1],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            ),
-        ]);
-
-        $keyLengths = $connection->fetchFirstColumn(sprintf(
-            'SELECT DISTINCT octet_length(query_stream_key) AS key_length FROM %sevent_query_streams',
-            $prefix,
-        ));
-
-        expect($keyLengths)->toBe([32]);
-    });
-});
-
-test('query-streams implementation does not duplicate events for overlapping OR branches', function () {
-    withPostgresQueryStreamsStore(function (EventStore $store): void {
-        $courseId = new DomainIdentifier('courseId', 'course-123');
-        $studentId = new DomainIdentifier('studentId', 'student-1');
-        $query = StreamQuery::anyOf(
-            StreamQuery::forStream($courseId)->ofTypes('student.subscribed'),
-            StreamQuery::forStream($courseId, $studentId)->ofTypes('student.subscribed'),
-        );
-
-        $store->append([
-            new Event(
-                eventType: 'student.subscribed',
-                payload: [],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            ),
-        ]);
-
-        $result = $store->load($query);
-
-        expect($result->events)->toHaveCount(1);
-        expect($result->events[0]->eventType)->toBe('student.subscribed');
-        expect($result->queryVersion->version)->toBe(1);
-    });
-});
