@@ -10,7 +10,6 @@ use Ultra\MessageHandling\Attribute\Before;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
-use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
@@ -27,15 +26,15 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $dispatchCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->name;
+                    return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class($dispatchCalls) {
+            ->withService(new class ($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -51,7 +50,8 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->boot();
+            ->boot()
+        ;
 
 
         // Dispatch-phase advice runs at send time (enqueue)
@@ -68,14 +68,14 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $dispatchCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->name;
+                    return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class($dispatchCalls) {
+            ->withService(new class ($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -91,7 +91,8 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->boot();
+            ->boot()
+        ;
 
         $result = $container->mediator()->send(new GreetingMessage('Alice'));
         self::assertSame('handled: Alice', $result);
@@ -103,15 +104,15 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $executeCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->name;
+                    return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class($executeCalls) {
+            ->withService(new class ($executeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -127,7 +128,8 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->boot();
+            ->boot()
+        ;
 
 
         // Send — execute-phase advice does NOT run at dispatch time
@@ -145,15 +147,15 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $executeCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->name;
+                    return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class($dispatchCalls) {
+            ->withService(new class ($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -169,7 +171,7 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->withService(new class($executeCalls) {
+            ->withService(new class ($executeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -185,7 +187,8 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->boot();
+            ->boot()
+        ;
 
 
         // Send: dispatch runs, execute does not

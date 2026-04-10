@@ -4,14 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Tests;
 
-use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Asynchronous;
 use Ultra\MessageHandling\Attribute\Before;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
-use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\ProceedResult;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
@@ -30,15 +28,15 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $aroundCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->name;
+                    return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class($beforeCalls) {
+            ->withService(new class ($beforeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -54,7 +52,7 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->withService(new class($aroundCalls) {
+            ->withService(new class ($aroundCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -72,7 +70,8 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return $proceed();
                 }
             })
-            ->boot();
+            ->boot()
+        ;
 
         // Send — message is enqueued, advices NOT called
         $container->mediator()->send(new GreetingMessage('test'));

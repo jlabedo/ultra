@@ -16,7 +16,7 @@ use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StaticEventTopologyProvider;
-use Ultra\Mapper\UltraNormalizer;
+use Ultra\Mapper_Bundle\MapperBundle;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling_Compiler\Tests\Support\UltraLight;
@@ -29,26 +29,26 @@ abstract class DecisionEngineFunctionalTestCase extends TestCase
      *
      * @return UltraLight<DecisionEngineTestContainer>
      */
-    protected function decisionUltraLight(array $eventClasses, ?EventBusInterface $eventBus = null): UltraLight
+    protected function decisionUltraLight(array $eventClasses): UltraLight
     {
-        $buildDir = dirname(__DIR__, 4) . '/var/decision_engine_compiler_tests';
+        $buildDir = dirname(__DIR__, 4).'/var/decision_engine_compiler_tests';
         $topologyProvider = new StaticEventTopologyProvider(self::eventTopologyMap($eventClasses));
-        $eventBus ??= new class implements EventBusInterface {
+        $eventBus = new class () implements EventBusInterface {
             public function publish(object $event, array|MessageContext $context = []): void {}
         };
         /** @var UltraLightContainerFactoryInterface<DecisionEngineTestContainer> $containerFactory */
-        $containerFactory = new class implements UltraLightContainerFactoryInterface {
+        $containerFactory = new class () implements UltraLightContainerFactoryInterface {
             public function create(Container $container): DecisionEngineTestContainer
             {
                 return new DecisionEngineTestContainer($container);
             }
         };
 
-        return (new UltraLight())
+        return new UltraLight()
             ->withContainerFactory($containerFactory)
             ->withBuildDir($buildDir)
             ->withBundle(new DecisionEngineBundle())
-            ->withService(new UltraNormalizer($buildDir . '/normalizer'), UltraNormalizer::class)
+            ->withBundle(new MapperBundle())
             ->withService($topologyProvider, EventTopologyProvider::class)
             ->withService(new InMemoryEventStore($topologyProvider), InMemoryEventStore::class)
             ->withAlias(EventStore::class, InMemoryEventStore::class)

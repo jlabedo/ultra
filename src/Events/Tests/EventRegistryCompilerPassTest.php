@@ -50,12 +50,12 @@ final class EventRegistryCompilerPassTest extends TestCase
         $container = new ContainerBuilder();
         $container->setDefinition(
             EventRegistryCompilerPassTestEvent::class,
-            (new Definition(EventRegistryCompilerPassTestEvent::class))
+            new Definition(EventRegistryCompilerPassTestEvent::class)
                 ->addResourceTag(EventsBundle::EVENT_TAG, ['name' => 'faculty.course_created'])
         );
 
         $registry = $this->compileRegistry($container, static function (ContainerBuilder $container): void {
-            (new EventRegistryCompilerPass())->process($container);
+            new EventRegistryCompilerPass()->process($container);
         });
 
         self::assertSame(
@@ -75,7 +75,7 @@ final class EventRegistryCompilerPassTest extends TestCase
     public function test_it_compiles_event_names_and_domain_identifiers_from_bundle_autoconfiguration(): void
     {
         $container = new ContainerBuilder();
-        (new EventsBundle())->build($container);
+        new EventsBundle()->build($container);
 
         $container->register(EventRegistryBundleTaggedEvent::class, EventRegistryBundleTaggedEvent::class)
             ->setAutoconfigured(true)
@@ -115,7 +115,7 @@ final class EventRegistryCompilerPassTest extends TestCase
             $configure($container);
         }
 
-        $container->addCompilerPass(new class implements CompilerPassInterface {
+        $container->addCompilerPass(new class () implements CompilerPassInterface {
             public function process(ContainerBuilder $container): void
             {
                 if ($container->hasDefinition(EventRegistryInterface::class)) {
@@ -127,8 +127,6 @@ final class EventRegistryCompilerPassTest extends TestCase
         $container->compile();
 
         /** @var EventRegistryInterface $registry */
-        $registry = $container->get(EventRegistryInterface::class);
-
-        return $registry;
+        return $container->get(EventRegistryInterface::class);
     }
 }

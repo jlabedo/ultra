@@ -18,8 +18,6 @@ use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
-use function Ultra\EventStore_Postgres\Tests\postgresTestSupportedImplementations;
-
 final class ConcurrencyWorker
 {
     private string $stdout = '';
@@ -47,7 +45,7 @@ final class ConcurrencyWorker
     public function waitForEvent(string $eventName, int $timeoutMs): array
     {
         return $this->waitForMessage(
-            static fn(array $message): bool => 'event' === ($message['type'] ?? null) && $eventName === ($message['name'] ?? null),
+            static fn (array $message): bool => 'event' === ($message['type'] ?? null) && $eventName === ($message['name'] ?? null),
             $timeoutMs,
             sprintf('Timed out waiting for worker event "%s".', $eventName),
         );
@@ -70,7 +68,7 @@ final class ConcurrencyWorker
             }
         }
 
-        throw new \RuntimeException('Worker exited without emitting a result message. STDERR: ' . $this->stderr . ' STDOUT: ' . $this->stdout);
+        throw new \RuntimeException('Worker exited without emitting a result message. STDERR: '.$this->stderr.' STDOUT: '.$this->stdout);
     }
 
     public function send(string $input, bool $close = false): void
@@ -79,7 +77,7 @@ final class ConcurrencyWorker
             throw new \LogicException('This worker does not accept stdin.');
         }
 
-        $this->input->write($input . PHP_EOL);
+        $this->input->write($input.PHP_EOL);
 
         if ($close) {
             $this->input->close();
@@ -127,7 +125,7 @@ final class ConcurrencyWorker
 
         $this->pump();
 
-        throw new \RuntimeException($timeoutMessage . ' STDERR: ' . $this->stderr . ' STDOUT: ' . $this->stdout);
+        throw new \RuntimeException($timeoutMessage.' STDERR: '.$this->stderr.' STDOUT: '.$this->stdout);
     }
 
     private function awaitExit(int $timeoutMs): void
@@ -139,7 +137,7 @@ final class ConcurrencyWorker
             $this->process->wait();
         } catch (ProcessTimedOutException $exception) {
             throw new \RuntimeException(
-                'Timed out waiting for concurrency worker to exit. STDERR: ' . $this->stderr . ' STDOUT: ' . $this->stdout,
+                'Timed out waiting for concurrency worker to exit. STDERR: '.$this->stderr.' STDOUT: '.$this->stdout,
                 previous: $exception,
             );
         } finally {
@@ -453,7 +451,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
      */
     private static function startConcurrencyWorker(array $config, bool $interactive = false): ConcurrencyWorker
     {
-        $script = __DIR__ . '/Fixtures/postgres_event_store_concurrency_worker.php';
+        $script = __DIR__.'/Fixtures/postgres_event_store_concurrency_worker.php';
         $input = $interactive ? new InputStream() : null;
         $process = new Process(
             [PHP_BINARY, $script],
@@ -496,7 +494,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
             'orCriteria' => array_values($query->orCriteria),
             'orBranchEventNames' => null === $query->orBranchEventNames
                 ? null
-                : array_map(static fn(array $types): array => array_values($types), $query->orBranchEventNames),
+                : array_map(static fn (array $types): array => array_values($types), $query->orBranchEventNames),
         ];
     }
 }

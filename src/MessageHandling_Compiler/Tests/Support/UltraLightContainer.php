@@ -7,7 +7,6 @@ namespace Ultra\MessageHandling_Compiler\Tests\Support;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Contracts\Service\ResetInterface;
-use Ultra\MessageHandling\Async\AsyncQueueInterface;
 use Ultra\MessageHandling\Async\InMemoryQueue;
 use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\EventBusInterface;
@@ -44,7 +43,7 @@ readonly class UltraLightContainer implements ContainerInterface, ResetInterface
         return $this->container->initialized($id);
     }
 
-    public function getParameter(string $name): array|bool|string|int|float|\UnitEnum|null
+    public function getParameter(string $name): array|bool|float|int|string|\UnitEnum|null
     {
         return $this->container->getParameter($name);
     }
@@ -54,7 +53,7 @@ readonly class UltraLightContainer implements ContainerInterface, ResetInterface
         return $this->container->hasParameter($name);
     }
 
-    public function setParameter(string $name, array|bool|string|int|float|\UnitEnum|null $value): void
+    public function setParameter(string $name, array|bool|float|int|string|\UnitEnum|null $value): void
     {
         $this->container->setParameter($name, $value);
     }

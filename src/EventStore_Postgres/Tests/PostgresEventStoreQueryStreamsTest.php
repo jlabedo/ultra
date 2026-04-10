@@ -21,7 +21,8 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
     {
         $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
             $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
-                ->ofTypes('course.created');
+                ->ofTypes('course.created')
+            ;
 
             $empty = $store->load($query);
             self::assertSame(0, $empty->queryVersion->version);
@@ -42,7 +43,8 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
     {
         $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
             $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
-                ->ofTypes('student.subscribed');
+                ->ofTypes('student.subscribed')
+            ;
             $pairQuery = StreamQuery::forStream(
                 new DomainIdentifier('courseId', 'course-123'),
                 new DomainIdentifier('studentId', 'student-2'),
@@ -77,7 +79,8 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
     {
         $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
             $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
-                ->ofTypes('student.subscribed');
+                ->ofTypes('student.subscribed')
+            ;
             $pairQuery = StreamQuery::forStream(
                 new DomainIdentifier('courseId', 'course-123'),
                 new DomainIdentifier('studentId', 'student-1'),

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-require_once __DIR__.'/vendor/autoload.php';
-require_once __DIR__.'/src/EventStore_Postgres/Tests/PostgresTestSupport.php';
+require_once __DIR__ . '/vendor/autoload.php';
+require_once __DIR__ . '/src/EventStore_Postgres/Tests/PostgresTestSupport.php';
 
 use Doctrine\DBAL\Connection;
-use Ultra\EventStore\AppendableEvent;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
@@ -253,7 +253,7 @@ function resolvePositiveIntOption(array $options, string $name, int $default): i
 
 function benchmarkTablePrefix(): string
 {
-    return 'ultra_event_store_bench_'.bin2hex(random_bytes(4)).'_';
+    return 'ultra_event_store_bench_' . bin2hex(random_bytes(4)) . '_';
 }
 
 function createSchema(Connection $connection, PostgresEventStoreSchemaDefinition $schema): void
@@ -369,9 +369,26 @@ function seedReadDataset(EventStore $store, int $seedEvents, int $batchSize): ar
         'cold' => 0,
     ];
     $subscriptionBandSequence = [
-        'hot', 'hot', 'hot', 'hot', 'hot', 'hot', 'hot', 'hot', 'hot', 'hot', 'hot',
-        'warm', 'warm', 'warm', 'warm', 'warm', 'warm',
-        'cold', 'cold', 'cold',
+        'hot',
+        'hot',
+        'hot',
+        'hot',
+        'hot',
+        'hot',
+        'hot',
+        'hot',
+        'hot',
+        'hot',
+        'hot',
+        'warm',
+        'warm',
+        'warm',
+        'warm',
+        'warm',
+        'warm',
+        'cold',
+        'cold',
+        'cold',
     ];
 
     while ($remainingCapacityChanges > 0 || $remainingStudentSubscriptions > 0) {
@@ -520,7 +537,7 @@ function seedReadDataset(EventStore $store, int $seedEvents, int $batchSize): ar
 function buildReadScenarios(array $profile): array
 {
     $dashboardBranches = array_map(
-        static fn (string $courseId): StreamQuery => StreamQuery::forStream(
+        static fn(string $courseId): StreamQuery => StreamQuery::forStream(
             new DomainIdentifier('courseId', $courseId),
         )->ofTypes('course.capacity_changed'),
         $profile['samples']['dashboard']['courseIds'],
@@ -672,9 +689,9 @@ function benchmarkReads(EventStore $store, StreamQuery $query, int $iterations, 
     ];
 }
 
-function courseCreatedEvent(string $courseId, string $facultyId, int $sequence): AppendableEvent
+function courseCreatedEvent(string $courseId, string $facultyId, int $sequence): Event
 {
-    return new AppendableEvent(
+    return new Event(
         eventType: 'course.created',
         payload: [
             'sequence' => $sequence,
@@ -687,9 +704,9 @@ function courseCreatedEvent(string $courseId, string $facultyId, int $sequence):
     );
 }
 
-function courseCapacityChangedEvent(string $courseId, int $capacity, int $sequence): AppendableEvent
+function courseCapacityChangedEvent(string $courseId, int $capacity, int $sequence): Event
 {
-    return new AppendableEvent(
+    return new Event(
         eventType: 'course.capacity_changed',
         payload: [
             'sequence' => $sequence,
@@ -701,9 +718,9 @@ function courseCapacityChangedEvent(string $courseId, int $capacity, int $sequen
     );
 }
 
-function studentSubscribedEvent(string $courseId, string $facultyId, string $studentId, int $sequence): AppendableEvent
+function studentSubscribedEvent(string $courseId, string $facultyId, string $studentId, int $sequence): Event
 {
-    return new AppendableEvent(
+    return new Event(
         eventType: 'student.subscribed',
         payload: [
             'sequence' => $sequence,
@@ -907,7 +924,7 @@ function saveBenchmarkSnapshot(string $path, array $snapshot): void
     }
 
     $encoded = json_encode($snapshot, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_THROW_ON_ERROR);
-    if (false === file_put_contents($path, $encoded.PHP_EOL)) {
+    if (false === file_put_contents($path, $encoded . PHP_EOL)) {
         throw new \RuntimeException(sprintf('Unable to write benchmark snapshot file: %s', $path));
     }
 }
@@ -984,16 +1001,18 @@ function printBenchmarkComparison(array $baseline, array $current, string $basel
 function benchmarkConfigDifferences(array $baseline, array $current): array
 {
     $differences = [];
-    foreach ([
-        'implementation',
-        'seedEvents',
-        'seedBatchSize',
-        'writeOperations',
-        'writeBatchSize',
-        'writeStreamCount',
-        'readIterations',
-        'readWarmupIterations',
-    ] as $key) {
+    foreach (
+        [
+            'implementation',
+            'seedEvents',
+            'seedBatchSize',
+            'writeOperations',
+            'writeBatchSize',
+            'writeStreamCount',
+            'readIterations',
+            'readWarmupIterations',
+        ] as $key
+    ) {
         if (($baseline[$key] ?? null) === ($current[$key] ?? null)) {
             continue;
         }
@@ -1014,19 +1033,23 @@ function benchmarkSeedDifferences(array $baseline, array $current): array
 {
     $differences = [];
 
-    foreach ([
-        'facultyCount',
-        'courseCount',
-    ] as $key) {
+    foreach (
+        [
+            'facultyCount',
+            'courseCount',
+        ] as $key
+    ) {
         if (($baseline[$key] ?? null) !== ($current[$key] ?? null)) {
             $differences[] = sprintf('%s %s -> %s', $key, (string) ($baseline[$key] ?? 'n/a'), (string) ($current[$key] ?? 'n/a'));
         }
     }
 
-    foreach ([
-        'courseCountsByBand',
-        'eventCounts',
-    ] as $group) {
+    foreach (
+        [
+            'courseCountsByBand',
+            'eventCounts',
+        ] as $group
+    ) {
         $baselineGroup = is_array($baseline[$group] ?? null) ? $baseline[$group] : [];
         $currentGroup = is_array($current[$group] ?? null) ? $current[$group] : [];
         foreach (array_unique([...array_keys($baselineGroup), ...array_keys($currentGroup)]) as $key) {
@@ -1273,7 +1296,7 @@ function printReadBenchmarkResult(string $label, string $description, array $res
 
 function printLine(string $message = ''): void
 {
-    fwrite(STDOUT, $message.PHP_EOL);
+    fwrite(STDOUT, $message . PHP_EOL);
 }
 
 function formatInteger(int $value): string
@@ -1283,12 +1306,12 @@ function formatInteger(int $value): string
 
 function formatSeconds(float $value): string
 {
-    return number_format($value, 3).' s';
+    return number_format($value, 3) . ' s';
 }
 
 function formatMilliseconds(float $value): string
 {
-    return number_format($value, 3).' ms';
+    return number_format($value, 3) . ' ms';
 }
 
 function formatRate(float $value): string

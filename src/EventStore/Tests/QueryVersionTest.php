@@ -32,7 +32,7 @@ final class QueryVersionTest extends EventStoreTestCase
 
         $this->expectException(ConcurrencyException::class);
 
-        (new QueryVersion(2, $query))->assertMatches(new QueryVersion(1, $query));
+        new QueryVersion(2, $query)->assertMatches(new QueryVersion(1, $query));
     }
 
     public function test_query_versions_match_when_their_versions_are_equal(): void
@@ -41,7 +41,7 @@ final class QueryVersionTest extends EventStoreTestCase
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
 
-        (new QueryVersion(2, $query))->assertMatches(new QueryVersion(2, $query));
+        new QueryVersion(2, $query)->assertMatches(new QueryVersion(2, $query));
 
         self::assertTrue(true);
     }

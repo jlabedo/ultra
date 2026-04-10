@@ -116,7 +116,8 @@ final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTe
 
         $this->ultraLight()
             ->withClass(CompilerNoOverlapState::class)
-            ->boot();
+            ->boot()
+        ;
     }
 
     public function test_container_compilation_rejects_ambiguous_handlers_without_match_tags(): void
@@ -125,7 +126,8 @@ final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTe
 
         $this->ultraLight()
             ->withClass(CompilerAmbiguousState::class)
-            ->boot();
+            ->boot()
+        ;
     }
 
     public function test_container_compilation_rejects_unnecessary_match_tags_for_single_tag_handlers(): void
@@ -134,7 +136,8 @@ final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTe
 
         $this->ultraLight()
             ->withClass(CompilerUnnecessaryMatchTagState::class)
-            ->boot();
+            ->boot()
+        ;
     }
 
     public function test_container_compilation_rejects_match_tags_outside_the_entity_and_event_intersection(): void
@@ -143,7 +146,8 @@ final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTe
 
         $this->ultraLight()
             ->withClass(CompilerInvalidMatchTagState::class)
-            ->boot();
+            ->boot()
+        ;
     }
 
     public function test_container_compilation_rejects_match_tags_on_methods_that_are_not_handlers(): void
@@ -152,7 +156,8 @@ final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTe
 
         $this->ultraLight()
             ->withClass(CompilerMissingHandlerAttributeState::class)
-            ->boot();
+            ->boot()
+        ;
     }
 
     public function test_container_compilation_rejects_handlers_without_a_class_typed_event_parameter(): void
@@ -161,7 +166,8 @@ final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTe
 
         $this->ultraLight()
             ->withClass(CompilerMissingTypeHintState::class)
-            ->boot();
+            ->boot()
+        ;
     }
 
     public function test_container_compilation_rejects_duplicate_handlers_for_the_same_event_type(): void
@@ -170,7 +176,8 @@ final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTe
 
         $this->ultraLight()
             ->withClass(CompilerDuplicateHandlerState::class)
-            ->boot();
+            ->boot()
+        ;
     }
 
     /**

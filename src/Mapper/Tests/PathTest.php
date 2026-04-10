@@ -19,7 +19,8 @@ final class PathTest extends TestCase
         $path = Path::new()
             ->add('foo')
             ->add('bar')
-            ->add(42);
+            ->add(42)
+        ;
 
         self::assertSame("['foo', 'bar', 42, \$k]", $path->toArrayString(['$k']));
     }

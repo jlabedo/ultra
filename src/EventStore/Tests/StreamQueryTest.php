@@ -58,7 +58,8 @@ final class StreamQueryTest extends EventStoreTestCase
     public function test_matches_and_stream_from_empty_query_adds_the_identifier_as_a_branch(): void
     {
         $query = StreamQuery::forStream()
-            ->andStream(new DomainIdentifier('course', 'math-101'));
+            ->andStream(new DomainIdentifier('course', 'math-101'))
+        ;
 
         self::assertFalse($query->isEmpty());
         self::assertTrue($query->matches(self::event(domainIds: ['course' => 'math-101'])));
@@ -67,8 +68,9 @@ final class StreamQueryTest extends EventStoreTestCase
 
     public function test_matches_and_stream_extends_legacy_domain_identifier_query(): void
     {
-        $query = (new StreamQuery(['course' => 'math-101']))
-            ->andStream(new DomainIdentifier('student', 'alice'));
+        $query = new StreamQuery(['course' => 'math-101'])
+            ->andStream(new DomainIdentifier('student', 'alice'))
+        ;
 
         self::assertTrue($query->matches(self::event(domainIds: [
             'course' => 'math-101',
@@ -146,7 +148,8 @@ final class StreamQueryTest extends EventStoreTestCase
     public function test_matches_of_types_filters_by_event_type(): void
     {
         $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'))
-            ->ofTypes('course.created', 'course.updated');
+            ->ofTypes('course.created', 'course.updated')
+        ;
 
         self::assertTrue($query->matches(self::event(
             eventType: 'course.created',
@@ -161,7 +164,8 @@ final class StreamQueryTest extends EventStoreTestCase
     public function test_of_types_normalizes_named_variadic_event_names_to_lists(): void
     {
         $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'))
-            ->ofTypes(created: 'course.created', updated: 'course.updated');
+            ->ofTypes(created: 'course.created', updated: 'course.updated')
+        ;
 
         self::assertSame(['course.created', 'course.updated'], $query->eventNames);
         self::assertSame([['course.created', 'course.updated']], $query->orBranchEventNames);
@@ -169,8 +173,9 @@ final class StreamQueryTest extends EventStoreTestCase
 
     public function test_of_types_records_branch_event_names_for_legacy_domain_identifier_query(): void
     {
-        $query = (new StreamQuery(['course' => 'math-101']))
-            ->ofTypes('course.created');
+        $query = new StreamQuery(['course' => 'math-101'])
+            ->ofTypes('course.created')
+        ;
 
         self::assertSame([['course.created']], $query->orBranchEventNames);
     }

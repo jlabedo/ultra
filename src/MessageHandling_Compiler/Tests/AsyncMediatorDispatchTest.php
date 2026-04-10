@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Tests;
 
-use Ultra\MessageHandling\Async\InMemoryQueue;
-use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\Attribute\Asynchronous;
 use Ultra\MessageHandling\Attribute\Handles;
-use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\EmptyMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\FarewellMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
@@ -24,15 +21,16 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
     public function test_async_handler_enqueues_message_and_returns_null(): void
     {
         $container = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 #[Asynchronous]
                 public function greet(GreetingMessage $message): string
                 {
-                    return 'Hello, ' . $message->name . '!';
+                    return 'Hello, '.$message->name.'!';
                 }
             })
-            ->boot();
+            ->boot()
+        ;
 
         $result = $container->mediator()->send(new GreetingMessage('Alice'));
 
@@ -45,7 +43,7 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
         $executed = false;
 
         $container = $this->ultraLight()
-            ->withService(new class($executed) {
+            ->withService(new class ($executed) {
                 public bool $executed;
 
                 public function __construct(bool &$executed)
@@ -60,7 +58,8 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
                     $this->executed = true;
                 }
             })
-            ->boot();
+            ->boot()
+        ;
 
         $container->mediator()->send(new EmptyMessage());
 
@@ -77,7 +76,7 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
         $syncExecuted = false;
 
         $container = $this->ultraLight()
-            ->withService(new class($syncExecuted) {
+            ->withService(new class ($syncExecuted) {
                 public bool $syncExecuted;
 
                 public function __construct(bool &$syncExecuted)
@@ -90,17 +89,18 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
                 {
                     $this->syncExecuted = true;
 
-                    return 'Hello, ' . $message->name . '!';
+                    return 'Hello, '.$message->name.'!';
                 }
 
                 #[Handles]
                 #[Asynchronous]
                 public function farewell(FarewellMessage $message): string
                 {
-                    return 'Goodbye, ' . $message->name . '!';
+                    return 'Goodbye, '.$message->name.'!';
                 }
             })
-            ->boot();
+            ->boot()
+        ;
 
         // Sync handler returns result immediately
         $syncResult = $container->mediator()->send(new GreetingMessage('Alice'));

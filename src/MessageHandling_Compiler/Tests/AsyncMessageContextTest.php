@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Tests;
 
-use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Asynchronous;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
-use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\MessageContextKeys;
 use Ultra\MessageHandling\ProceedResult;
@@ -29,7 +27,7 @@ final class AsyncMessageContextTest extends MessageHandlingCompilerTestCase
         $capturedContext = null;
 
         $container = $this->ultraLight()
-            ->withService(new class($capturedContext) {
+            ->withService(new class ($capturedContext) {
                 public ?MessageContext $captured;
 
                 public function __construct(?MessageContext &$captured)
@@ -47,7 +45,7 @@ final class AsyncMessageContextTest extends MessageHandlingCompilerTestCase
                     return $proceed();
                 }
             })
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
@@ -55,7 +53,8 @@ final class AsyncMessageContextTest extends MessageHandlingCompilerTestCase
                     return 'handled';
                 }
             })
-            ->boot();
+            ->boot()
+        ;
 
         $container->mediator()->send(new GreetingMessage('context-test'), [
             'traceId' => 'my-trace-123',

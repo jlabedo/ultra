@@ -25,7 +25,7 @@ final readonly class UltraLight
      * @param list<class-string>                                   $eventClasses
      * @param array<string, string>                                $publicAliases
      * @param list<Bundle>                                         $extraBundles
-     * @param UltraLightContainerFactoryInterface<TContainer>|null $containerFactory
+     * @param null|UltraLightContainerFactoryInterface<TContainer> $containerFactory
      */
     public function __construct(
         private array $services = [],

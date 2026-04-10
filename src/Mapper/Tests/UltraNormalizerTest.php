@@ -56,6 +56,8 @@ readonly class CustomerWithRuntimeEmail
 
 /**
  * @internal
+ *
+ * @coversNothing
  */
 #[CoversNamespace('Ultra\Mapper')]
 #[CoversNamespace('Ultra\Mapper_Compiler')]
@@ -383,7 +385,7 @@ final class UltraNormalizerTest extends TestCase
         $normalizer = new UltraNormalizer();
 
         $this->assertDenormalizationMessageContains(
-            static fn(): object => $normalizer->fromScalar(['id' => 'not-an-int', 'name' => 'bar'], Foo::class),
+            static fn (): object => $normalizer->fromScalar(['id' => 'not-an-int', 'name' => 'bar'], Foo::class),
             'id',
             'expected int',
             '[id]',
@@ -392,7 +394,7 @@ final class UltraNormalizerTest extends TestCase
 
     public function test_array_map(): void
     {
-        $result = array_map(fn($value) => $context = new \stdClass() ? $value : null, [1, 2, 3]);
+        $result = array_map(fn ($value) => $context = new \stdClass() ? $value : null, [1, 2, 3]);
 
         self::assertSame([1, 2, 3], $result);
     }
@@ -402,7 +404,7 @@ final class UltraNormalizerTest extends TestCase
         $normalizer = new UltraNormalizer();
 
         $this->assertDenormalizationMessageContains(
-            static fn(): object => $normalizer->fromScalar(['a@b.com', 123], EmailList::class),
+            static fn (): object => $normalizer->fromScalar(['a@b.com', 123], EmailList::class),
             'expected',
             '[1]',
         );
@@ -413,7 +415,7 @@ final class UltraNormalizerTest extends TestCase
         $normalizer = new UltraNormalizer();
 
         $this->assertDenormalizationMessageContains(
-            static fn(): object => $normalizer->fromScalar([
+            static fn (): object => $normalizer->fromScalar([
                 'username' => 'bob',
                 'address' => [
                     'street' => '1 Main',
@@ -432,7 +434,7 @@ final class UltraNormalizerTest extends TestCase
         $normalizer = new UltraNormalizer();
 
         $this->assertDenormalizationMessageContains(
-            static fn(): object => $normalizer->fromScalar([
+            static fn (): object => $normalizer->fromScalar([
                 'user' => [
                     'username' => 'deep',
                     'address' => [
@@ -454,7 +456,7 @@ final class UltraNormalizerTest extends TestCase
         $normalizer = new UltraNormalizer();
 
         $this->assertDenormalizationMessageContains(
-            static fn(): object => $normalizer->fromScalar(['name' => 'bar'], Foo::class),
+            static fn (): object => $normalizer->fromScalar(['name' => 'bar'], Foo::class),
             'id',
             'Missing required property',
             '[id]',
@@ -466,7 +468,7 @@ final class UltraNormalizerTest extends TestCase
         $normalizer = new UltraNormalizer();
 
         $this->assertDenormalizationMessageContains(
-            static fn(): object => $normalizer->fromScalar(['value' => ['not' => 'valid']], MultiUnion::class),
+            static fn (): object => $normalizer->fromScalar(['value' => ['not' => 'valid']], MultiUnion::class),
             'value',
             'does not match any type',
             '[value]',

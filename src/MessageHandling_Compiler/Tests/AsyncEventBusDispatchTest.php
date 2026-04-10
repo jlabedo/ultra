@@ -4,11 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Tests;
 
-use Ultra\MessageHandling\Async\InMemoryQueue;
-use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\Attribute\Asynchronous;
 use Ultra\MessageHandling\Attribute\EventHandler;
-use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\RecordedEvent;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
@@ -26,7 +23,7 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
 
         $container = $this->ultraLight()
             ->withEventClass(RecordedEvent::class)
-            ->withService(new class($syncLog) {
+            ->withService(new class ($syncLog) {
                 /** @var list<string> */
                 public array $log;
 
@@ -39,10 +36,10 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
                 #[EventHandler]
                 public function onEvent(RecordedEvent $event): void
                 {
-                    $this->log[] = 'sync: ' . $event->payload;
+                    $this->log[] = 'sync: '.$event->payload;
                 }
             })
-            ->withService(new class($asyncLog) {
+            ->withService(new class ($asyncLog) {
                 /** @var list<string> */
                 public array $log;
 
@@ -56,10 +53,11 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
                 #[Asynchronous]
                 public function onEvent(RecordedEvent $event): void
                 {
-                    $this->log[] = 'async: ' . $event->payload;
+                    $this->log[] = 'async: '.$event->payload;
                 }
             })
-            ->boot();
+            ->boot()
+        ;
 
         $container->eventBus()->publish(new RecordedEvent('data'));
 
@@ -82,7 +80,7 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
 
         $container = $this->ultraLight()
             ->withEventClass(RecordedEvent::class)
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 /** @var list<string> */
                 public array $log;
 
@@ -96,17 +94,18 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
                 #[Asynchronous]
                 public function handlerA(RecordedEvent $event): void
                 {
-                    $this->log[] = 'A: ' . $event->payload;
+                    $this->log[] = 'A: '.$event->payload;
                 }
 
                 #[EventHandler]
                 #[Asynchronous]
                 public function handlerB(RecordedEvent $event): void
                 {
-                    $this->log[] = 'B: ' . $event->payload;
+                    $this->log[] = 'B: '.$event->payload;
                 }
             })
-            ->boot();
+            ->boot()
+        ;
 
         $container->eventBus()->publish(new RecordedEvent('payload'));
 

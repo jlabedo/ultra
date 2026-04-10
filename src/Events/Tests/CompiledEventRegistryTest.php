@@ -23,7 +23,7 @@ final readonly class PublicTaggedEvent
 final class ProtectedTaggedEvent
 {
     #[DomainIdentifier('course')]
-    protected string $courseId;
+    private string $courseId;
 
     public function __construct(string $courseId)
     {

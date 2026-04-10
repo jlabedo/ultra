@@ -291,7 +291,7 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_publishes_emitted_events_to_the_event_bus_when_available(): void
     {
-        $eventBus = new class implements EventBusInterface {
+        $eventBus = new class () implements EventBusInterface {
             /** @var list<array{event: object, context: array<string, mixed>}> */
             public array $calls = [];
 
@@ -320,7 +320,7 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_publishes_emitted_events_with_the_final_context_from_inner_around_advices(): void
     {
-        $eventBus = new class implements EventBusInterface {
+        $eventBus = new class () implements EventBusInterface {
             /** @var list<array{event: object, context: array<string, mixed>}> */
             public array $calls = [];
 
@@ -333,7 +333,7 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
             }
         };
 
-        $aspect = new class {
+        $aspect = new class () {
             #[Around(priority: 10)]
             public function addPublishingContext(callable $proceed, object $message, MessageContext $context): ProceedResult
             {
@@ -378,18 +378,19 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
     private static function courseStreamQuery(string $courseId): StreamQuery
     {
         return StreamQuery::forStream(new DomainIdentifier('course', $courseId))
-            ->ofTypes('course.created', 'student.subscribed', 'student.unsubscribed');
+            ->ofTypes('course.created', 'student.subscribed', 'student.unsubscribed')
+        ;
     }
 
     private static function studentStreamQuery(string $studentId): StreamQuery
     {
         return StreamQuery::forStream(new DomainIdentifier('student', $studentId))
-            ->ofTypes('student.subscribed', 'student.unsubscribed');
+            ->ofTypes('student.subscribed', 'student.unsubscribed')
+        ;
     }
 
     /**
      * @param list<Violation> $violations
-     * @param string ...$expectedCodes
      */
     private static function assertViolationCodes(array $violations, string ...$expectedCodes): void
     {
