@@ -29,10 +29,6 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
         $baseResult = $this->inner->load($query);
         $pendingEvents = $this->pendingEventsMatching($query);
 
-        if ([] === $pendingEvents) {
-            return $baseResult;
-        }
-
         return new LoadResult(
             [...$baseResult->events, ...$pendingEvents],
             $baseResult->queryVersion,

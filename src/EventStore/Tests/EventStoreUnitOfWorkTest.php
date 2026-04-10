@@ -46,6 +46,44 @@ final class EventStoreUnitOfWorkTest extends TestCase
         self::assertCount(0, $store->load($query)->events);
     }
 
+    public function test_load_keeps_persisted_events_and_later_matching_buffered_events(): void
+    {
+        $store = new InMemoryEventStore($this->topologyProvider());
+        $uow = new EventStoreUnitOfWork($store);
+        $query = StreamQuery::forStream(
+            new DomainIdentifier('courseId', 'course-123'),
+        )->ofTypes('course.created');
+
+        $store->append([
+            new Event(
+                eventType: 'course.created',
+                payload: ['name' => 'Persisted'],
+                domainIds: ['courseId' => 'course-123'],
+            ),
+        ]);
+
+        $uow->append([
+            new Event(
+                eventType: 'course.created',
+                payload: ['name' => 'Other course'],
+                domainIds: ['courseId' => 'course-999'],
+            ),
+            new Event(
+                eventType: 'course.created',
+                payload: ['name' => 'Pending'],
+                domainIds: ['courseId' => 'course-123'],
+            ),
+        ]);
+
+        $result = $uow->load($query);
+
+        self::assertSame(['Persisted', 'Pending'], array_map(
+            static fn (Event $event): string => $event->payload['name'],
+            $result->events,
+        ));
+        self::assertSame(1, $result->queryVersion->version);
+    }
+
     public function test_load_keeps_persisted_query_version_when_pending_events_are_visible(): void
     {
         $store = new InMemoryEventStore($this->topologyProvider());
