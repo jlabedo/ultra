@@ -19,9 +19,6 @@ final class InMemoryEventStore implements EventStore
     public function load(StreamQuery $query): LoadResult
     {
         $canonicalQuery = $this->queryKeyFactory->resolveQuery($query);
-        if ($query->isEmpty()) {
-            return new LoadResult([], QueryVersion::empty($query));
-        }
 
         $result = [];
         foreach ($this->events as $event) {

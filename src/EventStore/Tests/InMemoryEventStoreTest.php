@@ -26,6 +26,23 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertSame(0, $result->queryVersion->version);
     }
 
+    public function test_load_with_empty_query_ignores_existing_events(): void
+    {
+        $store = $this->store();
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+            ),
+        ]);
+
+        $result = $store->load(new StreamQuery([]));
+
+        self::assertSame([], $result->events);
+        self::assertSame(0, $result->queryVersion->version);
+    }
+
     public function test_typed_singleton_query_loads_matching_events_and_returns_versions(): void
     {
         $store = $this->store();
@@ -52,6 +69,42 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertSame('course.created', $result->events[0]->eventType);
         self::assertSame('Math 101', $result->events[0]->payload['name']);
         self::assertSame(1, $result->queryVersion->version);
+    }
+
+    public function test_typed_singleton_query_version_counts_matches_after_non_matching_events(): void
+    {
+        $store = $this->store();
+        $query = StreamQuery::forStream(
+            new DomainIdentifier('courseId', 'course-123'),
+        )->ofTypes('course.created');
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-999'],
+            ),
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+            ),
+        ]);
+
+        $result = $store->load($query);
+
+        self::assertCount(1, $result->events);
+        self::assertSame(1, $result->queryVersion->version);
+    }
+
+    public function test_append_rejects_events_without_registered_topology(): void
+    {
+        $this->expectException(UnsupportedQueryException::class);
+
+        $this->store()->append([
+            self::event(
+                eventType: 'course.deleted',
+                domainIds: ['courseId' => 'course-123'],
+            ),
+        ]);
     }
 
     public function test_append_with_stale_singleton_query_version_throws_concurrency_exception(): void
