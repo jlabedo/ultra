@@ -24,7 +24,6 @@ use Ultra\EventStore\StreamQuery;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
-use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\ProceedResult;
 
@@ -33,9 +32,9 @@ use Ultra\MessageHandling\ProceedResult;
  *
  * @coversNothing
  */
-final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
+final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 {
-    public function test_full_handle_flow_creates_a_course_and_subscribes_a_student(): void
+    public function test_it_creates_a_course_and_subscribes_a_student_through_the_mediator(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -51,7 +50,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertCount(2, $store->load(self::courseStreamQuery('math-101'))->events);
     }
 
-    public function test_handle_returns_the_emitted_events(): void
+    public function test_it_returns_the_emitted_events_from_the_decision_handler(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -64,7 +63,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         );
     }
 
-    public function test_handle_throws_invariant_violation_when_the_course_is_full(): void
+    public function test_it_throws_invariant_violation_when_the_course_is_full(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -82,7 +81,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         }
     }
 
-    public function test_handle_throws_when_creating_a_course_that_already_exists(): void
+    public function test_it_throws_when_creating_a_course_that_already_exists(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -94,7 +93,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         $mediator->send(new CreateCourseCommand('math-101', 'Other', 5));
     }
 
-    public function test_handle_hydrates_empty_state_objects_when_streams_are_empty(): void
+    public function test_it_hydrates_empty_state_objects_when_streams_are_empty(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -105,7 +104,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertSame('new-course', $events[0]->courseId);
     }
 
-    public function test_subscribe_check_returns_course_not_found_before_course_creation(): void
+    public function test_it_returns_course_not_found_during_check_before_course_creation(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -125,7 +124,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertViolationCodes($violations, 'course.not_found');
     }
 
-    public function test_handle_allows_multiple_commands_in_sequence(): void
+    public function test_it_allows_multiple_commands_in_sequence(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -138,7 +137,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertCount(3, $store->load(self::courseStreamQuery('math-101'))->events);
     }
 
-    public function test_check_returns_empty_violations_for_valid_state(): void
+    public function test_it_returns_empty_violations_for_valid_check_requests(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -153,7 +152,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertSame([], $violations);
     }
 
-    public function test_check_returns_course_full_for_an_invalid_subscription(): void
+    public function test_it_returns_course_full_for_an_invalid_subscription_check(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -169,7 +168,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertViolationCodes($violations, 'course.full');
     }
 
-    public function test_check_returns_student_already_subscribed_when_a_student_subscribes_twice(): void
+    public function test_it_returns_student_already_subscribed_when_a_student_subscribes_twice(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -185,7 +184,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertViolationCodes($violations, 'student.already_subscribed');
     }
 
-    public function test_check_throws_if_the_command_has_no_check_method(): void
+    public function test_it_throws_if_the_command_has_no_check_method(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -195,7 +194,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         $mediator->send(new CreateCourseCommand('x', 'X', 1), ['decision_mode' => 'check']);
     }
 
-    public function test_handle_with_service_dependency_resolves_from_the_container(): void
+    public function test_it_resolves_non_state_dependencies_from_the_container(): void
     {
         $command = new readonly class ('timed-1', 'Timed Course', 10) {
             public function __construct(
@@ -238,7 +237,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertCount(1, $store->load(self::courseStreamQuery('timed-1'))->events);
     }
 
-    public function test_handle_can_unsubscribe_a_student_and_updates_the_streams(): void
+    public function test_it_can_unsubscribe_a_student_and_update_the_streams(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -261,7 +260,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertSame([], $violations);
     }
 
-    public function test_unsubscribe_check_returns_missing_course_and_not_subscribed_violations(): void
+    public function test_it_returns_missing_course_and_not_subscribed_violations_for_unsubscribe_checks(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -274,7 +273,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertViolationCodes($violations, 'course.not_found', 'student.not_subscribed');
     }
 
-    public function test_events_are_routed_to_both_course_and_student_streams(): void
+    public function test_it_routes_events_to_both_course_and_student_streams(): void
     {
         $container = $this->bootExampleContainer();
         $mediator = $container->get('test.mediator');
@@ -291,7 +290,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertSame('student.subscribed', $studentStream->events[0]->eventType);
     }
 
-    public function test_decision_engine_publishes_emitted_events_to_the_event_bus_when_available(): void
+    public function test_it_publishes_emitted_events_to_the_event_bus_when_available(): void
     {
         $eventBus = new class implements EventBusInterface {
             /** @var list<array{event: object, context: array<string, mixed>}> */
@@ -319,7 +318,7 @@ final class EngineIntegrationTest extends DecisionEngineFunctionalTestCase
         self::assertSame('trace-123', $eventBus->calls[0]['context']['traceId']);
     }
 
-    public function test_decision_engine_publishes_emitted_events_with_the_final_context_from_inner_around_advices(): void
+    public function test_it_publishes_emitted_events_with_the_final_context_from_inner_around_advices(): void
     {
         $eventBus = new class implements EventBusInterface {
             /** @var list<array{event: object, context: array<string, mixed>}> */
