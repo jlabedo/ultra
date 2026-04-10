@@ -27,7 +27,7 @@ final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
                     return 'Hello, '.$message->name.'!';
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('Hello, Alice!', $mediator->send(new GreetingMessage('Alice')));
@@ -57,7 +57,7 @@ final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
                     $this->recorded[] = $event;
                 }
             })
-            ->eventBus()
+            ->boot()->eventBus()
         ;
 
         $eventBus->publish(new RecordedEvent('stored'));
@@ -75,7 +75,7 @@ final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
                     return 'First hello, '.$message->name.'!';
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         $secondMediator = $this->ultraLight()
@@ -86,7 +86,7 @@ final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
                     return 'Second hello, '.$message->name.'!';
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('First hello, Alice!', $firstMediator->send(new GreetingMessage('Alice')));

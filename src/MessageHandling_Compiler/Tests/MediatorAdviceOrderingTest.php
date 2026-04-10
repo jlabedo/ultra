@@ -92,7 +92,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     $this->log->entries[] = 'after:5';
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
@@ -153,7 +153,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     $this->log->entries[] = 'after:10';
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
@@ -213,7 +213,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     $this->log->entries[] = 'after:10';
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         try {
@@ -293,7 +293,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     $this->log->entries[] = 'after:-5';
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
@@ -327,7 +327,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
             })
             ->withService(new AdviceOrderingAlphabeticalBeforeB($log))
             ->withService(new AdviceOrderingAlphabeticalBeforeA($log))
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
@@ -384,7 +384,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     $this->log->entries[] = 'after:-5';
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         try {
@@ -445,7 +445,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     return $result;
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
@@ -522,7 +522,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     );
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         try {

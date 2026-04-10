@@ -98,7 +98,7 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
                     ];
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame(
@@ -148,7 +148,7 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
                     ];
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame(
@@ -202,7 +202,7 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
                     ];
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame(
@@ -237,7 +237,7 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
                     return 'published: '.$message->name;
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame(

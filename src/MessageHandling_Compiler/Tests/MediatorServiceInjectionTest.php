@@ -137,7 +137,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     return $greeter->greet('pong');
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('Hello, pong!', $mediator->send(new EmptyMessage()));
@@ -186,7 +186,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     return $result;
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('entity-123', $mediator->send(new ProcessEntityMessage('entity-123')));
@@ -238,7 +238,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     ]);
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('left-1+right-2', $mediator->send(new ProcessPairMessage('left-1', 'right-2')));
@@ -310,7 +310,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     return $proceed(provided: [$entity]);
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('left-10+right-20', $mediator->send(new ProcessPairMessage('left-10', 'right-20')));
@@ -385,7 +385,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     return $result;
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('left-100+right-200', $mediator->send(new ProcessPairMessage('left-100', 'right-200')));

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests;
 
-use Symfony\Component\DependencyInjection\Container;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 use Ultra\DecisionEngine\Attribute\MatchTag;
@@ -18,6 +17,7 @@ use Ultra\DecisionEngine\Exception\UnnecessaryMatchTagError;
 use Ultra\DecisionEngine\Tests\Support\DecisionEngineFunctionalTestCase;
 use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\Attribute\Event;
+use Ultra\MessageHandling_Compiler\Tests\Support\UltraLightContainer;
 
 #[Event('compiler.no_overlap')]
 final readonly class CompilerNoOverlapEvent
@@ -161,7 +161,7 @@ final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTe
     /**
      * @param class-string ...$entityClasses
      */
-    private function bootCompilerContainer(string ...$entityClasses): Container
+    private function bootCompilerContainer(string ...$entityClasses): UltraLightContainer
     {
         return $this->decisionUltraLight(self::eventClasses())
             ->withClass(...$entityClasses)

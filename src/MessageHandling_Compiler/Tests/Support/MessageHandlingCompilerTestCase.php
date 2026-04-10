@@ -11,6 +11,9 @@ require_once dirname(__DIR__).'/Fixtures/Messages.php';
 
 abstract class MessageHandlingCompilerTestCase extends TestCase
 {
+    /**
+     * @return UltraLight<UltraLightContainer>
+     */
     protected function ultraLight(): UltraLight
     {
         return new UltraLight();

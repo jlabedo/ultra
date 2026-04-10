@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests;
 
-use Symfony\Component\DependencyInjection\Container;
 use Ultra\DecisionEngine\Engine;
 use Ultra\DecisionEngine\EventSourcedEntityLoader;
 use Ultra\DecisionEngine\Exception\DuplicateTagValueException;
@@ -23,6 +22,7 @@ use Ultra\DecisionEngine\Tests\Support\DecisionEngineFunctionalTestCase;
 use Ultra\EventStore\DomainIdentifier as StreamIdentifier;
 use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\StreamQuery;
+use Ultra\MessageHandling_Compiler\Tests\Support\UltraLightContainer;
 
 /**
  * @internal
@@ -163,7 +163,7 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
     /**
      * @param class-string ...$entityClasses
      */
-    private function bootCompilerContainer(string ...$entityClasses): Container
+    private function bootCompilerContainer(string ...$entityClasses): UltraLightContainer
     {
         return $this->decisionUltraLight(self::eventClasses())
             ->withClass(...$entityClasses)

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Tests\Support;
 
-use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\MessageHandling\Async\AsyncQueueInterface;
@@ -15,15 +14,19 @@ use Ultra\MessageHandling\MessageHandlingBundle;
 
 const ULTRA_LIGHT_BUILD_DIR = __DIR__.'/../../../../var/message_handling_compiler_tests';
 
+/**
+ * @template TContainer of UltraLightContainer
+ */
 final readonly class UltraLight
 {
     /**
- * @param array<int|string, object> $services
- * @param list<class-string>        $classesToDiscover
- * @param list<class-string>        $eventClasses
- * @param array<string, string>     $publicAliases
- * @param list<Bundle>              $extraBundles
- */
+     * @param array<int|string, object>                            $services
+     * @param list<class-string>                                   $classesToDiscover
+     * @param list<class-string>                                   $eventClasses
+     * @param array<string, string>                                $publicAliases
+     * @param list<Bundle>                                         $extraBundles
+     * @param UltraLightContainerFactoryInterface<TContainer>|null $containerFactory
+     */
     public function __construct(
         private array $services = [],
         private array $classesToDiscover = [],
@@ -36,10 +39,21 @@ final readonly class UltraLight
         ],
         private array $extraBundles = [],
         private string $buildDir = ULTRA_LIGHT_BUILD_DIR,
-    ) {}
+        ?UltraLightContainerFactoryInterface $containerFactory = null,
+    ) {
+        /** @var UltraLightContainerFactoryInterface<TContainer> $resolvedContainerFactory */
+        $resolvedContainerFactory = $containerFactory ?? new DefaultUltraLightContainerFactory();
+
+        $this->containerFactory = $resolvedContainerFactory;
+    }
+
+    /** @var UltraLightContainerFactoryInterface<TContainer> */
+    private UltraLightContainerFactoryInterface $containerFactory;
 
     /**
      * @param class-string ...$classesToDiscover
+     *
+     * @return UltraLight<TContainer>
      */
     public function withClass(string ...$classesToDiscover): self
     {
@@ -50,11 +64,14 @@ final readonly class UltraLight
             publicAliases: $this->publicAliases,
             extraBundles: $this->extraBundles,
             buildDir: $this->buildDir,
+            containerFactory: $this->containerFactory,
         );
     }
 
     /**
      * @param class-string ...$eventClasses
+     *
+     * @return UltraLight<TContainer>
      */
     public function withEventClass(string ...$eventClasses): self
     {
@@ -65,9 +82,13 @@ final readonly class UltraLight
             publicAliases: $this->publicAliases,
             extraBundles: $this->extraBundles,
             buildDir: $this->buildDir,
+            containerFactory: $this->containerFactory,
         );
     }
 
+    /**
+     * @return UltraLight<TContainer>
+     */
     public function withService(object $service, ?string $serviceId = null): self
     {
         $services = $this->services;
@@ -84,9 +105,13 @@ final readonly class UltraLight
             publicAliases: $this->publicAliases,
             extraBundles: $this->extraBundles,
             buildDir: $this->buildDir,
+            containerFactory: $this->containerFactory,
         );
     }
 
+    /**
+     * @return UltraLight<TContainer>
+     */
     public function withAlias(string $alias, string $serviceId): self
     {
         return new self(
@@ -96,9 +121,13 @@ final readonly class UltraLight
             publicAliases: [...$this->publicAliases, $alias => $serviceId],
             extraBundles: $this->extraBundles,
             buildDir: $this->buildDir,
+            containerFactory: $this->containerFactory,
         );
     }
 
+    /**
+     * @return UltraLight<TContainer>
+     */
     public function withBundle(Bundle ...$extraBundles): self
     {
         return new self(
@@ -108,9 +137,13 @@ final readonly class UltraLight
             publicAliases: $this->publicAliases,
             extraBundles: [...$this->extraBundles, ...$extraBundles],
             buildDir: $this->buildDir,
+            containerFactory: $this->containerFactory,
         );
     }
 
+    /**
+     * @return UltraLight<TContainer>
+     */
     public function withBuildDir(string $buildDir): self
     {
         return new self(
@@ -120,10 +153,34 @@ final readonly class UltraLight
             publicAliases: $this->publicAliases,
             extraBundles: $this->extraBundles,
             buildDir: $buildDir,
+            containerFactory: $this->containerFactory,
         );
     }
 
-    public function boot(): Container
+    /**
+     * @template TNewContainer of UltraLightContainer
+     *
+     * @param UltraLightContainerFactoryInterface<TNewContainer> $containerFactory
+     *
+     * @return UltraLight<TNewContainer>
+     */
+    public function withContainerFactory(UltraLightContainerFactoryInterface $containerFactory): self
+    {
+        return new self(
+            services: $this->services,
+            classesToDiscover: $this->classesToDiscover,
+            eventClasses: $this->eventClasses,
+            publicAliases: $this->publicAliases,
+            extraBundles: $this->extraBundles,
+            buildDir: $this->buildDir,
+            containerFactory: $containerFactory,
+        );
+    }
+
+    /**
+     * @return TContainer
+     */
+    public function boot(): UltraLightContainer
     {
         $container = new ContainerBuilder();
         $container->setParameter('kernel.build_dir', $this->buildDir);
@@ -157,31 +214,7 @@ final readonly class UltraLight
             $container->set($id, $service);
         }
 
-        return $container;
-    }
-
-    public function mediator(): MediatorInterface
-    {
-        // @var MediatorInterface $mediator
-        return $this->boot()->get('test.mediator');
-    }
-
-    public function eventBus(): EventBusInterface
-    {
-        // @var EventBusInterface $eventBus
-        return $this->boot()->get('test.event_bus');
-    }
-
-    public function asyncQueue(): AsyncQueueInterface
-    {
-        // @var AsyncQueueInterface $queue
-        return $this->boot()->get('test.async_queue');
-    }
-
-    public function queueWorker(): QueueWorker
-    {
-        // @var QueueWorker $worker
-        return $this->boot()->get('test.queue_worker');
+        return $this->containerFactory->create($container);
     }
 
     /**

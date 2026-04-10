@@ -33,7 +33,7 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
     {
         $mediator = $this->ultraLight()
             ->withClass(SelfGreetingMessage::class)
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('Hello, Alice!', $mediator->send(new SelfGreetingMessage('Alice')));
@@ -52,7 +52,7 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
         };
         $mediator = $this->ultraLight()
             ->withClass($message::class, SelfHandlerGreetingService::class)
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('Hello, Bob!', $mediator->send($message));
@@ -69,7 +69,7 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
                     return 'Handler hello, '.$message->name.'!';
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('Handler hello, Alice!', $mediator->send(new GreetingMessage('Alice')));
@@ -102,7 +102,7 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
                     $this->log[] = $message;
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('Hello, Dora!', $mediator->send($message));

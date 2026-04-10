@@ -19,11 +19,14 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling_Compiler\Tests\Support\UltraLight;
+use Ultra\MessageHandling_Compiler\Tests\Support\UltraLightContainer;
 
 abstract class DecisionEngineFunctionalTestCase extends TestCase
 {
     /**
      * @param list<class-string> $eventClasses
+     *
+     * @return UltraLight<UltraLightContainer>
      */
     protected function decisionUltraLight(array $eventClasses, ?EventBusInterface $eventBus = null): UltraLight
     {

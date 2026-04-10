@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests;
 
-use Symfony\Component\DependencyInjection\Container;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
@@ -26,6 +25,7 @@ use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\ProceedResult;
+use Ultra\MessageHandling_Compiler\Tests\Support\UltraLightContainer;
 
 /**
  * @internal
@@ -360,7 +360,7 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
      * @param array<int|string, object> $extraServices
      * @param list<class-string>        $extraClasses
      */
-    private function bootExampleContainer(array $extraServices = [], array $extraClasses = []): Container
+    private function bootExampleContainer(array $extraServices = [], array $extraClasses = []): UltraLightContainer
     {
         $eventBus = null;
         if (isset($extraServices[EventBusInterface::class]) && $extraServices[EventBusInterface::class] instanceof EventBusInterface) {

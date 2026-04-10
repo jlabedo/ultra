@@ -58,7 +58,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->logged[] = $message;
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('handled: payload', $mediator->send($handledMessage));
@@ -95,7 +95,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return $proceed();
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('wrapped: value', $mediator->send(new GreetingMessage('value')));
@@ -136,7 +136,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return ['executorId' => 'user-123'];
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('handled: user-123:trace-1', $mediator->send(new GreetingMessage('payload'), ['traceId' => 'trace-1']));
@@ -172,7 +172,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->captured = $returnValue;
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('observed: hello', $mediator->send(new GreetingMessage('hello')));
@@ -207,7 +207,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->caught = $throwable;
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         try {
@@ -250,7 +250,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                 }
             })
             ->withService($cleaner)
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('observed: world', $successfulMediator->send(new GreetingMessage('world')));
@@ -264,7 +264,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                 }
             })
             ->withService($cleaner)
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         $this->expectException(\RuntimeException::class);
@@ -339,7 +339,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return $result;
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('yes:hello', $mediator->send(new GreetingMessage('hello'), ['traceId' => 'trace-1']));

@@ -34,7 +34,7 @@ final class MediatorDispatchTest extends MessageHandlingCompilerTestCase
                     return 'Goodbye, '.$message->name.'!';
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         self::assertSame('Hello, Alice!', $mediator->send(new GreetingMessage('Alice')));
@@ -51,7 +51,7 @@ final class MediatorDispatchTest extends MessageHandlingCompilerTestCase
                     return 'Hello, '.$message->name.'!';
                 }
             })
-            ->mediator()
+            ->boot()->mediator()
         ;
 
         $this->expectException(NoHandlerFound::class);
