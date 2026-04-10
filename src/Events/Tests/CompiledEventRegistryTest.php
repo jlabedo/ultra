@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\Events\Tests;
 
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\TestCase;
 use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\Attribute\Event;
 use Ultra\Events\CompiledEventRegistry;
@@ -21,7 +23,7 @@ final readonly class PublicTaggedEvent
 final class ProtectedTaggedEvent
 {
     #[DomainIdentifier('course')]
-    private string $courseId;
+    protected string $courseId;
 
     public function __construct(string $courseId)
     {
@@ -41,25 +43,38 @@ final class PrivateTaggedEvent
     }
 }
 
-test('compiled registry returns domain identifier values for public and non-public properties', function () {
-    $registry = new CompiledEventRegistry([
-        'events.public_tagged' => PublicTaggedEvent::class,
-        'events.protected_tagged' => ProtectedTaggedEvent::class,
-        'events.private_tagged' => PrivateTaggedEvent::class,
-    ], [
-        PublicTaggedEvent::class => ['course' => 'courseId'],
-        ProtectedTaggedEvent::class => ['course' => 'courseId'],
-        PrivateTaggedEvent::class => ['course' => 'courseId'],
-    ], [
-        ProtectedTaggedEvent::class => true,
-        PrivateTaggedEvent::class => true,
-    ]);
+/**
+ * @internal
+ */
+#[CoversClass(CompiledEventRegistry::class)]
+final class CompiledEventRegistryTest extends TestCase
+{
+    public function test_it_returns_domain_identifier_values_for_public_and_non_public_properties(): void
+    {
+        $registry = new CompiledEventRegistry([
+            'events.public_tagged' => PublicTaggedEvent::class,
+            'events.protected_tagged' => ProtectedTaggedEvent::class,
+            'events.private_tagged' => PrivateTaggedEvent::class,
+        ], [
+            PublicTaggedEvent::class => ['course' => 'courseId'],
+            ProtectedTaggedEvent::class => ['course' => 'courseId'],
+            PrivateTaggedEvent::class => ['course' => 'courseId'],
+        ], [
+            ProtectedTaggedEvent::class => true,
+            PrivateTaggedEvent::class => true,
+        ]);
 
-    expect($registry->getDomainIdentifiers(new PublicTaggedEvent('course-public')))
-        ->toBe(['course' => 'course-public'])
-        ->and($registry->getDomainIdentifiers(new ProtectedTaggedEvent('course-protected')))
-        ->toBe(['course' => 'course-protected'])
-        ->and($registry->getDomainIdentifiers(new PrivateTaggedEvent('course-private')))
-        ->toBe(['course' => 'course-private'])
-    ;
-});
+        self::assertSame(
+            ['course' => 'course-public'],
+            $registry->getDomainIdentifiers(new PublicTaggedEvent('course-public')),
+        );
+        self::assertSame(
+            ['course' => 'course-protected'],
+            $registry->getDomainIdentifiers(new ProtectedTaggedEvent('course-protected')),
+        );
+        self::assertSame(
+            ['course' => 'course-private'],
+            $registry->getDomainIdentifiers(new PrivateTaggedEvent('course-private')),
+        );
+    }
+}

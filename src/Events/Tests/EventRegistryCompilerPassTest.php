@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Ultra\Events\Tests;
 
-use Symfony\Component\DependencyInjection\ChildDefinition;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
+use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Ultra\Events\Attribute\DomainIdentifier;
@@ -36,65 +39,96 @@ final class EventRegistryPrivateTaggedEvent
     }
 }
 
-test('compiler pass registers event names from tagged resource metadata', function () {
-    $container = new ContainerBuilder();
-    $container->setDefinition(
-        EventRegistryCompilerPassTestEvent::class,
-        new Definition(EventRegistryCompilerPassTestEvent::class)
-            ->addResourceTag(EventsBundle::EVENT_TAG, ['name' => 'faculty.course_created'])
-    );
+/**
+ * @internal
+ */
+#[CoversClass(EventRegistryCompilerPass::class)]
+final class EventRegistryCompilerPassTest extends TestCase
+{
+    public function test_it_registers_event_names_from_tagged_resource_metadata(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setDefinition(
+            EventRegistryCompilerPassTestEvent::class,
+            (new Definition(EventRegistryCompilerPassTestEvent::class))
+                ->addResourceTag(EventsBundle::EVENT_TAG, ['name' => 'faculty.course_created'])
+        );
 
-    new EventRegistryCompilerPass()->process($container);
+        $registry = $this->compileRegistry($container, static function (ContainerBuilder $container): void {
+            (new EventRegistryCompilerPass())->process($container);
+        });
 
-    expect($container->hasDefinition(EventRegistryInterface::class))->toBeTrue()
-        ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(0))
-        ->toBe([
-            'faculty.course_created' => EventRegistryCompilerPassTestEvent::class,
-        ])
-        ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(1))
-        ->toBe([])
-        ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(2))
-        ->toBe([])
-    ;
-});
+        self::assertSame(
+            ['faculty.course_created' => EventRegistryCompilerPassTestEvent::class],
+            $registry->all(),
+        );
+        self::assertSame(
+            EventRegistryCompilerPassTestEvent::class,
+            $registry->getClass('faculty.course_created'),
+        );
+        self::assertSame(
+            'faculty.course_created',
+            $registry->getName(EventRegistryCompilerPassTestEvent::class),
+        );
+    }
 
-test('event bundle autoconfiguration preserves the event name when collecting domain identifiers', function () {
-    $container = new ContainerBuilder();
-    new EventsBundle()->build($container);
+    public function test_it_compiles_event_names_and_domain_identifiers_from_bundle_autoconfiguration(): void
+    {
+        $container = new ContainerBuilder();
+        (new EventsBundle())->build($container);
 
-    $definition = new ChildDefinition('');
-    $configurator = $container->getAttributeAutoconfigurators()[Event::class][0];
-    $configurator(
-        $definition,
-        new Event('faculty.course_created'),
-        new \ReflectionClass(EventRegistryBundleTaggedEvent::class),
-    );
+        $container->register(EventRegistryBundleTaggedEvent::class, EventRegistryBundleTaggedEvent::class)
+            ->setAutoconfigured(true)
+            ->setAutowired(false)
+        ;
+        $container->register(EventRegistryPrivateTaggedEvent::class, EventRegistryPrivateTaggedEvent::class)
+            ->setAutoconfigured(true)
+            ->setAutowired(false)
+        ;
 
-    expect($definition->getTag(EventsBundle::EVENT_TAG))->toBe([[
-        'name' => 'faculty.course_created',
-        'tags' => ['faculty' => 'facultyId'],
-    ]]);
-});
+        $registry = $this->compileRegistry($container);
 
-test('compiler pass injects visibility-aware domain identifier metadata', function () {
-    $container = new ContainerBuilder();
-    $container->setDefinition(
-        EventRegistryPrivateTaggedEvent::class,
-        new Definition(EventRegistryPrivateTaggedEvent::class)
-            ->addResourceTag(EventsBundle::EVENT_TAG, ['name' => 'faculty.course_archived'])
-    );
+        self::assertSame(
+            EventRegistryBundleTaggedEvent::class,
+            $registry->getClass('faculty.course_created'),
+        );
+        self::assertSame(
+            EventRegistryPrivateTaggedEvent::class,
+            $registry->getClass('faculty.course_archived'),
+        );
+        self::assertSame(
+            ['faculty' => 'faculty-public'],
+            $registry->getDomainIdentifiers(new EventRegistryBundleTaggedEvent('faculty-public')),
+        );
+        self::assertSame(
+            ['faculty' => 'faculty-private'],
+            $registry->getDomainIdentifiers(new EventRegistryPrivateTaggedEvent('faculty-private')),
+        );
+    }
 
-    new EventRegistryCompilerPass()->process($container);
+    /**
+     * @param null|\Closure(ContainerBuilder): void $configure
+     */
+    private function compileRegistry(ContainerBuilder $container, ?\Closure $configure = null): EventRegistryInterface
+    {
+        if ($configure instanceof \Closure) {
+            $configure($container);
+        }
 
-    expect($container->getDefinition(EventRegistryInterface::class)->getArgument(1))
-        ->toBe([
-            EventRegistryPrivateTaggedEvent::class => [
-                'faculty' => 'facultyId',
-            ],
-        ])
-        ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(2))
-        ->toBe([
-            EventRegistryPrivateTaggedEvent::class => true,
-        ])
-    ;
-});
+        $container->addCompilerPass(new class implements CompilerPassInterface {
+            public function process(ContainerBuilder $container): void
+            {
+                if ($container->hasDefinition(EventRegistryInterface::class)) {
+                    $container->getDefinition(EventRegistryInterface::class)->setPublic(true);
+                }
+            }
+        }, PassConfig::TYPE_BEFORE_REMOVING, -1000);
+
+        $container->compile();
+
+        /** @var EventRegistryInterface $registry */
+        $registry = $container->get(EventRegistryInterface::class);
+
+        return $registry;
+    }
+}
