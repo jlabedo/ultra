@@ -1,23 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd" bootstrap="vendor/autoload.php" colors="true" cacheResultFile="var/.phpunit.result.cache">
-    <groups>
-        <exclude>
-            <group>slow</group>
-        </exclude>
-    </groups>
-    <testsuites>
-        <testsuite name="Ultra Test Suite">
-            <directory suffix="Test.php">./src/*/Tests</directory>
-            <directory suffix="Test.php">./tests</directory>
-        </testsuite>
-    </testsuites>
-    <source>
-        <include>
-            <directory>./src/*</directory>
-        </include>
-        <exclude>
-            <directory>./src/*/Tests</directory>
-            <directory>./src/*/vendor</directory>
-        </exclude>
-    </source>
+<phpunit xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:noNamespaceSchemaLocation="vendor/phpunit/phpunit/phpunit.xsd" bootstrap="vendor/autoload.php" colors="true" cacheDirectory="var/">
+  <groups>
+    <exclude>
+      <group>slow</group>
+    </exclude>
+  </groups>
+  <testsuites>
+    <testsuite name="Ultra Test Suite">
+      <directory suffix="Test.php">./src/*/Tests</directory>
+      <directory suffix="Test.php">./tests</directory>
+    </testsuite>
+  </testsuites>
+  <source>
+    <include>
+      <directory>./src/*</directory>
+    </include>
+    <exclude>
+      <directory>./src/*/Tests</directory>
+      <directory>./src/*/vendor</directory>
+    </exclude>
+  </source>
 </phpunit>
