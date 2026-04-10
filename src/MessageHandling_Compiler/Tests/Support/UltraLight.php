@@ -6,6 +6,7 @@ namespace Ultra\MessageHandling_Compiler\Tests\Support;
 
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\MessageHandling\Async\AsyncQueueInterface;
 use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\EventBusInterface;
@@ -17,11 +18,12 @@ const ULTRA_LIGHT_BUILD_DIR = __DIR__.'/../../../../var/message_handling_compile
 final readonly class UltraLight
 {
     /**
-     * @param array<int|string, object> $services
-     * @param list<class-string>        $classesToDiscover
-     * @param list<class-string>        $eventClasses
-     * @param array<string, string>     $publicAliases
-     */
+ * @param array<int|string, object> $services
+ * @param list<class-string>        $classesToDiscover
+ * @param list<class-string>        $eventClasses
+ * @param array<string, string>     $publicAliases
+ * @param list<Bundle>              $extraBundles
+ */
     public function __construct(
         private array $services = [],
         private array $classesToDiscover = [],
@@ -32,6 +34,8 @@ final readonly class UltraLight
             'test.async_queue' => AsyncQueueInterface::class,
             'test.queue_worker' => QueueWorker::class,
         ],
+        private array $extraBundles = [],
+        private string $buildDir = ULTRA_LIGHT_BUILD_DIR,
     ) {}
 
     /**
@@ -44,6 +48,8 @@ final readonly class UltraLight
             classesToDiscover: [...$this->classesToDiscover, ...$classesToDiscover],
             eventClasses: $this->eventClasses,
             publicAliases: $this->publicAliases,
+            extraBundles: $this->extraBundles,
+            buildDir: $this->buildDir,
         );
     }
 
@@ -57,6 +63,8 @@ final readonly class UltraLight
             classesToDiscover: $this->classesToDiscover,
             eventClasses: [...$this->eventClasses, ...$eventClasses],
             publicAliases: $this->publicAliases,
+            extraBundles: $this->extraBundles,
+            buildDir: $this->buildDir,
         );
     }
 
@@ -74,6 +82,8 @@ final readonly class UltraLight
             classesToDiscover: $this->classesToDiscover,
             eventClasses: $this->eventClasses,
             publicAliases: $this->publicAliases,
+            extraBundles: $this->extraBundles,
+            buildDir: $this->buildDir,
         );
     }
 
@@ -84,13 +94,39 @@ final readonly class UltraLight
             classesToDiscover: $this->classesToDiscover,
             eventClasses: $this->eventClasses,
             publicAliases: [...$this->publicAliases, $alias => $serviceId],
+            extraBundles: $this->extraBundles,
+            buildDir: $this->buildDir,
+        );
+    }
+
+    public function withBundle(Bundle ...$extraBundles): self
+    {
+        return new self(
+            services: $this->services,
+            classesToDiscover: $this->classesToDiscover,
+            eventClasses: $this->eventClasses,
+            publicAliases: $this->publicAliases,
+            extraBundles: [...$this->extraBundles, ...$extraBundles],
+            buildDir: $this->buildDir,
+        );
+    }
+
+    public function withBuildDir(string $buildDir): self
+    {
+        return new self(
+            services: $this->services,
+            classesToDiscover: $this->classesToDiscover,
+            eventClasses: $this->eventClasses,
+            publicAliases: $this->publicAliases,
+            extraBundles: $this->extraBundles,
+            buildDir: $buildDir,
         );
     }
 
     public function boot(): Container
     {
         $container = new ContainerBuilder();
-        $container->setParameter('kernel.build_dir', ULTRA_LIGHT_BUILD_DIR);
+        $container->setParameter('kernel.build_dir', $this->buildDir);
 
         foreach ($this->classesToDiscover as $class) {
             $container->register($this->serviceIdForClass($class), $class)
@@ -112,7 +148,9 @@ final readonly class UltraLight
             $container->setAlias($alias, $serviceId)->setPublic(true);
         }
 
-        new MessageHandlingBundle()->build($container);
+        foreach ([new MessageHandlingBundle(), ...$this->extraBundles] as $bundle) {
+            $bundle->build($container);
+        }
         $container->compile();
 
         foreach ($primaryServices as $id => $service) {
