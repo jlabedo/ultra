@@ -4,151 +4,185 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore\Tests;
 
+use PHPUnit\Framework\Attributes\CoversClass;
 use Ultra\EventStore\DomainIdentifier;
-use Ultra\EventStore\Event;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\Tests\Support\EventStoreTestCase;
 
-function storedEvent(array $domainIds, string $eventType = 'test.event'): Event
+/**
+ * @internal
+ */
+#[CoversClass(StreamQuery::class)]
+final class StreamQueryTest extends EventStoreTestCase
 {
-    return new Event(
-        eventType: $eventType,
-        payload: [],
-        domainIds: $domainIds,
-    );
-}
+    public function test_matches_empty_query_matches_no_event(): void
+    {
+        $query = new StreamQuery([], [], []);
+        $event = self::event(domainIds: ['course' => 'math-101']);
 
-test('matches: empty query matches no event', function () {
-    $query = new StreamQuery([], [], []);
-    $event = storedEvent(['course' => 'math-101']);
+        self::assertFalse($query->matches($event));
+    }
 
-    expect($query->matches($event))->toBeFalse();
-});
+    public function test_matches_for_stream_with_one_identifier_matches_event_with_that_dimension_and_value(): void
+    {
+        $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'));
+        $event = self::event(domainIds: ['course' => 'math-101']);
 
-test('matches: forStream with one identifier matches event with that dimension and value', function () {
-    $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'));
-    $event = storedEvent(['course' => 'math-101']);
+        self::assertTrue($query->matches($event));
+    }
 
-    expect($query->matches($event))->toBeTrue();
-});
+    public function test_matches_for_stream_does_not_match_when_dimension_value_differs(): void
+    {
+        $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'));
+        $event = self::event(domainIds: ['course' => 'other-101']);
 
-test('matches: forStream does not match when dimension value differs', function () {
-    $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'));
-    $event = storedEvent(['course' => 'other-101']);
+        self::assertFalse($query->matches($event));
+    }
 
-    expect($query->matches($event))->toBeFalse();
-});
+    public function test_matches_for_stream_does_not_match_when_dimension_is_missing_on_event(): void
+    {
+        $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'));
+        $event = self::event(domainIds: ['student' => 'alice']);
 
-test('matches: forStream does not match when dimension is missing on event', function () {
-    $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'));
-    $event = storedEvent(['student' => 'alice']);
+        self::assertFalse($query->matches($event));
+    }
 
-    expect($query->matches($event))->toBeFalse();
-});
+    public function test_matches_for_stream_with_multiple_identifiers_matches_event_with_all(): void
+    {
+        $query = StreamQuery::forStream(
+            new DomainIdentifier('course', 'math-101'),
+            new DomainIdentifier('student', 'alice'),
+        );
+        $event = self::event(domainIds: ['course' => 'math-101', 'student' => 'alice']);
 
-test('matches: forStream with multiple identifiers (AND) matches event with all', function () {
-    $query = StreamQuery::forStream(
-        new DomainIdentifier('course', 'math-101'),
-        new DomainIdentifier('student', 'alice'),
-    );
-    $event = storedEvent(['course' => 'math-101', 'student' => 'alice']);
+        self::assertTrue($query->matches($event));
+    }
 
-    expect($query->matches($event))->toBeTrue();
-});
+    public function test_matches_for_stream_with_multiple_identifiers_does_not_match_when_one_is_missing(): void
+    {
+        $query = StreamQuery::forStream(
+            new DomainIdentifier('course', 'math-101'),
+            new DomainIdentifier('student', 'alice'),
+        );
+        $event = self::event(domainIds: ['course' => 'math-101']);
 
-test('matches: forStream with multiple identifiers does not match when one is missing', function () {
-    $query = StreamQuery::forStream(
-        new DomainIdentifier('course', 'math-101'),
-        new DomainIdentifier('student', 'alice'),
-    );
-    $event = storedEvent(['course' => 'math-101']);
+        self::assertFalse($query->matches($event));
+    }
 
-    expect($query->matches($event))->toBeFalse();
-});
+    public function test_matches_any_of_matches_event_that_matches_any_branch(): void
+    {
+        $query = StreamQuery::anyOf(
+            StreamQuery::forStream(new DomainIdentifier('course', 'math-101')),
+            StreamQuery::forStream(new DomainIdentifier('student', 'alice')),
+        );
 
-test('matches: anyOf matches event that matches any branch', function () {
-    $query = StreamQuery::anyOf(
-        StreamQuery::forStream(new DomainIdentifier('course', 'math-101')),
-        StreamQuery::forStream(new DomainIdentifier('student', 'alice')),
-    );
-    $eventCourse = storedEvent(['course' => 'math-101']);
-    $eventStudent = storedEvent(['student' => 'alice']);
-    $eventNeither = storedEvent(['other' => 'x']);
+        self::assertTrue($query->matches(self::event(domainIds: ['course' => 'math-101'])));
+        self::assertTrue($query->matches(self::event(domainIds: ['student' => 'alice'])));
+        self::assertFalse($query->matches(self::event(domainIds: ['other' => 'x'])));
+    }
 
-    expect($query->matches($eventCourse))->toBeTrue();
-    expect($query->matches($eventStudent))->toBeTrue();
-    expect($query->matches($eventNeither))->toBeFalse();
-});
+    public function test_matches_of_types_filters_by_event_type(): void
+    {
+        $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'))
+            ->ofTypes('course.created', 'course.updated');
 
-test('matches: ofTypes filters by event type', function () {
-    $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'))
-        ->ofTypes('course.created', 'course.updated')
-    ;
-    $eventMatching = storedEvent(['course' => 'math-101'], 'course.created');
-    $eventNotMatching = storedEvent(['course' => 'math-101'], 'course.deleted');
+        self::assertTrue($query->matches(self::event(
+            eventType: 'course.created',
+            domainIds: ['course' => 'math-101'],
+        )));
+        self::assertFalse($query->matches(self::event(
+            eventType: 'course.deleted',
+            domainIds: ['course' => 'math-101'],
+        )));
+    }
 
-    expect($query->matches($eventMatching))->toBeTrue();
-    expect($query->matches($eventNotMatching))->toBeFalse();
-});
-
-test('matches: ofTypes filters by event type within OR criteria', function () {
-    $query = StreamQuery::anyOf(
-        StreamQuery::forStream(new DomainIdentifier('course', 'math-101'))
-            ->ofTypes('course.created'),
-        StreamQuery::forStream(new DomainIdentifier('course', 'math-102'))
-            ->ofTypes('course.updated'),
-    );
-    $eventMatching = storedEvent(['course' => 'math-101'], 'course.created');
-    $eventNotMatching = storedEvent(['course' => 'math-102'], 'course.created');
-
-    expect($query->matches($eventMatching))->toBeTrue();
-    expect($query->matches($eventNotMatching))->toBeFalse();
-});
-
-test('matches: deeply nested OR criteria', function () {
-    $query = StreamQuery::anyOf(
-        StreamQuery::forStream(new DomainIdentifier('course', 'math-101'))
-            ->ofTypes('course.created'),
-        StreamQuery::anyOf(
+    public function test_matches_of_types_filters_by_event_type_within_or_criteria(): void
+    {
+        $query = StreamQuery::anyOf(
+            StreamQuery::forStream(new DomainIdentifier('course', 'math-101'))
+                ->ofTypes('course.created'),
             StreamQuery::forStream(new DomainIdentifier('course', 'math-102'))
                 ->ofTypes('course.updated'),
-            StreamQuery::forStream(new DomainIdentifier('course', 'math-103'))
-                ->ofTypes('course.deleted'),
-        ),
-    );
-    $eventMatching = storedEvent(['course' => 'math-101'], 'course.created');
-    $eventMatching2 = storedEvent(['course' => 'math-102'], 'course.updated');
-    $eventMatching3 = storedEvent(['course' => 'math-103'], 'course.deleted');
-    $eventNotMatching = storedEvent(['course' => 'math-101'], 'course.deleted');
-    $eventNotMatching2 = storedEvent(['course' => 'math-102'], 'course.created');
-    $eventNotMatching3 = storedEvent(['course' => 'math-103'], 'course.created');
+        );
 
-    expect($query->matches($eventMatching))->toBeTrue();
-    expect($query->matches($eventMatching2))->toBeTrue();
-    expect($query->matches($eventMatching3))->toBeTrue();
-    expect($query->matches($eventNotMatching))->toBeFalse();
-    expect($query->matches($eventNotMatching2))->toBeFalse();
-    expect($query->matches($eventNotMatching3))->toBeFalse();
-});
+        self::assertTrue($query->matches(self::event(
+            eventType: 'course.created',
+            domainIds: ['course' => 'math-101'],
+        )));
+        self::assertFalse($query->matches(self::event(
+            eventType: 'course.created',
+            domainIds: ['course' => 'math-102'],
+        )));
+    }
 
-test('matches: empty ofTypes means all event types match (domain match only)', function () {
-    $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'));
-    $event = storedEvent(['course' => 'math-101'], 'any.event.type');
+    public function test_matches_deeply_nested_or_criteria(): void
+    {
+        $query = StreamQuery::anyOf(
+            StreamQuery::forStream(new DomainIdentifier('course', 'math-101'))
+                ->ofTypes('course.created'),
+            StreamQuery::anyOf(
+                StreamQuery::forStream(new DomainIdentifier('course', 'math-102'))
+                    ->ofTypes('course.updated'),
+                StreamQuery::forStream(new DomainIdentifier('course', 'math-103'))
+                    ->ofTypes('course.deleted'),
+            ),
+        );
 
-    expect($query->matches($event))->toBeTrue();
-});
+        self::assertTrue($query->matches(self::event(
+            eventType: 'course.created',
+            domainIds: ['course' => 'math-101'],
+        )));
+        self::assertTrue($query->matches(self::event(
+            eventType: 'course.updated',
+            domainIds: ['course' => 'math-102'],
+        )));
+        self::assertTrue($query->matches(self::event(
+            eventType: 'course.deleted',
+            domainIds: ['course' => 'math-103'],
+        )));
+        self::assertFalse($query->matches(self::event(
+            eventType: 'course.deleted',
+            domainIds: ['course' => 'math-101'],
+        )));
+        self::assertFalse($query->matches(self::event(
+            eventType: 'course.created',
+            domainIds: ['course' => 'math-102'],
+        )));
+        self::assertFalse($query->matches(self::event(
+            eventType: 'course.created',
+            domainIds: ['course' => 'math-103'],
+        )));
+    }
 
-test('matches: legacy constructor with domainIdentifiers', function () {
-    $query = new StreamQuery(['course' => 'math-101'], []);
-    $event = storedEvent(['course' => 'math-101']);
+    public function test_matches_empty_of_types_means_all_event_types_match(): void
+    {
+        $query = StreamQuery::forStream(new DomainIdentifier('course', 'math-101'));
 
-    expect($query->matches($event))->toBeTrue();
-});
+        self::assertTrue($query->matches(self::event(
+            eventType: 'any.event.type',
+            domainIds: ['course' => 'math-101'],
+        )));
+    }
 
-test('matches: legacy constructor with domainIdentifiers and eventNames', function () {
-    $query = new StreamQuery(['course' => 'math-101'], ['course.created']);
-    $eventMatch = storedEvent(['course' => 'math-101'], 'course.created');
-    $eventNoType = storedEvent(['course' => 'math-101'], 'course.updated');
+    public function test_matches_legacy_constructor_with_domain_identifiers(): void
+    {
+        $query = new StreamQuery(['course' => 'math-101'], []);
+        $event = self::event(domainIds: ['course' => 'math-101']);
 
-    expect($query->matches($eventMatch))->toBeTrue();
-    expect($query->matches($eventNoType))->toBeFalse();
-});
+        self::assertTrue($query->matches($event));
+    }
+
+    public function test_matches_legacy_constructor_with_domain_identifiers_and_event_names(): void
+    {
+        $query = new StreamQuery(['course' => 'math-101'], ['course.created']);
+
+        self::assertTrue($query->matches(self::event(
+            eventType: 'course.created',
+            domainIds: ['course' => 'math-101'],
+        )));
+        self::assertFalse($query->matches(self::event(
+            eventType: 'course.updated',
+            domainIds: ['course' => 'math-101'],
+        )));
+    }
+}
