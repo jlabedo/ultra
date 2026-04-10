@@ -15,9 +15,10 @@ use Ultra\DecisionEngine\Exception\MissingTypeHintError;
 use Ultra\DecisionEngine\Exception\NoTagOverlapError;
 use Ultra\DecisionEngine\Exception\UnnecessaryMatchTagError;
 use Ultra\DecisionEngine\Tests\Support\DecisionEngineFunctionalTestCase;
+use Ultra\DecisionEngine\Tests\Support\DecisionEngineTestContainer;
 use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\Attribute\Event;
-use Ultra\MessageHandling_Compiler\Tests\Support\UltraLightContainer;
+use Ultra\MessageHandling_Compiler\Tests\Support\UltraLight;
 
 #[Event('compiler.no_overlap')]
 final readonly class CompilerNoOverlapEvent
@@ -113,59 +114,71 @@ final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTe
     {
         $this->expectException(NoTagOverlapError::class);
 
-        $this->bootCompilerContainer(CompilerNoOverlapState::class);
+        $this->ultraLight()
+            ->withClass(CompilerNoOverlapState::class)
+            ->boot();
     }
 
     public function test_container_compilation_rejects_ambiguous_handlers_without_match_tags(): void
     {
         $this->expectException(AmbiguousTagError::class);
 
-        $this->bootCompilerContainer(CompilerAmbiguousState::class);
+        $this->ultraLight()
+            ->withClass(CompilerAmbiguousState::class)
+            ->boot();
     }
 
     public function test_container_compilation_rejects_unnecessary_match_tags_for_single_tag_handlers(): void
     {
         $this->expectException(UnnecessaryMatchTagError::class);
 
-        $this->bootCompilerContainer(CompilerUnnecessaryMatchTagState::class);
+        $this->ultraLight()
+            ->withClass(CompilerUnnecessaryMatchTagState::class)
+            ->boot();
     }
 
     public function test_container_compilation_rejects_match_tags_outside_the_entity_and_event_intersection(): void
     {
         $this->expectException(InvalidMatchTagError::class);
 
-        $this->bootCompilerContainer(CompilerInvalidMatchTagState::class);
+        $this->ultraLight()
+            ->withClass(CompilerInvalidMatchTagState::class)
+            ->boot();
     }
 
     public function test_container_compilation_rejects_match_tags_on_methods_that_are_not_handlers(): void
     {
         $this->expectException(MissingEventSourcingHandlerError::class);
 
-        $this->bootCompilerContainer(CompilerMissingHandlerAttributeState::class);
+        $this->ultraLight()
+            ->withClass(CompilerMissingHandlerAttributeState::class)
+            ->boot();
     }
 
     public function test_container_compilation_rejects_handlers_without_a_class_typed_event_parameter(): void
     {
         $this->expectException(MissingTypeHintError::class);
 
-        $this->bootCompilerContainer(CompilerMissingTypeHintState::class);
+        $this->ultraLight()
+            ->withClass(CompilerMissingTypeHintState::class)
+            ->boot();
     }
 
     public function test_container_compilation_rejects_duplicate_handlers_for_the_same_event_type(): void
     {
         $this->expectException(DuplicateEventSourcingHandlerError::class);
 
-        $this->bootCompilerContainer(CompilerDuplicateHandlerState::class);
+        $this->ultraLight()
+            ->withClass(CompilerDuplicateHandlerState::class)
+            ->boot();
     }
 
     /**
-     * @param class-string ...$entityClasses
+     * @return UltraLight<DecisionEngineTestContainer>
      */
-    private function bootCompilerContainer(string ...$entityClasses): UltraLightContainer
+    private function ultraLight(): UltraLight
     {
-        return $this->decisionUltraLight(self::eventClasses())
-            ->withClass(...$entityClasses)
-            ->boot();
+        return $this->decisionUltraLight(self::eventClasses());
     }
 
     /**

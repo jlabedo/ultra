@@ -16,16 +16,16 @@ use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
 use Ultra\DecisionEngine\Tests\Example\State\StudentSubscriptionState;
 use Ultra\DecisionEngine\Tests\Support\DecisionEngineFunctionalTestCase;
+use Ultra\DecisionEngine\Tests\Support\DecisionEngineTestContainer;
 use Ultra\DecisionEngine\Violation;
 use Ultra\EventStore\DomainIdentifier;
-use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\ProceedResult;
-use Ultra\MessageHandling_Compiler\Tests\Support\UltraLightContainer;
+use Ultra\MessageHandling_Compiler\Tests\Support\UltraLight;
 
 /**
  * @internal
@@ -36,9 +36,9 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 {
     public function test_it_creates_a_course_and_subscribes_a_student_through_the_mediator(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
-        $store = $container->get(InMemoryEventStore::class);
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
+        $store = $container->eventStore();
 
         $createEvents = $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
         $subscribeEvents = $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
@@ -52,8 +52,8 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_returns_the_emitted_events_from_the_decision_handler(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
 
         $events = $mediator->send(new CreateCourseCommand('c1', 'Course 1', 5));
 
@@ -65,9 +65,9 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_throws_invariant_violation_when_the_course_is_full(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
-        $store = $container->get(InMemoryEventStore::class);
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
+        $store = $container->eventStore();
 
         $mediator->send(new CreateCourseCommand('math-101', 'Math', 1));
         $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
@@ -83,8 +83,8 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_throws_when_creating_a_course_that_already_exists(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
 
         $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
 
@@ -95,8 +95,8 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_hydrates_empty_state_objects_when_streams_are_empty(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
 
         $events = $mediator->send(new CreateCourseCommand('new-course', 'New', 20));
 
@@ -106,8 +106,8 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_returns_course_not_found_during_check_before_course_creation(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
 
         try {
             $mediator->send(new SubscribeStudentToCourseCommand('missing-course', 'alice'));
@@ -126,9 +126,9 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_allows_multiple_commands_in_sequence(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
-        $store = $container->get(InMemoryEventStore::class);
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
+        $store = $container->eventStore();
 
         $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
         $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
@@ -139,8 +139,8 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_returns_empty_violations_for_valid_check_requests(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
 
         $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
 
@@ -154,8 +154,8 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_returns_course_full_for_an_invalid_subscription_check(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
 
         $mediator->send(new CreateCourseCommand('math-101', 'Math', 1));
         $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
@@ -170,8 +170,8 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_returns_student_already_subscribed_when_a_student_subscribes_twice(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
 
         $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
         $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
@@ -186,8 +186,8 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_throws_if_the_command_has_no_check_method(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
 
         $this->expectException(CommandHasNoCheckException::class);
 
@@ -219,14 +219,13 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
             }
         };
 
-        $container = $this->bootExampleContainer(
-            [
-                \DateTimeInterface::class => new \DateTimeImmutable('2020-06-15 12:00:00'),
-            ],
-            [$command::class],
-        );
-        $mediator = $container->get('test.mediator');
-        $store = $container->get(InMemoryEventStore::class);
+        $container = $this->ultraLight()
+            ->withService(new \DateTimeImmutable('2020-06-15 12:00:00'), \DateTimeInterface::class)
+            ->withClass($command::class)
+            ->boot()
+        ;
+        $mediator = $container->mediator();
+        $store = $container->eventStore();
 
         $events = $mediator->send($command);
 
@@ -239,9 +238,9 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_can_unsubscribe_a_student_and_update_the_streams(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
-        $store = $container->get(InMemoryEventStore::class);
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
+        $store = $container->eventStore();
 
         $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
         $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
@@ -262,8 +261,8 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_returns_missing_course_and_not_subscribed_violations_for_unsubscribe_checks(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
 
         $violations = $mediator->send(
             new UnsubscribeStudentFromCourseCommand('math-101', 'alice'),
@@ -275,9 +274,9 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_routes_events_to_both_course_and_student_streams(): void
     {
-        $container = $this->bootExampleContainer();
-        $mediator = $container->get('test.mediator');
-        $store = $container->get(InMemoryEventStore::class);
+        $container = $this->ultraLight()->boot();
+        $mediator = $container->mediator();
+        $store = $container->eventStore();
 
         $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
         $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
@@ -305,10 +304,11 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
             }
         };
 
-        $container = $this->bootExampleContainer([
-            EventBusInterface::class => $eventBus,
-        ]);
-        $mediator = $container->get('test.mediator');
+        $container = $this->ultraLight()
+            ->withService($eventBus, EventBusInterface::class)
+            ->boot()
+        ;
+        $mediator = $container->mediator();
 
         $events = $mediator->send(new CreateCourseCommand('math-101', 'Math', 10), ['traceId' => 'trace-123']);
 
@@ -341,11 +341,12 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
             }
         };
 
-        $container = $this->bootExampleContainer([
-            EventBusInterface::class => $eventBus,
-            $aspect,
-        ]);
-        $mediator = $container->get('test.mediator');
+        $container = $this->ultraLight()
+            ->withService($eventBus, EventBusInterface::class)
+            ->withService($aspect)
+            ->boot()
+        ;
+        $mediator = $container->mediator();
 
         $events = $mediator->send(new CreateCourseCommand('history-101', 'History', 10), ['traceId' => 'trace-ctx']);
 
@@ -357,35 +358,21 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
     }
 
     /**
-     * @param array<int|string, object> $extraServices
-     * @param list<class-string>        $extraClasses
+     * @return UltraLight<DecisionEngineTestContainer>
      */
-    private function bootExampleContainer(array $extraServices = [], array $extraClasses = []): UltraLightContainer
+    private function ultraLight(): UltraLight
     {
-        $eventBus = null;
-        if (isset($extraServices[EventBusInterface::class]) && $extraServices[EventBusInterface::class] instanceof EventBusInterface) {
-            $eventBus = $extraServices[EventBusInterface::class];
-            unset($extraServices[EventBusInterface::class]);
-        }
-
-        $ultraLight = $this->decisionUltraLight([
+        return $this->decisionUltraLight([
             CourseCreated::class,
             StudentSubscribed::class,
             StudentUnsubscribed::class,
-        ], $eventBus)->withClass(
+        ])->withClass(
             CreateCourseCommand::class,
             SubscribeStudentToCourseCommand::class,
             UnsubscribeStudentFromCourseCommand::class,
             CourseCapacityState::class,
             StudentSubscriptionState::class,
-            ...$extraClasses,
         );
-
-        foreach ($extraServices as $serviceId => $service) {
-            $ultraLight = $ultraLight->withService($service, is_string($serviceId) ? $serviceId : null);
-        }
-
-        return $ultraLight->boot();
     }
 
     private static function courseStreamQuery(string $courseId): StreamQuery

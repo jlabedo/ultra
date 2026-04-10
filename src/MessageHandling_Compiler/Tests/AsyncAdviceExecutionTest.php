@@ -30,15 +30,15 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $aroundCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class() {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: '.$message->name;
+                    return 'handled: ' . $message->name;
                 }
             })
-            ->withService(new class ($beforeCalls) {
+            ->withService(new class($beforeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -54,7 +54,7 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->withService(new class ($aroundCalls) {
+            ->withService(new class($aroundCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -72,21 +72,15 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return $proceed();
                 }
             })
-            ->boot()
-        ;
-
-        /** @var MediatorInterface $mediator */
-        $mediator = $container->get('test.mediator');
-        /** @var QueueWorker $worker */
-        $worker = $container->get('test.queue_worker');
+            ->boot();
 
         // Send — message is enqueued, advices NOT called
-        $mediator->send(new GreetingMessage('test'));
+        $container->mediator()->send(new GreetingMessage('test'));
         self::assertSame(0, $beforeCalls);
         self::assertSame(0, $aroundCalls);
 
         // Drain — handler executes with full advice chain
-        $worker->drain();
+        $container->queueWorker()->drain();
         self::assertSame(1, $beforeCalls);
         self::assertSame(1, $aroundCalls);
     }

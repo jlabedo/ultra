@@ -11,7 +11,7 @@ use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 use Ultra\DecisionEngine\DecisionEngineBundle;
-use Ultra\DecisionEngine\Engine;
+use Ultra\DecisionEngine\Tests\Support\DecisionEngineTestContainer;
 use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\Events\Attribute\Event;
 use Ultra\Events\CompiledEventRegistry;
@@ -88,8 +88,7 @@ final class DecisionEngineBundleTest extends TestCase
     {
         $container = $this->createContainer();
 
-        /** @var MediatorInterface $mediator */
-        $mediator = $container->get('test.mediator');
+        $mediator = $container->mediator();
         $events = $mediator->send(new CreateCourseForDecisionEngineBundleTest('course-1', 'Math'));
 
         self::assertEquals(
@@ -97,8 +96,7 @@ final class DecisionEngineBundleTest extends TestCase
             $events,
         );
 
-        /** @var Engine $engine */
-        $engine = $container->get(Engine::class);
+        $engine = $container->engine();
         $state = $engine->load(
             CourseStateForDecisionEngineBundleTest::class,
             new DomainIdentifier('course', 'course-1'),
@@ -107,7 +105,7 @@ final class DecisionEngineBundleTest extends TestCase
         self::assertSame('Math', $state->name);
     }
 
-    private function createContainer(): ContainerBuilder
+    private function createContainer(): DecisionEngineTestContainer
     {
         $container = new ContainerBuilder();
         $container->setParameter('kernel.build_dir', DECISION_ENGINE_BUNDLE_TEST_BUILD_DIR);
@@ -159,6 +157,6 @@ final class DecisionEngineBundleTest extends TestCase
         new DecisionEngineBundle()->build($container);
         $container->compile();
 
-        return $container;
+        return new DecisionEngineTestContainer($container);
     }
 }

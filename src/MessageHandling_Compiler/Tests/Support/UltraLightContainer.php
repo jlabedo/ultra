@@ -8,6 +8,7 @@ use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Contracts\Service\ResetInterface;
 use Ultra\MessageHandling\Async\AsyncQueueInterface;
+use Ultra\MessageHandling\Async\InMemoryQueue;
 use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
@@ -65,33 +66,21 @@ readonly class UltraLightContainer implements ContainerInterface, ResetInterface
 
     public function mediator(): MediatorInterface
     {
-        /** @var MediatorInterface $mediator */
-        $mediator = $this->get('test.mediator');
-
-        return $mediator;
+        return $this->get('test.mediator');
     }
 
     public function eventBus(): EventBusInterface
     {
-        /** @var EventBusInterface $eventBus */
-        $eventBus = $this->get('test.event_bus');
-
-        return $eventBus;
+        return $this->get('test.event_bus');
     }
 
-    public function asyncQueue(): AsyncQueueInterface
+    public function asyncQueue(): InMemoryQueue
     {
-        /** @var AsyncQueueInterface $queue */
-        $queue = $this->get('test.async_queue');
-
-        return $queue;
+        return $this->get('test.async_queue');
     }
 
     public function queueWorker(): QueueWorker
     {
-        /** @var QueueWorker $worker */
-        $worker = $this->get('test.queue_worker');
-
-        return $worker;
+        return $this->get('test.queue_worker');
     }
 }

@@ -27,15 +27,15 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $dispatchCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class() {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: '.$message->name;
+                    return 'handled: ' . $message->name;
                 }
             })
-            ->withService(new class ($dispatchCalls) {
+            ->withService(new class($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -51,18 +51,15 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
-        /** @var MediatorInterface $mediator */
-        $mediator = $container->get('test.mediator');
 
         // Dispatch-phase advice runs at send time (enqueue)
-        $mediator->send(new GreetingMessage('test'));
+        $container->mediator()->send(new GreetingMessage('test'));
         self::assertSame(1, $dispatchCalls);
 
         // Draining does NOT run the dispatch advice again
-        $container->get('test.queue_worker')->drain();
+        $container->queueWorker()->drain();
         self::assertSame(1, $dispatchCalls);
     }
 
@@ -71,14 +68,14 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $dispatchCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class() {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: '.$message->name;
+                    return 'handled: ' . $message->name;
                 }
             })
-            ->withService(new class ($dispatchCalls) {
+            ->withService(new class($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -94,13 +91,9 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
-        /** @var MediatorInterface $mediator */
-        $mediator = $container->get('test.mediator');
-
-        $result = $mediator->send(new GreetingMessage('Alice'));
+        $result = $container->mediator()->send(new GreetingMessage('Alice'));
         self::assertSame('handled: Alice', $result);
         self::assertSame(1, $dispatchCalls);
     }
@@ -110,15 +103,15 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $executeCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class() {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: '.$message->name;
+                    return 'handled: ' . $message->name;
                 }
             })
-            ->withService(new class ($executeCalls) {
+            ->withService(new class($executeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -134,18 +127,15 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
-        /** @var MediatorInterface $mediator */
-        $mediator = $container->get('test.mediator');
 
         // Send — execute-phase advice does NOT run at dispatch time
-        $mediator->send(new GreetingMessage('test'));
+        $container->mediator()->send(new GreetingMessage('test'));
         self::assertSame(0, $executeCalls);
 
         // Drain — execute-phase advice runs at dequeue
-        $container->get('test.queue_worker')->drain();
+        $container->queueWorker()->drain();
         self::assertSame(1, $executeCalls);
     }
 
@@ -155,15 +145,15 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $executeCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class() {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: '.$message->name;
+                    return 'handled: ' . $message->name;
                 }
             })
-            ->withService(new class ($dispatchCalls) {
+            ->withService(new class($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -179,7 +169,7 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->withService(new class ($executeCalls) {
+            ->withService(new class($executeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -195,19 +185,16 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
-        /** @var MediatorInterface $mediator */
-        $mediator = $container->get('test.mediator');
 
         // Send: dispatch runs, execute does not
-        $mediator->send(new GreetingMessage('test'));
+        $container->mediator()->send(new GreetingMessage('test'));
         self::assertSame(1, $dispatchCalls);
         self::assertSame(0, $executeCalls);
 
         // Drain: execute runs, dispatch does not repeat
-        $container->get('test.queue_worker')->drain();
+        $container->queueWorker()->drain();
         self::assertSame(1, $dispatchCalls);
         self::assertSame(1, $executeCalls);
     }

@@ -19,10 +19,11 @@ use Ultra\DecisionEngine\Tests\Example\Event\SubscriptionPairConfirmed;
 use Ultra\DecisionEngine\Tests\Example\State\CourseStudentActivityState;
 use Ultra\DecisionEngine\Tests\Example\State\SubscriptionPairStatusState;
 use Ultra\DecisionEngine\Tests\Support\DecisionEngineFunctionalTestCase;
+use Ultra\DecisionEngine\Tests\Support\DecisionEngineTestContainer;
 use Ultra\EventStore\DomainIdentifier as StreamIdentifier;
 use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\StreamQuery;
-use Ultra\MessageHandling_Compiler\Tests\Support\UltraLightContainer;
+use Ultra\MessageHandling_Compiler\Tests\Support\UltraLight;
 
 /**
  * @internal
@@ -33,12 +34,15 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
 {
     public function test_it_loads_entities_across_single_tag_and_pair_events(): void
     {
-        $container = $this->bootCompilerContainer(
-            CourseStudentActivityState::class,
-            SubscriptionPairStatusState::class,
-        );
+        $container = $this->ultraLight()
+            ->withClass(
+                CourseStudentActivityState::class,
+                SubscriptionPairStatusState::class,
+            )
+            ->boot()
+        ;
 
-        $container->get(\Ultra\EventStore\InMemoryEventStore::class)->append([
+        $container->eventStore()->append([
             new StoredEvent('course.created', ['courseId' => 'course-1', 'name' => 'Math', 'maxCapacity' => 10], ['course' => 'course-1']),
             new StoredEvent('student.enrolled', ['studentId' => 'student-1'], ['student' => 'student-1']),
             new StoredEvent('student.subscribed', ['courseId' => 'course-1', 'studentId' => 'student-1'], ['course' => 'course-1', 'student' => 'student-1']),
@@ -46,7 +50,7 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
             new StoredEvent('student.unsubscribed', ['courseId' => 'course-1', 'studentId' => 'student-1'], ['course' => 'course-1', 'student' => 'student-1']),
         ]);
 
-        $engine = $container->get(Engine::class);
+        $engine = $container->engine();
         $state = $engine->load(
             CourseStudentActivityState::class,
             new StreamIdentifier('course', 'course-1'),
@@ -68,14 +72,17 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_requires_all_tags_in_a_multi_tag_match_group(): void
     {
-        $container = $this->bootCompilerContainer(SubscriptionPairStatusState::class);
+        $container = $this->ultraLight()
+            ->withClass(SubscriptionPairStatusState::class)
+            ->boot()
+        ;
 
-        $container->get(\Ultra\EventStore\InMemoryEventStore::class)->append([
+        $container->eventStore()->append([
             new StoredEvent('subscription.pair_confirmed', ['courseId' => 'course-1', 'studentId' => 'student-1', 'status' => 'matched'], ['course' => 'course-1', 'student' => 'student-1']),
             new StoredEvent('subscription.pair_confirmed', ['courseId' => 'course-1', 'studentId' => 'student-2', 'status' => 'other-student'], ['course' => 'course-1', 'student' => 'student-2']),
         ]);
 
-        $engine = $container->get(Engine::class);
+        $engine = $container->engine();
         $state = $engine->load(
             SubscriptionPairStatusState::class,
             new StreamIdentifier('course', 'course-1'),
@@ -87,8 +94,11 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_validates_missing_unexpected_and_duplicate_tag_values_through_generated_loaders(): void
     {
-        $container = $this->bootCompilerContainer(CourseStudentActivityState::class);
-        $engine = $container->get(Engine::class);
+        $container = $this->ultraLight()
+            ->withClass(CourseStudentActivityState::class)
+            ->boot()
+        ;
+        $engine = $container->engine();
 
         try {
             $engine->load(
@@ -150,8 +160,11 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_throws_for_unknown_event_sourced_entities(): void
     {
-        $container = $this->bootCompilerContainer(CourseStudentActivityState::class);
-        $engine = $container->get(Engine::class);
+        $container = $this->ultraLight()
+            ->withClass(CourseStudentActivityState::class)
+            ->boot()
+        ;
+        $engine = $container->engine();
 
         $unknownStateClass = new class () {};
 
@@ -161,13 +174,11 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
     }
 
     /**
-     * @param class-string ...$entityClasses
+     * @return UltraLight<DecisionEngineTestContainer>
      */
-    private function bootCompilerContainer(string ...$entityClasses): UltraLightContainer
+    private function ultraLight(): UltraLight
     {
-        return $this->decisionUltraLight(self::eventClasses())
-            ->withClass(...$entityClasses)
-            ->boot();
+        return $this->decisionUltraLight(self::eventClasses());
     }
 
     /**

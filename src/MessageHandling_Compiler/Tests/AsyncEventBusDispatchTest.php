@@ -26,7 +26,7 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
 
         $container = $this->ultraLight()
             ->withEventClass(RecordedEvent::class)
-            ->withService(new class ($syncLog) {
+            ->withService(new class($syncLog) {
                 /** @var list<string> */
                 public array $log;
 
@@ -39,10 +39,10 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
                 #[EventHandler]
                 public function onEvent(RecordedEvent $event): void
                 {
-                    $this->log[] = 'sync: '.$event->payload;
+                    $this->log[] = 'sync: ' . $event->payload;
                 }
             })
-            ->withService(new class ($asyncLog) {
+            ->withService(new class($asyncLog) {
                 /** @var list<string> */
                 public array $log;
 
@@ -56,32 +56,24 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
                 #[Asynchronous]
                 public function onEvent(RecordedEvent $event): void
                 {
-                    $this->log[] = 'async: '.$event->payload;
+                    $this->log[] = 'async: ' . $event->payload;
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
-        /** @var EventBusInterface $eventBus */
-        $eventBus = $container->get('test.event_bus');
-        /** @var InMemoryQueue $queue */
-        $queue = $container->get('test.async_queue');
-        /** @var QueueWorker $worker */
-        $worker = $container->get('test.queue_worker');
-
-        $eventBus->publish(new RecordedEvent('data'));
+        $container->eventBus()->publish(new RecordedEvent('data'));
 
         // Sync handler ran immediately
         self::assertSame(['sync: data'], $syncLog);
         // Async handler was enqueued, not executed yet
         self::assertSame([], $asyncLog);
-        self::assertSame(1, $queue->count());
+        self::assertSame(1, $container->asyncQueue()->count());
 
         // Drain the queue
-        $worker->drain();
+        $container->queueWorker()->drain();
 
         self::assertSame(['async: data'], $asyncLog);
-        self::assertTrue($queue->isEmpty());
+        self::assertTrue($container->asyncQueue()->isEmpty());
     }
 
     public function test_all_handlers_async_none_run_immediately(): void
@@ -90,7 +82,7 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
 
         $container = $this->ultraLight()
             ->withEventClass(RecordedEvent::class)
-            ->withService(new class ($log) {
+            ->withService(new class($log) {
                 /** @var list<string> */
                 public array $log;
 
@@ -104,32 +96,24 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
                 #[Asynchronous]
                 public function handlerA(RecordedEvent $event): void
                 {
-                    $this->log[] = 'A: '.$event->payload;
+                    $this->log[] = 'A: ' . $event->payload;
                 }
 
                 #[EventHandler]
                 #[Asynchronous]
                 public function handlerB(RecordedEvent $event): void
                 {
-                    $this->log[] = 'B: '.$event->payload;
+                    $this->log[] = 'B: ' . $event->payload;
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
-        /** @var EventBusInterface $eventBus */
-        $eventBus = $container->get('test.event_bus');
-        /** @var InMemoryQueue $queue */
-        $queue = $container->get('test.async_queue');
-        /** @var QueueWorker $worker */
-        $worker = $container->get('test.queue_worker');
-
-        $eventBus->publish(new RecordedEvent('payload'));
+        $container->eventBus()->publish(new RecordedEvent('payload'));
 
         self::assertSame([], $log);
-        self::assertSame(2, $queue->count());
+        self::assertSame(2, $container->asyncQueue()->count());
 
-        $count = $worker->drain();
+        $count = $container->queueWorker()->drain();
 
         self::assertSame(2, $count);
         self::assertCount(2, $log);

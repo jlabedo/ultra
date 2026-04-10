@@ -24,26 +24,20 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
     public function test_async_handler_enqueues_message_and_returns_null(): void
     {
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class() {
                 #[Handles]
                 #[Asynchronous]
                 public function greet(GreetingMessage $message): string
                 {
-                    return 'Hello, '.$message->name.'!';
+                    return 'Hello, ' . $message->name . '!';
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
-        /** @var MediatorInterface $mediator */
-        $mediator = $container->get('test.mediator');
-        /** @var InMemoryQueue $queue */
-        $queue = $container->get('test.async_queue');
-
-        $result = $mediator->send(new GreetingMessage('Alice'));
+        $result = $container->mediator()->send(new GreetingMessage('Alice'));
 
         self::assertNull($result);
-        self::assertSame(1, $queue->count());
+        self::assertSame(1, $container->asyncQueue()->count());
     }
 
     public function test_queue_worker_drains_and_executes_handler(): void
@@ -51,7 +45,7 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
         $executed = false;
 
         $container = $this->ultraLight()
-            ->withService(new class ($executed) {
+            ->withService(new class($executed) {
                 public bool $executed;
 
                 public function __construct(bool &$executed)
@@ -66,19 +60,13 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
                     $this->executed = true;
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
-        /** @var MediatorInterface $mediator */
-        $mediator = $container->get('test.mediator');
-        /** @var QueueWorker $worker */
-        $worker = $container->get('test.queue_worker');
-
-        $mediator->send(new EmptyMessage());
+        $container->mediator()->send(new EmptyMessage());
 
         self::assertFalse($executed);
 
-        $count = $worker->drain();
+        $count = $container->queueWorker()->drain();
 
         self::assertSame(1, $count);
         self::assertTrue($executed);
@@ -89,7 +77,7 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
         $syncExecuted = false;
 
         $container = $this->ultraLight()
-            ->withService(new class ($syncExecuted) {
+            ->withService(new class($syncExecuted) {
                 public bool $syncExecuted;
 
                 public function __construct(bool &$syncExecuted)
@@ -102,33 +90,27 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
                 {
                     $this->syncExecuted = true;
 
-                    return 'Hello, '.$message->name.'!';
+                    return 'Hello, ' . $message->name . '!';
                 }
 
                 #[Handles]
                 #[Asynchronous]
                 public function farewell(FarewellMessage $message): string
                 {
-                    return 'Goodbye, '.$message->name.'!';
+                    return 'Goodbye, ' . $message->name . '!';
                 }
             })
-            ->boot()
-        ;
-
-        /** @var MediatorInterface $mediator */
-        $mediator = $container->get('test.mediator');
-        /** @var InMemoryQueue $queue */
-        $queue = $container->get('test.async_queue');
+            ->boot();
 
         // Sync handler returns result immediately
-        $syncResult = $mediator->send(new GreetingMessage('Alice'));
+        $syncResult = $container->mediator()->send(new GreetingMessage('Alice'));
         self::assertSame('Hello, Alice!', $syncResult);
         self::assertTrue($syncExecuted);
-        self::assertSame(0, $queue->count());
+        self::assertSame(0, $container->asyncQueue()->count());
 
         // Async handler returns null and enqueues
-        $asyncResult = $mediator->send(new FarewellMessage('Bob'));
+        $asyncResult = $container->mediator()->send(new FarewellMessage('Bob'));
         self::assertNull($asyncResult);
-        self::assertSame(1, $queue->count());
+        self::assertSame(1, $container->asyncQueue()->count());
     }
 }

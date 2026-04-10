@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\DecisionEngine\Tests\Support;
 
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\Container;
 use Ultra\DecisionEngine\DecisionEngineBundle;
 use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\Events\Attribute\Event as EventAttribute;
@@ -19,14 +20,14 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling_Compiler\Tests\Support\UltraLight;
-use Ultra\MessageHandling_Compiler\Tests\Support\UltraLightContainer;
+use Ultra\MessageHandling_Compiler\Tests\Support\UltraLightContainerFactoryInterface;
 
 abstract class DecisionEngineFunctionalTestCase extends TestCase
 {
     /**
      * @param list<class-string> $eventClasses
      *
-     * @return UltraLight<UltraLightContainer>
+     * @return UltraLight<DecisionEngineTestContainer>
      */
     protected function decisionUltraLight(array $eventClasses, ?EventBusInterface $eventBus = null): UltraLight
     {
@@ -35,8 +36,16 @@ abstract class DecisionEngineFunctionalTestCase extends TestCase
         $eventBus ??= new class implements EventBusInterface {
             public function publish(object $event, array|MessageContext $context = []): void {}
         };
+        /** @var UltraLightContainerFactoryInterface<DecisionEngineTestContainer> $containerFactory */
+        $containerFactory = new class implements UltraLightContainerFactoryInterface {
+            public function create(Container $container): DecisionEngineTestContainer
+            {
+                return new DecisionEngineTestContainer($container);
+            }
+        };
 
         return (new UltraLight())
+            ->withContainerFactory($containerFactory)
             ->withBuildDir($buildDir)
             ->withBundle(new DecisionEngineBundle())
             ->withService(new UltraNormalizer($buildDir . '/normalizer'), UltraNormalizer::class)
