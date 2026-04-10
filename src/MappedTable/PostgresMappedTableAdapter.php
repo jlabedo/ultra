@@ -13,6 +13,27 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         private readonly Connection $connection,
     ) {}
 
+    public function row(string $tableName, string $idColumn, string|int $id, array $columns = []): array|false
+    {
+        $selectColumns = [$idColumn, ...$columns];
+        $quotedColumns = array_map(
+            $this->connection->quoteSingleIdentifier(...),
+            array_values(array_unique($selectColumns)),
+        );
+
+        $row = $this->connection->fetchAssociative(
+            sprintf(
+                'SELECT %s FROM %s WHERE %s = ?',
+                implode(', ', $quotedColumns),
+                $this->connection->quoteSingleIdentifier($tableName),
+                $this->connection->quoteSingleIdentifier($idColumn),
+            ),
+            [$id],
+        );
+
+        return false === $row ? false : $row;
+    }
+
     public function apply(string $tableName, string $idColumn, array $rowUpdates): void
     {
         foreach ($rowUpdates as $rowUpdate) {

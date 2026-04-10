@@ -1,0 +1,25 @@
+{
+    "name": "ultra/state-store",
+    "description": "Ultra Framework - Mapper-backed state store on top of mapped tables",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Jean de La Bédoyère",
+            "email": "1191198+jlabedo@users.noreply.github.com"
+        }
+    ],
+    "require": {
+        "php": ">=8.5",
+        "ultra/mapped-table": "*",
+        "ultra/mapper": "*"
+    },
+    "autoload": {
+        "psr-4": {
+            "Ultra\\StateStore\\": ""
+        },
+        "exclude-from-classmap": [
+            "/Tests/"
+        ]
+    }
+}

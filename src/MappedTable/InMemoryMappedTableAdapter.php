@@ -12,6 +12,11 @@ final class InMemoryMappedTableAdapter implements MappedTableAdapter
         private readonly InMemoryRowDatabase $database,
     ) {}
 
+    public function row(string $tableName, string $idColumn, string|int $id, array $columns = []): array|false
+    {
+        return $this->database->row($tableName, $idColumn, $id, $columns);
+    }
+
     public function apply(string $tableName, string $idColumn, array $rowUpdates): void
     {
         foreach ($rowUpdates as $rowUpdate) {

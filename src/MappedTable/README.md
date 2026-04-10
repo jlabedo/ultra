@@ -9,6 +9,7 @@ Adapter-backed row-mutation unit of work for explicitly buffered table operation
 The core package owns:
 
 - row-plan buffering
+- read-through access that reflects buffered row changes before flush
 - optimistic expectation merging
 - deterministic flush ordering
 - fluent row update configuration
@@ -36,10 +37,13 @@ $table->withId('user-1')
 
 `withId(...)` returns a fluent `PendingRowUpdate` handle for one row in the table.
 
+`row(...)` reads the current row through the adapter and overlays any buffered in-memory mutations for the same id, so callers can observe pending state before `flush()`.
+
 ## Adapter Contract
 
 Adapters implement `Ultra\MappedTable\MappedTableAdapter`:
 
+- `row(string $tableName, string $idColumn, string|int $id, array $columns = [])` reads one row, optionally projecting columns while always including the id column when found
 - `apply(string $tableName, string $idColumn, array $rowUpdates)` receives the target table metadata and full sorted batch of immutable row plans
 
 `MappedTable` itself does not open transactions. If you need atomicity across a flush, open the surrounding transaction on the underlying storage before calling `flush()`.

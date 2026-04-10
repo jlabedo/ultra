@@ -10,6 +10,55 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 {
+    public function testRowReturnsProjectedColumns(): void
+    {
+        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => 'A1',
+                'version_b' => 'B1',
+            ]);
+
+            self::assertSame([
+                'id' => 'row-1',
+                'status' => 'pending',
+                'version_b' => 'B1',
+            ], $table->row('row-1', ['status', 'version_b']));
+        });
+    }
+
+    public function testExpectAbsentTurnsLaterColumnWritesIntoInsert(): void
+    {
+        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+            $table->withId('row-1')
+                ->expectAbsent()
+                ->setColumn('status', 'pending')
+                ->setColumn('note', 'draft');
+
+            $connection->beginTransaction();
+            try {
+                $table->flush();
+                $connection->commit();
+            } catch (\Throwable $exception) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+
+                throw $exception;
+            }
+
+            self::assertSame([
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => null,
+                'version_b' => null,
+            ], $this->fetchRow($connection, $tableName, 'row-1'));
+        });
+    }
+
     public function testFlushDeletesRow(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {

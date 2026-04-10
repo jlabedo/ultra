@@ -94,6 +94,83 @@ final class MappedTableTest extends TestCase
         self::assertSame('active', $this->row($database, 'row-1')['status']);
     }
 
+    public function testRowReflectsBufferedUpdatesBeforeFlush(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, [
+            'id' => 'row-1',
+            'status' => 'pending',
+            'note' => 'draft',
+            'version_a' => 'A1',
+            'version_b' => 'B1',
+        ]);
+
+        $table->withId('row-1')
+            ->setColumn('status', 'active')
+            ->setColumn('note', 'published');
+
+        self::assertSame([
+            'id' => 'row-1',
+            'status' => 'active',
+            'note' => 'published',
+            'version_a' => 'A1',
+        ], $table->row('row-1', ['status', 'note', 'version_a']));
+    }
+
+    public function testRowReflectsBufferedInsertAndDeleteBeforeFlush(): void
+    {
+        [, $table] = $this->newTable();
+
+        $table->withId('row-1')
+            ->insert()
+            ->setColumn('status', 'pending')
+            ->setColumn('note', 'draft');
+
+        self::assertSame([
+            'id' => 'row-1',
+            'status' => 'pending',
+            'note' => 'draft',
+            'version_a' => null,
+        ], $table->row('row-1', ['status', 'note', 'version_a']));
+
+        $table->withId('row-1')
+            ->delete();
+
+        self::assertFalse($table->row('row-1', ['status']));
+    }
+
+    public function testExpectAbsentDoesNotWriteWithoutSubsequentChanges(): void
+    {
+        [$database, $table] = $this->newTable();
+
+        $table->withId('row-1')
+            ->expectAbsent();
+
+        $this->flushInTransaction($database, $table);
+
+        self::assertFalse($this->row($database, 'row-1'));
+    }
+
+    public function testExpectAbsentTurnsLaterColumnWritesIntoInsert(): void
+    {
+        [$database, $table] = $this->newTable();
+
+        $table->withId('row-1')
+            ->expectAbsent()
+            ->setColumn('status', 'pending')
+            ->setColumn('note', 'draft');
+
+        $this->flushInTransaction($database, $table);
+
+        self::assertSame([
+            'id' => 'row-1',
+            'status' => 'pending',
+            'note' => 'draft',
+            'version_a' => null,
+            'version_b' => null,
+        ], $this->row($database, 'row-1'));
+    }
+
     public function testFlushThrowsWhenExpectedColumnsDoNotMatch(): void
     {
         [$database, $table] = $this->newTable();
@@ -374,6 +451,11 @@ final class RecordingMappedTableAdapter implements MappedTableAdapter
 {
     /** @var list<array{tableName: string, idColumn: string, rowUpdates: list<RowUpdatePlan>}> */
     public array $batches = [];
+
+    public function row(string $tableName, string $idColumn, string|int $id, array $columns = []): array|false
+    {
+        return false;
+    }
 
     public function apply(string $tableName, string $idColumn, array $rowUpdates): void
     {

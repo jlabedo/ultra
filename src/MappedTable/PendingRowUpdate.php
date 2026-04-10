@@ -38,6 +38,36 @@ final readonly class PendingRowUpdate
         return $this;
     }
 
+    public function expectAbsent(): self
+    {
+        if (RowUpdatePlan::EXPECTED_PRESENT === $this->update->expectedPresence) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot mark table "%s", row "%s" as expected absent because it is already expected to exist.',
+                $this->tableName,
+                (string) $this->update->id,
+            ));
+        }
+
+        if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot mark table "%s", row "%s" as expected absent because it is already marked for delete.',
+                $this->tableName,
+                (string) $this->update->id,
+            ));
+        }
+
+        $this->update->expectedPresence = RowUpdatePlan::EXPECTED_ABSENT;
+
+        if (
+            RowUpdatePlan::MODE_UPSERT === $this->update->mode
+            || RowUpdatePlan::MODE_UPDATE === $this->update->mode
+        ) {
+            $this->update->mode = RowUpdatePlan::MODE_INSERT;
+        }
+
+        return $this;
+    }
+
     public function upsert(): self
     {
         if (RowUpdatePlan::EXPECTED_PRESENT === $this->update->expectedPresence) {
@@ -91,7 +121,7 @@ final readonly class PendingRowUpdate
     {
         if (RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence) {
             throw new ConcurrencyException(sprintf(
-                'Cannot register expected column values for table "%s", row "%s" because it is already marked for insert.',
+                'Cannot register expected column values for table "%s", row "%s" because it is already expected to be absent.',
                 $this->tableName,
                 (string) $this->update->id,
             ));
@@ -141,7 +171,11 @@ final readonly class PendingRowUpdate
             ));
         }
 
-        $this->update->mode ??= RowUpdatePlan::MODE_UPDATE;
+        if (null === $this->update->mode) {
+            $this->update->mode = RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence
+                ? RowUpdatePlan::MODE_INSERT
+                : RowUpdatePlan::MODE_UPDATE;
+        }
 
         $this->update->setColumns[$column] = $value;
 

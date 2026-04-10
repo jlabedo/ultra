@@ -28,6 +28,24 @@ final class MappedTable implements UnitOfWork
         return new PendingRowUpdate($update, $this->tableName);
     }
 
+    /**
+     * @param list<string> $columns
+     *
+     * @return array<string, mixed>|false
+     */
+    public function row(string|int $id, array $columns = []): array|false
+    {
+        $row = $this->adapter->row($this->tableName, $this->idColumn, $id, $columns);
+        $update = $this->updates[self::updateKey($id)] ?? null;
+        $plan = $update?->toPlan();
+
+        if (null === $plan) {
+            return $row;
+        }
+
+        return $this->projectRow($this->applyPlanToRow($row, $plan), $columns);
+    }
+
     public function flush(): void
     {
         $updates = array_values($this->updates);
@@ -61,5 +79,80 @@ final class MappedTable implements UnitOfWork
     private static function updateKey(string|int $id): string
     {
         return (string) $id;
+    }
+
+    /**
+     * @param array<string, mixed>|false $row
+     * @return array<string, mixed>|false
+     */
+    private function applyPlanToRow(array|false $row, RowUpdatePlan $plan): array|false
+    {
+        return match ($plan->mode) {
+            RowUpdatePlan::MODE_DELETE => false,
+            RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE => $this->newRow($plan),
+            RowUpdatePlan::MODE_UPSERT => false === $row
+                ? $this->newRow($plan)
+                : $this->mergeColumns($row, $plan->setColumns),
+            RowUpdatePlan::MODE_UPDATE => false === $row
+                ? false
+                : $this->mergeColumns($row, $plan->setColumns),
+            default => throw new \LogicException(sprintf(
+                'Unsupported row update mode "%s" for table "%s".',
+                $plan->mode,
+                $this->tableName,
+            )),
+        };
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param array<string, mixed> $columns
+     *
+     * @return array<string, mixed>
+     */
+    private function mergeColumns(array $row, array $columns): array
+    {
+        foreach ($columns as $column => $value) {
+            $row[$column] = $value;
+        }
+
+        return $row;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function newRow(RowUpdatePlan $plan): array
+    {
+        $row = [$this->idColumn => $plan->id];
+
+        foreach ($plan->setColumns as $column => $value) {
+            $row[$column] = $value;
+        }
+
+        return $row;
+    }
+
+    /**
+     * @param list<string> $columns
+     * @param array<string, mixed>|false $row
+     *
+     * @return array<string, mixed>|false
+     */
+    private function projectRow(array|false $row, array $columns): array|false
+    {
+        if (false === $row || [] === $columns) {
+            return $row;
+        }
+
+        $projectedRow = [
+            $this->idColumn => $row[$this->idColumn],
+        ];
+
+        foreach ($columns as $column) {
+            $projectedRow[$column] = $row[$column] ?? null;
+        }
+
+        return $projectedRow;
     }
 }

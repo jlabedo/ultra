@@ -38,6 +38,8 @@
         "ultra/mapper-compiler": "self.version",
         "ultra/message-handling": "self.version",
         "ultra/message-handling-compiler": "self.version",
+        "ultra/state-store": "self.version",
+        "ultra/state-store-bundle": "self.version",
         "ultra/unit-of-work": "self.version",
         "ultra/unit-of-work-bundle": "self.version"
     },
