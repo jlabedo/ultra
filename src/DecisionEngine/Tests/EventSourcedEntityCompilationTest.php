@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Ultra\DecisionEngine\Tests;
 
 use Symfony\Component\DependencyInjection\Container;
+use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
+use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
+use Ultra\DecisionEngine\Attribute\MatchTag;
 use Ultra\DecisionEngine\Exception\AmbiguousTagError;
 use Ultra\DecisionEngine\Exception\DuplicateEventSourcingHandlerError;
 use Ultra\DecisionEngine\Exception\InvalidMatchTagError;
@@ -12,25 +15,92 @@ use Ultra\DecisionEngine\Exception\MissingEventSourcingHandlerError;
 use Ultra\DecisionEngine\Exception\MissingTypeHintError;
 use Ultra\DecisionEngine\Exception\NoTagOverlapError;
 use Ultra\DecisionEngine\Exception\UnnecessaryMatchTagError;
-use Ultra\DecisionEngine\Tests\Support\CompilerAmbiguousEvent;
-use Ultra\DecisionEngine\Tests\Support\CompilerAmbiguousState;
-use Ultra\DecisionEngine\Tests\Support\CompilerCourseCapacityChanged;
-use Ultra\DecisionEngine\Tests\Support\CompilerCourseCreated;
-use Ultra\DecisionEngine\Tests\Support\CompilerDuplicateHandlerState;
-use Ultra\DecisionEngine\Tests\Support\CompilerInvalidMatchTagState;
-use Ultra\DecisionEngine\Tests\Support\CompilerMissingHandlerAttributeState;
-use Ultra\DecisionEngine\Tests\Support\CompilerMissingTypeHintState;
-use Ultra\DecisionEngine\Tests\Support\CompilerNoOverlapEvent;
-use Ultra\DecisionEngine\Tests\Support\CompilerNoOverlapState;
-use Ultra\DecisionEngine\Tests\Support\CompilerPairConfirmed;
-use Ultra\DecisionEngine\Tests\Support\CompilerSingleTagEvent;
-use Ultra\DecisionEngine\Tests\Support\CompilerStudentEnrolled;
-use Ultra\DecisionEngine\Tests\Support\CompilerStudentSubscribed;
-use Ultra\DecisionEngine\Tests\Support\CompilerStudentUnsubscribed;
-use Ultra\DecisionEngine\Tests\Support\CompilerUnnecessaryMatchTagState;
 use Ultra\DecisionEngine\Tests\Support\DecisionEngineFunctionalTestCase;
+use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\Events\Attribute\Event;
 
-require_once __DIR__.'/Support/EventSourcedEntityFixtures.php';
+#[Event('compiler.no_overlap')]
+final readonly class CompilerNoOverlapEvent
+{
+    public function __construct(
+        #[DomainIdentifier('faculty')]
+        public string $facultyId,
+    ) {}
+}
+
+#[Event('compiler.ambiguous')]
+final readonly class CompilerAmbiguousEvent
+{
+    public function __construct(
+        #[DomainIdentifier('course')]
+        public string $courseId,
+        #[DomainIdentifier('student')]
+        public string $studentId,
+    ) {}
+}
+
+#[Event('compiler.single')]
+final readonly class CompilerSingleTagEvent
+{
+    public function __construct(
+        #[DomainIdentifier('course')]
+        public string $courseId,
+    ) {}
+}
+
+#[EventSourcedEntity(tags: ['course', 'student'])]
+final class CompilerNoOverlapState
+{
+    #[EventSourcingHandler]
+    public function onEvent(CompilerNoOverlapEvent $event): void {}
+}
+
+#[EventSourcedEntity(tags: ['course', 'student'])]
+final class CompilerAmbiguousState
+{
+    #[EventSourcingHandler]
+    public function onEvent(CompilerAmbiguousEvent $event): void {}
+}
+
+#[EventSourcedEntity(tags: ['course', 'student'])]
+final class CompilerUnnecessaryMatchTagState
+{
+    #[EventSourcingHandler]
+    #[MatchTag('course')]
+    public function onEvent(CompilerSingleTagEvent $event): void {}
+}
+
+#[EventSourcedEntity(tags: ['course', 'student'])]
+final class CompilerInvalidMatchTagState
+{
+    #[EventSourcingHandler]
+    #[MatchTag('faculty')]
+    public function onEvent(CompilerAmbiguousEvent $event): void {}
+}
+
+#[EventSourcedEntity(tags: ['course'])]
+final class CompilerMissingHandlerAttributeState
+{
+    #[MatchTag('course')]
+    public function onEvent(CompilerSingleTagEvent $event): void {}
+}
+
+#[EventSourcedEntity(tags: ['course'])]
+final class CompilerMissingTypeHintState
+{
+    #[EventSourcingHandler]
+    public function onEvent(string $event): void {}
+}
+
+#[EventSourcedEntity(tags: ['course'])]
+final class CompilerDuplicateHandlerState
+{
+    #[EventSourcingHandler]
+    public function onFirst(CompilerSingleTagEvent $event): void {}
+
+    #[EventSourcingHandler]
+    public function onSecond(CompilerSingleTagEvent $event): void {}
+}
 
 /**
  * @internal
@@ -104,12 +174,6 @@ final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTe
     private static function eventClasses(): array
     {
         return [
-            CompilerCourseCreated::class,
-            CompilerCourseCapacityChanged::class,
-            CompilerStudentEnrolled::class,
-            CompilerStudentSubscribed::class,
-            CompilerStudentUnsubscribed::class,
-            CompilerPairConfirmed::class,
             CompilerNoOverlapEvent::class,
             CompilerAmbiguousEvent::class,
             CompilerSingleTagEvent::class,
