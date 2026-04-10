@@ -21,7 +21,7 @@ test('query version detects stale snapshots when the matching event count change
         )->ofTypes('student.subscribed'),
     );
 
-    (new QueryVersion(2, $query))->assertMatches(new QueryVersion(1, $query));
+    new QueryVersion(2, $query)->assertMatches(new QueryVersion(1, $query));
 })->throws(ConcurrencyException::class);
 
 test('query versions match when their versions are equal', function () {
@@ -29,7 +29,7 @@ test('query versions match when their versions are equal', function () {
         new DomainIdentifier('courseId', 'course-123'),
     )->ofTypes('course.created');
 
-    (new QueryVersion(2, $query))->assertMatches(new QueryVersion(2, $query));
+    new QueryVersion(2, $query)->assertMatches(new QueryVersion(2, $query));
 
     expect(true)->toBeTrue();
 });

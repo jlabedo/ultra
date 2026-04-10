@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\TestCase;
+use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\InMemoryEventStore;
@@ -16,9 +16,14 @@ use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore\StreamQuery;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class EventStoreUnitOfWorkTest extends TestCase
 {
-    public function testLoadIncludesBufferedEventsBeforeFlush(): void
+    public function test_load_includes_buffered_events_before_flush(): void
     {
         $store = new InMemoryEventStore($this->topologyProvider());
         $uow = new EventStoreUnitOfWork($store);
@@ -41,7 +46,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
         self::assertCount(0, $store->load($query)->events);
     }
 
-    public function testLoadKeepsPersistedQueryVersionWhenPendingEventsAreVisible(): void
+    public function test_load_keeps_persisted_query_version_when_pending_events_are_visible(): void
     {
         $store = new InMemoryEventStore($this->topologyProvider());
         $uow = new EventStoreUnitOfWork($store);
@@ -63,7 +68,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
         self::assertSame(0, $uow->load($query)->queryVersion->version);
     }
 
-    public function testFlushPersistsBufferedAppendsInOrder(): void
+    public function test_flush_persists_buffered_appends_in_order(): void
     {
         $store = new InMemoryEventStore($this->topologyProvider());
         $uow = new EventStoreUnitOfWork($store);
@@ -98,7 +103,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
         self::assertSame('Math 102', $persisted->events[1]->payload['name']);
     }
 
-    public function testFlushUsesSingleInnerAppendCallAndPassesPersistedExpectedVersionsThrough(): void
+    public function test_flush_uses_single_inner_append_call_and_passes_persisted_expected_versions_through(): void
     {
         $recordingStore = new RecordingEventStore(
             new InMemoryEventStore($this->topologyProvider()),
@@ -137,7 +142,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
         ));
     }
 
-    public function testClearDropsBufferedAppends(): void
+    public function test_clear_drops_buffered_appends(): void
     {
         $store = new InMemoryEventStore($this->topologyProvider());
         $uow = new EventStoreUnitOfWork($store);

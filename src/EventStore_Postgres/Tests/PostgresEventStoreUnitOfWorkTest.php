@@ -5,17 +5,21 @@ declare(strict_types=1);
 namespace Ultra\EventStore_Postgres\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore_Postgres\PostgresEventStore;
 
 require_once __DIR__.'/PostgresTestSupport.php';
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class PostgresEventStoreUnitOfWorkTest extends TestCase
 {
-    public function testFlushPersistsAppendsThatDependOnEarlierBufferedEvents(): void
+    public function test_flush_persists_appends_that_depend_on_earlier_buffered_events(): void
     {
         $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
         if (false === $dsn || '' === $dsn) {
@@ -56,6 +60,7 @@ final class PostgresEventStoreUnitOfWorkTest extends TestCase
             ], $secondVersion);
 
             $connection->beginTransaction();
+
             try {
                 $uow->flush();
                 $connection->commit();

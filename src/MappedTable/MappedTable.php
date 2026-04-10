@@ -20,7 +20,7 @@ final class MappedTable implements UnitOfWork
         private readonly string $idColumn = 'id',
     ) {}
 
-    public function withId(string|int $id): PendingRowUpdate
+    public function withId(int|string $id): PendingRowUpdate
     {
         $updateKey = self::updateKey($id);
         $update = $this->updates[$updateKey] ??= new BufferedRowUpdate($id);
@@ -33,7 +33,7 @@ final class MappedTable implements UnitOfWork
      *
      * @return array<string, mixed>|false
      */
-    public function row(string|int $id, array $columns = []): array|false
+    public function row(int|string $id, array $columns = []): array|false
     {
         $row = $this->adapter->row($this->tableName, $this->idColumn, $id, $columns);
         $update = $this->updates[self::updateKey($id)] ?? null;
@@ -67,7 +67,7 @@ final class MappedTable implements UnitOfWork
         $this->updates = [];
     }
 
-    private static function compareIds(string|int $left, string|int $right): int
+    private static function compareIds(int|string $left, int|string $right): int
     {
         if (is_int($left) && is_int($right)) {
             return $left <=> $right;
@@ -76,13 +76,14 @@ final class MappedTable implements UnitOfWork
         return (string) $left <=> (string) $right;
     }
 
-    private static function updateKey(string|int $id): string
+    private static function updateKey(int|string $id): string
     {
         return (string) $id;
     }
 
     /**
      * @param array<string, mixed>|false $row
+     *
      * @return array<string, mixed>|false
      */
     private function applyPlanToRow(array|false $row, RowUpdatePlan $plan): array|false
@@ -134,7 +135,7 @@ final class MappedTable implements UnitOfWork
     }
 
     /**
-     * @param list<string> $columns
+     * @param list<string>               $columns
      * @param array<string, mixed>|false $row
      *
      * @return array<string, mixed>|false

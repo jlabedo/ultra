@@ -16,18 +16,18 @@ namespace Ultra\MessageHandling\Attribute;
 final readonly class MatchResult
 {
     /**
-     * @param array              $config   serializable runtime config embedded verbatim as a PHP
-     *                                     literal in the generated dispatch method and passed as
-     *                                     the last argument to the advice method at runtime
-     * @param list<int>          $provides 0-based indices into the handler's non-message dep-param
-     *                                     array that this around advice will supply at runtime.
-     *                                     Those slots are excluded from the service locator; the
-     *                                     advice passes them as extra arguments to $proceed instead.
-     *                                     Always empty for before advices.
-     * @param list<AdvicePhase>  $phases   phases where this advice should run.
-     *                                     Defaults to [Execute] — backward compatible.
-     *                                     Use [Dispatch] for advices that should run once at
-     *                                     send/publish time regardless of sync/async.
+     * @param array             $config   serializable runtime config embedded verbatim as a PHP
+     *                                    literal in the generated dispatch method and passed as
+     *                                    the last argument to the advice method at runtime
+     * @param list<int>         $provides 0-based indices into the handler's non-message dep-param
+     *                                    array that this around advice will supply at runtime.
+     *                                    Those slots are excluded from the service locator; the
+     *                                    advice passes them as extra arguments to $proceed instead.
+     *                                    Always empty for before advices.
+     * @param list<AdvicePhase> $phases   phases where this advice should run.
+     *                                    Defaults to [Execute] — backward compatible.
+     *                                    Use [Dispatch] for advices that should run once at
+     *                                    send/publish time regardless of sync/async.
      */
     private function __construct(
         public array $config = [],

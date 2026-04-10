@@ -10,16 +10,21 @@ use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\RecordedEvent;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
 {
     public function test_it_autoconfigures_anonymous_handler_services(): void
     {
         $mediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'Hello, ' . $message->name . '!';
+                    return 'Hello, '.$message->name.'!';
                 }
             })
             ->mediator()
@@ -34,7 +39,7 @@ final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
 
         $eventBus = $this->ultraLight()
             ->withEventClass(RecordedEvent::class)
-            ->withService(new class($recorded) {
+            ->withService(new class ($recorded) {
                 /** @var list<RecordedEvent> */
                 public array $recorded;
 
@@ -63,22 +68,22 @@ final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
     public function test_it_builds_independent_router_implementations_in_the_same_build_directory(): void
     {
         $firstMediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'First hello, ' . $message->name . '!';
+                    return 'First hello, '.$message->name.'!';
                 }
             })
             ->mediator()
         ;
 
         $secondMediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'Second hello, ' . $message->name . '!';
+                    return 'Second hello, '.$message->name.'!';
                 }
             })
             ->mediator()

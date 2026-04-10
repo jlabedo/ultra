@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\MessageHandling_Compiler\Tests;
 
 use Ultra\MessageHandling\Attribute\Before;
+use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\Attribute\SelfHandler;
@@ -17,25 +18,30 @@ final class SelfHandlerGreetingService
 {
     public function greet(string $name): string
     {
-        return 'Hello, ' . $name . '!';
+        return 'Hello, '.$name.'!';
     }
 }
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
 {
     public function test_it_dispatches_self_handling_messages(): void
     {
         $mediator = $this->ultraLight()
             ->withClass(SelfGreetingMessage::class)
-            ->mediator();
+            ->mediator()
+        ;
 
         self::assertSame('Hello, Alice!', $mediator->send(new SelfGreetingMessage('Alice')));
     }
 
     public function test_it_injects_services_into_self_handling_methods(): void
     {
-        $message = new readonly class('Bob')
-        {
+        $message = new readonly class ('Bob') {
             public function __construct(public string $name) {}
 
             #[SelfHandler]
@@ -46,7 +52,8 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
         };
         $mediator = $this->ultraLight()
             ->withClass($message::class, SelfHandlerGreetingService::class)
-            ->mediator();
+            ->mediator()
+        ;
 
         self::assertSame('Hello, Bob!', $mediator->send($message));
     }
@@ -55,14 +62,15 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
     {
         $mediator = $this->ultraLight()
             ->withClass(SelfGreetingMessage::class)
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function greet(GreetingMessage $message): string
                 {
-                    return 'Handler hello, ' . $message->name . '!';
+                    return 'Handler hello, '.$message->name.'!';
                 }
             })
-            ->mediator();
+            ->mediator()
+        ;
 
         self::assertSame('Handler hello, Alice!', $mediator->send(new GreetingMessage('Alice')));
         self::assertSame('Hello, Carol!', $mediator->send(new SelfGreetingMessage('Carol')));
@@ -75,7 +83,7 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withClass(SelfGreetingMessage::class)
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 /**
                  * @param list<object> $log
                  */
@@ -86,7 +94,7 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
                     $this->log = &$log;
                 }
 
-                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function record(object $message, MessageContext $context): void
@@ -94,7 +102,8 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
                     $this->log[] = $message;
                 }
             })
-            ->mediator();
+            ->mediator()
+        ;
 
         self::assertSame('Hello, Dora!', $mediator->send($message));
         self::assertSame([$message], $log);

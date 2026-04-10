@@ -87,7 +87,7 @@ readonly class ProjectionPlan
 
                 if ([] !== $parameters) {
                     $type = $parameters[0]->getType();
-                    if (! $type instanceof \ReflectionNamedType || $type->isBuiltin() === false || 'string' !== $type->getName()) {
+                    if (! $type instanceof \ReflectionNamedType || false === $type->isBuiltin() || 'string' !== $type->getName()) {
                         throw new \LogicException(sprintf(
                             'Partition initializer %s::%s must type-hint string when it declares a parameter.',
                             $projection::class,

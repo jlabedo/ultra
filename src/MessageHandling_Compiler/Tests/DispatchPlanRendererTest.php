@@ -11,6 +11,11 @@ use Ultra\MessageHandling_Compiler\Handler\AdviceType;
 use Ultra\MessageHandling_Compiler\Handler\DispatchPlan;
 use Ultra\MessageHandling_Compiler\Handler\DispatchPlanRenderer;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class DispatchPlanRendererTest extends TestCase
 {
     public function test_it_does_not_wrap_results_when_the_plan_has_no_around_advices(): void
@@ -108,7 +113,7 @@ final class DispatchPlanRendererTest extends TestCase
 
         self::assertStringContainsString('use ($m, &$c)', $body);
         self::assertStringContainsString("\$__context0_after0 = \$this->locator->get('after.service')->enrich(\$m, \$c);", $body);
-        self::assertStringContainsString("\$c = \$c->merge(\$__context0_after0);", $body);
-        self::assertStringContainsString("\$__result0 = \$__result0->withContext(\$c);", $body);
+        self::assertStringContainsString('$c = $c->merge($__context0_after0);', $body);
+        self::assertStringContainsString('$__result0 = $__result0->withContext($c);', $body);
     }
 }

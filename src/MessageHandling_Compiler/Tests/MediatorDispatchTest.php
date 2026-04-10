@@ -6,27 +6,32 @@ namespace Ultra\MessageHandling_Compiler\Tests;
 
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Exception\NoHandlerFound;
+use Ultra\MessageHandling_Compiler\Tests\Fixtures\EmptyMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\FarewellMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
-use Ultra\MessageHandling_Compiler\Tests\Fixtures\EmptyMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class MediatorDispatchTest extends MessageHandlingCompilerTestCase
 {
     public function test_it_dispatches_registered_messages_and_returns_handler_results(): void
     {
         $mediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function greet(GreetingMessage $message): string
                 {
-                    return 'Hello, ' . $message->name . '!';
+                    return 'Hello, '.$message->name.'!';
                 }
 
                 #[Handles]
                 public function farewell(FarewellMessage $message): string
                 {
-                    return 'Goodbye, ' . $message->name . '!';
+                    return 'Goodbye, '.$message->name.'!';
                 }
             })
             ->mediator()
@@ -39,11 +44,11 @@ final class MediatorDispatchTest extends MessageHandlingCompilerTestCase
     public function test_it_throws_when_no_handler_is_registered_for_the_message(): void
     {
         $mediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function greet(GreetingMessage $message): string
                 {
-                    return 'Hello, ' . $message->name . '!';
+                    return 'Hello, '.$message->name.'!';
                 }
             })
             ->mediator()

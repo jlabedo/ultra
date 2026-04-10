@@ -7,14 +7,14 @@ namespace Ultra\EventStore_Postgres\Tests;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Tools\DsnParser;
-use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\EventStore;
+use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore_Postgres\PostgresEventStore;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
-use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
 use Ultra\EventStore_Postgres\PostgresEventStoreSchema;
+use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
 
 function postgresTestConnection(string $dsn): Connection
 {

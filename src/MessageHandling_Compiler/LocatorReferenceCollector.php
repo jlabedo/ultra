@@ -6,7 +6,6 @@ namespace Ultra\MessageHandling_Compiler;
 
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MessageHandling\MessageContext;
-use Ultra\MessageHandling_Compiler\Handler\AdviceDescriptor;
 use Ultra\MessageHandling_Compiler\Handler\HandlerDescriptor;
 
 final class LocatorReferenceCollector

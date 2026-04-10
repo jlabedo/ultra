@@ -40,10 +40,10 @@ final class HandlerClassGenerator
         $code = $this->buildCode($placeholder, $handler, $wrappersFilePath);
 
         $hash = substr(sha1($code), 0, 8);
-        $className = $baseName . '_' . $hash;
+        $className = $baseName.'_'.$hash;
         $code = str_replace($placeholder, $className, $code);
 
-        $filePath = rtrim($outputDir, '/') . '/' . $className . '.php';
+        $filePath = rtrim($outputDir, '/').'/'.$className.'.php';
         $dir = dirname($filePath);
         if (! is_dir($dir)) {
             mkdir($dir, 0o777, true);
@@ -70,7 +70,7 @@ final class HandlerClassGenerator
         $body = $this->renderer->renderBody($plan);
 
         $requireLine = null !== $wrappersFilePath
-            ? "\nrequire_once " . var_export($wrappersFilePath, true) . ";\n"
+            ? "\nrequire_once ".var_export($wrappersFilePath, true).";\n"
             : '';
 
         return <<<PHP

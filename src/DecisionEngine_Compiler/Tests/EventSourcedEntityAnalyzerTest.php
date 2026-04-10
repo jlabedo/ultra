@@ -105,47 +105,54 @@ test('analyzer rejects handlers whose events share no tags with the entity', fun
     $analyzer = new EventSourcedEntityAnalyzer();
 
     expect(fn () => $analyzer->analyze(AnalyzerNoOverlapState::class))
-        ->toThrow(NoTagOverlapError::class);
+        ->toThrow(NoTagOverlapError::class)
+    ;
 });
 
 test('analyzer rejects ambiguous handlers without match tags', function () {
     $analyzer = new EventSourcedEntityAnalyzer();
 
     expect(fn () => $analyzer->analyze(AnalyzerAmbiguousState::class))
-        ->toThrow(AmbiguousTagError::class);
+        ->toThrow(AmbiguousTagError::class)
+    ;
 });
 
 test('analyzer rejects unnecessary match tags for single-tag handlers', function () {
     $analyzer = new EventSourcedEntityAnalyzer();
 
     expect(fn () => $analyzer->analyze(AnalyzerUnnecessaryMatchTagState::class))
-        ->toThrow(UnnecessaryMatchTagError::class);
+        ->toThrow(UnnecessaryMatchTagError::class)
+    ;
 });
 
 test('analyzer rejects match tags outside the entity and event intersection', function () {
     $analyzer = new EventSourcedEntityAnalyzer();
 
     expect(fn () => $analyzer->analyze(AnalyzerInvalidMatchTagState::class))
-        ->toThrow(InvalidMatchTagError::class);
+        ->toThrow(InvalidMatchTagError::class)
+    ;
 });
 
 test('analyzer rejects match tags on methods that are not handlers', function () {
     $analyzer = new EventSourcedEntityAnalyzer();
 
     expect(fn () => $analyzer->analyze(AnalyzerMissingHandlerAttributeState::class))
-        ->toThrow(MissingEventSourcingHandlerError::class);
+        ->toThrow(MissingEventSourcingHandlerError::class)
+    ;
 });
 
 test('analyzer rejects handlers without a class-typed event parameter', function () {
     $analyzer = new EventSourcedEntityAnalyzer();
 
     expect(fn () => $analyzer->analyze(AnalyzerMissingTypeHintState::class))
-        ->toThrow(MissingTypeHintError::class);
+        ->toThrow(MissingTypeHintError::class)
+    ;
 });
 
 test('analyzer rejects duplicate handlers for the same event type', function () {
     $analyzer = new EventSourcedEntityAnalyzer();
 
     expect(fn () => $analyzer->analyze(AnalyzerDuplicateHandlerState::class))
-        ->toThrow(DuplicateEventSourcingHandlerError::class);
+        ->toThrow(DuplicateEventSourcingHandlerError::class)
+    ;
 });

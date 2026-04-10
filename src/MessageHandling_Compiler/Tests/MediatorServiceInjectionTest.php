@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\MessageHandling_Compiler\Tests;
 
 use Ultra\MessageHandling\Attribute\Around;
+use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
@@ -18,7 +19,7 @@ final class MediatorServiceInjectionGreeter
 {
     public function greet(string $name): string
     {
-        return 'Hello, ' . $name . '!';
+        return 'Hello, '.$name.'!';
     }
 }
 
@@ -118,13 +119,18 @@ final class MediatorServiceInjectionEntityManager
     }
 }
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 {
     public function test_it_resolves_handler_method_dependencies_from_services(): void
     {
         $mediator = $this->ultraLight()
             ->withService(new MediatorServiceInjectionGreeter())
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(EmptyMessage $message, MediatorServiceInjectionGreeter $greeter): string
                 {
@@ -143,7 +149,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($repository)
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(ProcessEntityMessage $message, MediatorServiceInjectionEntity $entity): string
                 {
@@ -152,12 +158,12 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     return $entity->id;
                 }
             })
-            ->withService(new class($repository) {
+            ->withService(new class ($repository) {
                 public function __construct(
                     private readonly MediatorServiceInjectionEntityRepository $repository,
                 ) {}
 
-                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     $method = $ctx->method();
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
                         $type = $parameter->getType();
@@ -191,18 +197,18 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
     public function test_it_lets_one_around_advice_provide_multiple_handler_dependencies(): void
     {
         $mediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(
                     ProcessPairMessage $message,
                     MediatorServiceInjectionLeftEntity $left,
                     MediatorServiceInjectionRightEntity $right,
                 ): string {
-                    return $left->id . '+' . $right->id;
+                    return $left->id.'+'.$right->id;
                 }
             })
-            ->withService(new class() {
-                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+            ->withService(new class () {
+                #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     $method = $ctx->method();
                     $indices = [];
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
@@ -246,23 +252,23 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
         $mediator = $this->ultraLight()
             ->withService($leftRepository)
             ->withService($rightRepository)
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(
                     ProcessPairMessage $message,
                     MediatorServiceInjectionLeftEntity $left,
                     MediatorServiceInjectionRightEntity $right,
                 ): string {
-                    return $left->id . '+' . $right->id;
+                    return $left->id.'+'.$right->id;
                 }
             })
-            ->withService(new class($leftRepository, $rightRepository) {
+            ->withService(new class ($leftRepository, $rightRepository) {
                 public function __construct(
                     private readonly MediatorServiceInjectionLeftRepository $leftRepository,
                     private readonly MediatorServiceInjectionRightRepository $rightRepository,
                 ) {}
 
-                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     $method = $ctx->method();
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
                         $type = $parameter->getType();
@@ -276,7 +282,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
                     return null;
                 }, priority: 0)]
-                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     $method = $ctx->method();
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
                         $type = $parameter->getType();
@@ -316,20 +322,20 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($entityManager)
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(
                     ProcessPairMessage $message,
                     MediatorServiceInjectionConfiguredLeftEntity $left,
                     MediatorServiceInjectionConfiguredRightEntity $right,
                 ): string {
-                    return $left->id . '+' . $right->id;
+                    return $left->id.'+'.$right->id;
                 }
             })
-            ->withService(new class($entityManager) {
+            ->withService(new class ($entityManager) {
                 public function __construct(private readonly MediatorServiceInjectionEntityManager $entityManager) {}
 
-                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     $method = $ctx->method();
                     $indices = [];
                     $entities = [];

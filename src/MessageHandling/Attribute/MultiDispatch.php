@@ -9,7 +9,7 @@ final readonly class MultiDispatch
 {
     /**
      * @param \Closure(\ReflectionMethod): ?RouteMatch $matcher
-     * @param string $messageTag Resource tag used to discover known message classes via is_a() routing
+     * @param string                                   $messageTag Resource tag used to discover known message classes via is_a() routing
      */
     public function __construct(
         public \Closure $matcher,

@@ -21,7 +21,7 @@ final readonly class QueueWorker
     /**
      * Process one envelope from the queue.
      *
-     * @return bool True if an envelope was processed, false if queue was empty.
+     * @return bool true if an envelope was processed, false if queue was empty
      */
     public function processOne(): bool
     {
@@ -40,7 +40,7 @@ final readonly class QueueWorker
     /**
      * Process all envelopes until the queue is empty.
      *
-     * @return int The number of envelopes processed.
+     * @return int the number of envelopes processed
      */
     public function drain(): int
     {

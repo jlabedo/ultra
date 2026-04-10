@@ -26,7 +26,7 @@ final class UnitOfWorkBundle extends Bundle
         $container->register(EventStoreUnitOfWork::class, EventStoreUnitOfWork::class)
             ->setDecoratedService(EventStore::class)
             ->setArguments([
-                new Reference(EventStoreUnitOfWork::class . '.inner'),
+                new Reference(EventStoreUnitOfWork::class.'.inner'),
             ])
             ->addTag(TagNames::UNIT_OF_WORK)
         ;

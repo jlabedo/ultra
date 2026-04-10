@@ -60,14 +60,14 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             $stateMetadata[$stateClass] = $metadata->toArray();
 
             if (! array_key_exists($metadata->tableKey, $tableReferences)) {
-                $serviceId = 'ultra.state_store.table.' . substr(md5($metadata->tableKey), 0, 12);
+                $serviceId = 'ultra.state_store.table.'.substr(md5($metadata->tableKey), 0, 12);
                 $container->setDefinition(
                     $serviceId,
-                    (new Definition(MappedTable::class, [
+                    new Definition(MappedTable::class, [
                         new Reference(MappedTableAdapter::class),
                         $metadata->tableName,
                         $metadata->idColumn,
-                    ]))
+                    ])
                         ->addTag(self::UNIT_OF_WORK_TAG)
                 );
 
@@ -78,19 +78,19 @@ final class StateStoreCompilerPass implements CompilerPassInterface
         ksort($stateMetadata);
         ksort($tableReferences);
 
-        $container->setDefinition(StateMetadataRegistry::class, (new Definition(StateMetadataRegistry::class, [
+        $container->setDefinition(StateMetadataRegistry::class, new Definition(StateMetadataRegistry::class, [
             $stateMetadata,
-        ]))->setPublic(false));
+        ])->setPublic(false));
 
-        $container->setDefinition(StateTableRegistry::class, (new Definition(StateTableRegistry::class, [
+        $container->setDefinition(StateTableRegistry::class, new Definition(StateTableRegistry::class, [
             $tableReferences,
-        ]))->setPublic(false));
+        ])->setPublic(false));
 
-        $container->setDefinition(StateStore::class, (new Definition(StateStore::class, [
+        $container->setDefinition(StateStore::class, new Definition(StateStore::class, [
             new Reference(StateMetadataRegistry::class),
             new Reference(StateTableRegistry::class),
             new Reference(UltraNormalizer::class),
-        ]))->setPublic(true));
+        ])->setPublic(true));
     }
 
     /**

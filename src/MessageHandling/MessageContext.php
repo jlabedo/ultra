@@ -49,19 +49,19 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
         return $this->values;
     }
 
-    public function has(string|int $key): bool
+    public function has(int|string $key): bool
     {
         return array_key_exists($key, $this->values);
     }
 
-    public function get(string|int $key, mixed $default = null): mixed
+    public function get(int|string $key, mixed $default = null): mixed
     {
         return array_key_exists($key, $this->values)
             ? $this->values[$key]
             : $default;
     }
 
-    public function with(string|int $key, mixed $value): self
+    public function with(int|string $key, mixed $value): self
     {
         $values = $this->values;
         $values[$key] = $value;
@@ -69,7 +69,7 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
         return new self($values);
     }
 
-    public function without(string|int $key): self
+    public function without(int|string $key): self
     {
         if (! array_key_exists($key, $this->values)) {
             return $this;

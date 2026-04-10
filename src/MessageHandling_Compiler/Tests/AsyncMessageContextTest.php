@@ -7,6 +7,7 @@ namespace Ultra\MessageHandling_Compiler\Tests;
 use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Asynchronous;
+use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MediatorInterface;
@@ -16,6 +17,11 @@ use Ultra\MessageHandling\ProceedResult;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class AsyncMessageContextTest extends MessageHandlingCompilerTestCase
 {
     public function test_message_context_is_preserved_through_enqueue_dequeue(): void
@@ -23,7 +29,7 @@ final class AsyncMessageContextTest extends MessageHandlingCompilerTestCase
         $capturedContext = null;
 
         $container = $this->ultraLight()
-            ->withService(new class($capturedContext) {
+            ->withService(new class ($capturedContext) {
                 public ?MessageContext $captured;
 
                 public function __construct(?MessageContext &$captured)
@@ -31,7 +37,7 @@ final class AsyncMessageContextTest extends MessageHandlingCompilerTestCase
                     $this->captured = &$captured;
                 }
 
-                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function captureContext(callable $proceed, object $message, MessageContext $context): ProceedResult
@@ -41,7 +47,7 @@ final class AsyncMessageContextTest extends MessageHandlingCompilerTestCase
                     return $proceed();
                 }
             })
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string

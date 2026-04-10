@@ -51,7 +51,7 @@ final class MessageHandlingBundle extends Bundle
         $this->ensureRouterDefinition($container, EventBusInterface::class);
 
         $buildDir = (string) $container->getParameter('kernel.build_dir');
-        $outputDir = $buildDir . '/message_handling';
+        $outputDir = $buildDir.'/message_handling';
 
         $container->addCompilerPass(new MessageRouterCompilerPass($outputDir));
     }

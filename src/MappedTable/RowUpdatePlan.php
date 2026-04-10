@@ -23,7 +23,7 @@ final readonly class RowUpdatePlan
      * @param array<string, mixed> $setColumns
      */
     public function __construct(
-        public string|int $id,
+        public int|string $id,
         public ?string $expectedPresence,
         public string $mode,
         public array $expectedColumns,

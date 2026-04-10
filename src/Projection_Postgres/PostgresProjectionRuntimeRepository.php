@@ -233,7 +233,7 @@ final readonly class PostgresProjectionRuntimeRepository
     }
 
     /**
-     * @return array{last_event_id: int, last_error: ?string}|null
+     * @return null|array{last_event_id: int, last_error: ?string}
      */
     public function fetchStateRow(string $projectionName, int $projectionVersion, string $lane): ?array
     {
@@ -259,7 +259,7 @@ final readonly class PostgresProjectionRuntimeRepository
     }
 
     /**
-     * @return array{partition_key: string, last_event_id: int, last_error: ?string}|null
+     * @return null|array{partition_key: string, last_event_id: int, last_error: ?string}
      */
     public function fetchPartitionRow(string $projectionName, int $projectionVersion, string $partitionKey): ?array
     {

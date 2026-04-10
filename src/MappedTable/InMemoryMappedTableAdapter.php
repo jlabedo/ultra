@@ -12,7 +12,7 @@ final class InMemoryMappedTableAdapter implements MappedTableAdapter
         private readonly InMemoryRowDatabase $database,
     ) {}
 
-    public function row(string $tableName, string $idColumn, string|int $id, array $columns = []): array|false
+    public function row(string $tableName, string $idColumn, int|string $id, array $columns = []): array|false
     {
         return $this->database->row($tableName, $idColumn, $id, $columns);
     }
@@ -23,22 +23,27 @@ final class InMemoryMappedTableAdapter implements MappedTableAdapter
             switch ($rowUpdate->mode) {
                 case RowUpdatePlan::MODE_DELETE:
                     $this->applyDelete($tableName, $idColumn, $rowUpdate);
+
                     break;
 
                 case RowUpdatePlan::MODE_INSERT:
                     $this->applyInsert($tableName, $idColumn, $rowUpdate);
+
                     break;
 
                 case RowUpdatePlan::MODE_REPLACE:
                     $this->applyReplace($tableName, $idColumn, $rowUpdate);
+
                     break;
 
                 case RowUpdatePlan::MODE_UPSERT:
                     $this->applyUpsert($tableName, $idColumn, $rowUpdate);
+
                     break;
 
                 case RowUpdatePlan::MODE_UPDATE:
                     $this->applyUpdate($tableName, $idColumn, $rowUpdate);
+
                     break;
 
                 default:
@@ -123,8 +128,7 @@ final class InMemoryMappedTableAdapter implements MappedTableAdapter
         string $idColumn,
         RowUpdatePlan $update,
         string $message,
-    ): array
-    {
+    ): array {
         $row = $this->database->row($tableName, $idColumn, $update->id);
         if (false === $row) {
             throw new ConcurrencyException($message);

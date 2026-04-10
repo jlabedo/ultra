@@ -11,7 +11,7 @@ interface MappedTableAdapter
      *
      * @return array<string, mixed>|false
      */
-    public function row(string $tableName, string $idColumn, string|int $id, array $columns = []): array|false;
+    public function row(string $tableName, string $idColumn, int|string $id, array $columns = []): array|false;
 
     /**
      * @param list<RowUpdatePlan> $rowUpdates

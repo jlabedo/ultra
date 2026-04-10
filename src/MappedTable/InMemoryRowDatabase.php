@@ -62,7 +62,7 @@ final class InMemoryRowDatabase
      *
      * @return array<string, mixed>|false
      */
-    public function row(string $tableName, string $idColumn, string|int $id, array $columns = []): array|false
+    public function row(string $tableName, string $idColumn, int|string $id, array $columns = []): array|false
     {
         $row = $this->tables[$tableName][$this->rowKey($id)] ?? null;
         if (null === $row) {
@@ -100,12 +100,12 @@ final class InMemoryRowDatabase
         $this->tables[$tableName][$this->rowKey($row[$idColumn])] = $row;
     }
 
-    public function deleteRow(string $tableName, string $idColumn, string|int $id): void
+    public function deleteRow(string $tableName, string $idColumn, int|string $id): void
     {
         unset($this->tables[$tableName][$this->rowKey($id)]);
     }
 
-    private function rowKey(string|int $id): string
+    private function rowKey(int|string $id): string
     {
         return (string) $id;
     }

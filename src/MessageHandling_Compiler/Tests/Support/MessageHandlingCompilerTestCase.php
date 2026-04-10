@@ -7,7 +7,7 @@ namespace Ultra\MessageHandling_Compiler\Tests\Support;
 use PHPUnit\Framework\TestCase;
 use Ultra\MessageHandling\MessageContextKeys;
 
-require_once dirname(__DIR__) . '/Fixtures/Messages.php';
+require_once dirname(__DIR__).'/Fixtures/Messages.php';
 
 abstract class MessageHandlingCompilerTestCase extends TestCase
 {

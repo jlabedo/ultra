@@ -40,11 +40,11 @@ test('compiler pass registers event names from tagged resource metadata', functi
     $container = new ContainerBuilder();
     $container->setDefinition(
         EventRegistryCompilerPassTestEvent::class,
-        (new Definition(EventRegistryCompilerPassTestEvent::class))
+        new Definition(EventRegistryCompilerPassTestEvent::class)
             ->addResourceTag(EventsBundle::EVENT_TAG, ['name' => 'faculty.course_created'])
     );
 
-    (new EventRegistryCompilerPass())->process($container);
+    new EventRegistryCompilerPass()->process($container);
 
     expect($container->hasDefinition(EventRegistryInterface::class))->toBeTrue()
         ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(0))
@@ -54,12 +54,13 @@ test('compiler pass registers event names from tagged resource metadata', functi
         ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(1))
         ->toBe([])
         ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(2))
-        ->toBe([]);
+        ->toBe([])
+    ;
 });
 
 test('event bundle autoconfiguration preserves the event name when collecting domain identifiers', function () {
     $container = new ContainerBuilder();
-    (new EventsBundle())->build($container);
+    new EventsBundle()->build($container);
 
     $definition = new ChildDefinition('');
     $configurator = $container->getAttributeAutoconfigurators()[Event::class][0];
@@ -79,11 +80,11 @@ test('compiler pass injects visibility-aware domain identifier metadata', functi
     $container = new ContainerBuilder();
     $container->setDefinition(
         EventRegistryPrivateTaggedEvent::class,
-        (new Definition(EventRegistryPrivateTaggedEvent::class))
+        new Definition(EventRegistryPrivateTaggedEvent::class)
             ->addResourceTag(EventsBundle::EVENT_TAG, ['name' => 'faculty.course_archived'])
     );
 
-    (new EventRegistryCompilerPass())->process($container);
+    new EventRegistryCompilerPass()->process($container);
 
     expect($container->getDefinition(EventRegistryInterface::class)->getArgument(1))
         ->toBe([
@@ -94,5 +95,6 @@ test('compiler pass injects visibility-aware domain identifier metadata', functi
         ->and($container->getDefinition(EventRegistryInterface::class)->getArgument(2))
         ->toBe([
             EventRegistryPrivateTaggedEvent::class => true,
-        ]);
+        ])
+    ;
 });

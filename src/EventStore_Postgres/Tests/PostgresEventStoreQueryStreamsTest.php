@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore_Postgres\Tests;
 
-use Ultra\EventStore\Event;
+use Doctrine\DBAL\Connection;
 use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
 
@@ -126,7 +127,7 @@ test('query-streams implementation validates multiple expected query versions', 
 });
 
 test('query-streams implementation stores fixed-width binary digests for query stream keys', function () {
-    withPostgresQueryStreamsStore(function (EventStore $store, \Doctrine\DBAL\Connection $connection, string $prefix): void {
+    withPostgresQueryStreamsStore(function (EventStore $store, Connection $connection, string $prefix): void {
         $store->append([
             new Event(
                 eventType: 'student.subscribed',

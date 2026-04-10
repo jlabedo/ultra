@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore_Postgres\Tests;
 
-use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\Exception\UnsupportedQueryException;
 use Ultra\EventStore\StreamQuery;
@@ -120,7 +120,7 @@ test('append validates multiple expected query versions', function () {
 
 test('load round-trips hstore domain identifiers', function () {
     withPostgresStore(function (PostgresEventStore $store): void {
-        $domainIds = ['courseId' => 'course-"123"\\example'];
+        $domainIds = ['courseId' => 'course-"123"\example'];
         $query = StreamQuery::forStream(new DomainIdentifier('courseId', $domainIds['courseId']))
             ->ofTypes('course.created')
         ;

@@ -4,17 +4,14 @@ declare(strict_types=1);
 
 namespace Ultra\Projection_Postgres\Tests;
 
-use Doctrine\DBAL\Connection;
-use Ultra\EventStore\EventStore;
-use Ultra\Projection\EventFeed;
-use Ultra\Projection_Postgres\PostgresEventFeed;
-use Ultra\Projection_Postgres\PostgresProjectionRuntimeRepository;
-use Ultra\Projection_Postgres\PostgresProjectionRuntimeSchema;
-
 use function Ultra\EventStore_Postgres\Tests\postgresTestConnection;
 use function Ultra\EventStore_Postgres\Tests\postgresTestSchemaForImplementation;
 use function Ultra\EventStore_Postgres\Tests\postgresTestStoreForImplementation;
 use function Ultra\EventStore_Postgres\Tests\postgresTestUniquePrefix;
+
+use Ultra\Projection_Postgres\PostgresEventFeed;
+use Ultra\Projection_Postgres\PostgresProjectionRuntimeRepository;
+use Ultra\Projection_Postgres\PostgresProjectionRuntimeSchema;
 
 require_once __DIR__.'/../../EventStore_Postgres/Tests/PostgresTestSupport.php';
 

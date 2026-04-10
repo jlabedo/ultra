@@ -21,19 +21,22 @@ final class RecordingUnitOfWork implements UnitOfWork
 
     public function flush(): void
     {
-        $this->calls[] = $this->name . ':flush';
+        $this->calls[] = $this->name.':flush';
     }
 
     public function clear(): void
     {
-        $this->calls[] = $this->name . ':clear';
+        $this->calls[] = $this->name.':clear';
     }
 }
 
+/**
+ * @internal
+ */
 #[CoversClass(CompositeUnitOfWork::class)]
 final class CompositeUnitOfWorkTest extends TestCase
 {
-    public function testCompositeFlushesChildUnitOfWorksInRegistrationOrder(): void
+    public function test_composite_flushes_child_unit_of_works_in_registration_order(): void
     {
         $calls = [];
 
@@ -50,7 +53,7 @@ final class CompositeUnitOfWorkTest extends TestCase
         ], $calls);
     }
 
-    public function testCompositeClearsChildUnitOfWorksInRegistrationOrder(): void
+    public function test_composite_clears_child_unit_of_works_in_registration_order(): void
     {
         $calls = [];
 
@@ -67,7 +70,7 @@ final class CompositeUnitOfWorkTest extends TestCase
         ], $calls);
     }
 
-    public function testCompositeAcceptsTraversableUnitOfWorks(): void
+    public function test_composite_accepts_traversable_unit_of_works(): void
     {
         $calls = [];
 

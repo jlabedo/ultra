@@ -8,7 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
-use Ultra\EventStore\Event;
+use Symfony\Component\DependencyInjection\Reference;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
@@ -71,9 +71,14 @@ final readonly class BundleOrderStatusView
     }
 }
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class StateStoreBundleTest extends TestCase
 {
-    public function testBundleRegistersStateStoreAndSharedMappedTableServices(): void
+    public function test_bundle_registers_state_store_and_shared_mapped_table_services(): void
     {
         $container = $this->createContainer();
         $database = $container->get(InMemoryRowDatabase::class);
@@ -105,10 +110,10 @@ final class StateStoreBundleTest extends TestCase
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
     }
 
-    public function testBundleAutoconfigurationMarksStatesAsNormalizableResources(): void
+    public function test_bundle_autoconfiguration_marks_states_as_normalizable_resources(): void
     {
         $container = new ContainerBuilder();
-        (new StateStoreBundle())->build($container);
+        new StateStoreBundle()->build($container);
 
         $definition = new ChildDefinition('');
         $configurator = $container->getAttributeAutoconfigurators()[State::class][0];
@@ -130,9 +135,9 @@ final class StateStoreBundleTest extends TestCase
     {
         $container = new ContainerBuilder();
         $container->setParameter('kernel.build_dir', sys_get_temp_dir().'/ultra_state_store_bundle_test');
-        (new MapperBundle())->build($container);
-        (new UnitOfWorkBundle())->build($container);
-        (new StateStoreBundle())->build($container);
+        new MapperBundle()->build($container);
+        new UnitOfWorkBundle()->build($container);
+        new StateStoreBundle()->build($container);
 
         $container->register(NullEventStore::class, NullEventStore::class)
             ->setPublic(true)
@@ -143,19 +148,19 @@ final class StateStoreBundleTest extends TestCase
             ->setPublic(true)
         ;
         $container->register(InMemoryMappedTableAdapter::class, InMemoryMappedTableAdapter::class)
-            ->setArguments([new \Symfony\Component\DependencyInjection\Reference(InMemoryRowDatabase::class)])
+            ->setArguments([new Reference(InMemoryRowDatabase::class)])
             ->setPublic(true)
         ;
         $container->setAlias(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setPublic(true);
 
         $container->setDefinition(
             BundleOrderState::class,
-            (new Definition(BundleOrderState::class))
+            new Definition(BundleOrderState::class)
                 ->setAutoconfigured(true)
         );
         $container->setDefinition(
             BundleOrderStatusView::class,
-            (new Definition(BundleOrderStatusView::class))
+            new Definition(BundleOrderStatusView::class)
                 ->setAutoconfigured(true)
         );
 

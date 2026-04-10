@@ -7,14 +7,19 @@ namespace Ultra\MessageHandling_Compiler\Tests;
 use Ultra\MessageHandling\Attribute\AdvicePhase;
 use Ultra\MessageHandling\Attribute\Asynchronous;
 use Ultra\MessageHandling\Attribute\Before;
-use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
+use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
 {
     public function test_dispatch_phase_advice_runs_at_enqueue_time(): void
@@ -22,15 +27,15 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $dispatchCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->name;
+                    return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class($dispatchCalls) {
+            ->withService(new class ($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -66,14 +71,14 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $dispatchCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->name;
+                    return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class($dispatchCalls) {
+            ->withService(new class ($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -105,15 +110,15 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $executeCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->name;
+                    return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class($executeCalls) {
+            ->withService(new class ($executeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -150,15 +155,15 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $executeCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->name;
+                    return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class($dispatchCalls) {
+            ->withService(new class ($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -174,7 +179,7 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->withService(new class($executeCalls) {
+            ->withService(new class ($executeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)

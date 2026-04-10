@@ -53,9 +53,14 @@ final readonly class OrderStatusView
     }
 }
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class StateStoreTest extends TestCase
 {
-    public function testLoadHydratesReadonlyStateFromMappedRow(): void
+    public function test_load_hydrates_readonly_state_from_mapped_row(): void
     {
         [$database, $table, $store] = $this->newStore([OrderState::class]);
         $database->seedRow('orders', 'order_id', [
@@ -77,7 +82,7 @@ final class StateStoreTest extends TestCase
         ], $table->row('order-123', ['status', 'note']));
     }
 
-    public function testSaveUpsertsNewReadonlyState(): void
+    public function test_save_upserts_new_readonly_state(): void
     {
         [$database, $table, $store] = $this->newStore([OrderState::class]);
 
@@ -102,7 +107,7 @@ final class StateStoreTest extends TestCase
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
     }
 
-    public function testExpectedSaveRejectsStaleMappedState(): void
+    public function test_expected_save_rejects_stale_mapped_state(): void
     {
         [$database, $table, $store] = $this->newStore([OrderState::class]);
         $database->seedRow('orders', 'order_id', [
@@ -128,7 +133,7 @@ final class StateStoreTest extends TestCase
         $this->flushInTransaction($database, $table);
     }
 
-    public function testExpectationCanBeBufferedWithoutSaving(): void
+    public function test_expectation_can_be_buffered_without_saving(): void
     {
         [$database, $table, $store] = $this->newStore([OrderState::class]);
         $database->seedRow('orders', 'order_id', [
@@ -150,7 +155,7 @@ final class StateStoreTest extends TestCase
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
     }
 
-    public function testExpectationFromOneStateClassCanGuardSaveOfAnotherOnSameRow(): void
+    public function test_expectation_from_one_state_class_can_guard_save_of_another_on_same_row(): void
     {
         [$database, $table, $store] = $this->newStore([OrderState::class, OrderStatusView::class]);
         $database->seedRow('orders', 'order_id', [
@@ -173,7 +178,7 @@ final class StateStoreTest extends TestCase
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
     }
 
-    public function testLoadThrowsForMissingState(): void
+    public function test_load_throws_for_missing_state(): void
     {
         [, , $store] = $this->newStore([OrderState::class]);
 
@@ -182,7 +187,7 @@ final class StateStoreTest extends TestCase
         $store->load(OrderState::class, 'missing-order');
     }
 
-    public function testExpectMissingTurnsLaterSaveIntoInsert(): void
+    public function test_expect_missing_turns_later_save_into_insert(): void
     {
         [$database, $table, $store] = $this->newStore([OrderState::class]);
 
@@ -198,7 +203,7 @@ final class StateStoreTest extends TestCase
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
     }
 
-    public function testExpectMissingWithoutSaveDoesNotWriteAnything(): void
+    public function test_expect_missing_without_save_does_not_write_anything(): void
     {
         [$database, $table, $store] = $this->newStore([OrderState::class]);
 
@@ -208,7 +213,7 @@ final class StateStoreTest extends TestCase
         self::assertFalse($database->row('orders', 'order_id', 'order-123', ['status', 'note']));
     }
 
-    public function testExpectMissingRejectsConcurrentInsert(): void
+    public function test_expect_missing_rejects_concurrent_insert(): void
     {
         [$database, $table, $store] = $this->newStore([OrderState::class]);
 
@@ -228,6 +233,7 @@ final class StateStoreTest extends TestCase
 
     /**
      * @param list<class-string> $stateClasses
+     *
      * @return array{InMemoryRowDatabase, MappedTable, StateStore}
      */
     private function newStore(array $stateClasses): array

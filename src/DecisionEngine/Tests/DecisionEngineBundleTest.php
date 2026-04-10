@@ -25,10 +25,10 @@ use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\EventHandler;
 use Ultra\MessageHandling\Attribute\SelfHandler;
-use Ultra\MessageHandling\MessageHandlingBundle;
 use Ultra\MessageHandling\MediatorInterface;
+use Ultra\MessageHandling\MessageHandlingBundle;
 
-const DECISION_ENGINE_BUNDLE_TEST_BUILD_DIR = __DIR__ . '/../../../var/decision_engine_bundle_tests';
+const DECISION_ENGINE_BUNDLE_TEST_BUILD_DIR = __DIR__.'/../../../var/decision_engine_bundle_tests';
 
 #[Event('decision_engine_bundle.course_created')]
 final readonly class CourseCreatedForDecisionEngineBundleTest
@@ -74,11 +74,14 @@ final readonly class CreateCourseForDecisionEngineBundleTest
 final class RecordCourseCreatedForDecisionEngineBundleTest
 {
     #[EventHandler]
-    public function onCourseCreated(CourseCreatedForDecisionEngineBundleTest $event): void
-    {
-    }
+    public function onCourseCreated(CourseCreatedForDecisionEngineBundleTest $event): void {}
 }
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class DecisionEngineBundleTest extends TestCase
 {
     public function test_it_wires_the_decision_engine_into_the_message_handling_bundle(): void
@@ -111,7 +114,7 @@ final class DecisionEngineBundleTest extends TestCase
         $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
 
         $container->register(UltraNormalizer::class, UltraNormalizer::class)
-            ->setArguments([DECISION_ENGINE_BUNDLE_TEST_BUILD_DIR . '/normalizer'])
+            ->setArguments([DECISION_ENGINE_BUNDLE_TEST_BUILD_DIR.'/normalizer'])
         ;
 
         $container->register(EventTopologyProvider::class, StaticEventTopologyProvider::class)

@@ -1,15 +1,15 @@
 <?php
 
 declare(strict_types=1);
+
 use PhpCsFixer\Config;
 use PhpCsFixer\Finder;
 
 $finder = Finder::create()
-    ->in(__DIR__.'/src')
+    ->in(__DIR__ . '/src')
     ->name('*.php')
     ->ignoreDotFiles(true)
-    ->ignoreVCS(true)
-;
+    ->ignoreVCS(true);
 
 return new Config()
     ->setRules([
@@ -38,9 +38,10 @@ return new Config()
             'keep_multiple_spaces_after_comma' => true,
         ],
         'single_trait_insert_per_statement' => true,
+        'php_unit_method_casing' => ['case' => 'snake_case'],
     ])
     ->setFinder($finder)
     ->setRiskyAllowed(true)
     ->setUsingCache(true)
-    ->setCacheFile(__DIR__.'/var/.php-cs-fixer.cache')
+    ->setCacheFile(__DIR__ . '/var/.php-cs-fixer.cache')
 ;

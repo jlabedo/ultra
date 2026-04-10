@@ -208,9 +208,9 @@ final class EventSourcedEntityAnalyzer
     }
 
     /**
-     * @param list<string>                                $intersection
-     * @param list<\ReflectionAttribute<MatchTag>>        $matchTagAttributes
-     * @param list<string>                                $entityTags
+     * @param list<string>                         $intersection
+     * @param list<\ReflectionAttribute<MatchTag>> $matchTagAttributes
+     * @param list<string>                         $entityTags
      *
      * @return list<list<string>>
      */

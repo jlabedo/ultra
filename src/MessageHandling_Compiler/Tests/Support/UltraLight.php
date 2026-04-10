@@ -8,16 +8,11 @@ use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\MessageHandling\Async\AsyncQueueInterface;
 use Ultra\MessageHandling\Async\QueueWorker;
-use Ultra\MessageHandling\Attribute\Advice;
-use Ultra\MessageHandling\Attribute\EventHandler;
-use Ultra\MessageHandling\Attribute\Handles;
-use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageHandlingBundle;
-use Ultra\MessageHandling\TagNames;
 
-const ULTRA_LIGHT_BUILD_DIR = __DIR__ . '/../../../../var/message_handling_compiler_tests';
+const ULTRA_LIGHT_BUILD_DIR = __DIR__.'/../../../../var/message_handling_compiler_tests';
 
 final readonly class UltraLight
 {
@@ -100,7 +95,8 @@ final readonly class UltraLight
         foreach ($this->classesToDiscover as $class) {
             $container->register($this->serviceIdForClass($class), $class)
                 ->setAutoconfigured(true)
-                ->setAutowired(true);
+                ->setAutowired(true)
+            ;
         }
 
         foreach ($this->eventClasses as $eventClass) {
@@ -128,34 +124,26 @@ final readonly class UltraLight
 
     public function mediator(): MediatorInterface
     {
-        /** @var MediatorInterface $mediator */
-        $mediator = $this->boot()->get('test.mediator');
-
-        return $mediator;
+        // @var MediatorInterface $mediator
+        return $this->boot()->get('test.mediator');
     }
 
     public function eventBus(): EventBusInterface
     {
-        /** @var EventBusInterface $eventBus */
-        $eventBus = $this->boot()->get('test.event_bus');
-
-        return $eventBus;
+        // @var EventBusInterface $eventBus
+        return $this->boot()->get('test.event_bus');
     }
 
     public function asyncQueue(): AsyncQueueInterface
     {
-        /** @var AsyncQueueInterface $queue */
-        $queue = $this->boot()->get('test.async_queue');
-
-        return $queue;
+        // @var AsyncQueueInterface $queue
+        return $this->boot()->get('test.async_queue');
     }
 
     public function queueWorker(): QueueWorker
     {
-        /** @var QueueWorker $worker */
-        $worker = $this->boot()->get('test.queue_worker');
-
-        return $worker;
+        // @var QueueWorker $worker
+        return $this->boot()->get('test.queue_worker');
     }
 
     /**

@@ -16,7 +16,8 @@ final class MessageContextPropagator implements MessageContextPropagatorInterfac
 
             return $context
                 ->with(MessageContextKeys::MESSAGE_ID, $messageId)
-                ->with(MessageContextKeys::CORRELATION_ID, $correlationId);
+                ->with(MessageContextKeys::CORRELATION_ID, $correlationId)
+            ;
         }
 
         if ($context->has(MessageContextKeys::MESSAGE_ID)) {
@@ -28,7 +29,8 @@ final class MessageContextPropagator implements MessageContextPropagatorInterfac
 
             $normalized = $context
                 ->with(MessageContextKeys::MESSAGE_ID, $messageId)
-                ->with(MessageContextKeys::CORRELATION_ID, $correlationId);
+                ->with(MessageContextKeys::CORRELATION_ID, $correlationId)
+            ;
 
             if (null !== $parentMessageId) {
                 $normalized = $normalized->with(MessageContextKeys::CAUSATION_ID, $parentMessageId);
@@ -43,7 +45,8 @@ final class MessageContextPropagator implements MessageContextPropagatorInterfac
 
         return $context
             ->with(MessageContextKeys::MESSAGE_ID, $messageId)
-            ->with(MessageContextKeys::CORRELATION_ID, $correlationId);
+            ->with(MessageContextKeys::CORRELATION_ID, $correlationId)
+        ;
     }
 
     private function generateMessageId(): string

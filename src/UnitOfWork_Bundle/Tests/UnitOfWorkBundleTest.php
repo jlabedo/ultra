@@ -71,6 +71,11 @@ final class TaggedUnitOfWork implements UnitOfWork
     }
 }
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class UnitOfWorkBundleTest extends TestCase
 {
     protected function setUp(): void
@@ -78,7 +83,7 @@ final class UnitOfWorkBundleTest extends TestCase
         UnitOfWorkCallRecorder::reset();
     }
 
-    public function testBundleDecoratesTheEventStoreAndAggregatesTaggedUnitOfWorks(): void
+    public function test_bundle_decorates_the_event_store_and_aggregates_tagged_unit_of_works(): void
     {
         $container = $this->createContainer();
 
@@ -103,7 +108,7 @@ final class UnitOfWorkBundleTest extends TestCase
         ], UnitOfWorkCallRecorder::$calls);
     }
 
-    public function testBundleClearDelegatesToEveryRegisteredUnitOfWork(): void
+    public function test_bundle_clear_delegates_to_every_registered_unit_of_work(): void
     {
         $container = $this->createContainer();
 
@@ -130,7 +135,7 @@ final class UnitOfWorkBundleTest extends TestCase
     private function createContainer(): ContainerBuilder
     {
         $container = new ContainerBuilder();
-        (new UnitOfWorkBundle())->build($container);
+        new UnitOfWorkBundle()->build($container);
 
         $container->register(RecordingEventStore::class, RecordingEventStore::class)
             ->setPublic(true)
@@ -139,12 +144,12 @@ final class UnitOfWorkBundleTest extends TestCase
 
         $container->setDefinition(
             AutoconfiguredUnitOfWork::class,
-            (new Definition(AutoconfiguredUnitOfWork::class))
+            new Definition(AutoconfiguredUnitOfWork::class)
                 ->setAutoconfigured(true)
         );
         $container->setDefinition(
             TaggedUnitOfWork::class,
-            (new Definition(TaggedUnitOfWork::class))
+            new Definition(TaggedUnitOfWork::class)
                 ->addTag(TagNames::UNIT_OF_WORK)
         );
         $container->getAlias(UnitOfWork::class)->setPublic(true);

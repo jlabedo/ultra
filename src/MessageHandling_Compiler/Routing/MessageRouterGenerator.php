@@ -32,7 +32,7 @@ final class MessageRouterGenerator
      * filename changes when the generated code changes (cache invalidation)
      * and stays stable when it doesn't.
      *
-     * @param array<class-string, string|list<string>> $routes message class → handler service ID (single) or list of IDs (multi)
+     * @param array<class-string, list<string>|string> $routes message class → handler service ID (single) or list of IDs (multi)
      *
      * @return array{className: string, filePath: string}
      */
@@ -46,10 +46,10 @@ final class MessageRouterGenerator
         $code = $this->buildCode($placeholder, $descriptor, $routes);
 
         $hash = substr(sha1($code), 0, 8);
-        $className = $baseName . '_' . $hash;
+        $className = $baseName.'_'.$hash;
         $code = str_replace($placeholder, $className, $code);
 
-        $filePath = rtrim($outputDir, '/') . '/' . $className . '.php';
+        $filePath = rtrim($outputDir, '/').'/'.$className.'.php';
         $dir = dirname($filePath);
         if (! is_dir($dir)) {
             mkdir($dir, 0o777, true);
@@ -63,7 +63,7 @@ final class MessageRouterGenerator
     /**
      * Build the PHP source code string for a compiled router.
      *
-     * @param array<class-string, string|list<string>> $routes
+     * @param array<class-string, list<string>|string> $routes
      */
     public function buildCode(
         string $className,
@@ -85,7 +85,7 @@ final class MessageRouterGenerator
         }
 
         $routesCode = [] !== $routeEntries
-            ? implode("\n", $routeEntries) . "\n"
+            ? implode("\n", $routeEntries)."\n"
             : '';
 
         $interface = ltrim($descriptor->interfaceName, '\\');
@@ -120,7 +120,7 @@ final class MessageRouterGenerator
     {
         $interface = ltrim($descriptor->interfaceName, '\\');
         $method = $descriptor->methodName;
-        $msgVar = '$' . $descriptor->firstParamName;
+        $msgVar = '$'.$descriptor->firstParamName;
         $returnType = $descriptor->returnsVoid ? 'void' : 'mixed';
         $returnKeyword = $descriptor->returnsVoid ? '' : 'return ';
 
@@ -188,14 +188,14 @@ final class MessageRouterGenerator
     public static function wrapperClassName(string $interfaceName, string $outputDir): string
     {
         $shortName = substr($interfaceName, strrpos($interfaceName, '\\') + 1);
-        $hash = substr(sha1($interfaceName . $outputDir), 0, 8);
+        $hash = substr(sha1($interfaceName.$outputDir), 0, 8);
 
-        return 'Contextual' . $shortName . '_' . $hash;
+        return 'Contextual'.$shortName.'_'.$hash;
     }
 
     private function buildSingleDispatchMethod(RouterDescriptor $descriptor): string
     {
-        $msgVar = '$' . $descriptor->firstParamName;
+        $msgVar = '$'.$descriptor->firstParamName;
         $exceptionClass = ltrim($descriptor->noHandlerExceptionClass, '\\');
 
         $body = <<<PHP
@@ -219,7 +219,7 @@ final class MessageRouterGenerator
 
     private function buildMultiDispatchMethod(RouterDescriptor $descriptor): string
     {
-        $msgVar = '$' . $descriptor->firstParamName;
+        $msgVar = '$'.$descriptor->firstParamName;
         $exceptionClass = ltrim($descriptor->noHandlerExceptionClass, '\\');
         $method = $descriptor->methodName;
 

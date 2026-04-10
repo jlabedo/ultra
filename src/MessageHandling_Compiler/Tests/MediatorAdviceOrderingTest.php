@@ -43,6 +43,11 @@ final class AdviceOrderingAlphabeticalBeforeB
     }
 }
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
 {
     public function test_it_places_before_around_and_after_advice_in_onion_order(): void
@@ -51,18 +56,18 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($log)
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->name;
+                    $this->log->entries[] = 'handler:'.$message->name;
 
                     return $message->name;
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Before(priority: 20)]
@@ -106,18 +111,18 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($log)
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->name;
+                    $this->log->entries[] = 'handler:'.$message->name;
 
                     return $message->name;
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Before(priority: 10)]
@@ -139,7 +144,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 #[AfterReturning(priority: 10)]
                 public function afterReturning(object $message, MessageContext $context, mixed $result): void
                 {
-                    $this->log->entries[] = 'afterReturning:10:' . $result;
+                    $this->log->entries[] = 'afterReturning:10:'.$result;
                 }
 
                 #[After(priority: 10)]
@@ -168,18 +173,18 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($log)
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->name;
+                    $this->log->entries[] = 'handler:'.$message->name;
 
                     throw new \RuntimeException('boom');
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Before(priority: 10)]
@@ -199,7 +204,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                 #[AfterThrowing(priority: 10)]
                 public function afterThrowing(object $message, MessageContext $context, \Throwable $throwable): void
                 {
-                    $this->log->entries[] = 'afterThrowing:10:' . $throwable->getMessage();
+                    $this->log->entries[] = 'afterThrowing:10:'.$throwable->getMessage();
                 }
 
                 #[After(priority: 10)]
@@ -233,18 +238,18 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($log)
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->name;
+                    $this->log->entries[] = 'handler:'.$message->name;
 
                     return $message->name;
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Around(priority: 0)]
@@ -257,7 +262,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     return $result;
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Before(priority: 10)]
@@ -266,7 +271,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     $this->log->entries[] = 'before:10';
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Around(priority: 20)]
@@ -279,7 +284,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     return $result;
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[After(priority: -5)]
@@ -309,13 +314,13 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($log)
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->name;
+                    $this->log->entries[] = 'handler:'.$message->name;
 
                     return $message->name;
                 }
@@ -339,18 +344,18 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($log)
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->name;
+                    $this->log->entries[] = 'handler:'.$message->name;
 
                     throw new \RuntimeException('boom');
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Around(priority: 0)]
@@ -361,16 +366,16 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     return $proceed();
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[AfterThrowing(priority: 10)]
                 public function afterThrowing(object $message, MessageContext $context, \Throwable $throwable): void
                 {
-                    $this->log->entries[] = 'afterThrowing:10:' . $throwable->getMessage();
+                    $this->log->entries[] = 'afterThrowing:10:'.$throwable->getMessage();
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[After(priority: -5)]
@@ -403,39 +408,39 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($log)
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    $this->log->entries[] = 'handler:' . $message->name;
+                    $this->log->entries[] = 'handler:'.$message->name;
 
                     return $message->name;
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Around(priority: 0)]
                 public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
-                    $this->log->entries[] = 'outer-before:' . $context->get('trace', 'none');
+                    $this->log->entries[] = 'outer-before:'.$context->get('trace', 'none');
                     $result = $proceed(context: $context->with('trace', 'propagated'));
-                    $this->log->entries[] = 'outer-after:' . $context->get('trace', 'none');
+                    $this->log->entries[] = 'outer-after:'.$context->get('trace', 'none');
 
                     return $result;
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[Around(priority: 10)]
                 public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
-                    $this->log->entries[] = 'inner-before:' . $context->get('trace', 'none');
+                    $this->log->entries[] = 'inner-before:'.$context->get('trace', 'none');
                     $result = $proceed();
-                    $this->log->entries[] = 'inner-after:' . $context->get('trace', 'none');
+                    $this->log->entries[] = 'inner-after:'.$context->get('trace', 'none');
 
                     return $result;
                 }
@@ -459,21 +464,21 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($log)
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
                     throw new \RuntimeException('boom');
                 }
             })
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Around(priority: 10)]
                 public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
                     return $proceed();
                 }
             })
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Before(priority: 20)]
                 public function before(object $message, MessageContext $context): array
                 {
@@ -492,7 +497,7 @@ final class MediatorAdviceOrderingTest extends MessageHandlingCompilerTestCase
                     return ['after' => 'done'];
                 }
             })
-            ->withService(new class($log) {
+            ->withService(new class ($log) {
                 public function __construct(private readonly AdviceOrderingLog $log) {}
 
                 #[AfterThrowing(priority: 0)]

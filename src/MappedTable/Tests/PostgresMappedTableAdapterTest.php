@@ -10,10 +10,13 @@ use Ultra\MappedTable\MappedTable;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
+/**
+ * @internal
+ */
 #[CoversClass(PostgresMappedTableAdapter::class)]
 final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 {
-    public function testRowReturnsProjectedColumns(): void
+    public function test_row_returns_projected_columns(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -32,15 +35,17 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testExpectAbsentTurnsLaterColumnWritesIntoInsert(): void
+    public function test_expect_absent_turns_later_column_writes_into_insert(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $table->withId('row-1')
                 ->expectAbsent()
                 ->setColumn('status', 'pending')
-                ->setColumn('note', 'draft');
+                ->setColumn('note', 'draft')
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -62,7 +67,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testFlushDeletesRow(): void
+    public function test_flush_deletes_row(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -74,9 +79,11 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
             ]);
 
             $table->withId('row-1')
-                ->delete();
+                ->delete()
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -92,7 +99,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testFlushThrowsWhenDeleteExpectedColumnsDoNotMatch(): void
+    public function test_flush_throws_when_delete_expected_columns_do_not_match(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -105,7 +112,8 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
             $table->withId('row-1')
                 ->expectColumnValue('version_a', 'A2')
-                ->delete();
+                ->delete()
+            ;
 
             $connection->beginTransaction();
 
@@ -122,7 +130,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testFlushMergesDeleteWithPriorBufferedUpdatesForTheSameRow(): void
+    public function test_flush_merges_delete_with_prior_buffered_updates_for_the_same_row(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -135,13 +143,16 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
             $table->withId('row-1')
                 ->expectColumnValue('version_a', 'A1')
-                ->setColumn('status', 'active');
+                ->setColumn('status', 'active')
+            ;
 
             $table->withId('row-1')
                 ->expectColumnValue('version_a', 'A1')
-                ->delete();
+                ->delete()
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -157,17 +168,20 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testDeleteCancelsPendingInsertForTheSameRow(): void
+    public function test_delete_cancels_pending_insert_for_the_same_row(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $table->withId('row-1')
                 ->insert()
-                ->setColumn('status', 'pending');
+                ->setColumn('status', 'pending')
+            ;
 
             $table->withId('row-1')
-                ->delete();
+                ->delete()
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -183,7 +197,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testInsertAfterDeleteReplacesRowAndKeepsItsInitialExpectation(): void
+    public function test_insert_after_delete_replaces_row_and_keeps_its_initial_expectation(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -196,15 +210,18 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
             $table->withId('row-1')
                 ->expectColumnValue('version_a', 'A1')
-                ->delete();
+                ->delete()
+            ;
 
             $table->withId('row-1')
                 ->insert()
                 ->setColumn('status', 'recreated')
                 ->setColumn('note', 'fresh')
-                ->setColumn('version_a', 'A2');
+                ->setColumn('version_a', 'A2')
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -226,7 +243,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testInsertAfterDeleteFailsWhenTheInitialExpectationIsStale(): void
+    public function test_insert_after_delete_fails_when_the_initial_expectation_is_stale(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -239,11 +256,13 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
             $table->withId('row-1')
                 ->expectColumnValue('version_a', 'A1')
-                ->delete();
+                ->delete()
+            ;
 
             $table->withId('row-1')
                 ->insert()
-                ->setColumn('status', 'recreated');
+                ->setColumn('status', 'recreated')
+            ;
 
             $connection->beginTransaction();
 
@@ -266,27 +285,30 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testDeleteRejectsSubsequentColumnUpdates(): void
+    public function test_delete_rejects_subsequent_column_updates(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->expectException(ConcurrencyException::class);
 
             $table->withId('row-1')
                 ->delete()
-                ->setColumn('status', 'pending');
+                ->setColumn('status', 'pending')
+            ;
         });
     }
 
-    public function testFlushUpsertsRowByInsertingWhenAbsent(): void
+    public function test_flush_upserts_row_by_inserting_when_absent(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $table->withId('row-1')
                 ->upsert()
                 ->setColumn('status', 'pending')
                 ->setColumn('note', 'draft')
-                ->setColumn('version_a', 'A1');
+                ->setColumn('version_a', 'A1')
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -308,7 +330,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testFlushUpsertsRowByUpdatingWhenPresent(): void
+    public function test_flush_upserts_row_by_updating_when_present(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -322,9 +344,11 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
             $table->withId('row-1')
                 ->upsert()
                 ->setColumn('status', 'updated')
-                ->setColumn('note', 'fresh');
+                ->setColumn('note', 'fresh')
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -346,15 +370,17 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testUpsertWorksWhenCalledAfterSetColumn(): void
+    public function test_upsert_works_when_called_after_set_column(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $table->withId('row-1')
                 ->setColumn('status', 'pending')
                 ->setColumn('note', 'draft')
-                ->upsert();
+                ->upsert()
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -376,7 +402,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testUpsertAfterDeleteReplacesRowAndKeepsItsInitialExpectation(): void
+    public function test_upsert_after_delete_replaces_row_and_keeps_its_initial_expectation(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -389,14 +415,17 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
             $table->withId('row-1')
                 ->expectColumnValue('version_a', 'A1')
-                ->delete();
+                ->delete()
+            ;
 
             $table->withId('row-1')
                 ->upsert()
                 ->setColumn('status', 'upserted')
-                ->setColumn('version_a', 'A2');
+                ->setColumn('version_a', 'A2')
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -418,16 +447,18 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testFlushInsertsRow(): void
+    public function test_flush_inserts_row(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $table->withId('row-1')
                 ->insert()
                 ->setColumn('status', 'pending')
                 ->setColumn('note', 'draft')
-                ->setColumn('version_a', 'A1');
+                ->setColumn('version_a', 'A1')
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -449,18 +480,21 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testFlushMergesInsertWithOtherBufferedChangesForTheSameRow(): void
+    public function test_flush_merges_insert_with_other_buffered_changes_for_the_same_row(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $table->withId('row-1')
-                ->setColumn('status', 'pending');
+                ->setColumn('status', 'pending')
+            ;
 
             $table->withId('row-1')
                 ->insert()
                 ->setColumn('note', 'draft')
-                ->setColumn('version_a', 'A1');
+                ->setColumn('version_a', 'A1')
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -482,7 +516,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testFlushThrowsWhenInsertTargetsAnExistingRow(): void
+    public function test_flush_throws_when_insert_targets_an_existing_row(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -495,7 +529,8 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
             $table->withId('row-1')
                 ->insert()
-                ->setColumn('status', 'new');
+                ->setColumn('status', 'new')
+            ;
 
             $connection->beginTransaction();
 
@@ -512,18 +547,19 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testInsertRejectsExpectedColumnValues(): void
+    public function test_insert_rejects_expected_column_values(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->expectException(ConcurrencyException::class);
 
             $table->withId('row-1')
                 ->insert()
-                ->expectColumnValue('version_a', 'A1');
+                ->expectColumnValue('version_a', 'A1')
+            ;
         });
     }
 
-    public function testFlushUpdatesRowWhenExpectedColumnsMatch(): void
+    public function test_flush_updates_row_when_expected_columns_match(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -538,9 +574,11 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
                 ->expectColumnValue('version_a', 'A1')
                 ->expectColumnValue('version_b', 'B1')
                 ->setColumn('status', 'active')
-                ->setColumn('note', 'published');
+                ->setColumn('note', 'published')
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -562,7 +600,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testFlushSupportsNullExpectedValues(): void
+    public function test_flush_supports_null_expected_values(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -576,9 +614,11 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
             $table->withId('row-1')
                 ->expectColumnValue('note', null)
                 ->expectColumnValue('version_a', null)
-                ->setColumn('status', 'active');
+                ->setColumn('status', 'active')
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -594,7 +634,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testFlushThrowsWhenExpectedColumnsDoNotMatch(): void
+    public function test_flush_throws_when_expected_columns_do_not_match(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -607,7 +647,8 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
             $table->withId('row-1')
                 ->expectColumnValue('version_a', 'A1')
-                ->setColumn('note', 'next');
+                ->setColumn('note', 'next')
+            ;
 
             $connection->beginTransaction();
 
@@ -627,7 +668,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testFlushMergesOperationsTargetingTheSameRow(): void
+    public function test_flush_merges_operations_targeting_the_same_row(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -640,13 +681,16 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
             $table->withId('row-1')
                 ->expectColumnValue('version_a', 'A1')
-                ->setColumn('version_a', 'A2');
+                ->setColumn('version_a', 'A2')
+            ;
 
             $table->withId('row-1')
                 ->expectColumnValue('version_a', 'A1')
-                ->setColumn('note', 'published');
+                ->setColumn('note', 'published')
+            ;
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();
@@ -668,7 +712,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
-    public function testConflictingExpectationsForTheSameRowThrowImmediately(): void
+    public function test_conflicting_expectations_for_the_same_row_throw_immediately(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -681,16 +725,18 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
             $table->withId('row-1')
                 ->expectColumnValue('version_a', 'A1')
-                ->setColumn('status', 'active');
+                ->setColumn('status', 'active')
+            ;
 
             $this->expectException(ConcurrencyException::class);
 
             $table->withId('row-1')
-                ->expectColumnValue('version_a', 'A2');
+                ->expectColumnValue('version_a', 'A2')
+            ;
         });
     }
 
-    public function testClearDropsBufferedUpdates(): void
+    public function test_clear_drops_buffered_updates(): void
     {
         $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
@@ -703,11 +749,13 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
             $table->withId('row-1')
                 ->expectColumnValue('version_a', 'A1')
-                ->setColumn('status', 'active');
+                ->setColumn('status', 'active')
+            ;
 
             $table->clear();
 
             $connection->beginTransaction();
+
             try {
                 $table->flush();
                 $connection->commit();

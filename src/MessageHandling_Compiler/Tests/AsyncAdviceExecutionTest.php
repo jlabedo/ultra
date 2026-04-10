@@ -8,6 +8,7 @@ use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Asynchronous;
 use Ultra\MessageHandling\Attribute\Before;
+use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MediatorInterface;
@@ -16,6 +17,11 @@ use Ultra\MessageHandling\ProceedResult;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
 {
     public function test_advices_run_at_dequeue_time_not_at_enqueue_time(): void
@@ -24,15 +30,15 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $aroundCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->name;
+                    return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class($beforeCalls) {
+            ->withService(new class ($beforeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -40,7 +46,7 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->calls = &$calls;
                 }
 
-                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function log(object $message, MessageContext $context): void
@@ -48,7 +54,7 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->withService(new class($aroundCalls) {
+            ->withService(new class ($aroundCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -56,7 +62,7 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->calls = &$calls;
                 }
 
-                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function wrap(callable $proceed, object $message, MessageContext $context): ProceedResult

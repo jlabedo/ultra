@@ -31,8 +31,8 @@ use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\Attribute\Around;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
@@ -110,13 +110,13 @@ function createMediator(array $serviceDefinitions = []): array
 {
     $container = new ContainerBuilder();
     $container->setAlias('test.mediator', MediatorInterface::class)->setPublic(true);
-    $outputDir = dirname(__DIR__, 3) . '/var/decision-mediator';
+    $outputDir = dirname(__DIR__, 3).'/var/decision-mediator';
     if (! is_dir($outputDir)) {
         mkdir($outputDir, 0o777, true);
     }
 
     $container->register(UltraNormalizer::class, UltraNormalizer::class)
-        ->setArguments([$outputDir . '/normalizer'])
+        ->setArguments([$outputDir.'/normalizer'])
     ;
     $container->register(EventTopologyProvider::class, StaticEventTopologyProvider::class)
         ->setArguments([[
@@ -186,11 +186,11 @@ function createMediator(array $serviceDefinitions = []): array
 
     $container->setDefinition(
         MediatorInterface::class,
-        (new Definition(MediatorInterface::class))
+        new Definition(MediatorInterface::class)
             ->addTag(TagNames::ROUTER, ['interface' => MediatorInterface::class])
             ->setAbstract(true),
     );
-    $container->addCompilerPass(new EntityLoaderCompilerPass($outputDir . '/decision_engine'));
+    $container->addCompilerPass(new EntityLoaderCompilerPass($outputDir.'/decision_engine'));
     $container->addCompilerPass(new MessageRouterCompilerPass($outputDir));
     $container->compile();
 
@@ -239,8 +239,9 @@ test('handle throws InvariantViolation when invariants fail', function () {
     $mediator->send(new CreateCourseCommand('math-101', 'Math', 1));
     $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'alice'));
 
-    expect(fn() => $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'bob')))
-        ->toThrow(InvariantViolation::class);
+    expect(fn () => $mediator->send(new SubscribeStudentToCourseCommand('math-101', 'bob')))
+        ->toThrow(InvariantViolation::class)
+    ;
 });
 
 test('handle throws when creating course that already exists', function () {
@@ -248,8 +249,9 @@ test('handle throws when creating course that already exists', function () {
 
     $mediator->send(new CreateCourseCommand('math-101', 'Math', 10));
 
-    expect(fn() => $mediator->send(new CreateCourseCommand('math-101', 'Other', 5)))
-        ->toThrow(\InvalidArgumentException::class);
+    expect(fn () => $mediator->send(new CreateCourseCommand('math-101', 'Other', 5)))
+        ->toThrow(\InvalidArgumentException::class)
+    ;
 });
 
 test('handle hydrates an empty state object when the stream is empty', function () {
@@ -264,8 +266,9 @@ test('handle hydrates an empty state object when the stream is empty', function 
 test('handle returns a course.not_found violation when subscribing before course creation', function () {
     ['mediator' => $mediator] = createMediator();
 
-    expect(fn() => $mediator->send(new SubscribeStudentToCourseCommand('missing-course', 'alice')))
-        ->toThrow(InvariantViolation::class);
+    expect(fn () => $mediator->send(new SubscribeStudentToCourseCommand('missing-course', 'alice')))
+        ->toThrow(InvariantViolation::class)
+    ;
 
     $violations = $mediator->send(new SubscribeStudentToCourseCommand('missing-course', 'alice'), [
         'decision_mode' => 'check',
@@ -318,7 +321,7 @@ test('check returns violations for invalid state', function () {
 test('check throws if command has no check method', function () {
     ['mediator' => $mediator] = createMediator();
 
-    expect(fn() => $mediator->send(new CreateCourseCommand('x', 'X', 1), [
+    expect(fn () => $mediator->send(new CreateCourseCommand('x', 'X', 1), [
         'decision_mode' => 'check',
     ]))->toThrow(CommandHasNoCheckException::class);
 });
@@ -373,7 +376,7 @@ test('concurrency: appending with stale version throws', function () {
         ],
         domainIds: ['course' => 'math-101'],
     );
-    expect(fn() => $store->append([$anotherEvent], $staleVersion))->toThrow(ConcurrencyException::class);
+    expect(fn () => $store->append([$anotherEvent], $staleVersion))->toThrow(ConcurrencyException::class);
 });
 
 test('events are correctly routed to multiple streams', function () {
@@ -417,7 +420,7 @@ test('decision engine publishes emitted events with the final context from inner
     ['mediator' => $mediator, 'container' => $container] = createMediator([
         EventBusInterface::class => new Definition(RecordingEventBus::class)
             ->setPublic(true),
-        PublishingContextAspect::class => (new Definition(PublishingContextAspect::class))
+        PublishingContextAspect::class => new Definition(PublishingContextAspect::class)
             ->setAutowired(true)
             ->addTag(TagNames::ASPECT),
     ]);

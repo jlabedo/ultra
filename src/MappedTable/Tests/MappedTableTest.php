@@ -15,6 +15,9 @@ use Ultra\MappedTable\PendingRowUpdate;
 use Ultra\MappedTable\RowUpdatePlan;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
+/**
+ * @internal
+ */
 #[CoversClass(MappedTable::class)]
 #[CoversClass(PendingRowUpdate::class)]
 #[CoversClass(BufferedRowUpdate::class)]
@@ -26,17 +29,19 @@ final class MappedTableTest extends TestCase
     private const ID_COLUMN = 'id';
     private const COLUMNS = ['status', 'note', 'version_a', 'version_b'];
 
-    public function testFlushPassesSortedPlansToAdapter(): void
+    public function test_flush_passes_sorted_plans_to_adapter(): void
     {
         $adapter = new RecordingMappedTableAdapter();
         $table = new MappedTable($adapter, self::TABLE_NAME, self::ID_COLUMN);
 
         $table->withId('row-2')
-            ->setColumn('status', 'second');
+            ->setColumn('status', 'second')
+        ;
 
         $table->withId('row-1')
             ->insert()
-            ->setColumn('status', 'first');
+            ->setColumn('status', 'first')
+        ;
 
         $table->flush();
 
@@ -45,15 +50,15 @@ final class MappedTableTest extends TestCase
         self::assertSame(self::ID_COLUMN, $adapter->batches[0]['idColumn']);
         self::assertSame(
             ['row-1', 'row-2'],
-            array_map(static fn(RowUpdatePlan $rowUpdate): string|int => $rowUpdate->id, $adapter->batches[0]['rowUpdates']),
+            array_map(static fn (RowUpdatePlan $rowUpdate): int|string => $rowUpdate->id, $adapter->batches[0]['rowUpdates']),
         );
         self::assertSame(
             [RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_UPDATE],
-            array_map(static fn(RowUpdatePlan $rowUpdate): string => $rowUpdate->mode, $adapter->batches[0]['rowUpdates']),
+            array_map(static fn (RowUpdatePlan $rowUpdate): string => $rowUpdate->mode, $adapter->batches[0]['rowUpdates']),
         );
     }
 
-    public function testFlushUpdatesRowWhenExpectedColumnsMatch(): void
+    public function test_flush_updates_row_when_expected_columns_match(): void
     {
         [$database, $table] = $this->newTable();
         $this->seedRow($database, [
@@ -68,7 +73,8 @@ final class MappedTableTest extends TestCase
             ->expectColumnValue('version_a', 'A1')
             ->expectColumnValue('version_b', 'B1')
             ->setColumn('status', 'active')
-            ->setColumn('note', 'published');
+            ->setColumn('note', 'published')
+        ;
 
         $this->flushInTransaction($database, $table);
 
@@ -81,7 +87,7 @@ final class MappedTableTest extends TestCase
         ], $this->row($database, 'row-1'));
     }
 
-    public function testFlushSupportsNullExpectedValues(): void
+    public function test_flush_supports_null_expected_values(): void
     {
         [$database, $table] = $this->newTable();
         $this->seedRow($database, [
@@ -95,14 +101,15 @@ final class MappedTableTest extends TestCase
         $table->withId('row-1')
             ->expectColumnValue('note', null)
             ->expectColumnValue('version_a', null)
-            ->setColumn('status', 'active');
+            ->setColumn('status', 'active')
+        ;
 
         $this->flushInTransaction($database, $table);
 
         self::assertSame('active', $this->row($database, 'row-1')['status']);
     }
 
-    public function testRowReflectsBufferedUpdatesBeforeFlush(): void
+    public function test_row_reflects_buffered_updates_before_flush(): void
     {
         [$database, $table] = $this->newTable();
         $this->seedRow($database, [
@@ -115,7 +122,8 @@ final class MappedTableTest extends TestCase
 
         $table->withId('row-1')
             ->setColumn('status', 'active')
-            ->setColumn('note', 'published');
+            ->setColumn('note', 'published')
+        ;
 
         self::assertSame([
             'id' => 'row-1',
@@ -125,14 +133,15 @@ final class MappedTableTest extends TestCase
         ], $table->row('row-1', ['status', 'note', 'version_a']));
     }
 
-    public function testRowReflectsBufferedInsertAndDeleteBeforeFlush(): void
+    public function test_row_reflects_buffered_insert_and_delete_before_flush(): void
     {
         [, $table] = $this->newTable();
 
         $table->withId('row-1')
             ->insert()
             ->setColumn('status', 'pending')
-            ->setColumn('note', 'draft');
+            ->setColumn('note', 'draft')
+        ;
 
         self::assertSame([
             'id' => 'row-1',
@@ -142,31 +151,34 @@ final class MappedTableTest extends TestCase
         ], $table->row('row-1', ['status', 'note', 'version_a']));
 
         $table->withId('row-1')
-            ->delete();
+            ->delete()
+        ;
 
         self::assertFalse($table->row('row-1', ['status']));
     }
 
-    public function testExpectAbsentDoesNotWriteWithoutSubsequentChanges(): void
+    public function test_expect_absent_does_not_write_without_subsequent_changes(): void
     {
         [$database, $table] = $this->newTable();
 
         $table->withId('row-1')
-            ->expectAbsent();
+            ->expectAbsent()
+        ;
 
         $this->flushInTransaction($database, $table);
 
         self::assertFalse($this->row($database, 'row-1'));
     }
 
-    public function testExpectAbsentTurnsLaterColumnWritesIntoInsert(): void
+    public function test_expect_absent_turns_later_column_writes_into_insert(): void
     {
         [$database, $table] = $this->newTable();
 
         $table->withId('row-1')
             ->expectAbsent()
             ->setColumn('status', 'pending')
-            ->setColumn('note', 'draft');
+            ->setColumn('note', 'draft')
+        ;
 
         $this->flushInTransaction($database, $table);
 
@@ -179,7 +191,7 @@ final class MappedTableTest extends TestCase
         ], $this->row($database, 'row-1'));
     }
 
-    public function testFlushThrowsWhenExpectedColumnsDoNotMatch(): void
+    public function test_flush_throws_when_expected_columns_do_not_match(): void
     {
         [$database, $table] = $this->newTable();
         $this->seedRow($database, [
@@ -192,7 +204,8 @@ final class MappedTableTest extends TestCase
 
         $table->withId('row-1')
             ->expectColumnValue('version_a', 'A1')
-            ->setColumn('note', 'next');
+            ->setColumn('note', 'next')
+        ;
 
         $this->expectException(ConcurrencyException::class);
 
@@ -203,23 +216,25 @@ final class MappedTableTest extends TestCase
         }
     }
 
-    public function testDeleteCancelsPendingInsertForTheSameRow(): void
+    public function test_delete_cancels_pending_insert_for_the_same_row(): void
     {
         [$database, $table] = $this->newTable();
 
         $table->withId('row-1')
             ->insert()
-            ->setColumn('status', 'pending');
+            ->setColumn('status', 'pending')
+        ;
 
         $table->withId('row-1')
-            ->delete();
+            ->delete()
+        ;
 
         $this->flushInTransaction($database, $table);
 
         self::assertFalse($this->row($database, 'row-1'));
     }
 
-    public function testInsertAfterDeleteReplacesRowAndKeepsItsInitialExpectation(): void
+    public function test_insert_after_delete_replaces_row_and_keeps_its_initial_expectation(): void
     {
         [$database, $table] = $this->newTable();
         $this->seedRow($database, [
@@ -232,13 +247,15 @@ final class MappedTableTest extends TestCase
 
         $table->withId('row-1')
             ->expectColumnValue('version_a', 'A1')
-            ->delete();
+            ->delete()
+        ;
 
         $table->withId('row-1')
             ->insert()
             ->setColumn('status', 'recreated')
             ->setColumn('note', 'fresh')
-            ->setColumn('version_a', 'A2');
+            ->setColumn('version_a', 'A2')
+        ;
 
         $this->flushInTransaction($database, $table);
 
@@ -251,7 +268,7 @@ final class MappedTableTest extends TestCase
         ], $this->row($database, 'row-1'));
     }
 
-    public function testUpsertAfterDeleteReplacesRowAndKeepsItsInitialExpectation(): void
+    public function test_upsert_after_delete_replaces_row_and_keeps_its_initial_expectation(): void
     {
         [$database, $table] = $this->newTable();
         $this->seedRow($database, [
@@ -264,12 +281,14 @@ final class MappedTableTest extends TestCase
 
         $table->withId('row-1')
             ->expectColumnValue('version_a', 'A1')
-            ->delete();
+            ->delete()
+        ;
 
         $table->withId('row-1')
             ->upsert()
             ->setColumn('status', 'upserted')
-            ->setColumn('version_a', 'A2');
+            ->setColumn('version_a', 'A2')
+        ;
 
         $this->flushInTransaction($database, $table);
 
@@ -282,7 +301,7 @@ final class MappedTableTest extends TestCase
         ], $this->row($database, 'row-1'));
     }
 
-    public function testDeleteRejectsSubsequentColumnUpdates(): void
+    public function test_delete_rejects_subsequent_column_updates(): void
     {
         [, $table] = $this->newTable();
 
@@ -290,10 +309,11 @@ final class MappedTableTest extends TestCase
 
         $table->withId('row-1')
             ->delete()
-            ->setColumn('status', 'pending');
+            ->setColumn('status', 'pending')
+        ;
     }
 
-    public function testInsertRejectsExpectedColumnValues(): void
+    public function test_insert_rejects_expected_column_values(): void
     {
         [, $table] = $this->newTable();
 
@@ -301,24 +321,27 @@ final class MappedTableTest extends TestCase
 
         $table->withId('row-1')
             ->insert()
-            ->expectColumnValue('version_a', 'A1');
+            ->expectColumnValue('version_a', 'A1')
+        ;
     }
 
-    public function testConflictingExpectationsForTheSameRowThrowImmediately(): void
+    public function test_conflicting_expectations_for_the_same_row_throw_immediately(): void
     {
         [, $table] = $this->newTable();
 
         $table->withId('row-1')
             ->expectColumnValue('version_a', 'A1')
-            ->setColumn('status', 'active');
+            ->setColumn('status', 'active')
+        ;
 
         $this->expectException(ConcurrencyException::class);
 
         $table->withId('row-1')
-            ->expectColumnValue('version_a', 'A2');
+            ->expectColumnValue('version_a', 'A2')
+        ;
     }
 
-    public function testClearDropsBufferedUpdates(): void
+    public function test_clear_drops_buffered_updates(): void
     {
         [$database, $table] = $this->newTable();
         $this->seedRow($database, [
@@ -331,7 +354,8 @@ final class MappedTableTest extends TestCase
 
         $table->withId('row-1')
             ->expectColumnValue('version_a', 'A1')
-            ->setColumn('status', 'active');
+            ->setColumn('status', 'active')
+        ;
 
         $table->clear();
         $this->flushInTransaction($database, $table);
@@ -339,7 +363,7 @@ final class MappedTableTest extends TestCase
         self::assertSame('pending', $this->row($database, 'row-1')['status']);
     }
 
-    public function testExternalTransactionRollsBackInMemoryBatchOnFailure(): void
+    public function test_external_transaction_rolls_back_in_memory_batch_on_failure(): void
     {
         [$database, $table] = $this->newTable();
         $this->seedRow($database, [
@@ -359,11 +383,13 @@ final class MappedTableTest extends TestCase
 
         $table->withId('row-1')
             ->expectColumnValue('version_a', 'A1')
-            ->setColumn('status', 'active');
+            ->setColumn('status', 'active')
+        ;
 
         $table->withId('row-2')
             ->expectColumnValue('version_a', 'stale')
-            ->setColumn('status', 'active');
+            ->setColumn('status', 'active')
+        ;
 
         $this->expectException(ConcurrencyException::class);
 
@@ -375,7 +401,7 @@ final class MappedTableTest extends TestCase
         }
     }
 
-    public function testFailedFlushWithoutExternalTransactionDoesNotRollBackEarlierWrites(): void
+    public function test_failed_flush_without_external_transaction_does_not_roll_back_earlier_writes(): void
     {
         [$database, $table] = $this->newTable();
         $this->seedRow($database, [
@@ -395,11 +421,13 @@ final class MappedTableTest extends TestCase
 
         $table->withId('row-1')
             ->expectColumnValue('version_a', 'A1')
-            ->setColumn('status', 'active');
+            ->setColumn('status', 'active')
+        ;
 
         $table->withId('row-2')
             ->expectColumnValue('version_a', 'stale')
-            ->setColumn('status', 'active');
+            ->setColumn('status', 'active')
+        ;
 
         $this->expectException(ConcurrencyException::class);
 
@@ -460,7 +488,7 @@ final class RecordingMappedTableAdapter implements MappedTableAdapter
     /** @var list<array{tableName: string, idColumn: string, rowUpdates: list<RowUpdatePlan>}> */
     public array $batches = [];
 
-    public function row(string $tableName, string $idColumn, string|int $id, array $columns = []): array|false
+    public function row(string $tableName, string $idColumn, int|string $id, array $columns = []): array|false
     {
         return false;
     }

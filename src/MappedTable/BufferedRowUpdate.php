@@ -22,7 +22,7 @@ final class BufferedRowUpdate
     public array $setColumns = [];
 
     public function __construct(
-        public readonly string|int $id,
+        public readonly int|string $id,
     ) {}
 
     public function toPlan(): ?RowUpdatePlan

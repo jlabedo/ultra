@@ -89,11 +89,9 @@ final class DispatchPlanRenderer
                 ?? $this->renderHandlerDependencyExpression($depId);
         }
 
-        $call = $isSelf
+        return $isSelf
             ? sprintf('%s->%s(%s)', $messageVar, $handlerMethod, implode(', ', $args))
             : $this->renderServiceMethodCall($serviceId, $handlerMethod, $args);
-
-        return $call;
     }
 
     private function renderHandlerDependencyExpression(string $depId): string
@@ -109,8 +107,8 @@ final class DispatchPlanRenderer
     }
 
     /**
-     * @param list<AdviceLayer>      $layers
-     * @param array<int, string>     $claimedVarNames
+     * @param list<AdviceLayer>  $layers
+     * @param array<int, string> $claimedVarNames
      *
      * @return list<string>
      */
@@ -384,9 +382,9 @@ final class DispatchPlanRenderer
 
         $captures[1] = '&$c';
 
-        $lines = ['function (?\\Ultra\\MessageHandling\\MessageContext $context = null, array $provided = []) use ('.implode(', ', $captures).') : \\Ultra\\MessageHandling\\ProceedResult {'];
+        $lines = ['function (?\Ultra\MessageHandling\MessageContext $context = null, array $provided = []) use ('.implode(', ', $captures).') : \Ultra\MessageHandling\ProceedResult {'];
         $lines[] = $this->indent(1).'if (count($provided) !== '.count($advice->claimedDepIndices).') {';
-        $lines[] = $this->indent(2).'throw new \\LogicException(sprintf('
+        $lines[] = $this->indent(2).'throw new \LogicException(sprintf('
             .$this->exportString($owner.' must call $proceed() with exactly '.count($advice->claimedDepIndices).' provided value(s); received %d.')
             .', count($provided)));';
         $lines[] = $this->indent(1).'}';
@@ -429,7 +427,7 @@ final class DispatchPlanRenderer
 
         if (! $returnsVoid) {
             $lines = [];
-            $prefix = null === $resultVar ? 'return new \\Ultra\\MessageHandling\\ProceedResult(' : $resultVar.' = new \\Ultra\\MessageHandling\\ProceedResult(';
+            $prefix = null === $resultVar ? 'return new \Ultra\MessageHandling\ProceedResult(' : $resultVar.' = new \Ultra\MessageHandling\ProceedResult(';
             $this->appendExpression($lines, $indentLevel, $prefix, $handlerExpr.', $c)', ';');
 
             return $lines;
@@ -437,8 +435,8 @@ final class DispatchPlanRenderer
 
         $lines = [$this->indent($indentLevel).$handlerExpr.';'];
         $lines[] = $this->indent($indentLevel).(null === $resultVar
-            ? 'return new \\Ultra\\MessageHandling\\ProceedResult(null, $c);'
-            : $resultVar.' = new \\Ultra\\MessageHandling\\ProceedResult(null, $c);');
+            ? 'return new \Ultra\MessageHandling\ProceedResult(null, $c);'
+            : $resultVar.' = new \Ultra\MessageHandling\ProceedResult(null, $c);');
 
         return $lines;
     }

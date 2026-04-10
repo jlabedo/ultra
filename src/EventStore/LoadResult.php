@@ -14,8 +14,8 @@ namespace Ultra\EventStore;
 readonly class LoadResult
 {
     /**
-     * @param list<Event>   $events        events matching the query, ordered by stream order ascending
-     * @param QueryVersion  $queryVersion  optimistic concurrency token for the loaded query
+     * @param list<Event>  $events       events matching the query, ordered by stream order ascending
+     * @param QueryVersion $queryVersion optimistic concurrency token for the loaded query
      */
     public function __construct(
         public array $events,

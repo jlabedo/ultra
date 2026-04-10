@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore\Tests;
 
-use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\Exception\UnsupportedQueryException;

@@ -13,7 +13,7 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         private readonly Connection $connection,
     ) {}
 
-    public function row(string $tableName, string $idColumn, string|int $id, array $columns = []): array|false
+    public function row(string $tableName, string $idColumn, int|string $id, array $columns = []): array|false
     {
         $selectColumns = [$idColumn, ...$columns];
         $quotedColumns = array_map(
@@ -40,22 +40,27 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
             switch ($rowUpdate->mode) {
                 case RowUpdatePlan::MODE_DELETE:
                     $this->flushDelete($tableName, $idColumn, $rowUpdate);
+
                     break;
 
                 case RowUpdatePlan::MODE_INSERT:
                     $this->flushInsert($tableName, $idColumn, $rowUpdate);
+
                     break;
 
                 case RowUpdatePlan::MODE_REPLACE:
                     $this->flushReplace($tableName, $idColumn, $rowUpdate);
+
                     break;
 
                 case RowUpdatePlan::MODE_UPSERT:
                     $this->flushUpsert($tableName, $idColumn, $rowUpdate);
+
                     break;
 
                 case RowUpdatePlan::MODE_UPDATE:
                     $this->flushUpdate($tableName, $idColumn, $rowUpdate);
+
                     break;
 
                 default:

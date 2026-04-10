@@ -34,9 +34,7 @@ final class TestProjection
     }
 
     #[ProjectionHandler('student.subscribed')]
-    public function onStudentSubscribed(StoredEvent $event): void
-    {
-    }
+    public function onStudentSubscribed(StoredEvent $event): void {}
 }
 
 test('projection plans can invoke projection and partition initializers', function () {
@@ -44,11 +42,13 @@ test('projection plans can invoke projection and partition initializers', functi
     $plan = new ProjectionPlan($projection);
 
     expect($plan->hasProjectionInitializer())->toBeTrue()
-        ->and($plan->hasPartitionInitializer())->toBeTrue();
+        ->and($plan->hasPartitionInitializer())->toBeTrue()
+    ;
 
     $plan->initializeProjection();
     $plan->initializePartition('student-1');
 
     expect($projection->projectionInitializations)->toBe(1)
-        ->and($projection->initializedPartitions)->toBe(['student-1']);
+        ->and($projection->initializedPartitions)->toBe(['student-1'])
+    ;
 });

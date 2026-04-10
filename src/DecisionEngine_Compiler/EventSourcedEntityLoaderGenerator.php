@@ -117,7 +117,7 @@ final class EventSourcedEntityLoaderGenerator
 
         foreach ($definition->dispatchEntries as $entry) {
             $cases[] = sprintf(
-                "                %s => \$state->%s(\$this->normalizer->fromScalar(\$event->payload, \\%s::class)),",
+                '                %s => $state->%s($this->normalizer->fromScalar($event->payload, \%s::class)),',
                 var_export($entry->eventName, true),
                 $entry->method,
                 ltrim($entry->eventClass, '\\'),

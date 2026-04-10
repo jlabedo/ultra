@@ -10,7 +10,7 @@ namespace Ultra\Events;
 final readonly class CompiledEventRegistry implements EventRegistryInterface
 {
     /**
-     * @param array<string, class-string> $events
+     * @param array<string, class-string>                $events
      * @param array<class-string, array<string, string>> $domainIdentifiers
      * @param array<class-string, bool>                  $domainIdentifierRequiresScope
      */

@@ -73,6 +73,7 @@ final readonly class StateMetadata
 
     /**
      * @param array<string, mixed> $row
+     *
      * @return array<string, mixed>
      */
     public function payloadFromRow(array $row): array
@@ -91,7 +92,7 @@ final readonly class StateMetadata
     /**
      * @param array<string, mixed> $normalizedState
      */
-    public function identifierFromNormalized(array $normalizedState): string|int
+    public function identifierFromNormalized(array $normalizedState): int|string
     {
         $id = $this->requireNormalizedValue($normalizedState, $this->idProperty);
 
@@ -108,6 +109,7 @@ final readonly class StateMetadata
 
     /**
      * @param array<string, mixed> $normalizedState
+     *
      * @return array<string, mixed>
      */
     public function columnsFromNormalized(array $normalizedState): array
@@ -123,6 +125,7 @@ final readonly class StateMetadata
 
     /**
      * @param array<string, mixed> $normalizedState
+     *
      * @return array<string, mixed>
      */
     public function optimisticColumnsFromNormalized(array $normalizedState): array

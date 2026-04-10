@@ -17,10 +17,12 @@ final readonly class StateStore
 
     /**
      * @template T of object
+     *
      * @param class-string<T> $stateClass
+     *
      * @return T
      */
-    public function load(string $stateClass, string|int $id): object
+    public function load(string $stateClass, int|string $id): object
     {
         $metadata = $this->metadataRegistry->metadataFor($stateClass);
         $row = $this->tableRegistry->tableFor($metadata)->row($id, $metadata->selectedColumns());
@@ -40,7 +42,8 @@ final readonly class StateStore
         $this->tableRegistry->tableFor($metadata)
             ->withId($id)
             ->upsert()
-            ->setColumns($metadata->columnsFromNormalized($normalizedState));
+            ->setColumns($metadata->columnsFromNormalized($normalizedState))
+        ;
     }
 
     public function expect(object $state): void
@@ -55,7 +58,8 @@ final readonly class StateStore
 
         $this->tableRegistry->tableFor($metadata)
             ->withId($id)
-            ->expectColumnValues($expectedColumns);
+            ->expectColumnValues($expectedColumns)
+        ;
     }
 
     /**
@@ -64,15 +68,17 @@ final readonly class StateStore
      * The expectation stays inert until a later write targets the same mapped row.
      *
      * @template T of object
+     *
      * @param class-string<T> $stateClass
      */
-    public function expectMissing(string $stateClass, string|int $id): void
+    public function expectMissing(string $stateClass, int|string $id): void
     {
         $metadata = $this->metadataRegistry->metadataFor($stateClass);
 
         $this->tableRegistry->tableFor($metadata)
             ->withId($id)
-            ->expectAbsent();
+            ->expectAbsent()
+        ;
     }
 
     /**

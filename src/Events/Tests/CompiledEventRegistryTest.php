@@ -21,7 +21,7 @@ final readonly class PublicTaggedEvent
 final class ProtectedTaggedEvent
 {
     #[DomainIdentifier('course')]
-    protected string $courseId;
+    private string $courseId;
 
     public function __construct(string $courseId)
     {
@@ -60,5 +60,6 @@ test('compiled registry returns domain identifier values for public and non-publ
         ->and($registry->getDomainIdentifiers(new ProtectedTaggedEvent('course-protected')))
         ->toBe(['course' => 'course-protected'])
         ->and($registry->getDomainIdentifiers(new PrivateTaggedEvent('course-private')))
-        ->toBe(['course' => 'course-private']);
+        ->toBe(['course' => 'course-private'])
+    ;
 });

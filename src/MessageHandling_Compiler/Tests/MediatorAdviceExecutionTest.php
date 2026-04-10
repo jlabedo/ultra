@@ -9,6 +9,7 @@ use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Before;
+use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
@@ -17,6 +18,11 @@ use Ultra\MessageHandling_Compiler\Tests\Fixtures\EmptyMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
 {
     public function test_it_runs_before_advice_before_the_handler(): void
@@ -25,14 +31,14 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $logged = [];
 
         $mediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'handled: ' . $message->name;
+                    return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class($logged) {
+            ->withService(new class ($logged) {
                 /** @var list<object> */
                 public array $logged;
 
@@ -44,7 +50,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->logged = &$logged;
                 }
 
-                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function log(object $message, MessageContext $context): void
@@ -64,14 +70,14 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $calls = 0;
 
         $mediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'wrapped: ' . $message->name;
+                    return 'wrapped: '.$message->name;
                 }
             })
-            ->withService(new class($calls) {
+            ->withService(new class ($calls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -79,7 +85,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->calls = &$calls;
                 }
 
-                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function execute(callable $proceed, object $message, MessageContext $context): ProceedResult
@@ -101,7 +107,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $seen = [];
 
         $mediator = $this->ultraLight()
-            ->withService(new class($seen) {
+            ->withService(new class ($seen) {
                 /** @var array<string, mixed> */
                 public array $seen;
 
@@ -118,11 +124,11 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                 {
                     $this->seen = $context->all();
 
-                    return 'handled: ' . $context->get('executorId') . ':' . $context->get('traceId');
+                    return 'handled: '.$context->get('executorId').':'.$context->get('traceId');
                 }
             })
-            ->withService(new class() {
-                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+            ->withService(new class () {
+                #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function enrich(object $message, MessageContext $context): array
@@ -143,14 +149,14 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $captured = null;
 
         $mediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'observed: ' . $message->name;
+                    return 'observed: '.$message->name;
                 }
             })
-            ->withService(new class($captured) {
+            ->withService(new class ($captured) {
                 public mixed $captured;
 
                 public function __construct(mixed &$captured)
@@ -158,7 +164,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->captured = &$captured;
                 }
 
-                #[AfterReturning(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[AfterReturning(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function inspect(object $message, MessageContext $context, mixed $returnValue): void
@@ -178,14 +184,14 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $caught = null;
 
         $mediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(EmptyMessage $message): string
                 {
                     throw new \RuntimeException('handler failed');
                 }
             })
-            ->withService(new class($caught) {
+            ->withService(new class ($caught) {
                 public ?\Throwable $caught;
 
                 public function __construct(?\Throwable &$caught)
@@ -193,7 +199,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->caught = &$caught;
                 }
 
-                #[AfterThrowing(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[AfterThrowing(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function record(object $message, MessageContext $context, \Throwable $throwable): void
@@ -218,7 +224,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
     {
         $calls = 0;
 
-        $cleaner = new class($calls) {
+        $cleaner = new class ($calls) {
             public int $calls;
 
             public function __construct(int &$calls)
@@ -226,7 +232,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                 $this->calls = &$calls;
             }
 
-            #[After(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+            #[After(static function (HandlerMatchContext $ctx): ?MatchResult {
                 return MatchResult::apply();
             })]
             public function cleanup(object $message, MessageContext $context): void
@@ -236,11 +242,11 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         };
 
         $successfulMediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
-                    return 'observed: ' . $message->name;
+                    return 'observed: '.$message->name;
                 }
             })
             ->withService($cleaner)
@@ -250,7 +256,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         self::assertSame('observed: world', $successfulMediator->send(new GreetingMessage('world')));
 
         $failingMediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(EmptyMessage $message): string
                 {
@@ -276,15 +282,15 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $finalContext = [];
 
         $mediator = $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message, MessageContext $context): string
                 {
-                    return $context->get('before') . ':' . $message->name;
+                    return $context->get('before').':'.$message->name;
                 }
             })
-            ->withService(new class() {
-                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+            ->withService(new class () {
+                #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 }, priority: 20)]
                 public function enrich(object $message, MessageContext $context): array
@@ -292,8 +298,8 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return ['before' => 'yes'];
                 }
             })
-            ->withService(new class() {
-                #[AfterReturning(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+            ->withService(new class () {
+                #[AfterReturning(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 }, priority: 20)]
                 public function enrich(object $message, MessageContext $context, mixed $returnValue): array
@@ -301,8 +307,8 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return ['afterReturning' => $returnValue];
                 }
             })
-            ->withService(new class() {
-                #[After(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+            ->withService(new class () {
+                #[After(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 }, priority: 20)]
                 public function enrich(object $message, MessageContext $context): array
@@ -310,7 +316,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return ['after' => 'done'];
                 }
             })
-            ->withService(new class($finalContext) {
+            ->withService(new class ($finalContext) {
                 /** @var array<string, mixed> */
                 public array $finalContext;
 
@@ -322,7 +328,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->finalContext = &$finalContext;
                 }
 
-                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+                #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 }, priority: 0)]
                 public function inspect(callable $proceed, object $message, MessageContext $context): ProceedResult
@@ -349,15 +355,15 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $this->expectExceptionMessageMatches('/Around advice "class@anonymous.*::execute" must declare return type "'.preg_quote(ProceedResult::class, '/').'"\./');
 
         $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
                     return $message->name;
                 }
             })
-            ->withService(new class() {
-                #[Around(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+            ->withService(new class () {
+                #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function execute(callable $proceed, object $message, MessageContext $context): mixed
@@ -372,18 +378,18 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
     public function test_it_requires_non_around_context_mutating_advices_to_return_patch_arrays(): void
     {
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessageMatches('/Before advice "class@anonymous.*::log" must declare no return type, "void", or return type "array" \\(optionally nullable\\)\\./');
+        $this->expectExceptionMessageMatches('/Before advice "class@anonymous.*::log" must declare no return type, "void", or return type "array" \(optionally nullable\)\./');
 
         $this->ultraLight()
-            ->withService(new class() {
+            ->withService(new class () {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
                     return $message->name;
                 }
             })
-            ->withService(new class() {
-                #[Before(static function (\Ultra\MessageHandling\Attribute\HandlerMatchContext $ctx): ?MatchResult {
+            ->withService(new class () {
+                #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
                 public function log(object $message, MessageContext $context): string

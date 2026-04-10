@@ -67,11 +67,11 @@ final class DecisionEngineAspect
             }
             $commandProperty = null !== $bindTo
                 ? $bindTo->property
-                : $domainIdentifierName . 'Id';
+                : $domainIdentifierName.'Id';
             if (! $commandRef->hasProperty($commandProperty)) {
                 throw new \LogicException(sprintf(
                     'Command %s has no property "%s" required for decision handler parameter "%s" (domain identifier "%s"). '
-                        . 'Either add the property or use #[BindTo("propertyName")] to bind to a different command property.',
+                        .'Either add the property or use #[BindTo("propertyName")] to bind to a different command property.',
                     $commandClass,
                     $commandProperty,
                     $parameter->getName(),
@@ -244,7 +244,7 @@ final class DecisionEngineAspect
             return false;
         }
 
-        return [] !== (new \ReflectionClass($class))->getAttributes(EventSourcedEntity::class);
+        return [] !== new \ReflectionClass($class)->getAttributes(EventSourcedEntity::class);
     }
 
     private static function getDomainIdentifierName(string $stateClass): string

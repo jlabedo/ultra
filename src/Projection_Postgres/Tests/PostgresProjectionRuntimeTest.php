@@ -153,7 +153,8 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
         );
 
         expect($runner->runOnce($plan, 100))->toBe(2)
-            ->and($runner->runOnce($plan, 100))->toBe(0);
+            ->and($runner->runOnce($plan, 100))->toBe(0)
+        ;
 
         $rows = $connection->fetchAllAssociative(sprintf(
             'SELECT course_id, name, last_event_id FROM %s ORDER BY course_id ASC',
@@ -168,7 +169,8 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
             ->and($state)->toBe([
                 'last_event_id' => 2,
                 'last_error' => null,
-            ]);
+            ])
+        ;
     });
 });
 
@@ -235,7 +237,8 @@ test('router and partition workers process each partition in order while sharing
 
         expect($worker->runOnce($plan, 100))->toBe(2)
             ->and($worker->runOnce($plan, 100))->toBe(2)
-            ->and($worker->runOnce($plan, 100))->toBe(0);
+            ->and($worker->runOnce($plan, 100))->toBe(0)
+        ;
 
         $rows = $connection->fetchAllAssociative(sprintf(
             'SELECT student_id, event_id, slot FROM %s ORDER BY student_id ASC, event_id ASC',
@@ -251,7 +254,7 @@ test('router and partition workers process each partition in order while sharing
             ['student_id' => 'student-1', 'event_id' => 3, 'slot' => 2],
             ['student_id' => 'student-2', 'event_id' => 2, 'slot' => 1],
             ['student_id' => 'student-2', 'event_id' => 4, 'slot' => 2],
-            ])
+        ])
             ->and($initializedPartitions)->toBe([
                 '{"studentId":"student-1"}',
                 '{"studentId":"student-2"}',
@@ -269,6 +272,7 @@ test('router and partition workers process each partition in order while sharing
                 'partition_key' => '{"studentId":"student-2"}',
                 'last_event_id' => 4,
                 'last_error' => null,
-            ]);
+            ])
+        ;
     });
 });

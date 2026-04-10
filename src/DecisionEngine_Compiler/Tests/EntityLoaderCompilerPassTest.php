@@ -6,6 +6,7 @@ namespace Ultra\DecisionEngine_Compiler\Tests;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 use Ultra\DecisionEngine\Attribute\MatchTag;
@@ -159,8 +160,9 @@ final class NotAnEntityState {}
 
 function createEntityDefinition(string $class): Definition
 {
-    return (new Definition($class))
-        ->addResourceTag('decision_engine.entity');
+    return new Definition($class)
+        ->addResourceTag('decision_engine.entity')
+    ;
 }
 
 function createEngineContainer(string $suffix, array $definitions = []): ContainerBuilder
@@ -187,7 +189,7 @@ function createEngineContainer(string $suffix, array $definitions = []): Contain
     ;
 
     $container->register(InMemoryEventStore::class, InMemoryEventStore::class)
-        ->setArguments([new \Symfony\Component\DependencyInjection\Reference(EventTopologyProvider::class)])
+        ->setArguments([new Reference(EventTopologyProvider::class)])
         ->setPublic(true)
     ;
     $container->setAlias(EventStore::class, InMemoryEventStore::class)->setPublic(true);
@@ -246,7 +248,8 @@ test('compiler pass generates loaders and engine hydrates OR-matched entities', 
             'student_subscribed',
             'capacity_changed',
             'student_unsubscribed',
-        ]);
+        ])
+    ;
 });
 
 test('compiler pass generates AND criteria groups for multi-tag match clauses', function () {
@@ -270,10 +273,12 @@ test('compiler pass generates AND criteria groups for multi-tag match clauses', 
     expect($generatedLoaderFiles)->toHaveCount(1);
     expect(file_get_contents($generatedLoaderFiles[0]))
         ->toContain("'entity.pair_confirmed' => \$state->onPairConfirmed(\$this->normalizer->fromScalar(\$event->payload, \\Ultra\\DecisionEngine_Compiler\\Tests\\EntityPairConfirmed::class))")
-        ->not->toContain('(function () use ($state, $event): void {');
+        ->not->toContain('(function () use ($state, $event): void {')
+    ;
 
     expect($state)->toBeInstanceOf(ExactSubscriptionState::class)
-        ->and($state->statuses)->toBe(['matched']);
+        ->and($state->statuses)->toBe(['matched'])
+    ;
 });
 
 test('generated loaders reject missing, extra, and duplicate tag values', function () {

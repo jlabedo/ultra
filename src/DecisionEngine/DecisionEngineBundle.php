@@ -30,10 +30,11 @@ final class DecisionEngineBundle extends Bundle
         $container->register(DecisionEngineAspect::class)
             ->setAutoconfigured(true)
             ->setAutowired(true)
-            ->addTag(MessageHandlingTagNames::ASPECT);
+            ->addTag(MessageHandlingTagNames::ASPECT)
+        ;
 
         $buildDir = (string) $container->getParameter('kernel.build_dir');
-        $outputDir = $buildDir . '/decision_engine';
+        $outputDir = $buildDir.'/decision_engine';
 
         $container->addCompilerPass(new EntityLoaderCompilerPass(
             $outputDir,

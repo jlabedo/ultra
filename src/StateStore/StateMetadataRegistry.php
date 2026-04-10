@@ -12,7 +12,7 @@ final readonly class StateMetadataRegistry
     private array $metadata;
 
     /**
-     * @param array<class-string, StateMetadata|array{
+     * @param array<class-string, array{
      *     stateClass: class-string,
      *     tableName: string,
      *     tableKey: string,
@@ -20,7 +20,7 @@ final readonly class StateMetadataRegistry
      *     idColumn: string,
      *     propertyColumns: array<string, string>,
      *     optimisticPropertyColumns: array<string, string>
-     * }> $metadata
+     * }|StateMetadata> $metadata
      */
     public function __construct(array $metadata)
     {
@@ -37,6 +37,7 @@ final readonly class StateMetadataRegistry
 
     /**
      * @template T of object
+     *
      * @param class-string<T> $stateClass
      */
     public function metadataFor(string $stateClass): StateMetadata
