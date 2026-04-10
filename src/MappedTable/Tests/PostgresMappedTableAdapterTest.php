@@ -5,9 +5,12 @@ declare(strict_types=1);
 namespace Ultra\MappedTable\Tests;
 
 use Doctrine\DBAL\Connection;
+use PHPUnit\Framework\Attributes\CoversClass;
 use Ultra\MappedTable\MappedTable;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
+#[CoversClass(PostgresMappedTableAdapter::class)]
 final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 {
     public function testRowReturnsProjectedColumns(): void

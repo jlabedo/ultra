@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable\Tests;
 
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\InMemoryRowDatabase;
 
+#[CoversClass(InMemoryRowDatabase::class)]
 final class InMemoryRowDatabaseTest extends TestCase
 {
     public function testCommitKeepsChangesAppliedDuringTransaction(): void

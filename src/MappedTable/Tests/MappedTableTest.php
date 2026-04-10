@@ -4,14 +4,22 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable\Tests;
 
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Ultra\MappedTable\BufferedRowUpdate;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedTable;
 use Ultra\MappedTable\MappedTableAdapter;
+use Ultra\MappedTable\PendingRowUpdate;
 use Ultra\MappedTable\RowUpdatePlan;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
+#[CoversClass(MappedTable::class)]
+#[CoversClass(PendingRowUpdate::class)]
+#[CoversClass(BufferedRowUpdate::class)]
+#[CoversClass(RowUpdatePlan::class)]
+#[CoversClass(InMemoryMappedTableAdapter::class)]
 final class MappedTableTest extends TestCase
 {
     private const TABLE_NAME = 'users';
@@ -37,11 +45,11 @@ final class MappedTableTest extends TestCase
         self::assertSame(self::ID_COLUMN, $adapter->batches[0]['idColumn']);
         self::assertSame(
             ['row-1', 'row-2'],
-            array_map(static fn (RowUpdatePlan $rowUpdate): string|int => $rowUpdate->id, $adapter->batches[0]['rowUpdates']),
+            array_map(static fn(RowUpdatePlan $rowUpdate): string|int => $rowUpdate->id, $adapter->batches[0]['rowUpdates']),
         );
         self::assertSame(
             [RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_UPDATE],
-            array_map(static fn (RowUpdatePlan $rowUpdate): string => $rowUpdate->mode, $adapter->batches[0]['rowUpdates']),
+            array_map(static fn(RowUpdatePlan $rowUpdate): string => $rowUpdate->mode, $adapter->batches[0]['rowUpdates']),
         );
     }
 
