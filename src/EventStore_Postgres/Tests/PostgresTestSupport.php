@@ -12,10 +12,10 @@ use Psr\Log\NullLogger;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\StaticEventTopologyProvider;
-use Ultra\EventStore_Postgres\PostgresEventStore;
+use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
-use Ultra\EventStore_Postgres\PostgresEventStoreSchema;
+use Ultra\EventStore_Postgres\PostgresEventStoreHStoreSchema;
 use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
 
 function postgresTestConnection(string $dsn): Connection
@@ -40,18 +40,18 @@ function postgresTestTopologyProvider(): StaticEventTopologyProvider
     ]);
 }
 
-function postgresTestStore(Connection $connection, string $tablePrefix): PostgresEventStore
+function postgresTestStore(Connection $connection, string $tablePrefix): PostgresEventStoreHStore
 {
-    return new PostgresEventStore(
+    return new PostgresEventStoreHStore(
         connection: $connection,
         topologyProvider: postgresTestTopologyProvider(),
         tablePrefix: $tablePrefix,
     );
 }
 
-function postgresTestSchema(string $tablePrefix): PostgresEventStoreSchema
+function postgresTestSchema(string $tablePrefix): PostgresEventStoreHStoreSchema
 {
-    return new PostgresEventStoreSchema($tablePrefix);
+    return new PostgresEventStoreHStoreSchema($tablePrefix);
 }
 
 /**
@@ -63,12 +63,12 @@ function postgresTestSupportedImplementations(): array
 }
 
 /**
- * @return PostgresEventStore|PostgresEventStoreQueryStreams
+ * @return PostgresEventStoreHStore|PostgresEventStoreQueryStreams
  */
 function postgresTestStoreForImplementation(Connection $connection, string $tablePrefix, string $implementation, LoggerInterface $logger = new NullLogger()): EventStore
 {
     return match ($implementation) {
-        'hstore' => new PostgresEventStore(
+        'hstore' => new PostgresEventStoreHStore(
             connection: $connection,
             topologyProvider: postgresTestTopologyProvider(),
             tablePrefix: $tablePrefix,
@@ -90,7 +90,7 @@ function postgresTestStoreForImplementation(Connection $connection, string $tabl
 function postgresTestSchemaForImplementation(string $tablePrefix, string $implementation): PostgresEventStoreSchemaDefinition
 {
     return match ($implementation) {
-        'hstore' => new PostgresEventStoreSchema($tablePrefix),
+        'hstore' => new PostgresEventStoreHStoreSchema($tablePrefix),
         'query-streams' => new PostgresEventStoreQueryStreamsSchema($tablePrefix),
         default => throw new \InvalidArgumentException(sprintf(
             'Unsupported Postgres event store implementation "%s". Expected one of: hstore, query-streams.',

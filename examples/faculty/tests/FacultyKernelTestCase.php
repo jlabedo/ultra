@@ -8,7 +8,7 @@ use App\Faculty\Infrastructure\EventStore\FacultyEventStoreFactory;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Tools\DsnParser;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
-use Ultra\EventStore_Postgres\PostgresEventStoreSchema;
+use Ultra\EventStore_Postgres\PostgresEventStoreHStoreSchema;
 
 abstract class FacultyKernelTestCase extends KernelTestCase
 {
@@ -71,11 +71,11 @@ abstract class FacultyKernelTestCase extends KernelTestCase
             return;
         }
 
-        foreach ((new PostgresEventStoreSchema($this->tablePrefix))->dropStatements() as $statement) {
+        foreach ((new PostgresEventStoreHStoreSchema($this->tablePrefix))->dropStatements() as $statement) {
             $connection->executeStatement($statement);
         }
 
-        foreach ((new PostgresEventStoreSchema($this->tablePrefix))->createStatements() as $statement) {
+        foreach ((new PostgresEventStoreHStoreSchema($this->tablePrefix))->createStatements() as $statement) {
             $connection->executeStatement($statement);
         }
 
@@ -89,7 +89,7 @@ abstract class FacultyKernelTestCase extends KernelTestCase
             return;
         }
 
-        foreach ((new PostgresEventStoreSchema($this->tablePrefix))->dropStatements() as $statement) {
+        foreach ((new PostgresEventStoreHStoreSchema($this->tablePrefix))->dropStatements() as $statement) {
             $connection->executeStatement($statement);
         }
 

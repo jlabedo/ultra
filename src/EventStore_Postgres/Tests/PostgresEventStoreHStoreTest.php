@@ -4,23 +4,24 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore_Postgres\Tests;
 
+use PHPUnit\Framework\Attributes\CoversNothing;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\Exception\UnsupportedQueryException;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore_Postgres\PostgresEventStore;
+use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
 /**
  * @internal
  *
- * @coversNothing
  */
-final class PostgresEventStoreTest extends PostgresEventStoreTestCase
+#[CoversNothing]
+final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
 {
     public function test_load_returns_db_generated_recorded_at_and_query_version(): void
     {
-        $this->withPostgresStore(function (PostgresEventStore $store): void {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
                 ->ofTypes('course.created')
             ;
@@ -46,7 +47,7 @@ final class PostgresEventStoreTest extends PostgresEventStoreTestCase
 
     public function test_append_inserts_multiple_events_in_one_batch(): void
     {
-        $this->withPostgresStore(function (PostgresEventStore $store): void {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
                 ->ofTypes('course.created')
             ;
@@ -67,7 +68,7 @@ final class PostgresEventStoreTest extends PostgresEventStoreTestCase
 
     public function test_append_validates_multiple_expected_query_versions(): void
     {
-        $this->withPostgresStore(function (PostgresEventStore $store): void {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
                 ->ofTypes('student.subscribed')
             ;
@@ -94,7 +95,7 @@ final class PostgresEventStoreTest extends PostgresEventStoreTestCase
 
     public function test_load_round_trips_hstore_domain_identifiers(): void
     {
-        $this->withPostgresStore(function (PostgresEventStore $store): void {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $domainIds = ['courseId' => 'course-"123"\example'];
             $query = StreamQuery::forStream(new DomainIdentifier('courseId', $domainIds['courseId']))
                 ->ofTypes('course.created')
@@ -113,7 +114,7 @@ final class PostgresEventStoreTest extends PostgresEventStoreTestCase
 
     public function test_load_does_not_duplicate_events_for_overlapping_or_branches(): void
     {
-        $this->withPostgresStore(function (PostgresEventStore $store): void {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $courseId = new DomainIdentifier('courseId', 'course-123');
             $studentId = new DomainIdentifier('studentId', 'student-1');
             $query = StreamQuery::anyOf(
@@ -139,7 +140,7 @@ final class PostgresEventStoreTest extends PostgresEventStoreTestCase
 
     public function test_canonical_pair_does_not_conflict_for_same_course_and_different_student(): void
     {
-        $this->withPostgresStore(function (PostgresEventStore $store): void {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $query = StreamQuery::forStream(
                 new DomainIdentifier('courseId', 'course-123'),
                 new DomainIdentifier('studentId', 'student-1'),
@@ -176,7 +177,7 @@ final class PostgresEventStoreTest extends PostgresEventStoreTestCase
 
     public function test_canonical_pair_conflicts_for_same_pair(): void
     {
-        $this->withPostgresStore(function (PostgresEventStore $store): void {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $query = StreamQuery::forStream(
                 new DomainIdentifier('courseId', 'course-123'),
                 new DomainIdentifier('studentId', 'student-1'),
@@ -213,7 +214,7 @@ final class PostgresEventStoreTest extends PostgresEventStoreTestCase
 
     public function test_unsupported_query_shapes_throw_before_hitting_the_database(): void
     {
-        $this->withPostgresStore(function (PostgresEventStore $store): void {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $this->expectException(UnsupportedQueryException::class);
 
             $store->load(StreamQuery::forStream(

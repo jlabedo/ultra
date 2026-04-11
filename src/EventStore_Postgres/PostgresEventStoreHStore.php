@@ -25,7 +25,7 @@ use Ultra\EventStore\StreamQuery;
  * transaction-scoped advisory locks, replays the expected query to compare its version, and only
  * then inserts new events.
  */
-final class PostgresEventStore implements EventStore
+final class PostgresEventStoreHStore implements EventStore
 {
     private CanonicalQueryKeyFactory $queryKeyFactory;
 

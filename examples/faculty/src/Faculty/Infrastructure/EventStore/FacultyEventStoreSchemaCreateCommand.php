@@ -9,7 +9,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Ultra\EventStore_Postgres\PostgresEventStoreSchema;
+use Ultra\EventStore_Postgres\PostgresEventStoreHStoreSchema;
 
 #[AsCommand(name: 'faculty:event-store:schema:create', description: 'Create the optional Postgres schema for the faculty example event store.')]
 final class FacultyEventStoreSchemaCreateCommand extends Command
@@ -35,7 +35,7 @@ final class FacultyEventStoreSchemaCreateCommand extends Command
             return self::FAILURE;
         }
 
-        foreach ((new PostgresEventStoreSchema($this->tablePrefix))->createStatements() as $statement) {
+        foreach ((new PostgresEventStoreHStoreSchema($this->tablePrefix))->createStatements() as $statement) {
             $this->connection->executeStatement($statement);
         }
 

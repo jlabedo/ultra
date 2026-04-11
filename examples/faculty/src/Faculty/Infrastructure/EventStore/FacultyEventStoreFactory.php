@@ -8,7 +8,7 @@ use Doctrine\DBAL\Connection;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\InMemoryEventStore;
-use Ultra\EventStore_Postgres\PostgresEventStore;
+use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 
 final readonly class FacultyEventStoreFactory
 {
@@ -26,7 +26,7 @@ final readonly class FacultyEventStoreFactory
             return new InMemoryEventStore($this->topologyProvider);
         }
 
-        return new PostgresEventStore(
+        return new PostgresEventStoreHStore(
             $this->connection,
             $this->topologyProvider,
             $this->tablePrefix,

@@ -8,7 +8,7 @@ use Doctrine\DBAL\Connection;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore_Postgres\PostgresEventStore;
+use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
 /**
@@ -20,7 +20,7 @@ final class PostgresEventStoreUnitOfWorkTest extends PostgresEventStoreTestCase
 {
     public function test_flush_persists_appends_that_depend_on_earlier_buffered_events(): void
     {
-        $this->withPostgresStore(function (PostgresEventStore $store, Connection $connection): void {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store, Connection $connection): void {
             $uow = new EventStoreUnitOfWork($store);
             $query = StreamQuery::forStream(
                 new DomainIdentifier('courseId', 'course-123'),
