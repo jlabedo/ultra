@@ -16,6 +16,7 @@ use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
 use function Ultra\EventStore_Postgres\Tests\postgresTestConnection;
 use function Ultra\EventStore_Postgres\Tests\postgresTestSchemaForImplementation;
 use function Ultra\EventStore_Postgres\Tests\postgresTestStoreForImplementation;
+use function Ultra\EventStore_Postgres\Tests\postgresTestSupportedLockStrategies;
 use function Ultra\EventStore_Postgres\Tests\postgresTestSupportedImplementations;
 
 exit(main());
@@ -28,7 +29,7 @@ function main(): int
     $config = benchmarkConfig();
     $connection = postgresTestConnection($config['dsn']);
     $prefix = benchmarkTablePrefix();
-    $schema = postgresTestSchemaForImplementation($prefix, $config['implementation']);
+    $schema = postgresTestSchemaForImplementation($prefix, $config['implementation'], $config['lockStrategy']);
     $logger = new class() extends AbstractLogger {
         public function log($level, $message, array $context = []): void
         {
@@ -52,7 +53,13 @@ function main(): int
     try {
         createSchema($connection, $schema);
 
-        $store = postgresTestStoreForImplementation($connection, $prefix, $config['implementation'], $logger);
+        $store = postgresTestStoreForImplementation(
+            $connection,
+            $prefix,
+            $config['implementation'],
+            $logger,
+            $config['lockStrategy'],
+        );
 
         printHeader($config, $prefix);
         $seedResult = null;
@@ -151,6 +158,7 @@ function main(): int
  *     dsn: string,
  *     dsnSource: string,
  *     implementation: string,
+ *     lockStrategy: string,
  *     full: bool,
  *     saveResult: null|string,
  *     compareTo: null|string,
@@ -168,6 +176,7 @@ function benchmarkConfig(): array
     $options = getopt('', [
         'dsn::',
         'implementation::',
+        'lock-strategy::',
         'full',
         'save-result::',
         'compare-to::',
@@ -196,6 +205,7 @@ function benchmarkConfig(): array
             ? '--dsn'
             : (false !== $envDsn && '' !== $envDsn ? 'ULTRA_TEST_POSTGRES_DSN' : 'docker-compose default'),
         'implementation' => resolveImplementationOption($options),
+        'lockStrategy' => resolveLockStrategyOption($options),
         'full' => $full,
         'saveResult' => resolveNullableStringOption($options, 'save-result'),
         'compareTo' => resolveNullableStringOption($options, 'compare-to'),
@@ -225,6 +235,24 @@ function resolveImplementationOption(array $options): string
     }
 
     return $implementation;
+}
+
+/**
+ * @param array<string, mixed> $options
+ */
+function resolveLockStrategyOption(array $options): string
+{
+    $lockStrategy = strtolower(trim(resolveStringOption($options, 'lock-strategy', 'shared-exclusive')));
+    $supportedLockStrategies = postgresTestSupportedLockStrategies();
+
+    if (! in_array($lockStrategy, $supportedLockStrategies, true)) {
+        throw new \InvalidArgumentException(sprintf(
+            'Option "--lock-strategy" must be one of: %s.',
+            implode(', ', $supportedLockStrategies),
+        ));
+    }
+
+    return $lockStrategy;
 }
 
 /**
@@ -996,6 +1024,7 @@ function analyzeEventStore(Connection $connection, string $tablePrefix, string $
  * @param array{
  *     dsnSource: string,
  *     implementation: string,
+ *     lockStrategy: string,
  *     full: bool,
  *     saveResult: null|string,
  *     compareTo: null|string,
@@ -1069,7 +1098,7 @@ function buildBenchmarkSnapshot(
     Connection $connection,
 ): array {
     return [
-        'schemaVersion' => 4,
+        'schemaVersion' => 5,
         'createdAt' => (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format(DATE_ATOM),
         'runtime' => [
             'phpVersion' => PHP_VERSION,
@@ -1079,6 +1108,7 @@ function buildBenchmarkSnapshot(
         'config' => [
             'dsnSource' => $config['dsnSource'],
             'implementation' => $config['implementation'],
+            'lockStrategy' => $config['lockStrategy'],
             'full' => $config['full'],
             'seedEvents' => $config['seedEvents'],
             'seedBatchSize' => $config['seedBatchSize'],
@@ -1233,6 +1263,7 @@ function benchmarkConfigDifferences(array $baseline, array $current): array
     foreach (
         [
             'implementation',
+            'lockStrategy',
             'full',
             'seedEvents',
             'seedBatchSize',
@@ -1454,6 +1485,7 @@ function gitHeadCommit(): string
  * @param array{
  *     dsnSource: string,
  *     implementation: string,
+ *     lockStrategy: string,
  *     full: bool,
  *     saveResult: null|string,
  *     compareTo: null|string,
@@ -1472,6 +1504,7 @@ function printHeader(array $config, string $prefix): void
     printLine(str_repeat('=', 30));
     printLine(sprintf('Connection source: %s', $config['dsnSource']));
     printLine(sprintf('Implementation: %s', $config['implementation']));
+    printLine(sprintf('Lock strategy: %s', $config['lockStrategy']));
     printLine(sprintf('Mode: %s', $config['full'] ? 'full suite' : 'read + guarded append'));
     if (null !== $config['compareTo']) {
         printLine(sprintf('Compare to: %s', $config['compareTo']));

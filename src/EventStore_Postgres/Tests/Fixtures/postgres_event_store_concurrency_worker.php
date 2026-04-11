@@ -38,7 +38,12 @@ if (false === $decoded) {
 
 $config = json_decode($decoded, true, 512, JSON_THROW_ON_ERROR);
 $connection = postgresTestConnection($config['dsn']);
-$store = postgresTestStoreForImplementation($connection, $config['tablePrefix'], $config['implementation'] ?? 'hstore');
+$store = postgresTestStoreForImplementation(
+    $connection,
+    $config['tablePrefix'],
+    $config['implementation'] ?? 'hstore',
+    lockStrategy: $config['lockStrategy'] ?? 'shared-exclusive',
+);
 $expectedVersion = null;
 if (isset($config['version'], $config['query'])) {
     $query = new StreamQuery(

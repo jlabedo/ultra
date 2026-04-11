@@ -13,9 +13,11 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
+use Ultra\EventStore_Postgres\PostgresEventStoreHStoreSchema;
+use Ultra\EventStore_Postgres\PostgresEventStoreLockStrategies;
+use Ultra\EventStore_Postgres\PostgresEventStoreLockStrategy;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
-use Ultra\EventStore_Postgres\PostgresEventStoreHStoreSchema;
 use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
 
 function postgresTestConnection(string $dsn): Connection
@@ -63,22 +65,45 @@ function postgresTestSupportedImplementations(): array
 }
 
 /**
+ * @return list<string>
+ */
+function postgresTestSupportedLockStrategies(): array
+{
+    return PostgresEventStoreLockStrategies::names();
+}
+
+function postgresTestLockStrategy(string $lockStrategy): PostgresEventStoreLockStrategy
+{
+    return PostgresEventStoreLockStrategies::fromName($lockStrategy);
+}
+
+/**
  * @return PostgresEventStoreHStore|PostgresEventStoreQueryStreams
  */
-function postgresTestStoreForImplementation(Connection $connection, string $tablePrefix, string $implementation, LoggerInterface $logger = new NullLogger()): EventStore
+function postgresTestStoreForImplementation(
+    Connection $connection,
+    string $tablePrefix,
+    string $implementation,
+    LoggerInterface $logger = new NullLogger(),
+    string $lockStrategy = 'shared-exclusive',
+): EventStore
 {
+    $strategy = postgresTestLockStrategy($lockStrategy);
+
     return match ($implementation) {
         'hstore' => new PostgresEventStoreHStore(
             connection: $connection,
             topologyProvider: postgresTestTopologyProvider(),
             tablePrefix: $tablePrefix,
             logger: $logger,
+            lockStrategy: $strategy,
         ),
         'query-streams' => new PostgresEventStoreQueryStreams(
             connection: $connection,
             topologyProvider: postgresTestTopologyProvider(),
             tablePrefix: $tablePrefix,
             logger: $logger,
+            lockStrategy: $strategy,
         ),
         default => throw new \InvalidArgumentException(sprintf(
             'Unsupported Postgres event store implementation "%s". Expected one of: hstore, query-streams.',
@@ -87,11 +112,17 @@ function postgresTestStoreForImplementation(Connection $connection, string $tabl
     };
 }
 
-function postgresTestSchemaForImplementation(string $tablePrefix, string $implementation): PostgresEventStoreSchemaDefinition
+function postgresTestSchemaForImplementation(
+    string $tablePrefix,
+    string $implementation,
+    string $lockStrategy = 'shared-exclusive',
+): PostgresEventStoreSchemaDefinition
 {
+    $strategy = postgresTestLockStrategy($lockStrategy);
+
     return match ($implementation) {
-        'hstore' => new PostgresEventStoreHStoreSchema($tablePrefix),
-        'query-streams' => new PostgresEventStoreQueryStreamsSchema($tablePrefix),
+        'hstore' => new PostgresEventStoreHStoreSchema($tablePrefix, $strategy),
+        'query-streams' => new PostgresEventStoreQueryStreamsSchema($tablePrefix, $strategy),
         default => throw new \InvalidArgumentException(sprintf(
             'Unsupported Postgres event store implementation "%s". Expected one of: hstore, query-streams.',
             $implementation,

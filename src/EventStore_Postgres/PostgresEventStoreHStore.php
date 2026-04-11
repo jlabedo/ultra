@@ -34,6 +34,7 @@ final class PostgresEventStoreHStore implements EventStore
         EventTopologyProvider $topologyProvider,
         private readonly string $tablePrefix = 'event_store_',
         private readonly LoggerInterface $logger = new NullLogger(),
+        private readonly PostgresEventStoreLockStrategy $lockStrategy = new PostgresEventStoreSharedExclusiveLockStrategy(),
     ) {
         $this->queryKeyFactory = new CanonicalQueryKeyFactory($topologyProvider);
     }
@@ -84,7 +85,7 @@ final class PostgresEventStoreHStore implements EventStore
                 }
             }
 
-            $this->acquireAdvisoryLocks(array_keys($readKeys), array_keys($writeKeys));
+            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, array_keys($readKeys), array_keys($writeKeys));
 
             foreach ($expectedQueries as [$expectedVersion, $expectedCanonicalQuery]) {
                 $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedCanonicalQuery), $expectedVersion->query);
@@ -191,51 +192,6 @@ final class PostgresEventStoreHStore implements EventStore
         );
     }
 
-    /**
-     * Acquire transaction-scoped advisory locks in deterministic order.
-     *
-     * Read locks use the exact query keys. Write locks use all canonical singleton/pair subsets produced by
-     * the appended events. When a key is present in both sets, the stronger exclusive lock wins.
-     *
-     * @param list<string> $readKeys
-     * @param list<string> $writeKeys
-     */
-    private function acquireAdvisoryLocks(array $readKeys, array $writeKeys): void
-    {
-        $modeByKey = [];
-        foreach ($readKeys as $readKey) {
-            $modeByKey[$readKey] = 'shared';
-        }
-        foreach ($writeKeys as $writeKey) {
-            $modeByKey[$writeKey] = 'exclusive';
-        }
-
-        if ([] === $modeByKey) {
-            return;
-        }
-
-        $lockInstructions = [];
-        foreach ($modeByKey as $queryStreamKey => $mode) {
-            $lockId = $this->advisoryLockId($queryStreamKey);
-            if (isset($lockInstructions[$lockId]) && 'exclusive' === $lockInstructions[$lockId]) {
-                continue;
-            }
-
-            $lockInstructions[$lockId] = $mode;
-        }
-
-        ksort($lockInstructions, SORT_NUMERIC);
-        // $this->logger->debug(sprintf('Acquiring %d advisory locks', count($lockInstructions)));
-
-        $this->connection->executeQuery(
-            sprintf('SELECT %s(?::bigint[], ?::boolean[])', $this->acquireAdvisoryLocksFunction()),
-            [
-                $this->postgresIntArrayLiteral(array_keys($lockInstructions)),
-                $this->postgresBoolArrayLiteral(array_values($lockInstructions)),
-            ],
-        )->free();
-    }
-
     private function eventsTable(): string
     {
         return $this->tablePrefix . 'events';
@@ -265,16 +221,6 @@ final class PostgresEventStoreHStore implements EventStore
         return [implode(' OR ', $clauses), $params];
     }
 
-    private function acquireAdvisoryLocksFunction(): string
-    {
-        return $this->tablePrefix . 'acquire_advisory_locks';
-    }
-
-    private function advisoryLockId(string $queryStreamKey): int
-    {
-        return unpack('J', hex2bin(hash('xxh3', $queryStreamKey)))[1];
-    }
-
     /**
      * @param array<string, string> $values
      *
@@ -300,24 +246,4 @@ final class PostgresEventStoreHStore implements EventStore
         ];
     }
 
-    /**
-     * @param list<int> $values
-     */
-    private function postgresIntArrayLiteral(array $values): string
-    {
-        return '{' . implode(',', $values) . '}';
-    }
-
-    /**
-     * @param list<string> $values
-     */
-    private function postgresBoolArrayLiteral(array $values): string
-    {
-        $encoded = array_map(
-            static fn(string $value): string => 'exclusive' === $value ? 'true' : 'false',
-            $values,
-        );
-
-        return '{' . implode(',', $encoded) . '}';
-    }
 }

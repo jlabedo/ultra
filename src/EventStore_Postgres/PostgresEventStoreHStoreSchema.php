@@ -11,6 +11,7 @@ final readonly class PostgresEventStoreHStoreSchema implements PostgresEventStor
 {
     public function __construct(
         private string $tablePrefix = 'event_store_',
+        private PostgresEventStoreLockStrategy $lockStrategy = new PostgresEventStoreSharedExclusiveLockStrategy(),
     ) {}
 
     /**
@@ -41,29 +42,7 @@ final readonly class PostgresEventStoreHStoreSchema implements PostgresEventStor
                 'CREATE INDEX %1$sevents_event_type_domain_ids_gin_idx ON %1$sevents USING GIN (event_type, domain_ids)',
                 $this->tablePrefix,
             ),
-            sprintf(
-                <<<'SQL'
-                    CREATE FUNCTION %1$sacquire_advisory_locks(lock_ids BIGINT[], exclusive_modes BOOLEAN[]) RETURNS void AS $$
-                    DECLARE
-                        position INTEGER;
-                    BEGIN
-                        IF COALESCE(array_length(lock_ids, 1), 0) <> COALESCE(array_length(exclusive_modes, 1), 0) THEN
-                            RAISE EXCEPTION 'Lock id and mode array lengths must match';
-                        END IF;
-
-                        FOR position IN 1..COALESCE(array_length(lock_ids, 1), 0)
-                        LOOP
-                            IF exclusive_modes[position] THEN
-                                PERFORM pg_advisory_xact_lock(lock_ids[position]);
-                            ELSE
-                                PERFORM pg_advisory_xact_lock_shared(lock_ids[position]);
-                            END IF;
-                        END LOOP;
-                    END;
-                    $$ LANGUAGE plpgsql
-                    SQL,
-                $this->tablePrefix,
-            ),
+            ...$this->lockStrategy->createStatements($this->tablePrefix),
         ];
     }
 
@@ -75,7 +54,7 @@ final readonly class PostgresEventStoreHStoreSchema implements PostgresEventStor
     public function dropStatements(): array
     {
         return [
-            sprintf('DROP FUNCTION IF EXISTS %sacquire_advisory_locks(BIGINT[], BOOLEAN[])', $this->tablePrefix),
+            ...$this->lockStrategy->dropStatements($this->tablePrefix),
             sprintf('DROP TABLE IF EXISTS %sevents', $this->tablePrefix),
         ];
     }

@@ -31,18 +31,22 @@ abstract class PostgresEventStoreTestCase extends TestCase
     /**
      * @param callable(EventStore, Connection, string): void $callback
      */
-    protected function withPostgresStore(callable $callback, string $implementation = 'hstore'): void
+    protected function withPostgresStore(
+        callable $callback,
+        string $implementation = 'hstore',
+        string $lockStrategy = 'shared-exclusive',
+    ): void
     {
         $connection = postgresTestConnection($this->postgresDsn());
         $prefix = postgresTestUniquePrefix();
-        $schema = postgresTestSchemaForImplementation($prefix, $implementation);
+        $schema = postgresTestSchemaForImplementation($prefix, $implementation, $lockStrategy);
 
         try {
             foreach ($schema->createStatements() as $statement) {
                 $connection->executeStatement($statement);
             }
 
-            $store = postgresTestStoreForImplementation($connection, $prefix, $implementation);
+            $store = postgresTestStoreForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
             $callback($store, $connection, $prefix);
         } finally {

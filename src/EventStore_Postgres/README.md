@@ -24,6 +24,13 @@ Both implementations share the same public contract:
 
 That means one append can guard multiple stream snapshots at once.
 
+The lock mechanism is selected through `PostgresEventStoreLockStrategy` and must match the schema DDL:
+
+- `shared-exclusive` is the former strategy: read keys take shared advisory locks and write keys take exclusive advisory locks.
+- `bucket` uses separate read/write buckets per key. Same-bucket operations can run together, so unguarded writes to the same key can overlap, while guarded read/write conflicts still serialize.
+
+The Postgres benchmark script accepts `--lock-strategy=shared-exclusive` or `--lock-strategy=bucket`.
+
 ## Transactions
 
 Both implementations join an existing transaction when one is already active. If no transaction is open, they open and manage their own transaction around the append.

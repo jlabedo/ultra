@@ -35,6 +35,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
         EventTopologyProvider $topologyProvider,
         private readonly string $tablePrefix = 'event_store_',
         private readonly LoggerInterface $logger = new NullLogger(),
+        private readonly PostgresEventStoreLockStrategy $lockStrategy = new PostgresEventStoreSharedExclusiveLockStrategy(),
     ) {
         $this->queryKeyFactory = new CanonicalQueryKeyFactory($topologyProvider);
     }
@@ -54,33 +55,33 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
     public function append(array $events, QueryVersion ...$expectedVersions): void
     {
+        $readKeys = [];
+        $expectedQueries = [];
+        foreach ($expectedVersions as $expectedVersion) {
+            $expectedReadKeys = $this->queryKeyFactory->resolveQuery($expectedVersion->query)->allKeys();
+            $expectedQueries[] = [$expectedVersion, $expectedReadKeys];
+            foreach ($expectedReadKeys as $readKey) {
+                $readKeys[$readKey] = true;
+            }
+        }
+
+        $eventsWithKeys = [];
+        $writeKeys = [];
+        foreach ($events as $event) {
+            $eventKeys = $this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds);
+            $eventsWithKeys[] = [$event, $eventKeys];
+            foreach ($eventKeys as $eventKey) {
+                $writeKeys[$eventKey] = true;
+            }
+        }
+
         $ownsTransaction = ! $this->connection->isTransactionActive();
         if ($ownsTransaction) {
             $this->connection->beginTransaction();
         }
 
         try {
-            $readKeys = [];
-            $expectedQueries = [];
-            foreach ($expectedVersions as $expectedVersion) {
-                $expectedReadKeys = $this->queryKeyFactory->resolveQuery($expectedVersion->query)->allKeys();
-                $expectedQueries[] = [$expectedVersion, $expectedReadKeys];
-                foreach ($expectedReadKeys as $readKey) {
-                    $readKeys[$readKey] = true;
-                }
-            }
-
-            $eventsWithKeys = [];
-            $writeKeys = [];
-            foreach ($events as $event) {
-                $eventKeys = $this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds);
-                $eventsWithKeys[] = [$event, $eventKeys];
-                foreach ($eventKeys as $eventKey) {
-                    $writeKeys[$eventKey] = true;
-                }
-            }
-
-            $this->acquireAdvisoryLocks(array_keys($readKeys), array_keys($writeKeys));
+            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, array_keys($readKeys), array_keys($writeKeys));
 
             foreach ($expectedQueries as [$expectedVersion, $expectedReadKeys]) {
                 $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedReadKeys), $expectedVersion->query);
@@ -89,7 +90,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
             if ([] !== $eventsWithKeys) {
                 $eventIds = $this->insertEvents(array_map(
-                    static fn (array $eventWithKeys): Event => $eventWithKeys[0],
+                    static fn(array $eventWithKeys): Event => $eventWithKeys[0],
                     $eventsWithKeys,
                 ));
 
@@ -207,7 +208,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
             $types,
         )->fetchFirstColumn();
 
-        return array_map(static fn (mixed $eventId): int => (int) $eventId, $eventIds);
+        return array_map(static fn(mixed $eventId): int => (int) $eventId, $eventIds);
     }
 
     /**
@@ -240,63 +241,14 @@ final class PostgresEventStoreQueryStreams implements EventStore
         );
     }
 
-    /**
-     * @param list<string> $readKeys
-     * @param list<string> $writeKeys
-     */
-    private function acquireAdvisoryLocks(array $readKeys, array $writeKeys): void
-    {
-        $modeByKey = [];
-        foreach ($readKeys as $readKey) {
-            $modeByKey[$readKey] = 'shared';
-        }
-        foreach ($writeKeys as $writeKey) {
-            $modeByKey[$writeKey] = 'exclusive';
-        }
-
-        if ([] === $modeByKey) {
-            return;
-        }
-
-        $lockInstructions = [];
-        foreach ($modeByKey as $queryStreamKey => $mode) {
-            $lockId = $this->advisoryLockId($queryStreamKey);
-            if (isset($lockInstructions[$lockId]) && 'exclusive' === $lockInstructions[$lockId]) {
-                continue;
-            }
-
-            $lockInstructions[$lockId] = $mode;
-        }
-
-        ksort($lockInstructions, SORT_NUMERIC);
-
-        $this->connection->executeQuery(
-            sprintf('SELECT %s(?::bigint[], ?::boolean[])', $this->acquireAdvisoryLocksFunction()),
-            [
-                $this->postgresIntArrayLiteral(array_keys($lockInstructions)),
-                $this->postgresBoolArrayLiteral(array_values($lockInstructions)),
-            ],
-        )->free();
-    }
-
     private function eventsTable(): string
     {
-        return $this->tablePrefix.'events';
+        return $this->tablePrefix . 'events';
     }
 
     private function eventQueryStreamsTable(): string
     {
-        return $this->tablePrefix.'event_query_streams';
-    }
-
-    private function acquireAdvisoryLocksFunction(): string
-    {
-        return $this->tablePrefix.'acquire_advisory_locks';
-    }
-
-    private function advisoryLockId(string $queryStreamKey): int
-    {
-        return unpack('J', hex2bin(hash('xxh3', $queryStreamKey)))[1];
+        return $this->tablePrefix . 'event_query_streams';
     }
 
     /**
@@ -309,7 +261,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
         sort($queryStreamKeys);
 
         return array_map(
-            fn (string $queryStreamKey): string => $this->storageKeyForQueryStream($queryStreamKey),
+            fn(string $queryStreamKey): string => $this->storageKeyForQueryStream($queryStreamKey),
             $queryStreamKeys,
         );
     }
@@ -319,24 +271,4 @@ final class PostgresEventStoreQueryStreams implements EventStore
         return hash('sha256', $queryStreamKey, true);
     }
 
-    /**
-     * @param list<int> $values
-     */
-    private function postgresIntArrayLiteral(array $values): string
-    {
-        return '{'.implode(',', $values).'}';
-    }
-
-    /**
-     * @param list<string> $values
-     */
-    private function postgresBoolArrayLiteral(array $values): string
-    {
-        $encoded = array_map(
-            static fn (string $value): string => 'exclusive' === $value ? 'true' : 'false',
-            $values,
-        );
-
-        return '{'.implode(',', $encoded).'}';
-    }
 }

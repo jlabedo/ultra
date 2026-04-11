@@ -1,10 +1,10 @@
 {
     "schemaVersion": 4,
-    "createdAt": "2026-04-11T06:51:14+00:00",
+    "createdAt": "2026-04-11T07:08:30+00:00",
     "runtime": {
         "phpVersion": "8.5.3",
         "postgresVersion": "18.3",
-        "gitCommit": "b49220d"
+        "gitCommit": "e025a51"
     },
     "config": {
         "dsnSource": "docker-compose default",
@@ -26,16 +26,16 @@
             "operations": 5000,
             "loadedEventsPerOperation": 22,
             "appendedEventsPerOperation": 1,
-            "totalSeconds": 37.1153685,
-            "opsPerSecond": 134.71508439960658,
-            "loadedEventsPerSecond": 2896.3743145915414,
-            "appendedEventsPerSecond": 134.71508439960658,
+            "totalSeconds": 24.214313792,
+            "opsPerSecond": 206.4894360810636,
+            "loadedEventsPerSecond": 4439.522875742867,
+            "appendedEventsPerSecond": 206.4894360810636,
             "latencyMs": {
-                "avg": 7.408370935799982,
-                "min": 1.9119169999999999,
-                "p50": 7.792416,
-                "p95": 10.883417,
-                "max": 53.557458000000004
+                "avg": 4.829940570400005,
+                "min": 1.6376249999999999,
+                "p50": 4.749709,
+                "p95": 7.8321250000000004,
+                "max": 23.142916
             }
         }
     }

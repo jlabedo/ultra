@@ -189,11 +189,15 @@ final class ConcurrencyWorker
 #[Group('event-store-concurrency')]
 final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
 {
-    public function test_concurrent_append_from_another_process_waits_for_the_lock_and_then_fails_with_concurrency_exception(): void
+    #[DataProvider('implementationAndLockStrategyProvider')]
+    public function test_concurrent_append_from_another_process_waits_for_the_lock_and_then_fails_with_concurrency_exception(
+        string $implementation,
+        string $lockStrategy,
+    ): void
     {
         $dsn = $this->postgresDsn();
 
-        $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn): void {
+        $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn, $implementation, $lockStrategy): void {
             $query = StreamQuery::forStream(
                 new DomainIdentifier('courseId', 'course-123'),
                 new DomainIdentifier('studentId', 'student-1'),
@@ -214,6 +218,8 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 $workerA = self::startConcurrencyWorker([
                     'dsn' => $dsn,
                     'tablePrefix' => $prefix,
+                    'implementation' => $implementation,
+                    'lockStrategy' => $lockStrategy,
                     'mode' => 'hold_then_commit',
                     ...self::queryVersionToWorkerConfig($staleVersion, $query),
                     'event' => [
@@ -228,6 +234,8 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 $workerB = self::startConcurrencyWorker([
                     'dsn' => $dsn,
                     'tablePrefix' => $prefix,
+                    'implementation' => $implementation,
+                    'lockStrategy' => $lockStrategy,
                     'mode' => 'append_once',
                     ...self::queryVersionToWorkerConfig($staleVersion, $query),
                     'event' => [
@@ -259,14 +267,18 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 $workerA?->stop();
                 $workerB?->stop();
             }
-        });
+        }, $implementation, $lockStrategy);
     }
 
-    public function test_concurrent_append_for_the_same_course_and_another_student_waits_and_then_succeeds(): void
+    #[DataProvider('implementationAndLockStrategyProvider')]
+    public function test_concurrent_append_for_the_same_course_and_another_student_succeeds(
+        string $implementation,
+        string $lockStrategy,
+    ): void
     {
         $dsn = $this->postgresDsn();
 
-        $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn): void {
+        $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn, $implementation, $lockStrategy): void {
             $studentOneQuery = StreamQuery::forStream(
                 new DomainIdentifier('courseId', 'course-123'),
                 new DomainIdentifier('studentId', 'student-1'),
@@ -297,6 +309,8 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 $workerA = self::startConcurrencyWorker([
                     'dsn' => $dsn,
                     'tablePrefix' => $prefix,
+                    'implementation' => $implementation,
+                    'lockStrategy' => $lockStrategy,
                     'mode' => 'hold_then_commit',
                     ...self::queryVersionToWorkerConfig($staleVersion, $studentOneQuery),
                     'event' => [
@@ -311,6 +325,8 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 $workerB = self::startConcurrencyWorker([
                     'dsn' => $dsn,
                     'tablePrefix' => $prefix,
+                    'implementation' => $implementation,
+                    'lockStrategy' => $lockStrategy,
                     'mode' => 'append_once',
                     'event' => [
                         'eventType' => $studentTwoEvent->eventType,
@@ -338,16 +354,17 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 $workerA?->stop();
                 $workerB?->stop();
             }
-        });
+        }, $implementation, $lockStrategy);
     }
 
-    #[DataProvider('implementationProvider')]
+    #[DataProvider('implementationAndLockStrategyProvider')]
     public function test_implementation_rejects_a_stale_multi_branch_query_version_when_a_lower_event_id_becomes_visible_later(
         string $implementation,
+        string $lockStrategy,
     ): void {
         $dsn = $this->postgresDsn();
 
-        $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn, $implementation): void {
+        $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn, $implementation, $lockStrategy): void {
             $courseQuery = StreamQuery::forStream(
                 new DomainIdentifier('courseId', 'course-123'),
             )->ofTypes('course.created');
@@ -381,6 +398,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                     'dsn' => $dsn,
                     'tablePrefix' => $prefix,
                     'implementation' => $implementation,
+                    'lockStrategy' => $lockStrategy,
                     'mode' => 'hold_then_commit',
                     'event' => [
                         'eventType' => $courseCreatedEvent->eventType,
@@ -395,6 +413,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                     'dsn' => $dsn,
                     'tablePrefix' => $prefix,
                     'implementation' => $implementation,
+                    'lockStrategy' => $lockStrategy,
                     'mode' => 'append_once',
                     'event' => [
                         'eventType' => $studentSubscribedEvent->eventType,
@@ -433,16 +452,18 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 $workerA?->stop();
                 $workerB?->stop();
             }
-        }, $implementation);
+        }, $implementation, $lockStrategy);
     }
 
     /**
-     * @return iterable<string, array{string}>
+     * @return iterable<string, array{string, string}>
      */
-    public static function implementationProvider(): iterable
+    public static function implementationAndLockStrategyProvider(): iterable
     {
         foreach (postgresTestSupportedImplementations() as $implementation) {
-            yield $implementation => [$implementation];
+            foreach (postgresTestSupportedLockStrategies() as $lockStrategy) {
+                yield sprintf('%s/%s', $implementation, $lockStrategy) => [$implementation, $lockStrategy];
+            }
         }
     }
 
