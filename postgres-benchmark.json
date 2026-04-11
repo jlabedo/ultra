@@ -1,13 +1,14 @@
 {
-    "schemaVersion": 1,
-    "createdAt": "2026-03-24T09:49:33+00:00",
+    "schemaVersion": 2,
+    "createdAt": "2026-04-11T05:57:38+00:00",
     "runtime": {
         "phpVersion": "8.5.3",
         "postgresVersion": "18.3",
-        "gitCommit": "ca1f9ad"
+        "gitCommit": "b49220d"
     },
     "config": {
         "dsnSource": "docker-compose default",
+        "implementation": "hstore",
         "seedEvents": 20000,
         "seedBatchSize": 100,
         "writeOperations": 5000,
@@ -19,9 +20,9 @@
     "seed": {
         "operations": 20000,
         "eventsPerOperation": 1,
-        "totalSeconds": 1.908888791,
-        "opsPerSecond": 10477.299722380736,
-        "eventsPerSecond": 10477.299722380736,
+        "totalSeconds": 1.732325958,
+        "opsPerSecond": 11545.17133893805,
+        "eventsPerSecond": 11545.17133893805,
         "profile": {
             "facultyCount": 24,
             "courseCount": 240,
@@ -68,15 +69,15 @@
         "write": {
             "operations": 5000,
             "eventsPerOperation": 1,
-            "totalSeconds": 5.637268167,
-            "opsPerSecond": 886.9544346443364,
-            "eventsPerSecond": 886.9544346443364,
+            "totalSeconds": 4.785866083,
+            "opsPerSecond": 1044.7429813718838,
+            "eventsPerSecond": 1044.7429813718838,
             "latencyMs": {
-                "avg": 1.126502550399998,
-                "min": 0.802916,
-                "p50": 1.030958,
-                "p95": 1.579167,
-                "max": 69.684625
+                "avg": 0.9565619065999995,
+                "min": 0.848583,
+                "p50": 0.932542,
+                "p95": 1.0829170000000001,
+                "max": 28.346415999999998
             }
         },
         "reads": [
@@ -86,15 +87,15 @@
                 "result": {
                     "operations": 50,
                     "eventsPerOperation": 1245,
-                    "totalSeconds": 0.441034375,
-                    "opsPerSecond": 113.36984787183539,
-                    "eventsPerSecond": 141145.46060043506,
+                    "totalSeconds": 0.362099875,
+                    "opsPerSecond": 138.083450042616,
+                    "eventsPerSecond": 171913.89530305692,
                     "latencyMs": {
-                        "avg": 8.81922496,
-                        "min": 7.873875000000001,
-                        "p50": 8.70725,
-                        "p95": 10.090541,
-                        "max": 10.92075
+                        "avg": 7.241524179999999,
+                        "min": 6.983166,
+                        "p50": 7.223333,
+                        "p95": 7.515708,
+                        "max": 7.782916
                     }
                 }
             },
@@ -104,15 +105,15 @@
                 "result": {
                     "operations": 50,
                     "eventsPerOperation": 170,
-                    "totalSeconds": 0.162141791,
-                    "opsPerSecond": 308.3720717011199,
-                    "eventsPerSecond": 52423.25218919038,
+                    "totalSeconds": 0.143238666,
+                    "opsPerSecond": 349.0677580032755,
+                    "eventsPerSecond": 59341.51886055683,
                     "latencyMs": {
-                        "avg": 3.2419683800000003,
-                        "min": 2.869208,
-                        "p50": 3.120791,
-                        "p95": 3.876709,
-                        "max": 3.9723750000000004
+                        "avg": 2.864335899999999,
+                        "min": 2.696166,
+                        "p50": 2.841541,
+                        "p95": 3.1848750000000003,
+                        "max": 3.29725
                     }
                 }
             },
@@ -122,15 +123,15 @@
                 "result": {
                     "operations": 50,
                     "eventsPerOperation": 8,
-                    "totalSeconds": 0.061016792,
-                    "opsPerSecond": 819.4465549745715,
-                    "eventsPerSecond": 6555.572439796572,
+                    "totalSeconds": 0.049811583,
+                    "opsPerSecond": 1003.7825941006532,
+                    "eventsPerSecond": 8030.260752805226,
                     "latencyMs": {
-                        "avg": 1.2197908799999997,
-                        "min": 0.976083,
-                        "p50": 1.105959,
-                        "p95": 2.045375,
-                        "max": 2.134167
+                        "avg": 0.9958391800000002,
+                        "min": 0.90925,
+                        "p50": 0.994333,
+                        "p95": 1.061625,
+                        "max": 1.132792
                     }
                 }
             },
@@ -140,15 +141,15 @@
                 "result": {
                     "operations": 50,
                     "eventsPerOperation": 1,
-                    "totalSeconds": 0.147370375,
-                    "opsPerSecond": 339.2812157803086,
-                    "eventsPerSecond": 339.2812157803086,
+                    "totalSeconds": 0.133272541,
+                    "opsPerSecond": 375.17105642939606,
+                    "eventsPerSecond": 375.17105642939606,
                     "latencyMs": {
-                        "avg": 2.94666584,
-                        "min": 2.66725,
-                        "p50": 2.8467499999999997,
-                        "p95": 3.487458,
-                        "max": 4.076
+                        "avg": 2.66460924,
+                        "min": 2.5604999999999998,
+                        "p50": 2.651917,
+                        "p95": 2.790125,
+                        "max": 2.8097920000000003
                     }
                 }
             },
@@ -158,15 +159,15 @@
                 "result": {
                     "operations": 50,
                     "eventsPerOperation": 28,
-                    "totalSeconds": 0.074121416,
-                    "opsPerSecond": 674.5688722406491,
-                    "eventsPerSecond": 18887.928422738176,
+                    "totalSeconds": 0.068013458,
+                    "opsPerSecond": 735.1486230857429,
+                    "eventsPerSecond": 20584.161446400798,
                     "latencyMs": {
-                        "avg": 1.4819157599999997,
-                        "min": 1.34325,
-                        "p50": 1.427792,
-                        "p95": 1.762666,
-                        "max": 2.695916
+                        "avg": 1.3595375400000003,
+                        "min": 1.258375,
+                        "p50": 1.356042,
+                        "p95": 1.4835,
+                        "max": 1.569917
                     }
                 }
             }

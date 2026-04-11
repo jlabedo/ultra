@@ -6,6 +6,8 @@ require_once __DIR__ . '/vendor/autoload.php';
 require_once __DIR__ . '/src/EventStore_Postgres/Tests/PostgresTestSupport.php';
 
 use Doctrine\DBAL\Connection;
+use Psr\Log\AbstractLogger;
+use Psr\Log\NullLogger;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
@@ -27,55 +29,93 @@ function main(): int
     $connection = postgresTestConnection($config['dsn']);
     $prefix = benchmarkTablePrefix();
     $schema = postgresTestSchemaForImplementation($prefix, $config['implementation']);
+    $logger = new class() extends AbstractLogger {
+        public function log($level, $message, array $context = []): void
+        {
+            $timestamp = date('Y-m-d H:i:s');
+            $interpolatedMessage = $this->interpolate($message, $context);
+            fwrite(STDOUT, sprintf("[%s] %s\n", $timestamp, $interpolatedMessage));
+        }
+
+        private function interpolate(string $message, array $context): string
+        {
+            foreach ($context as $key => $value) {
+                if (is_scalar($value) || (is_object($value) && method_exists($value, '__toString'))) {
+                    $message = str_replace("{" . $key . "}", (string) $value, $message);
+                }
+            }
+
+            return $message;
+        }
+    };
 
     try {
         createSchema($connection, $schema);
 
-        $store = postgresTestStoreForImplementation($connection, $prefix, $config['implementation']);
+        $store = postgresTestStoreForImplementation($connection, $prefix, $config['implementation'], $logger);
 
         printHeader($config, $prefix);
-        printLine('Seeding read dataset...');
-        $seedResult = seedReadDataset($store, $config['seedEvents'], $config['seedBatchSize']);
-        printSeedResult($seedResult);
+        $seedResult = null;
+        $writeResult = null;
+        $readResults = [];
 
-        printLine();
-        printLine('Benchmarking writes...');
-        $writeResult = benchmarkWrites(
+        if ($config['full']) {
+            printLine('Seeding read dataset...');
+            $seedResult = seedReadDataset($store, $config['seedEvents'], $config['seedBatchSize']);
+            printSeedResult($seedResult);
+
+            printLine();
+            printLine('Benchmarking writes...');
+            $writeResult = benchmarkWrites(
+                $store,
+                operations: $config['writeOperations'],
+                batchSize: $config['writeBatchSize'],
+                streamCount: $config['writeStreamCount'],
+            );
+            printBenchmarkResult('Writes', $writeResult);
+
+            printLine();
+            printLine('Refreshing planner stats...');
+            analyzeEventStore($connection, $prefix, $config['implementation']);
+
+            printLine();
+            printLine('Benchmarking reads...');
+            foreach (buildReadScenarios($seedResult['profile']) as $scenario) {
+                $readResult = benchmarkReads(
+                    $store,
+                    $scenario['query'],
+                    iterations: $config['readIterations'],
+                    warmupIterations: $config['readWarmupIterations'],
+                );
+                $readResults[] = [
+                    'label' => $scenario['label'],
+                    'description' => $scenario['description'],
+                    'result' => $readResult,
+                ];
+                printReadBenchmarkResult($scenario['label'], $scenario['description'], $readResult);
+                printLine();
+            }
+        }
+
+        printLine('Benchmarking read + guarded appends...');
+        $readAppendResult = benchmarkReadAppendWithQueryVersion(
             $store,
             operations: $config['writeOperations'],
-            batchSize: $config['writeBatchSize'],
             streamCount: $config['writeStreamCount'],
         );
-        printBenchmarkResult('Writes', $writeResult);
-
+        printReadAppendBenchmarkResult(
+            'Read + append: Guarded subscription',
+            'load course history, derive enrollment state, append student.subscribed with the returned QueryVersion',
+            $readAppendResult,
+        );
         printLine();
-        printLine('Refreshing planner stats...');
-        analyzeEventStore($connection, $prefix, $config['implementation']);
-
-        $readResults = [];
-        printLine();
-        printLine('Benchmarking reads...');
-        foreach (buildReadScenarios($seedResult['profile']) as $scenario) {
-            $readResult = benchmarkReads(
-                $store,
-                $scenario['query'],
-                iterations: $config['readIterations'],
-                warmupIterations: $config['readWarmupIterations'],
-            );
-            $readResults[] = [
-                'label' => $scenario['label'],
-                'description' => $scenario['description'],
-                'result' => $readResult,
-            ];
-            printReadBenchmarkResult($scenario['label'], $scenario['description'], $readResult);
-            printLine();
-        }
 
         $snapshot = buildBenchmarkSnapshot(
             $config,
             $seedResult,
             $writeResult,
             $readResults,
+            $readAppendResult,
             $connection,
         );
 
@@ -111,6 +151,7 @@ function main(): int
  *     dsn: string,
  *     dsnSource: string,
  *     implementation: string,
+ *     full: bool,
  *     saveResult: null|string,
  *     compareTo: null|string,
  *     seedEvents: int,
@@ -127,6 +168,7 @@ function benchmarkConfig(): array
     $options = getopt('', [
         'dsn::',
         'implementation::',
+        'full',
         'save-result::',
         'compare-to::',
         'seed-events::',
@@ -142,8 +184,9 @@ function benchmarkConfig(): array
     $envDsn = getenv('ULTRA_TEST_POSTGRES_DSN');
     $fallbackDsn = 'pgsql://ultra:ultra@127.0.0.1:55432/ultra_test';
     $dsn = resolveStringOption($options, 'dsn', false !== $envDsn && '' !== $envDsn ? $envDsn : $fallbackDsn);
+    $full = array_key_exists('full', $options);
     $seedEvents = resolvePositiveIntOption($options, 'seed-events', 20_000);
-    if ($seedEvents < 4) {
+    if ($full && $seedEvents < 4) {
         throw new \InvalidArgumentException('Option "--seed-events" must be at least 4 to build the read benchmark suite.');
     }
 
@@ -153,6 +196,7 @@ function benchmarkConfig(): array
             ? '--dsn'
             : (false !== $envDsn && '' !== $envDsn ? 'ULTRA_TEST_POSTGRES_DSN' : 'docker-compose default'),
         'implementation' => resolveImplementationOption($options),
+        'full' => $full,
         'saveResult' => resolveNullableStringOption($options, 'save-result'),
         'compareTo' => resolveNullableStringOption($options, 'compare-to'),
         'seedEvents' => $seedEvents,
@@ -689,6 +733,154 @@ function benchmarkReads(EventStore $store, StreamQuery $query, int $iterations, 
     ];
 }
 
+/**
+ * @return array{
+ *     operations: int,
+ *     loadedEventsPerOperation: int,
+ *     appendedEventsPerOperation: int,
+ *     totalSeconds: float,
+ *     opsPerSecond: float,
+ *     loadedEventsPerSecond: float,
+ *     appendedEventsPerSecond: float,
+ *     latencyMs: array{avg: float, min: float, p50: float, p95: float, max: float}
+ * }
+ */
+function benchmarkReadAppendWithQueryVersion(EventStore $store, int $operations, int $streamCount): array
+{
+    $streamCount = max(1, $streamCount);
+    seedReadAppendDataset($store, $streamCount);
+
+    $durationsMs = [];
+    $totalEventsLoaded = 0;
+    $startedAt = hrtime(true);
+
+    for ($operation = 0; $operation < $operations; ++$operation) {
+        $streamIndex = $operation % $streamCount;
+        $courseId = readAppendCourseId($streamIndex);
+        $facultyId = readAppendFacultyId($streamIndex);
+        $query = readAppendCourseQuery($courseId);
+
+        $operationStartedAt = hrtime(true);
+        $result = $store->load($query);
+        $state = courseEnrollmentState($result->events);
+
+        $store->append([
+            studentSubscribedEvent(
+                courseId: $courseId,
+                facultyId: $facultyId,
+                studentId: readAppendStudentId($streamIndex, $state['subscriptionCount']),
+                sequence: 1_000_000 + $operation,
+                status: $state['subscriptionCount'] < $state['capacity'] ? 'confirmed' : 'waitlisted',
+            ),
+        ], $result->queryVersion);
+
+        $durationsMs[] = elapsedMilliseconds($operationStartedAt);
+        $totalEventsLoaded += count($result->events);
+    }
+
+    $totalSeconds = elapsedSeconds($startedAt);
+
+    return [
+        'operations' => $operations,
+        'loadedEventsPerOperation' => 0 === $operations ? 0 : (int) round($totalEventsLoaded / $operations),
+        'appendedEventsPerOperation' => 1,
+        'totalSeconds' => $totalSeconds,
+        'opsPerSecond' => ratePerSecond($operations, $totalSeconds),
+        'loadedEventsPerSecond' => ratePerSecond($totalEventsLoaded, $totalSeconds),
+        'appendedEventsPerSecond' => ratePerSecond($operations, $totalSeconds),
+        'latencyMs' => summarizeDurations($durationsMs),
+    ];
+}
+
+function seedReadAppendDataset(EventStore $store, int $streamCount): void
+{
+    $events = [];
+    $sequence = 0;
+
+    for ($streamIndex = 0; $streamIndex < $streamCount; ++$streamIndex) {
+        $courseId = readAppendCourseId($streamIndex);
+        $facultyId = readAppendFacultyId($streamIndex);
+
+        $events[] = courseCreatedEvent($courseId, $facultyId, $sequence);
+        ++$sequence;
+        $events[] = courseCapacityChangedEvent(
+            courseId: $courseId,
+            capacity: 10 + ($streamIndex % 12),
+            sequence: $sequence,
+        );
+        ++$sequence;
+
+        $initialSubscriptions = 4 + ($streamIndex % 8);
+        for ($studentIndex = 0; $studentIndex < $initialSubscriptions; ++$studentIndex) {
+            $events[] = studentSubscribedEvent(
+                courseId: $courseId,
+                facultyId: $facultyId,
+                studentId: readAppendStudentId($streamIndex, $studentIndex),
+                sequence: $sequence,
+            );
+            ++$sequence;
+        }
+
+        if (count($events) >= 100) {
+            $store->append($events);
+            $events = [];
+        }
+    }
+
+    if ([] !== $events) {
+        $store->append($events);
+    }
+}
+
+function readAppendCourseQuery(string $courseId): StreamQuery
+{
+    return StreamQuery::forStream(new DomainIdentifier('courseId', $courseId))
+        ->ofTypes('course.created', 'course.capacity_changed', 'student.subscribed');
+}
+
+/**
+ * @param list<Event> $events
+ *
+ * @return array{capacity: int, subscriptionCount: int}
+ */
+function courseEnrollmentState(array $events): array
+{
+    $capacity = 30;
+    $subscriptionCount = 0;
+
+    foreach ($events as $event) {
+        if ('course.capacity_changed' === $event->eventType && is_int($event->payload['capacity'] ?? null)) {
+            $capacity = $event->payload['capacity'];
+
+            continue;
+        }
+
+        if ('student.subscribed' === $event->eventType) {
+            ++$subscriptionCount;
+        }
+    }
+
+    return [
+        'capacity' => $capacity,
+        'subscriptionCount' => $subscriptionCount,
+    ];
+}
+
+function readAppendCourseId(int $streamIndex): string
+{
+    return sprintf('course-guarded-%03d', $streamIndex);
+}
+
+function readAppendFacultyId(int $streamIndex): string
+{
+    return sprintf('faculty-guarded-%02d', $streamIndex % 10);
+}
+
+function readAppendStudentId(int $streamIndex, int $studentIndex): string
+{
+    return sprintf('student-guarded-%03d-%05d', $streamIndex, $studentIndex);
+}
+
 function courseCreatedEvent(string $courseId, string $facultyId, int $sequence): Event
 {
     return new Event(
@@ -718,13 +910,13 @@ function courseCapacityChangedEvent(string $courseId, int $capacity, int $sequen
     );
 }
 
-function studentSubscribedEvent(string $courseId, string $facultyId, string $studentId, int $sequence): Event
+function studentSubscribedEvent(string $courseId, string $facultyId, string $studentId, int $sequence, string $status = 'confirmed'): Event
 {
     return new Event(
         eventType: 'student.subscribed',
         payload: [
             'sequence' => $sequence,
-            'status' => 'confirmed',
+            'status' => $status,
         ],
         domainIds: [
             'facultyId' => $facultyId,
@@ -804,6 +996,7 @@ function analyzeEventStore(Connection $connection, string $tablePrefix, string $
  * @param array{
  *     dsnSource: string,
  *     implementation: string,
+ *     full: bool,
  *     saveResult: null|string,
  *     compareTo: null|string,
  *     seedEvents: int,
@@ -814,7 +1007,7 @@ function analyzeEventStore(Connection $connection, string $tablePrefix, string $
  *     readIterations: int,
  *     readWarmupIterations: int
  * } $config
- * @param array{
+ * @param null|array{
  *     operations: int,
  *     eventsPerOperation: int,
  *     totalSeconds: float,
@@ -834,7 +1027,7 @@ function analyzeEventStore(Connection $connection, string $tablePrefix, string $
  *         }
  *     }
  * } $seedResult
- * @param array{
+ * @param null|array{
  *     operations: int,
  *     eventsPerOperation: int,
  *     totalSeconds: float,
@@ -854,18 +1047,29 @@ function analyzeEventStore(Connection $connection, string $tablePrefix, string $
  *         latencyMs: array{avg: float, min: float, p50: float, p95: float, max: float}
  *     }
  * }> $readResults
+ * @param array{
+ *     operations: int,
+ *     loadedEventsPerOperation: int,
+ *     appendedEventsPerOperation: int,
+ *     totalSeconds: float,
+ *     opsPerSecond: float,
+ *     loadedEventsPerSecond: float,
+ *     appendedEventsPerSecond: float,
+ *     latencyMs: array{avg: float, min: float, p50: float, p95: float, max: float}
+ * } $readAppendResult
  *
  * @return array<string, mixed>
  */
 function buildBenchmarkSnapshot(
     array $config,
-    array $seedResult,
-    array $writeResult,
+    ?array $seedResult,
+    ?array $writeResult,
     array $readResults,
+    array $readAppendResult,
     Connection $connection,
 ): array {
     return [
-        'schemaVersion' => 2,
+        'schemaVersion' => 4,
         'createdAt' => (new DateTimeImmutable('now', new DateTimeZone('UTC')))->format(DATE_ATOM),
         'runtime' => [
             'phpVersion' => PHP_VERSION,
@@ -875,6 +1079,7 @@ function buildBenchmarkSnapshot(
         'config' => [
             'dsnSource' => $config['dsnSource'],
             'implementation' => $config['implementation'],
+            'full' => $config['full'],
             'seedEvents' => $config['seedEvents'],
             'seedBatchSize' => $config['seedBatchSize'],
             'writeOperations' => $config['writeOperations'],
@@ -887,6 +1092,7 @@ function buildBenchmarkSnapshot(
         'results' => [
             'write' => $writeResult,
             'reads' => $readResults,
+            'readAppend' => $readAppendResult,
         ],
     ];
 }
@@ -959,36 +1165,59 @@ function printBenchmarkComparison(array $baseline, array $current, string $basel
         printLine(sprintf('  Config differences: %s', implode(' | ', $configDifferences)));
     }
 
-    $seedDifferences = benchmarkSeedDifferences(
-        is_array($baseline['seed']['profile'] ?? null) ? $baseline['seed']['profile'] : [],
-        is_array($current['seed']['profile'] ?? null) ? $current['seed']['profile'] : [],
-    );
-    if ([] !== $seedDifferences) {
-        printLine(sprintf('  Seed profile differences: %s', implode(' | ', $seedDifferences)));
+    $baselineSeedProfile = is_array($baseline['seed']['profile'] ?? null) ? $baseline['seed']['profile'] : null;
+    $currentSeedProfile = is_array($current['seed']['profile'] ?? null) ? $current['seed']['profile'] : null;
+    if (null !== $baselineSeedProfile && null !== $currentSeedProfile) {
+        $seedDifferences = benchmarkSeedDifferences($baselineSeedProfile, $currentSeedProfile);
+        if ([] !== $seedDifferences) {
+            printLine(sprintf('  Seed profile differences: %s', implode(' | ', $seedDifferences)));
+        }
     }
 
-    printLine();
-    printMetricComparison(
-        '  Writes',
-        is_array($baseline['results']['write'] ?? null) ? $baseline['results']['write'] : [],
-        is_array($current['results']['write'] ?? null) ? $current['results']['write'] : [],
-    );
+    $currentReadAppend = is_array($current['results']['readAppend'] ?? null) ? $current['results']['readAppend'] : [];
+    if ([] !== $currentReadAppend) {
+        printLine();
+        $baselineReadAppend = is_array($baseline['results']['readAppend'] ?? null) ? $baseline['results']['readAppend'] : [];
+        if ([] === $baselineReadAppend) {
+            printLine('  Read + append: Guarded subscription: no matching baseline scenario');
+        } else {
+            printReadAppendMetricComparison(
+                '  Read + append: Guarded subscription',
+                $baselineReadAppend,
+                $currentReadAppend,
+            );
+        }
+    }
+
+    $currentWrite = is_array($current['results']['write'] ?? null) ? $current['results']['write'] : [];
+    if ([] !== $currentWrite) {
+        printLine();
+        $baselineWrite = is_array($baseline['results']['write'] ?? null) ? $baseline['results']['write'] : [];
+        if ([] === $baselineWrite) {
+            printLine('  Writes: no matching baseline scenario');
+        } else {
+            printMetricComparison('  Writes', $baselineWrite, $currentWrite);
+        }
+    }
 
     $baselineReads = indexReadResultsByLabel(is_array($baseline['results']['reads'] ?? null) ? $baseline['results']['reads'] : []);
     $currentReads = indexReadResultsByLabel(is_array($current['results']['reads'] ?? null) ? $current['results']['reads'] : []);
 
-    foreach ($currentReads as $label => $readResult) {
-        if (! isset($baselineReads[$label])) {
-            printLine(sprintf('  %s: no matching baseline scenario', $label));
+    if ([] !== $currentReads) {
+        printLine();
+        foreach ($currentReads as $label => $readResult) {
+            if (! isset($baselineReads[$label])) {
+                printLine(sprintf('  %s: no matching baseline scenario', $label));
 
-            continue;
+                continue;
+            }
+
+            printMetricComparison(sprintf('  %s', $label), $baselineReads[$label], $readResult);
         }
 
-        printMetricComparison(sprintf('  %s', $label), $baselineReads[$label], $readResult);
-    }
-
-    foreach (array_diff(array_keys($baselineReads), array_keys($currentReads)) as $label) {
-        printLine(sprintf('  %s: present in baseline only', $label));
+        foreach (array_diff(array_keys($baselineReads), array_keys($currentReads)) as $label) {
+            printLine(sprintf('  %s: present in baseline only', $label));
+        }
     }
 }
 
@@ -1004,6 +1233,7 @@ function benchmarkConfigDifferences(array $baseline, array $current): array
     foreach (
         [
             'implementation',
+            'full',
             'seedEvents',
             'seedBatchSize',
             'writeOperations',
@@ -1017,10 +1247,28 @@ function benchmarkConfigDifferences(array $baseline, array $current): array
             continue;
         }
 
-        $differences[] = sprintf('%s %s -> %s', $key, (string) ($baseline[$key] ?? 'n/a'), (string) ($current[$key] ?? 'n/a'));
+        $differences[] = sprintf(
+            '%s %s -> %s',
+            $key,
+            formatBenchmarkConfigValue($baseline[$key] ?? null),
+            formatBenchmarkConfigValue($current[$key] ?? null),
+        );
     }
 
     return $differences;
+}
+
+function formatBenchmarkConfigValue(mixed $value): string
+{
+    if (null === $value) {
+        return 'n/a';
+    }
+
+    if (is_bool($value)) {
+        return $value ? 'true' : 'false';
+    }
+
+    return (string) $value;
 }
 
 /**
@@ -1135,6 +1383,66 @@ function printMetricComparison(string $label, array $baseline, array $current): 
     ));
 }
 
+/**
+ * @param array<string, mixed> $baseline
+ * @param array<string, mixed> $current
+ */
+function printReadAppendMetricComparison(string $label, array $baseline, array $current): void
+{
+    printLine($label);
+
+    if (($baseline['loadedEventsPerOperation'] ?? null) !== ($current['loadedEventsPerOperation'] ?? null)) {
+        printLine(sprintf(
+            '    Loaded events per operation: %s -> %s',
+            formatInteger((int) ($baseline['loadedEventsPerOperation'] ?? 0)),
+            formatInteger((int) ($current['loadedEventsPerOperation'] ?? 0)),
+        ));
+    }
+
+    if (($baseline['appendedEventsPerOperation'] ?? null) !== ($current['appendedEventsPerOperation'] ?? null)) {
+        printLine(sprintf(
+            '    Appended events per operation: %s -> %s',
+            formatInteger((int) ($baseline['appendedEventsPerOperation'] ?? 0)),
+            formatInteger((int) ($current['appendedEventsPerOperation'] ?? 0)),
+        ));
+    }
+
+    printLine(sprintf(
+        '    Ops/s: %s -> %s (%s)',
+        formatRate((float) ($baseline['opsPerSecond'] ?? 0.0)),
+        formatRate((float) ($current['opsPerSecond'] ?? 0.0)),
+        formatDelta((float) ($baseline['opsPerSecond'] ?? 0.0), (float) ($current['opsPerSecond'] ?? 0.0), true),
+    ));
+    printLine(sprintf(
+        '    Loaded events/s: %s -> %s (%s)',
+        formatRate((float) ($baseline['loadedEventsPerSecond'] ?? 0.0)),
+        formatRate((float) ($current['loadedEventsPerSecond'] ?? 0.0)),
+        formatDelta((float) ($baseline['loadedEventsPerSecond'] ?? 0.0), (float) ($current['loadedEventsPerSecond'] ?? 0.0), true),
+    ));
+    printLine(sprintf(
+        '    Appended events/s: %s -> %s (%s)',
+        formatRate((float) ($baseline['appendedEventsPerSecond'] ?? 0.0)),
+        formatRate((float) ($current['appendedEventsPerSecond'] ?? 0.0)),
+        formatDelta((float) ($baseline['appendedEventsPerSecond'] ?? 0.0), (float) ($current['appendedEventsPerSecond'] ?? 0.0), true),
+    ));
+
+    $baselineLatency = is_array($baseline['latencyMs'] ?? null) ? $baseline['latencyMs'] : [];
+    $currentLatency = is_array($current['latencyMs'] ?? null) ? $current['latencyMs'] : [];
+
+    printLine(sprintf(
+        '    Avg latency: %s -> %s (%s)',
+        formatMilliseconds((float) ($baselineLatency['avg'] ?? 0.0)),
+        formatMilliseconds((float) ($currentLatency['avg'] ?? 0.0)),
+        formatDelta((float) ($baselineLatency['avg'] ?? 0.0), (float) ($currentLatency['avg'] ?? 0.0), false),
+    ));
+    printLine(sprintf(
+        '    P95 latency: %s -> %s (%s)',
+        formatMilliseconds((float) ($baselineLatency['p95'] ?? 0.0)),
+        formatMilliseconds((float) ($currentLatency['p95'] ?? 0.0)),
+        formatDelta((float) ($baselineLatency['p95'] ?? 0.0), (float) ($currentLatency['p95'] ?? 0.0), false),
+    ));
+}
+
 function gitHeadCommit(): string
 {
     $output = shell_exec('git rev-parse --short HEAD 2>/dev/null');
@@ -1146,6 +1454,7 @@ function gitHeadCommit(): string
  * @param array{
  *     dsnSource: string,
  *     implementation: string,
+ *     full: bool,
  *     saveResult: null|string,
  *     compareTo: null|string,
  *     seedEvents: int,
@@ -1163,6 +1472,7 @@ function printHeader(array $config, string $prefix): void
     printLine(str_repeat('=', 30));
     printLine(sprintf('Connection source: %s', $config['dsnSource']));
     printLine(sprintf('Implementation: %s', $config['implementation']));
+    printLine(sprintf('Mode: %s', $config['full'] ? 'full suite' : 'read + guarded append'));
     if (null !== $config['compareTo']) {
         printLine(sprintf('Compare to: %s', $config['compareTo']));
     }
@@ -1170,13 +1480,15 @@ function printHeader(array $config, string $prefix): void
         printLine(sprintf('Save result: %s', $config['saveResult']));
     }
     printLine(sprintf('Schema prefix: %s', $prefix));
-    printLine(sprintf('Seed events: %s', formatInteger($config['seedEvents'])));
-    printLine(sprintf('Seed batch size: %s', formatInteger($config['seedBatchSize'])));
-    printLine(sprintf('Write operations: %s', formatInteger($config['writeOperations'])));
-    printLine(sprintf('Write batch size: %s', formatInteger($config['writeBatchSize'])));
-    printLine(sprintf('Write stream count: %s', formatInteger($config['writeStreamCount'])));
-    printLine(sprintf('Read iterations: %s', formatInteger($config['readIterations'])));
-    printLine(sprintf('Read warmup iterations: %s', formatInteger($config['readWarmupIterations'])));
+    printLine(sprintf('Read+append operations: %s', formatInteger($config['writeOperations'])));
+    printLine(sprintf('Read+append stream count: %s', formatInteger($config['writeStreamCount'])));
+    if ($config['full']) {
+        printLine(sprintf('Seed events: %s', formatInteger($config['seedEvents'])));
+        printLine(sprintf('Seed batch size: %s', formatInteger($config['seedBatchSize'])));
+        printLine(sprintf('Write batch size: %s', formatInteger($config['writeBatchSize'])));
+        printLine(sprintf('Read iterations: %s', formatInteger($config['readIterations'])));
+        printLine(sprintf('Read warmup iterations: %s', formatInteger($config['readWarmupIterations'])));
+    }
     printLine();
 }
 
@@ -1283,6 +1595,42 @@ function printReadBenchmarkResult(string $label, string $description, array $res
         '  Throughput: %s ops/s | %s events/s',
         formatRate($result['opsPerSecond']),
         formatRate($result['eventsPerSecond']),
+    ));
+    printLine(sprintf(
+        '  Latency: avg %s | p50 %s | p95 %s | min %s | max %s',
+        formatMilliseconds($result['latencyMs']['avg']),
+        formatMilliseconds($result['latencyMs']['p50']),
+        formatMilliseconds($result['latencyMs']['p95']),
+        formatMilliseconds($result['latencyMs']['min']),
+        formatMilliseconds($result['latencyMs']['max']),
+    ));
+}
+
+/**
+ * @param array{
+ *     operations: int,
+ *     loadedEventsPerOperation: int,
+ *     appendedEventsPerOperation: int,
+ *     totalSeconds: float,
+ *     opsPerSecond: float,
+ *     loadedEventsPerSecond: float,
+ *     appendedEventsPerSecond: float,
+ *     latencyMs: array{avg: float, min: float, p50: float, p95: float, max: float}
+ * } $result
+ */
+function printReadAppendBenchmarkResult(string $label, string $description, array $result): void
+{
+    printLine($label);
+    printLine(sprintf('  Scenario: %s', $description));
+    printLine(sprintf('  Operations: %s', formatInteger($result['operations'])));
+    printLine(sprintf('  Loaded events per operation: %s', formatInteger($result['loadedEventsPerOperation'])));
+    printLine(sprintf('  Appended events per operation: %s', formatInteger($result['appendedEventsPerOperation'])));
+    printLine(sprintf('  Total time: %s', formatSeconds($result['totalSeconds'])));
+    printLine(sprintf(
+        '  Throughput: %s ops/s | %s loaded events/s | %s appended events/s',
+        formatRate($result['opsPerSecond']),
+        formatRate($result['loadedEventsPerSecond']),
+        formatRate($result['appendedEventsPerSecond']),
     ));
     printLine(sprintf(
         '  Latency: avg %s | p50 %s | p95 %s | min %s | max %s',

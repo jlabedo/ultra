@@ -7,6 +7,8 @@ namespace Ultra\EventStore_Postgres\Tests;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Tools\DsnParser;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\StaticEventTopologyProvider;
@@ -63,18 +65,20 @@ function postgresTestSupportedImplementations(): array
 /**
  * @return PostgresEventStore|PostgresEventStoreQueryStreams
  */
-function postgresTestStoreForImplementation(Connection $connection, string $tablePrefix, string $implementation): EventStore
+function postgresTestStoreForImplementation(Connection $connection, string $tablePrefix, string $implementation, LoggerInterface $logger = new NullLogger()): EventStore
 {
     return match ($implementation) {
         'hstore' => new PostgresEventStore(
             connection: $connection,
             topologyProvider: postgresTestTopologyProvider(),
             tablePrefix: $tablePrefix,
+            logger: $logger,
         ),
         'query-streams' => new PostgresEventStoreQueryStreams(
             connection: $connection,
             topologyProvider: postgresTestTopologyProvider(),
             tablePrefix: $tablePrefix,
+            logger: $logger,
         ),
         default => throw new \InvalidArgumentException(sprintf(
             'Unsupported Postgres event store implementation "%s". Expected one of: hstore, query-streams.',
@@ -97,5 +101,5 @@ function postgresTestSchemaForImplementation(string $tablePrefix, string $implem
 
 function postgresTestUniquePrefix(): string
 {
-    return 'ultra_event_store_'.bin2hex(random_bytes(4)).'_';
+    return 'ultra_event_store_' . bin2hex(random_bytes(4)) . '_';
 }

@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ultra\EventStore_Postgres;
 
 use Doctrine\DBAL\Connection;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Ultra\EventStore\CanonicalQuery;
 use Ultra\EventStore\CanonicalQueryKeyFactory;
 use Ultra\EventStore\Event;
@@ -31,6 +33,7 @@ final class PostgresEventStore implements EventStore
         private readonly Connection $connection,
         EventTopologyProvider $topologyProvider,
         private readonly string $tablePrefix = 'event_store_',
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {
         $this->queryKeyFactory = new CanonicalQueryKeyFactory($topologyProvider);
     }
@@ -222,6 +225,7 @@ final class PostgresEventStore implements EventStore
         }
 
         ksort($lockInstructions, SORT_NUMERIC);
+        // $this->logger->debug(sprintf('Acquiring %d advisory locks', count($lockInstructions)));
 
         $this->connection->executeQuery(
             sprintf('SELECT %s(?::bigint[], ?::boolean[])', $this->acquireAdvisoryLocksFunction()),
@@ -234,7 +238,7 @@ final class PostgresEventStore implements EventStore
 
     private function eventsTable(): string
     {
-        return $this->tablePrefix.'events';
+        return $this->tablePrefix . 'events';
     }
 
     /**
@@ -263,7 +267,7 @@ final class PostgresEventStore implements EventStore
 
     private function acquireAdvisoryLocksFunction(): string
     {
-        return $this->tablePrefix.'acquire_advisory_locks';
+        return $this->tablePrefix . 'acquire_advisory_locks';
     }
 
     private function advisoryLockId(string $queryStreamKey): int
@@ -301,7 +305,7 @@ final class PostgresEventStore implements EventStore
      */
     private function postgresIntArrayLiteral(array $values): string
     {
-        return '{'.implode(',', $values).'}';
+        return '{' . implode(',', $values) . '}';
     }
 
     /**
@@ -310,10 +314,10 @@ final class PostgresEventStore implements EventStore
     private function postgresBoolArrayLiteral(array $values): string
     {
         $encoded = array_map(
-            static fn (string $value): string => 'exclusive' === $value ? 'true' : 'false',
+            static fn(string $value): string => 'exclusive' === $value ? 'true' : 'false',
             $values,
         );
 
-        return '{'.implode(',', $encoded).'}';
+        return '{' . implode(',', $encoded) . '}';
     }
 }

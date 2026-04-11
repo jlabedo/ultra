@@ -1,0 +1,42 @@
+{
+    "schemaVersion": 4,
+    "createdAt": "2026-04-11T06:51:14+00:00",
+    "runtime": {
+        "phpVersion": "8.5.3",
+        "postgresVersion": "18.3",
+        "gitCommit": "b49220d"
+    },
+    "config": {
+        "dsnSource": "docker-compose default",
+        "implementation": "hstore",
+        "full": false,
+        "seedEvents": 20000,
+        "seedBatchSize": 100,
+        "writeOperations": 5000,
+        "writeBatchSize": 1,
+        "writeStreamCount": 200,
+        "readIterations": 50,
+        "readWarmupIterations": 25
+    },
+    "seed": null,
+    "results": {
+        "write": null,
+        "reads": [],
+        "readAppend": {
+            "operations": 5000,
+            "loadedEventsPerOperation": 22,
+            "appendedEventsPerOperation": 1,
+            "totalSeconds": 37.1153685,
+            "opsPerSecond": 134.71508439960658,
+            "loadedEventsPerSecond": 2896.3743145915414,
+            "appendedEventsPerSecond": 134.71508439960658,
+            "latencyMs": {
+                "avg": 7.408370935799982,
+                "min": 1.9119169999999999,
+                "p50": 7.792416,
+                "p95": 10.883417,
+                "max": 53.557458000000004
+            }
+        }
+    }
+}

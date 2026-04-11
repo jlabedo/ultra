@@ -7,6 +7,8 @@ namespace Ultra\EventStore_Postgres;
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
+use Psr\Log\LoggerInterface;
+use Psr\Log\NullLogger;
 use Ultra\EventStore\CanonicalQueryKeyFactory;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
@@ -32,6 +34,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
         private readonly Connection $connection,
         EventTopologyProvider $topologyProvider,
         private readonly string $tablePrefix = 'event_store_',
+        private readonly LoggerInterface $logger = new NullLogger(),
     ) {
         $this->queryKeyFactory = new CanonicalQueryKeyFactory($topologyProvider);
     }
