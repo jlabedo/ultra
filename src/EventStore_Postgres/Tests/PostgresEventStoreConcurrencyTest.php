@@ -358,6 +358,107 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
     }
 
     #[DataProvider('implementationAndLockStrategyProvider')]
+    public function test_bucket_lock_allows_concurrent_write_for_same_course_and_different_student_pair(
+        string $implementation,
+        string $lockStrategy,
+    ): void
+    {
+        $dsn = $this->postgresDsn();
+
+        $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn, $implementation, $lockStrategy): void {
+            $studentOneQuery = StreamQuery::forStream(
+                new DomainIdentifier('courseId', 'course-123'),
+                new DomainIdentifier('studentId', 'student-1'),
+            )->ofTypes('student.subscribed');
+            $studentTwoQuery = StreamQuery::forStream(
+                new DomainIdentifier('courseId', 'course-123'),
+                new DomainIdentifier('studentId', 'student-2'),
+            )->ofTypes('student.subscribed');
+
+            $studentOneEvent = new Event(
+                eventType: 'student.subscribed',
+                payload: [],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
+            );
+            $studentTwoEvent = new Event(
+                eventType: 'student.subscribed',
+                payload: [],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
+            );
+
+            $workerA = null;
+            $workerB = null;
+
+            try {
+                $store->append([$studentOneEvent]);
+                $staleVersion = $store->load($studentOneQuery)->queryVersion;
+
+                $workerA = self::startConcurrencyWorker([
+                    'dsn' => $dsn,
+                    'tablePrefix' => $prefix,
+                    'implementation' => $implementation,
+                    'lockStrategy' => $lockStrategy,
+                    'mode' => 'hold_then_commit',
+                    ...self::queryVersionToWorkerConfig($staleVersion, $studentOneQuery),
+                    'event' => [
+                        'eventType' => $studentOneEvent->eventType,
+                        'payload' => $studentOneEvent->payload,
+                        'domainIds' => $studentOneEvent->domainIds,
+                    ],
+                ], true);
+
+                $workerA->waitForEvent('ready', 5_000);
+
+                $workerB = self::startConcurrencyWorker([
+                    'dsn' => $dsn,
+                    'tablePrefix' => $prefix,
+                    'implementation' => $implementation,
+                    'lockStrategy' => $lockStrategy,
+                    'mode' => 'append_once',
+                    'event' => [
+                        'eventType' => $studentTwoEvent->eventType,
+                        'payload' => $studentTwoEvent->payload,
+                        'domainIds' => $studentTwoEvent->domainIds,
+                    ],
+                    'lockTimeoutMs' => 5_000,
+                ]);
+
+                $workerB->waitForEvent('attempting', 5_000);
+
+                if ('bucket' === $lockStrategy) {
+                    $workerBResult = $workerB->waitForResult(5_000);
+                    $workerB = null;
+                    self::assertSame(0, $workerBResult['exitCode'], $workerBResult['stderr']);
+                    self::assertSame('ok', $workerBResult['status']);
+                } else {
+                    usleep(250_000);
+                    self::assertTrue($workerB->isRunning());
+                }
+
+                $workerA->send('release', true);
+                $workerAResult = $workerA->waitForResult(5_000);
+                $workerA = null;
+
+                self::assertSame(0, $workerAResult['exitCode']);
+                self::assertSame('ok', $workerAResult['status']);
+
+                if (null !== $workerB) {
+                    $workerBResult = $workerB->waitForResult(5_000);
+                    $workerB = null;
+                    self::assertSame(0, $workerBResult['exitCode'], $workerBResult['stderr']);
+                    self::assertSame('ok', $workerBResult['status']);
+                }
+
+                self::assertCount(2, $store->load($studentOneQuery)->events);
+                self::assertCount(1, $store->load($studentTwoQuery)->events);
+            } finally {
+                $workerA?->stop();
+                $workerB?->stop();
+            }
+        }, $implementation, $lockStrategy);
+    }
+
+    #[DataProvider('implementationAndLockStrategyProvider')]
     public function test_implementation_rejects_a_stale_multi_branch_query_version_when_a_lower_event_id_becomes_visible_later(
         string $implementation,
         string $lockStrategy,
