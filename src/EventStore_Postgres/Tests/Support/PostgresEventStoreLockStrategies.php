@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventStore_Postgres;
+namespace Ultra\EventStore_Postgres\Tests\Support;
+
+use Ultra\EventStore_Postgres\LockStrategy\BucketLockStrategy;
+use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
+use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
 final class PostgresEventStoreLockStrategies
 {
@@ -14,11 +18,11 @@ final class PostgresEventStoreLockStrategies
         return ['shared-exclusive', 'bucket'];
     }
 
-    public static function fromName(string $name): PostgresEventStoreLockStrategy
+    public static function fromName(string $name): LockStrategy
     {
         return match (strtolower(trim($name))) {
-            'shared-exclusive' => new PostgresEventStoreSharedExclusiveLockStrategy(),
-            'bucket' => new PostgresEventStoreBucketLockStrategy(),
+            'shared-exclusive' => new SharedExclusiveLockStrategy(),
+            'bucket' => new BucketLockStrategy(),
             default => throw new \InvalidArgumentException(sprintf(
                 'Unsupported Postgres event store lock strategy "%s". Expected one of: %s.',
                 $name,

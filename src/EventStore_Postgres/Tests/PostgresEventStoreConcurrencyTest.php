@@ -17,6 +17,8 @@ use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedImplementations;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedLockStrategies;
 
 final class ConcurrencyWorker
 {

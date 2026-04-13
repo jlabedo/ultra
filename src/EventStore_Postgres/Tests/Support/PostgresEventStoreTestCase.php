@@ -9,12 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 
-use function Ultra\EventStore_Postgres\Tests\postgresTestConnection;
-use function Ultra\EventStore_Postgres\Tests\postgresTestSchemaForImplementation;
-use function Ultra\EventStore_Postgres\Tests\postgresTestStoreForImplementation;
-use function Ultra\EventStore_Postgres\Tests\postgresTestUniquePrefix;
-
-require_once dirname(__DIR__).'/PostgresTestSupport.php';
+require_once __DIR__.'/PostgresTestSupport.php';
 
 abstract class PostgresEventStoreTestCase extends TestCase
 {
@@ -50,9 +45,9 @@ abstract class PostgresEventStoreTestCase extends TestCase
 
             $callback($store, $connection, $prefix);
         } finally {
-            foreach ($schema->dropStatements() as $statement) {
-                $connection->executeStatement($statement);
-            }
+//            foreach ($schema->dropStatements() as $statement) {
+//                $connection->executeStatement($statement);
+//            }
 
             $connection->close();
         }

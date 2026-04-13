@@ -15,6 +15,8 @@ use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
+use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
 /**
  * PostgreSQL implementation of the event store backed by typed canonical query streams.
@@ -30,11 +32,11 @@ final class PostgresEventStoreHStore implements EventStore
     private CanonicalQueryKeyFactory $queryKeyFactory;
 
     public function __construct(
-        private readonly Connection $connection,
-        EventTopologyProvider $topologyProvider,
-        private readonly string $tablePrefix = 'event_store_',
+        private readonly Connection      $connection,
+        EventTopologyProvider            $topologyProvider,
+        private readonly string          $tablePrefix = 'event_store_',
         private readonly LoggerInterface $logger = new NullLogger(),
-        private readonly PostgresEventStoreLockStrategy $lockStrategy = new PostgresEventStoreSharedExclusiveLockStrategy(),
+        private readonly LockStrategy    $lockStrategy = new SharedExclusiveLockStrategy(),
     ) {
         $this->queryKeyFactory = new CanonicalQueryKeyFactory($topologyProvider);
     }

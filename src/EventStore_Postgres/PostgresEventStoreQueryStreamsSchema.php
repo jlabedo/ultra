@@ -4,14 +4,17 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore_Postgres;
 
+use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
+use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
+
 /**
  * Generates the PostgreSQL DDL required by `PostgresEventStoreQueryStreams`.
  */
 final readonly class PostgresEventStoreQueryStreamsSchema implements PostgresEventStoreSchemaDefinition
 {
     public function __construct(
-        private string $tablePrefix = 'event_store_',
-        private PostgresEventStoreLockStrategy $lockStrategy = new PostgresEventStoreSharedExclusiveLockStrategy(),
+        private string       $tablePrefix = 'event_store_',
+        private LockStrategy $lockStrategy = new SharedExclusiveLockStrategy(),
     ) {}
 
     /**

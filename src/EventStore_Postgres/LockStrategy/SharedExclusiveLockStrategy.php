@@ -2,14 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventStore_Postgres;
+namespace Ultra\EventStore_Postgres\LockStrategy;
 
 use Doctrine\DBAL\Connection;
 
 /**
  * Former lock strategy: read keys use shared advisory locks, write keys use exclusive advisory locks.
  */
-final readonly class PostgresEventStoreSharedExclusiveLockStrategy implements PostgresEventStoreLockStrategy
+final readonly class SharedExclusiveLockStrategy implements LockStrategy
 {
     public function name(): string
     {

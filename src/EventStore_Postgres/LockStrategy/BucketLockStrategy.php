@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventStore_Postgres;
+namespace Ultra\EventStore_Postgres\LockStrategy;
 
 use Doctrine\DBAL\Connection;
 
@@ -13,7 +13,7 @@ use Doctrine\DBAL\Connection;
  * same key acquires both buckets for that key, which preserves optimistic concurrency validation while
  * still allowing unguarded writes for the same key to run concurrently.
  */
-final readonly class PostgresEventStoreBucketLockStrategy implements PostgresEventStoreLockStrategy
+final readonly class BucketLockStrategy implements LockStrategy
 {
     public function name(): string
     {

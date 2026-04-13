@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventStore_Postgres;
+namespace Ultra\EventStore_Postgres\LockStrategy;
 
 use Doctrine\DBAL\Connection;
 
-interface PostgresEventStoreLockStrategy
+interface LockStrategy
 {
     public function name(): string;
 

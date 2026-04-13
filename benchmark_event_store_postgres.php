@@ -7,17 +7,16 @@ require_once __DIR__ . '/src/EventStore_Postgres/Tests/PostgresTestSupport.php';
 
 use Doctrine\DBAL\Connection;
 use Psr\Log\AbstractLogger;
-use Psr\Log\NullLogger;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
-use function Ultra\EventStore_Postgres\Tests\postgresTestConnection;
-use function Ultra\EventStore_Postgres\Tests\postgresTestSchemaForImplementation;
-use function Ultra\EventStore_Postgres\Tests\postgresTestStoreForImplementation;
-use function Ultra\EventStore_Postgres\Tests\postgresTestSupportedLockStrategies;
-use function Ultra\EventStore_Postgres\Tests\postgresTestSupportedImplementations;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSchemaForImplementation;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedLockStrategies;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedImplementations;
 
 exit(main());
 

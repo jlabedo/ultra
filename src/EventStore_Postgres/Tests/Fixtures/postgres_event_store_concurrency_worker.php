@@ -7,11 +7,11 @@ use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
 
-use function Ultra\EventStore_Postgres\Tests\postgresTestConnection;
-use function Ultra\EventStore_Postgres\Tests\postgresTestStoreForImplementation;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation;
 
 require_once __DIR__.'/../../../../vendor/autoload.php';
-require_once __DIR__.'/../PostgresTestSupport.php';
+require_once __DIR__.'/../Support/PostgresTestSupport.php';
 
 /**
  * @param array<string, mixed> $message

@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventStore_Postgres\Tests;
+namespace Ultra\EventStore_Postgres\Tests\Support;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
@@ -12,10 +12,9 @@ use Psr\Log\NullLogger;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\StaticEventTopologyProvider;
+use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStoreSchema;
-use Ultra\EventStore_Postgres\PostgresEventStoreLockStrategies;
-use Ultra\EventStore_Postgres\PostgresEventStoreLockStrategy;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
 use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
@@ -72,7 +71,7 @@ function postgresTestSupportedLockStrategies(): array
     return PostgresEventStoreLockStrategies::names();
 }
 
-function postgresTestLockStrategy(string $lockStrategy): PostgresEventStoreLockStrategy
+function postgresTestLockStrategy(string $lockStrategy): LockStrategy
 {
     return PostgresEventStoreLockStrategies::fromName($lockStrategy);
 }
