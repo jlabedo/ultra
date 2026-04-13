@@ -2,16 +2,13 @@
 
 declare(strict_types=1);
 
-namespace App\Faculty\State;
+namespace App\Faculty\Read;
 
 use App\Faculty\Event\CourseCapacityChanged;
 use App\Faculty\Event\CourseCreated;
 use App\Faculty\Event\StudentEnrolledInFaculty;
 use App\Faculty\Event\StudentSubscribedToCourse;
 use App\Faculty\Event\StudentUnsubscribedFromCourse;
-use App\Faculty\Read\Model\CourseStatsView;
-use App\Faculty\Read\Model\FacultyOverviewView;
-use App\Faculty\Read\Model\StudentProfileView;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
 

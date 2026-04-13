@@ -8,7 +8,7 @@ use App\Faculty\Event\CourseCapacityChanged;
 use App\Faculty\Event\CourseCreated;
 use App\Faculty\Event\StudentSubscribedToCourse;
 use App\Faculty\Event\StudentUnsubscribedFromCourse;
-use App\Faculty\Write\SendAllCoursesFullyBookedNotification\SendAllCoursesFullyBookedNotificationCommand;
+use App\Faculty\Write\SendAllCoursesFullyBookedNotificationCommand;
 use Ultra\MessageHandling\Attribute\EventHandler;
 use Ultra\MessageHandling\MediatorInterface;
 

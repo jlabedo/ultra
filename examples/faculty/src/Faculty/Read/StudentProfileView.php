@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Faculty\Read\Model;
+namespace App\Faculty\Read;
 
 final readonly class StudentProfileView implements \JsonSerializable
 {

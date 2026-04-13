@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\UnitOfWork_Bundle\Tests;
 
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
@@ -73,9 +74,8 @@ final class TaggedUnitOfWork implements UnitOfWork
 
 /**
  * @internal
- *
- * @coversNothing
  */
+#[CoversClass(UnitOfWorkBundle::class)]
 final class UnitOfWorkBundleTest extends TestCase
 {
     protected function setUp(): void

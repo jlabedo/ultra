@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Faculty\Write\CreateCourse;
+namespace App\Faculty\Write;
 
 use App\Faculty\Event\CourseCreated;
 use App\Faculty\State\CourseState;

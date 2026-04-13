@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Faculty\Write\SendAllCoursesFullyBookedNotification;
+namespace App\Faculty\Write;
 
 use App\Faculty\Event\AllCoursesFullyBookedNotificationSent;
 use App\Faculty\State\FacultyAdminNotificationState;

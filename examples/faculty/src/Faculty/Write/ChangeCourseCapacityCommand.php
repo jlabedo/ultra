@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Faculty\Write\ChangeCourseCapacity;
+namespace App\Faculty\Write;
 
 use App\Faculty\Event\CourseCapacityChanged;
 use App\Faculty\State\CourseState;

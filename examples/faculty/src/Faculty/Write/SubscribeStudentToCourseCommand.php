@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Faculty\Write\SubscribeStudentToCourse;
+namespace App\Faculty\Write;
 
 use App\Faculty\Event\StudentSubscribedToCourse;
 use App\Faculty\State\CourseState;

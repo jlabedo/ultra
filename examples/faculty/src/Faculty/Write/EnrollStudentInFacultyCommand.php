@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Faculty\Write\EnrollStudent;
+namespace App\Faculty\Write;
 
 use App\Faculty\Event\StudentEnrolledInFaculty;
 use App\Faculty\State\StudentState;

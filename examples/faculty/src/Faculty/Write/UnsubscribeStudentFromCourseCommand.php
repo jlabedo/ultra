@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace App\Faculty\Write\UnsubscribeStudentFromCourse;
+namespace App\Faculty\Write;
 
 use App\Faculty\Event\StudentUnsubscribedFromCourse;
 use App\Faculty\State\CourseState;
