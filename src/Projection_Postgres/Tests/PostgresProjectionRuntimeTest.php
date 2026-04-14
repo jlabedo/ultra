@@ -21,7 +21,7 @@ use Ultra\Projection_Postgres\PostgresProjectionRouter;
 use Ultra\Projection_Postgres\PostgresProjectionRuntimeRepository;
 
 require_once __DIR__.'/PostgresProjectionTestSupport.php';
-require_once __DIR__.'/../../EventStore_Postgres/Tests/PostgresTestSupport.php';
+require_once __DIR__.'/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
 
 #[Projection('course_names')]
 final class CourseNamesProjection
