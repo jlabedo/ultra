@@ -12,10 +12,7 @@ use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Events\CompiledEventRegistry;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\EventTopology;
-use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\InMemoryEventStore;
-use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\Mapper_Bundle\MapperBundle;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
@@ -32,7 +29,6 @@ abstract class DecisionEngineFunctionalTestCase extends TestCase
     protected function decisionUltraLight(array $eventClasses): UltraLight
     {
         $buildDir = dirname(__DIR__, 4).'/var/decision_engine_compiler_tests';
-        $topologyProvider = new StaticEventTopologyProvider(self::eventTopologyMap($eventClasses));
         $eventBus = new class () implements EventBusInterface {
             public function publish(object $event, array|MessageContext $context = []): void {}
         };
@@ -49,8 +45,7 @@ abstract class DecisionEngineFunctionalTestCase extends TestCase
             ->withBuildDir($buildDir)
             ->withBundle(new DecisionEngineBundle())
             ->withBundle(new MapperBundle())
-            ->withService($topologyProvider, EventTopologyProvider::class)
-            ->withService(new InMemoryEventStore($topologyProvider), InMemoryEventStore::class)
+            ->withService(new InMemoryEventStore(), InMemoryEventStore::class)
             ->withAlias(EventStore::class, InMemoryEventStore::class)
             ->withService($eventBus, EventBusInterface::class)
             ->withService(new CompiledEventRegistry(
@@ -87,24 +82,6 @@ abstract class DecisionEngineFunctionalTestCase extends TestCase
 
         foreach ($eventClasses as $eventClass) {
             $map[$eventClass] = self::eventDomainIdentifiers($eventClass);
-        }
-
-        return $map;
-    }
-
-    /**
-     * @param list<class-string> $eventClasses
-     *
-     * @return array<string, EventTopology>
-     */
-    private static function eventTopologyMap(array $eventClasses): array
-    {
-        $map = [];
-
-        foreach ($eventClasses as $eventClass) {
-            $map[self::eventName($eventClass)] = new EventTopology(
-                array_keys(self::eventDomainIdentifiers($eventClass)),
-            );
         }
 
         return $map;

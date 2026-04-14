@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore_Postgres;
 
-use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Ultra\EventStore\CanonicalQuery;
 use Ultra\EventStore\CanonicalQueryKeyFactory;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
@@ -20,13 +19,11 @@ use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
 /**
- * PostgreSQL event store implementation backed by a materialized `event_query_streams` table.
+ * PostgreSQL event store implementation backed by a normalized domain-identifier index.
  *
- * Events are stored once in the `events` table, while `event_query_streams` materializes membership in the
- * canonical singleton/pair keys used by supported queries. Those query-stream keys are persisted as fixed-width
- * binary SHA-256 digests to keep the table and index entries compact. `load()` is lock-free. `append()`
- * acquires transaction-scoped advisory locks, replays each expected query to compare its version, and
- * only then inserts new events.
+ * Events are stored once in the `events` table, while `event_domain_ids` stores one row per event domain
+ * identifier. `load()` is lock-free. `append()` acquires transaction-scoped advisory locks, replays each
+ * expected query to compare its version, and only then inserts new events.
  */
 final class PostgresEventStoreQueryStreams implements EventStore
 {
@@ -34,12 +31,11 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
     public function __construct(
         private readonly Connection      $connection,
-        EventTopologyProvider            $topologyProvider,
         private readonly string          $tablePrefix = 'event_store_',
         private readonly LoggerInterface $logger = new NullLogger(),
         private readonly LockStrategy    $lockStrategy = new SharedExclusiveLockStrategy(),
     ) {
-        $this->queryKeyFactory = new CanonicalQueryKeyFactory($topologyProvider);
+        $this->queryKeyFactory = new CanonicalQueryKeyFactory();
     }
 
     public function load(StreamQuery $query): LoadResult
@@ -49,8 +45,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
             return new LoadResult([], QueryVersion::empty($query));
         }
 
-        $keys = $canonicalQuery->allKeys();
-        $events = [] === $keys ? [] : $this->fetchEvents($keys);
+        $events = [] === $canonicalQuery->branches ? [] : $this->fetchEvents($canonicalQuery);
 
         return new LoadResult($events, new QueryVersion(count($events), $query));
     }
@@ -60,18 +55,18 @@ final class PostgresEventStoreQueryStreams implements EventStore
         $readKeys = [];
         $expectedQueries = [];
         foreach ($expectedVersions as $expectedVersion) {
-            $expectedReadKeys = $this->queryKeyFactory->resolveQuery($expectedVersion->query)->allKeys();
-            $expectedQueries[] = [$expectedVersion, $expectedReadKeys];
-            foreach ($expectedReadKeys as $readKey) {
+            $expectedCanonicalQuery = $this->queryKeyFactory->resolveQuery($expectedVersion->query);
+            $expectedQueries[] = [$expectedVersion, $expectedCanonicalQuery];
+            foreach ($expectedCanonicalQuery->allKeys() as $readKey) {
                 $readKeys[$readKey] = true;
             }
         }
 
-        $eventsWithKeys = [];
+        $eventsToInsert = [];
         $writeKeys = [];
         foreach ($events as $event) {
             $eventKeys = $this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds);
-            $eventsWithKeys[] = [$event, $eventKeys];
+            $eventsToInsert[] = $event;
             foreach ($eventKeys as $eventKey) {
                 $writeKeys[$eventKey] = true;
             }
@@ -85,26 +80,23 @@ final class PostgresEventStoreQueryStreams implements EventStore
         try {
             $this->lockStrategy->acquire($this->connection, $this->tablePrefix, array_keys($readKeys), array_keys($writeKeys));
 
-            foreach ($expectedQueries as [$expectedVersion, $expectedReadKeys]) {
-                $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedReadKeys), $expectedVersion->query);
+            foreach ($expectedQueries as [$expectedVersion, $expectedCanonicalQuery]) {
+                $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedCanonicalQuery), $expectedVersion->query);
                 $currentVersion->assertMatches($expectedVersion);
             }
 
-            if ([] !== $eventsWithKeys) {
-                $eventIds = $this->insertEvents(array_map(
-                    static fn(array $eventWithKeys): Event => $eventWithKeys[0],
-                    $eventsWithKeys,
-                ));
+            if ([] !== $eventsToInsert) {
+                $eventIds = $this->insertEvents($eventsToInsert);
 
-                $queryStreamRows = [];
-                foreach ($eventsWithKeys as $index => [$event, $queryStreamKeys]) {
+                $domainIdentifierRows = [];
+                foreach ($eventsToInsert as $index => $event) {
                     $eventId = $eventIds[$index];
-                    foreach ($queryStreamKeys as $queryStreamKey) {
-                        $queryStreamRows[] = [$eventId, $this->storageKeyForQueryStream($queryStreamKey)];
+                    foreach ($event->domainIds as $name => $value) {
+                        $domainIdentifierRows[] = [$eventId, $name, $value];
                     }
                 }
 
-                $this->insertEventQueryStreams($queryStreamRows);
+                $this->insertEventDomainIdentifiers($domainIdentifierRows);
             }
 
             if ($ownsTransaction) {
@@ -120,48 +112,45 @@ final class PostgresEventStoreQueryStreams implements EventStore
     }
 
     /**
-     * @param list<string> $queryStreamKeys
+     * Return the visible version for the validated query.
      */
-    private function fetchQueryVersion(array $queryStreamKeys): int
+    private function fetchQueryVersion(CanonicalQuery $canonicalQuery): int
     {
-        if ([] === $queryStreamKeys) {
+        if ([] === $canonicalQuery->branches) {
             return 0;
         }
 
+        [$whereClause, $params] = $this->canonicalQueryPredicate($canonicalQuery);
+
         return (int) $this->connection->executeQuery(
             sprintf(
-                'SELECT COUNT(DISTINCT event_id)
-                 FROM %s
-                 WHERE query_stream_key IN (?)',
-                $this->eventQueryStreamsTable(),
+                'SELECT COUNT(*)
+                 FROM %s e
+                 WHERE %s',
+                $this->eventsTable(),
+                $whereClause,
             ),
-            [$this->storageKeysForQueryStreams($queryStreamKeys)],
-            [ArrayParameterType::BINARY],
+            $params,
         )->fetchOne();
     }
 
     /**
-     * @param list<string> $queryStreamKeys
-     *
      * @return list<Event>
      */
-    private function fetchEvents(array $queryStreamKeys): array
+    private function fetchEvents(CanonicalQuery $canonicalQuery): array
     {
+        [$whereClause, $params] = $this->canonicalQueryPredicate($canonicalQuery);
+
         $rows = $this->connection->executeQuery(
             sprintf(
                 'SELECT e.event_id, e.event_type, e.payload, e.domain_ids, e.recorded_at
                  FROM %1$s e
-                 WHERE e.event_id IN (
-                     SELECT event_id
-                     FROM %2$s
-                     WHERE query_stream_key IN (?)
-                 )
+                 WHERE %2$s
                  ORDER BY e.event_id ASC',
                 $this->eventsTable(),
-                $this->eventQueryStreamsTable(),
+                $whereClause,
             ),
-            [$this->storageKeysForQueryStreams($queryStreamKeys)],
-            [ArrayParameterType::BINARY],
+            $params,
         )->fetchAllAssociative();
 
         $events = [];
@@ -214,28 +203,30 @@ final class PostgresEventStoreQueryStreams implements EventStore
     }
 
     /**
-     * @param list<array{0: int, 1: string}> $rows
+     * @param list<array{0: int, 1: string, 2: string}> $rows
      */
-    private function insertEventQueryStreams(array $rows): void
+    private function insertEventDomainIdentifiers(array $rows): void
     {
         if ([] === $rows) {
             return;
         }
 
-        $placeholders = implode(', ', array_fill(0, count($rows), '(?, ?::bytea)'));
+        $placeholders = implode(', ', array_fill(0, count($rows), '(?, ?, ?)'));
         $params = [];
         $types = [];
-        foreach ($rows as [$eventId, $queryStreamKey]) {
+        foreach ($rows as [$eventId, $name, $value]) {
             $params[] = $eventId;
             $types[] = ParameterType::INTEGER;
-            $params[] = $queryStreamKey;
-            $types[] = ParameterType::BINARY;
+            $params[] = $name;
+            $types[] = ParameterType::STRING;
+            $params[] = $value;
+            $types[] = ParameterType::STRING;
         }
 
         $this->connection->executeStatement(
             sprintf(
-                'INSERT INTO %s (event_id, query_stream_key) VALUES %s',
-                $this->eventQueryStreamsTable(),
+                'INSERT INTO %s (event_id, identifier_name, identifier_value) VALUES %s',
+                $this->eventDomainIdsTable(),
                 $placeholders,
             ),
             $params,
@@ -248,29 +239,52 @@ final class PostgresEventStoreQueryStreams implements EventStore
         return $this->tablePrefix . 'events';
     }
 
-    private function eventQueryStreamsTable(): string
+    private function eventDomainIdsTable(): string
     {
-        return $this->tablePrefix . 'event_query_streams';
+        return $this->tablePrefix . 'event_domain_ids';
     }
 
     /**
-     * @param list<string> $queryStreamKeys
-     *
-     * @return list<string>
+     * @return array{0: string, 1: list<mixed>}
      */
-    private function storageKeysForQueryStreams(array $queryStreamKeys): array
+    private function canonicalQueryPredicate(CanonicalQuery $canonicalQuery): array
     {
-        sort($queryStreamKeys);
+        $clauses = [];
+        $params = [];
 
-        return array_map(
-            fn(string $queryStreamKey): string => $this->storageKeyForQueryStream($queryStreamKey),
-            $queryStreamKeys,
-        );
-    }
+        foreach ($canonicalQuery->branches as $branch) {
+            $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
+            $identifierClauses = [];
+            $domainIdentifiers = $branch->domainIdentifiers;
+            $branchParams = $branch->eventTypes;
+            ksort($domainIdentifiers);
 
-    private function storageKeyForQueryStream(string $queryStreamKey): string
-    {
-        return hash('sha256', $queryStreamKey, true);
+            foreach ($domainIdentifiers as $name => $value) {
+                $identifierClauses[] = sprintf(
+                    'EXISTS (
+                        SELECT 1
+                        FROM %s d
+                        WHERE d.event_id = e.event_id
+                          AND d.identifier_name = ?
+                          AND d.identifier_value = ?
+                    )',
+                    $this->eventDomainIdsTable(),
+                );
+
+                $branchParams[] = $name;
+                $branchParams[] = $value;
+            }
+
+            $clauses[] = sprintf(
+                '(e.event_type IN (%s) AND %s)',
+                $eventTypePlaceholders,
+                [] === $identifierClauses ? 'TRUE' : implode(' AND ', $identifierClauses),
+            );
+
+            array_push($params, ...$branchParams);
+        }
+
+        return [implode(' OR ', $clauses), $params];
     }
 
 }

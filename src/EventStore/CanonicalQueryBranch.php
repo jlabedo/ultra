@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Ultra\EventStore;
 
 /**
- * One validated branch of a canonical query.
+ * One validated branch of a stream query.
  *
- * A branch keeps the original domain identifiers plus the canonical query-stream keys generated for each
- * requested event type. Those keys remain the units used for optimistic concurrency.
+ * A branch keeps the original domain identifiers plus the lock keys generated for each requested event type.
+ * Those keys remain the units used for optimistic concurrency.
  */
 readonly class CanonicalQueryBranch
 {

@@ -18,10 +18,7 @@ use Ultra\Events\CompiledEventRegistry;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\EventTopology;
-use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\InMemoryEventStore;
-use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\EventHandler;
 use Ultra\MessageHandling\Attribute\SelfHandler;
@@ -115,13 +112,7 @@ final class DecisionEngineBundleTest extends TestCase
             ->setArguments([DECISION_ENGINE_BUNDLE_TEST_BUILD_DIR.'/normalizer'])
         ;
 
-        $container->register(EventTopologyProvider::class, StaticEventTopologyProvider::class)
-            ->setArguments([[
-                'decision_engine_bundle.course_created' => new EventTopology(['course']),
-            ]])
-        ;
         $container->register(InMemoryEventStore::class, InMemoryEventStore::class)
-            ->setArguments([new Reference(EventTopologyProvider::class)])
         ;
         $container->setAlias(EventStore::class, InMemoryEventStore::class);
 

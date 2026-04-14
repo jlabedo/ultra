@@ -4,8 +4,8 @@ PostgreSQL implementations of `Ultra\EventStore\EventStore`.
 
 ## Implementations
 
-- **PostgresEventStore** – Stores events in one `events` table and evaluates canonical queries directly from the persisted event rows.
-- **PostgresEventStoreQueryStreams** – Stores events once and also materializes query-stream membership in `event_query_streams` for faster query replay on supported canonical streams.
+- **PostgresEventStoreHStore** – Stores events in one `events` table and evaluates queries directly from the persisted `hstore` domain identifiers.
+- **PostgresEventStoreQueryStreams** – Stores events once and also indexes one row per domain identifier in `event_domain_ids` for relational query replay.
 
 Both implementations share the same public contract:
 
@@ -16,8 +16,8 @@ Both implementations share the same public contract:
 
 `append()` is responsible for:
 
-1. Resolving all read-side canonical keys from the expected query versions.
-2. Resolving all write-side keys from the events being appended.
+1. Resolving all read-side keys from the expected query versions.
+2. Resolving all write-side singleton and pair keys from the events being appended.
 3. Acquiring advisory locks in deterministic order.
 4. Validating every expected query version under those locks.
 5. Inserting the events once.
@@ -43,6 +43,6 @@ This makes them work naturally with:
 
 ## Choosing an Implementation
 
-Use `PostgresEventStore` when you want the simpler storage model based on direct event-table queries.
+Use `PostgresEventStoreHStore` when you want the simpler storage model based on direct event-table queries.
 
-Use `PostgresEventStoreQueryStreams` when you want query-stream membership materialized explicitly and are comfortable maintaining the extra table.
+Use `PostgresEventStoreQueryStreams` when you want a normalized domain-identifier index instead of the `hstore` extension.

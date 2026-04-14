@@ -6,7 +6,6 @@ namespace Ultra\DecisionEngine\Tests\Support;
 
 use Ultra\DecisionEngine\Engine;
 use Ultra\Events\EventRegistryInterface;
-use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling_Compiler\Tests\Support\UltraLightContainer;
@@ -26,11 +25,6 @@ final readonly class DecisionEngineTestContainer extends UltraLightContainer
     public function eventRegistry(): EventRegistryInterface
     {
         return $this->get(EventRegistryInterface::class);
-    }
-
-    public function eventTopologyProvider(): EventTopologyProvider
-    {
-        return $this->get(EventTopologyProvider::class);
     }
 
     public function normalizer(): UltraNormalizer

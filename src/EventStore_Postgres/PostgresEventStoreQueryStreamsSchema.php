@@ -35,11 +35,20 @@ final readonly class PostgresEventStoreQueryStreamsSchema implements PostgresEve
                 )
             SQL,
             <<<SQL
-            CREATE TABLE {$tablePrefix}event_query_streams (
+            CREATE INDEX {$tablePrefix}events_event_type_event_id_idx
+                ON {$tablePrefix}events (event_type, event_id)
+            SQL,
+            <<<SQL
+            CREATE TABLE {$tablePrefix}event_domain_ids (
                     event_id BIGINT NOT NULL,
-                    query_stream_key BYTEA NOT NULL,
-                    PRIMARY KEY (query_stream_key, event_id)
+                    identifier_name TEXT NOT NULL,
+                    identifier_value TEXT NOT NULL,
+                    PRIMARY KEY (identifier_name, identifier_value, event_id)
                 )
+            SQL,
+            <<<SQL
+            CREATE INDEX {$tablePrefix}event_domain_ids_event_id_idx
+                ON {$tablePrefix}event_domain_ids (event_id)
             SQL,
             ...$this->lockStrategy->createStatements($this->tablePrefix),
         ];
@@ -52,7 +61,7 @@ final readonly class PostgresEventStoreQueryStreamsSchema implements PostgresEve
     {
         return [
             ...$this->lockStrategy->dropStatements($this->tablePrefix),
-            sprintf('DROP TABLE IF EXISTS %sevent_query_streams', $this->tablePrefix),
+            sprintf('DROP TABLE IF EXISTS %sevent_domain_ids', $this->tablePrefix),
             sprintf('DROP TABLE IF EXISTS %sevents', $this->tablePrefix),
         ];
     }

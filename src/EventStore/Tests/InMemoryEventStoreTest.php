@@ -95,16 +95,21 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertSame(1, $result->queryVersion->version);
     }
 
-    public function test_append_rejects_events_without_registered_topology(): void
+    public function test_append_accepts_new_event_types_without_registration(): void
     {
-        $this->expectException(UnsupportedQueryException::class);
+        $store = $this->store();
+        $query = StreamQuery::forStream(
+            new DomainIdentifier('courseId', 'course-123'),
+        )->ofTypes('course.deleted');
 
-        $this->store()->append([
+        $store->append([
             self::event(
                 eventType: 'course.deleted',
                 domainIds: ['courseId' => 'course-123'],
             ),
         ]);
+
+        self::assertCount(1, $store->load($query)->events);
     }
 
     public function test_append_with_stale_singleton_query_version_throws_concurrency_exception(): void
@@ -164,7 +169,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertCount(1, $store->load($pairQuery)->events);
     }
 
-    public function test_canonical_pair_query_does_not_conflict_for_same_course_and_different_student(): void
+    public function test_pair_query_does_not_conflict_for_same_course_and_different_student(): void
     {
         $store = $this->store();
         $query = StreamQuery::forStream(
@@ -210,7 +215,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertCount(2, $store->load($query)->events);
     }
 
-    public function test_canonical_pair_query_conflicts_for_the_same_pair(): void
+    public function test_pair_query_conflicts_for_the_same_pair(): void
     {
         $store = $this->store();
         $query = StreamQuery::forStream(
@@ -276,23 +281,25 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         )->ofTypes('student.subscribed'));
     }
 
-    public function test_non_canonical_pair_throws_unsupported_query_exception(): void
+    public function test_pair_queries_do_not_require_registration(): void
     {
-        $this->expectException(UnsupportedQueryException::class);
-
-        $this->store()->load(StreamQuery::forStream(
+        $store = $this->store();
+        $query = StreamQuery::forStream(
             new DomainIdentifier('facultyId', 'faculty-1'),
             new DomainIdentifier('courseId', 'course-123'),
-        )->ofTypes('student.subscribed'));
-    }
+        )->ofTypes('student.subscribed');
 
-    public function test_mixed_type_branch_with_unsupported_identifiers_throws_unsupported_query_exception(): void
-    {
-        $this->expectException(UnsupportedQueryException::class);
+        $store->append([
+            self::event(
+                eventType: 'student.subscribed',
+                domainIds: [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ],
+            ),
+        ]);
 
-        $this->store()->load(StreamQuery::forStream(
-            new DomainIdentifier('courseId', 'course-123'),
-            new DomainIdentifier('studentId', 'student-1'),
-        )->ofTypes('course.created', 'student.subscribed'));
+        self::assertCount(1, $store->load($query)->events);
     }
 }

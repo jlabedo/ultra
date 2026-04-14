@@ -6,7 +6,6 @@ namespace App\Faculty\Infrastructure\EventStore;
 
 use Doctrine\DBAL\Connection;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 
@@ -15,7 +14,6 @@ final readonly class FacultyEventStoreFactory
     public const DEFAULT_TABLE_PREFIX = 'faculty_';
 
     public function __construct(
-        private EventTopologyProvider $topologyProvider,
         private ?Connection $connection = null,
         private string $tablePrefix = self::DEFAULT_TABLE_PREFIX,
     ) {}
@@ -23,12 +21,11 @@ final readonly class FacultyEventStoreFactory
     public function create(): EventStore
     {
         if (! $this->shouldUsePostgres()) {
-            return new InMemoryEventStore($this->topologyProvider);
+            return new InMemoryEventStore();
         }
 
         return new PostgresEventStoreHStore(
             $this->connection,
-            $this->topologyProvider,
             $this->tablePrefix,
         );
     }

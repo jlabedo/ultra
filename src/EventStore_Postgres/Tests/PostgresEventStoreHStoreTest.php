@@ -138,7 +138,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
         });
     }
 
-    public function test_canonical_pair_does_not_conflict_for_same_course_and_different_student(): void
+    public function test_pair_query_does_not_conflict_for_same_course_and_different_student(): void
     {
         $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $query = StreamQuery::forStream(
@@ -175,7 +175,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
         });
     }
 
-    public function test_canonical_pair_conflicts_for_same_pair(): void
+    public function test_pair_query_conflicts_for_same_pair(): void
     {
         $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $query = StreamQuery::forStream(
@@ -212,7 +212,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
         });
     }
 
-    public function test_unsupported_query_shapes_throw_before_hitting_the_database(): void
+    public function test_three_identifier_query_shapes_throw_before_hitting_the_database(): void
     {
         $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $this->expectException(UnsupportedQueryException::class);
@@ -220,6 +220,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
             $store->load(StreamQuery::forStream(
                 new DomainIdentifier('facultyId', 'faculty-1'),
                 new DomainIdentifier('courseId', 'course-123'),
+                new DomainIdentifier('studentId', 'student-1'),
             )->ofTypes('student.subscribed'));
         });
     }

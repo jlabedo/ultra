@@ -24,9 +24,6 @@ services:
         exclude:
             - '../src/Kernel.php'
 
-    Ultra\EventStore\EventTopologyProvider:
-        alias: App\Faculty\Infrastructure\EventStore\FacultyEventTopologyProvider
-
     Ultra\EventStore\EventStore:
         factory: ['@App\Faculty\Infrastructure\EventStore\FacultyEventStoreFactory', 'create']
 

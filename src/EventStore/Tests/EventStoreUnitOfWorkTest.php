@@ -9,11 +9,9 @@ use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
-use Ultra\EventStore\EventTopology;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
-use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore\StreamQuery;
 
 /**
@@ -25,7 +23,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
 {
     public function test_load_includes_buffered_events_before_flush(): void
     {
-        $store = new InMemoryEventStore($this->topologyProvider());
+        $store = new InMemoryEventStore();
         $uow = new EventStoreUnitOfWork($store);
         $query = StreamQuery::forStream(
             new DomainIdentifier('courseId', 'course-123'),
@@ -48,7 +46,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
 
     public function test_load_keeps_persisted_events_and_later_matching_buffered_events(): void
     {
-        $store = new InMemoryEventStore($this->topologyProvider());
+        $store = new InMemoryEventStore();
         $uow = new EventStoreUnitOfWork($store);
         $query = StreamQuery::forStream(
             new DomainIdentifier('courseId', 'course-123'),
@@ -86,7 +84,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
 
     public function test_load_keeps_persisted_query_version_when_pending_events_are_visible(): void
     {
-        $store = new InMemoryEventStore($this->topologyProvider());
+        $store = new InMemoryEventStore();
         $uow = new EventStoreUnitOfWork($store);
         $query = StreamQuery::forStream(
             new DomainIdentifier('courseId', 'course-123'),
@@ -108,7 +106,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
 
     public function test_flush_persists_buffered_appends_in_order(): void
     {
-        $store = new InMemoryEventStore($this->topologyProvider());
+        $store = new InMemoryEventStore();
         $uow = new EventStoreUnitOfWork($store);
         $query = StreamQuery::forStream(
             new DomainIdentifier('courseId', 'course-123'),
@@ -144,7 +142,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
     public function test_flush_uses_single_inner_append_call_and_passes_persisted_expected_versions_through(): void
     {
         $recordingStore = new RecordingEventStore(
-            new InMemoryEventStore($this->topologyProvider()),
+            new InMemoryEventStore(),
         );
         $uow = new EventStoreUnitOfWork($recordingStore);
         $query = StreamQuery::forStream(
@@ -182,7 +180,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
 
     public function test_clear_drops_buffered_appends(): void
     {
-        $store = new InMemoryEventStore($this->topologyProvider());
+        $store = new InMemoryEventStore();
         $uow = new EventStoreUnitOfWork($store);
         $query = StreamQuery::forStream(
             new DomainIdentifier('courseId', 'course-123'),
@@ -200,16 +198,6 @@ final class EventStoreUnitOfWorkTest extends TestCase
         $uow->flush();
 
         self::assertCount(0, $store->load($query)->events);
-    }
-
-    private function topologyProvider(): StaticEventTopologyProvider
-    {
-        return new StaticEventTopologyProvider([
-            'course.created' => new EventTopology(['courseId']),
-            'student.subscribed' => new EventTopology(['facultyId', 'courseId', 'studentId'], [
-                'courseId' => ['facultyId'],
-            ]),
-        ]);
     }
 }
 

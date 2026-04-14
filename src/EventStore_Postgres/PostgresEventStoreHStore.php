@@ -11,7 +11,6 @@ use Ultra\EventStore\CanonicalQuery;
 use Ultra\EventStore\CanonicalQueryKeyFactory;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
@@ -19,11 +18,11 @@ use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
 /**
- * PostgreSQL implementation of the event store backed by typed canonical query streams.
+ * PostgreSQL implementation of the event store backed by typed stream queries.
  *
  * Events are stored once in the `events` table, with `domain_ids` persisted directly as `hstore`. Queries are
- * resolved against the typed event type and indexed `domain_ids` containment, while canonical singleton/pair
- * keys remain the units used by optimistic-concurrency locks. `load()` is lock-free. `append()` acquires
+ * resolved against the typed event type and indexed `domain_ids` containment, while singleton/pair keys remain
+ * the units used by optimistic-concurrency locks. `load()` is lock-free. `append()` acquires
  * transaction-scoped advisory locks, replays the expected query to compare its version, and only
  * then inserts new events.
  */
@@ -33,16 +32,15 @@ final class PostgresEventStoreHStore implements EventStore
 
     public function __construct(
         private readonly Connection      $connection,
-        EventTopologyProvider            $topologyProvider,
         private readonly string          $tablePrefix = 'event_store_',
         private readonly LoggerInterface $logger = new NullLogger(),
         private readonly LockStrategy    $lockStrategy = new SharedExclusiveLockStrategy(),
     ) {
-        $this->queryKeyFactory = new CanonicalQueryKeyFactory($topologyProvider);
+        $this->queryKeyFactory = new CanonicalQueryKeyFactory();
     }
 
     /**
-     * Load and materialize the events matched by a typed canonical query.
+     * Load and materialize the events matched by a typed query.
      */
     public function load(StreamQuery $query): LoadResult
     {
@@ -111,7 +109,7 @@ final class PostgresEventStoreHStore implements EventStore
     }
 
     /**
-     * Return the visible version for the canonical query.
+     * Return the visible version for the validated query.
      */
     private function fetchQueryVersion(?CanonicalQuery $canonicalQuery): int
     {

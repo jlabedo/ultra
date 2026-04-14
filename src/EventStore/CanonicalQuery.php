@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Ultra\EventStore;
 
 /**
- * Canonical representation of a validated `StreamQuery`.
+ * Internal representation of a validated `StreamQuery`.
  *
- * It preserves the original query for callers while exposing the resolved branch metadata and canonical
- * query-stream keys that back concurrency checks.
+ * It preserves the original query for callers while exposing the resolved branch metadata and lock keys that
+ * back concurrency checks.
  */
 readonly class CanonicalQuery
 {

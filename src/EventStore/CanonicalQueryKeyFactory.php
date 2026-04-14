@@ -7,22 +7,18 @@ namespace Ultra\EventStore;
 use Ultra\EventStore\Exception\UnsupportedQueryException;
 
 /**
- * Validates typed stream queries and turns them into canonical query-stream keys.
+ * Validates typed stream queries and turns them into optimistic-concurrency lock keys.
  *
- * Query validation is deliberately strict: each branch must be typed, may contain at most two identifiers,
- * and pairs must already be canonical for every requested event type. The same factory is also used when
- * indexing appended events so in-memory and persisted stores agree on the exact key set.
+ * Query validation is deliberately strict: each branch must be typed and may contain at most two identifiers.
+ * The same factory is also used when deriving appended-event lock keys so in-memory and persisted stores
+ * agree on the exact optimistic-concurrency key set.
  */
 final readonly class CanonicalQueryKeyFactory
 {
-    public function __construct(
-        private EventTopologyProvider $topologyProvider,
-    ) {}
-
     /**
-     * Resolve a user-facing `StreamQuery` into a validated canonical form.
+     * Resolve a user-facing `StreamQuery` into a validated internal form.
      *
-     * @throws UnsupportedQueryException when a branch is untyped, too wide, unsupported, or non-canonical
+     * @throws UnsupportedQueryException when a branch is untyped or too wide
      */
     public function resolveQuery(StreamQuery $query): CanonicalQuery
     {
@@ -37,38 +33,11 @@ final readonly class CanonicalQueryKeyFactory
             }
 
             if (count($criteria) > 2) {
-                throw new UnsupportedQueryException('Canonical query branches may contain at most two domain identifiers.');
+                throw new UnsupportedQueryException('Query branches may contain at most two domain identifiers.');
             }
 
             $keys = [];
             foreach ($eventTypes as $eventType) {
-                $topology = $this->topologyProvider->get($eventType);
-                if (null === $topology) {
-                    throw new UnsupportedQueryException(sprintf('No event topology is registered for event type "%s".', $eventType));
-                }
-
-                $dimensions = array_keys($criteria);
-                if (! $topology->supportsAll($dimensions)) {
-                    throw new UnsupportedQueryException(sprintf(
-                        'Query branch [%s] is not supported for event type "%s".',
-                        implode(', ', $dimensions),
-                        $eventType,
-                    ));
-                }
-
-                if (2 === count($dimensions)) {
-                    $canonical = $topology->canonicalize($dimensions);
-                    $sorted = $dimensions;
-                    sort($sorted);
-                    if ($canonical !== $sorted) {
-                        throw new UnsupportedQueryException(sprintf(
-                            'Query branch [%s] is not a canonical pair for event type "%s".',
-                            implode(', ', $sorted),
-                            $eventType,
-                        ));
-                    }
-                }
-
                 $keys[] = $this->buildKey($eventType, $criteria);
             }
 
@@ -86,25 +55,10 @@ final readonly class CanonicalQueryKeyFactory
      * @param array<string, string> $domainIds
      *
      * @return list<string>
-     *
-     * @throws UnsupportedQueryException when the event type has no topology or the event carries unsupported identifiers
      */
     public function keysForEvent(string $eventType, array $domainIds): array
     {
-        $topology = $this->topologyProvider->get($eventType);
-        if (null === $topology) {
-            throw new UnsupportedQueryException(sprintf('No event topology is registered for event type "%s".', $eventType));
-        }
-
         $dimensions = array_keys($domainIds);
-        if (! $topology->supportsAll($dimensions)) {
-            throw new UnsupportedQueryException(sprintf(
-                'Event type "%s" contains unsupported identifiers [%s] for its topology.',
-                $eventType,
-                implode(', ', $dimensions),
-            ));
-        }
-
         sort($dimensions);
         $keys = [];
         foreach ($dimensions as $dimension) {
@@ -114,11 +68,6 @@ final readonly class CanonicalQueryKeyFactory
         $count = count($dimensions);
         for ($i = 0; $i < $count; ++$i) {
             for ($j = $i + 1; $j < $count; ++$j) {
-                $pair = [$dimensions[$i], $dimensions[$j]];
-                if (2 !== count($topology->canonicalize($pair))) {
-                    continue;
-                }
-
                 $criteria = [
                     $dimensions[$i] => $domainIds[$dimensions[$i]],
                     $dimensions[$j] => $domainIds[$dimensions[$j]],
@@ -133,7 +82,7 @@ final readonly class CanonicalQueryKeyFactory
     /**
      * @param array<string, string> $criteria
      *
-     * Build the opaque storage key for a typed canonical query stream
+     * Build the opaque lock key for a typed query branch.
      */
     public function buildKey(string $eventType, array $criteria): string
     {

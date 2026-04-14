@@ -11,9 +11,9 @@ final class InMemoryEventStore implements EventStore
 
     private CanonicalQueryKeyFactory $queryKeyFactory;
 
-    public function __construct(?EventTopologyProvider $topologyProvider = null)
+    public function __construct()
     {
-        $this->queryKeyFactory = new CanonicalQueryKeyFactory($topologyProvider ?? new StaticEventTopologyProvider([]));
+        $this->queryKeyFactory = new CanonicalQueryKeyFactory();
     }
 
     public function load(StreamQuery $query): LoadResult
