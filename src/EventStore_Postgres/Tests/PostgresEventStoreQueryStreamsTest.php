@@ -127,4 +127,38 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
             self::assertSame(1, $result->queryVersion->version);
         }, 'query-streams');
     }
+
+    public function test_query_streams_implementation_supports_untyped_multi_identifier_queries(): void
+    {
+        $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
+            $query = StreamQuery::forStream(
+                new DomainIdentifier('facultyId', 'faculty-1'),
+                new DomainIdentifier('courseId', 'course-123'),
+                new DomainIdentifier('studentId', 'student-1'),
+            );
+
+            $store->append([
+                self::event('student.subscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+                self::event('student.unsubscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+                self::event('student.subscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-2',
+                ]),
+            ]);
+
+            $result = $store->load($query);
+
+            self::assertCount(2, $result->events);
+            self::assertSame(2, $result->queryVersion->version);
+        }, 'query-streams');
+    }
 }

@@ -5,7 +5,7 @@ Typed event store API with query-scoped optimistic concurrency.
 ## Core Model
 
 - **Event** – Neutral event value used for both `append()` input and `load()` output on the write side. It contains `eventType`, `payload`, `domainIds`, and optional `recordedAt`.
-- **StreamQuery** – Immutable branch list for typed stream queries. Each branch matches domain identifiers with AND semantics and event types with OR semantics. Use `forStream(...)->ofTypes(...)` for one branch and `anyOf(...)` for OR-composition.
+- **StreamQuery** – Immutable branch list for stream queries. Each branch matches domain identifiers with AND semantics and event types with OR semantics. An empty event type list means all event types. Use `forStream(...)->ofTypes(...)` for one branch and `anyOf(...)` for OR-composition.
 - **LoadResult** – Result of `load()`: a list of visible `Event` objects plus a `QueryVersion`.
 - **QueryVersion** – Optimistic-concurrency token tied to one exact `StreamQuery`.
 

@@ -9,17 +9,8 @@ final class InMemoryEventStore implements EventStore
     /** @var list<Event> */
     private array $events = [];
 
-    private StreamQueryLockKeys $queryLockKeys;
-
-    public function __construct()
-    {
-        $this->queryLockKeys = new StreamQueryLockKeys();
-    }
-
     public function load(StreamQuery $query): LoadResult
     {
-        $this->queryLockKeys->assertQuerySupported($query);
-
         $result = [];
         foreach ($this->events as $event) {
             if (! $query->matches($event)) {
@@ -36,7 +27,6 @@ final class InMemoryEventStore implements EventStore
     public function append(array $events, QueryVersion ...$expectedVersions): void
     {
         foreach ($expectedVersions as $expectedVersion) {
-            $this->queryLockKeys->assertQuerySupported($expectedVersion->query);
             $currentVersion = $this->buildQueryVersion($expectedVersion->query);
             $currentVersion->assertMatches($expectedVersion);
         }

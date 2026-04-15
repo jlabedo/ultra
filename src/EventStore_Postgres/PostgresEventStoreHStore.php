@@ -12,34 +12,28 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore\StreamQueryLockKeys;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
 /**
- * PostgreSQL implementation of the event store backed by typed stream queries.
+ * PostgreSQL implementation of the event store backed by stream queries.
  *
  * Events are stored once in the `events` table, with `domain_ids` persisted directly as `hstore`. Queries are
- * resolved against the typed event type and indexed `domain_ids` containment, while singleton/pair keys remain
- * the units used by optimistic-concurrency locks. `load()` is lock-free. `append()` acquires
- * transaction-scoped advisory locks, replays the expected query to compare its version, and only
- * then inserts new events.
+ * resolved against optional event type filters and indexed `domain_ids` containment. `load()` is lock-free.
+ * `append()` acquires transaction-scoped advisory locks, replays the expected query to compare its version,
+ * and only then inserts new events.
  */
 final class PostgresEventStoreHStore implements EventStore
 {
-    private StreamQueryLockKeys $queryLockKeys;
-
     public function __construct(
         private readonly Connection      $connection,
         private readonly string          $tablePrefix = 'event_store_',
         private readonly LoggerInterface $logger = new NullLogger(),
         private readonly LockStrategy    $lockStrategy = new SharedExclusiveLockStrategy(),
-    ) {
-        $this->queryLockKeys = new StreamQueryLockKeys();
-    }
+    ) {}
 
     /**
-     * Load and materialize the events matched by a typed query.
+     * Load and materialize the events matched by a query.
      */
     public function load(StreamQuery $query): LoadResult
     {
@@ -47,7 +41,6 @@ final class PostgresEventStoreHStore implements EventStore
             return new LoadResult([], QueryVersion::empty($query));
         }
 
-        $this->queryLockKeys->assertQuerySupported($query);
         $events = $this->fetchEvents($query);
 
         return new LoadResult($events, new QueryVersion(count($events), $query));
@@ -65,25 +58,18 @@ final class PostgresEventStoreHStore implements EventStore
 
         try {
             $expectedQueries = [];
-            $readKeys = [];
+            $readQueries = [];
             foreach ($expectedVersions as $expectedVersion) {
                 $expectedQueries[] = [$expectedVersion, $expectedVersion->query];
-                foreach ($this->queryLockKeys->readKeys($expectedVersion->query) as $readKey) {
-                    $readKeys[$readKey] = true;
-                }
+                $readQueries[] = $expectedVersion->query;
             }
 
             $eventsToInsert = [];
-            $writeKeys = [];
             foreach ($events as $event) {
                 $eventsToInsert[] = $event;
-                $eventKeys = $this->queryLockKeys->writeKeysForEvent($event->eventType, $event->domainIds);
-                foreach ($eventKeys as $eventKey) {
-                    $writeKeys[$eventKey] = true;
-                }
             }
 
-            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, array_keys($readKeys), array_keys($writeKeys));
+            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, $readQueries, $eventsToInsert);
 
             foreach ($expectedQueries as [$expectedVersion, $expectedQuery]) {
                 $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedQuery), $expectedVersion->query);
@@ -204,16 +190,21 @@ final class PostgresEventStoreHStore implements EventStore
         $params = [];
 
         foreach ($query->branches as $branch) {
-            $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
             [$domainIdsSql, $domainIdsParams] = $this->hstoreValueExpression($branch->domainIdentifiers);
 
-            $clauses[] = sprintf(
-                '(event_type IN (%s) AND domain_ids @> %s)',
-                $eventTypePlaceholders,
-                $domainIdsSql,
-            );
+            if ([] === $branch->eventTypes) {
+                $clauses[] = sprintf('(domain_ids @> %s)', $domainIdsSql);
+                array_push($params, ...$domainIdsParams);
+            } else {
+                $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
+                $clauses[] = sprintf(
+                    '(event_type IN (%s) AND domain_ids @> %s)',
+                    $eventTypePlaceholders,
+                    $domainIdsSql,
+                );
 
-            array_push($params, ...$branch->eventTypes, ...$domainIdsParams);
+                array_push($params, ...$branch->eventTypes, ...$domainIdsParams);
+            }
         }
 
         return [implode(' OR ', $clauses), $params];
@@ -243,5 +234,4 @@ final class PostgresEventStoreHStore implements EventStore
             $params,
         ];
     }
-
 }

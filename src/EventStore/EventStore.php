@@ -7,7 +7,7 @@ namespace Ultra\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 
 /**
- * Stores events and exposes optimistic concurrency over typed stream queries.
+ * Stores events and exposes optimistic concurrency over stream queries.
  *
  * A successful `load()` returns both the matching events and a `QueryVersion` token that captures the
  * original query plus the version of its materialized result. Passing that token back to `append()` allows
@@ -17,9 +17,6 @@ interface EventStore
 {
     /**
      * Load events matching the query.
-     *
-     * Implementations may reject queries they cannot represent safely for optimistic concurrency,
-     * for example untyped branches or branches with too many identifiers.
      */
     public function load(StreamQuery $query): LoadResult;
 

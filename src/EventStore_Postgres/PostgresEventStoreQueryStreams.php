@@ -13,7 +13,6 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore\StreamQueryLockKeys;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
@@ -26,16 +25,12 @@ use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
  */
 final class PostgresEventStoreQueryStreams implements EventStore
 {
-    private StreamQueryLockKeys $queryLockKeys;
-
     public function __construct(
         private readonly Connection      $connection,
         private readonly string          $tablePrefix = 'event_store_',
         private readonly LoggerInterface $logger = new NullLogger(),
         private readonly LockStrategy    $lockStrategy = new SharedExclusiveLockStrategy(),
-    ) {
-        $this->queryLockKeys = new StreamQueryLockKeys();
-    }
+    ) {}
 
     public function load(StreamQuery $query): LoadResult
     {
@@ -43,7 +38,6 @@ final class PostgresEventStoreQueryStreams implements EventStore
             return new LoadResult([], QueryVersion::empty($query));
         }
 
-        $this->queryLockKeys->assertQuerySupported($query);
         $events = $this->fetchEvents($query);
 
         return new LoadResult($events, new QueryVersion(count($events), $query));
@@ -51,23 +45,16 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
     public function append(array $events, QueryVersion ...$expectedVersions): void
     {
-        $readKeys = [];
         $expectedQueries = [];
+        $readQueries = [];
         foreach ($expectedVersions as $expectedVersion) {
             $expectedQueries[] = [$expectedVersion, $expectedVersion->query];
-            foreach ($this->queryLockKeys->readKeys($expectedVersion->query) as $readKey) {
-                $readKeys[$readKey] = true;
-            }
+            $readQueries[] = $expectedVersion->query;
         }
 
         $eventsToInsert = [];
-        $writeKeys = [];
         foreach ($events as $event) {
-            $eventKeys = $this->queryLockKeys->writeKeysForEvent($event->eventType, $event->domainIds);
             $eventsToInsert[] = $event;
-            foreach ($eventKeys as $eventKey) {
-                $writeKeys[$eventKey] = true;
-            }
         }
 
         $ownsTransaction = ! $this->connection->isTransactionActive();
@@ -76,7 +63,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
         }
 
         try {
-            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, array_keys($readKeys), array_keys($writeKeys));
+            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, $readQueries, $eventsToInsert);
 
             foreach ($expectedQueries as [$expectedVersion, $expectedQuery]) {
                 $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedQuery), $expectedVersion->query);
@@ -251,10 +238,9 @@ final class PostgresEventStoreQueryStreams implements EventStore
         $params = [];
 
         foreach ($query->branches as $branch) {
-            $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
             $identifierClauses = [];
             $domainIdentifiers = $branch->domainIdentifiers;
-            $branchParams = $branch->eventTypes;
+            $branchParams = [];
             ksort($domainIdentifiers);
 
             foreach ($domainIdentifiers as $name => $value) {
@@ -273,16 +259,23 @@ final class PostgresEventStoreQueryStreams implements EventStore
                 $branchParams[] = $value;
             }
 
-            $clauses[] = sprintf(
-                '(e.event_type IN (%s) AND %s)',
-                $eventTypePlaceholders,
-                [] === $identifierClauses ? 'TRUE' : implode(' AND ', $identifierClauses),
-            );
+            $identifierPredicate = [] === $identifierClauses ? 'TRUE' : implode(' AND ', $identifierClauses);
 
-            array_push($params, ...$branchParams);
+            if ([] === $branch->eventTypes) {
+                $clauses[] = sprintf('(%s)', $identifierPredicate);
+                array_push($params, ...$branchParams);
+            } else {
+                $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
+                $clauses[] = sprintf(
+                    '(e.event_type IN (%s) AND %s)',
+                    $eventTypePlaceholders,
+                    $identifierPredicate,
+                );
+
+                array_push($params, ...$branch->eventTypes, ...$branchParams);
+            }
         }
 
         return [implode(' OR ', $clauses), $params];
     }
-
 }

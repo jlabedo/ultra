@@ -7,7 +7,6 @@ namespace Ultra\EventStore\Tests;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Exception\ConcurrencyException;
-use Ultra\EventStore\Exception\UnsupportedQueryException;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\Tests\Support\EventStoreTestCase;
@@ -261,24 +260,52 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         ], $staleVersion);
     }
 
-    public function test_untyped_branch_throws_unsupported_query_exception(): void
+    public function test_untyped_query_loads_all_matching_event_types(): void
     {
-        $this->expectException(UnsupportedQueryException::class);
+        $store = $this->store();
+        $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'));
 
-        $this->store()->load(StreamQuery::forStream(
-            new DomainIdentifier('courseId', 'course-123'),
-        ));
+        $store->append([
+            self::event(eventType: 'course.created', domainIds: ['courseId' => 'course-123']),
+            self::event(eventType: 'course.renamed', domainIds: ['courseId' => 'course-123']),
+            self::event(eventType: 'course.created', domainIds: ['courseId' => 'course-999']),
+        ]);
+
+        $result = $store->load($query);
+
+        self::assertCount(2, $result->events);
+        self::assertSame(2, $result->queryVersion->version);
     }
 
-    public function test_three_identifier_branch_throws_unsupported_query_exception(): void
+    public function test_query_with_more_than_two_identifiers_loads_matching_events(): void
     {
-        $this->expectException(UnsupportedQueryException::class);
-
-        $this->store()->load(StreamQuery::forStream(
+        $store = $this->store();
+        $query = StreamQuery::forStream(
             new DomainIdentifier('facultyId', 'faculty-1'),
             new DomainIdentifier('courseId', 'course-123'),
             new DomainIdentifier('studentId', 'student-1'),
-        )->ofTypes('student.subscribed'));
+        )->ofTypes('student.subscribed');
+
+        $store->append([
+            self::event(
+                eventType: 'student.subscribed',
+                domainIds: [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ],
+            ),
+            self::event(
+                eventType: 'student.subscribed',
+                domainIds: [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-2',
+                ],
+            ),
+        ]);
+
+        self::assertCount(1, $store->load($query)->events);
     }
 
     public function test_pair_queries_do_not_require_registration(): void

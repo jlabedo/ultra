@@ -16,8 +16,8 @@ Both implementations share the same public contract:
 
 `append()` is responsible for:
 
-1. Resolving all read-side keys from the expected query versions.
-2. Resolving all write-side singleton and pair keys from the events being appended.
+1. Passing the expected query versions and appended events to the configured lock strategy.
+2. Letting the lock strategy resolve the read-side and write-side advisory-lock namespaces it needs.
 3. Acquiring advisory locks in deterministic order.
 4. Validating every expected query version under those locks.
 5. Inserting the events once.
@@ -26,8 +26,12 @@ That means one append can guard multiple stream snapshots at once.
 
 The lock mechanism is selected through `PostgresEventStoreLockStrategy` and must match the schema DDL:
 
-- `shared-exclusive` is the former strategy: read keys take shared advisory locks and write keys take exclusive advisory locks.
-- `bucket` uses separate read/write buckets per key. Same-bucket operations can run together, so unguarded writes to the same key can overlap, while guarded read/write conflicts still serialize.
+- `shared-exclusive` is the former strategy: read namespaces take shared advisory locks and write namespaces take exclusive advisory locks.
+- `bucket` uses separate read/write buckets per namespace. Same-bucket operations can run together, so unguarded writes to the same namespace can overlap, while guarded read/write conflicts still serialize.
+
+The current strategies support typed and untyped query branches with any number of domain identifiers. Untyped
+branches use a wildcard event-type namespace, and writes lock every non-empty domain-identifier subset for both
+the concrete event type and the wildcard.
 
 The Postgres benchmark script accepts `--lock-strategy=shared-exclusive` or `--lock-strategy=bucket`.
 
