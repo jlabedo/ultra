@@ -45,9 +45,9 @@ abstract class PostgresEventStoreTestCase extends TestCase
 
             $callback($store, $connection, $prefix);
         } finally {
-//            foreach ($schema->dropStatements() as $statement) {
-//                $connection->executeStatement($statement);
-//            }
+            foreach ($schema->dropStatements() as $statement) {
+                $connection->executeStatement($statement);
+            }
 
             $connection->close();
         }
