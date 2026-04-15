@@ -9,9 +9,10 @@ use Ultra\Projection_Postgres\PostgresProjectionRuntimeRepository;
 use Ultra\Projection_Postgres\PostgresProjectionRuntimeSchema;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSchemaForImplementation;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestUniquePrefix;
 
-require_once __DIR__.'/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
+require_once __DIR__ . '/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
 
 function withPostgresProjectionRuntime(callable $callback): void
 {
@@ -22,7 +23,7 @@ function withPostgresProjectionRuntime(callable $callback): void
 
     $connection = postgresTestConnection($dsn);
     $eventStorePrefix = postgresTestUniquePrefix();
-    $projectionPrefix = 'ultra_projection_'.bin2hex(random_bytes(4)).'_';
+    $projectionPrefix = 'ultra_projection_' . bin2hex(random_bytes(4)) . '_';
     $eventSchema = postgresTestSchemaForImplementation($eventStorePrefix, 'query-streams');
     $projectionSchema = new PostgresProjectionRuntimeSchema($projectionPrefix);
 

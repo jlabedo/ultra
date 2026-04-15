@@ -7,7 +7,6 @@ namespace Ultra\EventStore_Postgres\Tests;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Exception\ConcurrencyException;
-use Ultra\EventStore\Exception\UnsupportedQueryException;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
@@ -138,7 +137,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
         });
     }
 
-    public function test_canonical_pair_does_not_conflict_for_same_course_and_different_student(): void
+    public function test_pair_query_does_not_conflict_for_same_course_and_different_student(): void
     {
         $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $query = StreamQuery::forStream(
@@ -175,7 +174,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
         });
     }
 
-    public function test_canonical_pair_conflicts_for_same_pair(): void
+    public function test_pair_query_conflicts_for_same_pair(): void
     {
         $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $query = StreamQuery::forStream(
@@ -212,15 +211,42 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
         });
     }
 
-    public function test_unsupported_query_shapes_throw_before_hitting_the_database(): void
+    public function test_three_identifier_query_shapes_are_supported(): void
     {
         $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
-            $this->expectException(UnsupportedQueryException::class);
-
-            $store->load(StreamQuery::forStream(
+            $query = StreamQuery::forStream(
                 new DomainIdentifier('facultyId', 'faculty-1'),
                 new DomainIdentifier('courseId', 'course-123'),
-            )->ofTypes('student.subscribed'));
+                new DomainIdentifier('studentId', 'student-1'),
+            )->ofTypes('student.subscribed');
+
+            $store->append([
+                self::event('student.subscribed', [], [
+                    'facultyId' => 'faculty-1',
+                    'courseId' => 'course-123',
+                    'studentId' => 'student-1',
+                ]),
+            ]);
+
+            self::assertCount(1, $store->load($query)->events);
+        });
+    }
+
+    public function test_untyped_queries_load_all_matching_event_types(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
+            $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'));
+
+            $store->append([
+                self::event('course.created', [], ['courseId' => 'course-123']),
+                self::event('course.renamed', [], ['courseId' => 'course-123']),
+                self::event('course.created', [], ['courseId' => 'course-999']),
+            ]);
+
+            $result = $store->load($query);
+
+            self::assertCount(2, $result->events);
+            self::assertSame(2, $result->queryVersion->version);
         });
     }
 }

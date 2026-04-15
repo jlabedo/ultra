@@ -3,7 +3,7 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/vendor/autoload.php';
-require_once __DIR__ . '/src/EventStore_Postgres/Tests/PostgresTestSupport.php';
+require_once __DIR__ . '/src/EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
 
 use Doctrine\DBAL\Connection;
 use Psr\Log\AbstractLogger;
@@ -1015,7 +1015,7 @@ function analyzeEventStore(Connection $connection, string $tablePrefix, string $
     $connection->executeStatement(sprintf('ANALYZE %sevents', $tablePrefix));
 
     if ('query-streams' === $implementation) {
-        $connection->executeStatement(sprintf('ANALYZE %sevent_query_streams', $tablePrefix));
+        $connection->executeStatement(sprintf('ANALYZE %sevent_domain_ids', $tablePrefix));
     }
 }
 

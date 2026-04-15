@@ -9,17 +9,8 @@ final class InMemoryEventStore implements EventStore
     /** @var list<Event> */
     private array $events = [];
 
-    private CanonicalQueryKeyFactory $queryKeyFactory;
-
-    public function __construct(?EventTopologyProvider $topologyProvider = null)
-    {
-        $this->queryKeyFactory = new CanonicalQueryKeyFactory($topologyProvider ?? new StaticEventTopologyProvider([]));
-    }
-
     public function load(StreamQuery $query): LoadResult
     {
-        $canonicalQuery = $this->queryKeyFactory->resolveQuery($query);
-
         $result = [];
         foreach ($this->events as $event) {
             if (! $query->matches($event)) {
@@ -28,7 +19,7 @@ final class InMemoryEventStore implements EventStore
             $result[] = $event;
         }
 
-        $queryVersion = $this->buildQueryVersion($canonicalQuery);
+        $queryVersion = $this->buildQueryVersion($query);
 
         return new LoadResult($result, $queryVersion);
     }
@@ -36,7 +27,7 @@ final class InMemoryEventStore implements EventStore
     public function append(array $events, QueryVersion ...$expectedVersions): void
     {
         foreach ($expectedVersions as $expectedVersion) {
-            $currentVersion = $this->buildQueryVersion($this->queryKeyFactory->resolveQuery($expectedVersion->query));
+            $currentVersion = $this->buildQueryVersion($expectedVersion->query);
             $currentVersion->assertMatches($expectedVersion);
         }
 
@@ -47,7 +38,6 @@ final class InMemoryEventStore implements EventStore
 
     private function appendOne(Event $event): void
     {
-        $this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds);
         $this->events[] = new Event(
             eventType: $event->eventType,
             payload: $event->payload,
@@ -56,17 +46,17 @@ final class InMemoryEventStore implements EventStore
         );
     }
 
-    private function buildQueryVersion(CanonicalQuery $canonicalQuery): QueryVersion
+    private function buildQueryVersion(StreamQuery $query): QueryVersion
     {
         $version = 0;
         foreach ($this->events as $event) {
-            if (! $canonicalQuery->query->matches($event)) {
+            if (! $query->matches($event)) {
                 continue;
             }
 
             ++$version;
         }
 
-        return new QueryVersion($version, $canonicalQuery->query);
+        return new QueryVersion($version, $query);
     }
 }

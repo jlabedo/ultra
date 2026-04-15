@@ -45,12 +45,13 @@ readonly class QueryVersion
     private static function describeQuery(StreamQuery $query): string
     {
         $description = json_encode([
-            'domainIdentifiers' => $query->domainIdentifiers,
-            'eventNames' => array_values($query->eventNames),
-            'orCriteria' => array_values($query->orCriteria),
-            'orBranchEventNames' => null === $query->orBranchEventNames
-                ? null
-                : array_map(static fn (array $types): array => array_values($types), $query->orBranchEventNames),
+            'branches' => array_map(
+                static fn (StreamQueryBranch $branch): array => [
+                    'domainIdentifiers' => $branch->domainIdentifiers,
+                    'eventTypes' => $branch->eventTypes,
+                ],
+                $query->branches,
+            ),
         ]);
 
         return is_string($description) ? $description : 'query';

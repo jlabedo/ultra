@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ultra\EventStore_Postgres\LockStrategy;
 
 use Doctrine\DBAL\Connection;
+use Ultra\EventStore\Event;
+use Ultra\EventStore\StreamQuery;
 
 /**
  * Former lock strategy: read keys use shared advisory locks, write keys use exclusive advisory locks.
@@ -52,8 +54,9 @@ final readonly class SharedExclusiveLockStrategy implements LockStrategy
         ];
     }
 
-    public function acquire(Connection $connection, string $tablePrefix, array $readKeys, array $writeKeys): void
+    public function acquire(Connection $connection, string $tablePrefix, array $readQueries, array $writeEvents): void
     {
+        [$readKeys, $writeKeys] = $this->lockKeys($readQueries, $writeEvents);
         $modeByKey = [];
         foreach ($readKeys as $readKey) {
             $modeByKey[$readKey] = 'shared';
@@ -85,6 +88,32 @@ final readonly class SharedExclusiveLockStrategy implements LockStrategy
                 $this->postgresBoolArrayLiteral(array_values($lockInstructions)),
             ],
         )->free();
+    }
+
+    /**
+     * @param list<StreamQuery> $readQueries
+     * @param list<Event>       $writeEvents
+     *
+     * @return array{0: list<string>, 1: list<string>}
+     */
+    private function lockKeys(array $readQueries, array $writeEvents): array
+    {
+        $lockKeys = new StreamQueryLockKeys();
+        $readKeys = [];
+        foreach ($readQueries as $query) {
+            foreach ($lockKeys->readKeys($query) as $readKey) {
+                $readKeys[$readKey] = true;
+            }
+        }
+
+        $writeKeys = [];
+        foreach ($writeEvents as $event) {
+            foreach ($lockKeys->writeKeysForEvent($event->eventType, $event->domainIds) as $writeKey) {
+                $writeKeys[$writeKey] = true;
+            }
+        }
+
+        return [array_keys($readKeys), array_keys($writeKeys)];
     }
 
     private function acquireAdvisoryLocksFunction(string $tablePrefix): string

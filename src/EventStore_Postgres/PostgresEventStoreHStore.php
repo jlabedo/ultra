@@ -7,11 +7,8 @@ namespace Ultra\EventStore_Postgres;
 use Doctrine\DBAL\Connection;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Ultra\EventStore\CanonicalQuery;
-use Ultra\EventStore\CanonicalQueryKeyFactory;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\EventTopologyProvider;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
@@ -19,30 +16,24 @@ use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
 /**
- * PostgreSQL implementation of the event store backed by typed canonical query streams.
+ * PostgreSQL implementation of the event store backed by stream queries.
  *
  * Events are stored once in the `events` table, with `domain_ids` persisted directly as `hstore`. Queries are
- * resolved against the typed event type and indexed `domain_ids` containment, while canonical singleton/pair
- * keys remain the units used by optimistic-concurrency locks. `load()` is lock-free. `append()` acquires
- * transaction-scoped advisory locks, replays the expected query to compare its version, and only
- * then inserts new events.
+ * resolved against optional event type filters and indexed `domain_ids` containment. `load()` is lock-free.
+ * `append()` acquires transaction-scoped advisory locks, replays the expected query to compare its version,
+ * and only then inserts new events.
  */
 final class PostgresEventStoreHStore implements EventStore
 {
-    private CanonicalQueryKeyFactory $queryKeyFactory;
-
     public function __construct(
         private readonly Connection      $connection,
-        EventTopologyProvider            $topologyProvider,
         private readonly string          $tablePrefix = 'event_store_',
         private readonly LoggerInterface $logger = new NullLogger(),
         private readonly LockStrategy    $lockStrategy = new SharedExclusiveLockStrategy(),
-    ) {
-        $this->queryKeyFactory = new CanonicalQueryKeyFactory($topologyProvider);
-    }
+    ) {}
 
     /**
-     * Load and materialize the events matched by a typed canonical query.
+     * Load and materialize the events matched by a query.
      */
     public function load(StreamQuery $query): LoadResult
     {
@@ -50,8 +41,7 @@ final class PostgresEventStoreHStore implements EventStore
             return new LoadResult([], QueryVersion::empty($query));
         }
 
-        $canonicalQuery = $this->queryKeyFactory->resolveQuery($query);
-        $events = [] === $canonicalQuery->branches ? [] : $this->fetchEvents($canonicalQuery);
+        $events = $this->fetchEvents($query);
 
         return new LoadResult($events, new QueryVersion(count($events), $query));
     }
@@ -68,29 +58,21 @@ final class PostgresEventStoreHStore implements EventStore
 
         try {
             $expectedQueries = [];
-            $readKeys = [];
+            $readQueries = [];
             foreach ($expectedVersions as $expectedVersion) {
-                $expectedCanonicalQuery = $this->queryKeyFactory->resolveQuery($expectedVersion->query);
-                $expectedQueries[] = [$expectedVersion, $expectedCanonicalQuery];
-                foreach ($expectedCanonicalQuery->allKeys() as $readKey) {
-                    $readKeys[$readKey] = true;
-                }
+                $expectedQueries[] = [$expectedVersion, $expectedVersion->query];
+                $readQueries[] = $expectedVersion->query;
             }
 
             $eventsToInsert = [];
-            $writeKeys = [];
             foreach ($events as $event) {
                 $eventsToInsert[] = $event;
-                $eventKeys = $this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds);
-                foreach ($eventKeys as $eventKey) {
-                    $writeKeys[$eventKey] = true;
-                }
             }
 
-            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, array_keys($readKeys), array_keys($writeKeys));
+            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, $readQueries, $eventsToInsert);
 
-            foreach ($expectedQueries as [$expectedVersion, $expectedCanonicalQuery]) {
-                $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedCanonicalQuery), $expectedVersion->query);
+            foreach ($expectedQueries as [$expectedVersion, $expectedQuery]) {
+                $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedQuery), $expectedVersion->query);
                 $currentVersion->assertMatches($expectedVersion);
             }
 
@@ -111,15 +93,15 @@ final class PostgresEventStoreHStore implements EventStore
     }
 
     /**
-     * Return the visible version for the canonical query.
+     * Return the visible version for the validated query.
      */
-    private function fetchQueryVersion(?CanonicalQuery $canonicalQuery): int
+    private function fetchQueryVersion(StreamQuery $query): int
     {
-        if (null === $canonicalQuery || [] === $canonicalQuery->branches) {
+        if ($query->isEmpty()) {
             return 0;
         }
 
-        [$whereClause, $params] = $this->canonicalQueryPredicate($canonicalQuery);
+        [$whereClause, $params] = $this->queryPredicate($query);
 
         return (int) $this->connection->executeQuery(
             sprintf(
@@ -136,9 +118,9 @@ final class PostgresEventStoreHStore implements EventStore
     /**
      * @return list<Event>
      */
-    private function fetchEvents(CanonicalQuery $canonicalQuery): array
+    private function fetchEvents(StreamQuery $query): array
     {
-        [$whereClause, $params] = $this->canonicalQueryPredicate($canonicalQuery);
+        [$whereClause, $params] = $this->queryPredicate($query);
 
         $rows = $this->connection->executeQuery(
             sprintf(
@@ -202,22 +184,27 @@ final class PostgresEventStoreHStore implements EventStore
     /**
      * @return array{0: string, 1: list<mixed>}
      */
-    private function canonicalQueryPredicate(CanonicalQuery $canonicalQuery): array
+    private function queryPredicate(StreamQuery $query): array
     {
         $clauses = [];
         $params = [];
 
-        foreach ($canonicalQuery->branches as $branch) {
-            $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
+        foreach ($query->branches as $branch) {
             [$domainIdsSql, $domainIdsParams] = $this->hstoreValueExpression($branch->domainIdentifiers);
 
-            $clauses[] = sprintf(
-                '(event_type IN (%s) AND domain_ids @> %s)',
-                $eventTypePlaceholders,
-                $domainIdsSql,
-            );
+            if ([] === $branch->eventTypes) {
+                $clauses[] = sprintf('(domain_ids @> %s)', $domainIdsSql);
+                array_push($params, ...$domainIdsParams);
+            } else {
+                $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
+                $clauses[] = sprintf(
+                    '(event_type IN (%s) AND domain_ids @> %s)',
+                    $eventTypePlaceholders,
+                    $domainIdsSql,
+                );
 
-            array_push($params, ...$branch->eventTypes, ...$domainIdsParams);
+                array_push($params, ...$branch->eventTypes, ...$domainIdsParams);
+            }
         }
 
         return [implode(' OR ', $clauses), $params];
@@ -247,5 +234,4 @@ final class PostgresEventStoreHStore implements EventStore
             $params,
         ];
     }
-
 }

@@ -20,8 +20,7 @@ use Ultra\Projection_Postgres\PostgresInboxPartitionWorker;
 use Ultra\Projection_Postgres\PostgresProjectionRouter;
 use Ultra\Projection_Postgres\PostgresProjectionRuntimeRepository;
 
-require_once __DIR__.'/PostgresProjectionTestSupport.php';
-require_once __DIR__.'/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
+require_once __DIR__ . '/PostgresProjectionTestSupport.php';
 
 #[Projection('course_names')]
 final class CourseNamesProjection
@@ -127,7 +126,7 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {
-        $tableName = $projectionPrefix.'course_names_view';
+        $tableName = $projectionPrefix . 'course_names_view';
 
         $store->append([
             new Event(
@@ -183,8 +182,8 @@ test('router and partition workers process each partition in order while sharing
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {
-        $tableName = $projectionPrefix.'student_activity_view';
-        $partitionRegistryTable = $projectionPrefix.'student_activity_partitions';
+        $tableName = $projectionPrefix . 'student_activity_view';
+        $partitionRegistryTable = $projectionPrefix . 'student_activity_partitions';
 
         $store->append([
             new Event(

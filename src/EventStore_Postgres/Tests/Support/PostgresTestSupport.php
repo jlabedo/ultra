@@ -10,8 +10,6 @@ use Doctrine\DBAL\Tools\DsnParser;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\EventTopology;
-use Ultra\EventStore\StaticEventTopologyProvider;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStoreSchema;
@@ -29,23 +27,10 @@ function postgresTestConnection(string $dsn): Connection
     );
 }
 
-function postgresTestTopologyProvider(): StaticEventTopologyProvider
-{
-    return new StaticEventTopologyProvider([
-        'course.created' => new EventTopology(['courseId']),
-        'course.capacity_changed' => new EventTopology(['courseId']),
-        'student.subscribed' => new EventTopology(['facultyId', 'courseId', 'studentId'], [
-            'courseId' => ['facultyId'],
-            'studentId' => ['facultyId'],
-        ]),
-    ]);
-}
-
 function postgresTestStore(Connection $connection, string $tablePrefix): PostgresEventStoreHStore
 {
     return new PostgresEventStoreHStore(
         connection: $connection,
-        topologyProvider: postgresTestTopologyProvider(),
         tablePrefix: $tablePrefix,
     );
 }
@@ -92,14 +77,12 @@ function postgresTestStoreForImplementation(
     return match ($implementation) {
         'hstore' => new PostgresEventStoreHStore(
             connection: $connection,
-            topologyProvider: postgresTestTopologyProvider(),
             tablePrefix: $tablePrefix,
             logger: $logger,
             lockStrategy: $strategy,
         ),
         'query-streams' => new PostgresEventStoreQueryStreams(
             connection: $connection,
-            topologyProvider: postgresTestTopologyProvider(),
             tablePrefix: $tablePrefix,
             logger: $logger,
             lockStrategy: $strategy,
