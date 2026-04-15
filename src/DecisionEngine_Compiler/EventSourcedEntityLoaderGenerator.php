@@ -84,7 +84,7 @@ final class EventSourcedEntityLoaderGenerator
     private function buildQueryCode(EventSourcedEntityDefinition $definition): string
     {
         if ([] === $definition->criteriaGroups) {
-            return 'new \Ultra\EventStore\StreamQuery([])';
+            return '\Ultra\EventStore\StreamQuery::none()';
         }
 
         $branches = [];

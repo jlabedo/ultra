@@ -6,6 +6,7 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\StreamQueryBranch;
 
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation;
@@ -46,12 +47,13 @@ $store = postgresTestStoreForImplementation(
 );
 $expectedVersion = null;
 if (isset($config['version'], $config['query'])) {
-    $query = new StreamQuery(
-        domainIdentifiers: $config['query']['domainIdentifiers'],
-        eventNames: $config['query']['eventNames'],
-        orCriteria: $config['query']['orCriteria'],
-        orBranchEventNames: $config['query']['orBranchEventNames'],
-    );
+    $query = new StreamQuery(array_map(
+        static fn (array $branch): StreamQueryBranch => new StreamQueryBranch(
+            domainIdentifiers: $branch['domainIdentifiers'],
+            eventTypes: $branch['eventTypes'],
+        ),
+        $config['query']['branches'],
+    ));
     $expectedVersion = new QueryVersion((int) $config['version'], $query);
 }
 $event = new Event(

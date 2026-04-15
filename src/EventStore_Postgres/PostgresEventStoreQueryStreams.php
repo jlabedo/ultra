@@ -8,13 +8,12 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
-use Ultra\EventStore\CanonicalQuery;
-use Ultra\EventStore\CanonicalQueryKeyFactory;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\StreamQueryLockKeys;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
@@ -27,7 +26,7 @@ use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
  */
 final class PostgresEventStoreQueryStreams implements EventStore
 {
-    private CanonicalQueryKeyFactory $queryKeyFactory;
+    private StreamQueryLockKeys $queryLockKeys;
 
     public function __construct(
         private readonly Connection      $connection,
@@ -35,17 +34,17 @@ final class PostgresEventStoreQueryStreams implements EventStore
         private readonly LoggerInterface $logger = new NullLogger(),
         private readonly LockStrategy    $lockStrategy = new SharedExclusiveLockStrategy(),
     ) {
-        $this->queryKeyFactory = new CanonicalQueryKeyFactory();
+        $this->queryLockKeys = new StreamQueryLockKeys();
     }
 
     public function load(StreamQuery $query): LoadResult
     {
-        $canonicalQuery = $this->queryKeyFactory->resolveQuery($query);
         if ($query->isEmpty()) {
             return new LoadResult([], QueryVersion::empty($query));
         }
 
-        $events = [] === $canonicalQuery->branches ? [] : $this->fetchEvents($canonicalQuery);
+        $this->queryLockKeys->assertQuerySupported($query);
+        $events = $this->fetchEvents($query);
 
         return new LoadResult($events, new QueryVersion(count($events), $query));
     }
@@ -55,9 +54,8 @@ final class PostgresEventStoreQueryStreams implements EventStore
         $readKeys = [];
         $expectedQueries = [];
         foreach ($expectedVersions as $expectedVersion) {
-            $expectedCanonicalQuery = $this->queryKeyFactory->resolveQuery($expectedVersion->query);
-            $expectedQueries[] = [$expectedVersion, $expectedCanonicalQuery];
-            foreach ($expectedCanonicalQuery->allKeys() as $readKey) {
+            $expectedQueries[] = [$expectedVersion, $expectedVersion->query];
+            foreach ($this->queryLockKeys->readKeys($expectedVersion->query) as $readKey) {
                 $readKeys[$readKey] = true;
             }
         }
@@ -65,7 +63,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
         $eventsToInsert = [];
         $writeKeys = [];
         foreach ($events as $event) {
-            $eventKeys = $this->queryKeyFactory->keysForEvent($event->eventType, $event->domainIds);
+            $eventKeys = $this->queryLockKeys->writeKeysForEvent($event->eventType, $event->domainIds);
             $eventsToInsert[] = $event;
             foreach ($eventKeys as $eventKey) {
                 $writeKeys[$eventKey] = true;
@@ -80,8 +78,8 @@ final class PostgresEventStoreQueryStreams implements EventStore
         try {
             $this->lockStrategy->acquire($this->connection, $this->tablePrefix, array_keys($readKeys), array_keys($writeKeys));
 
-            foreach ($expectedQueries as [$expectedVersion, $expectedCanonicalQuery]) {
-                $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedCanonicalQuery), $expectedVersion->query);
+            foreach ($expectedQueries as [$expectedVersion, $expectedQuery]) {
+                $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedQuery), $expectedVersion->query);
                 $currentVersion->assertMatches($expectedVersion);
             }
 
@@ -114,13 +112,13 @@ final class PostgresEventStoreQueryStreams implements EventStore
     /**
      * Return the visible version for the validated query.
      */
-    private function fetchQueryVersion(CanonicalQuery $canonicalQuery): int
+    private function fetchQueryVersion(StreamQuery $query): int
     {
-        if ([] === $canonicalQuery->branches) {
+        if ($query->isEmpty()) {
             return 0;
         }
 
-        [$whereClause, $params] = $this->canonicalQueryPredicate($canonicalQuery);
+        [$whereClause, $params] = $this->queryPredicate($query);
 
         return (int) $this->connection->executeQuery(
             sprintf(
@@ -137,9 +135,9 @@ final class PostgresEventStoreQueryStreams implements EventStore
     /**
      * @return list<Event>
      */
-    private function fetchEvents(CanonicalQuery $canonicalQuery): array
+    private function fetchEvents(StreamQuery $query): array
     {
-        [$whereClause, $params] = $this->canonicalQueryPredicate($canonicalQuery);
+        [$whereClause, $params] = $this->queryPredicate($query);
 
         $rows = $this->connection->executeQuery(
             sprintf(
@@ -247,12 +245,12 @@ final class PostgresEventStoreQueryStreams implements EventStore
     /**
      * @return array{0: string, 1: list<mixed>}
      */
-    private function canonicalQueryPredicate(CanonicalQuery $canonicalQuery): array
+    private function queryPredicate(StreamQuery $query): array
     {
         $clauses = [];
         $params = [];
 
-        foreach ($canonicalQuery->branches as $branch) {
+        foreach ($query->branches as $branch) {
             $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
             $identifierClauses = [];
             $domainIdentifiers = $branch->domainIdentifiers;

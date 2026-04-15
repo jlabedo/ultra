@@ -20,7 +20,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
 {
     public function test_load_with_empty_query_returns_empty_events_and_empty_query_version(): void
     {
-        $result = $this->store()->load(new StreamQuery([]));
+        $result = $this->store()->load(StreamQuery::none());
 
         self::assertSame([], $result->events);
         self::assertSame(0, $result->queryVersion->version);
@@ -37,7 +37,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             ),
         ]);
 
-        $result = $store->load(new StreamQuery([]));
+        $result = $store->load(StreamQuery::none());
 
         self::assertSame([], $result->events);
         self::assertSame(0, $result->queryVersion->version);

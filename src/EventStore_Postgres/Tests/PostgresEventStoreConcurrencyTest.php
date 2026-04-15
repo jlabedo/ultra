@@ -16,6 +16,7 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\StreamQueryBranch;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedImplementations;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedLockStrategies;
@@ -604,21 +605,22 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
 
     /**
      * @return array{
-     *     domainIdentifiers: array<string, string>,
-     *     eventNames: list<string>,
-     *     orCriteria: list<array<string, string>>,
-     *     orBranchEventNames: null|list<list<string>>
+     *     branches: list<array{
+     *         domainIdentifiers: array<string, string>,
+     *         eventTypes: list<string>
+     *     }>
      * }
      */
     private static function streamQueryToArray(StreamQuery $query): array
     {
         return [
-            'domainIdentifiers' => $query->domainIdentifiers,
-            'eventNames' => array_values($query->eventNames),
-            'orCriteria' => array_values($query->orCriteria),
-            'orBranchEventNames' => null === $query->orBranchEventNames
-                ? null
-                : array_map(static fn (array $types): array => array_values($types), $query->orBranchEventNames),
+            'branches' => array_map(
+                static fn (StreamQueryBranch $branch): array => [
+                    'domainIdentifiers' => $branch->domainIdentifiers,
+                    'eventTypes' => $branch->eventTypes,
+                ],
+                $query->branches,
+            ),
         ];
     }
 }
