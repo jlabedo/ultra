@@ -17,7 +17,7 @@ use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
  */
 final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCase
 {
-    public function test_query_streams_implementation_returns_db_generated_recorded_at_and_query_version(): void
+    public function test_query_streams_implementation_returns_db_generated_recorded_at_and_a_fresh_query_version(): void
     {
         $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
             $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
@@ -25,17 +25,15 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
             ;
 
             $empty = $store->load($query);
-            self::assertSame(0, $empty->queryVersion->version);
 
             $store->append([
                 self::event('course.created', ['name' => 'Math 101'], ['courseId' => 'course-123']),
-            ]);
+            ], $empty->queryVersion);
 
             $result = $store->load($query);
 
             self::assertCount(1, $result->events);
             self::assertInstanceOf(\DateTimeImmutable::class, $result->events[0]->recordedAt);
-            self::assertSame(1, $result->queryVersion->version);
         }, 'query-streams');
     }
 
@@ -71,7 +69,6 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
             self::assertSame(2, $courseResult->events[1]->payload['slot']);
             self::assertCount(1, $pairResult->events);
             self::assertSame('student-2', $pairResult->events[0]->domainIds['studentId']);
-            self::assertSame(1, $pairResult->queryVersion->version);
         }, 'query-streams');
     }
 
@@ -124,7 +121,6 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
 
             self::assertCount(1, $result->events);
             self::assertSame('student.subscribed', $result->events[0]->eventType);
-            self::assertSame(1, $result->queryVersion->version);
         }, 'query-streams');
     }
 
@@ -158,7 +154,6 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
             $result = $store->load($query);
 
             self::assertCount(2, $result->events);
-            self::assertSame(2, $result->queryVersion->version);
         }, 'query-streams');
     }
 }

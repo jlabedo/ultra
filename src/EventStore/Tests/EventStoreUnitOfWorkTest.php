@@ -40,7 +40,6 @@ final class EventStoreUnitOfWorkTest extends TestCase
         $result = $uow->load($query);
 
         self::assertCount(1, $result->events);
-        self::assertSame(0, $result->queryVersion->version);
         self::assertCount(0, $store->load($query)->events);
     }
 
@@ -79,7 +78,6 @@ final class EventStoreUnitOfWorkTest extends TestCase
             static fn (Event $event): string => $event->payload['name'],
             $result->events,
         ));
-        self::assertSame(1, $result->queryVersion->version);
     }
 
     public function test_load_keeps_persisted_query_version_when_pending_events_are_visible(): void
@@ -90,8 +88,6 @@ final class EventStoreUnitOfWorkTest extends TestCase
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
 
-        $staleVersion = $uow->load($query)->queryVersion;
-
         $uow->append([
             new Event(
                 eventType: 'course.created',
@@ -100,8 +96,21 @@ final class EventStoreUnitOfWorkTest extends TestCase
             ),
         ]);
 
-        self::assertSame(0, $staleVersion->version);
-        self::assertSame(0, $uow->load($query)->queryVersion->version);
+        $visibleVersion = $uow->load($query)->queryVersion;
+        $uow->append([
+            new Event(
+                eventType: 'course.created',
+                payload: ['name' => 'Math 102'],
+                domainIds: ['courseId' => 'course-123'],
+            ),
+        ], $visibleVersion);
+
+        $uow->flush();
+
+        self::assertSame(['Math 101', 'Math 102'], array_map(
+            static fn (Event $event): string => $event->payload['name'],
+            $store->load($query)->events,
+        ));
     }
 
     public function test_flush_persists_buffered_appends_in_order(): void
@@ -134,7 +143,6 @@ final class EventStoreUnitOfWorkTest extends TestCase
 
         $persisted = $store->load($query);
         self::assertCount(2, $persisted->events);
-        self::assertSame(2, $persisted->queryVersion->version);
         self::assertSame('Math 101', $persisted->events[0]->payload['name']);
         self::assertSame('Math 102', $persisted->events[1]->payload['name']);
     }
@@ -172,10 +180,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
         self::assertCount(1, $recordingStore->appendCalls);
         self::assertCount(2, $recordingStore->appendCalls[0]['events']);
         self::assertCount(2, $recordingStore->appendCalls[0]['expectedVersions']);
-        self::assertSame([0, 0], array_map(
-            static fn (QueryVersion $queryVersion): int => $queryVersion->version,
-            $recordingStore->appendCalls[0]['expectedVersions'],
-        ));
+        self::assertSame([$firstVersion, $secondVersion], $recordingStore->appendCalls[0]['expectedVersions']);
     }
 
     public function test_clear_drops_buffered_appends(): void

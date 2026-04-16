@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore;
 
+use Ultra\EventStore\Exception\ConcurrencyException;
+
 final class InMemoryEventStore implements EventStore
 {
     /** @var list<Event> */
@@ -28,7 +30,9 @@ final class InMemoryEventStore implements EventStore
     {
         foreach ($expectedVersions as $expectedVersion) {
             $currentVersion = $this->buildQueryVersion($expectedVersion->query);
-            $currentVersion->assertMatches($expectedVersion);
+            if (! $currentVersion->token->matches($expectedVersion->token)) {
+                throw new ConcurrencyException(self::describeQuery($expectedVersion->query));
+            }
         }
 
         foreach ($events as $event) {
@@ -48,15 +52,30 @@ final class InMemoryEventStore implements EventStore
 
     private function buildQueryVersion(StreamQuery $query): QueryVersion
     {
-        $version = 0;
+        $matchingEventCount = 0;
         foreach ($this->events as $event) {
             if (! $query->matches($event)) {
                 continue;
             }
 
-            ++$version;
+            ++$matchingEventCount;
         }
 
-        return new QueryVersion($version, $query);
+        return new QueryVersion(new InMemoryEventStoreVersionToken($matchingEventCount), $query);
+    }
+
+    private static function describeQuery(StreamQuery $query): string
+    {
+        $description = json_encode([
+            'branches' => array_map(
+                static fn (StreamQueryBranch $branch): array => [
+                    'domainIdentifiers' => $branch->domainIdentifiers,
+                    'eventTypes' => $branch->eventTypes,
+                ],
+                $query->branches,
+            ),
+        ]);
+
+        return is_string($description) ? $description : 'query';
     }
 }

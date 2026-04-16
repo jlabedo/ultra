@@ -10,9 +10,11 @@ use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
+use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\StreamQueryBranch;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
@@ -21,7 +23,7 @@ use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
  *
  * Events are stored once in the `events` table, while `event_domain_ids` stores one row per event domain
  * identifier. `load()` is lock-free. `append()` acquires transaction-scoped advisory locks, replays each
- * expected query to compare its version, and only then inserts new events.
+ * expected query to compare its token, and only then inserts new events.
  */
 final class PostgresEventStoreQueryStreams implements EventStore
 {
@@ -35,12 +37,12 @@ final class PostgresEventStoreQueryStreams implements EventStore
     public function load(StreamQuery $query): LoadResult
     {
         if ($query->isEmpty()) {
-            return new LoadResult([], QueryVersion::empty($query));
+            return new LoadResult([], new QueryVersion(new PostgresEventStoreVersionToken(0), $query));
         }
 
         $events = $this->fetchEvents($query);
 
-        return new LoadResult($events, new QueryVersion(count($events), $query));
+        return new LoadResult($events, new QueryVersion(new PostgresEventStoreVersionToken(count($events)), $query));
     }
 
     public function append(array $events, QueryVersion ...$expectedVersions): void
@@ -66,8 +68,13 @@ final class PostgresEventStoreQueryStreams implements EventStore
             $this->lockStrategy->acquire($this->connection, $this->tablePrefix, $readQueries, $eventsToInsert);
 
             foreach ($expectedQueries as [$expectedVersion, $expectedQuery]) {
-                $currentVersion = new QueryVersion($this->fetchQueryVersion($expectedQuery), $expectedVersion->query);
-                $currentVersion->assertMatches($expectedVersion);
+                $currentVersion = new QueryVersion(
+                    new PostgresEventStoreVersionToken($this->fetchMatchingEventCount($expectedQuery)),
+                    $expectedVersion->query,
+                );
+                if (! $currentVersion->token->matches($expectedVersion->token)) {
+                    throw new ConcurrencyException(self::describeQuery($expectedVersion->query));
+                }
             }
 
             if ([] !== $eventsToInsert) {
@@ -97,9 +104,9 @@ final class PostgresEventStoreQueryStreams implements EventStore
     }
 
     /**
-     * Return the visible version for the validated query.
+     * Return the visible event count for the validated query.
      */
-    private function fetchQueryVersion(StreamQuery $query): int
+    private function fetchMatchingEventCount(StreamQuery $query): int
     {
         if ($query->isEmpty()) {
             return 0;
@@ -117,6 +124,21 @@ final class PostgresEventStoreQueryStreams implements EventStore
             ),
             $params,
         )->fetchOne();
+    }
+
+    private static function describeQuery(StreamQuery $query): string
+    {
+        $description = json_encode([
+            'branches' => array_map(
+                static fn (StreamQueryBranch $branch): array => [
+                    'domainIdentifiers' => $branch->domainIdentifiers,
+                    'eventTypes' => $branch->eventTypes,
+                ],
+                $query->branches,
+            ),
+        ]);
+
+        return is_string($description) ? $description : 'query';
     }
 
     /**

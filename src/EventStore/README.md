@@ -7,7 +7,7 @@ Typed event store API with query-scoped optimistic concurrency.
 - **Event** – Neutral event value used for both `append()` input and `load()` output on the write side. It contains `eventType`, `payload`, `domainIds`, and optional `recordedAt`.
 - **StreamQuery** – Immutable branch list for stream queries. Each branch matches domain identifiers with AND semantics and event types with OR semantics. An empty event type list means all event types. Use `forStream(...)->ofTypes(...)` for one branch and `anyOf(...)` for OR-composition.
 - **LoadResult** – Result of `load()`: a list of visible `Event` objects plus a `QueryVersion`.
-- **QueryVersion** – Optimistic-concurrency token tied to one exact `StreamQuery`.
+- **QueryVersion** – Optimistic-concurrency token tied to one exact `StreamQuery`. It carries an opaque `VersionToken` owned by the event store implementation.
 
 ## EventStore Interface
 
@@ -26,7 +26,8 @@ interface EventStore
 
 `QueryVersion` is a persistence token, not an in-memory overlay token.
 
-- It represents the version of the snapshot returned by the underlying store for a specific query.
+- It represents the snapshot returned by the underlying store for a specific query.
+- Its `VersionToken` is opaque. Callers pass it back unchanged instead of inspecting it.
 - It is meant for optimistic locking against the transactional database.
 - It should not be patched to account for in-process pending writes.
 
@@ -43,7 +44,7 @@ It gives read-your-own-writes semantics while still keeping optimistic concurren
 - `flush()` forwards all buffered events in a single inner `append(...)` call.
 - Buffered expected versions are passed through unchanged.
 
-So the visible event list can include pending writes, while `QueryVersion` continues to mean “persisted snapshot version”.
+So the visible event list can include pending writes, while `QueryVersion` continues to mean “persisted snapshot token”.
 
 ## Projection Boundary
 

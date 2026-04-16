@@ -13,6 +13,7 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\VersionToken;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedTableAdapter;
@@ -31,10 +32,18 @@ final class NullEventStore implements EventStore
 {
     public function load(StreamQuery $query): LoadResult
     {
-        return new LoadResult([], new QueryVersion(0, $query));
+        return new LoadResult([], new QueryVersion(new NullVersionToken(), $query));
     }
 
     public function append(array $events, QueryVersion ...$expectedVersions): void {}
+}
+
+final readonly class NullVersionToken implements VersionToken
+{
+    public function matches(VersionToken $expected): bool
+    {
+        return $expected instanceof self;
+    }
 }
 
 #[State(table: 'orders', idColumn: 'order_id')]

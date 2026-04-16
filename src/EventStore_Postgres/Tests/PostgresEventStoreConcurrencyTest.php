@@ -14,7 +14,6 @@ use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
-use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\StreamQueryBranch;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
@@ -216,7 +215,6 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
 
             try {
                 $store->append([$event]);
-                $staleVersion = $store->load($query)->queryVersion;
 
                 $workerA = self::startConcurrencyWorker([
                     'dsn' => $dsn,
@@ -224,7 +222,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                     'implementation' => $implementation,
                     'lockStrategy' => $lockStrategy,
                     'mode' => 'hold_then_commit',
-                    ...self::queryVersionToWorkerConfig($staleVersion, $query),
+                    ...self::expectedQueryToWorkerConfig($query),
                     'event' => [
                         'eventType' => $event->eventType,
                         'payload' => $event->payload,
@@ -240,7 +238,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                     'implementation' => $implementation,
                     'lockStrategy' => $lockStrategy,
                     'mode' => 'append_once',
-                    ...self::queryVersionToWorkerConfig($staleVersion, $query),
+                    ...self::expectedQueryToWorkerConfig($query),
                     'event' => [
                         'eventType' => $event->eventType,
                         'payload' => $event->payload,
@@ -307,7 +305,6 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
 
             try {
                 $store->append([$studentOneEvent]);
-                $staleVersion = $store->load($studentOneQuery)->queryVersion;
 
                 $workerA = self::startConcurrencyWorker([
                     'dsn' => $dsn,
@@ -315,7 +312,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                     'implementation' => $implementation,
                     'lockStrategy' => $lockStrategy,
                     'mode' => 'hold_then_commit',
-                    ...self::queryVersionToWorkerConfig($staleVersion, $studentOneQuery),
+                    ...self::expectedQueryToWorkerConfig($studentOneQuery),
                     'event' => [
                         'eventType' => $studentOneEvent->eventType,
                         'payload' => $studentOneEvent->payload,
@@ -394,7 +391,6 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
 
             try {
                 $store->append([$studentOneEvent]);
-                $staleVersion = $store->load($studentOneQuery)->queryVersion;
 
                 $workerA = self::startConcurrencyWorker([
                     'dsn' => $dsn,
@@ -402,7 +398,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                     'implementation' => $implementation,
                     'lockStrategy' => $lockStrategy,
                     'mode' => 'hold_then_commit',
-                    ...self::queryVersionToWorkerConfig($staleVersion, $studentOneQuery),
+                    ...self::expectedQueryToWorkerConfig($studentOneQuery),
                     'event' => [
                         'eventType' => $studentOneEvent->eventType,
                         'payload' => $studentOneEvent->payload,
@@ -533,8 +529,8 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 self::assertSame(0, $workerBResult['exitCode'], $workerBResult['stderr']);
                 self::assertSame('ok', $workerBResult['status']);
 
-                $staleVersion = $store->load($combinedQuery)->queryVersion;
-                self::assertSame(1, $staleVersion->version);
+                $staleResult = $store->load($combinedQuery);
+                self::assertCount(1, $staleResult->events);
 
                 $workerA->send('release', true);
                 $workerAResult = $workerA->waitForResult(5_000);
@@ -544,14 +540,13 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 self::assertSame('ok', $workerAResult['status']);
 
                 try {
-                    $store->append([$followUpEvent], $staleVersion);
+                    $store->append([$followUpEvent], $staleResult->queryVersion);
                     self::fail('Expected ConcurrencyException to be thrown.');
                 } catch (ConcurrencyException) {
                 }
 
                 $result = $store->load($combinedQuery);
                 self::assertCount(2, $result->events);
-                self::assertSame(2, $result->queryVersion->version);
             } finally {
                 $workerA?->stop();
                 $workerB?->stop();
@@ -595,11 +590,10 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
     /**
      * @return array<string, mixed>
      */
-    private static function queryVersionToWorkerConfig(QueryVersion $queryVersion, StreamQuery $query): array
+    private static function expectedQueryToWorkerConfig(StreamQuery $query): array
     {
         return [
             'query' => self::streamQueryToArray($query),
-            'version' => $queryVersion->version,
         ];
     }
 

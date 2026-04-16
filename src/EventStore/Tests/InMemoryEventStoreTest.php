@@ -17,12 +17,11 @@ use Ultra\EventStore\Tests\Support\EventStoreTestCase;
 #[CoversClass(InMemoryEventStore::class)]
 final class InMemoryEventStoreTest extends EventStoreTestCase
 {
-    public function test_load_with_empty_query_returns_empty_events_and_empty_query_version(): void
+    public function test_load_with_empty_query_returns_empty_events(): void
     {
         $result = $this->store()->load(StreamQuery::none());
 
         self::assertSame([], $result->events);
-        self::assertSame(0, $result->queryVersion->version);
     }
 
     public function test_load_with_empty_query_ignores_existing_events(): void
@@ -39,10 +38,9 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         $result = $store->load(StreamQuery::none());
 
         self::assertSame([], $result->events);
-        self::assertSame(0, $result->queryVersion->version);
     }
 
-    public function test_typed_singleton_query_loads_matching_events_and_returns_versions(): void
+    public function test_typed_singleton_query_loads_matching_events_and_returns_a_fresh_query_version(): void
     {
         $store = $this->store();
         $query = StreamQuery::forStream(
@@ -52,7 +50,6 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         $empty = $store->load($query);
 
         self::assertSame([], $empty->events);
-        self::assertSame(0, $empty->queryVersion->version);
 
         $store->append([
             self::event(
@@ -60,38 +57,41 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                 domainIds: ['courseId' => 'course-123'],
                 payload: ['name' => 'Math 101'],
             ),
-        ]);
+        ], $empty->queryVersion);
 
         $result = $store->load($query);
 
         self::assertCount(1, $result->events);
         self::assertSame('course.created', $result->events[0]->eventType);
         self::assertSame('Math 101', $result->events[0]->payload['name']);
-        self::assertSame(1, $result->queryVersion->version);
     }
 
-    public function test_typed_singleton_query_version_counts_matches_after_non_matching_events(): void
+    public function test_non_matching_events_do_not_make_a_query_version_stale(): void
     {
         $store = $this->store();
         $query = StreamQuery::forStream(
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
 
+        $queryVersion = $store->load($query)->queryVersion;
+
         $store->append([
             self::event(
                 eventType: 'course.created',
                 domainIds: ['courseId' => 'course-999'],
             ),
+        ], $queryVersion);
+
+        $store->append([
             self::event(
                 eventType: 'course.created',
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ]);
+        ], $queryVersion);
 
         $result = $store->load($query);
 
         self::assertCount(1, $result->events);
-        self::assertSame(1, $result->queryVersion->version);
     }
 
     public function test_append_accepts_new_event_types_without_registration(): void
@@ -274,7 +274,6 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         $result = $store->load($query);
 
         self::assertCount(2, $result->events);
-        self::assertSame(2, $result->queryVersion->version);
     }
 
     public function test_query_with_more_than_two_identifiers_loads_matching_events(): void

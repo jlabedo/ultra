@@ -19,7 +19,7 @@ Both implementations share the same public contract:
 1. Passing the expected query versions and appended events to the configured lock strategy.
 2. Letting the lock strategy resolve the read-side and write-side advisory-lock namespaces it needs.
 3. Acquiring advisory locks in deterministic order.
-4. Validating every expected query version under those locks.
+4. Validating every expected query version's opaque token under those locks.
 5. Inserting the events once.
 
 That means one append can guard multiple stream snapshots at once.

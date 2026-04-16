@@ -18,7 +18,7 @@ use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 #[CoversNothing]
 final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
 {
-    public function test_load_returns_db_generated_recorded_at_and_query_version(): void
+    public function test_load_returns_db_generated_recorded_at_and_a_fresh_query_version(): void
     {
         $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
@@ -26,7 +26,6 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
             ;
 
             $empty = $store->load($query);
-            self::assertSame(0, $empty->queryVersion->version);
 
             $store->append([
                 self::event(
@@ -34,13 +33,12 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
                     ['name' => 'Math 101'],
                     ['courseId' => 'course-123'],
                 ),
-            ]);
+            ], $empty->queryVersion);
 
             $result = $store->load($query);
 
             self::assertCount(1, $result->events);
             self::assertInstanceOf(\DateTimeImmutable::class, $result->events[0]->recordedAt);
-            self::assertSame(1, $result->queryVersion->version);
         });
     }
 
@@ -61,7 +59,6 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
             self::assertCount(2, $result->events);
             self::assertSame('Math 101', $result->events[0]->payload['name']);
             self::assertSame('Math 101 v2', $result->events[1]->payload['name']);
-            self::assertSame(2, $result->queryVersion->version);
         });
     }
 
@@ -133,7 +130,6 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
 
             self::assertCount(1, $result->events);
             self::assertSame('student.subscribed', $result->events[0]->eventType);
-            self::assertSame(1, $result->queryVersion->version);
         });
     }
 
@@ -246,7 +242,6 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
             $result = $store->load($query);
 
             self::assertCount(2, $result->events);
-            self::assertSame(2, $result->queryVersion->version);
         });
     }
 }
