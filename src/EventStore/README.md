@@ -6,28 +6,32 @@ Typed event store API with query-scoped optimistic concurrency.
 
 - **Event** – Neutral event value used for both `append()` input and `load()` output on the write side. It contains `eventType`, `payload`, `domainIds`, and optional `recordedAt`.
 - **StreamQuery** – Immutable branch list for stream queries. Each branch matches domain identifiers with AND semantics and event types with OR semantics. An empty event type list means all event types. Use `forStream(...)->ofTypes(...)` for one branch and `anyOf(...)` for OR-composition.
-- **LoadResult** – Result of `load()`: a list of visible `Event` objects plus a `QueryVersion`.
-- **QueryVersion** – Optimistic-concurrency token tied to one exact `StreamQuery`. It carries an opaque `VersionToken` owned by the event store implementation.
+- **LoadResult** – Result of `load()`: a list of visible `Event` objects plus a `VersionedQuery`.
+- **VersionedQuery** – Optimistic-concurrency token tied to one exact `StreamQuery`. It carries an opaque `VersionToken` owned by the event store implementation.
 
 ## EventStore Interface
 
 ```php
 interface EventStore
 {
-    public function load(StreamQuery $query): LoadResult;
+    public function load(StreamQuery|VersionedQuery $query): LoadResult;
 
-    public function append(array $events, QueryVersion ...$expectedVersions): void;
+    public function append(array $events, VersionedQuery ...$expectedQueries): void;
 }
 ```
 
-`append()` can validate zero, one, or many query versions in the same write. That lets a store acquire locks once, validate every relevant stream snapshot, and insert once.
+Passing a `VersionedQuery` to `load()` reloads its embedded `StreamQuery` and returns a fresh `VersionedQuery`.
+The old token is not validated by `load()`.
 
-## QueryVersion Semantics
+`append()` can validate zero, one, or many versioned queries in the same write. That lets a store acquire locks once, validate every relevant stream snapshot, and insert once.
 
-`QueryVersion` is a persistence token, not an in-memory overlay token.
+## VersionedQuery Semantics
+
+`VersionedQuery` is a persistence token, not an in-memory overlay token.
 
 - It represents the snapshot returned by the underlying store for a specific query.
 - Its `VersionToken` is opaque. Callers pass it back unchanged instead of inspecting it.
+- It can be passed to `load()` as a reusable handle for the same `StreamQuery`.
 - It is meant for optimistic locking against the transactional database.
 - It should not be patched to account for in-process pending writes.
 
@@ -40,11 +44,11 @@ This matters when using the unit of work wrapper.
 It gives read-your-own-writes semantics while still keeping optimistic concurrency aligned with the wrapped store:
 
 - `load()` returns persisted events plus buffered pending events that match the query.
-- `load()->queryVersion` stays the `QueryVersion` from the wrapped store.
+- `load()->versionedQuery` stays the `VersionedQuery` from the wrapped store.
 - `flush()` forwards all buffered events in a single inner `append(...)` call.
-- Buffered expected versions are passed through unchanged.
+- Buffered expected versioned queries are passed through unchanged.
 
-So the visible event list can include pending writes, while `QueryVersion` continues to mean “persisted snapshot token”.
+So the visible event list can include pending writes, while `VersionedQuery` continues to mean “persisted snapshot token”.
 
 ## Projection Boundary
 
@@ -64,8 +68,8 @@ $pairQuery = StreamQuery::forStream(
     new DomainIdentifier('studentId', 'student-1'),
 )->ofTypes('student.subscribed');
 
-$courseVersion = $store->load($courseQuery)->queryVersion;
-$pairVersion = $store->load($pairQuery)->queryVersion;
+$courseVersionedQuery = $store->load($courseQuery)->versionedQuery;
+$pairVersionedQuery = $store->load($pairQuery)->versionedQuery;
 
 $store->append([
     new Event(
@@ -77,5 +81,5 @@ $store->append([
             'studentId' => 'student-1',
         ],
     ),
-], $courseVersion, $pairVersion);
+], $courseVersionedQuery, $pairVersionedQuery);
 ```

@@ -11,8 +11,9 @@ final class InMemoryEventStore implements EventStore
     /** @var list<Event> */
     private array $events = [];
 
-    public function load(StreamQuery $query): LoadResult
+    public function load(StreamQuery|VersionedQuery $query): LoadResult
     {
+        $query = self::streamQuery($query);
         $result = [];
         foreach ($this->events as $event) {
             if (! $query->matches($event)) {
@@ -23,15 +24,15 @@ final class InMemoryEventStore implements EventStore
 
         $versionToken = $this->buildVersionToken($query);
 
-        return new LoadResult($result, new QueryVersion($versionToken, $query));
+        return new LoadResult($result, new VersionedQuery($versionToken, $query));
     }
 
-    public function append(array $events, QueryVersion ...$expectedVersions): void
+    public function append(array $events, VersionedQuery ...$expectedQueries): void
     {
-        foreach ($expectedVersions as $expectedVersion) {
-            $currentToken = $this->buildVersionToken($expectedVersion->query);
-            if (! $currentToken->matches($expectedVersion->token)) {
-                throw new ConcurrencyException(self::describeQuery($expectedVersion->query));
+        foreach ($expectedQueries as $expectedQuery) {
+            $currentToken = $this->buildVersionToken($expectedQuery->query);
+            if (! $currentToken->matches($expectedQuery->token)) {
+                throw new ConcurrencyException(self::describeQuery($expectedQuery->query));
             }
         }
 
@@ -77,5 +78,10 @@ final class InMemoryEventStore implements EventStore
         ]);
 
         return is_string($description) ? $description : 'query';
+    }
+
+    private static function streamQuery(StreamQuery|VersionedQuery $query): StreamQuery
+    {
+        return $query instanceof VersionedQuery ? $query->query : $query;
     }
 }

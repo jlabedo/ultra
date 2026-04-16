@@ -40,7 +40,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertSame([], $result->events);
     }
 
-    public function test_typed_singleton_query_loads_matching_events_and_returns_a_fresh_query_version(): void
+    public function test_typed_singleton_query_loads_matching_events_and_returns_a_fresh_versioned_query(): void
     {
         $store = $this->store();
         $query = StreamQuery::forStream(
@@ -57,7 +57,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                 domainIds: ['courseId' => 'course-123'],
                 payload: ['name' => 'Math 101'],
             ),
-        ], $empty->queryVersion);
+        ], $empty->versionedQuery);
 
         $result = $store->load($query);
 
@@ -66,28 +66,53 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertSame('Math 101', $result->events[0]->payload['name']);
     }
 
-    public function test_non_matching_events_do_not_make_a_query_version_stale(): void
+    public function test_load_accepts_a_versioned_query_to_reload_the_same_query(): void
     {
         $store = $this->store();
         $query = StreamQuery::forStream(
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
 
-        $queryVersion = $store->load($query)->queryVersion;
+        $versionedQuery = $store->load($query)->versionedQuery;
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+                payload: ['name' => 'Math 101'],
+            ),
+        ]);
+
+        $result = $store->load($versionedQuery);
+
+        self::assertCount(1, $result->events);
+        self::assertSame('Math 101', $result->events[0]->payload['name']);
+        self::assertNotSame($versionedQuery, $result->versionedQuery);
+        self::assertSame($query, $result->versionedQuery->query);
+    }
+
+    public function test_non_matching_events_do_not_make_a_versioned_query_stale(): void
+    {
+        $store = $this->store();
+        $query = StreamQuery::forStream(
+            new DomainIdentifier('courseId', 'course-123'),
+        )->ofTypes('course.created');
+
+        $versionedQuery = $store->load($query)->versionedQuery;
 
         $store->append([
             self::event(
                 eventType: 'course.created',
                 domainIds: ['courseId' => 'course-999'],
             ),
-        ], $queryVersion);
+        ], $versionedQuery);
 
         $store->append([
             self::event(
                 eventType: 'course.created',
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ], $queryVersion);
+        ], $versionedQuery);
 
         $result = $store->load($query);
 
@@ -111,14 +136,14 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertCount(1, $store->load($query)->events);
     }
 
-    public function test_append_with_stale_singleton_query_version_throws_concurrency_exception(): void
+    public function test_append_with_stale_singleton_versioned_query_throws_concurrency_exception(): void
     {
         $store = $this->store();
         $query = StreamQuery::forStream(
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.capacity_changed');
 
-        $staleVersion = $store->load($query)->queryVersion;
+        $staleQuery = $store->load($query)->versionedQuery;
 
         $store->append([
             self::event(
@@ -136,10 +161,10 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                 domainIds: ['courseId' => 'course-123'],
                 payload: ['capacity' => 31],
             ),
-        ], $staleVersion);
+        ], $staleQuery);
     }
 
-    public function test_append_validates_all_expected_query_versions(): void
+    public function test_append_validates_all_expected_versioned_queries(): void
     {
         $store = $this->store();
         $courseQuery = StreamQuery::forStream(
@@ -150,8 +175,8 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             new DomainIdentifier('studentId', 'student-1'),
         )->ofTypes('student.subscribed');
 
-        $courseVersion = $store->load($courseQuery)->queryVersion;
-        $pairVersion = $store->load($pairQuery)->queryVersion;
+        $courseVersionedQuery = $store->load($courseQuery)->versionedQuery;
+        $pairVersionedQuery = $store->load($pairQuery)->versionedQuery;
 
         $store->append([
             self::event(
@@ -162,7 +187,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                     'studentId' => 'student-1',
                 ],
             ),
-        ], $courseVersion, $pairVersion);
+        ], $courseVersionedQuery, $pairVersionedQuery);
 
         self::assertCount(1, $store->load($courseQuery)->events);
         self::assertCount(1, $store->load($pairQuery)->events);
@@ -187,7 +212,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             ),
         ]);
 
-        $staleVersion = $store->load($query)->queryVersion;
+        $staleQuery = $store->load($query)->versionedQuery;
 
         $store->append([
             self::event(
@@ -209,7 +234,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                     'studentId' => 'student-1',
                 ],
             ),
-        ], $staleVersion);
+        ], $staleQuery);
 
         self::assertCount(2, $store->load($query)->events);
     }
@@ -233,7 +258,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             ),
         ]);
 
-        $staleVersion = $store->load($query)->queryVersion;
+        $staleQuery = $store->load($query)->versionedQuery;
 
         $store->append([
             self::event(
@@ -257,7 +282,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                     'studentId' => 'student-1',
                 ],
             ),
-        ], $staleVersion);
+        ], $staleQuery);
     }
 
     public function test_untyped_query_loads_all_matching_event_types(): void

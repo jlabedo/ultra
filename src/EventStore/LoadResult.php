@@ -7,18 +7,17 @@ namespace Ultra\EventStore;
 /**
  * Result of loading a stream query.
  *
- * The returned events are the materialized snapshot used by the caller, while `queryVersion` is the
- * optimistic-concurrency token that must be passed back to `append()` if the caller wants a replayed
- * snapshot check.
+ * The returned events are the materialized snapshot used by the caller, while `versionedQuery` can be passed
+ * back to `load()` to reload the same query or to `append()` for optimistic concurrency.
  */
 readonly class LoadResult
 {
     /**
-     * @param list<Event>  $events       events matching the query, ordered by stream order ascending
-     * @param QueryVersion $queryVersion opaque optimistic concurrency token for the loaded query
+     * @param list<Event>     $events         events matching the query, ordered by stream order ascending
+     * @param VersionedQuery  $versionedQuery query plus opaque optimistic-concurrency token
      */
     public function __construct(
         public array $events,
-        public QueryVersion $queryVersion,
+        public VersionedQuery $versionedQuery,
     ) {}
 }

@@ -12,7 +12,7 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\QueryVersion;
+use Ultra\EventStore\VersionedQuery;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\VersionToken;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
@@ -25,12 +25,14 @@ final class RecordingEventStore implements EventStore
     /** @var list<list<Event>> */
     public array $appendCalls = [];
 
-    public function load(StreamQuery $query): LoadResult
+    public function load(StreamQuery|VersionedQuery $query): LoadResult
     {
-        return new LoadResult([], new QueryVersion(new RecordingVersionToken(), $query));
+        $query = $query instanceof VersionedQuery ? $query->query : $query;
+
+        return new LoadResult([], new VersionedQuery(new RecordingVersionToken(), $query));
     }
 
-    public function append(array $events, QueryVersion ...$expectedVersions): void
+    public function append(array $events, VersionedQuery ...$expectedQueries): void
     {
         $this->appendCalls[] = $events;
     }

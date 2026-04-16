@@ -9,40 +9,41 @@ use Ultra\UnitOfWork\UnitOfWork;
 /**
  * Buffers event-store appends while preserving read-your-own-pending-writes semantics through the EventStore API.
  *
- * The visible event list includes pending writes, while the `QueryVersion` remains the token from the wrapped
- * store so optimistic concurrency stays aligned with the underlying transaction resource.
+ * The visible event list includes pending writes, while the `VersionedQuery` comes from the wrapped store so
+ * optimistic concurrency stays aligned with the underlying transaction resource.
  */
 final class EventStoreUnitOfWork implements EventStore, UnitOfWork
 {
     /** @var list<Event> */
     private array $bufferedEvents = [];
 
-    /** @var list<QueryVersion> */
-    private array $expectedVersions = [];
+    /** @var list<VersionedQuery> */
+    private array $expectedQueries = [];
 
     public function __construct(
         private readonly EventStore $inner,
     ) {}
 
-    public function load(StreamQuery $query): LoadResult
+    public function load(StreamQuery|VersionedQuery $query): LoadResult
     {
+        $query = self::streamQuery($query);
         $baseResult = $this->inner->load($query);
         $pendingEvents = $this->pendingEventsMatching($query);
 
         return new LoadResult(
             [...$baseResult->events, ...$pendingEvents],
-            $baseResult->queryVersion,
+            $baseResult->versionedQuery,
         );
     }
 
-    public function append(array $events, QueryVersion ...$expectedVersions): void
+    public function append(array $events, VersionedQuery ...$expectedQueries): void
     {
         if ([] === $events) {
             return;
         }
 
         array_push($this->bufferedEvents, ...$events);
-        array_push($this->expectedVersions, ...$expectedVersions);
+        array_push($this->expectedQueries, ...$expectedQueries);
     }
 
     public function flush(): void
@@ -51,13 +52,13 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
             return;
         }
 
-        $this->inner->append($this->bufferedEvents, ...$this->expectedVersions);
+        $this->inner->append($this->bufferedEvents, ...$this->expectedQueries);
     }
 
     public function clear(): void
     {
         $this->bufferedEvents = [];
-        $this->expectedVersions = [];
+        $this->expectedQueries = [];
     }
 
     /**
@@ -76,5 +77,10 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
         }
 
         return $pendingEvents;
+    }
+
+    private static function streamQuery(StreamQuery|VersionedQuery $query): StreamQuery
+    {
+        return $query instanceof VersionedQuery ? $query->query : $query;
     }
 }

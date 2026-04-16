@@ -11,7 +11,7 @@ use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\QueryVersion;
+use Ultra\EventStore\VersionedQuery;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\VersionToken;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
@@ -30,12 +30,14 @@ use Ultra\UnitOfWork_Bundle\UnitOfWorkBundle;
 
 final class NullEventStore implements EventStore
 {
-    public function load(StreamQuery $query): LoadResult
+    public function load(StreamQuery|VersionedQuery $query): LoadResult
     {
-        return new LoadResult([], new QueryVersion(new NullVersionToken(), $query));
+        $query = $query instanceof VersionedQuery ? $query->query : $query;
+
+        return new LoadResult([], new VersionedQuery(new NullVersionToken(), $query));
     }
 
-    public function append(array $events, QueryVersion ...$expectedVersions): void {}
+    public function append(array $events, VersionedQuery ...$expectedQueries): void {}
 }
 
 final readonly class NullVersionToken implements VersionToken

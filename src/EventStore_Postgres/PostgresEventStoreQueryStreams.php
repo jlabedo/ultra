@@ -12,7 +12,7 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\QueryVersion;
+use Ultra\EventStore\VersionedQuery;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\StreamQueryBranch;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
@@ -34,25 +34,26 @@ final class PostgresEventStoreQueryStreams implements EventStore
         private readonly LockStrategy    $lockStrategy = new SharedExclusiveLockStrategy(),
     ) {}
 
-    public function load(StreamQuery $query): LoadResult
+    public function load(StreamQuery|VersionedQuery $query): LoadResult
     {
+        $query = self::streamQuery($query);
         if ($query->isEmpty()) {
-            return new LoadResult([], new QueryVersion(new PostgresEventStoreVersionToken(0), $query));
+            return new LoadResult([], new VersionedQuery(new PostgresEventStoreVersionToken(0), $query));
         }
 
         $events = $this->fetchEvents($query);
 
-        return new LoadResult($events, new QueryVersion(new PostgresEventStoreVersionToken(count($events)), $query));
+        return new LoadResult($events, new VersionedQuery(new PostgresEventStoreVersionToken(count($events)), $query));
     }
 
-    public function append(array $events, QueryVersion ...$expectedVersions): void
+    public function append(array $events, VersionedQuery ...$expectedQueries): void
     {
         if ([] === $events) {
             return;
         }
         $readQueries = array_map(
-            static fn(QueryVersion $expectedVersion): StreamQuery => $expectedVersion->query,
-            $expectedVersions,
+            static fn(VersionedQuery $expectedQuery): StreamQuery => $expectedQuery->query,
+            $expectedQueries,
         );
 
         $ownsTransaction = ! $this->connection->isTransactionActive();
@@ -63,10 +64,10 @@ final class PostgresEventStoreQueryStreams implements EventStore
         try {
             $this->lockStrategy->acquire($this->connection, $this->tablePrefix, $readQueries, $events);
 
-            foreach ($expectedVersions as $expectedVersion) {
-                $currentToken = new PostgresEventStoreVersionToken($this->fetchMatchingEventCount($expectedVersion->query));
-                if (! $currentToken->matches($expectedVersion->token)) {
-                    throw new ConcurrencyException(self::describeQuery($expectedVersion->query));
+            foreach ($expectedQueries as $expectedQuery) {
+                $currentToken = new PostgresEventStoreVersionToken($this->fetchMatchingEventCount($expectedQuery->query));
+                if (! $currentToken->matches($expectedQuery->token)) {
+                    throw new ConcurrencyException(self::describeQuery($expectedQuery->query));
                 }
             }
 
@@ -130,6 +131,11 @@ final class PostgresEventStoreQueryStreams implements EventStore
         ]);
 
         return is_string($description) ? $description : 'query';
+    }
+
+    private static function streamQuery(StreamQuery|VersionedQuery $query): StreamQuery
+    {
+        return $query instanceof VersionedQuery ? $query->query : $query;
     }
 
     /**

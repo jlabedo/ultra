@@ -44,7 +44,7 @@ $store = postgresTestStoreForImplementation(
     $config['implementation'] ?? 'hstore',
     lockStrategy: $config['lockStrategy'] ?? 'shared-exclusive',
 );
-$expectedVersion = null;
+$expectedQuery = null;
 if (isset($config['query'])) {
     $query = new StreamQuery(array_map(
         static fn (array $branch): StreamQueryBranch => new StreamQueryBranch(
@@ -53,14 +53,14 @@ if (isset($config['query'])) {
         ),
         $config['query']['branches'],
     ));
-    $expectedVersion = $store->load($query)->queryVersion;
+    $expectedQuery = $store->load($query)->versionedQuery;
 }
 $event = new Event(
     eventType: $config['event']['eventType'],
     payload: $config['event']['payload'],
     domainIds: $config['event']['domainIds'],
 );
-$expectedVersions = null === $expectedVersion ? [] : [$expectedVersion];
+$expectedQueries = null === $expectedQuery ? [] : [$expectedQuery];
 
 try {
     if (isset($config['lockTimeoutMs'])) {
@@ -69,7 +69,7 @@ try {
 
     if ('hold_then_commit' === $config['mode']) {
         $connection->beginTransaction();
-        $store->append([$event], ...$expectedVersions);
+        $store->append([$event], ...$expectedQueries);
         emitMessage([
             'type' => 'event',
             'name' => 'ready',
@@ -94,7 +94,7 @@ try {
         'name' => 'attempting',
     ]);
 
-    $store->append([$event], ...$expectedVersions);
+    $store->append([$event], ...$expectedQueries);
     emitMessage([
         'type' => 'result',
         'status' => 'ok',

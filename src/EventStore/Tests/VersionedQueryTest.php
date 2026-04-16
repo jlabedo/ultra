@@ -6,12 +6,12 @@ namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use Ultra\EventStore\DomainIdentifier;
-use Ultra\EventStore\QueryVersion;
+use Ultra\EventStore\VersionedQuery;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\Tests\Support\EventStoreTestCase;
 use Ultra\EventStore\VersionToken;
 
-final readonly class QueryVersionTestToken implements VersionToken
+final readonly class VersionedQueryTestToken implements VersionToken
 {
     public function matches(VersionToken $expected): bool
     {
@@ -22,12 +22,12 @@ final readonly class QueryVersionTestToken implements VersionToken
 /**
  * @internal
  */
-#[CoversClass(QueryVersion::class)]
-final class QueryVersionTest extends EventStoreTestCase
+#[CoversClass(VersionedQuery::class)]
+final class VersionedQueryTest extends EventStoreTestCase
 {
-    public function test_query_version_carries_an_opaque_token_and_the_loaded_query(): void
+    public function test_versioned_query_carries_an_opaque_token_and_the_loaded_query(): void
     {
-        $token = new QueryVersionTestToken();
+        $token = new VersionedQueryTestToken();
         $query = StreamQuery::anyOf(
             StreamQuery::forStream(
                 new DomainIdentifier('courseId', 'course-123'),
@@ -39,9 +39,9 @@ final class QueryVersionTest extends EventStoreTestCase
             )->ofTypes('student.subscribed'),
         );
 
-        $queryVersion = new QueryVersion($token, $query);
+        $versionedQuery = new VersionedQuery($token, $query);
 
-        self::assertSame($token, $queryVersion->token);
-        self::assertSame($query, $queryVersion->query);
+        self::assertSame($token, $versionedQuery->token);
+        self::assertSame($query, $versionedQuery->query);
     }
 }

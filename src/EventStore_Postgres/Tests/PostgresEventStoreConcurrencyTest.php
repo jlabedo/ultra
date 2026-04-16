@@ -458,7 +458,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
     }
 
     #[DataProvider('implementationAndLockStrategyProvider')]
-    public function test_implementation_rejects_a_stale_multi_branch_query_version_when_a_lower_event_id_becomes_visible_later(
+    public function test_implementation_rejects_a_stale_multi_branch_versioned_query_when_a_lower_event_id_becomes_visible_later(
         string $implementation,
         string $lockStrategy,
     ): void {
@@ -540,7 +540,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 self::assertSame('ok', $workerAResult['status']);
 
                 try {
-                    $store->append([$followUpEvent], $staleResult->queryVersion);
+                    $store->append([$followUpEvent], $staleResult->versionedQuery);
                     self::fail('Expected ConcurrencyException to be thrown.');
                 } catch (ConcurrencyException) {
                 }

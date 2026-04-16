@@ -150,7 +150,7 @@ final class DecisionEngineAspect
             return $proceedResult;
         }
 
-        $this->eventStore->append($this->toEvents($emittedEvents), $loadResult->queryVersion);
+        $this->eventStore->append($this->toEvents($emittedEvents), $loadResult->versionedQuery);
         if (null !== $this->eventBus) {
             foreach ($emittedEvents as $emittedEvent) {
                 $this->eventBus->publish($emittedEvent, $proceedResult->context);

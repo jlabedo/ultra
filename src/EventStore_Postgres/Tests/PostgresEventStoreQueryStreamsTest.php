@@ -17,7 +17,7 @@ use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
  */
 final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCase
 {
-    public function test_query_streams_implementation_returns_db_generated_recorded_at_and_a_fresh_query_version(): void
+    public function test_query_streams_implementation_returns_db_generated_recorded_at_and_a_fresh_versioned_query(): void
     {
         $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
             $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
@@ -28,7 +28,7 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
 
             $store->append([
                 self::event('course.created', ['name' => 'Math 101'], ['courseId' => 'course-123']),
-            ], $empty->queryVersion);
+            ], $empty->versionedQuery);
 
             $result = $store->load($query);
 
@@ -72,7 +72,7 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
         }, 'query-streams');
     }
 
-    public function test_query_streams_implementation_validates_multiple_expected_query_versions(): void
+    public function test_query_streams_implementation_validates_multiple_expected_versioned_queries(): void
     {
         $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
             $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
@@ -83,8 +83,8 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
                 new DomainIdentifier('studentId', 'student-1'),
             )->ofTypes('student.subscribed');
 
-            $courseVersion = $store->load($courseQuery)->queryVersion;
-            $pairVersion = $store->load($pairQuery)->queryVersion;
+            $courseVersionedQuery = $store->load($courseQuery)->versionedQuery;
+            $pairVersionedQuery = $store->load($pairQuery)->versionedQuery;
 
             $store->append([
                 self::event('student.subscribed', ['slot' => 1], [
@@ -92,7 +92,7 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
                     'courseId' => 'course-123',
                     'studentId' => 'student-1',
                 ]),
-            ], $courseVersion, $pairVersion);
+            ], $courseVersionedQuery, $pairVersionedQuery);
 
             self::assertCount(1, $store->load($courseQuery)->events);
             self::assertCount(1, $store->load($pairQuery)->events);

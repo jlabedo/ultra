@@ -11,7 +11,7 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\QueryVersion;
+use Ultra\EventStore\VersionedQuery;
 use Ultra\EventStore\StreamQuery;
 
 /**
@@ -80,7 +80,42 @@ final class EventStoreUnitOfWorkTest extends TestCase
         ));
     }
 
-    public function test_load_keeps_persisted_query_version_when_pending_events_are_visible(): void
+    public function test_load_accepts_versioned_query_and_keeps_buffered_events_visible(): void
+    {
+        $store = new InMemoryEventStore();
+        $uow = new EventStoreUnitOfWork($store);
+        $query = StreamQuery::forStream(
+            new DomainIdentifier('courseId', 'course-123'),
+        )->ofTypes('course.created');
+
+        $store->append([
+            new Event(
+                eventType: 'course.created',
+                payload: ['name' => 'Persisted'],
+                domainIds: ['courseId' => 'course-123'],
+            ),
+        ]);
+
+        $versionedQuery = $uow->load($query)->versionedQuery;
+
+        $uow->append([
+            new Event(
+                eventType: 'course.created',
+                payload: ['name' => 'Pending'],
+                domainIds: ['courseId' => 'course-123'],
+            ),
+        ]);
+
+        $result = $uow->load($versionedQuery);
+
+        self::assertSame(['Persisted', 'Pending'], array_map(
+            static fn (Event $event): string => $event->payload['name'],
+            $result->events,
+        ));
+        self::assertSame($query, $result->versionedQuery->query);
+    }
+
+    public function test_load_keeps_persisted_versioned_query_when_pending_events_are_visible(): void
     {
         $store = new InMemoryEventStore();
         $uow = new EventStoreUnitOfWork($store);
@@ -96,14 +131,14 @@ final class EventStoreUnitOfWorkTest extends TestCase
             ),
         ]);
 
-        $visibleVersion = $uow->load($query)->queryVersion;
+        $visibleQuery = $uow->load($query)->versionedQuery;
         $uow->append([
             new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 102'],
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ], $visibleVersion);
+        ], $visibleQuery);
 
         $uow->flush();
 
@@ -121,23 +156,23 @@ final class EventStoreUnitOfWorkTest extends TestCase
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
 
-        $firstVersion = $uow->load($query)->queryVersion;
+        $firstQuery = $uow->load($query)->versionedQuery;
         $uow->append([
             new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 101'],
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ], $firstVersion);
+        ], $firstQuery);
 
-        $secondVersion = $uow->load($query)->queryVersion;
+        $secondQuery = $uow->load($query)->versionedQuery;
         $uow->append([
             new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 102'],
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ], $secondVersion);
+        ], $secondQuery);
 
         $uow->flush();
 
@@ -157,30 +192,30 @@ final class EventStoreUnitOfWorkTest extends TestCase
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
 
-        $firstVersion = $uow->load($query)->queryVersion;
+        $firstQuery = $uow->load($query)->versionedQuery;
         $uow->append([
             new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 101'],
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ], $firstVersion);
+        ], $firstQuery);
 
-        $secondVersion = $uow->load($query)->queryVersion;
+        $secondQuery = $uow->load($query)->versionedQuery;
         $uow->append([
             new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 102'],
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ], $secondVersion);
+        ], $secondQuery);
 
         $uow->flush();
 
         self::assertCount(1, $recordingStore->appendCalls);
         self::assertCount(2, $recordingStore->appendCalls[0]['events']);
-        self::assertCount(2, $recordingStore->appendCalls[0]['expectedVersions']);
-        self::assertSame([$firstVersion, $secondVersion], $recordingStore->appendCalls[0]['expectedVersions']);
+        self::assertCount(2, $recordingStore->appendCalls[0]['expectedQueries']);
+        self::assertSame([$firstQuery, $secondQuery], $recordingStore->appendCalls[0]['expectedQueries']);
     }
 
     public function test_clear_drops_buffered_appends(): void
@@ -208,25 +243,25 @@ final class EventStoreUnitOfWorkTest extends TestCase
 
 final class RecordingEventStore implements EventStore
 {
-    /** @var list<array{events: list<Event>, expectedVersions: list<QueryVersion>}> */
+    /** @var list<array{events: list<Event>, expectedQueries: list<VersionedQuery>}> */
     public array $appendCalls = [];
 
     public function __construct(
         private readonly EventStore $inner,
     ) {}
 
-    public function load(StreamQuery $query): LoadResult
+    public function load(StreamQuery|VersionedQuery $query): LoadResult
     {
         return $this->inner->load($query);
     }
 
-    public function append(array $events, QueryVersion ...$expectedVersions): void
+    public function append(array $events, VersionedQuery ...$expectedQueries): void
     {
         $this->appendCalls[] = [
             'events' => $events,
-            'expectedVersions' => $expectedVersions,
+            'expectedQueries' => $expectedQueries,
         ];
 
-        $this->inner->append($events, ...$expectedVersions);
+        $this->inner->append($events, ...$expectedQueries);
     }
 }
