@@ -47,17 +47,13 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
     public function append(array $events, QueryVersion ...$expectedVersions): void
     {
-        $expectedQueries = [];
-        $readQueries = [];
-        foreach ($expectedVersions as $expectedVersion) {
-            $expectedQueries[] = [$expectedVersion, $expectedVersion->query];
-            $readQueries[] = $expectedVersion->query;
+        if ([] === $events) {
+            return;
         }
-
-        $eventsToInsert = [];
-        foreach ($events as $event) {
-            $eventsToInsert[] = $event;
-        }
+        $readQueries = array_map(
+            static fn(QueryVersion $expectedVersion): StreamQuery => $expectedVersion->query,
+            $expectedVersions,
+        );
 
         $ownsTransaction = ! $this->connection->isTransactionActive();
         if ($ownsTransaction) {
@@ -65,28 +61,26 @@ final class PostgresEventStoreQueryStreams implements EventStore
         }
 
         try {
-            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, $readQueries, $eventsToInsert);
+            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, $readQueries, $events);
 
-            foreach ($expectedQueries as [$expectedVersion, $expectedQuery]) {
-                $currentToken = new PostgresEventStoreVersionToken($this->fetchMatchingEventCount($expectedQuery));
+            foreach ($expectedVersions as $expectedVersion) {
+                $currentToken = new PostgresEventStoreVersionToken($this->fetchMatchingEventCount($expectedVersion->query));
                 if (! $currentToken->matches($expectedVersion->token)) {
                     throw new ConcurrencyException(self::describeQuery($expectedVersion->query));
                 }
             }
 
-            if ([] !== $eventsToInsert) {
-                $eventIds = $this->insertEvents($eventsToInsert);
+            $eventIds = $this->insertEvents($events);
 
-                $domainIdentifierRows = [];
-                foreach ($eventsToInsert as $index => $event) {
-                    $eventId = $eventIds[$index];
-                    foreach ($event->domainIds as $name => $value) {
-                        $domainIdentifierRows[] = [$eventId, $name, $value];
-                    }
+            $domainIdentifierRows = [];
+            foreach ($events as $index => $event) {
+                $eventId = $eventIds[$index];
+                foreach ($event->domainIds as $name => $value) {
+                    $domainIdentifierRows[] = [$eventId, $name, $value];
                 }
-
-                $this->insertEventDomainIdentifiers($domainIdentifierRows);
             }
+
+            $this->insertEventDomainIdentifiers($domainIdentifierRows);
 
             if ($ownsTransaction) {
                 $this->connection->commit();

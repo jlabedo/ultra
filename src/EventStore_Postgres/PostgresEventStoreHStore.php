@@ -53,36 +53,30 @@ final class PostgresEventStoreHStore implements EventStore
      */
     public function append(array $events, QueryVersion ...$expectedVersions): void
     {
+        if ([] === $events) {
+            return;
+        }
+        $readQueries = array_map(
+            static fn(QueryVersion $expectedVersion): StreamQuery => $expectedVersion->query,
+            $expectedVersions,
+        );
+
         $ownsTransaction = ! $this->connection->isTransactionActive();
         if ($ownsTransaction) {
             $this->connection->beginTransaction();
         }
 
         try {
-            $expectedQueries = [];
-            $readQueries = [];
+            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, $readQueries, $events);
+
             foreach ($expectedVersions as $expectedVersion) {
-                $expectedQueries[] = [$expectedVersion, $expectedVersion->query];
-                $readQueries[] = $expectedVersion->query;
-            }
-
-            $eventsToInsert = [];
-            foreach ($events as $event) {
-                $eventsToInsert[] = $event;
-            }
-
-            $this->lockStrategy->acquire($this->connection, $this->tablePrefix, $readQueries, $eventsToInsert);
-
-            foreach ($expectedQueries as [$expectedVersion, $expectedQuery]) {
-                $currentToken = new PostgresEventStoreVersionToken($this->fetchMatchingEventCount($expectedQuery));
+                $currentToken = new PostgresEventStoreVersionToken($this->fetchMatchingEventCount($expectedVersion->query));
                 if (! $currentToken->matches($expectedVersion->token)) {
                     throw new ConcurrencyException(self::describeQuery($expectedVersion->query));
                 }
             }
 
-            if ([] !== $eventsToInsert) {
-                $this->insertEvents($eventsToInsert);
-            }
+            $this->insertEvents($events);
 
             if ($ownsTransaction) {
                 $this->connection->commit();
