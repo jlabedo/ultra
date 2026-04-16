@@ -13,6 +13,11 @@ final readonly class InMemoryEventStoreVersionToken implements VersionToken
         private int $matchingEventCount,
     ) {}
 
+    public function matchingEventCount(): int
+    {
+        return $this->matchingEventCount;
+    }
+
     public function matches(VersionToken $expected): bool
     {
         return $expected instanceof self

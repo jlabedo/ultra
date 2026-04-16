@@ -6,6 +6,7 @@ namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
@@ -66,14 +67,12 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertSame('Math 101', $result->events[0]->payload['name']);
     }
 
-    public function test_load_accepts_a_versioned_query_to_reload_the_same_query(): void
+    public function test_load_from_versioned_query_returns_the_snapshot_captured_by_its_token(): void
     {
         $store = $this->store();
         $query = StreamQuery::forStream(
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
-
-        $versionedQuery = $store->load($query)->versionedQuery;
 
         $store->append([
             self::event(
@@ -83,12 +82,63 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             ),
         ]);
 
+        $versionedQuery = $store->load($query)->versionedQuery;
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-999'],
+                payload: ['name' => 'Other course'],
+            ),
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+                payload: ['name' => 'Math 102'],
+            ),
+        ]);
+
         $result = $store->load($versionedQuery);
 
         self::assertCount(1, $result->events);
         self::assertSame('Math 101', $result->events[0]->payload['name']);
-        self::assertNotSame($versionedQuery, $result->versionedQuery);
         self::assertSame($query, $result->versionedQuery->query);
+        self::assertSame(['Math 101'], array_map(
+            static fn (Event $event): string => $event->payload['name'],
+            $store->load($result->versionedQuery)->events,
+        ));
+        self::assertCount(2, $store->load($query)->events);
+    }
+
+    public function test_load_from_empty_versioned_query_stays_empty_after_matching_events_are_appended(): void
+    {
+        $store = $this->store();
+        $query = StreamQuery::forStream(
+            new DomainIdentifier('courseId', 'course-123'),
+        )->ofTypes('course.created');
+
+        $emptyVersionedQuery = $store->load($query)->versionedQuery;
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+                payload: ['name' => 'Math 101'],
+            ),
+        ]);
+
+        $result = $store->load($emptyVersionedQuery);
+
+        self::assertSame([], $result->events);
+
+        $this->expectException(ConcurrencyException::class);
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+                payload: ['name' => 'Math 102'],
+            ),
+        ], $result->versionedQuery);
     }
 
     public function test_non_matching_events_do_not_make_a_versioned_query_stale(): void
