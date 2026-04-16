@@ -97,6 +97,21 @@ readonly class StreamQuery
         return false;
     }
 
+    public function describe(): string
+    {
+        $description = json_encode([
+            'branches' => array_map(
+                static fn(StreamQueryBranch $branch): array => [
+                    'domainIdentifiers' => $branch->domainIdentifiers,
+                    'eventTypes' => $branch->eventTypes,
+                ],
+                $this->branches,
+            ),
+        ]);
+
+        return is_string($description) ? $description : 'query';
+    }
+
     /**
      * @param list<DomainIdentifier> $identifiers
      *

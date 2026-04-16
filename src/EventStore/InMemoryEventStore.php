@@ -13,12 +13,18 @@ final class InMemoryEventStore implements EventStore
 
     public function load(StreamQuery|VersionedQuery $query): LoadResult
     {
-        $streamQuery = self::streamQuery($query);
-        $result = $this->loadEvents($streamQuery, self::matchingEventLimit($query));
+        if ($query instanceof VersionedQuery) {
+            if (! $query->token instanceof InMemoryEventStoreVersionToken) {
+                throw new \InvalidArgumentException('Expected token of type ' . InMemoryEventStoreVersionToken::class);
+            }
 
-        $versionToken = new InMemoryEventStoreVersionToken(count($result));
-
-        return new LoadResult($result, new VersionedQuery($versionToken, $streamQuery));
+            $streamQuery = $query->query;
+            $matchingEventLimit = $query->token->matchingEventCount();
+        } else {
+            $streamQuery = $query;
+            $matchingEventLimit = null;
+        }
+        return $this->loadEvents($streamQuery, $matchingEventLimit);
     }
 
     public function append(array $events, VersionedQuery ...$expectedQueries): void
@@ -26,7 +32,7 @@ final class InMemoryEventStore implements EventStore
         foreach ($expectedQueries as $expectedQuery) {
             $currentToken = $this->buildVersionToken($expectedQuery->query);
             if (! $currentToken->matches($expectedQuery->token)) {
-                throw new ConcurrencyException(self::describeQuery($expectedQuery->query));
+                throw new ConcurrencyException($expectedQuery->query->describe());
             }
         }
 
@@ -47,65 +53,25 @@ final class InMemoryEventStore implements EventStore
 
     private function buildVersionToken(StreamQuery $query): InMemoryEventStoreVersionToken
     {
-        return new InMemoryEventStoreVersionToken(count($this->loadEvents($query)));
+        return $this->loadEvents($query)->versionedQuery->token;
     }
 
-    /**
-     * @return list<Event>
-     */
-    private function loadEvents(StreamQuery $query, ?int $matchingEventLimit = null): array
+    private function loadEvents(StreamQuery $query, ?int $matchingEventLimit = null): LoadResult
     {
-        if (0 === $matchingEventLimit) {
-            return [];
-        }
-
         $result = [];
 
-        foreach ($this->events as $event) {
+        $maxIndex = $matchingEventLimit ?? count($this->events) - 1;
+        $lastIndex = -1;
+        for ($i = 0; $i <= $maxIndex; $i++) {
+            $event = $this->events[$i];
             if (! $query->matches($event)) {
                 continue;
             }
 
             $result[] = $event;
-
-            if (null !== $matchingEventLimit && count($result) >= $matchingEventLimit) {
-                break;
-            }
+            $lastIndex = $i;
         }
 
-        return $result;
-    }
-
-    private static function describeQuery(StreamQuery $query): string
-    {
-        $description = json_encode([
-            'branches' => array_map(
-                static fn(StreamQueryBranch $branch): array => [
-                    'domainIdentifiers' => $branch->domainIdentifiers,
-                    'eventTypes' => $branch->eventTypes,
-                ],
-                $query->branches,
-            ),
-        ]);
-
-        return is_string($description) ? $description : 'query';
-    }
-
-    private static function streamQuery(StreamQuery|VersionedQuery $query): StreamQuery
-    {
-        return $query instanceof VersionedQuery ? $query->query : $query;
-    }
-
-    private static function matchingEventLimit(StreamQuery|VersionedQuery $query): ?int
-    {
-        if (! $query instanceof VersionedQuery) {
-            return null;
-        }
-
-        if (! $query->token instanceof InMemoryEventStoreVersionToken) {
-            throw new \InvalidArgumentException('Expected token of type '.InMemoryEventStoreVersionToken::class);
-        }
-
-        return $query->token->matchingEventCount();
+        return new LoadResult($result, new VersionedQuery(new InMemoryEventStoreVersionToken($lastIndex), $query));
     }
 }

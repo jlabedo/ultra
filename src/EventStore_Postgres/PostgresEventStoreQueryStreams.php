@@ -14,7 +14,6 @@ use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\VersionedQuery;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore\StreamQueryBranch;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
@@ -67,7 +66,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
             foreach ($expectedQueries as $expectedQuery) {
                 $currentToken = new PostgresEventStoreVersionToken($this->fetchMatchingEventCount($expectedQuery->query));
                 if (! $currentToken->matches($expectedQuery->token)) {
-                    throw new ConcurrencyException(self::describeQuery($expectedQuery->query));
+                    throw new ConcurrencyException($expectedQuery->query->describe());
                 }
             }
 
@@ -116,21 +115,6 @@ final class PostgresEventStoreQueryStreams implements EventStore
             ),
             $params,
         )->fetchOne();
-    }
-
-    private static function describeQuery(StreamQuery $query): string
-    {
-        $description = json_encode([
-            'branches' => array_map(
-                static fn(StreamQueryBranch $branch): array => [
-                    'domainIdentifiers' => $branch->domainIdentifiers,
-                    'eventTypes' => $branch->eventTypes,
-                ],
-                $query->branches,
-            ),
-        ]);
-
-        return is_string($description) ? $description : 'query';
     }
 
     private static function streamQuery(StreamQuery|VersionedQuery $query): StreamQuery
