@@ -21,16 +21,16 @@ final class InMemoryEventStore implements EventStore
             $result[] = $event;
         }
 
-        $queryVersion = $this->buildQueryVersion($query);
+        $versionToken = $this->buildVersionToken($query);
 
-        return new LoadResult($result, $queryVersion);
+        return new LoadResult($result, new QueryVersion($versionToken, $query));
     }
 
     public function append(array $events, QueryVersion ...$expectedVersions): void
     {
         foreach ($expectedVersions as $expectedVersion) {
-            $currentVersion = $this->buildQueryVersion($expectedVersion->query);
-            if (! $currentVersion->token->matches($expectedVersion->token)) {
+            $currentToken = $this->buildVersionToken($expectedVersion->query);
+            if (! $currentToken->matches($expectedVersion->token)) {
                 throw new ConcurrencyException(self::describeQuery($expectedVersion->query));
             }
         }
@@ -50,7 +50,7 @@ final class InMemoryEventStore implements EventStore
         );
     }
 
-    private function buildQueryVersion(StreamQuery $query): QueryVersion
+    private function buildVersionToken(StreamQuery $query): InMemoryEventStoreVersionToken
     {
         $matchingEventCount = 0;
         foreach ($this->events as $event) {
@@ -61,14 +61,14 @@ final class InMemoryEventStore implements EventStore
             ++$matchingEventCount;
         }
 
-        return new QueryVersion(new InMemoryEventStoreVersionToken($matchingEventCount), $query);
+        return new InMemoryEventStoreVersionToken($matchingEventCount);
     }
 
     private static function describeQuery(StreamQuery $query): string
     {
         $description = json_encode([
             'branches' => array_map(
-                static fn (StreamQueryBranch $branch): array => [
+                static fn(StreamQueryBranch $branch): array => [
                     'domainIdentifiers' => $branch->domainIdentifiers,
                     'eventTypes' => $branch->eventTypes,
                 ],

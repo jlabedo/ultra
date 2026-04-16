@@ -74,11 +74,8 @@ final class PostgresEventStoreHStore implements EventStore
             $this->lockStrategy->acquire($this->connection, $this->tablePrefix, $readQueries, $eventsToInsert);
 
             foreach ($expectedQueries as [$expectedVersion, $expectedQuery]) {
-                $currentVersion = new QueryVersion(
-                    new PostgresEventStoreVersionToken($this->fetchMatchingEventCount($expectedQuery)),
-                    $expectedVersion->query,
-                );
-                if (! $currentVersion->token->matches($expectedVersion->token)) {
+                $currentToken = new PostgresEventStoreVersionToken($this->fetchMatchingEventCount($expectedQuery));
+                if (! $currentToken->matches($expectedVersion->token)) {
                     throw new ConcurrencyException(self::describeQuery($expectedVersion->query));
                 }
             }
@@ -126,7 +123,7 @@ final class PostgresEventStoreHStore implements EventStore
     {
         $description = json_encode([
             'branches' => array_map(
-                static fn (StreamQueryBranch $branch): array => [
+                static fn(StreamQueryBranch $branch): array => [
                     'domainIdentifiers' => $branch->domainIdentifiers,
                     'eventTypes' => $branch->eventTypes,
                 ],
