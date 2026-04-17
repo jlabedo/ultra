@@ -7,8 +7,8 @@ namespace Ultra\EventStore;
 /**
  * One OR branch of a stream query.
  *
- * Domain identifiers are matched with AND semantics. Event types are matched with OR semantics,
- * where an empty event type list means all event types.
+ * Domain identifiers are matched with AND semantics. An empty domain identifier list means all streams.
+ * Event types are matched with OR semantics, where an empty event type list means all event types.
  */
 readonly class StreamQueryBranch
 {
@@ -30,7 +30,7 @@ readonly class StreamQueryBranch
         $this->eventTypes = array_values(array_unique($eventTypes));
     }
 
-    public function isEmpty(): bool
+    public function isGlobal(): bool
     {
         return [] === $this->domainIdentifiers;
     }

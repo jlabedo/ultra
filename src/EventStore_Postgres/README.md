@@ -34,7 +34,8 @@ The lock mechanism is selected through `PostgresEventStoreLockStrategy` and must
 
 The current strategies support typed and untyped query branches with any number of domain identifiers. Untyped
 branches use a wildcard event-type namespace, and writes lock every non-empty domain-identifier subset for both
-the concrete event type and the wildcard.
+the concrete event type and the wildcard. Global queries such as `StreamQuery::all()` are read-only; creating an
+append condition for one is rejected before a lock strategy is involved.
 
 The Postgres benchmark script accepts `--lock-strategy=shared-exclusive` or `--lock-strategy=bucket`.
 

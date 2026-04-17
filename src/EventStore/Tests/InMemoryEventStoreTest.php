@@ -41,6 +41,28 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertSame([], $result->events);
     }
 
+    public function test_load_with_all_query_returns_existing_events(): void
+    {
+        $store = $this->store();
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+            ),
+            self::event(
+                eventType: 'student.subscribed',
+                domainIds: ['studentId' => 'student-1'],
+            ),
+        ]);
+
+        $result = $store->load(StreamQuery::all());
+
+        self::assertCount(2, $result->events);
+        self::assertSame('course.created', $result->events[0]->eventType);
+        self::assertSame('student.subscribed', $result->events[1]->eventType);
+    }
+
     public function test_typed_singleton_query_loads_matching_events_and_returns_a_fresh_checkpoint(): void
     {
         $store = $this->store();

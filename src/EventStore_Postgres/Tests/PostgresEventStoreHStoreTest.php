@@ -277,4 +277,20 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
             self::assertCount(2, $result->events);
         });
     }
+
+    public function test_global_queries_load_all_events(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
+            $store->append([
+                self::event('course.created', [], ['courseId' => 'course-123']),
+                self::event('student.subscribed', [], ['studentId' => 'student-1']),
+            ]);
+
+            $result = $store->load(StreamQuery::all());
+
+            self::assertCount(2, $result->events);
+            self::assertSame('course.created', $result->events[0]->eventType);
+            self::assertSame('student.subscribed', $result->events[1]->eventType);
+        });
+    }
 }

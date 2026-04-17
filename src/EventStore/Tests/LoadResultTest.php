@@ -42,4 +42,14 @@ final class LoadResultTest extends TestCase
         self::assertSame($checkpoint, $appendCondition->checkpoint);
         self::assertSame($query, $appendCondition->query);
     }
+
+    public function test_append_condition_rejects_global_base_query(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Append conditions cannot use global stream queries.');
+
+        $result = new LoadResult([], Checkpoint::at(new Sequence(42)), StreamQuery::all());
+
+        $result->appendCondition();
+    }
 }

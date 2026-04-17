@@ -17,7 +17,7 @@ use Ultra\EventStore\Tests\Support\EventStoreTestCase;
 #[CoversClass(StreamQueryBranch::class)]
 final class StreamQueryTest extends EventStoreTestCase
 {
-    public function test_empty_query_matches_no_event(): void
+    public function test_none_query_matches_no_event(): void
     {
         $query = StreamQuery::none();
         $event = self::event(domainIds: ['course' => 'math-101']);
@@ -26,14 +26,41 @@ final class StreamQueryTest extends EventStoreTestCase
         self::assertFalse($query->matches($event));
     }
 
-    public function test_constructor_discards_empty_branches(): void
+    public function test_all_query_matches_events_without_stream_filtering(): void
+    {
+        $query = StreamQuery::all();
+
+        self::assertFalse($query->isEmpty());
+        self::assertTrue($query->hasGlobalBranch());
+        self::assertTrue($query->matches(self::event(domainIds: ['course' => 'math-101'])));
+        self::assertTrue($query->matches(self::event(domainIds: ['student' => 'alice'])));
+    }
+
+    public function test_all_query_can_be_limited_by_event_type(): void
+    {
+        $query = StreamQuery::all()->ofTypes('course.created');
+
+        self::assertTrue($query->hasGlobalBranch());
+        self::assertTrue($query->matches(self::event(
+            eventType: 'course.created',
+            domainIds: ['course' => 'math-101'],
+        )));
+        self::assertFalse($query->matches(self::event(
+            eventType: 'course.deleted',
+            domainIds: ['course' => 'math-101'],
+        )));
+    }
+
+    public function test_constructor_preserves_global_branches(): void
     {
         $query = new StreamQuery([
             new StreamQueryBranch([]),
             new StreamQueryBranch(['course' => 'math-101']),
         ]);
 
-        self::assertCount(1, $query->branches);
+        self::assertCount(2, $query->branches);
+        self::assertTrue($query->hasGlobalBranch());
+        self::assertTrue($query->matches(self::event(domainIds: ['student' => 'alice'])));
         self::assertTrue($query->matches(self::event(domainIds: ['course' => 'math-101'])));
     }
 

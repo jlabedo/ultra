@@ -5,7 +5,7 @@ Typed event store API with checkpointed reads and query-scoped optimistic concur
 ## Core Model
 
 - **Event** – Neutral event value used for both `append()` input and `load()` output on the write side. It contains `eventType`, `payload`, `domainIds`, and optional `recordedAt`.
-- **StreamQuery** – Immutable branch list for stream queries. Each branch matches domain identifiers with AND semantics and event types with OR semantics. An empty event type list means all event types. Use `forStream(...)->ofTypes(...)` for one branch and `anyOf(...)` for OR-composition.
+- **StreamQuery** – Immutable branch list for stream queries. Each branch matches domain identifiers with AND semantics and event types with OR semantics. An empty event type list means all event types. Use `all()` for unfiltered reads, `forStream(...)->ofTypes(...)` for one branch, and `anyOf(...)` for OR-composition. `none()` has no branches and matches no events.
 - **Sequence** – Persistence ordering value. Sequence `0` is the beginning position; persisted events use positive sequence numbers.
 - **Checkpoint** – Gap-aware sequence position with a stable `gapFloor` plus explicitly observed `gapSeqNos`.
 - **LoadResult** – Result of `load()`: visible `Event` objects, the base `StreamQuery`, the next `Checkpoint`, and `appendCondition()` for optimistic writes.
@@ -31,6 +31,7 @@ interface EventStore
 The checkpoint returned by `load()` is the next cursor for catch-up and paginated reads.
 
 `append()` can validate zero, one, or many append conditions in the same write. That lets a store acquire locks once, validate every relevant stream snapshot, and insert once.
+Append conditions cannot use global queries such as `StreamQuery::all()`, because that would require serializing writes behind one global stream lock.
 
 ## Checkpoint Semantics
 

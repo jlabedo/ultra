@@ -5,8 +5,9 @@ declare(strict_types=1);
 namespace Ultra\EventStore;
 
 /**
- * Immutable query for loading events. Use forStream() to start a branch (one or more identifiers, AND),
- * ofTypes() to filter by event type name. Combine branches with anyOf(). Pass to EventStore::load().
+ * Immutable query for loading events. Use all() to load without stream filtering, forStream() to start a
+ * branch (one or more identifiers, AND), and ofTypes() to filter by event type name. Combine branches with
+ * anyOf(). Pass to EventStore::load().
  */
 readonly class StreamQuery
 {
@@ -20,12 +21,7 @@ readonly class StreamQuery
      */
     public function __construct(array $branches = [])
     {
-        $this->branches = array_values(array_filter(
-            $branches,
-            static function (StreamQueryBranch $branch): bool {
-                return ! $branch->isEmpty();
-            },
-        ));
+        $this->branches = array_values($branches);
     }
 
     public static function none(): self
@@ -34,8 +30,17 @@ readonly class StreamQuery
     }
 
     /**
+     * Match every stream. Global queries are valid for reads but not for append conditions.
+     */
+    public static function all(): self
+    {
+        return new self([new StreamQueryBranch([])]);
+    }
+
+    /**
      * Start a branch: events that have all of these domain identifiers (AND).
      * Multiple identifiers mean "event is in all these streams".
+     * Use all() when no domain identifier filtering is intended.
      */
     public static function forStream(DomainIdentifier ...$identifiers): self
     {
@@ -77,6 +82,17 @@ readonly class StreamQuery
     public function isEmpty(): bool
     {
         return [] === $this->branches;
+    }
+
+    public function hasGlobalBranch(): bool
+    {
+        foreach ($this->branches as $branch) {
+            if ($branch->isGlobal()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     /**

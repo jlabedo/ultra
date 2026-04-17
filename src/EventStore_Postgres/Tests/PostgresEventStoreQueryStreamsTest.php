@@ -157,6 +157,22 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
         }, 'query-streams');
     }
 
+    public function test_query_streams_implementation_loads_global_queries(): void
+    {
+        $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
+            $store->append([
+                self::event('course.created', [], ['courseId' => 'course-123']),
+                self::event('student.subscribed', [], ['studentId' => 'student-1']),
+            ]);
+
+            $result = $store->load(StreamQuery::all());
+
+            self::assertCount(2, $result->events);
+            self::assertSame('course.created', $result->events[0]->eventType);
+            self::assertSame('student.subscribed', $result->events[1]->eventType);
+        }, 'query-streams');
+    }
+
     public function test_query_streams_implementation_supports_untyped_multi_identifier_queries(): void
     {
         $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
