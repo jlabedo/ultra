@@ -11,7 +11,6 @@ use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\Tests\Support\EventStoreTestCase;
-use Ultra\EventStore\AppendCondition;
 
 /**
  * @internal
@@ -59,7 +58,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                 domainIds: ['courseId' => 'course-123'],
                 payload: ['name' => 'Math 101'],
             ),
-        ], new AppendCondition($empty->checkpoint, $query));
+        ], $empty->appendCondition());
 
         $result = $store->load($query);
 
@@ -138,7 +137,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                 domainIds: ['courseId' => 'course-123'],
                 payload: ['name' => 'Math 102'],
             ),
-        ], new AppendCondition($result->checkpoint, $query));
+        ], $result->appendCondition());
     }
 
     public function test_catch_up_uses_checkpoint_as_the_next_page_cursor(): void
@@ -204,7 +203,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
 
-        $appendCondition = new AppendCondition($store->load($query)->checkpoint, $query);
+        $appendCondition = $store->load($query)->appendCondition();
 
         $store->append([
             self::event(
@@ -249,7 +248,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.capacity_changed');
 
-        $staleCondition = new AppendCondition($store->load($query)->checkpoint, $query);
+        $staleCondition = $store->load($query)->appendCondition();
 
         $store->append([
             self::event(
@@ -281,8 +280,8 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             new DomainIdentifier('studentId', 'student-1'),
         )->ofTypes('student.subscribed');
 
-        $courseAppendCondition = new AppendCondition($store->load($courseQuery)->checkpoint, $courseQuery);
-        $pairAppendCondition = new AppendCondition($store->load($pairQuery)->checkpoint, $pairQuery);
+        $courseAppendCondition = $store->load($courseQuery)->appendCondition();
+        $pairAppendCondition = $store->load($pairQuery)->appendCondition();
 
         $store->append([
             self::event(
@@ -318,7 +317,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             ),
         ]);
 
-        $staleCondition = new AppendCondition($store->load($query)->checkpoint, $query);
+        $staleCondition = $store->load($query)->appendCondition();
 
         $store->append([
             self::event(
@@ -364,7 +363,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             ),
         ]);
 
-        $staleCondition = new AppendCondition($store->load($query)->checkpoint, $query);
+        $staleCondition = $store->load($query)->appendCondition();
 
         $store->append([
             self::event(

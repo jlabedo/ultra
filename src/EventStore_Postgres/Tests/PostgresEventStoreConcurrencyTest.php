@@ -16,7 +16,6 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\StreamQueryBranch;
-use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedImplementations;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedLockStrategies;
@@ -541,7 +540,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 self::assertSame('ok', $workerAResult['status']);
 
                 try {
-                    $store->append([$followUpEvent], new AppendCondition($staleResult->checkpoint, $combinedQuery));
+                    $store->append([$followUpEvent], $staleResult->appendCondition());
                     self::fail('Expected ConcurrencyException to be thrown.');
                 } catch (ConcurrencyException) {
                 }

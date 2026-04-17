@@ -8,7 +8,7 @@ Typed event store API with checkpointed reads and query-scoped optimistic concur
 - **StreamQuery** – Immutable branch list for stream queries. Each branch matches domain identifiers with AND semantics and event types with OR semantics. An empty event type list means all event types. Use `forStream(...)->ofTypes(...)` for one branch and `anyOf(...)` for OR-composition.
 - **Sequence** – Persistence ordering value. Sequence `0` is the beginning position; persisted events use positive sequence numbers.
 - **Checkpoint** – Gap-aware sequence position with a stable `gapFloor` plus explicitly observed `gapSeqNos`.
-- **LoadResult** – Result of `load()`: visible `Event` objects plus the next `Checkpoint`.
+- **LoadResult** – Result of `load()`: visible `Event` objects, the base `StreamQuery`, the next `Checkpoint`, and `appendCondition()` for optimistic writes.
 - **AppendCondition** – Optimistic-concurrency expectation tied to one exact `StreamQuery` and the checkpoint that was loaded for it.
 
 ## EventStore Interface
@@ -40,7 +40,7 @@ The checkpoint returned by `load()` is the next cursor for catch-up and paginate
 - `Checkpoint::at($sequence)` is a simple upper bound with no gap entries.
 - Catch-up reads use `from` to skip everything already seen.
 - Replay reads use `to` to reproduce the visible set captured by a previous checkpoint.
-- Optimistic writes wrap the loaded checkpoint and query in `new AppendCondition($checkpoint, $query)`.
+- Optimistic writes pass `load()->appendCondition()` to `append()`.
 - It should not be patched to account for in-process pending writes.
 
 This matters when using the unit of work wrapper.
@@ -79,8 +79,8 @@ $pairQuery = StreamQuery::forStream(
 $courseResult = $store->load($courseQuery);
 $pairResult = $store->load($pairQuery);
 
-$courseAppendCondition = new AppendCondition($courseResult->checkpoint, $courseQuery);
-$pairAppendCondition = new AppendCondition($pairResult->checkpoint, $pairQuery);
+$courseAppendCondition = $courseResult->appendCondition();
+$pairAppendCondition = $pairResult->appendCondition();
 
 $store->append([
     new Event(

@@ -23,7 +23,7 @@ final class InMemoryEventStore implements EventStore
         }
 
         if ($query->isEmpty()) {
-            return new LoadResult([], $to ?? $from ?? Checkpoint::beginning());
+            return new LoadResult([], $to ?? $from ?? Checkpoint::beginning(), $query);
         }
 
         return $this->loadEvents($query, $from, $to, $batchSize);
@@ -80,7 +80,7 @@ final class InMemoryEventStore implements EventStore
         );
 
         if ($reachedToBound) {
-            return new LoadResult($events, $to);
+            return new LoadResult($events, $to, $query);
         }
 
         $checkpoint = $from ?? Checkpoint::beginning();
@@ -88,7 +88,7 @@ final class InMemoryEventStore implements EventStore
             $checkpoint = $checkpoint->record($sequence, inGap: false);
         }
 
-        return new LoadResult($events, $checkpoint);
+        return new LoadResult($events, $checkpoint, $query);
     }
 
     private function wasAlreadySeen(Sequence $sequence, ?Checkpoint $from): bool

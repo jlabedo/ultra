@@ -52,7 +52,7 @@ final class PostgresEventStoreHStore implements EventStore
         }
 
         if ($query->isEmpty()) {
-            return new LoadResult([], $to ?? $from ?? Checkpoint::beginning());
+            return new LoadResult([], $to ?? $from ?? Checkpoint::beginning(), $query);
         }
 
         return null === $to
@@ -153,6 +153,7 @@ final class PostgresEventStoreHStore implements EventStore
         return new LoadResult(
             $this->mapEvents($rows),
             $this->captureCheckpoint($from, $rows),
+            $query,
         );
     }
 
@@ -183,7 +184,7 @@ final class PostgresEventStoreHStore implements EventStore
         )->fetchAllAssociative();
 
         if (count($rows) <= $batchSize) {
-            return new LoadResult($this->mapEvents($rows), $to);
+            return new LoadResult($this->mapEvents($rows), $to, $query);
         }
 
         $rows = array_slice($rows, 0, $batchSize);
@@ -191,6 +192,7 @@ final class PostgresEventStoreHStore implements EventStore
         return new LoadResult(
             $this->mapEvents($rows),
             $this->captureCheckpoint($from, $rows, capturedInGap: false),
+            $query,
         );
     }
 

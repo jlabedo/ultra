@@ -15,7 +15,6 @@ use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore\AppendCondition;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
@@ -154,7 +153,7 @@ final class DecisionEngineAspect
 
         $this->eventStore->append(
             $this->toEvents($emittedEvents),
-            new AppendCondition($loadResult->checkpoint, $query),
+            $loadResult->appendCondition(),
         );
         if (null !== $this->eventBus) {
             foreach ($emittedEvents as $emittedEvent) {

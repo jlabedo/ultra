@@ -37,6 +37,7 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
         return new LoadResult(
             [...$baseResult->events, ...$pendingEvents],
             $baseResult->checkpoint,
+            $query,
         );
     }
 

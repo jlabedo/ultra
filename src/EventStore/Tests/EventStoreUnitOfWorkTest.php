@@ -130,7 +130,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
             ),
         ]);
 
-        $visibleCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
+        $visibleCondition = $uow->load($query)->appendCondition();
         $uow->append([
             new Event(
                 eventType: 'course.created',
@@ -155,7 +155,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
 
-        $firstCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
+        $firstCondition = $uow->load($query)->appendCondition();
         $uow->append([
             new Event(
                 eventType: 'course.created',
@@ -164,7 +164,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
             ),
         ], $firstCondition);
 
-        $secondCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
+        $secondCondition = $uow->load($query)->appendCondition();
         $uow->append([
             new Event(
                 eventType: 'course.created',
@@ -191,7 +191,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
 
-        $firstCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
+        $firstCondition = $uow->load($query)->appendCondition();
         $uow->append([
             new Event(
                 eventType: 'course.created',
@@ -200,7 +200,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
             ),
         ], $firstCondition);
 
-        $secondCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
+        $secondCondition = $uow->load($query)->appendCondition();
         $uow->append([
             new Event(
                 eventType: 'course.created',

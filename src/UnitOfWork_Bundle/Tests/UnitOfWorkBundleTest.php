@@ -32,7 +32,7 @@ final class RecordingEventStore implements EventStore
         int $batchSize = 1000,
     ): LoadResult
     {
-        return new LoadResult([], $to ?? $from ?? Checkpoint::beginning());
+        return new LoadResult([], $to ?? $from ?? Checkpoint::beginning(), $query);
     }
 
     public function append(array $events, AppendCondition ...$appendConditions): void

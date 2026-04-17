@@ -6,7 +6,6 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\StreamQueryBranch;
-use Ultra\EventStore\AppendCondition;
 
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation;
@@ -54,7 +53,7 @@ if (isset($config['query'])) {
         ),
         $config['query']['branches'],
     ));
-    $appendCondition = new AppendCondition($store->load($query)->checkpoint, $query);
+    $appendCondition = $store->load($query)->appendCondition();
 }
 $event = new Event(
     eventType: $config['event']['eventType'],

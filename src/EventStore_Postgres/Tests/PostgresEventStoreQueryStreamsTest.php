@@ -8,7 +8,6 @@ use Doctrine\DBAL\Connection;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
 /**
@@ -29,7 +28,7 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
 
             $store->append([
                 self::event('course.created', ['name' => 'Math 101'], ['courseId' => 'course-123']),
-            ], new AppendCondition($empty->checkpoint, $query));
+            ], $empty->appendCondition());
 
             $result = $store->load($query);
 
@@ -84,8 +83,8 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
                 new DomainIdentifier('studentId', 'student-1'),
             )->ofTypes('student.subscribed');
 
-            $courseAppendCondition = new AppendCondition($store->load($courseQuery)->checkpoint, $courseQuery);
-            $pairAppendCondition = new AppendCondition($store->load($pairQuery)->checkpoint, $pairQuery);
+            $courseAppendCondition = $store->load($courseQuery)->appendCondition();
+            $pairAppendCondition = $store->load($pairQuery)->appendCondition();
 
             $store->append([
                 self::event('student.subscribed', ['slot' => 1], [

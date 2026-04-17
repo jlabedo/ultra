@@ -11,7 +11,6 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSchemaForImplementation;
@@ -800,7 +799,7 @@ function benchmarkReadAppendWithAppendCondition(EventStore $store, int $operatio
                 sequence: 1_000_000 + $operation,
                 status: $state['subscriptionCount'] < $state['capacity'] ? 'confirmed' : 'waitlisted',
             ),
-        ], new AppendCondition($result->checkpoint, $query));
+        ], $result->appendCondition());
 
         $durationsMs[] = elapsedMilliseconds($operationStartedAt);
         $totalEventsLoaded += count($result->events);
