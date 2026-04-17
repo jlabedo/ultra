@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
@@ -26,23 +27,23 @@ final class PostgresEventStoreUnitOfWorkTest extends PostgresEventStoreTestCase
                 new DomainIdentifier('courseId', 'course-123'),
             )->ofTypes('course.created');
 
-            $firstQuery = $uow->load($query)->versionedQuery;
+            $firstCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
             $uow->append([
                 self::event(
                     'course.created',
                     ['name' => 'Math 101'],
                     ['courseId' => 'course-123'],
                 ),
-            ], $firstQuery);
+            ], $firstCondition);
 
-            $secondQuery = $uow->load($query)->versionedQuery;
+            $secondCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
             $uow->append([
                 self::event(
                     'course.created',
                     ['name' => 'Math 102'],
                     ['courseId' => 'course-123'],
                 ),
-            ], $secondQuery);
+            ], $secondCondition);
 
             $connection->beginTransaction();
 

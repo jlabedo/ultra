@@ -11,7 +11,7 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\VersionedQuery;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\StreamQuery;
 
 /**
@@ -80,7 +80,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
         ));
     }
 
-    public function test_load_accepts_versioned_query_and_keeps_buffered_events_visible(): void
+    public function test_load_from_checkpoint_keeps_later_buffered_events_visible(): void
     {
         $store = new InMemoryEventStore();
         $uow = new EventStoreUnitOfWork($store);
@@ -96,7 +96,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
             ),
         ]);
 
-        $versionedQuery = $uow->load($query)->versionedQuery;
+        $checkpoint = $uow->load($query)->checkpoint;
 
         $uow->append([
             new Event(
@@ -106,16 +106,15 @@ final class EventStoreUnitOfWorkTest extends TestCase
             ),
         ]);
 
-        $result = $uow->load($versionedQuery);
+        $result = $uow->load($query, from: $checkpoint);
 
-        self::assertSame(['Persisted', 'Pending'], array_map(
+        self::assertSame(['Pending'], array_map(
             static fn (Event $event): string => $event->payload['name'],
             $result->events,
         ));
-        self::assertSame($query, $result->versionedQuery->query);
     }
 
-    public function test_load_keeps_persisted_versioned_query_when_pending_events_are_visible(): void
+    public function test_load_keeps_persisted_checkpoint_when_pending_events_are_visible(): void
     {
         $store = new InMemoryEventStore();
         $uow = new EventStoreUnitOfWork($store);
@@ -131,14 +130,14 @@ final class EventStoreUnitOfWorkTest extends TestCase
             ),
         ]);
 
-        $visibleQuery = $uow->load($query)->versionedQuery;
+        $visibleCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
         $uow->append([
             new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 102'],
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ], $visibleQuery);
+        ], $visibleCondition);
 
         $uow->flush();
 
@@ -156,23 +155,23 @@ final class EventStoreUnitOfWorkTest extends TestCase
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
 
-        $firstQuery = $uow->load($query)->versionedQuery;
+        $firstCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
         $uow->append([
             new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 101'],
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ], $firstQuery);
+        ], $firstCondition);
 
-        $secondQuery = $uow->load($query)->versionedQuery;
+        $secondCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
         $uow->append([
             new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 102'],
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ], $secondQuery);
+        ], $secondCondition);
 
         $uow->flush();
 
@@ -182,7 +181,7 @@ final class EventStoreUnitOfWorkTest extends TestCase
         self::assertSame('Math 102', $persisted->events[1]->payload['name']);
     }
 
-    public function test_flush_uses_single_inner_append_call_and_passes_persisted_expected_versions_through(): void
+    public function test_flush_uses_single_inner_append_call_and_passes_persisted_append_conditions_through(): void
     {
         $recordingStore = new RecordingEventStore(
             new InMemoryEventStore(),
@@ -192,30 +191,30 @@ final class EventStoreUnitOfWorkTest extends TestCase
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.created');
 
-        $firstQuery = $uow->load($query)->versionedQuery;
+        $firstCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
         $uow->append([
             new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 101'],
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ], $firstQuery);
+        ], $firstCondition);
 
-        $secondQuery = $uow->load($query)->versionedQuery;
+        $secondCondition = new AppendCondition($uow->load($query)->checkpoint, $query);
         $uow->append([
             new Event(
                 eventType: 'course.created',
                 payload: ['name' => 'Math 102'],
                 domainIds: ['courseId' => 'course-123'],
             ),
-        ], $secondQuery);
+        ], $secondCondition);
 
         $uow->flush();
 
         self::assertCount(1, $recordingStore->appendCalls);
         self::assertCount(2, $recordingStore->appendCalls[0]['events']);
-        self::assertCount(2, $recordingStore->appendCalls[0]['expectedQueries']);
-        self::assertSame([$firstQuery, $secondQuery], $recordingStore->appendCalls[0]['expectedQueries']);
+        self::assertCount(2, $recordingStore->appendCalls[0]['appendConditions']);
+        self::assertSame([$firstCondition, $secondCondition], $recordingStore->appendCalls[0]['appendConditions']);
     }
 
     public function test_clear_drops_buffered_appends(): void
@@ -243,25 +242,30 @@ final class EventStoreUnitOfWorkTest extends TestCase
 
 final class RecordingEventStore implements EventStore
 {
-    /** @var list<array{events: list<Event>, expectedQueries: list<VersionedQuery>}> */
+    /** @var list<array{events: list<Event>, appendConditions: list<AppendCondition>}> */
     public array $appendCalls = [];
 
     public function __construct(
         private readonly EventStore $inner,
     ) {}
 
-    public function load(StreamQuery|VersionedQuery $query): LoadResult
+    public function load(
+        StreamQuery $query,
+        ?\Ultra\EventStore\Checkpoint $from = null,
+        ?\Ultra\EventStore\Checkpoint $to = null,
+        int $batchSize = 1000,
+    ): LoadResult
     {
-        return $this->inner->load($query);
+        return $this->inner->load($query, $from, $to, $batchSize);
     }
 
-    public function append(array $events, VersionedQuery ...$expectedQueries): void
+    public function append(array $events, AppendCondition ...$appendConditions): void
     {
         $this->appendCalls[] = [
             'events' => $events,
-            'expectedQueries' => $expectedQueries,
+            'appendConditions' => $appendConditions,
         ];
 
-        $this->inner->append($events, ...$expectedQueries);
+        $this->inner->append($events, ...$appendConditions);
     }
 }

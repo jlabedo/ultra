@@ -22,13 +22,16 @@ That split is intentional:
 ```php
 interface EventFeed
 {
+    public function read(?Checkpoint $from, int $limit, array $eventTypes = []): EventFeedResult;
+
     public function readAfter(int $afterEventId, int $limit, array $eventTypes = []): array;
 
     public function readByIds(array $eventIds): array;
 }
 ```
 
-Both methods return `list<StoredEvent>`.
+`read()` returns an `EventFeedResult` with `list<StoredEvent>` plus the next checkpoint.
+`readAfter()` and `readByIds()` return `list<StoredEvent>`.
 
 ## Projection Handlers
 

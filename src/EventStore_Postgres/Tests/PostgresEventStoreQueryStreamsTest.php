@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
 /**
@@ -17,7 +18,7 @@ use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
  */
 final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCase
 {
-    public function test_query_streams_implementation_returns_db_generated_recorded_at_and_a_fresh_versioned_query(): void
+    public function test_query_streams_implementation_returns_db_generated_recorded_at_and_a_fresh_append_condition(): void
     {
         $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
             $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
@@ -28,7 +29,7 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
 
             $store->append([
                 self::event('course.created', ['name' => 'Math 101'], ['courseId' => 'course-123']),
-            ], $empty->versionedQuery);
+            ], new AppendCondition($empty->checkpoint, $query));
 
             $result = $store->load($query);
 
@@ -72,7 +73,7 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
         }, 'query-streams');
     }
 
-    public function test_query_streams_implementation_validates_multiple_expected_versioned_queries(): void
+    public function test_query_streams_implementation_validates_multiple_append_conditions(): void
     {
         $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
             $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
@@ -83,8 +84,8 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
                 new DomainIdentifier('studentId', 'student-1'),
             )->ofTypes('student.subscribed');
 
-            $courseVersionedQuery = $store->load($courseQuery)->versionedQuery;
-            $pairVersionedQuery = $store->load($pairQuery)->versionedQuery;
+            $courseAppendCondition = new AppendCondition($store->load($courseQuery)->checkpoint, $courseQuery);
+            $pairAppendCondition = new AppendCondition($store->load($pairQuery)->checkpoint, $pairQuery);
 
             $store->append([
                 self::event('student.subscribed', ['slot' => 1], [
@@ -92,7 +93,7 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
                     'courseId' => 'course-123',
                     'studentId' => 'student-1',
                 ]),
-            ], $courseVersionedQuery, $pairVersionedQuery);
+            ], $courseAppendCondition, $pairAppendCondition);
 
             self::assertCount(1, $store->load($courseQuery)->events);
             self::assertCount(1, $store->load($pairQuery)->events);

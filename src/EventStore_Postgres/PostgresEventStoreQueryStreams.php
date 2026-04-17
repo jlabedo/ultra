@@ -4,16 +4,19 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore_Postgres;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\VersionedQuery;
+use Ultra\EventStore\Sequence;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
@@ -21,8 +24,8 @@ use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
  * PostgreSQL event store implementation backed by a normalized domain-identifier index.
  *
  * Events are stored once in the `events` table, while `event_domain_ids` stores one row per event domain
- * identifier. `load()` is lock-free. `append()` acquires transaction-scoped advisory locks, replays each
- * expected query to compare its token, and only then inserts new events.
+ * identifier. `load()` is lock-free. `append()` acquires transaction-scoped advisory locks, validates each
+ * append condition checkpoint, and only then inserts new events.
  */
 final class PostgresEventStoreQueryStreams implements EventStore
 {
@@ -33,26 +36,34 @@ final class PostgresEventStoreQueryStreams implements EventStore
         private readonly LockStrategy    $lockStrategy = new SharedExclusiveLockStrategy(),
     ) {}
 
-    public function load(StreamQuery|VersionedQuery $query): LoadResult
+    public function load(
+        StreamQuery $query,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
+        int $batchSize = 1000,
+    ): LoadResult
     {
-        $query = self::streamQuery($query);
-        if ($query->isEmpty()) {
-            return new LoadResult([], new VersionedQuery(new PostgresEventStoreVersionToken(0), $query));
+        if ($batchSize < 1) {
+            throw new \InvalidArgumentException('Event-store batch size must be at least 1.');
         }
 
-        $events = $this->fetchEvents($query);
+        if ($query->isEmpty()) {
+            return new LoadResult([], $to ?? $from ?? Checkpoint::beginning());
+        }
 
-        return new LoadResult($events, new VersionedQuery(new PostgresEventStoreVersionToken(count($events)), $query));
+        return null === $to
+            ? $this->fetchCapturedEvents($query, $from, $batchSize)
+            : $this->fetchBoundedEvents($query, $from, $to, $batchSize);
     }
 
-    public function append(array $events, VersionedQuery ...$expectedQueries): void
+    public function append(array $events, AppendCondition ...$appendConditions): void
     {
         if ([] === $events) {
             return;
         }
         $readQueries = array_map(
-            static fn(VersionedQuery $expectedQuery): StreamQuery => $expectedQuery->query,
-            $expectedQueries,
+            static fn(AppendCondition $appendCondition): StreamQuery => $appendCondition->query,
+            $appendConditions,
         );
 
         $ownsTransaction = ! $this->connection->isTransactionActive();
@@ -63,20 +74,19 @@ final class PostgresEventStoreQueryStreams implements EventStore
         try {
             $this->lockStrategy->acquire($this->connection, $this->tablePrefix, $readQueries, $events);
 
-            foreach ($expectedQueries as $expectedQuery) {
-                $currentToken = new PostgresEventStoreVersionToken($this->fetchMatchingEventCount($expectedQuery->query));
-                if (! $currentToken->matches($expectedQuery->token)) {
-                    throw new ConcurrencyException($expectedQuery->query->describe());
+            foreach ($appendConditions as $appendCondition) {
+                if ([] !== $this->load($appendCondition->query, from: $appendCondition->checkpoint, batchSize: 1)->events) {
+                    throw new ConcurrencyException($appendCondition->query->describe());
                 }
             }
 
-            $eventIds = $this->insertEvents($events);
+            $sequences = $this->insertEvents($events);
 
             $domainIdentifierRows = [];
             foreach ($events as $index => $event) {
-                $eventId = $eventIds[$index];
+                $sequence = $sequences[$index];
                 foreach ($event->domainIds as $name => $value) {
-                    $domainIdentifierRows[] = [$eventId, $name, $value];
+                    $domainIdentifierRows[] = [$sequence, $name, $value];
                 }
             }
 
@@ -95,52 +105,10 @@ final class PostgresEventStoreQueryStreams implements EventStore
     }
 
     /**
-     * Return the visible event count for the validated query.
-     */
-    private function fetchMatchingEventCount(StreamQuery $query): int
-    {
-        if ($query->isEmpty()) {
-            return 0;
-        }
-
-        [$whereClause, $params] = $this->queryPredicate($query);
-
-        return (int) $this->connection->executeQuery(
-            sprintf(
-                'SELECT COUNT(*)
-                 FROM %s e
-                 WHERE %s',
-                $this->eventsTable(),
-                $whereClause,
-            ),
-            $params,
-        )->fetchOne();
-    }
-
-    private static function streamQuery(StreamQuery|VersionedQuery $query): StreamQuery
-    {
-        return $query instanceof VersionedQuery ? $query->query : $query;
-    }
-
-    /**
      * @return list<Event>
      */
-    private function fetchEvents(StreamQuery $query): array
+    private function mapEvents(array $rows): array
     {
-        [$whereClause, $params] = $this->queryPredicate($query);
-
-        $rows = $this->connection->executeQuery(
-            sprintf(
-                'SELECT e.event_id, e.event_type, e.payload, e.domain_ids, e.recorded_at
-                 FROM %1$s e
-                 WHERE %2$s
-                 ORDER BY e.event_id ASC',
-                $this->eventsTable(),
-                $whereClause,
-            ),
-            $params,
-        )->fetchAllAssociative();
-
         $events = [];
         foreach ($rows as $row) {
             $events[] = new Event(
@@ -152,6 +120,81 @@ final class PostgresEventStoreQueryStreams implements EventStore
         }
 
         return $events;
+    }
+
+    private function fetchCapturedEvents(StreamQuery $query, ?Checkpoint $from, int $batchSize): LoadResult
+    {
+        [$domainPredicate, $domainParams, $domainTypes] = $this->queryPredicate($query);
+        [$fromPredicate, $fromParams, $fromTypes] = $this->fromPredicate($from);
+        $params = [...$fromParams, ...$domainParams];
+        $types = [...$fromTypes, ...$domainTypes];
+
+        $whereClause = $this->andPredicates($fromPredicate, $domainPredicate);
+        $params[] = $batchSize;
+        $types[] = ParameterType::INTEGER;
+
+        $rows = $this->connection->executeQuery(
+            sprintf(
+                'WITH snap AS (SELECT pg_current_snapshot() AS s)
+                 SELECT e.sequence,
+                        CASE WHEN e.xid >= pg_snapshot_xmin(snap.s) THEN 1 ELSE 0 END AS in_gap,
+                        e.event_type,
+                        e.payload,
+                        e.domain_ids,
+                        e.recorded_at
+                 FROM %s e, snap
+                 WHERE %s
+                 ORDER BY e.sequence ASC
+                 LIMIT ?',
+                $this->eventsTable(),
+                $whereClause,
+            ),
+            $params,
+            $types,
+        )->fetchAllAssociative();
+
+        return new LoadResult(
+            $this->mapEvents($rows),
+            $this->captureCheckpoint($from, $rows),
+        );
+    }
+
+    private function fetchBoundedEvents(StreamQuery $query, ?Checkpoint $from, Checkpoint $to, int $batchSize): LoadResult
+    {
+        [$domainPredicate, $domainParams, $domainTypes] = $this->queryPredicate($query);
+        [$fromPredicate, $fromParams, $fromTypes] = $this->fromPredicate($from);
+        [$toPredicate, $toParams, $toTypes] = $this->toPredicate($to);
+        $params = [...$fromParams, ...$toParams, ...$domainParams];
+        $types = [...$fromTypes, ...$toTypes, ...$domainTypes];
+
+        $whereClause = $this->andPredicates($fromPredicate, $toPredicate, $domainPredicate);
+        $params[] = $batchSize + 1;
+        $types[] = ParameterType::INTEGER;
+
+        $rows = $this->connection->executeQuery(
+            sprintf(
+                'SELECT e.sequence, e.event_type, e.payload, e.domain_ids, e.recorded_at
+                 FROM %s e
+                 WHERE %s
+                 ORDER BY e.sequence ASC
+                 LIMIT ?',
+                $this->eventsTable(),
+                $whereClause,
+            ),
+            $params,
+            $types,
+        )->fetchAllAssociative();
+
+        if (count($rows) <= $batchSize) {
+            return new LoadResult($this->mapEvents($rows), $to);
+        }
+
+        $rows = array_slice($rows, 0, $batchSize);
+
+        return new LoadResult(
+            $this->mapEvents($rows),
+            $this->captureCheckpoint($from, $rows, capturedInGap: false),
+        );
     }
 
     /**
@@ -177,9 +220,9 @@ final class PostgresEventStoreQueryStreams implements EventStore
             $types[] = ParameterType::STRING;
         }
 
-        $eventIds = $this->connection->executeQuery(
+        $sequences = $this->connection->executeQuery(
             sprintf(
-                'INSERT INTO %1$s (event_type, payload, domain_ids) VALUES %2$s RETURNING event_id',
+                'INSERT INTO %1$s (event_type, payload, domain_ids) VALUES %2$s RETURNING sequence',
                 $this->eventsTable(),
                 $placeholders,
             ),
@@ -187,7 +230,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
             $types,
         )->fetchFirstColumn();
 
-        return array_map(static fn(mixed $eventId): int => (int) $eventId, $eventIds);
+        return array_map(static fn(mixed $sequence): int => (int) $sequence, $sequences);
     }
 
     /**
@@ -202,8 +245,8 @@ final class PostgresEventStoreQueryStreams implements EventStore
         $placeholders = implode(', ', array_fill(0, count($rows), '(?, ?, ?)'));
         $params = [];
         $types = [];
-        foreach ($rows as [$eventId, $name, $value]) {
-            $params[] = $eventId;
+        foreach ($rows as [$sequence, $name, $value]) {
+            $params[] = $sequence;
             $types[] = ParameterType::INTEGER;
             $params[] = $name;
             $types[] = ParameterType::STRING;
@@ -213,7 +256,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
         $this->connection->executeStatement(
             sprintf(
-                'INSERT INTO %s (event_id, identifier_name, identifier_value) VALUES %s',
+                'INSERT INTO %s (sequence, identifier_name, identifier_value) VALUES %s',
                 $this->eventDomainIdsTable(),
                 $placeholders,
             ),
@@ -233,12 +276,13 @@ final class PostgresEventStoreQueryStreams implements EventStore
     }
 
     /**
-     * @return array{0: string, 1: list<mixed>}
+     * @return array{0: string, 1: list<mixed>, 2: list<mixed>}
      */
     private function queryPredicate(StreamQuery $query): array
     {
         $clauses = [];
         $params = [];
+        $types = [];
 
         foreach ($query->branches as $branch) {
             $identifierClauses = [];
@@ -251,7 +295,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
                     'EXISTS (
                         SELECT 1
                         FROM %s d
-                        WHERE d.event_id = e.event_id
+                        WHERE d.sequence = e.sequence
                           AND d.identifier_name = ?
                           AND d.identifier_value = ?
                     )',
@@ -267,6 +311,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
             if ([] === $branch->eventTypes) {
                 $clauses[] = sprintf('(%s)', $identifierPredicate);
                 array_push($params, ...$branchParams);
+                array_push($types, ...array_fill(0, count($branchParams), ParameterType::STRING));
             } else {
                 $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
                 $clauses[] = sprintf(
@@ -276,9 +321,79 @@ final class PostgresEventStoreQueryStreams implements EventStore
                 );
 
                 array_push($params, ...$branch->eventTypes, ...$branchParams);
+                array_push($types, ...array_fill(0, count($branch->eventTypes) + count($branchParams), ParameterType::STRING));
             }
         }
 
-        return [implode(' OR ', $clauses), $params];
+        return [implode(' OR ', $clauses), $params, $types];
+    }
+
+    /**
+     * @return array{0: string, 1: list<mixed>, 2: list<mixed>}
+     */
+    private function fromPredicate(?Checkpoint $from): array
+    {
+        if (null === $from) {
+            return ['TRUE', [], []];
+        }
+
+        $predicate = ['e.sequence > ?'];
+        $params = [$from->gapFloor->value];
+        $types = [ParameterType::INTEGER];
+        $gapSeqNos = $from->gapSeqNoValues();
+
+        if ([] !== $gapSeqNos) {
+            $predicate[] = 'e.sequence NOT IN (?)';
+            $params[] = $gapSeqNos;
+            $types[] = ArrayParameterType::INTEGER;
+        }
+
+        return [implode(' AND ', $predicate), $params, $types];
+    }
+
+    /**
+     * @return array{0: string, 1: list<mixed>, 2: list<mixed>}
+     */
+    private function toPredicate(Checkpoint $to): array
+    {
+        $params = [$to->gapFloor->value];
+        $types = [ParameterType::INTEGER];
+
+        if ($to->isSimplePosition()) {
+            return ['e.sequence <= ?', $params, $types];
+        }
+
+        $params[] = $to->gapSeqNoValues();
+        $types[] = ArrayParameterType::INTEGER;
+
+        return ['(e.sequence <= ? OR e.sequence IN (?))', $params, $types];
+    }
+
+    private function andPredicates(string ...$predicates): string
+    {
+        return implode(
+            ' AND ',
+            array_map(
+                static fn(string $predicate): string => sprintf('(%s)', $predicate),
+                $predicates,
+            ),
+        );
+    }
+
+    /**
+     * @param list<array<string, mixed>> $rows
+     */
+    private function captureCheckpoint(?Checkpoint $from, array $rows, ?bool $capturedInGap = null): Checkpoint
+    {
+        $checkpoint = $from ?? Checkpoint::beginning();
+
+        foreach ($rows as $row) {
+            $checkpoint = $checkpoint->record(
+                new Sequence((int) $row['sequence']),
+                $capturedInGap ?? (1 === (int) $row['in_gap']),
+            );
+        }
+
+        return $checkpoint;
     }
 }

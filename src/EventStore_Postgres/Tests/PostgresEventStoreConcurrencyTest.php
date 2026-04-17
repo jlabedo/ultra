@@ -16,6 +16,7 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\StreamQueryBranch;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedImplementations;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedLockStrategies;
@@ -222,7 +223,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                     'implementation' => $implementation,
                     'lockStrategy' => $lockStrategy,
                     'mode' => 'hold_then_commit',
-                    ...self::expectedQueryToWorkerConfig($query),
+                    ...self::appendConditionToWorkerConfig($query),
                     'event' => [
                         'eventType' => $event->eventType,
                         'payload' => $event->payload,
@@ -238,7 +239,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                     'implementation' => $implementation,
                     'lockStrategy' => $lockStrategy,
                     'mode' => 'append_once',
-                    ...self::expectedQueryToWorkerConfig($query),
+                    ...self::appendConditionToWorkerConfig($query),
                     'event' => [
                         'eventType' => $event->eventType,
                         'payload' => $event->payload,
@@ -312,7 +313,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                     'implementation' => $implementation,
                     'lockStrategy' => $lockStrategy,
                     'mode' => 'hold_then_commit',
-                    ...self::expectedQueryToWorkerConfig($studentOneQuery),
+                    ...self::appendConditionToWorkerConfig($studentOneQuery),
                     'event' => [
                         'eventType' => $studentOneEvent->eventType,
                         'payload' => $studentOneEvent->payload,
@@ -398,7 +399,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                     'implementation' => $implementation,
                     'lockStrategy' => $lockStrategy,
                     'mode' => 'hold_then_commit',
-                    ...self::expectedQueryToWorkerConfig($studentOneQuery),
+                    ...self::appendConditionToWorkerConfig($studentOneQuery),
                     'event' => [
                         'eventType' => $studentOneEvent->eventType,
                         'payload' => $studentOneEvent->payload,
@@ -458,7 +459,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
     }
 
     #[DataProvider('implementationAndLockStrategyProvider')]
-    public function test_implementation_rejects_a_stale_multi_branch_versioned_query_when_a_lower_event_id_becomes_visible_later(
+    public function test_implementation_rejects_a_stale_multi_branch_append_condition_when_a_lower_sequence_becomes_visible_later(
         string $implementation,
         string $lockStrategy,
     ): void {
@@ -469,7 +470,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 new DomainIdentifier('courseId', 'course-123'),
             )->ofTypes('course.created');
             $studentQuery = StreamQuery::forStream(
-                new DomainIdentifier('courseId', 'course-123'),
+                new DomainIdentifier('courseId', 'course-456'),
                 new DomainIdentifier('studentId', 'student-2'),
             )->ofTypes('student.subscribed');
             $combinedQuery = StreamQuery::anyOf($courseQuery, $studentQuery);
@@ -482,12 +483,12 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
             $studentSubscribedEvent = new Event(
                 eventType: 'student.subscribed',
                 payload: ['slot' => 2],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-456', 'studentId' => 'student-2'],
             );
             $followUpEvent = new Event(
                 eventType: 'student.subscribed',
                 payload: ['slot' => 3],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-456', 'studentId' => 'student-2'],
             );
 
             $workerA = null;
@@ -540,7 +541,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 self::assertSame('ok', $workerAResult['status']);
 
                 try {
-                    $store->append([$followUpEvent], $staleResult->versionedQuery);
+                    $store->append([$followUpEvent], new AppendCondition($staleResult->checkpoint, $combinedQuery));
                     self::fail('Expected ConcurrencyException to be thrown.');
                 } catch (ConcurrencyException) {
                 }
@@ -590,7 +591,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
     /**
      * @return array<string, mixed>
      */
-    private static function expectedQueryToWorkerConfig(StreamQuery $query): array
+    private static function appendConditionToWorkerConfig(StreamQuery $query): array
     {
         return [
             'query' => self::streamQueryToArray($query),

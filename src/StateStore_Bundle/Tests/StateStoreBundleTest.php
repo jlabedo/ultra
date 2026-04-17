@@ -9,11 +9,11 @@ use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\VersionedQuery;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore\VersionToken;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedTableAdapter;
@@ -30,22 +30,17 @@ use Ultra\UnitOfWork_Bundle\UnitOfWorkBundle;
 
 final class NullEventStore implements EventStore
 {
-    public function load(StreamQuery|VersionedQuery $query): LoadResult
+    public function load(
+        StreamQuery $query,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
+        int $batchSize = 1000,
+    ): LoadResult
     {
-        $query = $query instanceof VersionedQuery ? $query->query : $query;
-
-        return new LoadResult([], new VersionedQuery(new NullVersionToken(), $query));
+        return new LoadResult([], $to ?? $from ?? Checkpoint::beginning());
     }
 
-    public function append(array $events, VersionedQuery ...$expectedQueries): void {}
-}
-
-final readonly class NullVersionToken implements VersionToken
-{
-    public function matches(VersionToken $expected): bool
-    {
-        return $expected instanceof self;
-    }
+    public function append(array $events, AppendCondition ...$appendConditions): void {}
 }
 
 #[State(table: 'orders', idColumn: 'order_id')]

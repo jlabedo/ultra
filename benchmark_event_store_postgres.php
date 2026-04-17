@@ -11,6 +11,7 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSchemaForImplementation;
@@ -104,14 +105,14 @@ function main(): int
         }
 
         printLine('Benchmarking read + guarded appends...');
-        $readAppendResult = benchmarkReadAppendWithVersionedQuery(
+        $readAppendResult = benchmarkReadAppendWithAppendCondition(
             $store,
             operations: $config['writeOperations'],
             streamCount: $config['writeStreamCount'],
         );
         printReadAppendBenchmarkResult(
             'Read + append: Guarded subscription',
-            'load course history, derive enrollment state, append student.subscribed with the returned VersionedQuery',
+            'load course history, derive enrollment state, append student.subscribed with the returned AppendCondition',
             $readAppendResult,
         );
         printLine();
@@ -772,7 +773,7 @@ function benchmarkReads(EventStore $store, StreamQuery $query, int $iterations, 
  *     latencyMs: array{avg: float, min: float, p50: float, p95: float, max: float}
  * }
  */
-function benchmarkReadAppendWithVersionedQuery(EventStore $store, int $operations, int $streamCount): array
+function benchmarkReadAppendWithAppendCondition(EventStore $store, int $operations, int $streamCount): array
 {
     $streamCount = max(1, $streamCount);
     seedReadAppendDataset($store, $streamCount);
@@ -799,7 +800,7 @@ function benchmarkReadAppendWithVersionedQuery(EventStore $store, int $operation
                 sequence: 1_000_000 + $operation,
                 status: $state['subscriptionCount'] < $state['capacity'] ? 'confirmed' : 'waitlisted',
             ),
-        ], $result->versionedQuery);
+        ], new AppendCondition($result->checkpoint, $query));
 
         $durationsMs[] = elapsedMilliseconds($operationStartedAt);
         $totalEventsLoaded += count($result->events);

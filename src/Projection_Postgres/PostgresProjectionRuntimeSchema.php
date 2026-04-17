@@ -21,7 +21,7 @@ final readonly class PostgresProjectionRuntimeSchema
                     projection_name TEXT NOT NULL,
                     projection_version INTEGER NOT NULL,
                     lane TEXT NOT NULL,
-                    last_event_id BIGINT NOT NULL DEFAULT 0,
+                    checkpoint TEXT NOT NULL DEFAULT \'{"gapFloor":0,"gapSeqNos":[]}\',
                     last_error TEXT NULL,
                     updated_at TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
                     PRIMARY KEY (projection_name, projection_version, lane)

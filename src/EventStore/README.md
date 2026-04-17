@@ -1,38 +1,46 @@
 # Event Store
 
-Typed event store API with query-scoped optimistic concurrency.
+Typed event store API with checkpointed reads and query-scoped optimistic concurrency.
 
 ## Core Model
 
 - **Event** – Neutral event value used for both `append()` input and `load()` output on the write side. It contains `eventType`, `payload`, `domainIds`, and optional `recordedAt`.
 - **StreamQuery** – Immutable branch list for stream queries. Each branch matches domain identifiers with AND semantics and event types with OR semantics. An empty event type list means all event types. Use `forStream(...)->ofTypes(...)` for one branch and `anyOf(...)` for OR-composition.
-- **LoadResult** – Result of `load()`: a list of visible `Event` objects plus a `VersionedQuery`.
-- **VersionedQuery** – Optimistic-concurrency token tied to one exact `StreamQuery`. It carries an opaque `VersionToken` owned by the event store implementation.
+- **Sequence** – Persistence ordering value. Sequence `0` is the beginning position; persisted events use positive sequence numbers.
+- **Checkpoint** – Gap-aware sequence position with a stable `gapFloor` plus explicitly observed `gapSeqNos`.
+- **LoadResult** – Result of `load()`: visible `Event` objects plus the next `Checkpoint`.
+- **AppendCondition** – Optimistic-concurrency expectation tied to one exact `StreamQuery` and the checkpoint that was loaded for it.
 
 ## EventStore Interface
 
 ```php
 interface EventStore
 {
-    public function load(StreamQuery|VersionedQuery $query): LoadResult;
+    public function load(
+        StreamQuery $query,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
+        int $batchSize = 1000,
+    ): LoadResult;
 
-    public function append(array $events, VersionedQuery ...$expectedQueries): void;
+    public function append(array $events, AppendCondition ...$appendConditions): void;
 }
 ```
 
-Passing a `VersionedQuery` to `load()` reloads its embedded `StreamQuery` and returns a fresh `VersionedQuery`.
-The old token is not validated by `load()`.
+`from` is the last checkpoint already seen. `to` is an optional replay or upper bound checkpoint.
+The checkpoint returned by `load()` is the next cursor for catch-up and paginated reads.
 
-`append()` can validate zero, one, or many versioned queries in the same write. That lets a store acquire locks once, validate every relevant stream snapshot, and insert once.
+`append()` can validate zero, one, or many append conditions in the same write. That lets a store acquire locks once, validate every relevant stream snapshot, and insert once.
 
-## VersionedQuery Semantics
+## Checkpoint Semantics
 
-`VersionedQuery` is a persistence token, not an in-memory overlay token.
+`Checkpoint` is a persistence cursor, not an in-memory overlay token.
 
-- It represents the snapshot returned by the underlying store for a specific query.
-- Its `VersionToken` is opaque. Callers pass it back unchanged instead of inspecting it.
-- It can be passed to `load()` as a reusable handle for the same `StreamQuery`.
-- It is meant for optimistic locking against the transactional database.
+- `Checkpoint::beginning()` starts at sequence `0` with no gap entries.
+- `Checkpoint::at($sequence)` is a simple upper bound with no gap entries.
+- Catch-up reads use `from` to skip everything already seen.
+- Replay reads use `to` to reproduce the visible set captured by a previous checkpoint.
+- Optimistic writes wrap the loaded checkpoint and query in `new AppendCondition($checkpoint, $query)`.
 - It should not be patched to account for in-process pending writes.
 
 This matters when using the unit of work wrapper.
@@ -44,15 +52,15 @@ This matters when using the unit of work wrapper.
 It gives read-your-own-writes semantics while still keeping optimistic concurrency aligned with the wrapped store:
 
 - `load()` returns persisted events plus buffered pending events that match the query.
-- `load()->versionedQuery` stays the `VersionedQuery` from the wrapped store.
+- `load()->checkpoint` stays the checkpoint from the wrapped store.
 - `flush()` forwards all buffered events in a single inner `append(...)` call.
-- Buffered expected versioned queries are passed through unchanged.
+- Buffered append conditions are passed through unchanged.
 
-So the visible event list can include pending writes, while `VersionedQuery` continues to mean “persisted snapshot token”.
+So the visible event list can include pending writes, while `Checkpoint` continues to mean “persisted store position”.
 
 ## Projection Boundary
 
-`eventId` is intentionally not part of the write-side `Event` model.
+`sequence` is intentionally not part of the write-side `Event` model.
 
 If you need persisted ordering/checkpoint identifiers for projections, use `Ultra\Projection\EventFeed` and `Ultra\Projection\StoredEvent`. That is the read-model/projection boundary where persistence identity belongs.
 
@@ -68,8 +76,11 @@ $pairQuery = StreamQuery::forStream(
     new DomainIdentifier('studentId', 'student-1'),
 )->ofTypes('student.subscribed');
 
-$courseVersionedQuery = $store->load($courseQuery)->versionedQuery;
-$pairVersionedQuery = $store->load($pairQuery)->versionedQuery;
+$courseResult = $store->load($courseQuery);
+$pairResult = $store->load($pairQuery);
+
+$courseAppendCondition = new AppendCondition($courseResult->checkpoint, $courseQuery);
+$pairAppendCondition = new AppendCondition($pairResult->checkpoint, $pairQuery);
 
 $store->append([
     new Event(
@@ -81,5 +92,5 @@ $store->append([
             'studentId' => 'student-1',
         ],
     ),
-], $courseVersionedQuery, $pairVersionedQuery);
+], $courseAppendCondition, $pairAppendCondition);
 ```

@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\CoversNothing;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
@@ -18,7 +19,7 @@ use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 #[CoversNothing]
 final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
 {
-    public function test_load_returns_db_generated_recorded_at_and_a_fresh_versioned_query(): void
+    public function test_load_returns_db_generated_recorded_at_and_a_fresh_append_condition(): void
     {
         $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
@@ -33,7 +34,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
                     ['name' => 'Math 101'],
                     ['courseId' => 'course-123'],
                 ),
-            ], $empty->versionedQuery);
+            ], new AppendCondition($empty->checkpoint, $query));
 
             $result = $store->load($query);
 
@@ -62,7 +63,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
         });
     }
 
-    public function test_append_validates_multiple_expected_versioned_queries(): void
+    public function test_append_validates_multiple_append_conditions(): void
     {
         $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
             $courseQuery = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
@@ -73,8 +74,8 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
                 new DomainIdentifier('studentId', 'student-1'),
             )->ofTypes('student.subscribed');
 
-            $courseVersionedQuery = $store->load($courseQuery)->versionedQuery;
-            $pairVersionedQuery = $store->load($pairQuery)->versionedQuery;
+            $courseAppendCondition = new AppendCondition($store->load($courseQuery)->checkpoint, $courseQuery);
+            $pairAppendCondition = new AppendCondition($store->load($pairQuery)->checkpoint, $pairQuery);
 
             $store->append([
                 self::event('student.subscribed', ['slot' => 1], [
@@ -82,7 +83,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
                     'courseId' => 'course-123',
                     'studentId' => 'student-1',
                 ]),
-            ], $courseVersionedQuery, $pairVersionedQuery);
+            ], $courseAppendCondition, $pairAppendCondition);
 
             self::assertCount(1, $store->load($courseQuery)->events);
             self::assertCount(1, $store->load($pairQuery)->events);
@@ -148,7 +149,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
                     'studentId' => 'student-1',
                 ]),
             ]);
-            $staleQuery = $store->load($query)->versionedQuery;
+            $staleCondition = new AppendCondition($store->load($query)->checkpoint, $query);
 
             $store->append([
                 self::event('student.subscribed', [], [
@@ -164,7 +165,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
                     'courseId' => 'course-123',
                     'studentId' => 'student-1',
                 ]),
-            ], $staleQuery);
+            ], $staleCondition);
 
             self::assertCount(2, $store->load($query)->events);
         });
@@ -185,7 +186,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
                     'studentId' => 'student-1',
                 ]),
             ]);
-            $staleQuery = $store->load($query)->versionedQuery;
+            $staleCondition = new AppendCondition($store->load($query)->checkpoint, $query);
 
             $store->append([
                 self::event('student.subscribed', [], [
@@ -203,7 +204,7 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
                     'courseId' => 'course-123',
                     'studentId' => 'student-1',
                 ]),
-            ], $staleQuery);
+            ], $staleCondition);
         });
     }
 

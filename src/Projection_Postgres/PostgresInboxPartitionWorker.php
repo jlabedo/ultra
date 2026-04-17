@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
+use Ultra\EventStore\Checkpoint;
 use Ultra\Projection\EventFeed;
 use Ultra\Projection\ProjectionPlan;
 
@@ -102,7 +103,7 @@ final readonly class PostgresInboxPartitionWorker
     {
         try {
             $this->repository->recordProjectionError(
-                new ProjectionState($plan->name(), $plan->version(), $lane, 0, false),
+                new ProjectionState($plan->name(), $plan->version(), $lane, Checkpoint::beginning(), false),
                 $exception,
             );
         } catch (\Throwable) {

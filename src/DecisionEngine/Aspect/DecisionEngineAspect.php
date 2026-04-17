@@ -15,6 +15,7 @@ use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\AppendCondition;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
@@ -109,7 +110,8 @@ final class DecisionEngineAspect
     {
         $stateParams = $config['stateParams'] ?? [];
         $preparedStates = $this->prepareStates($message, $stateParams);
-        $loadResult = $this->eventStore->load(StreamQuery::anyOf(...array_column($preparedStates, 'query')));
+        $query = StreamQuery::anyOf(...array_column($preparedStates, 'query'));
+        $loadResult = $this->eventStore->load($query);
 
         $states = [];
         $stateByName = [];
@@ -150,7 +152,10 @@ final class DecisionEngineAspect
             return $proceedResult;
         }
 
-        $this->eventStore->append($this->toEvents($emittedEvents), $loadResult->versionedQuery);
+        $this->eventStore->append(
+            $this->toEvents($emittedEvents),
+            new AppendCondition($loadResult->checkpoint, $query),
+        );
         if (null !== $this->eventBus) {
             foreach ($emittedEvents as $emittedEvent) {
                 $this->eventBus->publish($emittedEvent, $proceedResult->context);

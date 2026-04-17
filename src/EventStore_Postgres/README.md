@@ -9,17 +9,20 @@ PostgreSQL implementations of `Ultra\EventStore\EventStore`.
 
 Both implementations share the same public contract:
 
-- `load(StreamQuery|VersionedQuery): LoadResult`
-- `append(array $events, VersionedQuery ...$expectedQueries): void`
+- `load(StreamQuery, ?Checkpoint $from = null, ?Checkpoint $to = null, int $batchSize = 1000): LoadResult`
+- `append(array $events, AppendCondition ...$appendConditions): void`
+
+The events table uses a `sequence BIGINT` identity primary key and an explicit `xid XID8` capture column.
+Unbounded reads use one SQL statement with `pg_current_snapshot()` to build a gap-aware checkpoint in sequence space.
 
 ## Concurrency Model
 
 `append()` is responsible for:
 
-1. Passing the expected versioned queries and appended events to the configured lock strategy.
+1. Passing the append conditions and appended events to the configured lock strategy.
 2. Letting the lock strategy resolve the read-side and write-side advisory-lock namespaces it needs.
 3. Acquiring advisory locks in deterministic order.
-4. Validating every expected versioned query's opaque token under those locks.
+4. Validating every append condition checkpoint under those locks.
 5. Inserting the events once.
 
 That means one append can guard multiple stream snapshots at once.
