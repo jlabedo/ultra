@@ -8,16 +8,12 @@ class ConcurrencyException extends \RuntimeException
 {
     public function __construct(
         string $subject,
-        int $expectedVersion,
-        int $actualVersion,
         ?\Throwable $previous = null,
     ) {
         parent::__construct(
             sprintf(
-                'Version conflict on "%s": expected version %d, actual version %d.',
+                'Query snapshot changed for "%s".',
                 $subject,
-                $expectedVersion,
-                $actualVersion,
             ),
             0,
             $previous,

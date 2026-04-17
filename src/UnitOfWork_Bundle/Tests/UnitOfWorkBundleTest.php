@@ -8,11 +8,12 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\QueryVersion;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\StreamQuery;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
 use Ultra\UnitOfWork\UnitOfWork;
@@ -24,12 +25,17 @@ final class RecordingEventStore implements EventStore
     /** @var list<list<Event>> */
     public array $appendCalls = [];
 
-    public function load(StreamQuery $query): LoadResult
+    public function load(
+        StreamQuery $query,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
+        int $batchSize = 1000,
+    ): LoadResult
     {
-        return new LoadResult([], new QueryVersion(0, $query));
+        return new LoadResult([], $to ?? $from ?? Checkpoint::beginning(), $query);
     }
 
-    public function append(array $events, QueryVersion ...$expectedVersions): void
+    public function append(array $events, AppendCondition ...$appendConditions): void
     {
         $this->appendCalls[] = $events;
     }

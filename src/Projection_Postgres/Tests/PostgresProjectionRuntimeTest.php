@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
+use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
+use Ultra\EventStore\Sequence;
 use Ultra\Projection\Attribute\PartitionInitializer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
@@ -166,7 +168,7 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
             ['course_id' => 'course-2', 'name' => 'Physics 201', 'last_event_id' => 2],
         ])
             ->and($state)->toBe([
-                'last_event_id' => 2,
+                'checkpoint' => Checkpoint::at(new Sequence(2))->serialize(),
                 'last_error' => null,
             ])
         ;
@@ -259,7 +261,7 @@ test('router and partition workers process each partition in order while sharing
                 '{"studentId":"student-2"}',
             ])
             ->and($repository->fetchStateRow($plan->name(), $plan->version(), 'router'))->toBe([
-                'last_event_id' => 4,
+                'checkpoint' => Checkpoint::at(new Sequence(4))->serialize(),
                 'last_error' => null,
             ])
             ->and($repository->fetchPartitionRow($plan->name(), $plan->version(), '{"studentId":"student-1"}'))->toBe([

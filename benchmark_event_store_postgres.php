@@ -104,14 +104,14 @@ function main(): int
         }
 
         printLine('Benchmarking read + guarded appends...');
-        $readAppendResult = benchmarkReadAppendWithQueryVersion(
+        $readAppendResult = benchmarkReadAppendWithAppendCondition(
             $store,
             operations: $config['writeOperations'],
             streamCount: $config['writeStreamCount'],
         );
         printReadAppendBenchmarkResult(
             'Read + append: Guarded subscription',
-            'load course history, derive enrollment state, append student.subscribed with the returned QueryVersion',
+            'load course history, derive enrollment state, append student.subscribed with the returned AppendCondition',
             $readAppendResult,
         );
         printLine();
@@ -772,7 +772,7 @@ function benchmarkReads(EventStore $store, StreamQuery $query, int $iterations, 
  *     latencyMs: array{avg: float, min: float, p50: float, p95: float, max: float}
  * }
  */
-function benchmarkReadAppendWithQueryVersion(EventStore $store, int $operations, int $streamCount): array
+function benchmarkReadAppendWithAppendCondition(EventStore $store, int $operations, int $streamCount): array
 {
     $streamCount = max(1, $streamCount);
     seedReadAppendDataset($store, $streamCount);
@@ -799,7 +799,7 @@ function benchmarkReadAppendWithQueryVersion(EventStore $store, int $operations,
                 sequence: 1_000_000 + $operation,
                 status: $state['subscriptionCount'] < $state['capacity'] ? 'confirmed' : 'waitlisted',
             ),
-        ], $result->queryVersion);
+        ], $result->appendCondition());
 
         $durationsMs[] = elapsedMilliseconds($operationStartedAt);
         $totalEventsLoaded += count($result->events);

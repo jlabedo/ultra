@@ -26,23 +26,23 @@ final class PostgresEventStoreUnitOfWorkTest extends PostgresEventStoreTestCase
                 new DomainIdentifier('courseId', 'course-123'),
             )->ofTypes('course.created');
 
-            $firstVersion = $uow->load($query)->queryVersion;
+            $firstCondition = $uow->load($query)->appendCondition();
             $uow->append([
                 self::event(
                     'course.created',
                     ['name' => 'Math 101'],
                     ['courseId' => 'course-123'],
                 ),
-            ], $firstVersion);
+            ], $firstCondition);
 
-            $secondVersion = $uow->load($query)->queryVersion;
+            $secondCondition = $uow->load($query)->appendCondition();
             $uow->append([
                 self::event(
                     'course.created',
                     ['name' => 'Math 102'],
                     ['courseId' => 'course-123'],
                 ),
-            ], $secondVersion);
+            ], $secondCondition);
 
             $connection->beginTransaction();
 

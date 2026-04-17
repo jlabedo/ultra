@@ -4,8 +4,15 @@ declare(strict_types=1);
 
 namespace Ultra\Projection;
 
+use Ultra\EventStore\Checkpoint;
+
 interface EventFeed
 {
+    /**
+     * @param list<string> $eventTypes
+     */
+    public function read(?Checkpoint $from, int $limit, array $eventTypes = []): EventFeedResult;
+
     /**
      * @param list<string> $eventTypes
      *

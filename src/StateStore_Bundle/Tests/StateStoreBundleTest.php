@@ -9,9 +9,10 @@ use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\QueryVersion;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
@@ -29,12 +30,17 @@ use Ultra\UnitOfWork_Bundle\UnitOfWorkBundle;
 
 final class NullEventStore implements EventStore
 {
-    public function load(StreamQuery $query): LoadResult
+    public function load(
+        StreamQuery $query,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
+        int $batchSize = 1000,
+    ): LoadResult
     {
-        return new LoadResult([], new QueryVersion(0, $query));
+        return new LoadResult([], $to ?? $from ?? Checkpoint::beginning(), $query);
     }
 
-    public function append(array $events, QueryVersion ...$expectedVersions): void {}
+    public function append(array $events, AppendCondition ...$appendConditions): void {}
 }
 
 #[State(table: 'orders', idColumn: 'order_id')]

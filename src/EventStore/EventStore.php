@@ -7,29 +7,30 @@ namespace Ultra\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 
 /**
- * Stores events and exposes optimistic concurrency over stream queries.
- *
- * A successful `load()` returns both the matching events and a `QueryVersion` token that captures the
- * original query plus the version of its materialized result. Passing that token back to `append()` allows
- * implementations to reject concurrent writes that would have changed the queried snapshot in the meantime.
+ * Stores events and exposes checkpointed reads plus optimistic concurrency over stream queries.
  */
 interface EventStore
 {
     /**
      * Load events matching the query.
      */
-    public function load(StreamQuery $query): LoadResult;
+    public function load(
+        StreamQuery $query,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
+        int $batchSize = 1000,
+    ): LoadResult;
 
     /**
      * Append events to the store.
      *
-     * If `expectedVersions` are provided, the store validates that replaying each exact query still yields the
-     * same version. If not, a `ConcurrencyException` is thrown and nothing should be considered committed by
-     * the caller.
+     * If append conditions are provided, the store validates that no matching event has become visible after
+     * each condition checkpoint. If not, a `ConcurrencyException` is thrown and nothing should be considered
+     * committed by the caller.
      *
      * @param list<Event> $events
      *
-     * @throws ConcurrencyException when any expected version is provided and a query snapshot has changed
+     * @throws ConcurrencyException when any append condition is provided and its checkpoint has changed
      */
-    public function append(array $events, QueryVersion ...$expectedVersions): void;
+    public function append(array $events, AppendCondition ...$appendConditions): void;
 }

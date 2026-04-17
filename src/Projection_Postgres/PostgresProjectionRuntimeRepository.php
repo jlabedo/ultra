@@ -6,6 +6,7 @@ namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
+use Ultra\EventStore\Checkpoint;
 
 final readonly class PostgresProjectionRuntimeRepository
 {
@@ -17,11 +18,11 @@ final readonly class PostgresProjectionRuntimeRepository
     public function lockProjectionState(string $projectionName, int $projectionVersion, string $lane): ProjectionState
     {
         $wasCreated = $this->createProjectionStateIfMissing($projectionName, $projectionVersion, $lane);
-        $lastEventId = $wasCreated
-            ? 0
-            : (int) $this->connection->executeQuery(
+        $checkpoint = $wasCreated
+            ? Checkpoint::beginning()
+            : Checkpoint::deserialize((string) $this->connection->executeQuery(
                 sprintf(
-                    'SELECT last_event_id
+                    'SELECT checkpoint
                      FROM %s
                      WHERE projection_name = ? AND projection_version = ? AND lane = ?
                      FOR UPDATE',
@@ -29,28 +30,28 @@ final readonly class PostgresProjectionRuntimeRepository
                 ),
                 [$projectionName, $projectionVersion, $lane],
                 [ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
-            )->fetchOne();
+            )->fetchOne());
 
         return new ProjectionState(
             projectionName: $projectionName,
             projectionVersion: $projectionVersion,
             lane: $lane,
-            lastEventId: $lastEventId,
+            checkpoint: $checkpoint,
             wasCreated: $wasCreated,
         );
     }
 
-    public function advanceProjectionState(ProjectionState $state, int $lastEventId): void
+    public function advanceProjectionState(ProjectionState $state, Checkpoint $checkpoint): void
     {
         $this->connection->executeStatement(
             sprintf(
                 'UPDATE %s
-                 SET last_event_id = ?, last_error = NULL, updated_at = statement_timestamp()
+                 SET checkpoint = ?, last_error = NULL, updated_at = statement_timestamp()
                  WHERE projection_name = ? AND projection_version = ? AND lane = ?',
                 $this->stateTable(),
             ),
-            [$lastEventId, $state->projectionName, $state->projectionVersion, $state->lane],
-            [ParameterType::INTEGER, ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
+            [$checkpoint->serialize(), $state->projectionName, $state->projectionVersion, $state->lane],
+            [ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
         );
     }
 
@@ -233,13 +234,13 @@ final readonly class PostgresProjectionRuntimeRepository
     }
 
     /**
-     * @return null|array{last_event_id: int, last_error: ?string}
+     * @return null|array{checkpoint: string, last_error: ?string}
      */
     public function fetchStateRow(string $projectionName, int $projectionVersion, string $lane): ?array
     {
         $row = $this->connection->executeQuery(
             sprintf(
-                'SELECT last_event_id, last_error
+                'SELECT checkpoint, last_error
                  FROM %s
                  WHERE projection_name = ? AND projection_version = ? AND lane = ?',
                 $this->stateTable(),
@@ -253,7 +254,7 @@ final readonly class PostgresProjectionRuntimeRepository
         }
 
         return [
-            'last_event_id' => (int) $row['last_event_id'],
+            'checkpoint' => (string) $row['checkpoint'],
             'last_error' => null === $row['last_error'] ? null : (string) $row['last_error'],
         ];
     }

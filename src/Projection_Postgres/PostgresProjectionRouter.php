@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
+use Ultra\EventStore\Checkpoint;
 use Ultra\Projection\EventFeed;
 use Ultra\Projection\ProjectionPlan;
 
@@ -29,7 +30,8 @@ final readonly class PostgresProjectionRouter
                 $plan->initializeProjection();
             }
 
-            $events = $this->eventFeed->readAfter($state->lastEventId, $limit, $plan->eventTypes);
+            $feedResult = $this->eventFeed->read($state->checkpoint, $limit, $plan->eventTypes);
+            $events = $feedResult->events;
 
             if ([] === $events) {
                 $this->connection->commit();
@@ -52,7 +54,7 @@ final readonly class PostgresProjectionRouter
             }
 
             $this->repository->enqueueEvents($plan->name(), $plan->version(), $rows);
-            $this->repository->advanceProjectionState($state, $events[array_key_last($events)]->eventId);
+            $this->repository->advanceProjectionState($state, $feedResult->checkpoint);
 
             $this->connection->commit();
 
@@ -72,7 +74,7 @@ final readonly class PostgresProjectionRouter
     {
         try {
             $this->repository->recordProjectionError(
-                $state ?? new ProjectionState($plan->name(), $plan->version(), self::LANE, 0, false),
+                $state ?? new ProjectionState($plan->name(), $plan->version(), self::LANE, Checkpoint::beginning(), false),
                 $exception,
             );
         } catch (\Throwable) {

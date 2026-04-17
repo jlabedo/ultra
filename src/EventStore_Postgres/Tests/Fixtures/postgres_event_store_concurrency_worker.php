@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
-use Ultra\EventStore\QueryVersion;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\StreamQueryBranch;
 
@@ -45,8 +44,8 @@ $store = postgresTestStoreForImplementation(
     $config['implementation'] ?? 'hstore',
     lockStrategy: $config['lockStrategy'] ?? 'shared-exclusive',
 );
-$expectedVersion = null;
-if (isset($config['version'], $config['query'])) {
+$appendCondition = null;
+if (isset($config['query'])) {
     $query = new StreamQuery(array_map(
         static fn (array $branch): StreamQueryBranch => new StreamQueryBranch(
             domainIdentifiers: $branch['domainIdentifiers'],
@@ -54,14 +53,14 @@ if (isset($config['version'], $config['query'])) {
         ),
         $config['query']['branches'],
     ));
-    $expectedVersion = new QueryVersion((int) $config['version'], $query);
+    $appendCondition = $store->load($query)->appendCondition();
 }
 $event = new Event(
     eventType: $config['event']['eventType'],
     payload: $config['event']['payload'],
     domainIds: $config['event']['domainIds'],
 );
-$expectedVersions = null === $expectedVersion ? [] : [$expectedVersion];
+$appendConditions = null === $appendCondition ? [] : [$appendCondition];
 
 try {
     if (isset($config['lockTimeoutMs'])) {
@@ -70,7 +69,7 @@ try {
 
     if ('hold_then_commit' === $config['mode']) {
         $connection->beginTransaction();
-        $store->append([$event], ...$expectedVersions);
+        $store->append([$event], ...$appendConditions);
         emitMessage([
             'type' => 'event',
             'name' => 'ready',
@@ -95,7 +94,7 @@ try {
         'name' => 'attempting',
     ]);
 
-    $store->append([$event], ...$expectedVersions);
+    $store->append([$event], ...$appendConditions);
     emitMessage([
         'type' => 'result',
         'status' => 'ok',

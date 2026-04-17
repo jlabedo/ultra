@@ -6,6 +6,7 @@ namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
@@ -17,12 +18,11 @@ use Ultra\EventStore\Tests\Support\EventStoreTestCase;
 #[CoversClass(InMemoryEventStore::class)]
 final class InMemoryEventStoreTest extends EventStoreTestCase
 {
-    public function test_load_with_empty_query_returns_empty_events_and_empty_query_version(): void
+    public function test_load_with_empty_query_returns_empty_events(): void
     {
         $result = $this->store()->load(StreamQuery::none());
 
         self::assertSame([], $result->events);
-        self::assertSame(0, $result->queryVersion->version);
     }
 
     public function test_load_with_empty_query_ignores_existing_events(): void
@@ -39,10 +39,9 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         $result = $store->load(StreamQuery::none());
 
         self::assertSame([], $result->events);
-        self::assertSame(0, $result->queryVersion->version);
     }
 
-    public function test_typed_singleton_query_loads_matching_events_and_returns_versions(): void
+    public function test_typed_singleton_query_loads_matching_events_and_returns_a_fresh_checkpoint(): void
     {
         $store = $this->store();
         $query = StreamQuery::forStream(
@@ -52,7 +51,6 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         $empty = $store->load($query);
 
         self::assertSame([], $empty->events);
-        self::assertSame(0, $empty->queryVersion->version);
 
         $store->append([
             self::event(
@@ -60,17 +58,16 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                 domainIds: ['courseId' => 'course-123'],
                 payload: ['name' => 'Math 101'],
             ),
-        ]);
+        ], $empty->appendCondition());
 
         $result = $store->load($query);
 
         self::assertCount(1, $result->events);
         self::assertSame('course.created', $result->events[0]->eventType);
         self::assertSame('Math 101', $result->events[0]->payload['name']);
-        self::assertSame(1, $result->queryVersion->version);
     }
 
-    public function test_typed_singleton_query_version_counts_matches_after_non_matching_events(): void
+    public function test_replay_to_checkpoint_returns_the_snapshot_captured_by_the_checkpoint(): void
     {
         $store = $this->store();
         $query = StreamQuery::forStream(
@@ -80,18 +77,151 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         $store->append([
             self::event(
                 eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+                payload: ['name' => 'Math 101'],
+            ),
+        ]);
+
+        $checkpoint = $store->load($query)->checkpoint;
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
                 domainIds: ['courseId' => 'course-999'],
+                payload: ['name' => 'Other course'],
             ),
             self::event(
                 eventType: 'course.created',
                 domainIds: ['courseId' => 'course-123'],
+                payload: ['name' => 'Math 102'],
             ),
         ]);
+
+        $result = $store->load($query, to: $checkpoint);
+
+        self::assertCount(1, $result->events);
+        self::assertSame('Math 101', $result->events[0]->payload['name']);
+        self::assertSame(['Math 101'], array_map(
+            static fn (Event $event): string => $event->payload['name'],
+            $store->load($query, to: $result->checkpoint)->events,
+        ));
+        self::assertCount(2, $store->load($query)->events);
+    }
+
+    public function test_replay_to_empty_checkpoint_stays_empty_after_matching_events_are_appended(): void
+    {
+        $store = $this->store();
+        $query = StreamQuery::forStream(
+            new DomainIdentifier('courseId', 'course-123'),
+        )->ofTypes('course.created');
+
+        $emptyCheckpoint = $store->load($query)->checkpoint;
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+                payload: ['name' => 'Math 101'],
+            ),
+        ]);
+
+        $result = $store->load($query, to: $emptyCheckpoint);
+
+        self::assertSame([], $result->events);
+
+        $this->expectException(ConcurrencyException::class);
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+                payload: ['name' => 'Math 102'],
+            ),
+        ], $result->appendCondition());
+    }
+
+    public function test_catch_up_uses_checkpoint_as_the_next_page_cursor(): void
+    {
+        $store = $this->store();
+        $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'));
+
+        $store->append([
+            self::event(eventType: 'course.created', domainIds: ['courseId' => 'course-123'], payload: ['name' => 'Math 101']),
+            self::event(eventType: 'course.renamed', domainIds: ['courseId' => 'course-123'], payload: ['name' => 'Math 102']),
+            self::event(eventType: 'course.archived', domainIds: ['courseId' => 'course-123'], payload: ['name' => 'Math 103']),
+        ]);
+
+        $firstPage = $store->load($query, batchSize: 2);
+        $secondPage = $store->load($query, from: $firstPage->checkpoint, batchSize: 2);
+
+        self::assertSame(['Math 101', 'Math 102'], array_map(
+            static fn(Event $event): string => $event->payload['name'],
+            $firstPage->events,
+        ));
+        self::assertSame(['Math 103'], array_map(
+            static fn(Event $event): string => $event->payload['name'],
+            $secondPage->events,
+        ));
+        self::assertSame(3, $secondPage->checkpoint->gapFloor->value);
+    }
+
+    public function test_replay_pagination_returns_a_page_cursor_until_the_bound_is_exhausted(): void
+    {
+        $store = $this->store();
+        $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'));
+
+        $store->append([
+            self::event(eventType: 'course.created', domainIds: ['courseId' => 'course-123'], payload: ['name' => 'Math 101']),
+            self::event(eventType: 'course.renamed', domainIds: ['courseId' => 'course-123'], payload: ['name' => 'Math 102']),
+            self::event(eventType: 'course.archived', domainIds: ['courseId' => 'course-123'], payload: ['name' => 'Math 103']),
+        ]);
+        $savedCheckpoint = $store->load($query)->checkpoint;
+
+        $store->append([
+            self::event(eventType: 'course.restored', domainIds: ['courseId' => 'course-123'], payload: ['name' => 'Math 104']),
+        ]);
+
+        $firstPage = $store->load($query, to: $savedCheckpoint, batchSize: 2);
+        $secondPage = $store->load($query, from: $firstPage->checkpoint, to: $savedCheckpoint, batchSize: 2);
+
+        self::assertSame(['Math 101', 'Math 102'], array_map(
+            static fn(Event $event): string => $event->payload['name'],
+            $firstPage->events,
+        ));
+        self::assertSame(2, $firstPage->checkpoint->gapFloor->value);
+        self::assertSame(['Math 103'], array_map(
+            static fn(Event $event): string => $event->payload['name'],
+            $secondPage->events,
+        ));
+        self::assertEquals($savedCheckpoint, $secondPage->checkpoint);
+    }
+
+    public function test_non_matching_events_do_not_make_an_append_condition_stale(): void
+    {
+        $store = $this->store();
+        $query = StreamQuery::forStream(
+            new DomainIdentifier('courseId', 'course-123'),
+        )->ofTypes('course.created');
+
+        $appendCondition = $store->load($query)->appendCondition();
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-999'],
+            ),
+        ], $appendCondition);
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+            ),
+        ], $appendCondition);
 
         $result = $store->load($query);
 
         self::assertCount(1, $result->events);
-        self::assertSame(1, $result->queryVersion->version);
     }
 
     public function test_append_accepts_new_event_types_without_registration(): void
@@ -111,14 +241,14 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertCount(1, $store->load($query)->events);
     }
 
-    public function test_append_with_stale_singleton_query_version_throws_concurrency_exception(): void
+    public function test_append_with_stale_singleton_append_condition_throws_concurrency_exception(): void
     {
         $store = $this->store();
         $query = StreamQuery::forStream(
             new DomainIdentifier('courseId', 'course-123'),
         )->ofTypes('course.capacity_changed');
 
-        $staleVersion = $store->load($query)->queryVersion;
+        $staleCondition = $store->load($query)->appendCondition();
 
         $store->append([
             self::event(
@@ -136,10 +266,10 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                 domainIds: ['courseId' => 'course-123'],
                 payload: ['capacity' => 31],
             ),
-        ], $staleVersion);
+        ], $staleCondition);
     }
 
-    public function test_append_validates_all_expected_query_versions(): void
+    public function test_append_validates_all_append_conditions(): void
     {
         $store = $this->store();
         $courseQuery = StreamQuery::forStream(
@@ -150,8 +280,8 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             new DomainIdentifier('studentId', 'student-1'),
         )->ofTypes('student.subscribed');
 
-        $courseVersion = $store->load($courseQuery)->queryVersion;
-        $pairVersion = $store->load($pairQuery)->queryVersion;
+        $courseAppendCondition = $store->load($courseQuery)->appendCondition();
+        $pairAppendCondition = $store->load($pairQuery)->appendCondition();
 
         $store->append([
             self::event(
@@ -162,7 +292,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                     'studentId' => 'student-1',
                 ],
             ),
-        ], $courseVersion, $pairVersion);
+        ], $courseAppendCondition, $pairAppendCondition);
 
         self::assertCount(1, $store->load($courseQuery)->events);
         self::assertCount(1, $store->load($pairQuery)->events);
@@ -187,7 +317,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             ),
         ]);
 
-        $staleVersion = $store->load($query)->queryVersion;
+        $staleCondition = $store->load($query)->appendCondition();
 
         $store->append([
             self::event(
@@ -209,7 +339,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                     'studentId' => 'student-1',
                 ],
             ),
-        ], $staleVersion);
+        ], $staleCondition);
 
         self::assertCount(2, $store->load($query)->events);
     }
@@ -233,7 +363,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
             ),
         ]);
 
-        $staleVersion = $store->load($query)->queryVersion;
+        $staleCondition = $store->load($query)->appendCondition();
 
         $store->append([
             self::event(
@@ -257,7 +387,7 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
                     'studentId' => 'student-1',
                 ],
             ),
-        ], $staleVersion);
+        ], $staleCondition);
     }
 
     public function test_untyped_query_loads_all_matching_event_types(): void
@@ -274,7 +404,6 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         $result = $store->load($query);
 
         self::assertCount(2, $result->events);
-        self::assertSame(2, $result->queryVersion->version);
     }
 
     public function test_query_with_more_than_two_identifiers_loads_matching_events(): void

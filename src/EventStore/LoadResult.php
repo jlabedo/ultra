@@ -6,19 +6,20 @@ namespace Ultra\EventStore;
 
 /**
  * Result of loading a stream query.
- *
- * The returned events are the materialized snapshot used by the caller, while `queryVersion` is the
- * optimistic-concurrency token that must be passed back to `append()` if the caller wants a replayed
- * version check.
  */
 readonly class LoadResult
 {
     /**
-     * @param list<Event>  $events       events matching the query, ordered by stream order ascending
-     * @param QueryVersion $queryVersion optimistic concurrency token for the loaded query
+     * @param list<Event> $events events matching the query, ordered by sequence ascending
      */
     public function __construct(
         public array $events,
-        public QueryVersion $queryVersion,
+        public Checkpoint $checkpoint,
+        public StreamQuery $baseQuery,
     ) {}
+
+    public function appendCondition(): AppendCondition
+    {
+        return new AppendCondition($this->checkpoint, $this->baseQuery);
+    }
 }

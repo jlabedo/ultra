@@ -109,7 +109,8 @@ final class DecisionEngineAspect
     {
         $stateParams = $config['stateParams'] ?? [];
         $preparedStates = $this->prepareStates($message, $stateParams);
-        $loadResult = $this->eventStore->load(StreamQuery::anyOf(...array_column($preparedStates, 'query')));
+        $query = StreamQuery::anyOf(...array_column($preparedStates, 'query'));
+        $loadResult = $this->eventStore->load($query);
 
         $states = [];
         $stateByName = [];
@@ -150,7 +151,10 @@ final class DecisionEngineAspect
             return $proceedResult;
         }
 
-        $this->eventStore->append($this->toEvents($emittedEvents), $loadResult->queryVersion);
+        $this->eventStore->append(
+            $this->toEvents($emittedEvents),
+            $loadResult->appendCondition(),
+        );
         if (null !== $this->eventBus) {
             foreach ($emittedEvents as $emittedEvent) {
                 $this->eventBus->publish($emittedEvent, $proceedResult->context);
