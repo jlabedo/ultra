@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore_Postgres;
 
-use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Psr\Log\LoggerInterface;
@@ -302,9 +301,9 @@ final class PostgresEventStoreHStore implements EventStore
         $gapSeqNos = $from->gapSeqNoValues();
 
         if ([] !== $gapSeqNos) {
-            $predicate[] = 'e.sequence NOT IN (?)';
-            $params[] = $gapSeqNos;
-            $types[] = ArrayParameterType::INTEGER;
+            $predicate[] = 'e.sequence <> ALL(?)';
+            $params[] = $this->sequenceArrayLiteral($gapSeqNos);
+            $types[] = ParameterType::STRING;
         }
 
         return [implode(' AND ', $predicate), $params, $types];
@@ -322,10 +321,18 @@ final class PostgresEventStoreHStore implements EventStore
             return ['e.sequence <= ?', $params, $types];
         }
 
-        $params[] = $to->gapSeqNoValues();
-        $types[] = ArrayParameterType::INTEGER;
+        $params[] = $this->sequenceArrayLiteral($to->gapSeqNoValues());
+        $types[] = ParameterType::STRING;
 
-        return ['(e.sequence <= ? OR e.sequence IN (?))', $params, $types];
+        return ['(e.sequence <= ? OR e.sequence = ANY(?))', $params, $types];
+    }
+
+    /**
+     * @param non-empty-list<int> $sequences
+     */
+    private function sequenceArrayLiteral(array $sequences): string
+    {
+        return sprintf('{%s}', implode(',', $sequences));
     }
 
     private function andPredicates(string ...$predicates): string

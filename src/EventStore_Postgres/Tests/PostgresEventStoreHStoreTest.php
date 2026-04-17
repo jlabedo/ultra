@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Ultra\EventStore_Postgres\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
+use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
+use Ultra\EventStore\Sequence;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
@@ -130,6 +133,36 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
 
             self::assertCount(1, $result->events);
             self::assertSame('student.subscribed', $result->events[0]->eventType);
+        });
+    }
+
+    public function test_gap_checkpoints_use_postgres_array_predicates_for_catch_up_and_replay(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
+            $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+                ->ofTypes('course.created')
+            ;
+
+            $store->append([
+                self::event('course.created', ['name' => 'first'], ['courseId' => 'course-123']),
+                self::event('course.created', ['name' => 'late'], ['courseId' => 'course-123']),
+                self::event('course.created', ['name' => 'gap'], ['courseId' => 'course-123']),
+                self::event('course.created', ['name' => 'next'], ['courseId' => 'course-123']),
+            ]);
+
+            $checkpoint = new Checkpoint(new Sequence(1), [new Sequence(3)]);
+
+            $catchUp = $store->load($query, from: $checkpoint);
+            $replay = $store->load($query, to: $checkpoint);
+
+            self::assertSame(['late', 'next'], array_map(
+                static fn(Event $event): string => $event->payload['name'],
+                $catchUp->events,
+            ));
+            self::assertSame(['first', 'gap'], array_map(
+                static fn(Event $event): string => $event->payload['name'],
+                $replay->events,
+            ));
         });
     }
 
