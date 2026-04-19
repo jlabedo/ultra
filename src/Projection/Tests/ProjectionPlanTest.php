@@ -10,6 +10,7 @@ use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
+use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\ProjectionPlan;
 
 // ---------------------------------------------------------------------------
@@ -37,8 +38,16 @@ final readonly class CourseCreatedEvent
 #[Projection(name: 'test_projection', partitionBy: 'courseId')]
 final class TestProjectionClass
 {
+    public bool $initialized = false;
+
     /** @var list<string> */
     public array $handled = [];
+
+    #[ProjectionInitializer]
+    public function initialize(): void
+    {
+        $this->initialized = true;
+    }
 
     #[ProjectionHandler]
     public function onStudentSubscribed(StudentSubscribed $event): void
@@ -51,6 +60,13 @@ final class TestProjectionClass
     {
         $this->handled[] = 'created:' . $event->courseId;
     }
+}
+
+#[Projection(name: 'no_init_projection', partitionBy: 'courseId')]
+final class TestProjectionClassWithoutInitializer
+{
+    #[ProjectionHandler]
+    public function onStudentSubscribed(StudentSubscribed $event): void {}
 }
 
 // ---------------------------------------------------------------------------
@@ -96,6 +112,21 @@ test('apply dispatches event to matching handler', function (): void {
     $plan->apply(new Event('unrelated.event', [], ['courseId' => 'course-1']));
 
     expect($projection->handled)->toBe(['subscribed:student-1', 'created:course-2']);
+});
+
+test('initialize calls the ProjectionInitializer method', function (): void {
+    $projection = new TestProjectionClass();
+    $plan = new ProjectionPlan($projection, new UltraNormalizer());
+
+    expect($projection->initialized)->toBeFalse();
+    $plan->initialize();
+    expect($projection->initialized)->toBeTrue();
+});
+
+test('initialize is a no-op when no ProjectionInitializer method is present', function (): void {
+    $plan = new ProjectionPlan(new TestProjectionClassWithoutInitializer(), new UltraNormalizer());
+    $plan->initialize(); // must not throw
+    expect(true)->toBeTrue();
 });
 
 test('projection plan throws when class has no Projection attribute', function (): void {

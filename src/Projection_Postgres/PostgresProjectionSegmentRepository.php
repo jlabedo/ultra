@@ -18,9 +18,13 @@ final readonly class PostgresProjectionSegmentRepository
     /**
      * Creates the initial segment [0-255] for a projection if none exist yet.
      */
-    public function ensureInitialized(string $projectionId): void
+    /**
+     * Creates the initial segment [0-255] for a projection if none exist yet.
+     * Returns true if the row was actually inserted (first-ever run for this projection).
+     */
+    public function ensureInitialized(string $projectionId): bool
     {
-        $this->connection->executeStatement(
+        $affected = $this->connection->executeStatement(
             sprintf(
                 "INSERT INTO %s (projection_id, bucket_from, bucket_to, status, checkpoint)
                  VALUES (?, 0, 255, 'available', ?)
@@ -30,6 +34,8 @@ final readonly class PostgresProjectionSegmentRepository
             [$projectionId, Checkpoint::beginning()->serialize()],
             [ParameterType::STRING, ParameterType::STRING],
         );
+
+        return $affected > 0;
     }
 
     /**

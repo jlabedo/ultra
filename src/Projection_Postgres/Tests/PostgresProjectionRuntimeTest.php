@@ -13,6 +13,7 @@ use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
+use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\ProjectionPlan;
 use Ultra\Projection_Postgres\PostgresProjectionRunner;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
@@ -51,7 +52,11 @@ final class CourseNamesProjection
     public function __construct(
         private readonly Connection $connection,
         private readonly string $tableName,
-    ) {
+    ) {}
+
+    #[ProjectionInitializer]
+    public function initialize(): void
+    {
         $this->connection->executeStatement(sprintf(
             'CREATE TABLE IF NOT EXISTS %s (
                 course_id TEXT PRIMARY KEY,

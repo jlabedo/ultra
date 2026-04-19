@@ -8,12 +8,14 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
+use Ultra\Projection\Attribute\ProjectionInitializer;
 
 final class ProjectionPlan
 {
     private readonly string $projectionId;
     private readonly string $partitionDimension;
     private readonly ProjectionHandlerMap $handlerMap;
+    private readonly ?string $initializerMethod;
 
     public function __construct(
         private readonly object $projection,
@@ -34,6 +36,7 @@ final class ProjectionPlan
         $this->projectionId = $attribute->name;
         $this->partitionDimension = $attribute->partitionBy;
         $this->handlerMap = ProjectionHandlerMap::fromClass($reflection->getName());
+        $this->initializerMethod = $this->resolveInitializerMethod($reflection);
     }
 
     public function projectionId(): string
@@ -71,8 +74,33 @@ final class ProjectionPlan
         );
     }
 
+    public function initialize(): void
+    {
+        if (null !== $this->initializerMethod) {
+            ($this->projection)->{$this->initializerMethod}();
+        }
+    }
+
     public function apply(Event $event): void
     {
         $this->handlerMap->apply($this->projection, $event, $this->normalizer);
+    }
+
+    private function resolveInitializerMethod(\ReflectionClass $reflection): ?string
+    {
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            if ([] !== $method->getAttributes(ProjectionInitializer::class)) {
+                if (0 !== count($method->getParameters())) {
+                    throw new \LogicException(sprintf(
+                        '#[ProjectionInitializer] method %s::%s must have no parameters.',
+                        $reflection->getName(),
+                        $method->getName(),
+                    ));
+                }
+                return $method->getName();
+            }
+        }
+
+        return null;
     }
 }

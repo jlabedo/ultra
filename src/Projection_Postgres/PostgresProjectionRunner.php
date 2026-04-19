@@ -27,7 +27,10 @@ final readonly class PostgresProjectionRunner
         string $workerId,
         int $limit = 100,
     ): int {
-        $this->segmentRepository->ensureInitialized($plan->projectionId());
+        $created = $this->segmentRepository->ensureInitialized($plan->projectionId());
+        if ($created) {
+            $plan->initialize();
+        }
 
         $segment = $this->segmentRepository->claimSegment($plan->projectionId(), $workerId);
         if (null === $segment) {
