@@ -48,12 +48,17 @@ final readonly class PostgresEventStoreQueryStreamsSchema implements PostgresEve
                     sequence BIGINT NOT NULL,
                     identifier_name TEXT NOT NULL,
                     identifier_value TEXT NOT NULL,
+                    bucket SMALLINT NOT NULL,
                     PRIMARY KEY (identifier_name, identifier_value, sequence)
                 )
             SQL,
             <<<SQL
             CREATE INDEX {$tablePrefix}event_domain_ids_sequence_idx
                 ON {$tablePrefix}event_domain_ids (sequence)
+            SQL,
+            <<<SQL
+            CREATE INDEX {$tablePrefix}event_domain_ids_bucket_idx
+                ON {$tablePrefix}event_domain_ids (identifier_name, bucket)
             SQL,
             ...$this->lockStrategy->createStatements($this->tablePrefix),
         ];

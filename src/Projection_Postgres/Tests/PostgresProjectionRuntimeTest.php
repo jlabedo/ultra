@@ -9,122 +9,92 @@ use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Sequence;
-use Ultra\Projection\Attribute\PartitionInitializer;
+use Ultra\Events\Attribute\Event as EventAttribute;
+use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
-use Ultra\Projection\Attribute\ProjectionInitializer;
-use Ultra\Projection\EventFeed;
 use Ultra\Projection\ProjectionPlan;
-use Ultra\Projection\StoredEvent;
-use Ultra\Projection_Postgres\PartitionStrategy;
-use Ultra\Projection_Postgres\PostgresDirectProjectionRunner;
-use Ultra\Projection_Postgres\PostgresInboxPartitionWorker;
-use Ultra\Projection_Postgres\PostgresProjectionRouter;
-use Ultra\Projection_Postgres\PostgresProjectionRuntimeRepository;
+use Ultra\Projection_Postgres\PostgresProjectionRunner;
+use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
+use Ultra\Projection_Postgres\SegmentOperator;
 
 require_once __DIR__ . '/PostgresProjectionTestSupport.php';
 
-#[Projection('course_names')]
+// ---------------------------------------------------------------------------
+// Event DTO
+// ---------------------------------------------------------------------------
+
+#[EventAttribute('course.created')]
+final readonly class CourseCreated
+{
+    public function __construct(
+        public string $courseId,
+        public string $name,
+    ) {}
+}
+
+#[EventAttribute('course.renamed')]
+final readonly class CourseRenamed
+{
+    public function __construct(
+        public string $courseId,
+        public string $name,
+    ) {}
+}
+
+// ---------------------------------------------------------------------------
+// Projection
+// ---------------------------------------------------------------------------
+
+#[Projection(name: 'course_names', partitionBy: 'courseId')]
 final class CourseNamesProjection
 {
     public function __construct(
         private readonly Connection $connection,
         private readonly string $tableName,
-    ) {}
-
-    #[ProjectionInitializer]
-    public function initialize(): void
-    {
+    ) {
         $this->connection->executeStatement(sprintf(
             'CREATE TABLE IF NOT EXISTS %s (
                 course_id TEXT PRIMARY KEY,
-                name TEXT NOT NULL,
-                last_event_id BIGINT NOT NULL
+                name      TEXT NOT NULL
             )',
             $this->tableName,
         ));
     }
 
-    #[ProjectionHandler('course.created')]
-    public function onCourseCreated(StoredEvent $event): void
+    #[ProjectionHandler]
+    public function onCourseCreated(CourseCreated $event): void
     {
         $this->connection->executeStatement(
             sprintf(
-                'INSERT INTO %s (course_id, name, last_event_id)
-                 VALUES (?, ?, ?)
-                 ON CONFLICT (course_id) DO UPDATE
-                 SET name = EXCLUDED.name, last_event_id = EXCLUDED.last_event_id',
+                'INSERT INTO %s (course_id, name) VALUES (?, ?)
+                 ON CONFLICT (course_id) DO UPDATE SET name = EXCLUDED.name',
                 $this->tableName,
             ),
-            [$event->payload['courseId'], $event->payload['name'], $event->eventId],
+            [$event->courseId, $event->name],
+        );
+    }
+
+    #[ProjectionHandler]
+    public function onCourseRenamed(CourseRenamed $event): void
+    {
+        $this->connection->executeStatement(
+            sprintf('UPDATE %s SET name = ? WHERE course_id = ?', $this->tableName),
+            [$event->name, $event->courseId],
         );
     }
 }
 
-#[Projection('student_activity')]
-final class StudentActivityProjection
-{
-    public function __construct(
-        private readonly Connection $connection,
-        private readonly string $tableName,
-        private readonly string $partitionRegistryTable,
-    ) {}
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
 
-    #[ProjectionInitializer]
-    public function initialize(): void
-    {
-        $this->connection->executeStatement(sprintf(
-            'CREATE TABLE IF NOT EXISTS %s (
-                student_id TEXT NOT NULL,
-                event_id BIGINT NOT NULL,
-                slot INTEGER NOT NULL,
-                PRIMARY KEY (student_id, event_id)
-            )',
-            $this->tableName,
-        ));
-
-        $this->connection->executeStatement(sprintf(
-            'CREATE TABLE IF NOT EXISTS %s (
-                partition_key TEXT PRIMARY KEY
-            )',
-            $this->partitionRegistryTable,
-        ));
-    }
-
-    #[PartitionInitializer]
-    public function initializePartition(string $partitionKey): void
-    {
-        $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (partition_key)
-                 VALUES (?)
-                 ON CONFLICT (partition_key) DO NOTHING',
-                $this->partitionRegistryTable,
-            ),
-            [$partitionKey],
-        );
-    }
-
-    #[ProjectionHandler('student.subscribed')]
-    public function onStudentSubscribed(StoredEvent $event): void
-    {
-        $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (student_id, event_id, slot)
-                 VALUES (?, ?, ?)',
-                $this->tableName,
-            ),
-            [$event->payload['studentId'], $event->eventId, $event->payload['slot']],
-        );
-    }
-}
-
-test('direct runner replays ordered events and advances the direct checkpoint', function () {
+test('runner processes events and advances the checkpoint', function (): void {
     withPostgresProjectionRuntime(function (
         Connection $connection,
         EventStore $store,
-        EventFeed $feed,
-        PostgresProjectionRuntimeRepository $repository,
+        PostgresProjectionSegmentRepository $segmentRepository,
+        PostgresProjectionRunner $runner,
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {
@@ -145,135 +115,227 @@ test('direct runner replays ordered events and advances the direct checkpoint', 
 
         $plan = new ProjectionPlan(
             new CourseNamesProjection($connection, $tableName),
+            new UltraNormalizer(),
         );
 
-        $runner = new PostgresDirectProjectionRunner(
-            connection: $connection,
-            eventFeed: $feed,
-            repository: $repository,
+        expect($runner->runOnce($plan, 'worker-1'))->toBe(2)
+            ->and($runner->runOnce($plan, 'worker-1'))->toBe(0);
+
+        $rows = $connection->fetchAllAssociative(
+            sprintf('SELECT course_id, name FROM %s ORDER BY course_id ASC', $tableName),
         );
-
-        expect($runner->runOnce($plan, 100))->toBe(2)
-            ->and($runner->runOnce($plan, 100))->toBe(0)
-        ;
-
-        $rows = $connection->fetchAllAssociative(sprintf(
-            'SELECT course_id, name, last_event_id FROM %s ORDER BY course_id ASC',
-            $tableName,
-        ));
-        $state = $repository->fetchStateRow($plan->name(), $plan->version(), 'direct');
 
         expect($rows)->toBe([
-            ['course_id' => 'course-1', 'name' => 'Math 101', 'last_event_id' => 1],
-            ['course_id' => 'course-2', 'name' => 'Physics 201', 'last_event_id' => 2],
-        ])
-            ->and($state)->toBe([
-                'checkpoint' => Checkpoint::at(new Sequence(2))->serialize(),
-                'last_error' => null,
-            ])
-        ;
+            ['course_id' => 'course-1', 'name' => 'Math 101'],
+            ['course_id' => 'course-2', 'name' => 'Physics 201'],
+        ]);
+
+        $segment = $segmentRepository->readCurrentState('course_names', 0);
+        expect($segment->checkpoint->gapFloor->value)->toBe(2);
     });
 });
 
-test('router and partition workers process each partition in order while sharing one projection definition', function () {
+test('runner resumes from checkpoint after restart', function (): void {
     withPostgresProjectionRuntime(function (
         Connection $connection,
         EventStore $store,
-        EventFeed $feed,
-        PostgresProjectionRuntimeRepository $repository,
+        PostgresProjectionSegmentRepository $segmentRepository,
+        PostgresProjectionRunner $runner,
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {
-        $tableName = $projectionPrefix . 'student_activity_view';
-        $partitionRegistryTable = $projectionPrefix . 'student_activity_partitions';
+        $tableName = $projectionPrefix . 'course_names_view';
 
         $store->append([
             new Event(
-                eventType: 'student.subscribed',
-                payload: ['studentId' => 'student-1', 'courseId' => 'course-1', 'slot' => 1],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-1', 'studentId' => 'student-1'],
-            ),
-            new Event(
-                eventType: 'student.subscribed',
-                payload: ['studentId' => 'student-2', 'courseId' => 'course-1', 'slot' => 1],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-1', 'studentId' => 'student-2'],
-            ),
-            new Event(
-                eventType: 'student.subscribed',
-                payload: ['studentId' => 'student-1', 'courseId' => 'course-2', 'slot' => 2],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-2', 'studentId' => 'student-1'],
-            ),
-            new Event(
-                eventType: 'student.subscribed',
-                payload: ['studentId' => 'student-2', 'courseId' => 'course-2', 'slot' => 2],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-2', 'studentId' => 'student-2'],
+                eventType: 'course.created',
+                payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
+                domainIds: ['courseId' => 'course-1'],
             ),
         ]);
 
         $plan = new ProjectionPlan(
-            new StudentActivityProjection($connection, $tableName, $partitionRegistryTable),
-        );
-        $partitionStrategy = PartitionStrategy::byDomainId('studentId');
-
-        $router = new PostgresProjectionRouter(
-            connection: $connection,
-            eventFeed: $feed,
-            repository: $repository,
-        );
-        $worker = new PostgresInboxPartitionWorker(
-            connection: $connection,
-            eventFeed: $feed,
-            repository: $repository,
+            new CourseNamesProjection($connection, $tableName),
+            new UltraNormalizer(),
         );
 
-        expect($router->routeOnce($plan, $partitionStrategy, 100))->toBe(4);
+        expect($runner->runOnce($plan, 'worker-1'))->toBe(1);
 
-        $inboxRows = $repository->fetchInboxRows($plan->name(), $plan->version());
-        expect($inboxRows)->toBe([
-            ['partition_key' => '{"studentId":"student-1"}', 'event_id' => 1],
-            ['partition_key' => '{"studentId":"student-1"}', 'event_id' => 3],
-            ['partition_key' => '{"studentId":"student-2"}', 'event_id' => 2],
-            ['partition_key' => '{"studentId":"student-2"}', 'event_id' => 4],
+        // Append a second event
+        $store->append([
+            new Event(
+                eventType: 'course.renamed',
+                payload: ['courseId' => 'course-1', 'name' => 'Advanced Math'],
+                domainIds: ['courseId' => 'course-1'],
+            ),
         ]);
 
-        expect($worker->runOnce($plan, 100))->toBe(2)
-            ->and($worker->runOnce($plan, 100))->toBe(2)
-            ->and($worker->runOnce($plan, 100))->toBe(0)
-        ;
+        // Second run should process only the new event
+        expect($runner->runOnce($plan, 'worker-1'))->toBe(1)
+            ->and($runner->runOnce($plan, 'worker-1'))->toBe(0);
 
-        $rows = $connection->fetchAllAssociative(sprintf(
-            'SELECT student_id, event_id, slot FROM %s ORDER BY student_id ASC, event_id ASC',
-            $tableName,
-        ));
-        $initializedPartitions = $connection->fetchFirstColumn(sprintf(
-            'SELECT partition_key FROM %s ORDER BY partition_key ASC',
-            $partitionRegistryTable,
-        ));
+        $row = $connection->fetchAssociative(
+            sprintf('SELECT name FROM %s WHERE course_id = ?', $tableName),
+            ['course-1'],
+        );
 
-        expect($rows)->toBe([
-            ['student_id' => 'student-1', 'event_id' => 1, 'slot' => 1],
-            ['student_id' => 'student-1', 'event_id' => 3, 'slot' => 2],
-            ['student_id' => 'student-2', 'event_id' => 2, 'slot' => 1],
-            ['student_id' => 'student-2', 'event_id' => 4, 'slot' => 2],
-        ])
-            ->and($initializedPartitions)->toBe([
-                '{"studentId":"student-1"}',
-                '{"studentId":"student-2"}',
-            ])
-            ->and($repository->fetchStateRow($plan->name(), $plan->version(), 'router'))->toBe([
-                'checkpoint' => Checkpoint::at(new Sequence(4))->serialize(),
-                'last_error' => null,
-            ])
-            ->and($repository->fetchPartitionRow($plan->name(), $plan->version(), '{"studentId":"student-1"}'))->toBe([
-                'partition_key' => '{"studentId":"student-1"}',
-                'last_event_id' => 3,
-                'last_error' => null,
-            ])
-            ->and($repository->fetchPartitionRow($plan->name(), $plan->version(), '{"studentId":"student-2"}'))->toBe([
-                'partition_key' => '{"studentId":"student-2"}',
-                'last_event_id' => 4,
-                'last_error' => null,
-            ])
-        ;
+        expect($row['name'])->toBe('Advanced Math');
+    });
+});
+
+test('expired lease is recovered so another worker can claim the segment', function (): void {
+    withPostgresProjectionRuntime(function (
+        Connection $connection,
+        EventStore $store,
+        PostgresProjectionSegmentRepository $segmentRepository,
+        PostgresProjectionRunner $runner,
+        string $eventStorePrefix,
+        string $projectionPrefix,
+    ): void {
+        $segmentRepository->ensureInitialized('course_names');
+
+        // Claim with a 0-second lease so it expires immediately
+        $segmentRepository->claimSegment('course_names', 'worker-stale', leaseDurationSeconds: 0);
+
+        // Simulate lease expiry by waiting 1 second then recovering
+        $connection->executeStatement(
+            "UPDATE {$projectionPrefix}segments SET lease_expires_at = now() - interval '1 second' WHERE projection_id = 'course_names'",
+        );
+
+        $recovered = $segmentRepository->recoverExpiredLeases('course_names');
+        expect($recovered)->toBe(1);
+
+        $segment = $segmentRepository->claimSegment('course_names', 'worker-new');
+        expect($segment)->not->toBeNull()
+            ->and($segment->status)->toBe('active');
+    });
+});
+
+test('segment split divides the range into two equal halves', function (): void {
+    withPostgresProjectionRuntime(function (
+        Connection $connection,
+        EventStore $store,
+        PostgresProjectionSegmentRepository $segmentRepository,
+        PostgresProjectionRunner $runner,
+        string $eventStorePrefix,
+        string $projectionPrefix,
+    ): void {
+        $operator = new SegmentOperator($segmentRepository);
+
+        $tableName = $projectionPrefix . 'course_names_view';
+        $store->append([
+            new Event(
+                eventType: 'course.created',
+                payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
+                domainIds: ['courseId' => 'course-1'],
+            ),
+        ]);
+
+        $plan = new ProjectionPlan(
+            new CourseNamesProjection($connection, $tableName),
+            new UltraNormalizer(),
+        );
+
+        $runner->runOnce($plan, 'worker-1');
+
+        $operator->split('course_names', 0);
+
+        $segments = $operator->listSegments('course_names');
+
+        expect($segments)->toHaveCount(2)
+            ->and($segments[0])->toMatchArray(['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'available'])
+            ->and($segments[1])->toMatchArray(['bucketFrom' => 128, 'bucketTo' => 255, 'status' => 'available']);
+    });
+});
+
+test('segment merge recombines two siblings into a parent', function (): void {
+    withPostgresProjectionRuntime(function (
+        Connection $connection,
+        EventStore $store,
+        PostgresProjectionSegmentRepository $segmentRepository,
+        PostgresProjectionRunner $runner,
+        string $eventStorePrefix,
+        string $projectionPrefix,
+    ): void {
+        $operator = new SegmentOperator($segmentRepository);
+
+        $tableName = $projectionPrefix . 'course_names_view';
+        $store->append([
+            new Event(
+                eventType: 'course.created',
+                payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
+                domainIds: ['courseId' => 'course-1'],
+            ),
+        ]);
+
+        $plan = new ProjectionPlan(
+            new CourseNamesProjection($connection, $tableName),
+            new UltraNormalizer(),
+        );
+
+        $runner->runOnce($plan, 'worker-1');
+
+        // Split first
+        $operator->split('course_names', 0);
+
+        // Both halves are available, so merge can proceed via draining
+        $operator->merge('course_names', 0, 255);
+
+        $segments = $operator->listSegments('course_names');
+        expect($segments)->toHaveCount(2);
+        foreach ($segments as $seg) {
+            expect($seg['status'])->toBe('draining')
+                ->and($seg['pendingOperation'])->toBe('merge');
+        }
+
+        // Simulate finalization by each worker
+        $state0 = $segmentRepository->readCurrentState('course_names', 0);
+        $state128 = $segmentRepository->readCurrentState('course_names', 128);
+
+        $segmentRepository->finalizeMerge($state0, $state0->checkpoint);
+        $segmentRepository->finalizeMerge($state128, $state128->checkpoint);
+
+        $segments = $operator->listSegments('course_names');
+        expect($segments)->toHaveCount(1)
+            ->and($segments[0])->toMatchArray(['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'available']);
+    });
+});
+
+test('draining split is finalized by the worker on its next iteration', function (): void {
+    withPostgresProjectionRuntime(function (
+        Connection $connection,
+        EventStore $store,
+        PostgresProjectionSegmentRepository $segmentRepository,
+        PostgresProjectionRunner $runner,
+        string $eventStorePrefix,
+        string $projectionPrefix,
+    ): void {
+        $tableName = $projectionPrefix . 'course_names_view';
+
+        $store->append([
+            new Event(
+                eventType: 'course.created',
+                payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
+                domainIds: ['courseId' => 'course-1'],
+            ),
+        ]);
+
+        $plan = new ProjectionPlan(
+            new CourseNamesProjection($connection, $tableName),
+            new UltraNormalizer(),
+        );
+
+        // First run: claims [0-255], processes 1 event, releases
+        $runner->runOnce($plan, 'worker-1');
+
+        // Mark for split while segment is available (simulates operator calling split)
+        $segmentRepository->splitSegment('course_names', 0);
+
+        // Since segment was available (not active), split was immediate.
+        // Verify two segments now exist.
+        $segments = $segmentRepository->listSegments('course_names');
+        expect($segments)->toHaveCount(2)
+            ->and($segments[0]['bucketFrom'])->toBe(0)
+            ->and($segments[1]['bucketFrom'])->toBe(128);
     });
 });
