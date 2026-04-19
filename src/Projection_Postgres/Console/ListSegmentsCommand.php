@@ -10,7 +10,7 @@ use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Ultra\Projection_Postgres\SegmentOperator;
+use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 
 #[AsCommand(
     name: 'projection:segment:list',
@@ -18,7 +18,7 @@ use Ultra\Projection_Postgres\SegmentOperator;
 )]
 final class ListSegmentsCommand extends Command
 {
-    public function __construct(private readonly SegmentOperator $operator)
+    public function __construct(private readonly PostgresProjectionSegmentRepository $repository)
     {
         parent::__construct();
     }
@@ -31,7 +31,7 @@ final class ListSegmentsCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $projectionId = (string) $input->getArgument('projection-id');
-        $segments = $this->operator->listSegments($projectionId);
+        $segments = $this->repository->listSegments($projectionId);
 
         if ([] === $segments) {
             $output->writeln(sprintf('<comment>No segments found for "%s".</comment>', $projectionId));

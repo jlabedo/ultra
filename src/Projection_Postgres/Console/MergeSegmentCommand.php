@@ -9,15 +9,15 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Ultra\Projection_Postgres\SegmentOperator;
+use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 
 #[AsCommand(
     name: 'projection:segment:merge',
-    description: 'Merge two sibling projection segments into their parent range.',
+    description: 'Mark two sibling segments for merge into their parent range.',
 )]
 final class MergeSegmentCommand extends Command
 {
-    public function __construct(private readonly SegmentOperator $operator)
+    public function __construct(private readonly PostgresProjectionSegmentRepository $repository)
     {
         parent::__construct();
     }
@@ -36,18 +36,13 @@ final class MergeSegmentCommand extends Command
         $bucketFrom   = (int)    $input->getArgument('bucket-from');
         $bucketTo     = (int)    $input->getArgument('bucket-to');
 
-        $message = $this->operator->merge($projectionId, $bucketFrom, $bucketTo);
-        $output->writeln($message);
+        $this->repository->requestMerge($projectionId, $bucketFrom, $bucketTo);
 
-        $segments = $this->operator->listSegments($projectionId);
-        $output->writeln('');
-        $output->writeln(sprintf('<info>Current segments for "%s":</info>', $projectionId));
+        $segments = $this->repository->listSegments($projectionId);
+        $output->writeln(sprintf('<info>Segments for "%s" after merge request:</info>', $projectionId));
         foreach ($segments as $seg) {
             $pending = $seg['pendingOperation'] ? sprintf(' [pending: %s]', $seg['pendingOperation']) : '';
-            $output->writeln(sprintf(
-                '  [%d-%d] %s%s',
-                $seg['bucketFrom'], $seg['bucketTo'], $seg['status'], $pending,
-            ));
+            $output->writeln(sprintf('  [%d-%d] %s%s', $seg['bucketFrom'], $seg['bucketTo'], $seg['status'], $pending));
         }
 
         return Command::SUCCESS;

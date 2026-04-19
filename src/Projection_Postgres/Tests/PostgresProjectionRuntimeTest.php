@@ -16,7 +16,6 @@ use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\ProjectionPlan;
 use Ultra\Projection_Postgres\PostgresProjectionRunner;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
-use Ultra\Projection_Postgres\SegmentOperator;
 
 require_once __DIR__ . '/PostgresProjectionTestSupport.php';
 
@@ -220,8 +219,6 @@ test('segment split divides the range into two equal halves', function (): void 
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {
-        $operator = new SegmentOperator($segmentRepository);
-
         $tableName = $projectionPrefix . 'course_names_view';
         $store->append([
             new Event(
@@ -238,9 +235,9 @@ test('segment split divides the range into two equal halves', function (): void 
 
         $runner->runOnce($plan, 'worker-1');
 
-        $operator->split('course_names', 0);
+        $segmentRepository->splitSegment('course_names', 0);
 
-        $segments = $operator->listSegments('course_names');
+        $segments = $segmentRepository->listSegments('course_names');
 
         expect($segments)->toHaveCount(2)
             ->and($segments[0])->toMatchArray(['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'available'])
@@ -257,8 +254,6 @@ test('segment merge recombines two siblings into a parent', function (): void {
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {
-        $operator = new SegmentOperator($segmentRepository);
-
         $tableName = $projectionPrefix . 'course_names_view';
         $store->append([
             new Event(
@@ -276,12 +271,12 @@ test('segment merge recombines two siblings into a parent', function (): void {
         $runner->runOnce($plan, 'worker-1');
 
         // Split first
-        $operator->split('course_names', 0);
+        $segmentRepository->splitSegment('course_names', 0);
 
         // Both halves are available, so merge can proceed via draining
-        $operator->merge('course_names', 0, 255);
+        $segmentRepository->requestMerge('course_names', 0, 255);
 
-        $segments = $operator->listSegments('course_names');
+        $segments = $segmentRepository->listSegments('course_names');
         expect($segments)->toHaveCount(2);
         foreach ($segments as $seg) {
             expect($seg['status'])->toBe('draining')
@@ -295,7 +290,7 @@ test('segment merge recombines two siblings into a parent', function (): void {
         $segmentRepository->finalizeMerge($state0, $state0->checkpoint);
         $segmentRepository->finalizeMerge($state128, $state128->checkpoint);
 
-        $segments = $operator->listSegments('course_names');
+        $segments = $segmentRepository->listSegments('course_names');
         expect($segments)->toHaveCount(1)
             ->and($segments[0])->toMatchArray(['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'available']);
     });

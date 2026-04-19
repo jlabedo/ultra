@@ -9,7 +9,7 @@ use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Ultra\Projection_Postgres\SegmentOperator;
+use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 
 #[AsCommand(
     name: 'projection:segment:split',
@@ -17,7 +17,7 @@ use Ultra\Projection_Postgres\SegmentOperator;
 )]
 final class SplitSegmentCommand extends Command
 {
-    public function __construct(private readonly SegmentOperator $operator)
+    public function __construct(private readonly PostgresProjectionSegmentRepository $repository)
     {
         parent::__construct();
     }
@@ -34,18 +34,13 @@ final class SplitSegmentCommand extends Command
         $projectionId = (string) $input->getArgument('projection-id');
         $bucketFrom   = (int)    $input->getArgument('bucket-from');
 
-        $message = $this->operator->split($projectionId, $bucketFrom);
-        $output->writeln($message);
+        $this->repository->splitSegment($projectionId, $bucketFrom);
 
-        $segments = $this->operator->listSegments($projectionId);
-        $output->writeln('');
-        $output->writeln(sprintf('<info>Current segments for "%s":</info>', $projectionId));
+        $segments = $this->repository->listSegments($projectionId);
+        $output->writeln(sprintf('<info>Segments for "%s" after split:</info>', $projectionId));
         foreach ($segments as $seg) {
             $pending = $seg['pendingOperation'] ? sprintf(' [pending: %s]', $seg['pendingOperation']) : '';
-            $output->writeln(sprintf(
-                '  [%d-%d] %s%s',
-                $seg['bucketFrom'], $seg['bucketTo'], $seg['status'], $pending,
-            ));
+            $output->writeln(sprintf('  [%d-%d] %s%s', $seg['bucketFrom'], $seg['bucketTo'], $seg['status'], $pending));
         }
 
         return Command::SUCCESS;
