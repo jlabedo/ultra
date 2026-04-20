@@ -243,7 +243,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
             return;
         }
 
-        $placeholders = implode(', ', array_fill(0, count($rows), '(?, ?, ?)'));
+        $placeholders = implode(', ', array_fill(0, count($rows), '(?, ?, ?, ?)'));
         $params = [];
         $types = [];
         foreach ($rows as [$sequence, $name, $value]) {
@@ -253,17 +253,28 @@ final class PostgresEventStoreQueryStreams implements EventStore
             $types[] = ParameterType::STRING;
             $params[] = $value;
             $types[] = ParameterType::STRING;
+            $params[] = $this->computeBucket($value);
+            $types[] = ParameterType::INTEGER;
         }
 
         $this->connection->executeStatement(
             sprintf(
-                'INSERT INTO %s (sequence, identifier_name, identifier_value) VALUES %s',
+                'INSERT INTO %s (sequence, identifier_name, identifier_value, bucket) VALUES %s',
                 $this->eventDomainIdsTable(),
                 $placeholders,
             ),
             $params,
             $types,
         );
+    }
+
+    /**
+     * Maps an identifier value to a bucket [0-255] using the first byte of its MD5 hash.
+     * MD5 is used for stability across PHP and PostgreSQL versions.
+     */
+    private function computeBucket(string $value): int
+    {
+        return hexdec(substr(md5($value), 0, 2));
     }
 
     private function eventsTable(): string
@@ -287,10 +298,32 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
         foreach ($query->branches as $branch) {
             $identifierClauses = [];
-            $domainIdentifiers = $branch->domainIdentifiers;
             $branchParams = [];
-            ksort($domainIdentifiers);
+            $branchTypes = [];
 
+            // Bucket-range predicate (segment-scoped queries)
+            if (null !== $branch->bucketRange) {
+                $identifierClauses[] = sprintf(
+                    'EXISTS (
+                        SELECT 1
+                        FROM %s d
+                        WHERE d.sequence = e.sequence
+                          AND d.identifier_name = ?
+                          AND d.bucket BETWEEN ? AND ?
+                    )',
+                    $this->eventDomainIdsTable(),
+                );
+                $branchParams[] = $branch->bucketRange['dimension'];
+                $branchTypes[] = ParameterType::STRING;
+                $branchParams[] = $branch->bucketRange['from'];
+                $branchTypes[] = ParameterType::INTEGER;
+                $branchParams[] = $branch->bucketRange['to'];
+                $branchTypes[] = ParameterType::INTEGER;
+            }
+
+            // Exact domain identifier predicates
+            $domainIdentifiers = $branch->domainIdentifiers;
+            ksort($domainIdentifiers);
             foreach ($domainIdentifiers as $name => $value) {
                 $identifierClauses[] = sprintf(
                     'EXISTS (
@@ -302,9 +335,10 @@ final class PostgresEventStoreQueryStreams implements EventStore
                     )',
                     $this->eventDomainIdsTable(),
                 );
-
                 $branchParams[] = $name;
+                $branchTypes[] = ParameterType::STRING;
                 $branchParams[] = $value;
+                $branchTypes[] = ParameterType::STRING;
             }
 
             $identifierPredicate = [] === $identifierClauses ? 'TRUE' : implode(' AND ', $identifierClauses);
@@ -312,7 +346,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
             if ([] === $branch->eventTypes) {
                 $clauses[] = sprintf('(%s)', $identifierPredicate);
                 array_push($params, ...$branchParams);
-                array_push($types, ...array_fill(0, count($branchParams), ParameterType::STRING));
+                array_push($types, ...$branchTypes);
             } else {
                 $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
                 $clauses[] = sprintf(
@@ -320,9 +354,8 @@ final class PostgresEventStoreQueryStreams implements EventStore
                     $eventTypePlaceholders,
                     $identifierPredicate,
                 );
-
                 array_push($params, ...$branch->eventTypes, ...$branchParams);
-                array_push($types, ...array_fill(0, count($branch->eventTypes) + count($branchParams), ParameterType::STRING));
+                array_push($types, ...array_fill(0, count($branch->eventTypes), ParameterType::STRING), ...$branchTypes);
             }
         }
 

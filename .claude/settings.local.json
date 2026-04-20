@@ -10,7 +10,9 @@
       "WebFetch(domain:github.com)",
       "Bash(git -C /Users/jean/Code/ultra diff --stat HEAD)",
       "Bash(xargs:*)",
-      "Bash(find:*)"
+      "Bash(find:*)",
+      "Bash(php -l*)",
+      "Bash(ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' vendor/bin/pest*)"
     ]
   }
 }

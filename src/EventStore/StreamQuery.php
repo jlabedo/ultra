@@ -66,6 +66,25 @@ readonly class StreamQuery
     }
 
     /**
+     * Segment-scoped query: matches events whose domain identifier value in $identifierDimension
+     * hashes to a bucket within [$bucketFrom, $bucketTo]. Requires the bucket column in
+     * event_domain_ids (step 2 of the projection schema migration).
+     */
+    public static function forSegment(
+        string $identifierDimension,
+        int $bucketFrom,
+        int $bucketTo,
+        string ...$eventTypes,
+    ): self {
+        $branch = (new StreamQueryBranch([]))->withBucketRange($identifierDimension, $bucketFrom, $bucketTo);
+        if ([] !== $eventTypes) {
+            $branch = $branch->withEventTypes(...$eventTypes);
+        }
+
+        return new self([$branch]);
+    }
+
+    /**
      * Combine multiple query branches with OR: an event matches if it matches any branch.
      * Each branch keeps its own event type filter (per-branch); an event must match clause and types of the same branch.
      */

@@ -4,204 +4,103 @@ declare(strict_types=1);
 
 namespace Ultra\Projection;
 
-use Ultra\Projection\Attribute\PartitionInitializer;
+use Ultra\EventStore\Event;
+use Ultra\EventStore\StreamQuery;
+use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
-use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 
-readonly class ProjectionPlan
+final class ProjectionPlan
 {
-    /**
-     * @var list<string>
-     */
-    public array $eventTypes;
-
-    /**
-     * @var array<string, string>
-     */
-    private array $handlerMethods;
-
-    private ?string $projectionInitializerMethod;
-
-    private ?string $partitionInitializerMethod;
+    private readonly string $projectionId;
+    private readonly string $partitionDimension;
+    private readonly ProjectionHandlerMap $handlerMap;
+    private readonly ?string $initializerMethod;
 
     public function __construct(
-        public object $projection,
+        private readonly object $projection,
+        private readonly UltraNormalizer $normalizer,
     ) {
-        $reflection = new \ReflectionObject($projection);
+        $reflection = new \ReflectionClass($projection);
         $attributes = $reflection->getAttributes(Projection::class);
+
         if ([] === $attributes) {
-            throw new \LogicException(sprintf(
-                'Projection class %s must declare #[%s].',
-                $projection::class,
-                Projection::class,
+            throw new \InvalidArgumentException(sprintf(
+                'Class %s must be annotated with #[Projection].',
+                $reflection->getName(),
             ));
         }
 
-        /** @var Projection $metadata */
-        $metadata = $attributes[0]->newInstance();
-        $this->name = $metadata->name;
-        $this->version = $metadata->version;
+        /** @var Projection $attribute */
+        $attribute = $attributes[0]->newInstance();
+        $this->projectionId = $attribute->name;
+        $this->partitionDimension = $attribute->partitionBy;
+        $this->handlerMap = ProjectionHandlerMap::fromClass($reflection->getName());
+        $this->initializerMethod = $this->resolveInitializerMethod($reflection);
+    }
 
-        $handlerMethods = [];
-        $projectionInitializerMethod = null;
-        $partitionInitializerMethod = null;
+    public function projectionId(): string
+    {
+        return $this->projectionId;
+    }
+
+    public function partitionDimension(): string
+    {
+        return $this->partitionDimension;
+    }
+
+    /**
+     * Global query — matches all events of the handled types across all streams.
+     * Used when running without segment filtering (step 1) or when the EventStore
+     * does not yet support bucket-range queries.
+     */
+    public function streamQuery(): StreamQuery
+    {
+        return StreamQuery::all()->ofTypes(...$this->handlerMap->eventTypeNames());
+    }
+
+    /**
+     * Segment-scoped query — restricts to events whose domain identifier value
+     * in the partition dimension falls within [bucketFrom, bucketTo].
+     * Requires the bucket column and StreamQuery::forSegment() (step 3).
+     */
+    public function streamQueryForSegment(int $bucketFrom, int $bucketTo): StreamQuery
+    {
+        return StreamQuery::forSegment(
+            $this->partitionDimension,
+            $bucketFrom,
+            $bucketTo,
+            ...$this->handlerMap->eventTypeNames(),
+        );
+    }
+
+    public function initialize(): void
+    {
+        if (null !== $this->initializerMethod) {
+            ($this->projection)->{$this->initializerMethod}();
+        }
+    }
+
+    public function apply(Event $event): void
+    {
+        $this->handlerMap->apply($this->projection, $event, $this->normalizer);
+    }
+
+    private function resolveInitializerMethod(\ReflectionClass $reflection): ?string
+    {
         foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
             if ([] !== $method->getAttributes(ProjectionInitializer::class)) {
-                if (null !== $projectionInitializerMethod) {
+                if (0 !== count($method->getParameters())) {
                     throw new \LogicException(sprintf(
-                        'Projection %s declares multiple #[%s] methods.',
-                        $projection::class,
-                        ProjectionInitializer::class,
-                    ));
-                }
-
-                if ([] !== $method->getParameters()) {
-                    throw new \LogicException(sprintf(
-                        'Projection initializer %s::%s must not declare parameters.',
-                        $projection::class,
+                        '#[ProjectionInitializer] method %s::%s must have no parameters.',
+                        $reflection->getName(),
                         $method->getName(),
                     ));
                 }
-
-                $projectionInitializerMethod = $method->getName();
+                return $method->getName();
             }
-
-            if ([] !== $method->getAttributes(PartitionInitializer::class)) {
-                if (null !== $partitionInitializerMethod) {
-                    throw new \LogicException(sprintf(
-                        'Projection %s declares multiple #[%s] methods.',
-                        $projection::class,
-                        PartitionInitializer::class,
-                    ));
-                }
-
-                $parameters = $method->getParameters();
-                if (count($parameters) > 1) {
-                    throw new \LogicException(sprintf(
-                        'Partition initializer %s::%s must declare zero parameters or a single string partition key.',
-                        $projection::class,
-                        $method->getName(),
-                    ));
-                }
-
-                if ([] !== $parameters) {
-                    $type = $parameters[0]->getType();
-                    if (! $type instanceof \ReflectionNamedType || false === $type->isBuiltin() || 'string' !== $type->getName()) {
-                        throw new \LogicException(sprintf(
-                            'Partition initializer %s::%s must type-hint string when it declares a parameter.',
-                            $projection::class,
-                            $method->getName(),
-                        ));
-                    }
-                }
-
-                $partitionInitializerMethod = $method->getName();
-            }
-
-            $handlerAttributes = $method->getAttributes(ProjectionHandler::class);
-            if ([] === $handlerAttributes) {
-                continue;
-            }
-
-            /** @var ProjectionHandler $handler */
-            $handler = $handlerAttributes[0]->newInstance();
-            if (isset($handlerMethods[$handler->eventType])) {
-                throw new \LogicException(sprintf(
-                    'Projection %s declares multiple handlers for event type "%s".',
-                    $projection::class,
-                    $handler->eventType,
-                ));
-            }
-
-            $parameters = $method->getParameters();
-            if (1 !== count($parameters)) {
-                throw new \LogicException(sprintf(
-                    'Projection handler %s::%s must declare exactly one StoredEvent parameter.',
-                    $projection::class,
-                    $method->getName(),
-                ));
-            }
-
-            $type = $parameters[0]->getType();
-            if (! $type instanceof \ReflectionNamedType || $type->isBuiltin() || StoredEvent::class !== $type->getName()) {
-                throw new \LogicException(sprintf(
-                    'Projection handler %s::%s must type-hint %s.',
-                    $projection::class,
-                    $method->getName(),
-                    StoredEvent::class,
-                ));
-            }
-
-            $handlerMethods[$handler->eventType] = $method->getName();
         }
 
-        if ([] === $handlerMethods) {
-            throw new \LogicException(sprintf(
-                'Projection class %s must declare at least one #[%s] method.',
-                $projection::class,
-                ProjectionHandler::class,
-            ));
-        }
-
-        $normalizedEventTypes = array_keys($handlerMethods);
-        sort($normalizedEventTypes);
-
-        $this->eventTypes = $normalizedEventTypes;
-        $this->handlerMethods = $handlerMethods;
-        $this->projectionInitializerMethod = $projectionInitializerMethod;
-        $this->partitionInitializerMethod = $partitionInitializerMethod;
-    }
-
-    public string $name;
-
-    public int $version;
-
-    public function name(): string
-    {
-        return $this->name;
-    }
-
-    public function version(): int
-    {
-        return $this->version;
-    }
-
-    public function apply(StoredEvent $event): void
-    {
-        $method = $this->handlerMethods[$event->eventType] ?? null;
-        if (null === $method) {
-            return;
-        }
-
-        $this->projection->{$method}($event);
-    }
-
-    public function hasProjectionInitializer(): bool
-    {
-        return null !== $this->projectionInitializerMethod;
-    }
-
-    public function initializeProjection(): void
-    {
-        if (null === $this->projectionInitializerMethod) {
-            return;
-        }
-
-        $this->projection->{$this->projectionInitializerMethod}();
-    }
-
-    public function hasPartitionInitializer(): bool
-    {
-        return null !== $this->partitionInitializerMethod;
-    }
-
-    public function initializePartition(string $partitionKey): void
-    {
-        if (null === $this->partitionInitializerMethod) {
-            return;
-        }
-
-        $this->projection->{$this->partitionInitializerMethod}($partitionKey);
+        return null;
     }
 }

@@ -9,14 +9,14 @@ final readonly class Projection
 {
     public function __construct(
         public string $name,
-        public int $version = 1,
+        public string $partitionBy,
     ) {
         if ('' === $this->name) {
-            throw new \InvalidArgumentException('Projection names must be non-empty strings.');
+            throw new \InvalidArgumentException('Projection name must be a non-empty string.');
         }
 
-        if ($this->version < 1) {
-            throw new \InvalidArgumentException('Projection versions must be greater than or equal to 1.');
+        if ('' === $this->partitionBy) {
+            throw new \InvalidArgumentException('Projection partitionBy must be a non-empty string.');
         }
     }
 }
