@@ -16,15 +16,11 @@ use Ultra\Time\SystemClock;
 
 final readonly class PostgresProjectionSegmentRepository implements ProjectionSegmentRepositoryInterface
 {
-    private ClockInterface $clock;
-
     public function __construct(
         private Connection $connection,
         private string $tablePrefix = 'projection_',
-        ?ClockInterface $clock = null,
-    ) {
-        $this->clock = $clock ?? new SystemClock();
-    }
+        private ClockInterface $clock = new SystemClock(),
+    ) {}
 
     /**
      * Creates the initial segment [0-255] for a projection if none exist yet.
@@ -387,12 +383,28 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                     $this->segmentsTable(),
                 ),
                 [
-                    $segment->projectionId, $segment->bucketFrom, $mid - 1, $serializedCheckpoint, $now,
-                    $segment->projectionId, $mid, $segment->bucketTo, $serializedCheckpoint, $now,
+                    $segment->projectionId,
+                    $segment->bucketFrom,
+                    $mid - 1,
+                    $serializedCheckpoint,
+                    $now,
+                    $segment->projectionId,
+                    $mid,
+                    $segment->bucketTo,
+                    $serializedCheckpoint,
+                    $now,
                 ],
                 [
-                    ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING,
-                    ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::INTEGER,
+                    ParameterType::INTEGER,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::INTEGER,
+                    ParameterType::INTEGER,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
                 ],
             );
 
@@ -618,7 +630,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             [ParameterType::STRING],
         )->fetchAllAssociative();
 
-        return array_map(static fn (array $row): array => [
+        return array_map(static fn(array $row): array => [
             'bucketFrom' => (int) $row['bucket_from'],
             'bucketTo' => (int) $row['bucket_to'],
             'status' => $row['status'],
@@ -628,7 +640,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
 
     private function segmentsTable(): string
     {
-        return $this->tablePrefix.'segments';
+        return $this->tablePrefix . 'segments';
     }
 
     private function now(): DatePoint
