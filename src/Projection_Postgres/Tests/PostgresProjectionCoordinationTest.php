@@ -5,91 +5,56 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres\Tests;
 
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivitySchema;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorSchema;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
-use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestUniquePrefix;
 
-require_once __DIR__ . '/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
-
-function withPostgresProjectionCoordination(callable $callback): void
+final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCase
 {
-    $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
-    if (false === $dsn || '' === $dsn) {
-        test()->markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres projection integration tests.');
+    public function test_postgres_segment_repository_can_claim_the_segment_containing_a_bucket(): void
+    {
+        $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
+            $segments = new PostgresProjectionSegmentRepository($connection, $projectionPrefix);
+            $segments->ensureInitialized('courses');
+            $segments->splitSegment('courses', 0);
+
+            $segment = $segments->claimSegmentForBucket('courses', 200, 'worker-1');
+
+            self::assertNotNull($segment);
+            self::assertSame(128, $segment->bucketFrom);
+            self::assertSame(255, $segment->bucketTo);
+        });
     }
 
-    $connection = postgresTestConnection($dsn);
-    $projectionPrefix = 'ultra_projection_' . bin2hex(random_bytes(4)) . '_';
-    $schemas = [
-        new PostgresProjectionSegmentSchema($projectionPrefix),
-        new PostgresProjectionCoordinatorSchema($projectionPrefix),
-        new PostgresProjectionBucketActivitySchema($projectionPrefix),
-    ];
+    public function test_postgres_bucket_activity_repository_stores_counters_and_acknowledgements(): void
+    {
+        $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
+            $activity = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
 
-    try {
-        foreach ($schemas as $schema) {
-            foreach ($schema->createStatements() as $statement) {
-                $connection->executeStatement($statement);
-            }
-        }
+            $activity->bump('courses', 42);
+            $activity->bump('courses', 42);
 
-        $callback($connection, $projectionPrefix);
-    } finally {
-        foreach (array_reverse($schemas) as $schema) {
-            foreach ($schema->dropStatements() as $statement) {
-                $connection->executeStatement($statement);
-            }
-        }
+            $pending = $activity->pendingBuckets('courses');
 
-        $connection->close();
+            self::assertCount(1, $pending);
+            self::assertSame(2, $pending[0]->counter);
+            self::assertSame(0, $pending[0]->acknowledgedCounter);
+
+            $activity->acknowledge('courses', 42, 2);
+
+            self::assertSame([], $activity->pendingBuckets('courses'));
+        });
+    }
+
+    public function test_postgres_coordinator_lease_repository_debounces_wakeups_until_a_coordinator_acquires_the_lease(): void
+    {
+        $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
+            $leases = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix);
+
+            self::assertTrue($leases->markWakeEnqueued('courses', 30));
+            self::assertFalse($leases->markWakeEnqueued('courses', 30));
+            self::assertTrue($leases->acquire('courses', 'coordinator-1'));
+            self::assertTrue($leases->hasLiveCoordinator('courses'));
+            self::assertFalse($leases->markWakeEnqueued('courses', 30));
+        });
     }
 }
-
-test('postgres segment repository can claim the segment containing a bucket', function (): void {
-    withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
-        $segments = new PostgresProjectionSegmentRepository($connection, $projectionPrefix);
-        $segments->ensureInitialized('courses');
-        $segments->splitSegment('courses', 0);
-
-        $segment = $segments->claimSegmentForBucket('courses', 200, 'worker-1');
-
-        expect($segment)->not->toBeNull()
-            ->and($segment->bucketFrom)->toBe(128)
-            ->and($segment->bucketTo)->toBe(255);
-    });
-});
-
-test('postgres bucket activity repository stores counters and acknowledgements', function (): void {
-    withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
-        $activity = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
-
-        $activity->bump('courses', 42);
-        $activity->bump('courses', 42);
-
-        $pending = $activity->pendingBuckets('courses');
-
-        expect($pending)->toHaveCount(1)
-            ->and($pending[0]->counter)->toBe(2)
-            ->and($pending[0]->acknowledgedCounter)->toBe(0);
-
-        $activity->acknowledge('courses', 42, 2);
-
-        expect($activity->pendingBuckets('courses'))->toBe([]);
-    });
-});
-
-test('postgres coordinator lease repository debounces wakeups until a coordinator acquires the lease', function (): void {
-    withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
-        $leases = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix);
-
-        expect($leases->markWakeEnqueued('courses', 30))->toBeTrue()
-            ->and($leases->markWakeEnqueued('courses', 30))->toBeFalse()
-            ->and($leases->acquire('courses', 'coordinator-1'))->toBeTrue()
-            ->and($leases->hasLiveCoordinator('courses'))->toBeTrue()
-            ->and($leases->markWakeEnqueued('courses', 30))->toBeFalse();
-    });
-});

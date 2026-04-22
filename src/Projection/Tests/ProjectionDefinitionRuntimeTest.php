@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests;
 
+use InvalidArgumentException;
+use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\Event;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Mapper\UltraNormalizer;
@@ -12,10 +14,6 @@ use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\ProjectionDefinition;
 use Ultra\Projection\ProjectionRuntime;
-
-// ---------------------------------------------------------------------------
-// Fixtures
-// ---------------------------------------------------------------------------
 
 #[EventAttribute('student.subscribed')]
 final readonly class StudentSubscribed
@@ -69,67 +67,80 @@ final class TestProjectionClassWithoutInitializer
     public function onStudentSubscribed(StudentSubscribed $event): void {}
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+final class ProjectionDefinitionRuntimeTest extends TestCase
+{
+    public function test_projection_definition_exposes_id_and_partition_dimension_from_attribute(): void
+    {
+        $definition = ProjectionDefinition::fromClass(TestProjectionClass::class);
 
-test('projection definition exposes id and partition dimension from attribute', function (): void {
-    $definition = ProjectionDefinition::fromClass(TestProjectionClass::class);
+        self::assertSame('test_projection', $definition->projectionId);
+        self::assertSame('courseId', $definition->partitionDimension);
+    }
 
-    expect($definition->projectionId)->toBe('test_projection')
-        ->and($definition->partitionDimension)->toBe('courseId');
-});
+    public function test_stream_query_covers_all_handled_event_types_globally(): void
+    {
+        $definition = ProjectionDefinition::fromClass(TestProjectionClass::class);
+        $query = $definition->streamQuery();
 
-test('stream query covers all handled event types globally', function (): void {
-    $definition = ProjectionDefinition::fromClass(TestProjectionClass::class);
-    $query = $definition->streamQuery();
+        self::assertFalse($query->isEmpty());
+        self::assertTrue($query->hasGlobalBranch());
 
-    expect($query->isEmpty())->toBeFalse()
-        ->and($query->hasGlobalBranch())->toBeTrue(); // all()->ofTypes() has no domain-id filter
+        $domainIds = ['courseId' => 'course-1'];
 
-    // Both event types must be matched
-    $domainIds = ['courseId' => 'course-1'];
-    expect($query->matches(new Event('student.subscribed', [], $domainIds)))->toBeTrue()
-        ->and($query->matches(new Event('course.created', [], $domainIds)))->toBeTrue()
-        ->and($query->matches(new Event('unrelated.event', [], $domainIds)))->toBeFalse();
-});
+        self::assertTrue($query->matches(new Event('student.subscribed', [], $domainIds)));
+        self::assertTrue($query->matches(new Event('course.created', [], $domainIds)));
+        self::assertFalse($query->matches(new Event('unrelated.event', [], $domainIds)));
+    }
 
-test('segment stream query uses bucket-range predicate', function (): void {
-    $definition = ProjectionDefinition::fromClass(TestProjectionClass::class);
-    $query = $definition->streamQueryForSegment(0, 127);
+    public function test_segment_stream_query_uses_bucket_range_predicate(): void
+    {
+        $definition = ProjectionDefinition::fromClass(TestProjectionClass::class);
+        $query = $definition->streamQueryForSegment(0, 127);
 
-    expect($query->isEmpty())->toBeFalse();
-    $branch = $query->branches[0];
-    expect($branch->bucketRange)->toBe(['dimension' => 'courseId', 'from' => 0, 'to' => 127]);
-});
+        self::assertFalse($query->isEmpty());
+        self::assertSame(
+            ['dimension' => 'courseId', 'from' => 0, 'to' => 127],
+            $query->branches[0]->bucketRange,
+        );
+    }
 
-test('runtime apply dispatches event to matching handler', function (): void {
-    $projection = new TestProjectionClass();
-    $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+    public function test_runtime_apply_dispatches_event_to_matching_handler(): void
+    {
+        $projection = new TestProjectionClass();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
 
-    $runtime->apply(new Event('student.subscribed', ['studentId' => 'student-1', 'courseId' => 'course-1'], ['courseId' => 'course-1']));
-    $runtime->apply(new Event('course.created', ['courseId' => 'course-2', 'name' => 'Math'], ['courseId' => 'course-2']));
-    $runtime->apply(new Event('unrelated.event', [], ['courseId' => 'course-1']));
+        $runtime->apply(new Event('student.subscribed', ['studentId' => 'student-1', 'courseId' => 'course-1'], ['courseId' => 'course-1']));
+        $runtime->apply(new Event('course.created', ['courseId' => 'course-2', 'name' => 'Math'], ['courseId' => 'course-2']));
+        $runtime->apply(new Event('unrelated.event', [], ['courseId' => 'course-1']));
 
-    expect($projection->handled)->toBe(['subscribed:student-1', 'created:course-2']);
-});
+        self::assertSame(['subscribed:student-1', 'created:course-2'], $projection->handled);
+    }
 
-test('runtime initialize calls the ProjectionInitializer method', function (): void {
-    $projection = new TestProjectionClass();
-    $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+    public function test_runtime_initialize_calls_the_projection_initializer_method(): void
+    {
+        $projection = new TestProjectionClass();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
 
-    expect($projection->initialized)->toBeFalse();
-    $runtime->initialize();
-    expect($projection->initialized)->toBeTrue();
-});
+        self::assertFalse($projection->initialized);
 
-test('runtime initialize is a no-op when no ProjectionInitializer method is present', function (): void {
-    $runtime = new ProjectionRuntime(new TestProjectionClassWithoutInitializer(), new UltraNormalizer());
-    $runtime->initialize(); // must not throw
-    expect(true)->toBeTrue();
-});
+        $runtime->initialize();
 
-test('projection definition throws when class has no Projection attribute', function (): void {
-    expect(fn () => ProjectionDefinition::fromClass(\stdClass::class))
-        ->toThrow(\InvalidArgumentException::class);
-});
+        self::assertTrue($projection->initialized);
+    }
+
+    public function test_runtime_initialize_is_a_no_op_when_no_projection_initializer_method_is_present(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $runtime = new ProjectionRuntime(new TestProjectionClassWithoutInitializer(), new UltraNormalizer());
+
+        $runtime->initialize();
+    }
+
+    public function test_projection_definition_throws_when_class_has_no_projection_attribute(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+
+        ProjectionDefinition::fromClass(\stdClass::class);
+    }
+}

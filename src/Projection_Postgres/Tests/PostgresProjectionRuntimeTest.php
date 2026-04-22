@@ -5,24 +5,16 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
-use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\Sequence;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
-use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
-
-require_once __DIR__ . '/PostgresProjectionTestSupport.php';
-
-// ---------------------------------------------------------------------------
-// Event DTO
-// ---------------------------------------------------------------------------
 
 #[EventAttribute('course.created')]
 final readonly class CourseCreated
@@ -41,10 +33,6 @@ final readonly class CourseRenamed
         public string $name,
     ) {}
 }
-
-// ---------------------------------------------------------------------------
-// Projection
-// ---------------------------------------------------------------------------
 
 #[Projection(name: 'course_names', partitionBy: 'courseId')]
 final class CourseNamesProjection
@@ -89,253 +77,259 @@ final class CourseNamesProjection
     }
 }
 
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
+final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
+{
+    public function test_runner_processes_events_and_advances_the_checkpoint(): void
+    {
+        $this->withPostgresProjectionRuntime(function (
+            Connection $connection,
+            EventStore $store,
+            PostgresProjectionSegmentRepository $segmentRepository,
+            ProjectionRunner $runner,
+            string $eventStorePrefix,
+            string $projectionPrefix,
+        ): void {
+            $tableName = $projectionPrefix . 'course_names_view';
 
-test('runner processes events and advances the checkpoint', function (): void {
-    withPostgresProjectionRuntime(function (
-        Connection $connection,
-        EventStore $store,
-        PostgresProjectionSegmentRepository $segmentRepository,
-        ProjectionRunner $runner,
-        string $eventStorePrefix,
-        string $projectionPrefix,
-    ): void {
-        $tableName = $projectionPrefix . 'course_names_view';
+            $store->append([
+                new Event(
+                    eventType: 'course.created',
+                    payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
+                    domainIds: ['courseId' => 'course-1'],
+                ),
+                new Event(
+                    eventType: 'course.created',
+                    payload: ['courseId' => 'course-2', 'name' => 'Physics 201'],
+                    domainIds: ['courseId' => 'course-2'],
+                ),
+            ]);
 
-        $store->append([
-            new Event(
-                eventType: 'course.created',
-                payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
-                domainIds: ['courseId' => 'course-1'],
-            ),
-            new Event(
-                eventType: 'course.created',
-                payload: ['courseId' => 'course-2', 'name' => 'Physics 201'],
-                domainIds: ['courseId' => 'course-2'],
-            ),
-        ]);
+            $runtime = new ProjectionRuntime(
+                new CourseNamesProjection($connection, $tableName),
+                new UltraNormalizer(),
+            );
 
-        $runtime = new ProjectionRuntime(
-            new CourseNamesProjection($connection, $tableName),
-            new UltraNormalizer(),
-        );
+            self::assertSame(2, $runner->runOnce($runtime, 'worker-1'));
+            self::assertSame(0, $runner->runOnce($runtime, 'worker-1'));
 
-        expect($runner->runOnce($runtime, 'worker-1'))->toBe(2)
-            ->and($runner->runOnce($runtime, 'worker-1'))->toBe(0);
+            $rows = $connection->fetchAllAssociative(
+                sprintf('SELECT course_id, name FROM %s ORDER BY course_id ASC', $tableName),
+            );
 
-        $rows = $connection->fetchAllAssociative(
-            sprintf('SELECT course_id, name FROM %s ORDER BY course_id ASC', $tableName),
-        );
+            self::assertSame([
+                ['course_id' => 'course-1', 'name' => 'Math 101'],
+                ['course_id' => 'course-2', 'name' => 'Physics 201'],
+            ], $rows);
 
-        expect($rows)->toBe([
-            ['course_id' => 'course-1', 'name' => 'Math 101'],
-            ['course_id' => 'course-2', 'name' => 'Physics 201'],
-        ]);
+            $segment = $segmentRepository->readCurrentState('course_names', 0);
 
-        $segment = $segmentRepository->readCurrentState('course_names', 0);
-        expect($segment->checkpoint->gapFloor->value)->toBe(2);
-    });
-});
+            self::assertSame(2, $segment->checkpoint->gapFloor->value);
+        });
+    }
 
-test('runner resumes from checkpoint after restart', function (): void {
-    withPostgresProjectionRuntime(function (
-        Connection $connection,
-        EventStore $store,
-        PostgresProjectionSegmentRepository $segmentRepository,
-        ProjectionRunner $runner,
-        string $eventStorePrefix,
-        string $projectionPrefix,
-    ): void {
-        $tableName = $projectionPrefix . 'course_names_view';
+    public function test_runner_resumes_from_checkpoint_after_restart(): void
+    {
+        $this->withPostgresProjectionRuntime(function (
+            Connection $connection,
+            EventStore $store,
+            PostgresProjectionSegmentRepository $segmentRepository,
+            ProjectionRunner $runner,
+            string $eventStorePrefix,
+            string $projectionPrefix,
+        ): void {
+            $tableName = $projectionPrefix . 'course_names_view';
 
-        $store->append([
-            new Event(
-                eventType: 'course.created',
-                payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
-                domainIds: ['courseId' => 'course-1'],
-            ),
-        ]);
+            $store->append([
+                new Event(
+                    eventType: 'course.created',
+                    payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
+                    domainIds: ['courseId' => 'course-1'],
+                ),
+            ]);
 
-        $runtime = new ProjectionRuntime(
-            new CourseNamesProjection($connection, $tableName),
-            new UltraNormalizer(),
-        );
+            $runtime = new ProjectionRuntime(
+                new CourseNamesProjection($connection, $tableName),
+                new UltraNormalizer(),
+            );
 
-        expect($runner->runOnce($runtime, 'worker-1'))->toBe(1);
+            self::assertSame(1, $runner->runOnce($runtime, 'worker-1'));
 
-        // Append a second event
-        $store->append([
-            new Event(
-                eventType: 'course.renamed',
-                payload: ['courseId' => 'course-1', 'name' => 'Advanced Math'],
-                domainIds: ['courseId' => 'course-1'],
-            ),
-        ]);
+            $store->append([
+                new Event(
+                    eventType: 'course.renamed',
+                    payload: ['courseId' => 'course-1', 'name' => 'Advanced Math'],
+                    domainIds: ['courseId' => 'course-1'],
+                ),
+            ]);
 
-        // Second run should process only the new event
-        expect($runner->runOnce($runtime, 'worker-1'))->toBe(1)
-            ->and($runner->runOnce($runtime, 'worker-1'))->toBe(0);
+            self::assertSame(1, $runner->runOnce($runtime, 'worker-1'));
+            self::assertSame(0, $runner->runOnce($runtime, 'worker-1'));
 
-        $row = $connection->fetchAssociative(
-            sprintf('SELECT name FROM %s WHERE course_id = ?', $tableName),
-            ['course-1'],
-        );
+            $row = $connection->fetchAssociative(
+                sprintf('SELECT name FROM %s WHERE course_id = ?', $tableName),
+                ['course-1'],
+            );
 
-        expect($row['name'])->toBe('Advanced Math');
-    });
-});
+            self::assertIsArray($row);
+            self::assertSame('Advanced Math', $row['name']);
+        });
+    }
 
-test('expired lease is recovered so another worker can claim the segment', function (): void {
-    withPostgresProjectionRuntime(function (
-        Connection $connection,
-        EventStore $store,
-        PostgresProjectionSegmentRepository $segmentRepository,
-        ProjectionRunner $runner,
-        string $eventStorePrefix,
-        string $projectionPrefix,
-    ): void {
-        $segmentRepository->ensureInitialized('course_names');
+    public function test_expired_lease_is_recovered_so_another_worker_can_claim_the_segment(): void
+    {
+        $this->withPostgresProjectionRuntime(function (
+            Connection $connection,
+            EventStore $store,
+            PostgresProjectionSegmentRepository $segmentRepository,
+            ProjectionRunner $runner,
+            string $eventStorePrefix,
+            string $projectionPrefix,
+        ): void {
+            $segmentRepository->ensureInitialized('course_names');
 
-        // Claim with a 0-second lease so it expires immediately
-        $segmentRepository->claimSegment('course_names', 'worker-stale', leaseDurationSeconds: 0);
+            $segmentRepository->claimSegment('course_names', 'worker-stale', leaseDurationSeconds: 0);
 
-        // Simulate lease expiry by waiting 1 second then recovering
-        $connection->executeStatement(
-            "UPDATE {$projectionPrefix}segments SET lease_expires_at = now() - interval '1 second' WHERE projection_id = 'course_names'",
-        );
+            $connection->executeStatement(
+                "UPDATE {$projectionPrefix}segments SET lease_expires_at = now() - interval '1 second' WHERE projection_id = 'course_names'",
+            );
 
-        $recovered = $segmentRepository->recoverExpiredLeases('course_names');
-        expect($recovered)->toBe(1);
+            $recovered = $segmentRepository->recoverExpiredLeases('course_names');
 
-        $segment = $segmentRepository->claimSegment('course_names', 'worker-new');
-        expect($segment)->not->toBeNull()
-            ->and($segment->status)->toBe('active');
-    });
-});
+            self::assertSame(1, $recovered);
 
-test('segment split divides the range into two equal halves', function (): void {
-    withPostgresProjectionRuntime(function (
-        Connection $connection,
-        EventStore $store,
-        PostgresProjectionSegmentRepository $segmentRepository,
-        ProjectionRunner $runner,
-        string $eventStorePrefix,
-        string $projectionPrefix,
-    ): void {
-        $tableName = $projectionPrefix . 'course_names_view';
-        $store->append([
-            new Event(
-                eventType: 'course.created',
-                payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
-                domainIds: ['courseId' => 'course-1'],
-            ),
-        ]);
+            $segment = $segmentRepository->claimSegment('course_names', 'worker-new');
 
-        $runtime = new ProjectionRuntime(
-            new CourseNamesProjection($connection, $tableName),
-            new UltraNormalizer(),
-        );
+            self::assertNotNull($segment);
+            self::assertSame('active', $segment->status);
+        });
+    }
 
-        $runner->runOnce($runtime, 'worker-1');
+    public function test_segment_split_divides_the_range_into_two_equal_halves(): void
+    {
+        $this->withPostgresProjectionRuntime(function (
+            Connection $connection,
+            EventStore $store,
+            PostgresProjectionSegmentRepository $segmentRepository,
+            ProjectionRunner $runner,
+            string $eventStorePrefix,
+            string $projectionPrefix,
+        ): void {
+            $tableName = $projectionPrefix . 'course_names_view';
 
-        $segmentRepository->splitSegment('course_names', 0);
+            $store->append([
+                new Event(
+                    eventType: 'course.created',
+                    payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
+                    domainIds: ['courseId' => 'course-1'],
+                ),
+            ]);
 
-        $segments = $segmentRepository->listSegments('course_names');
+            $runtime = new ProjectionRuntime(
+                new CourseNamesProjection($connection, $tableName),
+                new UltraNormalizer(),
+            );
 
-        expect($segments)->toHaveCount(2)
-            ->and($segments[0])->toMatchArray(['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'available'])
-            ->and($segments[1])->toMatchArray(['bucketFrom' => 128, 'bucketTo' => 255, 'status' => 'available']);
-    });
-});
+            $runner->runOnce($runtime, 'worker-1');
+            $segmentRepository->splitSegment('course_names', 0);
 
-test('segment merge recombines two siblings into a parent', function (): void {
-    withPostgresProjectionRuntime(function (
-        Connection $connection,
-        EventStore $store,
-        PostgresProjectionSegmentRepository $segmentRepository,
-        ProjectionRunner $runner,
-        string $eventStorePrefix,
-        string $projectionPrefix,
-    ): void {
-        $tableName = $projectionPrefix . 'course_names_view';
-        $store->append([
-            new Event(
-                eventType: 'course.created',
-                payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
-                domainIds: ['courseId' => 'course-1'],
-            ),
-        ]);
+            $segments = $segmentRepository->listSegments('course_names');
 
-        $runtime = new ProjectionRuntime(
-            new CourseNamesProjection($connection, $tableName),
-            new UltraNormalizer(),
-        );
+            self::assertCount(2, $segments);
+            self::assertSame(0, $segments[0]['bucketFrom']);
+            self::assertSame(127, $segments[0]['bucketTo']);
+            self::assertSame('available', $segments[0]['status']);
+            self::assertSame(128, $segments[1]['bucketFrom']);
+            self::assertSame(255, $segments[1]['bucketTo']);
+            self::assertSame('available', $segments[1]['status']);
+        });
+    }
 
-        $runner->runOnce($runtime, 'worker-1');
+    public function test_segment_merge_recombines_two_siblings_into_a_parent(): void
+    {
+        $this->withPostgresProjectionRuntime(function (
+            Connection $connection,
+            EventStore $store,
+            PostgresProjectionSegmentRepository $segmentRepository,
+            ProjectionRunner $runner,
+            string $eventStorePrefix,
+            string $projectionPrefix,
+        ): void {
+            $tableName = $projectionPrefix . 'course_names_view';
 
-        // Split first
-        $segmentRepository->splitSegment('course_names', 0);
+            $store->append([
+                new Event(
+                    eventType: 'course.created',
+                    payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
+                    domainIds: ['courseId' => 'course-1'],
+                ),
+            ]);
 
-        // Both halves are available, so merge can proceed via draining
-        $segmentRepository->requestMerge('course_names', 0, 255);
+            $runtime = new ProjectionRuntime(
+                new CourseNamesProjection($connection, $tableName),
+                new UltraNormalizer(),
+            );
 
-        $segments = $segmentRepository->listSegments('course_names');
-        expect($segments)->toHaveCount(2);
-        foreach ($segments as $seg) {
-            expect($seg['status'])->toBe('draining')
-                ->and($seg['pendingOperation'])->toBe('merge');
-        }
+            $runner->runOnce($runtime, 'worker-1');
+            $segmentRepository->splitSegment('course_names', 0);
+            $segmentRepository->requestMerge('course_names', 0, 255);
 
-        // Simulate finalization by each worker
-        $state0 = $segmentRepository->readCurrentState('course_names', 0);
-        $state128 = $segmentRepository->readCurrentState('course_names', 128);
+            $segments = $segmentRepository->listSegments('course_names');
 
-        $segmentRepository->finalizeMerge($state0, $state0->checkpoint);
-        $segmentRepository->finalizeMerge($state128, $state128->checkpoint);
+            self::assertCount(2, $segments);
 
-        $segments = $segmentRepository->listSegments('course_names');
-        expect($segments)->toHaveCount(1)
-            ->and($segments[0])->toMatchArray(['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'available']);
-    });
-});
+            foreach ($segments as $segment) {
+                self::assertSame('draining', $segment['status']);
+                self::assertSame('merge', $segment['pendingOperation']);
+            }
 
-test('draining split is finalized by the worker on its next iteration', function (): void {
-    withPostgresProjectionRuntime(function (
-        Connection $connection,
-        EventStore $store,
-        PostgresProjectionSegmentRepository $segmentRepository,
-        ProjectionRunner $runner,
-        string $eventStorePrefix,
-        string $projectionPrefix,
-    ): void {
-        $tableName = $projectionPrefix . 'course_names_view';
+            $state0 = $segmentRepository->readCurrentState('course_names', 0);
+            $state128 = $segmentRepository->readCurrentState('course_names', 128);
 
-        $store->append([
-            new Event(
-                eventType: 'course.created',
-                payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
-                domainIds: ['courseId' => 'course-1'],
-            ),
-        ]);
+            $segmentRepository->finalizeMerge($state0, $state0->checkpoint);
+            $segmentRepository->finalizeMerge($state128, $state128->checkpoint);
 
-        $runtime = new ProjectionRuntime(
-            new CourseNamesProjection($connection, $tableName),
-            new UltraNormalizer(),
-        );
+            $segments = $segmentRepository->listSegments('course_names');
 
-        // First run: claims [0-255], processes 1 event, releases
-        $runner->runOnce($runtime, 'worker-1');
+            self::assertCount(1, $segments);
+            self::assertSame(0, $segments[0]['bucketFrom']);
+            self::assertSame(255, $segments[0]['bucketTo']);
+            self::assertSame('available', $segments[0]['status']);
+        });
+    }
 
-        // Mark for split while segment is available (simulates operator calling split)
-        $segmentRepository->splitSegment('course_names', 0);
+    public function test_draining_split_is_finalized_by_the_worker_on_its_next_iteration(): void
+    {
+        $this->withPostgresProjectionRuntime(function (
+            Connection $connection,
+            EventStore $store,
+            PostgresProjectionSegmentRepository $segmentRepository,
+            ProjectionRunner $runner,
+            string $eventStorePrefix,
+            string $projectionPrefix,
+        ): void {
+            $tableName = $projectionPrefix . 'course_names_view';
 
-        // Since segment was available (not active), split was immediate.
-        // Verify two segments now exist.
-        $segments = $segmentRepository->listSegments('course_names');
-        expect($segments)->toHaveCount(2)
-            ->and($segments[0]['bucketFrom'])->toBe(0)
-            ->and($segments[1]['bucketFrom'])->toBe(128);
-    });
-});
+            $store->append([
+                new Event(
+                    eventType: 'course.created',
+                    payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
+                    domainIds: ['courseId' => 'course-1'],
+                ),
+            ]);
+
+            $runtime = new ProjectionRuntime(
+                new CourseNamesProjection($connection, $tableName),
+                new UltraNormalizer(),
+            );
+
+            $runner->runOnce($runtime, 'worker-1');
+            $segmentRepository->splitSegment('course_names', 0);
+
+            $segments = $segmentRepository->listSegments('course_names');
+
+            self::assertCount(2, $segments);
+            self::assertSame(0, $segments[0]['bucketFrom']);
+            self::assertSame(128, $segments[1]['bucketFrom']);
+        });
+    }
+}
