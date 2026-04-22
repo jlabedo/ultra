@@ -49,6 +49,12 @@ final class ProjectionPlan
         return $this->partitionDimension;
     }
 
+    /** @return list<string> */
+    public function handledEventTypes(): array
+    {
+        return $this->handlerMap->eventTypeNames();
+    }
+
     /**
      * Global query — matches all events of the handled types across all streams.
      * Used when running without segment filtering (step 1) or when the EventStore

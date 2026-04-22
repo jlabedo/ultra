@@ -6,7 +6,7 @@ namespace Ultra\Projection_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
 use Ultra\EventStore\EventStore;
-use Ultra\Projection_Postgres\PostgresProjectionRunner;
+use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
@@ -40,7 +40,7 @@ function withPostgresProjectionRuntime(callable $callback): void
 
         $store = postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams');
         $segmentRepository = new PostgresProjectionSegmentRepository($connection, $projectionPrefix);
-        $runner = new PostgresProjectionRunner($store, $segmentRepository);
+        $runner = new ProjectionRunner($store, $segmentRepository);
 
         $callback($connection, $store, $segmentRepository, $runner, $eventStorePrefix, $projectionPrefix);
     } finally {

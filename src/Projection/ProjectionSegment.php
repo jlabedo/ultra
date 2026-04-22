@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection_Postgres;
+namespace Ultra\Projection;
 
 use Ultra\EventStore\Checkpoint;
 
-final readonly class SegmentState
+readonly class ProjectionSegment
 {
     public function __construct(
         public string $projectionId,
@@ -17,6 +17,11 @@ final readonly class SegmentState
         public Checkpoint $checkpoint,
         public bool $wasCreated,
     ) {}
+
+    public function containsBucket(int $bucket): bool
+    {
+        return $bucket >= $this->bucketFrom && $bucket <= $this->bucketTo;
+    }
 
     public function segmentCount(): int
     {

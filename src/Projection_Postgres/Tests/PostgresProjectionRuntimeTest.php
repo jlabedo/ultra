@@ -15,7 +15,7 @@ use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\ProjectionPlan;
-use Ultra\Projection_Postgres\PostgresProjectionRunner;
+use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 
 require_once __DIR__ . '/PostgresProjectionTestSupport.php';
@@ -98,7 +98,7 @@ test('runner processes events and advances the checkpoint', function (): void {
         Connection $connection,
         EventStore $store,
         PostgresProjectionSegmentRepository $segmentRepository,
-        PostgresProjectionRunner $runner,
+        ProjectionRunner $runner,
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {
@@ -144,7 +144,7 @@ test('runner resumes from checkpoint after restart', function (): void {
         Connection $connection,
         EventStore $store,
         PostgresProjectionSegmentRepository $segmentRepository,
-        PostgresProjectionRunner $runner,
+        ProjectionRunner $runner,
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {
@@ -192,7 +192,7 @@ test('expired lease is recovered so another worker can claim the segment', funct
         Connection $connection,
         EventStore $store,
         PostgresProjectionSegmentRepository $segmentRepository,
-        PostgresProjectionRunner $runner,
+        ProjectionRunner $runner,
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {
@@ -220,7 +220,7 @@ test('segment split divides the range into two equal halves', function (): void 
         Connection $connection,
         EventStore $store,
         PostgresProjectionSegmentRepository $segmentRepository,
-        PostgresProjectionRunner $runner,
+        ProjectionRunner $runner,
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {
@@ -255,7 +255,7 @@ test('segment merge recombines two siblings into a parent', function (): void {
         Connection $connection,
         EventStore $store,
         PostgresProjectionSegmentRepository $segmentRepository,
-        PostgresProjectionRunner $runner,
+        ProjectionRunner $runner,
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {
@@ -306,7 +306,7 @@ test('draining split is finalized by the worker on its next iteration', function
         Connection $connection,
         EventStore $store,
         PostgresProjectionSegmentRepository $segmentRepository,
-        PostgresProjectionRunner $runner,
+        ProjectionRunner $runner,
         string $eventStorePrefix,
         string $projectionPrefix,
     ): void {

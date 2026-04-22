@@ -7,8 +7,10 @@ namespace Ultra\Projection_Postgres;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Ultra\EventStore\Checkpoint;
+use Ultra\Projection\ProjectionSegment;
+use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 
-final readonly class PostgresProjectionSegmentRepository
+final readonly class PostgresProjectionSegmentRepository implements ProjectionSegmentRepositoryInterface
 {
     public function __construct(
         private Connection $connection,
@@ -45,7 +47,41 @@ final readonly class PostgresProjectionSegmentRepository
         string $projectionId,
         string $workerId,
         int $leaseDurationSeconds = 60,
-    ): ?SegmentState {
+    ): ?ProjectionSegment {
+        return $this->claimByPredicate(
+            $projectionId,
+            $workerId,
+            $leaseDurationSeconds,
+            'AND status = \'available\'',
+            [],
+            [],
+        );
+    }
+
+    public function claimSegmentForBucket(
+        string $projectionId,
+        int $bucket,
+        string $workerId,
+        int $leaseDurationSeconds = 60,
+    ): ?ProjectionSegment {
+        return $this->claimByPredicate(
+            $projectionId,
+            $workerId,
+            $leaseDurationSeconds,
+            'AND status = \'available\' AND bucket_from <= ? AND bucket_to >= ?',
+            [$bucket, $bucket],
+            [ParameterType::INTEGER, ParameterType::INTEGER],
+        );
+    }
+
+    private function claimByPredicate(
+        string $projectionId,
+        string $workerId,
+        int $leaseDurationSeconds,
+        string $extraWhereSql,
+        array $extraParams,
+        array $extraTypes,
+    ): ?ProjectionSegment {
         $this->connection->beginTransaction();
 
         try {
@@ -54,14 +90,15 @@ final readonly class PostgresProjectionSegmentRepository
                     "SELECT bucket_from, bucket_to, status, pending_operation, checkpoint
                      FROM %s
                      WHERE projection_id = ?
-                       AND status = 'available'
+                       %s
                      ORDER BY bucket_from ASC
                      FOR UPDATE SKIP LOCKED
                      LIMIT 1",
                     $this->segmentsTable(),
+                    $extraWhereSql,
                 ),
-                [$projectionId],
-                [ParameterType::STRING],
+                [$projectionId, ...$extraParams],
+                [ParameterType::STRING, ...$extraTypes],
             )->fetchAssociative();
 
             if (false === $row) {
@@ -83,7 +120,7 @@ final readonly class PostgresProjectionSegmentRepository
 
             $this->connection->commit();
 
-            return new SegmentState(
+            return new ProjectionSegment(
                 projectionId: $projectionId,
                 bucketFrom: (int) $row['bucket_from'],
                 bucketTo: (int) $row['bucket_to'],
@@ -102,7 +139,7 @@ final readonly class PostgresProjectionSegmentRepository
      * Reads the current state of a segment from DB, without locking.
      * Used by the runner to detect mid-batch draining requests.
      */
-    public function readCurrentState(string $projectionId, int $bucketFrom): SegmentState
+    public function readCurrentState(string $projectionId, int $bucketFrom): ProjectionSegment
     {
         $row = $this->connection->executeQuery(
             sprintf(
@@ -121,7 +158,7 @@ final readonly class PostgresProjectionSegmentRepository
             ));
         }
 
-        return new SegmentState(
+        return new ProjectionSegment(
             projectionId: $projectionId,
             bucketFrom: (int) $row['bucket_from'],
             bucketTo: (int) $row['bucket_to'],
@@ -135,7 +172,7 @@ final readonly class PostgresProjectionSegmentRepository
     /**
      * Releases a segment back to available status and saves its checkpoint.
      */
-    public function releaseSegment(SegmentState $segment, Checkpoint $checkpoint): void
+    public function releaseSegment(ProjectionSegment $segment, Checkpoint $checkpoint): void
     {
         $this->connection->executeStatement(
             sprintf(
@@ -153,7 +190,7 @@ final readonly class PostgresProjectionSegmentRepository
     /**
      * Renews the worker's lease on a segment to prevent expiry during long batches.
      */
-    public function renewLease(SegmentState $segment, string $workerId, int $leaseDurationSeconds = 60): void
+    public function renewLease(ProjectionSegment $segment, string $workerId, int $leaseDurationSeconds = 60): void
     {
         $this->connection->executeStatement(
             sprintf(
@@ -231,7 +268,7 @@ final readonly class PostgresProjectionSegmentRepository
             ));
         }
 
-        $this->finalizeSplit(new SegmentState(
+        $this->finalizeSplit(new ProjectionSegment(
             projectionId: $projectionId,
             bucketFrom: (int) $row['bucket_from'],
             bucketTo: (int) $row['bucket_to'],
@@ -245,7 +282,7 @@ final readonly class PostgresProjectionSegmentRepository
     /**
      * Executes the split transaction: creates two child segments, removes the parent.
      */
-    public function finalizeSplit(SegmentState $segment, Checkpoint $checkpoint): void
+    public function finalizeSplit(ProjectionSegment $segment, Checkpoint $checkpoint): void
     {
         $rangeSize = $segment->bucketTo - $segment->bucketFrom + 1;
         if ($rangeSize < 2) {
@@ -321,7 +358,7 @@ final readonly class PostgresProjectionSegmentRepository
     /**
      * Called by a worker draining for a merge. The last sibling to drain finalizes the merge.
      */
-    public function finalizeMerge(SegmentState $segment, Checkpoint $checkpoint): void
+    public function finalizeMerge(ProjectionSegment $segment, Checkpoint $checkpoint): void
     {
         [$parentFrom, $parentTo, $siblingFrom] = $this->resolveMergeSibling($segment);
 
@@ -383,7 +420,7 @@ final readonly class PostgresProjectionSegmentRepository
     }
 
     /** @return array{0: int, 1: int, 2: int} [parentFrom, parentTo, siblingFrom] */
-    private function resolveMergeSibling(SegmentState $segment): array
+    private function resolveMergeSibling(ProjectionSegment $segment): array
     {
         $rangeSize = $segment->bucketTo - $segment->bucketFrom + 1;
         $parentRangeSize = $rangeSize * 2;

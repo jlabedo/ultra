@@ -13,6 +13,7 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\LoadResult;
+use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Sequence;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\AppendCondition;
@@ -274,7 +275,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
      */
     private function computeBucket(string $value): int
     {
-        return hexdec(substr(md5($value), 0, 2));
+        return BucketHasher::bucketFor($value);
     }
 
     private function eventsTable(): string

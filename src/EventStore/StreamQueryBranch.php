@@ -75,7 +75,7 @@ readonly class StreamQueryBranch
             if (null === $value) {
                 return false;
             }
-            $bucket = hexdec(substr(md5($value), 0, 2));
+            $bucket = BucketHasher::bucketFor($value);
             if ($bucket < $this->bucketRange['from'] || $bucket > $this->bucketRange['to']) {
                 return false;
             }
