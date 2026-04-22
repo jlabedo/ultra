@@ -22,18 +22,18 @@ final readonly class ProjectionActivityRecorder
     {
         $touchedBuckets = [];
 
-        foreach ($this->catalog->descriptors() as $descriptor) {
+        foreach ($this->catalog->definitions() as $definition) {
             foreach ($events as $event) {
-                if (!$descriptor->handles($event)) {
+                if (!$definition->handles($event)) {
                     continue;
                 }
 
-                $bucket = $descriptor->bucketFor($event);
+                $bucket = $definition->bucketFor($event);
                 if (null === $bucket) {
                     continue;
                 }
 
-                $touchedBuckets[$descriptor->projectionId][$bucket] = true;
+                $touchedBuckets[$definition->projectionId][$bucket] = true;
             }
         }
 

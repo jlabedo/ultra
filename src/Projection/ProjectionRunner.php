@@ -19,71 +19,73 @@ final readonly class ProjectionRunner
     }
 
     public function runOnce(
-        ProjectionPlan $plan,
+        ProjectionRuntime $runtime,
         string $workerId,
         int $limit = 100,
     ): int {
-        return $this->runOnceResult($plan, $workerId, $limit)->processedEvents;
+        return $this->runOnceResult($runtime, $workerId, $limit)->processedEvents;
     }
 
     public function runOnceResult(
-        ProjectionPlan $plan,
+        ProjectionRuntime $runtime,
         string $workerId,
         int $limit = 100,
     ): ProjectionRunResult {
-        $created = $this->segmentRepository->ensureInitialized($plan->projectionId());
+        $definition = $runtime->definition();
+        $created = $this->segmentRepository->ensureInitialized($definition->projectionId);
         if ($created) {
-            $plan->initialize();
+            $runtime->initialize();
         }
 
-        $segment = $this->segmentRepository->claimSegment($plan->projectionId(), $workerId);
+        $segment = $this->segmentRepository->claimSegment($definition->projectionId, $workerId);
         if (null === $segment) {
             return new ProjectionRunResult(0, false, null);
         }
 
-        return $this->processClaimedSegment($plan, $segment, $workerId, $limit);
+        return $this->processClaimedSegment($runtime, $segment, $workerId, $limit);
     }
 
     public function runBucketOnce(
-        ProjectionPlan $plan,
+        ProjectionRuntime $runtime,
         int $bucket,
         string $workerId,
         int $limit = 100,
     ): int {
-        return $this->runBucketOnceResult($plan, $bucket, $workerId, $limit)->processedEvents;
+        return $this->runBucketOnceResult($runtime, $bucket, $workerId, $limit)->processedEvents;
     }
 
     public function runBucketOnceResult(
-        ProjectionPlan $plan,
+        ProjectionRuntime $runtime,
         int $bucket,
         string $workerId,
         int $limit = 100,
     ): ProjectionRunResult {
-        $created = $this->segmentRepository->ensureInitialized($plan->projectionId());
+        $definition = $runtime->definition();
+        $created = $this->segmentRepository->ensureInitialized($definition->projectionId);
         if ($created) {
-            $plan->initialize();
+            $runtime->initialize();
         }
 
-        $segment = $this->segmentRepository->claimSegmentForBucket($plan->projectionId(), $bucket, $workerId);
+        $segment = $this->segmentRepository->claimSegmentForBucket($definition->projectionId, $bucket, $workerId);
         if (null === $segment) {
             return new ProjectionRunResult(0, false, null);
         }
 
-        return $this->processClaimedSegment($plan, $segment, $workerId, $limit);
+        return $this->processClaimedSegment($runtime, $segment, $workerId, $limit);
     }
 
     private function processClaimedSegment(
-        ProjectionPlan $plan,
+        ProjectionRuntime $runtime,
         ProjectionSegment $segment,
         string $workerId,
         int $limit,
     ): ProjectionRunResult {
         try {
-            $query = $plan->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
+            $query = $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
             $result = $this->eventStore->load($query, $segment->checkpoint, null, $limit);
 
             foreach ($result->events as $event) {
-                $plan->apply($event);
+                $runtime->apply($event);
             }
 
             $current = $this->segmentRepository->readCurrentState($segment->projectionId, $segment->bucketFrom);

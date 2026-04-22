@@ -14,7 +14,7 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
-use Ultra\Projection\ProjectionPlan;
+use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 
@@ -117,13 +117,13 @@ test('runner processes events and advances the checkpoint', function (): void {
             ),
         ]);
 
-        $plan = new ProjectionPlan(
+        $runtime = new ProjectionRuntime(
             new CourseNamesProjection($connection, $tableName),
             new UltraNormalizer(),
         );
 
-        expect($runner->runOnce($plan, 'worker-1'))->toBe(2)
-            ->and($runner->runOnce($plan, 'worker-1'))->toBe(0);
+        expect($runner->runOnce($runtime, 'worker-1'))->toBe(2)
+            ->and($runner->runOnce($runtime, 'worker-1'))->toBe(0);
 
         $rows = $connection->fetchAllAssociative(
             sprintf('SELECT course_id, name FROM %s ORDER BY course_id ASC', $tableName),
@@ -158,12 +158,12 @@ test('runner resumes from checkpoint after restart', function (): void {
             ),
         ]);
 
-        $plan = new ProjectionPlan(
+        $runtime = new ProjectionRuntime(
             new CourseNamesProjection($connection, $tableName),
             new UltraNormalizer(),
         );
 
-        expect($runner->runOnce($plan, 'worker-1'))->toBe(1);
+        expect($runner->runOnce($runtime, 'worker-1'))->toBe(1);
 
         // Append a second event
         $store->append([
@@ -175,8 +175,8 @@ test('runner resumes from checkpoint after restart', function (): void {
         ]);
 
         // Second run should process only the new event
-        expect($runner->runOnce($plan, 'worker-1'))->toBe(1)
-            ->and($runner->runOnce($plan, 'worker-1'))->toBe(0);
+        expect($runner->runOnce($runtime, 'worker-1'))->toBe(1)
+            ->and($runner->runOnce($runtime, 'worker-1'))->toBe(0);
 
         $row = $connection->fetchAssociative(
             sprintf('SELECT name FROM %s WHERE course_id = ?', $tableName),
@@ -233,12 +233,12 @@ test('segment split divides the range into two equal halves', function (): void 
             ),
         ]);
 
-        $plan = new ProjectionPlan(
+        $runtime = new ProjectionRuntime(
             new CourseNamesProjection($connection, $tableName),
             new UltraNormalizer(),
         );
 
-        $runner->runOnce($plan, 'worker-1');
+        $runner->runOnce($runtime, 'worker-1');
 
         $segmentRepository->splitSegment('course_names', 0);
 
@@ -268,12 +268,12 @@ test('segment merge recombines two siblings into a parent', function (): void {
             ),
         ]);
 
-        $plan = new ProjectionPlan(
+        $runtime = new ProjectionRuntime(
             new CourseNamesProjection($connection, $tableName),
             new UltraNormalizer(),
         );
 
-        $runner->runOnce($plan, 'worker-1');
+        $runner->runOnce($runtime, 'worker-1');
 
         // Split first
         $segmentRepository->splitSegment('course_names', 0);
@@ -320,13 +320,13 @@ test('draining split is finalized by the worker on its next iteration', function
             ),
         ]);
 
-        $plan = new ProjectionPlan(
+        $runtime = new ProjectionRuntime(
             new CourseNamesProjection($connection, $tableName),
             new UltraNormalizer(),
         );
 
         // First run: claims [0-255], processes 1 event, releases
-        $runner->runOnce($plan, 'worker-1');
+        $runner->runOnce($runtime, 'worker-1');
 
         // Mark for split while segment is available (simulates operator calling split)
         $segmentRepository->splitSegment('course_names', 0);

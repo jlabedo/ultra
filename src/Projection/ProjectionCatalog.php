@@ -6,47 +6,47 @@ namespace Ultra\Projection;
 
 final class ProjectionCatalog
 {
-    /** @var array<string, ProjectionPlan> */
-    private array $plans = [];
+    /** @var array<string, ProjectionRuntime> */
+    private array $runtimes = [];
 
-    /** @var array<string, ProjectionDescriptor> */
-    private array $descriptors = [];
+    /** @var array<string, ProjectionDefinition> */
+    private array $definitions = [];
 
-    public function __construct(ProjectionPlan ...$plans)
+    public function __construct(ProjectionRuntime ...$runtimes)
     {
-        foreach ($plans as $plan) {
-            $this->add($plan);
+        foreach ($runtimes as $runtime) {
+            $this->add($runtime);
         }
     }
 
-    public function add(ProjectionPlan $plan): void
+    public function add(ProjectionRuntime $runtime): void
     {
-        $projectionId = $plan->projectionId();
-        $this->plans[$projectionId] = $plan;
-        $this->descriptors[$projectionId] = ProjectionDescriptor::fromPlan($plan);
+        $projectionId = $runtime->projectionId();
+        $this->runtimes[$projectionId] = $runtime;
+        $this->definitions[$projectionId] = $runtime->definition();
     }
 
-    public function plan(string $projectionId): ProjectionPlan
+    public function runtime(string $projectionId): ProjectionRuntime
     {
-        if (!isset($this->plans[$projectionId])) {
+        if (!isset($this->runtimes[$projectionId])) {
             throw new \InvalidArgumentException(sprintf('Unknown projection "%s".', $projectionId));
         }
 
-        return $this->plans[$projectionId];
+        return $this->runtimes[$projectionId];
     }
 
-    public function descriptor(string $projectionId): ProjectionDescriptor
+    public function definition(string $projectionId): ProjectionDefinition
     {
-        if (!isset($this->descriptors[$projectionId])) {
+        if (!isset($this->definitions[$projectionId])) {
             throw new \InvalidArgumentException(sprintf('Unknown projection "%s".', $projectionId));
         }
 
-        return $this->descriptors[$projectionId];
+        return $this->definitions[$projectionId];
     }
 
-    /** @return list<ProjectionDescriptor> */
-    public function descriptors(): array
+    /** @return list<ProjectionDefinition> */
+    public function definitions(): array
     {
-        return array_values($this->descriptors);
+        return array_values($this->definitions);
     }
 }

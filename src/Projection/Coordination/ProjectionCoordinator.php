@@ -31,7 +31,8 @@ final readonly class ProjectionCoordinator
         $processedEvents = 0;
         $acknowledgedBuckets = 0;
         $queuedWorkerWakeups = 0;
-        $plan = $this->catalog->plan($projectionId);
+        $runtime = $this->catalog->runtime($projectionId);
+        $definition = $runtime->definition();
 
         try {
             for ($cycle = 0; $cycle < $maxCycles; ++$cycle) {
@@ -43,7 +44,7 @@ final readonly class ProjectionCoordinator
                     break;
                 }
 
-                $queued = $this->scalingPolicy->additionalWorkerWakeups($plan, $pendingBuckets);
+                $queued = $this->scalingPolicy->additionalWorkerWakeups($definition, $pendingBuckets);
                 for ($i = 0; $i < $queued; ++$i) {
                     $this->wakeQueue->enqueue(new WakeProjectionWorker($projectionId));
                     ++$queuedWorkerWakeups;
@@ -52,7 +53,7 @@ final readonly class ProjectionCoordinator
                 $progressed = false;
                 foreach ($pendingBuckets as $bucketActivity) {
                     $result = $this->runner->runBucketOnceResult(
-                        $plan,
+                        $runtime,
                         $bucketActivity->bucket,
                         $workerId . '-segment',
                         $batchSize,

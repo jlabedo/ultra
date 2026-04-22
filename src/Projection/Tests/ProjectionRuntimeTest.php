@@ -19,7 +19,7 @@ use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\WakeProjectionCoordinator;
 use Ultra\Projection\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\ProjectionCatalog;
-use Ultra\Projection\ProjectionPlan;
+use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionRunner;
 
 #[EventAttribute('course.created')]
@@ -46,8 +46,8 @@ final class RuntimeProjection
 
 test('activity recorder deduplicates buckets per append and enqueues a single coordinator wakeup', function (): void {
     $projection = new RuntimeProjection();
-    $plan = new ProjectionPlan($projection, new UltraNormalizer());
-    $catalog = new ProjectionCatalog($plan);
+    $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+    $catalog = new ProjectionCatalog($runtime);
     $activity = new InMemoryProjectionBucketActivityRepository();
     $leases = new InMemoryProjectionCoordinatorLeaseRepository();
     $queue = new InMemoryProjectionWakeQueue();
@@ -68,8 +68,8 @@ test('activity recorder deduplicates buckets per append and enqueues a single co
 
 test('coordinator catches up a stale projection and acknowledges processed buckets', function (): void {
     $projection = new RuntimeProjection();
-    $plan = new ProjectionPlan($projection, new UltraNormalizer());
-    $catalog = new ProjectionCatalog($plan);
+    $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+    $catalog = new ProjectionCatalog($runtime);
     $eventStore = new InMemoryEventStore();
     $segments = new InMemoryProjectionSegmentRepository();
     $activity = new InMemoryProjectionBucketActivityRepository();
