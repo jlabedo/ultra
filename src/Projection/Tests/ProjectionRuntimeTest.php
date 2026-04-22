@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests;
 
+use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\Event;
@@ -17,10 +18,12 @@ use Ultra\Projection\Coordination\InMemoryProjectionBucketActivityRepository;
 use Ultra\Projection\Coordination\InMemoryProjectionCoordinatorLeaseRepository;
 use Ultra\Projection\Coordination\InMemoryProjectionWakeQueue;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
+use Ultra\Projection\Coordination\ProjectionBucketActivity;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\WakeProjectionCoordinator;
 use Ultra\Projection\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\ProjectionCatalog;
+use Ultra\Projection\ProjectionDefinition;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionRunner;
 
@@ -46,9 +49,18 @@ final class RuntimeProjection
     }
 }
 
+#[Projection(name: 'secondary_runtime_projection', partitionBy: 'courseId')]
+final class SecondaryRuntimeProjection
+{
+    #[ProjectionHandler]
+    public function onCourseCreated(RuntimeCourseCreated $event): void {}
+}
+
 #[CoversClass(ProjectionActivityRecorder::class)]
 #[CoversClass(ProjectionCoordinator::class)]
 #[CoversClass(DefaultProjectionScalingPolicy::class)]
+#[CoversClass(ProjectionCatalog::class)]
+#[CoversClass(ProjectionRuntime::class)]
 final class ProjectionRuntimeTest extends TestCase
 {
     public function test_activity_recorder_deduplicates_buckets_per_append_and_enqueues_a_single_coordinator_wakeup(): void
@@ -70,6 +82,55 @@ final class ProjectionRuntimeTest extends TestCase
 
         self::assertCount(1, $pending);
         self::assertSame(1, $pending[0]->counter);
+        self::assertInstanceOf(WakeProjectionCoordinator::class, $queue->dequeue());
+        self::assertNull($queue->dequeue());
+    }
+
+    public function test_activity_recorder_ignores_events_missing_the_partition_dimension(): void
+    {
+        $runtime = new ProjectionRuntime(new RuntimeProjection(), new UltraNormalizer());
+        $activity = new InMemoryProjectionBucketActivityRepository();
+        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
+        $queue = new InMemoryProjectionWakeQueue();
+        $recorder = new ProjectionActivityRecorder(new ProjectionCatalog($runtime), $activity, $leases, $queue);
+
+        $recorder->record([
+            new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['studentId' => 'student-1']),
+            new Event('unrelated.event', [], ['courseId' => 'course-1']),
+        ]);
+
+        self::assertSame([], $activity->pendingBuckets('runtime_projection'));
+        self::assertNull($queue->dequeue());
+    }
+
+    public function test_activity_recorder_continues_past_unhandled_and_unpartitioned_events_to_record_later_matches(): void
+    {
+        $runtime = new ProjectionRuntime(new RuntimeProjection(), new UltraNormalizer());
+        $secondaryRuntime = new ProjectionRuntime(new SecondaryRuntimeProjection(), new UltraNormalizer());
+        $activity = new InMemoryProjectionBucketActivityRepository();
+        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
+        $queue = new InMemoryProjectionWakeQueue();
+        $recorder = new ProjectionActivityRecorder(
+            new ProjectionCatalog($runtime, $secondaryRuntime),
+            $activity,
+            $leases,
+            $queue,
+        );
+
+        $recorder->record([
+            new Event('unrelated.event', [], ['courseId' => 'course-x']),
+            new Event('course.created', ['courseId' => 'course-missing', 'name' => 'Ignored'], ['studentId' => 'student-1']),
+            new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['courseId' => 'course-1']),
+        ]);
+
+        $primaryPending = $activity->pendingBuckets('runtime_projection');
+        $secondaryPending = $activity->pendingBuckets('secondary_runtime_projection');
+
+        self::assertCount(1, $primaryPending);
+        self::assertSame(1, $primaryPending[0]->counter);
+        self::assertCount(1, $secondaryPending);
+        self::assertSame(1, $secondaryPending[0]->counter);
+        self::assertInstanceOf(WakeProjectionCoordinator::class, $queue->dequeue());
         self::assertInstanceOf(WakeProjectionCoordinator::class, $queue->dequeue());
         self::assertNull($queue->dequeue());
     }
@@ -114,5 +175,63 @@ final class ProjectionRuntimeTest extends TestCase
             'course-2' => 'Physics',
         ], $projection->names);
         self::assertSame([], $activity->pendingBuckets('runtime_projection'));
+    }
+
+    public function test_projection_catalog_tracks_constructor_and_added_runtimes(): void
+    {
+        $runtime = new ProjectionRuntime(new RuntimeProjection(), new UltraNormalizer());
+        $secondaryRuntime = new ProjectionRuntime(new SecondaryRuntimeProjection(), new UltraNormalizer());
+        $catalog = new ProjectionCatalog($runtime);
+
+        $catalog->add($secondaryRuntime);
+
+        self::assertSame($runtime, $catalog->runtime('runtime_projection'));
+        self::assertSame($secondaryRuntime, $catalog->runtime('secondary_runtime_projection'));
+        self::assertSame($runtime->definition(), $catalog->definition('runtime_projection'));
+        self::assertSame(
+            ['runtime_projection', 'secondary_runtime_projection'],
+            array_map(
+                static fn(ProjectionDefinition $definition): string => $definition->projectionId,
+                $catalog->definitions(),
+            ),
+        );
+    }
+
+    public function test_projection_catalog_throws_for_unknown_projections(): void
+    {
+        $catalog = new ProjectionCatalog();
+
+        try {
+            $catalog->runtime('missing_projection');
+            self::fail('Expected runtime lookup to fail for an unknown projection.');
+        } catch (InvalidArgumentException $e) {
+            self::assertStringContainsString('Unknown projection "missing_projection"', $e->getMessage());
+        }
+
+        try {
+            $catalog->definition('missing_projection');
+            self::fail('Expected definition lookup to fail for an unknown projection.');
+        } catch (InvalidArgumentException $e) {
+            self::assertStringContainsString('Unknown projection "missing_projection"', $e->getMessage());
+        }
+    }
+
+    public function test_projection_runtime_uses_an_explicit_definition_when_one_is_provided(): void
+    {
+        $definition = ProjectionDefinition::fromClass(RuntimeProjection::class);
+        $runtime = new ProjectionRuntime(new \stdClass(), new UltraNormalizer(), $definition);
+
+        self::assertSame('runtime_projection', $runtime->projectionId());
+        self::assertSame($definition, $runtime->definition());
+    }
+
+    public function test_default_projection_scaling_policy_returns_zero_worker_wakeups(): void
+    {
+        $policy = new DefaultProjectionScalingPolicy();
+
+        self::assertSame(0, $policy->additionalWorkerWakeups(
+            ProjectionDefinition::fromClass(RuntimeProjection::class),
+            [new ProjectionBucketActivity('runtime_projection', 12, 3, 1)],
+        ));
     }
 }

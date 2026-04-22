@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace Ultra\Projection\Tests;
 
 use InvalidArgumentException;
+use LogicException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Mapper\UltraNormalizer;
@@ -68,6 +70,55 @@ final class TestProjectionClassWithoutInitializer
     public function onStudentSubscribed(StudentSubscribed $event): void {}
 }
 
+#[EventAttribute('student.subscribed')]
+final readonly class DuplicateStudentSubscribed
+{
+    public function __construct(public string $studentId) {}
+}
+
+final readonly class EventWithoutAttribute
+{
+    public function __construct(public string $courseId) {}
+}
+
+#[Projection(name: 'invalid_builtin_projection', partitionBy: 'courseId')]
+final class BuiltinParameterProjection
+{
+    #[ProjectionHandler]
+    public function onInvalid(string $eventType): void {}
+}
+
+#[Projection(name: 'invalid_parameter_count_projection', partitionBy: 'courseId')]
+final class InvalidParameterCountProjection
+{
+    #[ProjectionHandler]
+    public function onInvalid(StudentSubscribed $event, CourseCreatedEvent $other): void {}
+}
+
+#[Projection(name: 'duplicate_handler_projection', partitionBy: 'courseId')]
+final class DuplicateHandlerProjection
+{
+    #[ProjectionHandler]
+    public function onStudentSubscribed(StudentSubscribed $event): void {}
+
+    #[ProjectionHandler]
+    public function onDuplicateStudentSubscribed(DuplicateStudentSubscribed $event): void {}
+}
+
+#[Projection(name: 'missing_event_attribute_projection', partitionBy: 'courseId')]
+final class MissingEventAttributeProjection
+{
+    #[ProjectionHandler]
+    public function onMissingAttribute(EventWithoutAttribute $event): void {}
+}
+
+#[Projection(name: 'invalid_initializer_projection', partitionBy: 'courseId')]
+final class InvalidInitializerProjection
+{
+    #[ProjectionInitializer]
+    public function initialize(string $projectionId): void {}
+}
+
 #[CoversClass(ProjectionDefinition::class)]
 #[CoversClass(ProjectionRuntime::class)]
 final class ProjectionDefinitionRuntimeTest extends TestCase
@@ -93,6 +144,31 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
         self::assertTrue($query->matches(new Event('student.subscribed', [], $domainIds)));
         self::assertTrue($query->matches(new Event('course.created', [], $domainIds)));
         self::assertFalse($query->matches(new Event('unrelated.event', [], $domainIds)));
+    }
+
+    public function test_projection_definition_exposes_handler_lookup_bucket_hashing_and_handled_event_types(): void
+    {
+        $definition = ProjectionDefinition::fromProjection(new TestProjectionClass());
+        $event = new Event(
+            'student.subscribed',
+            ['studentId' => 'student-1', 'courseId' => 'course-1'],
+            ['courseId' => 'course-1'],
+        );
+
+        self::assertSame(['student.subscribed', 'course.created'], $definition->handledEventTypes());
+        self::assertTrue($definition->handles($event));
+        self::assertFalse($definition->handles(new Event('unrelated.event', [], ['studentId' => 'student-1'])));
+        self::assertSame(BucketHasher::bucketFor('course-1'), $definition->bucketFor($event));
+        self::assertNull($definition->bucketFor(new Event('student.subscribed', [], ['studentId' => 'student-1'])));
+
+        $handler = $definition->handlerFor($event);
+
+        self::assertNotNull($handler);
+        self::assertSame('student.subscribed', $handler->eventType);
+        self::assertSame(StudentSubscribed::class, $handler->eventClass);
+        self::assertSame('onStudentSubscribed', $handler->method);
+        self::assertSame($handler, $definition->handlerFor('student.subscribed'));
+        self::assertNull($definition->handlerFor('missing.event'));
     }
 
     public function test_segment_stream_query_uses_bucket_range_predicate(): void
@@ -145,5 +221,45 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
         $this->expectException(InvalidArgumentException::class);
 
         ProjectionDefinition::fromClass(\stdClass::class);
+    }
+
+    public function test_projection_definition_throws_when_a_handler_uses_a_builtin_parameter_type(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('must type-hint a specific event class');
+
+        ProjectionDefinition::fromClass(BuiltinParameterProjection::class);
+    }
+
+    public function test_projection_definition_throws_when_a_handler_has_the_wrong_number_of_parameters(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('must have exactly one parameter');
+
+        ProjectionDefinition::fromClass(InvalidParameterCountProjection::class);
+    }
+
+    public function test_projection_definition_throws_when_multiple_handlers_target_the_same_event_type(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('Duplicate #[ProjectionHandler]');
+
+        ProjectionDefinition::fromClass(DuplicateHandlerProjection::class);
+    }
+
+    public function test_projection_definition_throws_when_the_event_class_has_no_event_attribute(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('has no #[Event] attribute');
+
+        ProjectionDefinition::fromClass(MissingEventAttributeProjection::class);
+    }
+
+    public function test_projection_definition_throws_when_the_initializer_declares_parameters(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('must have no parameters');
+
+        ProjectionDefinition::fromClass(InvalidInitializerProjection::class);
     }
 }

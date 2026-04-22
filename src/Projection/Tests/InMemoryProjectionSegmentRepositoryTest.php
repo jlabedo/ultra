@@ -37,6 +37,15 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         self::assertSame(0, $right->checkpoint->gapFloor->value);
     }
 
+    public function test_ensure_initialized_returns_false_when_the_projection_already_exists(): void
+    {
+        $repository = new InMemoryProjectionSegmentRepository();
+
+        self::assertTrue($repository->ensureInitialized('courses'));
+        self::assertFalse($repository->ensureInitialized('courses'));
+        self::assertSame(0, $repository->readCurrentState('courses', 0)->checkpoint->gapFloor->value);
+    }
+
     public function test_split_of_an_active_segment_is_deferred_until_finalize_split(): void
     {
         $repository = new InMemoryProjectionSegmentRepository();
@@ -93,6 +102,47 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         } catch (LogicException $e) {
             self::assertStringContainsString('Segment [128] not found', $e->getMessage());
         }
+    }
+
+    public function test_claim_segment_skips_non_available_segments_and_claims_the_next_one(): void
+    {
+        $repository = new InMemoryProjectionSegmentRepository();
+        $repository->ensureInitialized('courses');
+        $repository->splitSegment('courses', 0);
+
+        $first = $repository->claimSegmentForBucket('courses', 40, 'worker-1');
+        $second = $repository->claimSegment('courses', 'worker-2');
+
+        self::assertNotNull($first);
+        self::assertNotNull($second);
+        self::assertSame(0, $first->bucketFrom);
+        self::assertSame(128, $second->bucketFrom);
+    }
+
+    public function test_claim_segment_for_bucket_returns_null_when_the_matching_segment_is_not_available(): void
+    {
+        $repository = new InMemoryProjectionSegmentRepository();
+        $repository->ensureInitialized('courses');
+        $repository->splitSegment('courses', 0);
+
+        $claimed = $repository->claimSegmentForBucket('courses', 200, 'worker-1');
+        $retry = $repository->claimSegmentForBucket('courses', 200, 'worker-2');
+
+        self::assertNotNull($claimed);
+        self::assertNull($retry);
+    }
+
+    public function test_projection_segment_exposes_its_state(): void
+    {
+        $segment = new ProjectionSegment('courses', 128, 255, 'available', null, Checkpoint::beginning(), false);
+
+        self::assertSame('courses', $segment->projectionId);
+        self::assertSame(128, $segment->bucketFrom);
+        self::assertSame(255, $segment->bucketTo);
+        self::assertSame('available', $segment->status);
+        self::assertNull($segment->pendingOperation);
+        self::assertSame(0, $segment->checkpoint->gapFloor->value);
+        self::assertFalse($segment->wasCreated);
     }
 
     public function test_finalize_split_rejects_a_minimum_granularity_segment(): void
