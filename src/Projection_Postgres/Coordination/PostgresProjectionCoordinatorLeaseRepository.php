@@ -10,17 +10,19 @@ use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
 
 final readonly class PostgresProjectionCoordinatorLeaseRepository implements ProjectionCoordinatorLeaseRepositoryInterface
 {
+    private const string COORDINATOR_KEY = 'global';
+
     public function __construct(
         private Connection $connection,
         private string $tablePrefix = 'projection_',
     ) {}
 
-    public function acquire(string $projectionId, string $workerId, int $leaseDurationSeconds = 60): bool
+    public function acquire(string $workerId, int $leaseDurationSeconds = 60): bool
     {
         $this->connection->beginTransaction();
 
         try {
-            $row = $this->lockRow($projectionId);
+            $row = $this->lockRow();
             if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
                 $leaseExpiresAt = new \DateTimeImmutable((string) $row['lease_expires_at']);
                 if ($leaseExpiresAt >= new \DateTimeImmutable()) {
@@ -29,17 +31,17 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
                 }
             }
 
-            $this->upsertRow($projectionId);
+            $this->upsertRow();
             $this->connection->executeStatement(
                 sprintf(
                     "UPDATE %s
                      SET worker_id = ?, lease_expires_at = now() + interval '%d seconds',
                          wake_enqueued_until = NULL, updated_at = statement_timestamp()
-                     WHERE projection_id = ?",
+                     WHERE coordinator_key = ?",
                     $this->coordinatorsTable(),
                     $leaseDurationSeconds,
                 ),
-                [$workerId, $projectionId],
+                [$workerId, self::COORDINATOR_KEY],
                 [ParameterType::STRING, ParameterType::STRING],
             );
 
@@ -54,43 +56,43 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
         }
     }
 
-    public function renew(string $projectionId, string $workerId, int $leaseDurationSeconds = 60): void
+    public function renew(string $workerId, int $leaseDurationSeconds = 60): void
     {
         $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
                  SET lease_expires_at = now() + interval '%d seconds', updated_at = statement_timestamp()
-                 WHERE projection_id = ? AND worker_id = ?",
+                 WHERE coordinator_key = ? AND worker_id = ?",
                 $this->coordinatorsTable(),
                 $leaseDurationSeconds,
             ),
-            [$projectionId, $workerId],
+            [self::COORDINATOR_KEY, $workerId],
             [ParameterType::STRING, ParameterType::STRING],
         );
     }
 
-    public function release(string $projectionId, string $workerId): void
+    public function release(string $workerId): void
     {
         $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
                  SET worker_id = NULL, lease_expires_at = NULL, updated_at = statement_timestamp()
-                 WHERE projection_id = ? AND worker_id = ?",
+                 WHERE coordinator_key = ? AND worker_id = ?",
                 $this->coordinatorsTable(),
             ),
-            [$projectionId, $workerId],
+            [self::COORDINATOR_KEY, $workerId],
             [ParameterType::STRING, ParameterType::STRING],
         );
     }
 
-    public function hasLiveCoordinator(string $projectionId): bool
+    public function hasLiveCoordinator(): bool
     {
         $row = $this->connection->executeQuery(
             sprintf(
-                'SELECT worker_id, lease_expires_at FROM %s WHERE projection_id = ?',
+                'SELECT worker_id, lease_expires_at FROM %s WHERE coordinator_key = ?',
                 $this->coordinatorsTable(),
             ),
-            [$projectionId],
+            [self::COORDINATOR_KEY],
             [ParameterType::STRING],
         )->fetchAssociative();
 
@@ -101,13 +103,13 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
         return new \DateTimeImmutable((string) $row['lease_expires_at']) >= new \DateTimeImmutable();
     }
 
-    public function markWakeEnqueued(string $projectionId, int $ttlSeconds = 30): bool
+    public function markWakeEnqueued(int $ttlSeconds = 30): bool
     {
         $this->connection->beginTransaction();
 
         try {
-            $row = $this->lockRow($projectionId);
-            $this->upsertRow($projectionId);
+            $row = $this->lockRow();
+            $this->upsertRow();
             $now = new \DateTimeImmutable();
 
             if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
@@ -130,11 +132,11 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
                 sprintf(
                     "UPDATE %s
                      SET wake_enqueued_until = now() + interval '%d seconds', updated_at = statement_timestamp()
-                     WHERE projection_id = ?",
+                     WHERE coordinator_key = ?",
                     $this->coordinatorsTable(),
                     $ttlSeconds,
                 ),
-                [$projectionId],
+                [self::COORDINATOR_KEY],
                 [ParameterType::STRING],
             );
 
@@ -150,28 +152,28 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
     }
 
     /** @return array{worker_id: string|null, lease_expires_at: string|null, wake_enqueued_until: string|null}|null */
-    private function lockRow(string $projectionId): ?array
+    private function lockRow(): ?array
     {
         $row = $this->connection->executeQuery(
             sprintf(
-                'SELECT worker_id, lease_expires_at, wake_enqueued_until FROM %s WHERE projection_id = ? FOR UPDATE',
+                'SELECT worker_id, lease_expires_at, wake_enqueued_until FROM %s WHERE coordinator_key = ? FOR UPDATE',
                 $this->coordinatorsTable(),
             ),
-            [$projectionId],
+            [self::COORDINATOR_KEY],
             [ParameterType::STRING],
         )->fetchAssociative();
 
         return false === $row ? null : $row;
     }
 
-    private function upsertRow(string $projectionId): void
+    private function upsertRow(): void
     {
         $this->connection->executeStatement(
             sprintf(
-                'INSERT INTO %s (projection_id) VALUES (?) ON CONFLICT (projection_id) DO NOTHING',
+                'INSERT INTO %s (coordinator_key) VALUES (?) ON CONFLICT (coordinator_key) DO NOTHING',
                 $this->coordinatorsTable(),
             ),
-            [$projectionId],
+            [self::COORDINATOR_KEY],
             [ParameterType::STRING],
         );
     }

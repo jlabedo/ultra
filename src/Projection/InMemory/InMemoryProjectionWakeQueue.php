@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection\Coordination;
+namespace Ultra\Projection\InMemory;
+
+use Ultra\Projection\Coordination\ProjectionWakeQueueInterface;
 
 final class InMemoryProjectionWakeQueue implements ProjectionWakeQueueInterface
 {

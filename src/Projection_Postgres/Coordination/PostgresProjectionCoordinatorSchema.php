@@ -14,7 +14,7 @@ final readonly class PostgresProjectionCoordinatorSchema
         return [
             sprintf(
                 "CREATE TABLE IF NOT EXISTS %s (
-                    projection_id        TEXT        NOT NULL PRIMARY KEY,
+                    coordinator_key      TEXT        NOT NULL PRIMARY KEY,
                     worker_id            TEXT        NULL,
                     lease_expires_at     TIMESTAMPTZ NULL,
                     wake_enqueued_until  TIMESTAMPTZ NULL,

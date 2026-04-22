@@ -2,72 +2,74 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection\Coordination;
+namespace Ultra\Projection\InMemory;
+
+use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
 
 final class InMemoryProjectionCoordinatorLeaseRepository implements ProjectionCoordinatorLeaseRepositoryInterface
 {
-    /** @var array<string, array{workerId: string|null, leaseExpiresAt: int|null, wakeEnqueuedUntil: int|null}> */
-    private array $rows = [];
+    /** @var array{workerId: string|null, leaseExpiresAt: int|null, wakeEnqueuedUntil: int|null} */
+    private array $row = ['workerId' => null, 'leaseExpiresAt' => null, 'wakeEnqueuedUntil' => null];
 
-    public function acquire(string $projectionId, string $workerId, int $leaseDurationSeconds = 60): bool
+    public function acquire(string $workerId, int $leaseDurationSeconds = 60): bool
     {
-        $row = $this->row($projectionId);
+        $row = $this->row;
         if ($this->isLeaseExpired($row)) {
             $row['workerId'] = null;
             $row['leaseExpiresAt'] = null;
         }
 
         if (null !== $row['workerId']) {
-            $this->rows[$projectionId] = $row;
+            $this->row = $row;
             return false;
         }
 
         $row['workerId'] = $workerId;
         $row['leaseExpiresAt'] = time() + $leaseDurationSeconds;
         $row['wakeEnqueuedUntil'] = null;
-        $this->rows[$projectionId] = $row;
+        $this->row = $row;
 
         return true;
     }
 
-    public function renew(string $projectionId, string $workerId, int $leaseDurationSeconds = 60): void
+    public function renew(string $workerId, int $leaseDurationSeconds = 60): void
     {
-        $row = $this->row($projectionId);
+        $row = $this->row;
         if ($row['workerId'] !== $workerId) {
             return;
         }
 
         $row['leaseExpiresAt'] = time() + $leaseDurationSeconds;
-        $this->rows[$projectionId] = $row;
+        $this->row = $row;
     }
 
-    public function release(string $projectionId, string $workerId): void
+    public function release(string $workerId): void
     {
-        $row = $this->row($projectionId);
+        $row = $this->row;
         if ($row['workerId'] !== $workerId) {
             return;
         }
 
         $row['workerId'] = null;
         $row['leaseExpiresAt'] = null;
-        $this->rows[$projectionId] = $row;
+        $this->row = $row;
     }
 
-    public function hasLiveCoordinator(string $projectionId): bool
+    public function hasLiveCoordinator(): bool
     {
-        $row = $this->row($projectionId);
+        $row = $this->row;
         if ($this->isLeaseExpired($row)) {
             $row['workerId'] = null;
             $row['leaseExpiresAt'] = null;
-            $this->rows[$projectionId] = $row;
+            $this->row = $row;
         }
 
         return null !== $row['workerId'];
     }
 
-    public function markWakeEnqueued(string $projectionId, int $ttlSeconds = 30): bool
+    public function markWakeEnqueued(int $ttlSeconds = 30): bool
     {
-        $row = $this->row($projectionId);
+        $row = $this->row;
         if ($this->isLeaseExpired($row)) {
             $row['workerId'] = null;
             $row['leaseExpiresAt'] = null;
@@ -75,17 +77,17 @@ final class InMemoryProjectionCoordinatorLeaseRepository implements ProjectionCo
 
         $now = time();
         if (null !== $row['workerId']) {
-            $this->rows[$projectionId] = $row;
+            $this->row = $row;
             return false;
         }
 
         if (null !== $row['wakeEnqueuedUntil'] && $row['wakeEnqueuedUntil'] >= $now) {
-            $this->rows[$projectionId] = $row;
+            $this->row = $row;
             return false;
         }
 
         $row['wakeEnqueuedUntil'] = $now + $ttlSeconds;
-        $this->rows[$projectionId] = $row;
+        $this->row = $row;
 
         return true;
     }
@@ -96,9 +98,4 @@ final class InMemoryProjectionCoordinatorLeaseRepository implements ProjectionCo
         return null !== $row['leaseExpiresAt'] && $row['leaseExpiresAt'] < time();
     }
 
-    /** @return array{workerId: string|null, leaseExpiresAt: int|null, wakeEnqueuedUntil: int|null} */
-    private function row(string $projectionId): array
-    {
-        return $this->rows[$projectionId] ?? ['workerId' => null, 'leaseExpiresAt' => null, 'wakeEnqueuedUntil' => null];
-    }
 }

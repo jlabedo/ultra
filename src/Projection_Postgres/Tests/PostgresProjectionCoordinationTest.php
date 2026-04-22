@@ -32,16 +32,23 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
 
             $activity->bump('courses', 42);
             $activity->bump('courses', 42);
+            $activity->bump('other_courses', 3);
 
             $pending = $activity->pendingBuckets('courses');
+            $affectedBuckets = $activity->affectedBuckets();
 
             self::assertCount(1, $pending);
             self::assertSame(2, $pending[0]->counter);
             self::assertSame(0, $pending[0]->acknowledgedCounter);
+            self::assertCount(2, $affectedBuckets);
+            self::assertSame('courses', $affectedBuckets[0]->projectionId);
+            self::assertSame('other_courses', $affectedBuckets[1]->projectionId);
 
             $activity->acknowledge('courses', 42, 2);
+            $activity->acknowledge('other_courses', 3, 1);
 
             self::assertSame([], $activity->pendingBuckets('courses'));
+            self::assertSame([], $activity->affectedBuckets());
         });
     }
 
@@ -50,11 +57,11 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
         $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
             $leases = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix);
 
-            self::assertTrue($leases->markWakeEnqueued('courses', 30));
-            self::assertFalse($leases->markWakeEnqueued('courses', 30));
-            self::assertTrue($leases->acquire('courses', 'coordinator-1'));
-            self::assertTrue($leases->hasLiveCoordinator('courses'));
-            self::assertFalse($leases->markWakeEnqueued('courses', 30));
+            self::assertTrue($leases->markWakeEnqueued(30));
+            self::assertFalse($leases->markWakeEnqueued(30));
+            self::assertTrue($leases->acquire('coordinator-1'));
+            self::assertTrue($leases->hasLiveCoordinator());
+            self::assertFalse($leases->markWakeEnqueued(30));
         });
     }
 }

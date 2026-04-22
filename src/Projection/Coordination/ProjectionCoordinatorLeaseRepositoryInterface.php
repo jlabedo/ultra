@@ -6,13 +6,13 @@ namespace Ultra\Projection\Coordination;
 
 interface ProjectionCoordinatorLeaseRepositoryInterface
 {
-    public function acquire(string $projectionId, string $workerId, int $leaseDurationSeconds = 60): bool;
+    public function acquire(string $workerId, int $leaseDurationSeconds = 60): bool;
 
-    public function renew(string $projectionId, string $workerId, int $leaseDurationSeconds = 60): void;
+    public function renew(string $workerId, int $leaseDurationSeconds = 60): void;
 
-    public function release(string $projectionId, string $workerId): void;
+    public function release(string $workerId): void;
 
-    public function hasLiveCoordinator(string $projectionId): bool;
+    public function hasLiveCoordinator(): bool;
 
-    public function markWakeEnqueued(string $projectionId, int $ttlSeconds = 30): bool;
+    public function markWakeEnqueued(int $ttlSeconds = 30): bool;
 }

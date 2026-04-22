@@ -2,9 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection;
+namespace Ultra\Projection\InMemory;
 
 use Ultra\EventStore\Checkpoint;
+use Ultra\Projection\ProjectionSegment;
+use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 
 final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepositoryInterface
 {

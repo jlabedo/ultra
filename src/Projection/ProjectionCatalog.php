@@ -49,4 +49,10 @@ final class ProjectionCatalog
     {
         return array_values($this->definitions);
     }
+
+    /** @return list<ProjectionRuntime> */
+    public function runtimes(): array
+    {
+        return array_values($this->runtimes);
+    }
 }

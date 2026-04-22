@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Sequence;
-use Ultra\Projection\InMemoryProjectionSegmentRepository;
+use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\ProjectionSegment;
 
 #[CoversClass(InMemoryProjectionSegmentRepository::class)]
