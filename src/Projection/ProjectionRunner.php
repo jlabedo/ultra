@@ -18,6 +18,11 @@ final readonly class ProjectionRunner
         return $this->segmentRepository->recoverExpiredLeases($projectionId);
     }
 
+    public function reconcilePendingOperations(string $projectionId): int
+    {
+        return $this->segmentRepository->reconcilePendingOperations($projectionId);
+    }
+
     public function runOnce(
         ProjectionRuntime $runtime,
         string $workerId,
@@ -42,7 +47,7 @@ final readonly class ProjectionRunner
             return new ProjectionRunResult(0, false, null);
         }
 
-        return $this->processClaimedSegment($runtime, $segment, $workerId, $limit);
+        return $this->processClaimedSegment($runtime, $segment, $limit);
     }
 
     public function runBucketOnce(
@@ -71,13 +76,12 @@ final readonly class ProjectionRunner
             return new ProjectionRunResult(0, false, null);
         }
 
-        return $this->processClaimedSegment($runtime, $segment, $workerId, $limit);
+        return $this->processClaimedSegment($runtime, $segment, $limit);
     }
 
     private function processClaimedSegment(
         ProjectionRuntime $runtime,
         ProjectionSegment $segment,
-        string $workerId,
         int $limit,
     ): ProjectionRunResult {
         try {
@@ -88,17 +92,11 @@ final readonly class ProjectionRunner
                 $runtime->apply($event);
             }
 
-            $current = $this->segmentRepository->readCurrentState($segment->projectionId, $segment->bucketFrom);
-
-            match ($current->pendingOperation) {
-                'split' => $this->segmentRepository->finalizeSplit($current, $result->checkpoint),
-                'merge' => $this->segmentRepository->finalizeMerge($current, $result->checkpoint),
-                default => $this->segmentRepository->releaseSegment($segment, $result->checkpoint),
-            };
+            $this->segmentRepository->completeSegment($segment, $result->checkpoint);
 
             return new ProjectionRunResult(count($result->events), true, $segment);
         } catch (\Throwable $e) {
-            $this->segmentRepository->releaseSegment($segment, $segment->checkpoint);
+            $this->segmentRepository->abandonSegment($segment);
             throw $e;
         }
     }

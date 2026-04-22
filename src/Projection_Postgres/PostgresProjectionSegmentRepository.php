@@ -52,7 +52,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             $projectionId,
             $workerId,
             $leaseDurationSeconds,
-            'AND status = \'available\'',
+            'AND status IN (\'available\', \'draining\')',
             [],
             [],
         );
@@ -68,7 +68,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             $projectionId,
             $workerId,
             $leaseDurationSeconds,
-            'AND status = \'available\' AND bucket_from <= ? AND bucket_to >= ?',
+            'AND status IN (\'available\', \'draining\') AND bucket_from <= ? AND bucket_to >= ?',
             [$bucket, $bucket],
             [ParameterType::INTEGER, ParameterType::INTEGER],
         );
@@ -109,7 +109,8 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             $this->connection->executeStatement(
                 sprintf(
                     "UPDATE %s
-                     SET status = 'active', worker_id = ?, lease_expires_at = now() + interval '%d seconds', updated_at = statement_timestamp()
+                     SET status = CASE WHEN pending_operation IS NULL THEN 'active' ELSE 'draining' END,
+                         worker_id = ?, lease_expires_at = now() + interval '%d seconds', updated_at = statement_timestamp()
                      WHERE projection_id = ? AND bucket_from = ?",
                     $this->segmentsTable(),
                     $leaseDurationSeconds,
@@ -172,18 +173,34 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     /**
      * Releases a segment back to available status and saves its checkpoint.
      */
-    public function releaseSegment(ProjectionSegment $segment, Checkpoint $checkpoint): void
+    public function completeSegment(ProjectionSegment $segment, Checkpoint $checkpoint): void
     {
         $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET status = 'available', worker_id = NULL, lease_expires_at = NULL,
+                 SET status = CASE WHEN pending_operation IS NULL THEN 'available' ELSE 'drained' END,
+                     worker_id = NULL, lease_expires_at = NULL,
                      checkpoint = ?, updated_at = statement_timestamp()
                  WHERE projection_id = ? AND bucket_from = ?",
                 $this->segmentsTable(),
             ),
             [$checkpoint->serialize(), $segment->projectionId, $segment->bucketFrom],
             [ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER],
+        );
+    }
+
+    public function abandonSegment(ProjectionSegment $segment): void
+    {
+        $this->connection->executeStatement(
+            sprintf(
+                "UPDATE %s
+                 SET status = CASE WHEN pending_operation IS NULL THEN 'available' ELSE 'draining' END,
+                     worker_id = NULL, lease_expires_at = NULL, updated_at = statement_timestamp()
+                 WHERE projection_id = ? AND bucket_from = ?",
+                $this->segmentsTable(),
+            ),
+            [$segment->projectionId, $segment->bucketFrom],
+            [ParameterType::STRING, ParameterType::INTEGER],
         );
     }
 
@@ -213,8 +230,9 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $count = $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET status = 'available', worker_id = NULL, lease_expires_at = NULL, updated_at = statement_timestamp()
-                 WHERE projection_id = ? AND status = 'active' AND lease_expires_at < now()",
+                 SET status = CASE WHEN pending_operation IS NULL THEN 'available' ELSE 'draining' END,
+                     worker_id = NULL, lease_expires_at = NULL, updated_at = statement_timestamp()
+                 WHERE projection_id = ? AND status IN ('active', 'draining') AND lease_expires_at < now()",
                 $this->segmentsTable(),
             ),
             [$projectionId],
@@ -261,22 +279,26 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             return;
         }
 
-        if ($row['status'] !== 'available') {
+        if ($row['status'] === 'available') {
+            $this->connection->executeStatement(
+                sprintf(
+                    "UPDATE %s
+                     SET status = 'drained', pending_operation = 'split', updated_at = statement_timestamp()
+                     WHERE projection_id = ? AND bucket_from = ?",
+                    $this->segmentsTable(),
+                ),
+                [$projectionId, $bucketFrom],
+                [ParameterType::STRING, ParameterType::INTEGER],
+            );
+            return;
+        }
+
+        if ($row['status'] !== 'drained') {
             throw new \LogicException(sprintf(
                 'Cannot split segment [%d-%d] of projection "%s": status is "%s".',
                 $row['bucket_from'], $row['bucket_to'], $projectionId, $row['status'],
             ));
         }
-
-        $this->finalizeSplit(new ProjectionSegment(
-            projectionId: $projectionId,
-            bucketFrom: (int) $row['bucket_from'],
-            bucketTo: (int) $row['bucket_to'],
-            status: $row['status'],
-            pendingOperation: $row['pending_operation'] ?? null,
-            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-            wasCreated: false,
-        ), Checkpoint::deserialize((string) $row['checkpoint']));
     }
 
     /**
@@ -339,7 +361,8 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $updated = $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET status = 'draining', pending_operation = 'merge', updated_at = statement_timestamp()
+                 SET status = CASE WHEN status = 'active' THEN 'draining' ELSE 'drained' END,
+                     pending_operation = 'merge', updated_at = statement_timestamp()
                  WHERE projection_id = ? AND bucket_from IN (?, ?) AND status IN ('available', 'active')",
                 $this->segmentsTable(),
             ),
@@ -353,6 +376,79 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                 $bucketFrom, $bucketTo, $projectionId, $updated,
             ));
         }
+    }
+
+    public function reconcilePendingOperations(string $projectionId): int
+    {
+        $reconciled = 0;
+
+        do {
+            $progressed = false;
+
+            $rows = $this->connection->executeQuery(
+                sprintf(
+                    'SELECT bucket_from, bucket_to, status, pending_operation, checkpoint
+                     FROM %s
+                     WHERE projection_id = ? AND pending_operation IS NOT NULL
+                     ORDER BY bucket_from ASC',
+                    $this->segmentsTable(),
+                ),
+                [$projectionId],
+                [ParameterType::STRING],
+            )->fetchAllAssociative();
+
+            foreach ($rows as $row) {
+                if (($row['pending_operation'] ?? null) === 'split' && $row['status'] === 'drained') {
+                    $this->finalizeSplit(
+                        new ProjectionSegment(
+                            projectionId: $projectionId,
+                            bucketFrom: (int) $row['bucket_from'],
+                            bucketTo: (int) $row['bucket_to'],
+                            status: $row['status'],
+                            pendingOperation: $row['pending_operation'] ?? null,
+                            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+                            wasCreated: false,
+                        ),
+                        Checkpoint::deserialize((string) $row['checkpoint']),
+                    );
+                    ++$reconciled;
+                    $progressed = true;
+                    break;
+                }
+
+                if (($row['pending_operation'] ?? null) !== 'merge' || $row['status'] !== 'drained') {
+                    continue;
+                }
+
+                $before = count($rows);
+                $this->finalizeMerge(
+                    new ProjectionSegment(
+                        projectionId: $projectionId,
+                        bucketFrom: (int) $row['bucket_from'],
+                        bucketTo: (int) $row['bucket_to'],
+                        status: $row['status'],
+                        pendingOperation: $row['pending_operation'] ?? null,
+                        checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+                        wasCreated: false,
+                    ),
+                    Checkpoint::deserialize((string) $row['checkpoint']),
+                );
+
+                $after = $this->connection->fetchOne(
+                    sprintf('SELECT count(*) FROM %s WHERE projection_id = ?', $this->segmentsTable()),
+                    [$projectionId],
+                    [ParameterType::STRING],
+                );
+
+                if ((int) $after !== $before) {
+                    ++$reconciled;
+                    $progressed = true;
+                    break;
+                }
+            }
+        } while ($progressed);
+
+        return $reconciled;
     }
 
     /**

@@ -16,12 +16,13 @@ use Ultra\Projection\ProjectionSegment;
 #[CoversClass(ProjectionSegment::class)]
 final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 {
-    public function test_split_of_an_available_segment_creates_two_children_with_the_same_checkpoint(): void
+    public function test_split_of_an_available_segment_is_reconciled_into_two_children_with_the_same_checkpoint(): void
     {
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
 
         $repository->splitSegment('courses', 0);
+        $repository->reconcilePendingOperations('courses');
 
         $left = $repository->readCurrentState('courses', 0);
         $right = $repository->readCurrentState('courses', 128);
@@ -46,11 +47,12 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         self::assertSame(0, $repository->readCurrentState('courses', 0)->checkpoint->gapFloor->value);
     }
 
-    public function test_split_of_an_active_segment_is_deferred_until_finalize_split(): void
+    public function test_split_of_an_active_segment_is_deferred_until_reconciliation(): void
     {
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
-        $repository->claimSegment('courses', 'worker-1');
+        $claimed = $repository->claimSegment('courses', 'worker-1');
+        self::assertNotNull($claimed);
 
         $repository->splitSegment('courses', 0);
 
@@ -59,7 +61,8 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         self::assertSame('draining', $draining->status);
         self::assertSame('split', $draining->pendingOperation);
 
-        $repository->finalizeSplit($draining, Checkpoint::at(new Sequence(5)));
+        $repository->completeSegment($claimed, Checkpoint::at(new Sequence(5)));
+        $repository->reconcilePendingOperations('courses');
 
         $left = $repository->readCurrentState('courses', 0);
         $right = $repository->readCurrentState('courses', 128);
@@ -75,19 +78,21 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
         $repository->splitSegment('courses', 0);
+        $repository->reconcilePendingOperations('courses');
         $repository->requestMerge('courses', 0, 255);
 
         $left = $repository->readCurrentState('courses', 0);
         $right = $repository->readCurrentState('courses', 128);
 
-        $repository->finalizeMerge($left, Checkpoint::at(new Sequence(10)));
+        $repository->completeSegment($left, Checkpoint::at(new Sequence(10)));
 
         $drainedLeft = $repository->readCurrentState('courses', 0);
 
         self::assertSame('drained', $drainedLeft->status);
         self::assertSame(10, $drainedLeft->checkpoint->gapFloor->value);
 
-        $repository->finalizeMerge($right, Checkpoint::at(new Sequence(7)));
+        $repository->completeSegment($right, Checkpoint::at(new Sequence(7)));
+        $repository->reconcilePendingOperations('courses');
 
         $merged = $repository->readCurrentState('courses', 0);
 
@@ -109,6 +114,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
         $repository->splitSegment('courses', 0);
+        $repository->reconcilePendingOperations('courses');
 
         $first = $repository->claimSegmentForBucket('courses', 40, 'worker-1');
         $second = $repository->claimSegment('courses', 'worker-2');
@@ -124,6 +130,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
         $repository->splitSegment('courses', 0);
+        $repository->reconcilePendingOperations('courses');
 
         $claimed = $repository->claimSegmentForBucket('courses', 200, 'worker-1');
         $retry = $repository->claimSegmentForBucket('courses', 200, 'worker-2');

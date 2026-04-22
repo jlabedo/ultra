@@ -9,5 +9,5 @@ interface ProjectionScalingPolicyInterface
     /**
      * @param list<ProjectionBucketActivity> $affectedBuckets
      */
-    public function additionalWorkerWakeups(array $affectedBuckets): int;
+    public function additionalWorkersRequested(array $affectedBuckets): int;
 }

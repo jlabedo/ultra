@@ -14,7 +14,7 @@ final readonly class ProjectionCoordinator
         private ProjectionRunner $runner,
         private ProjectionBucketActivityRepositoryInterface $activityRepository,
         private ProjectionCoordinatorLeaseRepositoryInterface $leaseRepository,
-        private ProjectionWakeQueueInterface $wakeQueue,
+        private ProjectionActivatorInterface $activator,
         private ProjectionScalingPolicyInterface $scalingPolicy = new DefaultProjectionScalingPolicy(),
     ) {}
 
@@ -23,49 +23,39 @@ final readonly class ProjectionCoordinator
         int $batchSize = 100,
         int $maxCycles = 32,
     ): ProjectionCoordinatorResult {
-        if (!$this->leaseRepository->acquire($workerId)) {
-            return new ProjectionCoordinatorResult(false, 0, 0, 0);
-        }
+        $acquiredLease = $this->leaseRepository->acquire($workerId);
 
         $processedEvents = 0;
         $acknowledgedBuckets = 0;
-        $queuedWorkerWakeups = 0;
+        $requestedWorkerActivations = 0;
 
         try {
             for ($cycle = 0; $cycle < $maxCycles; ++$cycle) {
-                $this->leaseRepository->renew($workerId);
+                if ($acquiredLease) {
+                    $this->leaseRepository->renew($workerId);
+                }
 
                 $affectedBuckets = $this->activityRepository->affectedBuckets();
                 if ([] === $affectedBuckets) {
                     break;
                 }
 
-                $queued = $this->scalingPolicy->additionalWorkerWakeups($affectedBuckets);
-                $queuedProjectionIds = [];
-                foreach ($affectedBuckets as $affectedBucket) {
-                    $queuedProjectionIds[$affectedBucket->projectionId] = true;
-                }
-                $queuedProjectionIds = array_values(array_keys($queuedProjectionIds));
-                for ($i = 0; $i < $queued; ++$i) {
-                    $projectionId = $queuedProjectionIds[$i % count($queuedProjectionIds)];
-                    $this->wakeQueue->enqueue(new WakeProjectionWorker($projectionId));
-                    ++$queuedWorkerWakeups;
+                if ($acquiredLease) {
+                    $requested = $this->scalingPolicy->additionalWorkersRequested($affectedBuckets);
+                    $this->activator->requestAdditionalWorkers($requested);
+                    $requestedWorkerActivations += $requested;
                 }
 
                 $progressed = false;
-                $recoveredProjectionIds = [];
-                foreach ($affectedBuckets as $affectedBucket) {
-                    $projectionId = $affectedBucket->projectionId;
-                    if (isset($recoveredProjectionIds[$projectionId])) {
-                        continue;
-                    }
-
-                    $this->runner->recoverExpiredLeases($projectionId);
-                    $recoveredProjectionIds[$projectionId] = true;
-                }
-
+                $coordinatedProjectionIds = [];
                 foreach ($affectedBuckets as $bucketActivity) {
                     $projectionId = $bucketActivity->projectionId;
+                    if ($acquiredLease && !isset($coordinatedProjectionIds[$projectionId])) {
+                        $this->runner->recoverExpiredLeases($projectionId);
+                        $this->runner->reconcilePendingOperations($projectionId);
+                        $coordinatedProjectionIds[$projectionId] = true;
+                    }
+
                     $runtime = $this->catalog->runtime($projectionId);
                     $result = $this->runner->runBucketOnceResult(
                         $runtime,
@@ -94,9 +84,16 @@ final readonly class ProjectionCoordinator
                 }
             }
         } finally {
-            $this->leaseRepository->release($workerId);
+            if ($acquiredLease) {
+                $this->leaseRepository->release($workerId);
+            }
         }
 
-        return new ProjectionCoordinatorResult(true, $processedEvents, $acknowledgedBuckets, $queuedWorkerWakeups);
+        return new ProjectionCoordinatorResult(
+            $acquiredLease,
+            $processedEvents,
+            $acknowledgedBuckets,
+            $requestedWorkerActivations,
+        );
     }
 }

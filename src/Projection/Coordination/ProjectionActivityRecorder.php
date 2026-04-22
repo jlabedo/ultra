@@ -13,7 +13,7 @@ final readonly class ProjectionActivityRecorder
         private ProjectionCatalog $catalog,
         private ProjectionBucketActivityRepositoryInterface $activityRepository,
         private ProjectionCoordinatorLeaseRepositoryInterface $leaseRepository,
-        private ProjectionWakeQueueInterface $wakeQueue,
+        private ProjectionActivatorInterface $activator,
         private int $wakeDebounceSeconds = 30,
     ) {}
 
@@ -47,7 +47,7 @@ final readonly class ProjectionActivityRecorder
         }
 
         if ($recordedAnyBucket && $this->leaseRepository->markWakeEnqueued($this->wakeDebounceSeconds)) {
-            $this->wakeQueue->enqueue(new WakeProjectionCoordinator());
+            $this->activator->signalWorkAvailable();
         }
     }
 }

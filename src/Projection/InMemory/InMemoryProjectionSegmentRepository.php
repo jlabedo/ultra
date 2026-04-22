@@ -40,11 +40,11 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
 
         foreach (array_keys($this->segments[$projectionId] ?? []) as $bucketFrom) {
             $row = $this->segments[$projectionId][$bucketFrom];
-            if ($row['status'] !== 'available') {
+            if (!in_array($row['status'], ['available', 'draining'], true)) {
                 continue;
             }
 
-            $row['status'] = 'active';
+            $row['status'] = $row['pendingOperation'] ? 'draining' : 'active';
             $row['workerId'] = $workerId;
             $row['leaseExpiresAt'] = time() + $leaseDurationSeconds;
             $this->segments[$projectionId][$bucketFrom] = $row;
@@ -61,7 +61,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
 
         foreach (array_keys($this->segments[$projectionId] ?? []) as $bucketFrom) {
             $row = $this->segments[$projectionId][$bucketFrom];
-            if ($row['status'] !== 'available') {
+            if (!in_array($row['status'], ['available', 'draining'], true)) {
                 continue;
             }
 
@@ -69,7 +69,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
                 continue;
             }
 
-            $row['status'] = 'active';
+            $row['status'] = $row['pendingOperation'] ? 'draining' : 'active';
             $row['workerId'] = $workerId;
             $row['leaseExpiresAt'] = time() + $leaseDurationSeconds;
             $this->segments[$projectionId][$bucketFrom] = $row;
@@ -94,18 +94,30 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return $this->toSegment($projectionId, $row);
     }
 
-    public function releaseSegment(ProjectionSegment $segment, Checkpoint $checkpoint): void
+    public function completeSegment(ProjectionSegment $segment, Checkpoint $checkpoint): void
     {
         $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
         if (null === $row) {
             return;
         }
 
-        $row['status'] = 'available';
+        $row['status'] = null === $row['pendingOperation'] ? 'available' : 'drained';
         $row['workerId'] = null;
         $row['leaseExpiresAt'] = null;
         $row['checkpoint'] = $checkpoint;
-        $row['pendingOperation'] = null;
+        $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
+    }
+
+    public function abandonSegment(ProjectionSegment $segment): void
+    {
+        $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
+        if (null === $row) {
+            return;
+        }
+
+        $row['status'] = null === $row['pendingOperation'] ? 'available' : 'draining';
+        $row['workerId'] = null;
+        $row['leaseExpiresAt'] = null;
         $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
     }
 
@@ -134,7 +146,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
                 continue;
             }
 
-            $row['status'] = 'available';
+            $row['status'] = null === $row['pendingOperation'] ? 'available' : 'draining';
             $row['workerId'] = null;
             $row['leaseExpiresAt'] = null;
             $this->segments[$projectionId][$bucketFrom] = $row;
@@ -162,7 +174,14 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             return;
         }
 
-        if ($row['status'] !== 'available') {
+        if ($row['status'] === 'available') {
+            $row['status'] = 'drained';
+            $row['pendingOperation'] = 'split';
+            $this->segments[$projectionId][$bucketFrom] = $row;
+            return;
+        }
+
+        if ($row['status'] !== 'drained') {
             throw new \LogicException(sprintf(
                 'Cannot split segment [%d-%d] of projection "%s": status is "%s".',
                 $row['bucketFrom'],
@@ -171,8 +190,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
                 $row['status'],
             ));
         }
-
-        $this->finalizeSplit($this->toSegment($projectionId, $row), $row['checkpoint']);
     }
 
     public function finalizeSplit(ProjectionSegment $segment, Checkpoint $checkpoint): void
@@ -226,10 +243,44 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
                 ));
             }
 
-            $row['status'] = 'draining';
+            $row['status'] = $row['status'] === 'active' ? 'draining' : 'drained';
             $row['pendingOperation'] = 'merge';
             $this->segments[$projectionId][$from] = $row;
         }
+    }
+
+    public function reconcilePendingOperations(string $projectionId): int
+    {
+        $reconciled = 0;
+
+        do {
+            $progressed = false;
+
+            foreach (array_keys($this->segments[$projectionId] ?? []) as $bucketFrom) {
+                $row = $this->segments[$projectionId][$bucketFrom];
+
+                if ('split' === $row['pendingOperation'] && 'drained' === $row['status']) {
+                    $this->finalizeSplit($this->toSegment($projectionId, $row), $row['checkpoint']);
+                    ++$reconciled;
+                    $progressed = true;
+                    break;
+                }
+
+                if ('merge' !== $row['pendingOperation'] || 'drained' !== $row['status']) {
+                    continue;
+                }
+
+                $before = count($this->segments[$projectionId]);
+                $this->finalizeMerge($this->toSegment($projectionId, $row), $row['checkpoint']);
+                if (count($this->segments[$projectionId]) !== $before) {
+                    ++$reconciled;
+                    $progressed = true;
+                    break;
+                }
+            }
+        } while ($progressed);
+
+        return $reconciled;
     }
 
     public function finalizeMerge(ProjectionSegment $segment, Checkpoint $checkpoint): void

@@ -25,11 +25,15 @@ interface ProjectionSegmentRepositoryInterface
 
     public function readCurrentState(string $projectionId, int $bucketFrom): ProjectionSegment;
 
-    public function releaseSegment(ProjectionSegment $segment, Checkpoint $checkpoint): void;
+    public function completeSegment(ProjectionSegment $segment, Checkpoint $checkpoint): void;
+
+    public function abandonSegment(ProjectionSegment $segment): void;
 
     public function renewLease(ProjectionSegment $segment, string $workerId, int $leaseDurationSeconds = 60): void;
 
     public function recoverExpiredLeases(string $projectionId): int;
+
+    public function reconcilePendingOperations(string $projectionId): int;
 
     public function splitSegment(string $projectionId, int $bucketFrom): void;
 

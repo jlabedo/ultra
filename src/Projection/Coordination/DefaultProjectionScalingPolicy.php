@@ -6,7 +6,7 @@ namespace Ultra\Projection\Coordination;
 
 final readonly class DefaultProjectionScalingPolicy implements ProjectionScalingPolicyInterface
 {
-    public function additionalWorkerWakeups(array $affectedBuckets): int
+    public function additionalWorkersRequested(array $affectedBuckets): int
     {
         return 0;
     }
