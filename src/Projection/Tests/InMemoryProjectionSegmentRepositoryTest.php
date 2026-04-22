@@ -1,0 +1,110 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ultra\Projection\Tests;
+
+use LogicException;
+use PHPUnit\Framework\Attributes\CoversClass;
+use PHPUnit\Framework\TestCase;
+use Ultra\EventStore\Checkpoint;
+use Ultra\EventStore\Sequence;
+use Ultra\Projection\InMemoryProjectionSegmentRepository;
+use Ultra\Projection\ProjectionSegment;
+
+#[CoversClass(InMemoryProjectionSegmentRepository::class)]
+#[CoversClass(ProjectionSegment::class)]
+final class InMemoryProjectionSegmentRepositoryTest extends TestCase
+{
+    public function test_split_of_an_available_segment_creates_two_children_with_the_same_checkpoint(): void
+    {
+        $repository = new InMemoryProjectionSegmentRepository();
+        $repository->ensureInitialized('courses');
+
+        $repository->splitSegment('courses', 0);
+
+        $left = $repository->readCurrentState('courses', 0);
+        $right = $repository->readCurrentState('courses', 128);
+
+        self::assertSame(0, $left->bucketFrom);
+        self::assertSame(127, $left->bucketTo);
+        self::assertSame('available', $left->status);
+        self::assertSame(0, $left->checkpoint->gapFloor->value);
+
+        self::assertSame(128, $right->bucketFrom);
+        self::assertSame(255, $right->bucketTo);
+        self::assertSame('available', $right->status);
+        self::assertSame(0, $right->checkpoint->gapFloor->value);
+    }
+
+    public function test_split_of_an_active_segment_is_deferred_until_finalize_split(): void
+    {
+        $repository = new InMemoryProjectionSegmentRepository();
+        $repository->ensureInitialized('courses');
+        $repository->claimSegment('courses', 'worker-1');
+
+        $repository->splitSegment('courses', 0);
+
+        $draining = $repository->readCurrentState('courses', 0);
+
+        self::assertSame('draining', $draining->status);
+        self::assertSame('split', $draining->pendingOperation);
+
+        $repository->finalizeSplit($draining, Checkpoint::at(new Sequence(5)));
+
+        $left = $repository->readCurrentState('courses', 0);
+        $right = $repository->readCurrentState('courses', 128);
+
+        self::assertSame('available', $left->status);
+        self::assertSame('available', $right->status);
+        self::assertSame(5, $left->checkpoint->gapFloor->value);
+        self::assertSame(5, $right->checkpoint->gapFloor->value);
+    }
+
+    public function test_finalize_merge_waits_for_both_siblings_and_keeps_the_earliest_checkpoint(): void
+    {
+        $repository = new InMemoryProjectionSegmentRepository();
+        $repository->ensureInitialized('courses');
+        $repository->splitSegment('courses', 0);
+        $repository->requestMerge('courses', 0, 255);
+
+        $left = $repository->readCurrentState('courses', 0);
+        $right = $repository->readCurrentState('courses', 128);
+
+        $repository->finalizeMerge($left, Checkpoint::at(new Sequence(10)));
+
+        $drainedLeft = $repository->readCurrentState('courses', 0);
+
+        self::assertSame('drained', $drainedLeft->status);
+        self::assertSame(10, $drainedLeft->checkpoint->gapFloor->value);
+
+        $repository->finalizeMerge($right, Checkpoint::at(new Sequence(7)));
+
+        $merged = $repository->readCurrentState('courses', 0);
+
+        self::assertSame(0, $merged->bucketFrom);
+        self::assertSame(255, $merged->bucketTo);
+        self::assertSame('available', $merged->status);
+        self::assertSame(7, $merged->checkpoint->gapFloor->value);
+
+        try {
+            $repository->readCurrentState('courses', 128);
+            self::fail('Expected the drained sibling segment to be removed after merge finalization.');
+        } catch (LogicException $e) {
+            self::assertStringContainsString('Segment [128] not found', $e->getMessage());
+        }
+    }
+
+    public function test_finalize_split_rejects_a_minimum_granularity_segment(): void
+    {
+        $repository = new InMemoryProjectionSegmentRepository();
+
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('cannot be split');
+
+        $repository->finalizeSplit(
+            new ProjectionSegment('courses', 0, 0, 'available', null, Checkpoint::beginning(), false),
+            Checkpoint::beginning(),
+        );
+    }
+}

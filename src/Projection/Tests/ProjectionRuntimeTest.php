@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests;
 
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\InMemoryEventStore;
@@ -45,6 +46,9 @@ final class RuntimeProjection
     }
 }
 
+#[CoversClass(ProjectionActivityRecorder::class)]
+#[CoversClass(ProjectionCoordinator::class)]
+#[CoversClass(DefaultProjectionScalingPolicy::class)]
 final class ProjectionRuntimeTest extends TestCase
 {
     public function test_activity_recorder_deduplicates_buckets_per_append_and_enqueues_a_single_coordinator_wakeup(): void

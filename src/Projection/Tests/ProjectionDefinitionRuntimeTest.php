@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\Projection\Tests;
 
 use InvalidArgumentException;
+use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\Event;
 use Ultra\Events\Attribute\Event as EventAttribute;
@@ -67,6 +68,8 @@ final class TestProjectionClassWithoutInitializer
     public function onStudentSubscribed(StudentSubscribed $event): void {}
 }
 
+#[CoversClass(ProjectionDefinition::class)]
+#[CoversClass(ProjectionRuntime::class)]
 final class ProjectionDefinitionRuntimeTest extends TestCase
 {
     public function test_projection_definition_exposes_id_and_partition_dimension_from_attribute(): void

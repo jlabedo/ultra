@@ -17,19 +17,4 @@ readonly class ProjectionSegment
         public Checkpoint $checkpoint,
         public bool $wasCreated,
     ) {}
-
-    public function containsBucket(int $bucket): bool
-    {
-        return $bucket >= $this->bucketFrom && $bucket <= $this->bucketTo;
-    }
-
-    public function segmentCount(): int
-    {
-        return intdiv(256, $this->bucketTo - $this->bucketFrom + 1);
-    }
-
-    public function segmentIndex(): int
-    {
-        return intdiv($this->bucketFrom, $this->bucketTo - $this->bucketFrom + 1);
-    }
 }
