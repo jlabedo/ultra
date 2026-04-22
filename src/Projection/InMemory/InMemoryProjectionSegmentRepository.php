@@ -4,14 +4,25 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\InMemory;
 
+use Psr\Clock\ClockInterface;
 use Ultra\EventStore\Checkpoint;
 use Ultra\Projection\ProjectionSegment;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Time\DatePoint;
+use Ultra\Time\Duration;
+use Ultra\Time\SystemClock;
 
 final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepositoryInterface
 {
+    private readonly ClockInterface $clock;
+
     /** @var array<string, array<int, array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: string|null, checkpoint: Checkpoint, workerId: string|null, leaseExpiresAt: int|null}>> */
     private array $segments = [];
+
+    public function __construct(?ClockInterface $clock = null)
+    {
+        $this->clock = $clock ?? new SystemClock();
+    }
 
     public function ensureInitialized(string $projectionId): bool
     {
@@ -34,8 +45,9 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return true;
     }
 
-    public function claimSegment(string $projectionId, string $workerId, int $leaseDurationSeconds = 60): ?ProjectionSegment
+    public function claimSegment(string $projectionId, string $workerId, ?Duration $leaseDurationSeconds = null): ?ProjectionSegment
     {
+        $leaseDurationSeconds ??= Duration::seconds(60);
         $this->recoverExpiredLeases($projectionId);
 
         foreach (array_keys($this->segments[$projectionId] ?? []) as $bucketFrom) {
@@ -44,9 +56,10 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
                 continue;
             }
 
+            $now = $this->clock->now();
             $row['status'] = $row['pendingOperation'] ? 'draining' : 'active';
             $row['workerId'] = $workerId;
-            $row['leaseExpiresAt'] = time() + $leaseDurationSeconds;
+            $row['leaseExpiresAt'] = $now->add($leaseDurationSeconds);
             $this->segments[$projectionId][$bucketFrom] = $row;
 
             return $this->toSegment($projectionId, $row);
@@ -55,8 +68,9 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return null;
     }
 
-    public function claimSegmentForBucket(string $projectionId, int $bucket, string $workerId, int $leaseDurationSeconds = 60): ?ProjectionSegment
+    public function claimSegmentForBucket(string $projectionId, int $bucket, string $workerId, ?Duration $leaseDurationSeconds = null): ?ProjectionSegment
     {
+        $leaseDurationSeconds ??= Duration::seconds(60);
         $this->recoverExpiredLeases($projectionId);
 
         foreach (array_keys($this->segments[$projectionId] ?? []) as $bucketFrom) {
@@ -69,9 +83,10 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
                 continue;
             }
 
+            $now = $this->clock->now();
             $row['status'] = $row['pendingOperation'] ? 'draining' : 'active';
             $row['workerId'] = $workerId;
-            $row['leaseExpiresAt'] = time() + $leaseDurationSeconds;
+            $row['leaseExpiresAt'] = $now->add($leaseDurationSeconds);
             $this->segments[$projectionId][$bucketFrom] = $row;
 
             return $this->toSegment($projectionId, $row);
@@ -121,14 +136,15 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
     }
 
-    public function renewLease(ProjectionSegment $segment, string $workerId, int $leaseDurationSeconds = 60): void
+    public function renewLease(ProjectionSegment $segment, string $workerId, ?Duration $leaseDuration = null): void
     {
+        $leaseDuration ??= Duration::seconds(60);
         $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
         if (null === $row || $row['workerId'] !== $workerId || $row['status'] !== 'active') {
             return;
         }
 
-        $row['leaseExpiresAt'] = time() + $leaseDurationSeconds;
+        $row['leaseExpiresAt'] = $this->now()->add($leaseDuration);
         $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
     }
 
@@ -142,7 +158,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
                 continue;
             }
 
-            if (null === $row['leaseExpiresAt'] || $row['leaseExpiresAt'] >= time()) {
+            if (null === $row['leaseExpiresAt'] || $row['leaseExpiresAt'] >= $this->now()) {
                 continue;
             }
 
@@ -352,5 +368,10 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             $row['checkpoint'],
             false,
         );
+    }
+
+    private function now(): DatePoint
+    {
+        return DatePoint::createFromInterface($this->clock->now());
     }
 }

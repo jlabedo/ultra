@@ -24,6 +24,7 @@ use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Time\Duration;
 
 #[EventAttribute('coordinator.course.created')]
 final readonly class CoordinatorCourseCreated
@@ -53,14 +54,14 @@ final class CountingLeaseRepository implements ProjectionCoordinatorLeaseReposit
     public int $renewCalls = 0;
     public int $releaseCalls = 0;
 
-    public function acquire(string $workerId, int $leaseDurationSeconds = 60): bool
+    public function acquire(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
     {
         ++$this->acquireCalls;
 
         return true;
     }
 
-    public function renew(string $workerId, int $leaseDurationSeconds = 60): void
+    public function renew(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): void
     {
         ++$this->renewCalls;
     }
@@ -75,7 +76,7 @@ final class CountingLeaseRepository implements ProjectionCoordinatorLeaseReposit
         return false;
     }
 
-    public function markWakeEnqueued(int $ttlSeconds = 30): bool
+    public function markWakeEnqueued(Duration $ttl = new Duration(seconds: 30)): bool
     {
         return true;
     }

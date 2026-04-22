@@ -7,6 +7,7 @@ namespace Ultra\Projection_Postgres\Tests;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
+use Ultra\Time\Duration;
 
 final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCase
 {
@@ -56,13 +57,30 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
     public function test_postgres_coordinator_lease_repository_debounces_wakeups_until_a_coordinator_acquires_the_lease(): void
     {
         $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
-            $leases = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix);
+            $clock = $this->staticClock('2024-01-01T00:00:00+00:00');
+            $leases = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix, $clock);
 
-            self::assertTrue($leases->markWakeEnqueued(30));
-            self::assertFalse($leases->markWakeEnqueued(30));
+            self::assertTrue($leases->markWakeEnqueued(Duration::seconds(30)));
+            self::assertFalse($leases->markWakeEnqueued(Duration::seconds(30)));
             self::assertTrue($leases->acquire('coordinator-1'));
             self::assertTrue($leases->hasLiveCoordinator());
-            self::assertFalse($leases->markWakeEnqueued(30));
+            self::assertFalse($leases->markWakeEnqueued(Duration::seconds(30)));
+        });
+    }
+
+    public function test_postgres_coordinator_lease_expiry_follows_the_injected_clock(): void
+    {
+        $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
+            $clock = $this->staticClock('2024-01-01T00:00:00+00:00');
+            $leases = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix, $clock);
+
+            self::assertTrue($leases->acquire('coordinator-1', Duration::seconds(30)));
+            self::assertTrue($leases->hasLiveCoordinator());
+
+            $clock->advance(Duration::seconds(31));
+
+            self::assertFalse($leases->hasLiveCoordinator());
+            self::assertTrue($leases->acquire('coordinator-2', Duration::seconds(30)));
         });
     }
 }

@@ -6,43 +6,52 @@ namespace Ultra\Projection_Postgres\Coordination;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
+use Psr\Clock\ClockInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
+use Ultra\Time\DatePoint;
+use Ultra\Time\Duration;
+use Ultra\Time\SystemClock;
 
 final readonly class PostgresProjectionCoordinatorLeaseRepository implements ProjectionCoordinatorLeaseRepositoryInterface
 {
     private const string COORDINATOR_KEY = 'global';
 
+    private ClockInterface $clock;
+
     public function __construct(
         private Connection $connection,
         private string $tablePrefix = 'projection_',
-    ) {}
+        ?ClockInterface $clock = null,
+    ) {
+        $this->clock = $clock ?? new SystemClock();
+    }
 
-    public function acquire(string $workerId, int $leaseDurationSeconds = 60): bool
+    public function acquire(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
     {
         $this->connection->beginTransaction();
 
         try {
             $row = $this->lockRow();
+            $now = $this->now();
             if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
-                $leaseExpiresAt = new \DateTimeImmutable((string) $row['lease_expires_at']);
-                if ($leaseExpiresAt >= new \DateTimeImmutable()) {
+                $leaseExpiresAt = new DatePoint((string) $row['lease_expires_at']);
+                if ($leaseExpiresAt >= $now) {
                     $this->connection->rollBack();
                     return false;
                 }
             }
 
-            $this->upsertRow();
+            $this->upsertRow($now);
             $this->connection->executeStatement(
                 sprintf(
                     "UPDATE %s
-                     SET worker_id = ?, lease_expires_at = now() + interval '%d seconds',
-                         wake_enqueued_until = NULL, updated_at = statement_timestamp()
+                     SET worker_id = ?, lease_expires_at = CAST(? AS TIMESTAMPTZ),
+                         wake_enqueued_until = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
                      WHERE coordinator_key = ?",
                     $this->coordinatorsTable(),
-                    $leaseDurationSeconds,
                 ),
-                [$workerId, self::COORDINATOR_KEY],
-                [ParameterType::STRING, ParameterType::STRING],
+                [$workerId, $now->add($leaseDuration), $now, self::COORDINATOR_KEY],
+                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
             );
 
             $this->connection->commit();
@@ -56,32 +65,35 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
         }
     }
 
-    public function renew(string $workerId, int $leaseDurationSeconds = 60): void
+    public function renew(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): void
     {
+        $now = $this->now();
+
         $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET lease_expires_at = now() + interval '%d seconds', updated_at = statement_timestamp()
+                 SET lease_expires_at = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
                  WHERE coordinator_key = ? AND worker_id = ?",
                 $this->coordinatorsTable(),
-                $leaseDurationSeconds,
             ),
-            [self::COORDINATOR_KEY, $workerId],
-            [ParameterType::STRING, ParameterType::STRING],
+            [$now->add($leaseDuration), $now, self::COORDINATOR_KEY, $workerId],
+            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
         );
     }
 
     public function release(string $workerId): void
     {
+        $now = $this->now();
+
         $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET worker_id = NULL, lease_expires_at = NULL, updated_at = statement_timestamp()
+                 SET worker_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
                  WHERE coordinator_key = ? AND worker_id = ?",
                 $this->coordinatorsTable(),
             ),
-            [self::COORDINATOR_KEY, $workerId],
-            [ParameterType::STRING, ParameterType::STRING],
+            [$now, self::COORDINATOR_KEY, $workerId],
+            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
         );
     }
 
@@ -100,20 +112,20 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
             return false;
         }
 
-        return new \DateTimeImmutable((string) $row['lease_expires_at']) >= new \DateTimeImmutable();
+        return new \DateTimeImmutable((string) $row['lease_expires_at']) >= $this->now();
     }
 
-    public function markWakeEnqueued(int $ttlSeconds = 30): bool
+    public function markWakeEnqueued(Duration $ttl = new Duration(seconds: 30)): bool
     {
         $this->connection->beginTransaction();
 
         try {
             $row = $this->lockRow();
-            $this->upsertRow();
-            $now = new \DateTimeImmutable();
+            $now = $this->now();
+            $this->upsertRow($now);
 
             if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
-                $leaseExpiresAt = new \DateTimeImmutable((string) $row['lease_expires_at']);
+                $leaseExpiresAt = new DatePoint((string) $row['lease_expires_at']);
                 if ($leaseExpiresAt >= $now) {
                     $this->connection->commit();
                     return false;
@@ -121,7 +133,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
             }
 
             if (null !== $row && null !== $row['wake_enqueued_until']) {
-                $wakeEnqueuedUntil = new \DateTimeImmutable((string) $row['wake_enqueued_until']);
+                $wakeEnqueuedUntil = new DatePoint((string) $row['wake_enqueued_until']);
                 if ($wakeEnqueuedUntil >= $now) {
                     $this->connection->commit();
                     return false;
@@ -131,13 +143,12 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
             $this->connection->executeStatement(
                 sprintf(
                     "UPDATE %s
-                     SET wake_enqueued_until = now() + interval '%d seconds', updated_at = statement_timestamp()
+                     SET wake_enqueued_until = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
                      WHERE coordinator_key = ?",
                     $this->coordinatorsTable(),
-                    $ttlSeconds,
                 ),
-                [self::COORDINATOR_KEY],
-                [ParameterType::STRING],
+                [$now->add($ttl), $now, self::COORDINATOR_KEY],
+                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
             );
 
             $this->connection->commit();
@@ -166,20 +177,25 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
         return false === $row ? null : $row;
     }
 
-    private function upsertRow(): void
+    private function upsertRow(\DateTimeImmutable $now): void
     {
         $this->connection->executeStatement(
             sprintf(
-                'INSERT INTO %s (coordinator_key) VALUES (?) ON CONFLICT (coordinator_key) DO NOTHING',
+                'INSERT INTO %s (coordinator_key, updated_at) VALUES (?, CAST(? AS TIMESTAMPTZ)) ON CONFLICT (coordinator_key) DO NOTHING',
                 $this->coordinatorsTable(),
             ),
-            [self::COORDINATOR_KEY],
-            [ParameterType::STRING],
+            [self::COORDINATOR_KEY, $now],
+            [ParameterType::STRING, ParameterType::STRING],
         );
     }
 
     private function coordinatorsTable(): string
     {
         return $this->tablePrefix . 'coordinators';
+    }
+
+    private function now(): DatePoint
+    {
+        return DatePoint::createFromInterface($this->clock->now());
     }
 }

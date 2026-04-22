@@ -11,7 +11,9 @@
     ],
     "require": {
         "php": ">=8.4",
-        "ultra/event-store": "self.version"
+        "psr/clock": "^1.0",
+        "ultra/event-store": "self.version",
+        "ultra/time": "self.version"
     },
     "autoload": {
         "psr-4": {

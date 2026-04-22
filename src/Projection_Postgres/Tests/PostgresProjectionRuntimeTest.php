@@ -15,6 +15,7 @@ use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
+use Ultra\Time\Duration;
 
 #[EventAttribute('course.created')]
 final readonly class CourseCreated
@@ -177,6 +178,8 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
     public function test_expired_lease_is_recovered_so_another_worker_can_claim_the_segment(): void
     {
+        $clock = $this->staticClock('2024-01-01T00:00:00+00:00');
+
         $this->withPostgresProjectionRuntime(function (
             Connection $connection,
             EventStore $store,
@@ -184,14 +187,11 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             ProjectionRunner $runner,
             string $eventStorePrefix,
             string $projectionPrefix,
-        ): void {
+        ) use ($clock): void {
             $segmentRepository->ensureInitialized('course_names');
 
-            $segmentRepository->claimSegment('course_names', 'worker-stale', leaseDurationSeconds: 0);
-
-            $connection->executeStatement(
-                "UPDATE {$projectionPrefix}segments SET lease_expires_at = now() - interval '1 second' WHERE projection_id = 'course_names'",
-            );
+            $segmentRepository->claimSegment('course_names', 'worker-stale', leaseDurationSeconds: Duration::seconds(30));
+            $clock->advance(Duration::seconds(31));
 
             $recovered = $segmentRepository->recoverExpiredLeases('course_names');
 
@@ -201,7 +201,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
             self::assertNotNull($segment);
             self::assertSame('active', $segment->status);
-        });
+        }, $clock);
     }
 
     public function test_segment_split_divides_the_range_into_two_equal_halves(): void

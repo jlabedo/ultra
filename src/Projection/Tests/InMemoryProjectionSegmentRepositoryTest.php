@@ -11,6 +11,8 @@ use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Sequence;
 use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\ProjectionSegment;
+use Ultra\Time\Duration;
+use Ultra\Time\StatickClock;
 
 #[CoversClass(InMemoryProjectionSegmentRepository::class)]
 #[CoversClass(ProjectionSegment::class)]
@@ -163,5 +165,25 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
             new ProjectionSegment('courses', 0, 0, 'available', null, Checkpoint::beginning(), false),
             Checkpoint::beginning(),
         );
+    }
+
+    public function test_expired_segment_leases_are_recovered_against_the_injected_clock(): void
+    {
+        $clock = new StatickClock(new \DateTimeImmutable('2024-01-01T00:00:00+00:00'));
+        $repository = new InMemoryProjectionSegmentRepository($clock);
+        $repository->ensureInitialized('courses');
+
+        $claimed = $repository->claimSegment('courses', 'worker-1', Duration::seconds(30));
+
+        self::assertNotNull($claimed);
+
+        $clock->advance(Duration::seconds(31));
+
+        self::assertSame(1, $repository->recoverExpiredLeases('courses'));
+
+        $reclaimed = $repository->claimSegment('courses', 'worker-2', Duration::seconds(30));
+
+        self::assertNotNull($reclaimed);
+        self::assertSame('active', $reclaimed->status);
     }
 }

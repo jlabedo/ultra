@@ -11,9 +11,17 @@ final readonly class Duration
     private const int MICROSECONDS_PER_HOUR = 60 * self::MICROSECONDS_PER_MINUTE;
     private const int MICROSECONDS_PER_DAY = 24 * self::MICROSECONDS_PER_HOUR;
 
+    public int $microseconds;
+
     public function __construct(
-        public int $microseconds,
-    ) {}
+        int $microseconds = 0,
+        int $seconds = 0,
+        int $minutes = 0,
+        int $hours = 0,
+        int $days = 0,
+    ) {
+        $this->microseconds = $microseconds + $seconds * self::MICROSECONDS_PER_SECOND + $minutes * self::MICROSECONDS_PER_MINUTE + $hours * self::MICROSECONDS_PER_HOUR + $days * self::MICROSECONDS_PER_DAY;
+    }
 
     public static function zero(): self
     {

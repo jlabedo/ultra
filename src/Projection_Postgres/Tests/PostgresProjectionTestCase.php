@@ -6,12 +6,14 @@ namespace Ultra\Projection_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
+use Psr\Clock\ClockInterface;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivitySchema;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorSchema;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
+use Ultra\Time\StatickClock;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSchemaForImplementation;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation;
@@ -34,7 +36,7 @@ abstract class PostgresProjectionTestCase extends TestCase
     /**
      * @param callable(Connection, EventStore, PostgresProjectionSegmentRepository, ProjectionRunner, string, string): void $callback
      */
-    protected function withPostgresProjectionRuntime(callable $callback): void
+    protected function withPostgresProjectionRuntime(callable $callback, ?ClockInterface $clock = null): void
     {
         $connection = postgresTestConnection($this->postgresDsn());
         $eventStorePrefix = postgresTestUniquePrefix();
@@ -52,7 +54,7 @@ abstract class PostgresProjectionTestCase extends TestCase
             }
 
             $store = postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams');
-            $segmentRepository = new PostgresProjectionSegmentRepository($connection, $projectionPrefix);
+            $segmentRepository = new PostgresProjectionSegmentRepository($connection, $projectionPrefix, $clock);
             $runner = new ProjectionRunner($store, $segmentRepository);
 
             $callback($connection, $store, $segmentRepository, $runner, $eventStorePrefix, $projectionPrefix);
@@ -99,5 +101,10 @@ abstract class PostgresProjectionTestCase extends TestCase
 
             $connection->close();
         }
+    }
+
+    protected function staticClock(string $now): StatickClock
+    {
+        return new StatickClock(new \DateTimeImmutable($now));
     }
 }

@@ -6,6 +6,7 @@ namespace Ultra\Projection\Coordination;
 
 use Ultra\EventStore\Event;
 use Ultra\Projection\ProjectionCatalog;
+use Ultra\Time\Duration;
 
 final readonly class ProjectionActivityRecorder
 {
@@ -14,7 +15,7 @@ final readonly class ProjectionActivityRecorder
         private ProjectionBucketActivityRepositoryInterface $activityRepository,
         private ProjectionCoordinatorLeaseRepositoryInterface $leaseRepository,
         private ProjectionActivatorInterface $activator,
-        private int $wakeDebounceSeconds = 30,
+        private Duration $wakeDebounceSeconds = new Duration(seconds: 30)
     ) {}
 
     /** @param list<Event> $events */
