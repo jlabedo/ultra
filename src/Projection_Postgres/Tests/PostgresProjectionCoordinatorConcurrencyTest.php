@@ -4,172 +4,73 @@ declare(strict_types=1);
 
 namespace Ultra\Projection_Postgres\Tests;
 
+use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\Group;
-use Symfony\Component\Process\Exception\ProcessTimedOutException;
-use Symfony\Component\Process\InputStream;
-use Symfony\Component\Process\Process;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
+use Ultra\Events\Attribute\Event as EventAttribute;
+use Ultra\EventStore\AppendCondition;
+use Ultra\EventStore\Checkpoint;
+use Ultra\EventStore\LoadResult;
+use Ultra\EventStore\StreamQuery;
+use Ultra\Mapper\UltraNormalizer;
+use Ultra\Projection\Attribute\Projection;
+use Ultra\Projection\Attribute\ProjectionHandler;
+use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
+use Ultra\Projection\Coordination\ProjectionCoordinator;
+use Ultra\Projection\Coordination\ProjectionCoordinatorResult;
+use Ultra\Projection\InMemory\InMemoryProjectionActivator;
+use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
+use Ultra\Testing\Concurrent\Cluster;
 
-final class ProjectionConcurrencyWorker
+#[EventAttribute('course.created')]
+final readonly class ConcurrencyCourseCreated
 {
-    private string $stdout = '';
-    private string $stderr = '';
-    private string $stdoutRemainder = '';
-
-    /** @var list<array<string, mixed>> */
-    private array $messages = [];
-
     public function __construct(
-        private Process $process,
-        private ?InputStream $input = null,
+        public string $courseId,
+        public string $name,
+    ) {}
+}
+
+#[Projection(name: 'course_names', partitionBy: 'courseId')]
+final class ConcurrencyCourseNamesProjection
+{
+    public function __construct(
+        private readonly Connection $connection,
+        private readonly string $tableName,
     ) {}
 
-    /**
-     * @return array<string, mixed>
-     */
-    public function waitForEvent(string $eventName, int $timeoutMs): array
+    #[ProjectionInitializer]
+    public function initialize(): void
     {
-        return $this->waitForMessage(
-            static fn (array $message): bool => 'event' === ($message['type'] ?? null) && $eventName === ($message['name'] ?? null),
-            $timeoutMs,
-            sprintf('Timed out waiting for worker event "%s".', $eventName),
+        $this->connection->executeStatement(sprintf(
+            'CREATE TABLE IF NOT EXISTS %s (
+                course_id TEXT PRIMARY KEY,
+                name      TEXT NOT NULL
+            )',
+            $this->tableName,
+        ));
+    }
+
+    #[ProjectionHandler]
+    public function onCourseCreated(ConcurrencyCourseCreated $event): void
+    {
+        $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (course_id, name) VALUES (?, ?)
+                 ON CONFLICT (course_id) DO UPDATE SET name = EXCLUDED.name',
+                $this->tableName,
+            ),
+            [$event->courseId, $event->name],
         );
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function waitForResult(int $timeoutMs): array
-    {
-        $this->awaitExit($timeoutMs);
-
-        foreach (array_reverse($this->messages) as $message) {
-            if ('result' === ($message['type'] ?? null)) {
-                return $message + [
-                    'exitCode' => $this->process->getExitCode() ?? -1,
-                    'stdout' => $this->stdout,
-                    'stderr' => $this->stderr,
-                ];
-            }
-        }
-
-        throw new \RuntimeException('Worker exited without emitting a result message. STDERR: '.$this->stderr.' STDOUT: '.$this->stdout);
-    }
-
-    public function send(string $input, bool $close = false): void
-    {
-        if (null === $this->input) {
-            throw new \LogicException('This worker does not accept stdin.');
-        }
-
-        $this->input->write($input.PHP_EOL);
-
-        if ($close) {
-            $this->input->close();
-        }
-    }
-
-    public function stop(): void
-    {
-        if (null !== $this->input && ! $this->input->isClosed()) {
-            $this->input->close();
-        }
-
-        if ($this->process->isRunning()) {
-            $this->process->stop(1);
-        }
-
-        $this->pump();
-    }
-
-    /**
-     * @param \Closure(array<string, mixed>): bool $matches
-     *
-     * @return array<string, mixed>
-     */
-    private function waitForMessage(\Closure $matches, int $timeoutMs, string $timeoutMessage): array
-    {
-        $deadline = microtime(true) + ($timeoutMs / 1000);
-
-        while (microtime(true) < $deadline) {
-            $this->pump();
-
-            foreach ($this->messages as $message) {
-                if ($matches($message)) {
-                    return $message;
-                }
-            }
-
-            if (! $this->process->isRunning()) {
-                break;
-            }
-
-            $this->process->checkTimeout();
-            usleep(10_000);
-        }
-
-        $this->pump();
-
-        throw new \RuntimeException($timeoutMessage.' STDERR: '.$this->stderr.' STDOUT: '.$this->stdout);
-    }
-
-    private function awaitExit(int $timeoutMs): void
-    {
-        $previousTimeout = $this->process->getTimeout();
-        $this->process->setTimeout($timeoutMs / 1000);
-
-        try {
-            $this->process->wait();
-        } catch (ProcessTimedOutException $exception) {
-            throw new \RuntimeException(
-                'Timed out waiting for projection worker to exit. STDERR: '.$this->stderr.' STDOUT: '.$this->stdout,
-                previous: $exception,
-            );
-        } finally {
-            $this->process->setTimeout($previousTimeout);
-        }
-
-        $this->pump();
-    }
-
-    private function pump(): void
-    {
-        $stdoutChunk = $this->process->getIncrementalOutput();
-        if ('' !== $stdoutChunk) {
-            $this->stdout .= $stdoutChunk;
-            $this->stdoutRemainder .= $stdoutChunk;
-            $this->parseStdoutMessages();
-        }
-
-        $stderrChunk = $this->process->getIncrementalErrorOutput();
-        if ('' !== $stderrChunk) {
-            $this->stderr .= $stderrChunk;
-        }
-    }
-
-    private function parseStdoutMessages(): void
-    {
-        while (false !== $position = strpos($this->stdoutRemainder, PHP_EOL)) {
-            $line = substr($this->stdoutRemainder, 0, $position);
-            $this->stdoutRemainder = substr($this->stdoutRemainder, $position + strlen(PHP_EOL));
-
-            $line = trim($line);
-            if ('' === $line) {
-                continue;
-            }
-
-            $message = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
-            if (is_array($message)) {
-                $this->messages[] = $message;
-            }
-        }
     }
 }
 
@@ -183,7 +84,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
         $dsn = $this->postgresDsn();
 
         $this->withPostgresProjectionCoordinatorRuntime(function (
-            \Doctrine\DBAL\Connection $connection,
+            Connection $connection,
             EventStore $store,
             PostgresProjectionSegmentRepository $segments,
             ProjectionRunner $runner,
@@ -192,16 +93,13 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             string $eventStorePrefix,
             string $projectionPrefix,
         ) use ($dsn): void {
-            $tableName = $projectionPrefix.'course_names_view';
+            $tableName = $projectionPrefix . 'course_names_view';
             [$leftCourseId, $rightCourseId] = self::courseIdsAcrossSplit();
             $leftBucket = BucketHasher::bucketFor($leftCourseId);
             $rightBucket = BucketHasher::bucketFor($rightCourseId);
 
             $connection->executeStatement(sprintf(
-                'CREATE TABLE %s (
-                    course_id TEXT PRIMARY KEY,
-                    name      TEXT NOT NULL
-                )',
+                'CREATE TABLE %s (course_id TEXT PRIMARY KEY, name TEXT NOT NULL)',
                 $tableName,
             ));
 
@@ -224,62 +122,137 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             $activity->bump('course_names', $leftBucket);
             $activity->bump('course_names', $rightBucket);
 
-            $leader = null;
-            $follower = null;
+            $supportFile = __DIR__ . '/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
+            $testFile = __FILE__;
 
-            try {
-                $leader = self::startProjectionWorker([
-                    'dsn' => $dsn,
-                    'eventStorePrefix' => $eventStorePrefix,
-                    'projectionPrefix' => $projectionPrefix,
-                    'tableName' => $tableName,
-                    'workerId' => 'worker-a',
-                    'pauseBeforeFirstLoad' => true,
-                ], true);
-                $leader->waitForEvent('segment_claimed', 5_000);
+            $cluster = new Cluster(timeout: 10.0);
 
-                $follower = self::startProjectionWorker([
-                    'dsn' => $dsn,
-                    'eventStorePrefix' => $eventStorePrefix,
-                    'projectionPrefix' => $projectionPrefix,
-                    'tableName' => $tableName,
-                    'workerId' => 'worker-b',
-                    'pauseBeforeFirstLoad' => false,
-                ]);
+            // Leader: claims its segment, then pauses at 'segment_claimed' before loading
+            // events so the follower can concurrently claim the other segment.
+            $leader = $cluster->spawn(
+                static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $supportFile, $testFile): ProjectionCoordinatorResult {
+                    require_once $supportFile;
+                    require_once $testFile;
 
-                $followerResult = $follower->waitForResult(5_000);
-                $follower = null;
+                    $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
+                    $innerStore = \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams');
 
-                $leader->send('release', true);
-                $leaderResult = $leader->waitForResult(5_000);
-                $leader = null;
+                    // Inline barrier: fires once on the first load(), holding the segment
+                    // claim open so the follower can grab the other segment concurrently.
+                    $barrierStore = new class($innerStore) implements EventStore {
+                        private bool $checkpointed = false;
 
-                self::assertSame(0, $leaderResult['exitCode'], $leaderResult['stderr']);
-                self::assertSame('ok', $leaderResult['status']);
-                self::assertTrue($leaderResult['acquiredLease']);
-                self::assertSame(1, $leaderResult['processedEvents']);
-                self::assertGreaterThanOrEqual(1, $leaderResult['acknowledgedBuckets']);
+                        public function __construct(private readonly EventStore $inner) {}
 
-                self::assertSame(0, $followerResult['exitCode'], $followerResult['stderr']);
-                self::assertSame('ok', $followerResult['status']);
-                self::assertFalse($followerResult['acquiredLease']);
-                self::assertSame(1, $followerResult['processedEvents']);
-                self::assertGreaterThanOrEqual(1, $followerResult['acknowledgedBuckets']);
+                        public function load(
+                            StreamQuery $query,
+                            ?Checkpoint $from = null,
+                            ?Checkpoint $to = null,
+                            int $batchSize = 1000,
+                        ): LoadResult {
+                            if (!$this->checkpointed) {
+                                $this->checkpointed = true;
+                                checkpoint('segment_claimed');
+                            }
 
-                $rows = $connection->fetchAllAssociative(
-                    sprintf('SELECT course_id, name FROM %s ORDER BY course_id ASC', $tableName),
-                );
+                            return $this->inner->load($query, $from, $to, $batchSize);
+                        }
 
-                self::assertSame([
-                    ['course_id' => $leftCourseId, 'name' => 'Math 101'],
-                    ['course_id' => $rightCourseId, 'name' => 'Physics 201'],
-                ], $rows);
-                self::assertSame([], $activity->pendingBuckets('course_names'));
-                self::assertFalse($leases->hasLiveCoordinator());
-            } finally {
-                $leader?->stop();
-                $follower?->stop();
-            }
+                        public function append(array $events, AppendCondition ...$appendConditions): void
+                        {
+                            $this->inner->append($events, ...$appendConditions);
+                        }
+                    };
+
+                    $runner = new ProjectionRunner(
+                        $barrierStore,
+                        new \Ultra\Projection_Postgres\PostgresProjectionSegmentRepository($connection, $projectionPrefix),
+                    );
+                    $coordinator = new ProjectionCoordinator(
+                        new ProjectionCatalog(
+                            new ProjectionRuntime(
+                                new ConcurrencyCourseNamesProjection($connection, $tableName),
+                                new UltraNormalizer(),
+                            ),
+                        ),
+                        $runner,
+                        new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix),
+                        new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix),
+                        new InMemoryProjectionActivator(),
+                    );
+
+                    try {
+                        return $coordinator->run('worker-a', batchSize: 100, maxCycles: 8);
+                    } finally {
+                        $connection->close();
+                    }
+                },
+            );
+
+            // Wait until the leader holds a segment before spawning the follower, so it
+            // cannot race ahead and claim both segments.
+            $leader->awaitCheckpoint('segment_claimed');
+
+            // Follower: no barrier, runs to completion while the leader is paused.
+            $follower = $cluster->spawn(
+                static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $supportFile, $testFile): ProjectionCoordinatorResult {
+                    require_once $supportFile;
+                    require_once $testFile;
+
+                    $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
+                    $runner = new ProjectionRunner(
+                        \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams'),
+                        new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
+                    );
+                    $coordinator = new ProjectionCoordinator(
+                        new ProjectionCatalog(
+                            new ProjectionRuntime(
+                                new ConcurrencyCourseNamesProjection($connection, $tableName),
+                                new UltraNormalizer(),
+                            ),
+                        ),
+                        $runner,
+                        new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix),
+                        new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix),
+                        new InMemoryProjectionActivator(),
+                    );
+
+                    try {
+                        return $coordinator->run('worker-b', batchSize: 100, maxCycles: 8);
+                    } finally {
+                        $connection->close();
+                    }
+                },
+            );
+
+            $followerOutcome = $follower->join();
+
+            $leader->release('segment_claimed');
+            $leaderOutcome = $leader->join();
+
+            self::assertTrue($leaderOutcome->isSuccess(), $leaderOutcome->exceptionMessage() ?? '');
+            /** @var ProjectionCoordinatorResult $leaderResult */
+            $leaderResult = $leaderOutcome->value();
+            self::assertTrue($leaderResult->acquiredLease);
+            self::assertSame(1, $leaderResult->processedEvents);
+            self::assertGreaterThanOrEqual(1, $leaderResult->acknowledgedBuckets);
+
+            self::assertTrue($followerOutcome->isSuccess(), $followerOutcome->exceptionMessage() ?? '');
+            /** @var ProjectionCoordinatorResult $followerResult */
+            $followerResult = $followerOutcome->value();
+            self::assertFalse($followerResult->acquiredLease);
+            self::assertSame(1, $followerResult->processedEvents);
+            self::assertGreaterThanOrEqual(1, $followerResult->acknowledgedBuckets);
+
+            $rows = $connection->fetchAllAssociative(
+                sprintf('SELECT course_id, name FROM %s ORDER BY course_id ASC', $tableName),
+            );
+            self::assertSame([
+                ['course_id' => $leftCourseId, 'name' => 'Math 101'],
+                ['course_id' => $rightCourseId, 'name' => 'Physics 201'],
+            ], $rows);
+            self::assertSame([], $activity->pendingBuckets('course_names'));
+            self::assertFalse($leases->hasLiveCoordinator());
         });
     }
 
@@ -292,7 +265,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
         $right = null;
 
         for ($i = 0; $i < 1024; ++$i) {
-            $courseId = 'course-'.$i;
+            $courseId = 'course-' . $i;
             $bucket = BucketHasher::bucketFor($courseId);
 
             if (null === $left && $bucket < 128) {
@@ -309,26 +282,5 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
         }
 
         throw new \RuntimeException('Failed to find course ids that land on both sides of the initial split.');
-    }
-
-    /**
-     * @param array<string, mixed> $config
-     */
-    private static function startProjectionWorker(array $config, bool $interactive = false): ProjectionConcurrencyWorker
-    {
-        $script = __DIR__.'/Fixtures/postgres_projection_concurrency_worker.php';
-        $input = $interactive ? new InputStream() : null;
-        $process = new Process(
-            [PHP_BINARY, $script],
-            dirname(__DIR__, 3),
-            [
-                'ULTRA_WORKER_CONFIG' => base64_encode(json_encode($config, JSON_THROW_ON_ERROR)),
-            ],
-            $input,
-        );
-        $process->setTimeout(15);
-        $process->start();
-
-        return new ProjectionConcurrencyWorker($process, $input);
     }
 }
