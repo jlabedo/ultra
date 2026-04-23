@@ -10,5 +10,6 @@ final readonly class ProjectionRunResult
         public int $processedEvents,
         public bool $claimedSegment,
         public ?ProjectionSegment $segment,
+        public bool $caughtUp = true,
     ) {}
 }
