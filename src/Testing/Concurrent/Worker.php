@@ -74,16 +74,29 @@ final class Worker
     /**
      * Block until the named checkpoint arrives or timeout elapses.
      *
+     * When $releaseOthers is true, any checkpoint whose name is not $name is
+     * released immediately as it arrives, letting the worker pass through
+     * intermediate checkpoints without the caller needing to await each one.
+     *
      * @throws WorkerDiedException          if the worker process exits before hitting the checkpoint
      * @throws ConcurrentTestTimeoutException if the timeout elapses first
      */
-    public function awaitCheckpoint(string $name, ?float $timeout = null): Checkpoint
+    public function awaitCheckpoint(string $name, ?float $timeout = null, bool $releaseOthers = false): Checkpoint
     {
         $timeout ??= $this->defaultTimeout;
         $deadline = microtime(true) + $timeout;
 
         while (microtime(true) < $deadline) {
             $this->pump();
+
+            if ($releaseOthers) {
+                foreach ($this->checkpointQueues as $otherName => $queue) {
+                    if ($otherName !== $name && $queue !== []) {
+                        array_shift($this->checkpointQueues[$otherName]);
+                        $this->release($otherName);
+                    }
+                }
+            }
 
             if ($this->checkpointQueues[$name] ?? [] !== []) {
                 return array_shift($this->checkpointQueues[$name]);

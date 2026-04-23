@@ -113,6 +113,24 @@ final class WorkerTest extends TestCase
         self::assertSame('all done', $outcome->value());
     }
 
+    public function test_release_others_skips_intermediate_checkpoints(): void
+    {
+        $worker = $this->cluster->spawn(static function (): string {
+            checkpoint('setup');
+            checkpoint('init');
+            checkpoint('ready');
+
+            return 'reached';
+        });
+
+        // Only care about 'ready' — let 'setup' and 'init' pass through automatically.
+        $worker->awaitCheckpoint('ready', releaseOthers: true);
+        $worker->release('ready');
+
+        $outcome = $worker->join();
+        self::assertSame('reached', $outcome->value());
+    }
+
     // -------------------------------------------------------------------------
     // Exception path
     // -------------------------------------------------------------------------
