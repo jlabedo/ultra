@@ -7,181 +7,18 @@ namespace Ultra\EventStore_Postgres\Tests;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
-use Symfony\Component\Process\Exception\ProcessTimedOutException;
-use Symfony\Component\Process\InputStream;
-use Symfony\Component\Process\Process;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore\StreamQueryBranch;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
+use Ultra\Testing\Concurrent\Cluster;
+use Ultra\Testing\Concurrent\Worker;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedImplementations;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedLockStrategies;
 
-final class ConcurrencyWorker
-{
-    private string $stdout = '';
-    private string $stderr = '';
-    private string $stdoutRemainder = '';
-
-    /** @var list<array<string, mixed>> */
-    private array $messages = [];
-
-    public function __construct(
-        private Process $process,
-        private ?InputStream $input = null,
-    ) {}
-
-    public function isRunning(): bool
-    {
-        $this->pump();
-
-        return $this->process->isRunning();
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function waitForEvent(string $eventName, int $timeoutMs): array
-    {
-        return $this->waitForMessage(
-            static fn (array $message): bool => 'event' === ($message['type'] ?? null) && $eventName === ($message['name'] ?? null),
-            $timeoutMs,
-            sprintf('Timed out waiting for worker event "%s".', $eventName),
-        );
-    }
-
-    /**
-     * @return array<string, mixed>
-     */
-    public function waitForResult(int $timeoutMs): array
-    {
-        $this->awaitExit($timeoutMs);
-
-        foreach (array_reverse($this->messages) as $message) {
-            if ('result' === ($message['type'] ?? null)) {
-                return $message + [
-                    'exitCode' => $this->process->getExitCode() ?? -1,
-                    'stdout' => $this->stdout,
-                    'stderr' => $this->stderr,
-                ];
-            }
-        }
-
-        throw new \RuntimeException('Worker exited without emitting a result message. STDERR: '.$this->stderr.' STDOUT: '.$this->stdout);
-    }
-
-    public function send(string $input, bool $close = false): void
-    {
-        if (null === $this->input) {
-            throw new \LogicException('This worker does not accept stdin.');
-        }
-
-        $this->input->write($input.PHP_EOL);
-
-        if ($close) {
-            $this->input->close();
-        }
-    }
-
-    public function stop(): void
-    {
-        if (null !== $this->input && ! $this->input->isClosed()) {
-            $this->input->close();
-        }
-
-        if ($this->process->isRunning()) {
-            $this->process->stop(1);
-        }
-
-        $this->pump();
-    }
-
-    /**
-     * @param \Closure(array<string, mixed>): bool $matches
-     *
-     * @return array<string, mixed>
-     */
-    private function waitForMessage(\Closure $matches, int $timeoutMs, string $timeoutMessage): array
-    {
-        $deadline = microtime(true) + ($timeoutMs / 1000);
-
-        while (microtime(true) < $deadline) {
-            $this->pump();
-
-            foreach ($this->messages as $message) {
-                if ($matches($message)) {
-                    return $message;
-                }
-            }
-
-            if (! $this->process->isRunning()) {
-                break;
-            }
-
-            $this->process->checkTimeout();
-            usleep(10_000);
-        }
-
-        $this->pump();
-
-        throw new \RuntimeException($timeoutMessage.' STDERR: '.$this->stderr.' STDOUT: '.$this->stdout);
-    }
-
-    private function awaitExit(int $timeoutMs): void
-    {
-        $previousTimeout = $this->process->getTimeout();
-        $this->process->setTimeout($timeoutMs / 1000);
-
-        try {
-            $this->process->wait();
-        } catch (ProcessTimedOutException $exception) {
-            throw new \RuntimeException(
-                'Timed out waiting for concurrency worker to exit. STDERR: '.$this->stderr.' STDOUT: '.$this->stdout,
-                previous: $exception,
-            );
-        } finally {
-            $this->process->setTimeout($previousTimeout);
-        }
-
-        $this->pump();
-    }
-
-    private function pump(): void
-    {
-        $stdoutChunk = $this->process->getIncrementalOutput();
-        if ('' !== $stdoutChunk) {
-            $this->stdout .= $stdoutChunk;
-            $this->stdoutRemainder .= $stdoutChunk;
-            $this->parseStdoutMessages();
-        }
-
-        $stderrChunk = $this->process->getIncrementalErrorOutput();
-        if ('' !== $stderrChunk) {
-            $this->stderr .= $stderrChunk;
-        }
-    }
-
-    private function parseStdoutMessages(): void
-    {
-        while (false !== $position = strpos($this->stdoutRemainder, PHP_EOL)) {
-            $line = substr($this->stdoutRemainder, 0, $position);
-            $this->stdoutRemainder = substr($this->stdoutRemainder, $position + strlen(PHP_EOL));
-
-            $line = trim($line);
-            if ('' === $line) {
-                continue;
-            }
-
-            $message = json_decode($line, true, 512, JSON_THROW_ON_ERROR);
-            if (is_array($message)) {
-                $this->messages[] = $message;
-            }
-        }
-    }
-}
+require_once __DIR__.'/Support/PostgresTestSupport.php';
 
 /**
  * @internal
@@ -195,8 +32,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
     public function test_concurrent_append_from_another_process_waits_for_the_lock_and_then_fails_with_concurrency_exception(
         string $implementation,
         string $lockStrategy,
-    ): void
-    {
+    ): void {
         $dsn = $this->postgresDsn();
 
         $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn, $implementation, $lockStrategy): void {
@@ -210,64 +46,31 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
             );
 
-            $workerA = null;
-            $workerB = null;
+            $store->append([$event]);
 
-            try {
-                $store->append([$event]);
+            $cluster = new Cluster(timeout: 10.0);
 
-                $workerA = self::startConcurrencyWorker([
-                    'dsn' => $dsn,
-                    'tablePrefix' => $prefix,
-                    'implementation' => $implementation,
-                    'lockStrategy' => $lockStrategy,
-                    'mode' => 'hold_then_commit',
-                    ...self::appendConditionToWorkerConfig($query),
-                    'event' => [
-                        'eventType' => $event->eventType,
-                        'payload' => $event->payload,
-                        'domainIds' => $event->domainIds,
-                    ],
-                ], true);
+            $wA = $this->spawnHoldThenCommitWorker($cluster, $dsn, $prefix, $implementation, $lockStrategy, $event, $query);
+            $wB = $this->spawnAppendOnceWorker($cluster, $dsn, $prefix, $implementation, $lockStrategy, $event, $query, lockTimeoutMs: 5_000);
 
-                $workerA->waitForEvent('ready', 5_000);
+            $wA->awaitCheckpoint('ready');
 
-                $workerB = self::startConcurrencyWorker([
-                    'dsn' => $dsn,
-                    'tablePrefix' => $prefix,
-                    'implementation' => $implementation,
-                    'lockStrategy' => $lockStrategy,
-                    'mode' => 'append_once',
-                    ...self::appendConditionToWorkerConfig($query),
-                    'event' => [
-                        'eventType' => $event->eventType,
-                        'payload' => $event->payload,
-                        'domainIds' => $event->domainIds,
-                    ],
-                    'lockTimeoutMs' => 5_000,
-                ]);
+            // B signals it is about to contend for the lock; release immediately so it proceeds.
+            $wB->awaitCheckpoint('attempting');
+            $wB->release('attempting');
 
-                $workerB->waitForEvent('attempting', 5_000);
-                usleep(250_000);
+            usleep(250_000); // let B actually block on the DB lock before we release A
 
-                self::assertTrue($workerB->isRunning());
+            self::assertNull($wB->outcome(), 'Worker B should still be blocked on the database lock');
 
-                $workerA->send('release', true);
+            $wA->release('ready'); // A commits, releasing the lock
 
-                $workerAResult = $workerA->waitForResult(5_000);
-                $workerA = null;
-                $workerBResult = $workerB->waitForResult(5_000);
-                $workerB = null;
+            $wAOutcome = $wA->join(5.0);
+            $wBOutcome = $wB->join(5.0);
 
-                self::assertSame(0, $workerAResult['exitCode']);
-                self::assertSame('ok', $workerAResult['status']);
-                self::assertSame(10, $workerBResult['exitCode'], $workerBResult['stderr']);
-                self::assertSame('concurrency_exception', $workerBResult['status']);
-                self::assertCount(2, $store->load($query)->events);
-            } finally {
-                $workerA?->stop();
-                $workerB?->stop();
-            }
+            self::assertSame('ok', $wAOutcome->value(), $wA->stderr());
+            self::assertSame('concurrency_exception', $wBOutcome->value(), $wB->stderr());
+            self::assertCount(2, $store->load($query)->events);
         }, $implementation, $lockStrategy);
     }
 
@@ -275,8 +78,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
     public function test_concurrent_append_for_the_same_course_and_another_student_succeeds(
         string $implementation,
         string $lockStrategy,
-    ): void
-    {
+    ): void {
         $dsn = $this->postgresDsn();
 
         $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn, $implementation, $lockStrategy): void {
@@ -300,60 +102,27 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
             );
 
-            $workerA = null;
-            $workerB = null;
+            $store->append([$studentOneEvent]);
 
-            try {
-                $store->append([$studentOneEvent]);
+            $cluster = new Cluster(timeout: 10.0);
 
-                $workerA = self::startConcurrencyWorker([
-                    'dsn' => $dsn,
-                    'tablePrefix' => $prefix,
-                    'implementation' => $implementation,
-                    'lockStrategy' => $lockStrategy,
-                    'mode' => 'hold_then_commit',
-                    ...self::appendConditionToWorkerConfig($studentOneQuery),
-                    'event' => [
-                        'eventType' => $studentOneEvent->eventType,
-                        'payload' => $studentOneEvent->payload,
-                        'domainIds' => $studentOneEvent->domainIds,
-                    ],
-                ], true);
+            $wA = $this->spawnHoldThenCommitWorker($cluster, $dsn, $prefix, $implementation, $lockStrategy, $studentOneEvent, $studentOneQuery);
+            $wB = $this->spawnAppendOnceWorker($cluster, $dsn, $prefix, $implementation, $lockStrategy, $studentTwoEvent, lockTimeoutMs: 5_000);
 
-                $workerA->waitForEvent('ready', 5_000);
+            $wA->awaitCheckpoint('ready');
 
-                $workerB = self::startConcurrencyWorker([
-                    'dsn' => $dsn,
-                    'tablePrefix' => $prefix,
-                    'implementation' => $implementation,
-                    'lockStrategy' => $lockStrategy,
-                    'mode' => 'append_once',
-                    'event' => [
-                        'eventType' => $studentTwoEvent->eventType,
-                        'payload' => $studentTwoEvent->payload,
-                        'domainIds' => $studentTwoEvent->domainIds,
-                    ],
-                    'lockTimeoutMs' => 5_000,
-                ]);
+            $wB->awaitCheckpoint('attempting');
+            $wB->release('attempting');
 
-                $workerB->waitForEvent('attempting', 5_000);
-                $workerA->send('release', true);
+            $wA->release('ready');
 
-                $workerAResult = $workerA->waitForResult(5_000);
-                $workerA = null;
-                $workerBResult = $workerB->waitForResult(5_000);
-                $workerB = null;
+            $wAOutcome = $wA->join(5.0);
+            $wBOutcome = $wB->join(5.0);
 
-                self::assertSame(0, $workerAResult['exitCode']);
-                self::assertSame('ok', $workerAResult['status']);
-                self::assertSame(0, $workerBResult['exitCode'], $workerBResult['stderr']);
-                self::assertSame('ok', $workerBResult['status']);
-                self::assertCount(2, $store->load($studentOneQuery)->events);
-                self::assertCount(1, $store->load($studentTwoQuery)->events);
-            } finally {
-                $workerA?->stop();
-                $workerB?->stop();
-            }
+            self::assertSame('ok', $wAOutcome->value(), $wA->stderr());
+            self::assertSame('ok', $wBOutcome->value(), $wB->stderr());
+            self::assertCount(2, $store->load($studentOneQuery)->events);
+            self::assertCount(1, $store->load($studentTwoQuery)->events);
         }, $implementation, $lockStrategy);
     }
 
@@ -361,8 +130,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
     public function test_bucket_lock_allows_concurrent_write_for_same_course_and_different_student_pair(
         string $implementation,
         string $lockStrategy,
-    ): void
-    {
+    ): void {
         $dsn = $this->postgresDsn();
 
         $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn, $implementation, $lockStrategy): void {
@@ -386,74 +154,39 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
             );
 
-            $workerA = null;
-            $workerB = null;
+            $store->append([$studentOneEvent]);
 
-            try {
-                $store->append([$studentOneEvent]);
+            $cluster = new Cluster(timeout: 10.0);
 
-                $workerA = self::startConcurrencyWorker([
-                    'dsn' => $dsn,
-                    'tablePrefix' => $prefix,
-                    'implementation' => $implementation,
-                    'lockStrategy' => $lockStrategy,
-                    'mode' => 'hold_then_commit',
-                    ...self::appendConditionToWorkerConfig($studentOneQuery),
-                    'event' => [
-                        'eventType' => $studentOneEvent->eventType,
-                        'payload' => $studentOneEvent->payload,
-                        'domainIds' => $studentOneEvent->domainIds,
-                    ],
-                ], true);
+            $wA = $this->spawnHoldThenCommitWorker($cluster, $dsn, $prefix, $implementation, $lockStrategy, $studentOneEvent, $studentOneQuery);
+            $wB = $this->spawnAppendOnceWorker($cluster, $dsn, $prefix, $implementation, $lockStrategy, $studentTwoEvent, lockTimeoutMs: 5_000);
 
-                $workerA->waitForEvent('ready', 5_000);
+            $wA->awaitCheckpoint('ready');
 
-                $workerB = self::startConcurrencyWorker([
-                    'dsn' => $dsn,
-                    'tablePrefix' => $prefix,
-                    'implementation' => $implementation,
-                    'lockStrategy' => $lockStrategy,
-                    'mode' => 'append_once',
-                    'event' => [
-                        'eventType' => $studentTwoEvent->eventType,
-                        'payload' => $studentTwoEvent->payload,
-                        'domainIds' => $studentTwoEvent->domainIds,
-                    ],
-                    'lockTimeoutMs' => 5_000,
-                ]);
+            $wB->awaitCheckpoint('attempting');
+            $wB->release('attempting');
 
-                $workerB->waitForEvent('attempting', 5_000);
-
-                if ('bucket' === $lockStrategy) {
-                    $workerBResult = $workerB->waitForResult(5_000);
-                    $workerB = null;
-                    self::assertSame(0, $workerBResult['exitCode'], $workerBResult['stderr']);
-                    self::assertSame('ok', $workerBResult['status']);
-                } else {
-                    usleep(250_000);
-                    self::assertTrue($workerB->isRunning());
-                }
-
-                $workerA->send('release', true);
-                $workerAResult = $workerA->waitForResult(5_000);
-                $workerA = null;
-
-                self::assertSame(0, $workerAResult['exitCode']);
-                self::assertSame('ok', $workerAResult['status']);
-
-                if (null !== $workerB) {
-                    $workerBResult = $workerB->waitForResult(5_000);
-                    $workerB = null;
-                    self::assertSame(0, $workerBResult['exitCode'], $workerBResult['stderr']);
-                    self::assertSame('ok', $workerBResult['status']);
-                }
-
-                self::assertCount(2, $store->load($studentOneQuery)->events);
-                self::assertCount(1, $store->load($studentTwoQuery)->events);
-            } finally {
-                $workerA?->stop();
-                $workerB?->stop();
+            if ('bucket' === $lockStrategy) {
+                // Bucket lock does not contend across different student pairs — B finishes before A commits.
+                $wBOutcome = $wB->join(5.0);
+                self::assertSame('ok', $wBOutcome->value(), $wB->stderr());
+            } else {
+                usleep(250_000); // let B block on the DB lock
+                self::assertNull($wB->outcome(), 'Worker B should still be blocked on the database lock');
             }
+
+            $wA->release('ready');
+
+            $wAOutcome = $wA->join(5.0);
+            self::assertSame('ok', $wAOutcome->value(), $wA->stderr());
+
+            if ('bucket' !== $lockStrategy) {
+                $wBOutcome = $wB->join(5.0);
+                self::assertSame('ok', $wBOutcome->value(), $wB->stderr());
+            }
+
+            self::assertCount(2, $store->load($studentOneQuery)->events);
+            self::assertCount(1, $store->load($studentTwoQuery)->events);
         }, $implementation, $lockStrategy);
     }
 
@@ -490,67 +223,40 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-456', 'studentId' => 'student-2'],
             );
 
-            $workerA = null;
-            $workerB = null;
+            $cluster = new Cluster(timeout: 10.0);
 
+            // A holds an open transaction (no append condition — first event in that stream).
+            $wA = $this->spawnHoldThenCommitWorker($cluster, $dsn, $prefix, $implementation, $lockStrategy, $courseCreatedEvent);
+
+            // B appends to a completely different stream — no lock contention with A.
+            $wB = $this->spawnAppendOnceWorker($cluster, $dsn, $prefix, $implementation, $lockStrategy, $studentSubscribedEvent);
+
+            $wA->awaitCheckpoint('ready');
+
+            $wB->awaitCheckpoint('attempting');
+            $wB->release('attempting');
+
+            // B commits independently while A is still holding its transaction open.
+            $wBOutcome = $wB->join(5.0);
+            self::assertSame('ok', $wBOutcome->value(), $wB->stderr());
+
+            // Load the combined query now: A's event is invisible (uncommitted), so we see only B's.
+            $staleResult = $store->load($combinedQuery);
+            self::assertCount(1, $staleResult->events);
+
+            // Release A — its event commits with a lower sequence number than B's.
+            $wA->release('ready');
+            $wAOutcome = $wA->join(5.0);
+            self::assertSame('ok', $wAOutcome->value(), $wA->stderr());
+
+            // The stale append condition should now fail because A's event appeared "below" the checkpoint.
             try {
-                $workerA = self::startConcurrencyWorker([
-                    'dsn' => $dsn,
-                    'tablePrefix' => $prefix,
-                    'implementation' => $implementation,
-                    'lockStrategy' => $lockStrategy,
-                    'mode' => 'hold_then_commit',
-                    'event' => [
-                        'eventType' => $courseCreatedEvent->eventType,
-                        'payload' => $courseCreatedEvent->payload,
-                        'domainIds' => $courseCreatedEvent->domainIds,
-                    ],
-                ], true);
-
-                $workerA->waitForEvent('ready', 5_000);
-
-                $workerB = self::startConcurrencyWorker([
-                    'dsn' => $dsn,
-                    'tablePrefix' => $prefix,
-                    'implementation' => $implementation,
-                    'lockStrategy' => $lockStrategy,
-                    'mode' => 'append_once',
-                    'event' => [
-                        'eventType' => $studentSubscribedEvent->eventType,
-                        'payload' => $studentSubscribedEvent->payload,
-                        'domainIds' => $studentSubscribedEvent->domainIds,
-                    ],
-                    'lockTimeoutMs' => 5_000,
-                ]);
-
-                $workerBResult = $workerB->waitForResult(5_000);
-                $workerB = null;
-
-                self::assertSame(0, $workerBResult['exitCode'], $workerBResult['stderr']);
-                self::assertSame('ok', $workerBResult['status']);
-
-                $staleResult = $store->load($combinedQuery);
-                self::assertCount(1, $staleResult->events);
-
-                $workerA->send('release', true);
-                $workerAResult = $workerA->waitForResult(5_000);
-                $workerA = null;
-
-                self::assertSame(0, $workerAResult['exitCode']);
-                self::assertSame('ok', $workerAResult['status']);
-
-                try {
-                    $store->append([$followUpEvent], $staleResult->appendCondition());
-                    self::fail('Expected ConcurrencyException to be thrown.');
-                } catch (ConcurrencyException) {
-                }
-
-                $result = $store->load($combinedQuery);
-                self::assertCount(2, $result->events);
-            } finally {
-                $workerA?->stop();
-                $workerB?->stop();
+                $store->append([$followUpEvent], $staleResult->appendCondition());
+                self::fail('Expected ConcurrencyException to be thrown.');
+            } catch (ConcurrencyException) {
             }
+
+            self::assertCount(2, $store->load($combinedQuery)->events);
         }, $implementation, $lockStrategy);
     }
 
@@ -567,54 +273,91 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
     }
 
     /**
-     * @param array<string, mixed> $config
+     * Spawns a worker that opens a database transaction, appends $event (optionally
+     * with an append condition loaded from $appendQuery), then freezes at checkpoint
+     * 'ready' while holding the transaction open. When released, it commits and returns 'ok'.
      */
-    private static function startConcurrencyWorker(array $config, bool $interactive = false): ConcurrencyWorker
-    {
-        $script = __DIR__.'/Fixtures/postgres_event_store_concurrency_worker.php';
-        $input = $interactive ? new InputStream() : null;
-        $process = new Process(
-            [PHP_BINARY, $script],
-            dirname(__DIR__, 3),
-            [
-                'ULTRA_WORKER_CONFIG' => base64_encode(json_encode($config, JSON_THROW_ON_ERROR)),
-            ],
-            $input,
-        );
-        $process->setTimeout(15);
-        $process->start();
+    private function spawnHoldThenCommitWorker(
+        Cluster $cluster,
+        string $dsn,
+        string $prefix,
+        string $implementation,
+        string $lockStrategy,
+        Event $event,
+        ?StreamQuery $appendQuery = null,
+    ): Worker {
+        $supportFile = __DIR__.'/Support/PostgresTestSupport.php';
 
-        return new ConcurrencyWorker($process, $input);
+        return $cluster->spawn(static function () use ($dsn, $prefix, $implementation, $lockStrategy, $event, $appendQuery, $supportFile): string {
+            require_once $supportFile;
+
+            $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
+            $store = \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
+
+            $appendConditions = [];
+            if ($appendQuery !== null) {
+                $appendConditions = [$store->load($appendQuery)->appendCondition()];
+            }
+
+            $connection->beginTransaction();
+            $store->append([$event], ...$appendConditions);
+
+            checkpoint('ready'); // frozen here — holds the DB lock / open transaction
+
+            $connection->commit();
+            $connection->close();
+
+            return 'ok';
+        });
     }
 
     /**
-     * @return array<string, mixed>
+     * Spawns a worker that pauses at checkpoint 'attempting' (so the master can
+     * verify the race setup before releasing), then appends $event. Returns 'ok' on
+     * success or 'concurrency_exception' if the store raises ConcurrencyException.
      */
-    private static function appendConditionToWorkerConfig(StreamQuery $query): array
-    {
-        return [
-            'query' => self::streamQueryToArray($query),
-        ];
-    }
+    private function spawnAppendOnceWorker(
+        Cluster $cluster,
+        string $dsn,
+        string $prefix,
+        string $implementation,
+        string $lockStrategy,
+        Event $event,
+        ?StreamQuery $appendQuery = null,
+        ?int $lockTimeoutMs = null,
+    ): Worker {
+        $supportFile = __DIR__.'/Support/PostgresTestSupport.php';
 
-    /**
-     * @return array{
-     *     branches: list<array{
-     *         domainIdentifiers: array<string, string>,
-     *         eventTypes: list<string>
-     *     }>
-     * }
-     */
-    private static function streamQueryToArray(StreamQuery $query): array
-    {
-        return [
-            'branches' => array_map(
-                static fn (StreamQueryBranch $branch): array => [
-                    'domainIdentifiers' => $branch->domainIdentifiers,
-                    'eventTypes' => $branch->eventTypes,
-                ],
-                $query->branches,
-            ),
-        ];
+        return $cluster->spawn(static function () use ($dsn, $prefix, $implementation, $lockStrategy, $event, $appendQuery, $lockTimeoutMs, $supportFile): string {
+            require_once $supportFile;
+
+            $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
+            $store = \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
+
+            if ($lockTimeoutMs !== null) {
+                $connection->executeStatement(sprintf("SET lock_timeout TO '%dms'", $lockTimeoutMs));
+            }
+
+            $appendConditions = [];
+            if ($appendQuery !== null) {
+                $appendConditions = [$store->load($appendQuery)->appendCondition()];
+            }
+
+            checkpoint('attempting'); // brief pause — master releases this immediately
+
+            try {
+                $store->append([$event], ...$appendConditions);
+                $connection->close();
+
+                return 'ok';
+            } catch (\Ultra\EventStore\Exception\ConcurrencyException) {
+                if ($connection->isTransactionActive()) {
+                    $connection->rollBack();
+                }
+                $connection->close();
+
+                return 'concurrency_exception';
+            }
+        });
     }
 }
