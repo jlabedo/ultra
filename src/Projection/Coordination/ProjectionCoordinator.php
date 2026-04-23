@@ -68,14 +68,17 @@ final readonly class ProjectionCoordinator
                         continue;
                     }
 
-                    $this->activityRepository->acknowledge(
-                        $projectionId,
-                        $bucketActivity->bucket,
-                        $bucketActivity->counter,
-                    );
+                    if ($result->caughtUp) {
+                        $this->activityRepository->acknowledge(
+                            $projectionId,
+                            $bucketActivity->bucket,
+                            $bucketActivity->counter,
+                        );
+
+                        ++$acknowledgedBuckets;
+                    }
 
                     $processedEvents += $result->processedEvents;
-                    ++$acknowledgedBuckets;
                     $progressed = true;
                 }
 

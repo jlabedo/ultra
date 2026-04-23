@@ -94,7 +94,12 @@ final readonly class ProjectionRunner
 
             $this->segmentRepository->completeSegment($segment, $result->checkpoint);
 
-            return new ProjectionRunResult(count($result->events), true, $segment);
+            return new ProjectionRunResult(
+                processedEvents: count($result->events),
+                claimedSegment: true,
+                segment: $segment,
+                caughtUp: count($result->events) < $limit,
+            );
         } catch (\Throwable $e) {
             $this->segmentRepository->abandonSegment($segment);
             throw $e;

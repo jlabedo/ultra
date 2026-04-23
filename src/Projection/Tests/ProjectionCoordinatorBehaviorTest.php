@@ -279,6 +279,49 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertSame($leftBucket, $remaining[0]->bucket);
     }
 
+    public function test_coordinator_keeps_bucket_activity_pending_until_the_segment_batch_catches_up(): void
+    {
+        $projection = new CoordinatorProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $catalog = new ProjectionCatalog($runtime);
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $activity = new InMemoryProjectionBucketActivityRepository();
+        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
+        $activator = new InMemoryProjectionActivator();
+        $runner = new ProjectionRunner($eventStore, $segments);
+        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
+        $bucket = BucketHasher::bucketFor('alpha');
+
+        $eventStore->append([
+            new Event(
+                eventType: 'coordinator.course.created',
+                payload: ['courseId' => 'alpha', 'name' => 'Math'],
+                domainIds: ['courseId' => 'alpha'],
+            ),
+            new Event(
+                eventType: 'coordinator.course.created',
+                payload: ['courseId' => 'alpha', 'name' => 'Advanced Math'],
+                domainIds: ['courseId' => 'alpha'],
+            ),
+        ]);
+        $activity->bump('coordinator_projection', $bucket);
+
+        $firstResult = $coordinator->run('coordinator-1', batchSize: 1, maxCycles: 1);
+
+        self::assertSame(1, $firstResult->processedEvents);
+        self::assertSame(0, $firstResult->acknowledgedBuckets);
+        self::assertCount(1, $activity->pendingBuckets('coordinator_projection'));
+        self::assertSame(['alpha' => 'Math'], $projection->names);
+
+        $secondResult = $coordinator->run('coordinator-1', batchSize: 1, maxCycles: 2);
+
+        self::assertSame(1, $secondResult->processedEvents);
+        self::assertSame(1, $secondResult->acknowledgedBuckets);
+        self::assertSame([], $activity->pendingBuckets('coordinator_projection'));
+        self::assertSame(['alpha' => 'Advanced Math'], $projection->names);
+    }
+
     public function test_coordinator_stops_after_the_first_empty_poll_instead_of_spinning_until_max_cycles(): void
     {
         $runtime = new ProjectionRuntime(new CoordinatorProjection(), new UltraNormalizer());
