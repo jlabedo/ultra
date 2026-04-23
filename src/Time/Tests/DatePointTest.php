@@ -29,7 +29,7 @@ final class DatePointTest extends TestCase
     {
         $datePoint = new DatePoint('2026-04-22 00:00:00.100000', new \DateTimeZone('UTC'));
 
-        $result = $datePoint->subtract(Duration::milliseconds(250));
+        $result = $datePoint->sub(Duration::milliseconds(250));
 
         self::assertInstanceOf(DatePoint::class, $result);
         self::assertSame('2026-04-21 23:59:59.850000', $result->format('Y-m-d H:i:s.u'));

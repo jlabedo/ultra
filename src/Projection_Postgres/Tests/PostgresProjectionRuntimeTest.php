@@ -15,6 +15,7 @@ use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
+use Ultra\Time\Duration;
 
 #[EventAttribute('course.created')]
 final readonly class CourseCreated
@@ -177,6 +178,8 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
     public function test_expired_lease_is_recovered_so_another_worker_can_claim_the_segment(): void
     {
+        $clock = $this->staticClock('2024-01-01T00:00:00+00:00');
+
         $this->withPostgresProjectionRuntime(function (
             Connection $connection,
             EventStore $store,
@@ -184,14 +187,11 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             ProjectionRunner $runner,
             string $eventStorePrefix,
             string $projectionPrefix,
-        ): void {
+        ) use ($clock): void {
             $segmentRepository->ensureInitialized('course_names');
 
-            $segmentRepository->claimSegment('course_names', 'worker-stale', leaseDurationSeconds: 0);
-
-            $connection->executeStatement(
-                "UPDATE {$projectionPrefix}segments SET lease_expires_at = now() - interval '1 second' WHERE projection_id = 'course_names'",
-            );
+            $segmentRepository->claimSegment('course_names', 'worker-stale', leaseDurationSeconds: Duration::seconds(30));
+            $clock->advance(Duration::seconds(31));
 
             $recovered = $segmentRepository->recoverExpiredLeases('course_names');
 
@@ -201,7 +201,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
             self::assertNotNull($segment);
             self::assertSame('active', $segment->status);
-        });
+        }, $clock);
     }
 
     public function test_segment_split_divides_the_range_into_two_equal_halves(): void
@@ -231,6 +231,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
             $runner->runOnce($runtime, 'worker-1');
             $segmentRepository->splitSegment('course_names', 0);
+            $segmentRepository->reconcilePendingOperations('course_names');
 
             $segments = $segmentRepository->listSegments('course_names');
 
@@ -271,6 +272,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
             $runner->runOnce($runtime, 'worker-1');
             $segmentRepository->splitSegment('course_names', 0);
+            $segmentRepository->reconcilePendingOperations('course_names');
             $segmentRepository->requestMerge('course_names', 0, 255);
 
             $segments = $segmentRepository->listSegments('course_names');
@@ -278,15 +280,11 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             self::assertCount(2, $segments);
 
             foreach ($segments as $segment) {
-                self::assertSame('draining', $segment['status']);
+                self::assertSame('drained', $segment['status']);
                 self::assertSame('merge', $segment['pendingOperation']);
             }
 
-            $state0 = $segmentRepository->readCurrentState('course_names', 0);
-            $state128 = $segmentRepository->readCurrentState('course_names', 128);
-
-            $segmentRepository->finalizeMerge($state0, $state0->checkpoint);
-            $segmentRepository->finalizeMerge($state128, $state128->checkpoint);
+            $segmentRepository->reconcilePendingOperations('course_names');
 
             $segments = $segmentRepository->listSegments('course_names');
 
@@ -297,7 +295,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
         });
     }
 
-    public function test_draining_split_is_finalized_by_the_worker_on_its_next_iteration(): void
+    public function test_draining_split_is_left_for_reconciliation_after_the_worker_finishes(): void
     {
         $this->withPostgresProjectionRuntime(function (
             Connection $connection,
@@ -324,6 +322,14 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
             $runner->runOnce($runtime, 'worker-1');
             $segmentRepository->splitSegment('course_names', 0);
+
+            $segments = $segmentRepository->listSegments('course_names');
+
+            self::assertCount(1, $segments);
+            self::assertSame('drained', $segments[0]['status']);
+            self::assertSame('split', $segments[0]['pendingOperation']);
+
+            $segmentRepository->reconcilePendingOperations('course_names');
 
             $segments = $segmentRepository->listSegments('course_names');
 

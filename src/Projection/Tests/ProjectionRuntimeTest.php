@@ -7,25 +7,24 @@ namespace Ultra\Projection\Tests;
 use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\InMemoryEventStore;
-use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Coordination\DefaultProjectionScalingPolicy;
-use Ultra\Projection\Coordination\InMemoryProjectionBucketActivityRepository;
-use Ultra\Projection\Coordination\InMemoryProjectionCoordinatorLeaseRepository;
-use Ultra\Projection\Coordination\InMemoryProjectionWakeQueue;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
 use Ultra\Projection\Coordination\ProjectionBucketActivity;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
-use Ultra\Projection\Coordination\WakeProjectionCoordinator;
-use Ultra\Projection\InMemoryProjectionSegmentRepository;
+use Ultra\Projection\InMemory\InMemoryProjectionActivator;
+use Ultra\Projection\InMemory\InMemoryProjectionBucketActivityRepository;
+use Ultra\Projection\InMemory\InMemoryProjectionCoordinatorLeaseRepository;
+use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionDefinition;
-use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionRuntime;
 
 #[EventAttribute('course.created')]
 final readonly class RuntimeCourseCreated
@@ -70,8 +69,8 @@ final class ProjectionRuntimeTest extends TestCase
         $catalog = new ProjectionCatalog($runtime);
         $activity = new InMemoryProjectionBucketActivityRepository();
         $leases = new InMemoryProjectionCoordinatorLeaseRepository();
-        $queue = new InMemoryProjectionWakeQueue();
-        $recorder = new ProjectionActivityRecorder($catalog, $activity, $leases, $queue);
+        $activator = new InMemoryProjectionActivator();
+        $recorder = new ProjectionActivityRecorder($catalog, $activity, $leases, $activator);
 
         $recorder->record([
             new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['courseId' => 'course-1']),
@@ -82,8 +81,8 @@ final class ProjectionRuntimeTest extends TestCase
 
         self::assertCount(1, $pending);
         self::assertSame(1, $pending[0]->counter);
-        self::assertInstanceOf(WakeProjectionCoordinator::class, $queue->dequeue());
-        self::assertNull($queue->dequeue());
+        self::assertSame(1, $activator->workSignals());
+        self::assertSame([], $activator->workerRequests());
     }
 
     public function test_activity_recorder_ignores_events_missing_the_partition_dimension(): void
@@ -91,8 +90,8 @@ final class ProjectionRuntimeTest extends TestCase
         $runtime = new ProjectionRuntime(new RuntimeProjection(), new UltraNormalizer());
         $activity = new InMemoryProjectionBucketActivityRepository();
         $leases = new InMemoryProjectionCoordinatorLeaseRepository();
-        $queue = new InMemoryProjectionWakeQueue();
-        $recorder = new ProjectionActivityRecorder(new ProjectionCatalog($runtime), $activity, $leases, $queue);
+        $activator = new InMemoryProjectionActivator();
+        $recorder = new ProjectionActivityRecorder(new ProjectionCatalog($runtime), $activity, $leases, $activator);
 
         $recorder->record([
             new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['studentId' => 'student-1']),
@@ -100,7 +99,7 @@ final class ProjectionRuntimeTest extends TestCase
         ]);
 
         self::assertSame([], $activity->pendingBuckets('runtime_projection'));
-        self::assertNull($queue->dequeue());
+        self::assertSame(0, $activator->workSignals());
     }
 
     public function test_activity_recorder_continues_past_unhandled_and_unpartitioned_events_to_record_later_matches(): void
@@ -109,12 +108,12 @@ final class ProjectionRuntimeTest extends TestCase
         $secondaryRuntime = new ProjectionRuntime(new SecondaryRuntimeProjection(), new UltraNormalizer());
         $activity = new InMemoryProjectionBucketActivityRepository();
         $leases = new InMemoryProjectionCoordinatorLeaseRepository();
-        $queue = new InMemoryProjectionWakeQueue();
+        $activator = new InMemoryProjectionActivator();
         $recorder = new ProjectionActivityRecorder(
             new ProjectionCatalog($runtime, $secondaryRuntime),
             $activity,
             $leases,
-            $queue,
+            $activator,
         );
 
         $recorder->record([
@@ -130,9 +129,7 @@ final class ProjectionRuntimeTest extends TestCase
         self::assertSame(1, $primaryPending[0]->counter);
         self::assertCount(1, $secondaryPending);
         self::assertSame(1, $secondaryPending[0]->counter);
-        self::assertInstanceOf(WakeProjectionCoordinator::class, $queue->dequeue());
-        self::assertInstanceOf(WakeProjectionCoordinator::class, $queue->dequeue());
-        self::assertNull($queue->dequeue());
+        self::assertSame(1, $activator->workSignals());
     }
 
     public function test_coordinator_catches_up_a_stale_projection_and_acknowledges_processed_buckets(): void
@@ -144,15 +141,15 @@ final class ProjectionRuntimeTest extends TestCase
         $segments = new InMemoryProjectionSegmentRepository();
         $activity = new InMemoryProjectionBucketActivityRepository();
         $leases = new InMemoryProjectionCoordinatorLeaseRepository();
-        $queue = new InMemoryProjectionWakeQueue();
-        $recorder = new ProjectionActivityRecorder($catalog, $activity, $leases, $queue);
+        $activator = new InMemoryProjectionActivator();
+        $recorder = new ProjectionActivityRecorder($catalog, $activity, $leases, $activator);
         $runner = new ProjectionRunner($eventStore, $segments);
         $coordinator = new ProjectionCoordinator(
             $catalog,
             $runner,
             $activity,
             $leases,
-            $queue,
+            $activator,
             new DefaultProjectionScalingPolicy(),
         );
 
@@ -164,9 +161,7 @@ final class ProjectionRuntimeTest extends TestCase
         $eventStore->append($events);
         $recorder->record($events);
 
-        self::assertInstanceOf(WakeProjectionCoordinator::class, $queue->dequeue());
-
-        $result = $coordinator->run('runtime_projection', 'coordinator-1');
+        $result = $coordinator->run('coordinator-1');
 
         self::assertTrue($result->acquiredLease);
         self::assertSame(2, $result->processedEvents);
@@ -175,6 +170,39 @@ final class ProjectionRuntimeTest extends TestCase
             'course-2' => 'Physics',
         ], $projection->names);
         self::assertSame([], $activity->pendingBuckets('runtime_projection'));
+    }
+
+    public function test_global_coordinator_can_catch_up_multiple_projections_in_one_run(): void
+    {
+        $primaryProjection = new RuntimeProjection();
+        $primaryRuntime = new ProjectionRuntime($primaryProjection, new UltraNormalizer());
+        $secondaryProjection = new SecondaryRuntimeProjection();
+        $secondaryRuntime = new ProjectionRuntime($secondaryProjection, new UltraNormalizer());
+        $catalog = new ProjectionCatalog($primaryRuntime, $secondaryRuntime);
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $activity = new InMemoryProjectionBucketActivityRepository();
+        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
+        $activator = new InMemoryProjectionActivator();
+        $recorder = new ProjectionActivityRecorder($catalog, $activity, $leases, $activator);
+        $runner = new ProjectionRunner($eventStore, $segments);
+        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
+
+        $events = [
+            new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['courseId' => 'course-1']),
+        ];
+
+        $eventStore->append($events);
+        $recorder->record($events);
+
+        $result = $coordinator->run('coordinator-1');
+
+        self::assertTrue($result->acquiredLease);
+        self::assertSame(2, $result->processedEvents);
+        self::assertSame(2, $result->acknowledgedBuckets);
+        self::assertSame(['course-1' => 'Math'], $primaryProjection->names);
+        self::assertSame([], $activity->pendingBuckets('runtime_projection'));
+        self::assertSame([], $activity->pendingBuckets('secondary_runtime_projection'));
     }
 
     public function test_projection_catalog_tracks_constructor_and_added_runtimes(): void
@@ -229,8 +257,7 @@ final class ProjectionRuntimeTest extends TestCase
     {
         $policy = new DefaultProjectionScalingPolicy();
 
-        self::assertSame(0, $policy->additionalWorkerWakeups(
-            ProjectionDefinition::fromClass(RuntimeProjection::class),
+        self::assertSame(0, $policy->additionalWorkersRequested(
             [new ProjectionBucketActivity('runtime_projection', 12, 3, 1)],
         ));
     }

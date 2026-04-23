@@ -6,6 +6,7 @@ namespace Ultra\Projection\Coordination;
 
 use Ultra\EventStore\Event;
 use Ultra\Projection\ProjectionCatalog;
+use Ultra\Time\Duration;
 
 final readonly class ProjectionActivityRecorder
 {
@@ -13,8 +14,8 @@ final readonly class ProjectionActivityRecorder
         private ProjectionCatalog $catalog,
         private ProjectionBucketActivityRepositoryInterface $activityRepository,
         private ProjectionCoordinatorLeaseRepositoryInterface $leaseRepository,
-        private ProjectionWakeQueueInterface $wakeQueue,
-        private int $wakeDebounceSeconds = 30,
+        private ProjectionActivatorInterface $activator,
+        private Duration $wakeDebounceSeconds = new Duration(seconds: 30)
     ) {}
 
     /** @param list<Event> $events */
@@ -37,14 +38,17 @@ final readonly class ProjectionActivityRecorder
             }
         }
 
+        $recordedAnyBucket = false;
+
         foreach ($touchedBuckets as $projectionId => $buckets) {
             foreach (array_keys($buckets) as $bucket) {
                 $this->activityRepository->bump($projectionId, (int) $bucket);
+                $recordedAnyBucket = true;
             }
+        }
 
-            if ($this->leaseRepository->markWakeEnqueued($projectionId, $this->wakeDebounceSeconds)) {
-                $this->wakeQueue->enqueue(new WakeProjectionCoordinator($projectionId));
-            }
+        if ($recordedAnyBucket && $this->leaseRepository->markWakeEnqueued($this->wakeDebounceSeconds)) {
+            $this->activator->signalWorkAvailable();
         }
     }
 }

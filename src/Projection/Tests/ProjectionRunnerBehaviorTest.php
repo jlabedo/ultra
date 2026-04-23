@@ -8,6 +8,7 @@ use Closure;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use RuntimeException;
+use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
@@ -15,12 +16,11 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
-use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
-use Ultra\Projection\InMemoryProjectionSegmentRepository;
+use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
 
@@ -195,6 +195,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
 
         $segments->ensureInitialized('tracking_projection');
         $segments->splitSegment('tracking_projection', 0);
+        $segments->reconcilePendingOperations('tracking_projection');
 
         $eventStore->append([
             self::courseCreatedEvent('course-2', 'Physics'),
@@ -218,6 +219,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
 
         $segments->ensureInitialized('tracking_projection');
         $segments->splitSegment('tracking_projection', 0);
+        $segments->reconcilePendingOperations('tracking_projection');
         $segments->claimSegmentForBucket('tracking_projection', BucketHasher::bucketFor('course-1'), 'other-worker');
 
         $result = $runner->runBucketOnceResult($runtime, BucketHasher::bucketFor('course-1'), 'worker-1');
@@ -228,7 +230,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame([], $projection->names);
     }
 
-    public function test_run_once_finalizes_a_deferred_split_when_the_segment_is_marked_during_processing(): void
+    public function test_run_once_leaves_a_deferred_split_for_reconciliation_when_the_segment_is_marked_during_processing(): void
     {
         $projection = new TrackingProjection();
         $segments = new InMemoryProjectionSegmentRepository();
@@ -249,6 +251,15 @@ final class ProjectionRunnerBehaviorTest extends TestCase
 
         self::assertTrue($result->claimedSegment);
         self::assertSame(['course-1' => 'Math'], $projection->names);
+
+        $drained = $segments->readCurrentState('tracking_projection', 0);
+
+        self::assertSame('drained', $drained->status);
+        self::assertSame('split', $drained->pendingOperation);
+        self::assertSame(1, $drained->checkpoint->gapFloor->value);
+
+        $segments->reconcilePendingOperations('tracking_projection');
+
         self::assertSame(1, $segments->readCurrentState('tracking_projection', 0)->checkpoint->gapFloor->value);
         self::assertSame(1, $segments->readCurrentState('tracking_projection', 128)->checkpoint->gapFloor->value);
     }

@@ -10,6 +10,6 @@ final readonly class ProjectionCoordinatorResult
         public bool $acquiredLease,
         public int $processedEvents,
         public int $acknowledgedBuckets,
-        public int $queuedWorkerWakeups,
+        public int $requestedWorkerActivations,
     ) {}
 }

@@ -12,7 +12,9 @@
     "require": {
         "php": ">=8.4",
         "doctrine/dbal": "^4.0",
-        "ultra/projection": "self.version"
+        "psr/clock": "^1.0",
+        "ultra/projection": "self.version",
+        "ultra/time": "self.version"
     },
     "autoload": {
         "psr-4": {

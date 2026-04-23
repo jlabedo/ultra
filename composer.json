@@ -12,6 +12,7 @@
     "require": {
         "php": ">=8.5",
         "laminas/laminas-code": "^4.5",
+        "psr/clock": "^1.0",
         "psr/container": "^2.0",
         "symfony/dependency-injection": "7.*|8.*",
         "symfony/type-info": "7.*|8.*"

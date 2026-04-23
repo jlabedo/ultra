@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection\Coordination;
+namespace Ultra\Projection\InMemory;
+
+use Ultra\Projection\Coordination\ProjectionBucketActivity;
+use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
 
 final class InMemoryProjectionBucketActivityRepository implements ProjectionBucketActivityRepositoryInterface
 {
@@ -14,6 +17,25 @@ final class InMemoryProjectionBucketActivityRepository implements ProjectionBuck
         $row = $this->rows[$projectionId][$bucket] ?? ['counter' => 0, 'acknowledgedCounter' => 0];
         ++$row['counter'];
         $this->rows[$projectionId][$bucket] = $row;
+    }
+
+    public function affectedBuckets(int $limit = 256): array
+    {
+        $affected = [];
+
+        foreach (array_keys($this->rows) as $projectionId) {
+            array_push($affected, ...$this->pendingBuckets($projectionId, $limit));
+        }
+
+        usort(
+            $affected,
+            static fn(ProjectionBucketActivity $a, ProjectionBucketActivity $b): int =>
+                ($a->projectionId <=> $b->projectionId)
+                ?: ($b->counter <=> $a->counter)
+                ?: ($a->bucket <=> $b->bucket),
+        );
+
+        return array_slice($affected, 0, $limit);
     }
 
     public function pendingBuckets(string $projectionId, int $limit = 32): array
