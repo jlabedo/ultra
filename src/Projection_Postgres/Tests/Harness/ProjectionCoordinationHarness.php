@@ -21,14 +21,16 @@ use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
+use Ultra\MappedTable\MappedTable;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
+use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
-use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
@@ -53,10 +55,14 @@ final readonly class HarnessCourseCreated
 #[Projection(name: ProjectionCoordinationHarness::PROJECTION_ID, partitionBy: 'courseId')]
 final readonly class HarnessCourseNamesProjection
 {
+    private MappedTable $table;
+
     public function __construct(
         private Connection $connection,
         private string $tableName,
-    ) {}
+    ) {
+        $this->table = new MappedTable(new PostgresMappedTableAdapter($this->connection),$this->tableName, 'course_id');
+    }
 
     #[ProjectionInitializer]
     public function initialize(): void
@@ -73,15 +79,16 @@ final readonly class HarnessCourseNamesProjection
     #[ProjectionHandler]
     public function onCourseCreated(HarnessCourseCreated $event): void
     {
-        $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (course_id, name) VALUES (?, ?)
-                 ON CONFLICT (course_id) DO UPDATE SET name = EXCLUDED.name',
-                $this->tableName,
-            ),
-            [$event->courseId, $event->name],
-            [ParameterType::STRING, ParameterType::STRING],
-        );
+        $this->table->withId($event->courseId)
+            ->upsert()
+            ->setColumn('name', $event->name);
+    }
+
+    #[ProjectionFlush]
+    public function flush(): void
+    {
+        $this->table->flush();
+        $this->table->clear();
     }
 }
 
