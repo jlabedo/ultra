@@ -21,7 +21,9 @@ final class Kernel extends BaseKernel
     public function registerBundles(): iterable
     {
         yield new FrameworkBundle();
+
         yield new EventsBundle();
+
         yield new MessageHandlingBundle();
     }
 
@@ -37,9 +39,9 @@ final class Kernel extends BaseKernel
             ->autowire()
             ->autoconfigure()
         ;
-        $services->load(__NAMESPACE__ . '\\', __DIR__ . '/');
+        $services->load(__NAMESPACE__.'\\', __DIR__.'/');
 
-        $services->load(__NAMESPACE__ . '\Infrastructure\\', __DIR__ . '/Infrastructure/')
+        $services->load(__NAMESPACE__.'\Infrastructure\\', __DIR__.'/Infrastructure/')
             ->public()
         ;
 

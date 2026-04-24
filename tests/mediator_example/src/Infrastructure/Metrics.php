@@ -11,11 +11,11 @@ final class Metrics
 
     public function recordSuccess(): void
     {
-        $this->success++;
+        ++$this->success;
     }
 
     public function recordFailure(): void
     {
-        $this->failure++;
+        ++$this->failure;
     }
 }

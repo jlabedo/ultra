@@ -10,6 +10,5 @@ final readonly class PlaceOrder
         public string $orderId,
         public int $amount,
         public string $userId,
-    ) {
-    }
+    ) {}
 }

@@ -10,6 +10,6 @@ final class CleanupTracker
 
     public function cleanup(): void
     {
-        $this->calls++;
+        ++$this->calls;
     }
 }

@@ -13,12 +13,11 @@ use Ultra\MessageHandling\MessageContext;
 
 final class CleanupAspect
 {
-    public function __construct(private readonly CleanupTracker $cleanup)
-    {
-    }
+    public function __construct(private readonly CleanupTracker $cleanup) {}
 
     #[After(static function (HandlerMatchContext $ctx): ?MatchResult {
         $method = $ctx->method();
+
         return [] !== $method->getAttributes(Handles::class)
             ? MatchResult::apply()
             : null;

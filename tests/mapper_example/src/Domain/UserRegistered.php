@@ -9,6 +9,5 @@ final class UserRegistered
     public function __construct(
         public RuntimeEmail $email,
         public string $name,
-    ) {
-    }
+    ) {}
 }

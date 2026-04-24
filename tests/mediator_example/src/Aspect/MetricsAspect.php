@@ -14,12 +14,11 @@ use Ultra\MessageHandling\MessageContext;
 
 final class MetricsAspect
 {
-    public function __construct(private readonly Metrics $metrics)
-    {
-    }
+    public function __construct(private readonly Metrics $metrics) {}
 
     #[AfterReturning(static function (HandlerMatchContext $ctx): ?MatchResult {
         $method = $ctx->method();
+
         return [] !== $method->getAttributes(Handles::class)
             ? MatchResult::apply()
             : null;
@@ -31,6 +30,7 @@ final class MetricsAspect
 
     #[AfterThrowing(static function (HandlerMatchContext $ctx): ?MatchResult {
         $method = $ctx->method();
+
         return [] !== $method->getAttributes(Handles::class)
             ? MatchResult::apply()
             : null;

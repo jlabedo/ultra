@@ -6,27 +6,18 @@ namespace Ultra\Mapper_Example\Tests;
 
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\Mapper_Bundle\Cache\MapperCacheWarmer;
 use Ultra\Mapper_Example\Domain\RuntimeEmail;
 use Ultra\Mapper_Example\Domain\RuntimeEmailNormalizer;
 use Ultra\Mapper_Example\Domain\UserRegistered;
 use Ultra\Mapper_Example\Kernel;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class MapperBundleTest extends KernelTestCase
 {
-    protected static function getKernelClass(): string
-    {
-        return Kernel::class;
-    }
-
-    protected static function createKernel(array $options = []): Kernel
-    {
-        return new Kernel(
-            $options['environment'] ?? 'test',
-            $options['debug'] ?? true,
-        );
-    }
-
     protected function tearDown(): void
     {
         parent::tearDown();
@@ -34,12 +25,12 @@ final class MapperBundleTest extends KernelTestCase
         restore_exception_handler();
     }
 
-    public function testCacheWarmupUsesRuntimeNormalizers(): void
+    public function test_cache_warmup_uses_runtime_normalizers(): void
     {
         self::bootKernel();
 
-        $cacheDir = self::$kernel->getBuildDir() . '/mapper';
-        $cacheFile = $cacheDir . '/__Normalizer_Ultra_Mapper_Example_Domain_UserRegistered.php';
+        $cacheDir = self::$kernel->getBuildDir().'/mapper';
+        $cacheFile = $cacheDir.'/__Normalizer_Ultra_Mapper_Example_Domain_UserRegistered.php';
         $this->assertFileExists($cacheFile);
 
         $normalizer = new UltraNormalizer($cacheDir);
@@ -55,5 +46,18 @@ final class MapperBundleTest extends KernelTestCase
         $this->assertInstanceOf(UserRegistered::class, $rehydrated);
         $this->assertSame('user@example.test', $rehydrated->email->value());
         $this->assertSame('User', $rehydrated->name);
+    }
+
+    protected static function getKernelClass(): string
+    {
+        return Kernel::class;
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new Kernel(
+            $options['environment'] ?? 'test',
+            $options['debug'] ?? true,
+        );
     }
 }

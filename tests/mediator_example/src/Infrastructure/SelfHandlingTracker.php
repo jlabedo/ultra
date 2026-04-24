@@ -13,7 +13,7 @@ final class SelfHandlingTracker
 
     public function record(string $payload): void
     {
-        $this->calls++;
+        ++$this->calls;
         $this->payloads[] = $payload;
     }
 }

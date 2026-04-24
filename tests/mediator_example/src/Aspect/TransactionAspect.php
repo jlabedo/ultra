@@ -18,6 +18,7 @@ final class TransactionAspect
 
     #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
         $method = $ctx->method();
+
         return [] !== $method->getAttributes(Handles::class)
             ? MatchResult::apply()
             : null;
@@ -25,12 +26,15 @@ final class TransactionAspect
     public function wrap(callable $proceed, object $message, MessageContext $context): ProceedResult
     {
         $this->tx->begin();
+
         try {
             $result = $proceed();
             $this->tx->commit();
+
             return $result;
         } catch (\Throwable $e) {
             $this->tx->rollback();
+
             throw $e;
         }
     }

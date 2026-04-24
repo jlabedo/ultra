@@ -19,21 +19,13 @@ use Ultra\Mediator_Example\OrderProcessing\Kernel;
 use Ultra\Mediator_Example\OrderProcessing\Message\SelfHandledPing;
 use Ultra\MessageHandling\MediatorInterface;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class OrderProcessingTest extends KernelTestCase
 {
-    protected static function getKernelClass(): string
-    {
-        return Kernel::class;
-    }
-
-    protected static function createKernel(array $options = []): Kernel
-    {
-        return new Kernel(
-            $options['environment'] ?? 'test',
-            $options['debug'] ?? true,
-        );
-    }
-
     protected function tearDown(): void
     {
         parent::tearDown();
@@ -41,7 +33,7 @@ final class OrderProcessingTest extends KernelTestCase
         restore_exception_handler();
     }
 
-    public function testOrderProcessingSucceedsAndAppliesAspects(): void
+    public function test_order_processing_succeeds_and_applies_aspects(): void
     {
         self::bootKernel();
         $container = self::$kernel->getContainer();
@@ -90,7 +82,7 @@ final class OrderProcessingTest extends KernelTestCase
         $this->assertSame('t-1', $audit->entries[0]['context']['traceId']);
     }
 
-    public function testOrderProcessingFailureRollsBackAndRecordsMetrics(): void
+    public function test_order_processing_failure_rolls_back_and_records_metrics(): void
     {
         self::bootKernel();
         $container = self::$kernel->getContainer();
@@ -135,7 +127,7 @@ final class OrderProcessingTest extends KernelTestCase
         $this->assertSame(PlaceOrder::class, $audit->entries[0]['message']);
     }
 
-    public function testSelfHandlingMessageDispatchesThroughMediator(): void
+    public function test_self_handling_message_dispatches_through_mediator(): void
     {
         self::bootKernel(['debug' => true]);
         $container = self::$kernel->getContainer();
@@ -152,5 +144,18 @@ final class OrderProcessingTest extends KernelTestCase
         $this->assertSame('PING', $result);
         $this->assertSame(1, $tracker->calls);
         $this->assertSame(['ping'], $tracker->payloads);
+    }
+
+    protected static function getKernelClass(): string
+    {
+        return Kernel::class;
+    }
+
+    protected static function createKernel(array $options = []): Kernel
+    {
+        return new Kernel(
+            $options['environment'] ?? 'test',
+            $options['debug'] ?? true,
+        );
     }
 }

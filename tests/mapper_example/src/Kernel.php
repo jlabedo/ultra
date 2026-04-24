@@ -19,6 +19,7 @@ final class Kernel extends BaseKernel
     public function registerBundles(): iterable
     {
         yield new FrameworkBundle();
+
         yield new MapperBundle();
     }
 
@@ -33,19 +34,22 @@ final class Kernel extends BaseKernel
 
         $services->defaults()
             ->autowire()
-            ->autoconfigure();
+            ->autoconfigure()
+        ;
 
-        $services->load(__NAMESPACE__ . '\\', __DIR__ . '/')
+        $services->load(__NAMESPACE__.'\\', __DIR__.'/')
             ->exclude([
-                __DIR__ . '/Kernel.php',
-                __DIR__ . '/Domain/RuntimeEmail.php',
-                __DIR__ . '/Domain/UserRegistered.php',
-            ]);
+                __DIR__.'/Kernel.php',
+                __DIR__.'/Domain/RuntimeEmail.php',
+                __DIR__.'/Domain/UserRegistered.php',
+            ])
+        ;
 
         $services->set(UserRegistered::class)
             ->autowire(false)
             ->autoconfigure(false)
             ->tag(TagNames::NORMALIZABLE)
-            ->tag('container.excluded');
+            ->tag('container.excluded')
+        ;
     }
 }
