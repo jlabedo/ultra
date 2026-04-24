@@ -36,41 +36,207 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
 
     public function apply(string $tableName, string $idColumn, array $rowUpdates): void
     {
-        foreach ($rowUpdates as $rowUpdate) {
-            switch ($rowUpdate->mode) {
+        foreach ($this->groupConsecutive($rowUpdates) as $batch) {
+            $mode = $batch[0]->mode;
+            $count = count($batch);
+
+            switch ($mode) {
                 case RowUpdatePlan::MODE_DELETE:
-                    $this->flushDelete($tableName, $idColumn, $rowUpdate);
+                    $count > 1
+                        ? $this->flushBatchDelete($tableName, $idColumn, $batch)
+                        : $this->flushDelete($tableName, $idColumn, $batch[0]);
 
                     break;
 
                 case RowUpdatePlan::MODE_INSERT:
-                    $this->flushInsert($tableName, $idColumn, $rowUpdate);
+                    $count > 1
+                        ? $this->flushBatchInsert($tableName, $idColumn, $batch)
+                        : $this->flushInsert($tableName, $idColumn, $batch[0]);
 
                     break;
 
                 case RowUpdatePlan::MODE_REPLACE:
-                    $this->flushReplace($tableName, $idColumn, $rowUpdate);
+                    $count > 1
+                        ? $this->flushBatchReplace($tableName, $idColumn, $batch)
+                        : $this->flushReplace($tableName, $idColumn, $batch[0]);
 
                     break;
 
                 case RowUpdatePlan::MODE_UPSERT:
-                    $this->flushUpsert($tableName, $idColumn, $rowUpdate);
+                    $count > 1
+                        ? $this->flushBatchUpsert($tableName, $idColumn, $batch)
+                        : $this->flushUpsert($tableName, $idColumn, $batch[0]);
 
                     break;
 
                 case RowUpdatePlan::MODE_UPDATE:
-                    $this->flushUpdate($tableName, $idColumn, $rowUpdate);
+                    $this->flushUpdate($tableName, $idColumn, $batch[0]);
 
                     break;
 
                 default:
                     throw new \LogicException(sprintf(
                         'Unsupported row update mode "%s" for table "%s".',
-                        $rowUpdate->mode,
+                        $mode,
                         $tableName,
                     ));
             }
         }
+    }
+
+    /** @return list<list<RowUpdatePlan>> */
+    private function groupConsecutive(array $rowUpdates): array
+    {
+        $groups = [];
+        $currentKey = null;
+        $currentGroup = [];
+
+        foreach ($rowUpdates as $update) {
+            $key = $this->batchKey($update);
+            if ($key !== $currentKey) {
+                if ($currentGroup !== []) {
+                    $groups[] = $currentGroup;
+                }
+                $currentKey = $key;
+                $currentGroup = [];
+            }
+            $currentGroup[] = $update;
+        }
+
+        if ($currentGroup !== []) {
+            $groups[] = $currentGroup;
+        }
+
+        return $groups;
+    }
+
+    private function batchKey(RowUpdatePlan $update): string
+    {
+        return match ($update->mode) {
+            RowUpdatePlan::MODE_INSERT => 'insert:' . implode(',', array_keys($update->setColumns)),
+            RowUpdatePlan::MODE_UPSERT => 'upsert:' . implode(',', array_keys($update->setColumns)),
+            RowUpdatePlan::MODE_DELETE => $update->expectedColumns === []
+                ? 'delete'
+                : 'delete:' . (string) $update->id,
+            RowUpdatePlan::MODE_REPLACE => $update->expectedColumns === []
+                ? 'replace:' . implode(',', array_keys($update->setColumns))
+                : 'replace:' . (string) $update->id,
+            default => $update->mode . ':' . (string) $update->id,
+        };
+    }
+
+    private function flushBatchDelete(string $tableName, string $idColumn, array $updates): void
+    {
+        $ids = array_map(static fn($u) => $u->id, $updates);
+
+        $affectedRows = $this->connection->executeStatement(
+            sprintf(
+                'DELETE FROM %s WHERE %s IN (%s)',
+                $this->connection->quoteSingleIdentifier($tableName),
+                $this->connection->quoteSingleIdentifier($idColumn),
+                implode(', ', array_fill(0, count($ids), '?')),
+            ),
+            $ids,
+        );
+
+        if ($affectedRows !== count($updates)) {
+            throw new ConcurrencyException(sprintf(
+                'Batch delete failed for table "%s": expected %d deletions, got %d.',
+                $tableName,
+                count($updates),
+                $affectedRows,
+            ));
+        }
+    }
+
+    private function flushBatchInsert(string $tableName, string $idColumn, array $updates): void
+    {
+        $columns = [$idColumn, ...array_keys($updates[0]->setColumns)];
+        $quotedColumns = array_map($this->connection->quoteSingleIdentifier(...), $columns);
+        $rowPlaceholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
+
+        $params = [];
+        foreach ($updates as $update) {
+            $params[] = $update->id;
+            foreach ($update->setColumns as $value) {
+                $params[] = $value;
+            }
+        }
+
+        $affectedRows = $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO NOTHING',
+                $this->connection->quoteSingleIdentifier($tableName),
+                implode(', ', $quotedColumns),
+                implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
+                $this->connection->quoteSingleIdentifier($idColumn),
+            ),
+            $params,
+        );
+
+        if ($affectedRows !== count($updates)) {
+            throw new ConcurrencyException(sprintf(
+                'Batch insert failed for table "%s": %d of %d rows already existed.',
+                $tableName,
+                count($updates) - $affectedRows,
+                count($updates),
+            ));
+        }
+    }
+
+    private function flushBatchReplace(string $tableName, string $idColumn, array $updates): void
+    {
+        $this->flushBatchDelete($tableName, $idColumn, $updates);
+        $this->flushBatchInsert($tableName, $idColumn, $updates);
+    }
+
+    private function flushBatchUpsert(string $tableName, string $idColumn, array $updates): void
+    {
+        $columns = [$idColumn, ...array_keys($updates[0]->setColumns)];
+        $quotedColumns = array_map($this->connection->quoteSingleIdentifier(...), $columns);
+        $rowPlaceholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
+        $allPlaceholders = implode(', ', array_fill(0, count($updates), $rowPlaceholder));
+
+        $params = [];
+        foreach ($updates as $update) {
+            $params[] = $update->id;
+            foreach ($update->setColumns as $value) {
+                $params[] = $value;
+            }
+        }
+
+        if ([] === $updates[0]->setColumns) {
+            $this->connection->executeStatement(
+                sprintf(
+                    'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO NOTHING',
+                    $this->connection->quoteSingleIdentifier($tableName),
+                    implode(', ', $quotedColumns),
+                    $allPlaceholders,
+                    $this->connection->quoteSingleIdentifier($idColumn),
+                ),
+                $params,
+            );
+
+            return;
+        }
+
+        $assignments = [];
+        foreach (array_slice($columns, 1) as $column) {
+            $quotedColumn = $this->connection->quoteSingleIdentifier($column);
+            $assignments[] = sprintf('%1$s = EXCLUDED.%1$s', $quotedColumn);
+        }
+
+        $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO UPDATE SET %s',
+                $this->connection->quoteSingleIdentifier($tableName),
+                implode(', ', $quotedColumns),
+                $allPlaceholders,
+                $this->connection->quoteSingleIdentifier($idColumn),
+                implode(', ', $assignments),
+            ),
+            $params,
+        );
     }
 
     private function flushDelete(string $tableName, string $idColumn, RowUpdatePlan $update): void
