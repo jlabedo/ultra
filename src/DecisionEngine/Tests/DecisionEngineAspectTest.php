@@ -25,7 +25,7 @@ use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\ProceedResult;
-use Ultra\MessageHandling_Compiler\Tests\Support\UltraLight;
+use Ultra\Testing\UltraLight;
 
 /**
  * @internal

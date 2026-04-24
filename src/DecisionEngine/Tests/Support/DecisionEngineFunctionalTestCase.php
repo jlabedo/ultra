@@ -15,9 +15,11 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\Mapper_Bundle\MapperBundle;
 use Ultra\MessageHandling\EventBusInterface;
+use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
-use Ultra\MessageHandling_Compiler\Tests\Support\UltraLight;
-use Ultra\MessageHandling_Compiler\Tests\Support\UltraLightContainerFactoryInterface;
+use Ultra\MessageHandling\MessageHandlingBundle;
+use Ultra\Testing\UltraLight;
+use Ultra\Testing\UltraLightContainerFactoryInterface;
 
 abstract class DecisionEngineFunctionalTestCase extends TestCase
 {
@@ -44,10 +46,12 @@ abstract class DecisionEngineFunctionalTestCase extends TestCase
         return new UltraLight()
             ->withContainerFactory($containerFactory)
             ->withBuildDir($buildDir)
+            ->withBundle(new MessageHandlingBundle())
             ->withBundle(new DecisionEngineBundle())
             ->withBundle(new MapperBundle())
             ->withService(new InMemoryEventStore(), InMemoryEventStore::class)
             ->withAlias(EventStore::class, InMemoryEventStore::class)
+            ->withAlias('test.mediator', MediatorInterface::class)
             ->withService($eventBus, EventBusInterface::class)
             ->withService(new CompiledEventRegistry(
                 self::eventClassMap($eventClasses),

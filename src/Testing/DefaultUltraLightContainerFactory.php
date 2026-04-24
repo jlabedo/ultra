@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling_Compiler\Tests\Support;
+namespace Ultra\Testing;
 
 use Symfony\Component\DependencyInjection\Container;
 

@@ -4,21 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Tests\Support;
 
-use PHPUnit\Framework\TestCase;
 use Ultra\MessageHandling\MessageContextKeys;
 
 require_once dirname(__DIR__).'/Fixtures/Messages.php';
 
-abstract class MessageHandlingCompilerTestCase extends TestCase
+abstract class MessageHandlingCompilerTestCase extends MessageHandlingFunctionalTestCase
 {
-    /**
-     * @return UltraLight<UltraLightContainer>
-     */
-    protected function ultraLight(): UltraLight
-    {
-        return new UltraLight();
-    }
-
     /**
      * @param list<array{message: class-string, context: array<array-key, mixed>}> $entries
      */

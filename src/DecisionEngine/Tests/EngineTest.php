@@ -23,7 +23,7 @@ use Ultra\DecisionEngine\Tests\Support\DecisionEngineTestContainer;
 use Ultra\EventStore\DomainIdentifier as StreamIdentifier;
 use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\StreamQuery;
-use Ultra\MessageHandling_Compiler\Tests\Support\UltraLight;
+use Ultra\Testing\UltraLight;
 
 /**
  * @internal

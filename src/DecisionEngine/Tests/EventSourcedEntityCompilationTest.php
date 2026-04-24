@@ -18,7 +18,7 @@ use Ultra\DecisionEngine\Tests\Support\DecisionEngineFunctionalTestCase;
 use Ultra\DecisionEngine\Tests\Support\DecisionEngineTestContainer;
 use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\Attribute\Event;
-use Ultra\MessageHandling_Compiler\Tests\Support\UltraLight;
+use Ultra\Testing\UltraLight;
 
 #[Event('compiler.no_overlap')]
 final readonly class CompilerNoOverlapEvent

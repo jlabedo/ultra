@@ -2,17 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling_Compiler\Tests\Support;
+namespace Ultra\Testing;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
-use Ultra\MessageHandling\Async\AsyncQueueInterface;
-use Ultra\MessageHandling\Async\QueueWorker;
-use Ultra\MessageHandling\EventBusInterface;
-use Ultra\MessageHandling\MediatorInterface;
-use Ultra\MessageHandling\MessageHandlingBundle;
 
-const ULTRA_LIGHT_BUILD_DIR = __DIR__.'/../../../../var/message_handling_compiler_tests';
+const ULTRA_LIGHT_BUILD_DIR = __DIR__.'/../../var/ultra_light_tests';
 
 /**
  * @template TContainer of UltraLightContainer
@@ -34,12 +29,7 @@ final readonly class UltraLight
         private array $services = [],
         private array $classesToDiscover = [],
         private array $eventClasses = [],
-        private array $publicAliases = [
-            'test.event_bus' => EventBusInterface::class,
-            'test.mediator' => MediatorInterface::class,
-            'test.async_queue' => AsyncQueueInterface::class,
-            'test.queue_worker' => QueueWorker::class,
-        ],
+        private array $publicAliases = [],
         private array $extraBundles = [],
         private string $buildDir = ULTRA_LIGHT_BUILD_DIR,
         ?UltraLightContainerFactoryInterface $containerFactory = null,
@@ -205,7 +195,7 @@ final readonly class UltraLight
             $container->setAlias($alias, $serviceId)->setPublic(true);
         }
 
-        foreach ([new MessageHandlingBundle(), ...$this->extraBundles] as $bundle) {
+        foreach ($this->extraBundles as $bundle) {
             $bundle->build($container);
         }
         $container->compile();
