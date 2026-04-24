@@ -8,7 +8,9 @@ use PhpCsFixer\Finder;
 $finder = Finder::create()
     ->in(__DIR__ . '/src')
     ->in(__DIR__ . '/tests')
+    ->in(__DIR__ . '/examples')
     ->name('*.php')
+    ->notName('bundles.php')
     ->ignoreDotFiles(true)
     ->ignoreVCS(true);
 

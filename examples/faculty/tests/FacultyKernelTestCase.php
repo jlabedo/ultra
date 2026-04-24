@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace App\Tests;
 
-use App\Faculty\Infrastructure\EventStore\FacultyEventStoreFactory;
+use App\Kernel;
+use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Tools\DsnParser;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -13,11 +14,6 @@ use Ultra\EventStore_Postgres\PostgresEventStoreHStoreSchema;
 abstract class FacultyKernelTestCase extends KernelTestCase
 {
     private ?string $tablePrefix = null;
-
-    protected static function getKernelClass(): string
-    {
-        return \App\Kernel::class;
-    }
 
     protected function setUp(): void
     {
@@ -38,6 +34,11 @@ abstract class FacultyKernelTestCase extends KernelTestCase
         parent::tearDown();
 
         restore_exception_handler();
+    }
+
+    protected static function getKernelClass(): string
+    {
+        return Kernel::class;
     }
 
     private function buildTablePrefix(): string
@@ -71,11 +72,11 @@ abstract class FacultyKernelTestCase extends KernelTestCase
             return;
         }
 
-        foreach ((new PostgresEventStoreHStoreSchema($this->tablePrefix))->dropStatements() as $statement) {
+        foreach (new PostgresEventStoreHStoreSchema($this->tablePrefix)->dropStatements() as $statement) {
             $connection->executeStatement($statement);
         }
 
-        foreach ((new PostgresEventStoreHStoreSchema($this->tablePrefix))->createStatements() as $statement) {
+        foreach (new PostgresEventStoreHStoreSchema($this->tablePrefix)->createStatements() as $statement) {
             $connection->executeStatement($statement);
         }
 
@@ -89,26 +90,26 @@ abstract class FacultyKernelTestCase extends KernelTestCase
             return;
         }
 
-        foreach ((new PostgresEventStoreHStoreSchema($this->tablePrefix))->dropStatements() as $statement) {
+        foreach (new PostgresEventStoreHStoreSchema($this->tablePrefix)->dropStatements() as $statement) {
             $connection->executeStatement($statement);
         }
 
         $connection->close();
     }
 
-    private function createPostgresConnection(): ?\Doctrine\DBAL\Connection
+    private function createPostgresConnection(): ?Connection
     {
         $databaseUrl = strtolower(trim((string) ($_SERVER['DATABASE_URL'] ?? $_ENV['DATABASE_URL'] ?? '')));
 
-        if (! str_starts_with($databaseUrl, 'pgsql://') && ! str_starts_with($databaseUrl, 'postgresql://')) {
+        if (!str_starts_with($databaseUrl, 'pgsql://') && !str_starts_with($databaseUrl, 'postgresql://')) {
             return null;
         }
 
         return DriverManager::getConnection(
-            (new DsnParser([
+            new DsnParser([
                 'pgsql' => 'pdo_pgsql',
                 'postgresql' => 'pdo_pgsql',
-            ]))->parse((string) ($_SERVER['DATABASE_URL'] ?? $_ENV['DATABASE_URL'] ?? '')),
+            ])->parse((string) ($_SERVER['DATABASE_URL'] ?? $_ENV['DATABASE_URL'] ?? '')),
         );
     }
 }

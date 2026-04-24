@@ -27,8 +27,8 @@ final readonly class SendAllCoursesFullyBookedNotificationCommand
         FacultyAdminNotificationState $notifications,
     ): array {
         if (
-            ! $faculty->hasCourses()
-            || ! $faculty->allCoursesFullyBooked()
+            !$faculty->hasCourses()
+            || !$faculty->allCoursesFullyBooked()
             || $notifications->hasSentAllCoursesFullyBookedNotification()
         ) {
             return [];

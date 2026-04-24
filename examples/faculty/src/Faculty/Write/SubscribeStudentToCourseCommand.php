@@ -27,10 +27,10 @@ final readonly class SubscribeStudentToCourseCommand
     public function check(CourseState $course, StudentState $student): array
     {
         return array_values(array_filter([
-            ! $course->exists()
+            !$course->exists()
                 ? new Violation('course.not_found', 'Course does not exist.')
                 : null,
-            ! $student->isEnrolled()
+            !$student->isEnrolled()
                 ? new Violation('student.not_enrolled', 'Student must be enrolled in the faculty before subscribing to a course.')
                 : null,
             $course->isFull()

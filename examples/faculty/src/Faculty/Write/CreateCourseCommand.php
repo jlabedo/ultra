@@ -26,7 +26,7 @@ final readonly class CreateCourseCommand
     public function decide(CourseState $course): array
     {
         if ($course->exists()) {
-            throw new \InvalidArgumentException('Course already exists: ' . $this->courseId);
+            throw new \InvalidArgumentException('Course already exists: '.$this->courseId);
         }
 
         if ('' === trim($this->name)) {

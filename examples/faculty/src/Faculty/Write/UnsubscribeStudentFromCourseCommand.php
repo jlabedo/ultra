@@ -26,13 +26,13 @@ final readonly class UnsubscribeStudentFromCourseCommand
     public function check(CourseState $course, StudentState $student): array
     {
         return array_values(array_filter([
-            ! $course->exists()
+            !$course->exists()
                 ? new Violation('course.not_found', 'Course does not exist.')
                 : null,
-            ! $student->isEnrolled()
+            !$student->isEnrolled()
                 ? new Violation('student.not_enrolled', 'Student must be enrolled in the faculty before unsubscribing from a course.')
                 : null,
-            ! $student->isSubscribedTo($this->courseId)
+            !$student->isSubscribedTo($this->courseId)
                 ? new Violation('student.not_subscribed', 'Student is not subscribed to this course.')
                 : null,
         ]));

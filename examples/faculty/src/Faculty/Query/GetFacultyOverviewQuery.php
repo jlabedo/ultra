@@ -10,7 +10,8 @@ use Ultra\DecisionEngine\Engine;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 
-final readonly class GetFacultyOverviewQuery {
+final readonly class GetFacultyOverviewQuery
+{
     #[SelfHandler]
     public function handle(Engine $engine): mixed
     {

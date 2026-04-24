@@ -34,6 +34,7 @@ final readonly class RunCommand
         $eventBus = $this->runEventBus($input, $output);
         $output->writeln('');
         $mediator = $this->runMediator($input, $output);
+
         return $eventBus | $mediator;
     }
 
@@ -62,6 +63,4 @@ final readonly class RunCommand
 
         return $success ? Command::SUCCESS : Command::FAILURE;
     }
-
-
 }

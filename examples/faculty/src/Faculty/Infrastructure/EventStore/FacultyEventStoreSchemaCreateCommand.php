@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Faculty\Infrastructure\EventStore;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\InputInterface;
@@ -29,13 +30,13 @@ final class FacultyEventStoreSchemaCreateCommand extends Command
             return self::FAILURE;
         }
 
-        if (! $this->connection->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform) {
+        if (!$this->connection->getDatabasePlatform() instanceof PostgreSQLPlatform) {
             $output->writeln('<error>The faculty event store schema command requires a PostgreSQL DATABASE_URL.</error>');
 
             return self::FAILURE;
         }
 
-        foreach ((new PostgresEventStoreHStoreSchema($this->tablePrefix))->createStatements() as $statement) {
+        foreach (new PostgresEventStoreHStoreSchema($this->tablePrefix)->createStatements() as $statement) {
             $this->connection->executeStatement($statement);
         }
 

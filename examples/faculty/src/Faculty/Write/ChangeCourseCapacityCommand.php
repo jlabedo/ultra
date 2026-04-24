@@ -25,7 +25,7 @@ final readonly class ChangeCourseCapacityCommand
     public function check(CourseState $course): array
     {
         return array_values(array_filter([
-            ! $course->exists()
+            !$course->exists()
                 ? new Violation('course.not_found', 'Course does not exist.')
                 : null,
             $this->capacity <= 0

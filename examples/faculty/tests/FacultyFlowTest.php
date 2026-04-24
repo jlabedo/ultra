@@ -21,16 +21,22 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\MessageHandling\MediatorInterface;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class FacultyFlowTest extends FacultyKernelTestCase
 {
-    public function testItEnrollsStudentsCreatesCoursesAndBuildsReadModels(): void
+    public function test_it_enrolls_students_creates_courses_and_builds_read_models(): void
     {
         self::bootKernel();
 
         /** @var MediatorInterface $mediator */
-        $mediator = static::getContainer()->get(MediatorInterface::class);
+        $mediator = self::getContainer()->get(MediatorInterface::class);
+
         /** @var RecordingNotificationService $notifications */
-        $notifications = static::getContainer()->get(RecordingNotificationService::class);
+        $notifications = self::getContainer()->get(RecordingNotificationService::class);
 
         $mediator->send(new CreateCourseCommand('course-1', 'Event Sourcing', 2));
         $mediator->send(new EnrollStudentInFacultyCommand('student-1', 'Ada', 'Lovelace'));
@@ -53,12 +59,12 @@ final class FacultyFlowTest extends FacultyKernelTestCase
         self::assertSame('student-1', $notifications->sent()[0]->recipientId);
     }
 
-    public function testItRejectsSubscriptionsWhenCourseIsFull(): void
+    public function test_it_rejects_subscriptions_when_course_is_full(): void
     {
         self::bootKernel();
 
         /** @var MediatorInterface $mediator */
-        $mediator = static::getContainer()->get(MediatorInterface::class);
+        $mediator = self::getContainer()->get(MediatorInterface::class);
 
         $mediator->send(new CreateCourseCommand('course-1', 'DDD', 1));
         $mediator->send(new EnrollStudentInFacultyCommand('student-1', 'Ada', 'Lovelace'));
@@ -71,14 +77,15 @@ final class FacultyFlowTest extends FacultyKernelTestCase
         $mediator->send(new SubscribeStudentToCourseCommand('course-1', 'student-2'));
     }
 
-    public function testItSendsAnAdminNotificationWhenAllCoursesAreFullyBooked(): void
+    public function test_it_sends_an_admin_notification_when_all_courses_are_fully_booked(): void
     {
         self::bootKernel();
 
         /** @var MediatorInterface $mediator */
-        $mediator = static::getContainer()->get(MediatorInterface::class);
+        $mediator = self::getContainer()->get(MediatorInterface::class);
+
         /** @var RecordingNotificationService $notifications */
-        $notifications = static::getContainer()->get(RecordingNotificationService::class);
+        $notifications = self::getContainer()->get(RecordingNotificationService::class);
 
         $mediator->send(new CreateCourseCommand('course-1', 'Axon', 1));
         $mediator->send(new CreateCourseCommand('course-2', 'Symfony', 1));
@@ -99,23 +106,23 @@ final class FacultyFlowTest extends FacultyKernelTestCase
         ));
     }
 
-    public function testItReturnsNullForMissingCourseAndStudentReadModels(): void
+    public function test_it_returns_null_for_missing_course_and_student_read_models(): void
     {
         self::bootKernel();
 
         /** @var MediatorInterface $mediator */
-        $mediator = static::getContainer()->get(MediatorInterface::class);
+        $mediator = self::getContainer()->get(MediatorInterface::class);
 
         self::assertNull($mediator->send(new GetCourseStatsByIdQuery('missing-course')));
         self::assertNull($mediator->send(new GetStudentProfileByIdQuery('missing-student')));
     }
 
-    public function testItKeepsSortedListsAndUpdatesReadModelsAfterUnsubscribe(): void
+    public function test_it_keeps_sorted_lists_and_updates_read_models_after_unsubscribe(): void
     {
         self::bootKernel();
 
         /** @var MediatorInterface $mediator */
-        $mediator = static::getContainer()->get(MediatorInterface::class);
+        $mediator = self::getContainer()->get(MediatorInterface::class);
 
         $mediator->send(new CreateCourseCommand('course-b', 'DDD', 2));
         $mediator->send(new CreateCourseCommand('course-a', 'Axon', 2));
@@ -155,14 +162,15 @@ final class FacultyFlowTest extends FacultyKernelTestCase
         ));
     }
 
-    public function testItPreservesTrackedSubscriptionsWhenStudentEnrollmentReplays(): void
+    public function test_it_preserves_tracked_subscriptions_when_student_enrollment_replays(): void
     {
         self::bootKernel();
 
         /** @var EventStore $eventStore */
-        $eventStore = static::getContainer()->get(EventStore::class);
+        $eventStore = self::getContainer()->get(EventStore::class);
+
         /** @var MediatorInterface $mediator */
-        $mediator = static::getContainer()->get(MediatorInterface::class);
+        $mediator = self::getContainer()->get(MediatorInterface::class);
 
         $eventStore->append([
             new Event(

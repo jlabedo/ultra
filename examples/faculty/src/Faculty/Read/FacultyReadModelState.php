@@ -124,7 +124,7 @@ final class FacultyReadModelState
     #[EventSourcingHandler]
     public function onCourseCapacityChanged(CourseCapacityChanged $event): void
     {
-        if (! isset($this->courses[$event->courseId])) {
+        if (!isset($this->courses[$event->courseId])) {
             return;
         }
 
@@ -148,7 +148,7 @@ final class FacultyReadModelState
             ++$this->courses[$event->courseId]['subscribedStudents'];
         }
 
-        if (! isset($this->students[$event->studentId])) {
+        if (!isset($this->students[$event->studentId])) {
             return;
         }
 
@@ -165,7 +165,7 @@ final class FacultyReadModelState
             );
         }
 
-        if (! isset($this->students[$event->studentId])) {
+        if (!isset($this->students[$event->studentId])) {
             return;
         }
 

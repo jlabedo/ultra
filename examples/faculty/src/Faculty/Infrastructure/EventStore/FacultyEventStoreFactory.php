@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Faculty\Infrastructure\EventStore;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
@@ -20,7 +21,7 @@ final readonly class FacultyEventStoreFactory
 
     public function create(): EventStore
     {
-        if (! $this->shouldUsePostgres()) {
+        if (!$this->shouldUsePostgres()) {
             return new InMemoryEventStore();
         }
 
@@ -36,6 +37,6 @@ final readonly class FacultyEventStoreFactory
             return false;
         }
 
-        return $this->connection->getDatabasePlatform() instanceof \Doctrine\DBAL\Platforms\PostgreSQLPlatform;
+        return $this->connection->getDatabasePlatform() instanceof PostgreSQLPlatform;
     }
 }

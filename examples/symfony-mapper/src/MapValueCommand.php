@@ -23,7 +23,7 @@ class MapValueCommand
         $email = $this->normalizer->fromScalar('john@example.com', Email::class);
 
         $emailDTO = $this->normalizer->toScalar($email);
-        $success = $emailDTO === 'john@example.com';
+        $success = 'john@example.com' === $emailDTO;
 
         $output->writeln(sprintf('Success : %s', $success ? 'Yes' : 'No'));
 

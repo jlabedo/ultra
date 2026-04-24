@@ -10,7 +10,8 @@ use Ultra\DecisionEngine\Engine;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 
-final readonly class ListCourseStatsQuery {
+final readonly class ListCourseStatsQuery
+{
     #[SelfHandler]
     public function handle(Engine $engine): array
     {

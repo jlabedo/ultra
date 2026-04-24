@@ -26,7 +26,7 @@ final readonly class EnrollStudentInFacultyCommand
     public function decide(StudentState $student): array
     {
         if ($student->isEnrolled()) {
-            throw new \InvalidArgumentException('Student already enrolled: ' . $this->studentId);
+            throw new \InvalidArgumentException('Student already enrolled: '.$this->studentId);
         }
 
         if ('' === trim($this->firstName) || '' === trim($this->lastName)) {

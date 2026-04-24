@@ -52,7 +52,7 @@ final class FacultyCourseAvailabilityState
     #[EventSourcingHandler]
     public function onCourseCapacityChanged(CourseCapacityChanged $event): void
     {
-        if (! isset($this->courses[$event->courseId])) {
+        if (!isset($this->courses[$event->courseId])) {
             return;
         }
 
@@ -62,7 +62,7 @@ final class FacultyCourseAvailabilityState
     #[EventSourcingHandler]
     public function onStudentSubscribedToCourse(StudentSubscribedToCourse $event): void
     {
-        if (! isset($this->courses[$event->courseId])) {
+        if (!isset($this->courses[$event->courseId])) {
             return;
         }
 
@@ -72,7 +72,7 @@ final class FacultyCourseAvailabilityState
     #[EventSourcingHandler]
     public function onStudentUnsubscribedFromCourse(StudentUnsubscribedFromCourse $event): void
     {
-        if (! isset($this->courses[$event->courseId])) {
+        if (!isset($this->courses[$event->courseId])) {
             return;
         }
 
