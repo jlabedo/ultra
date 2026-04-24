@@ -130,7 +130,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
         self::assertNotNull($repository->assignSegment('courses', 0, 'worker-1', Duration::seconds(30)));
 
-        $clock->advance(Duration::seconds(31));
+        $clock->sleep(Duration::seconds(31));
 
         self::assertSame(1, $repository->recoverExpiredAssignments('courses'));
         self::assertNotNull($repository->assignSegment('courses', 0, 'worker-2', Duration::seconds(30)));

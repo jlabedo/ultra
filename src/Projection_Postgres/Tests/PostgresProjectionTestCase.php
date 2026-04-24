@@ -6,7 +6,6 @@ namespace Ultra\Projection_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
-use Psr\Clock\ClockInterface;
 use Ultra\EventStore\EventStore;
 
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
@@ -22,6 +21,7 @@ use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorSchema;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
+use Ultra\Time\ClockInterface;
 use Ultra\Time\StatickClock;
 use Ultra\Time\SystemClock;
 

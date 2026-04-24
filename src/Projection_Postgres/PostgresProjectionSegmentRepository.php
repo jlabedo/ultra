@@ -6,11 +6,11 @@ namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
-use Psr\Clock\ClockInterface;
 use Ultra\EventStore\Checkpoint;
 use Ultra\Projection\ProjectionSegment;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 use Ultra\Projection\ProjectionWorkAssignment;
+use Ultra\Time\ClockInterface;
 use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
@@ -29,7 +29,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
      */
     public function ensureInitialized(string $projectionId): bool
     {
-        $now = $this->now();
+        $now = $this->clock->now();
 
         $affected = $this->connection->executeStatement(
             sprintf(
@@ -52,7 +52,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         Duration $leaseDuration = new Duration(seconds: 60),
     ): ?ProjectionWorkAssignment {
         $assignmentId = bin2hex(random_bytes(16));
-        $now = $this->now();
+        $now = $this->clock->now();
 
         $affected = $this->connection->executeStatement(
             sprintf(
@@ -104,7 +104,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                     $assignment->bucketFrom,
                     $assignment->workerId,
                     $assignment->assignmentId,
-                    $this->now(),
+                    $this->clock->now(),
                 ],
                 [ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
             )->fetchAssociative();
@@ -115,7 +115,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                 return null;
             }
 
-            $now = $this->now();
+            $now = $this->clock->now();
             $this->connection->executeStatement(
                 sprintf(
                     "UPDATE %s
@@ -154,7 +154,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         bool $caughtUp,
         Duration $leaseDuration = new Duration(seconds: 60),
     ): void {
-        $now = $this->now();
+        $now = $this->clock->now();
 
         if ($caughtUp) {
             $this->connection->executeStatement(
@@ -609,10 +609,5 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     private function segmentsTable(): string
     {
         return $this->tablePrefix.'segments';
-    }
-
-    private function now(): DatePoint
-    {
-        return DatePoint::createFromInterface($this->clock->now());
     }
 }

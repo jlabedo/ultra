@@ -204,7 +204,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             $segmentRepository->ensureInitialized('course_names');
 
             self::assertNotNull($segmentRepository->assignSegment('course_names', 0, 'worker-stale', Duration::seconds(30)));
-            $clock->advance(Duration::seconds(31));
+            $clock->sleep(Duration::seconds(31));
 
             $recovered = $segmentRepository->recoverExpiredAssignments('course_names');
 

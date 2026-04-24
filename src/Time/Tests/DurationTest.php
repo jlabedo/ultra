@@ -18,14 +18,14 @@ final class DurationTest extends TestCase
     {
         $duration = Duration::seconds(1.5)->add(Duration::milliseconds(250));
 
-        self::assertSame(1_750_000, $duration->microseconds);
+        self::assertSame(1_750_000, $duration->inMicroseconds());
     }
 
     public function test_durations_can_be_subtracted(): void
     {
         $duration = Duration::seconds(3)->subtract(Duration::milliseconds(750));
 
-        self::assertSame(2_250_000, $duration->microseconds);
+        self::assertSame(2_250_000, $duration->inMicroseconds());
     }
 
     public function test_duration_can_be_converted_to_a_date_interval(): void

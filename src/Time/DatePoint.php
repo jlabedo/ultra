@@ -16,22 +16,22 @@ class DatePoint extends \DateTimeImmutable
         if ($object instanceof static) {
             return $object;
         }
-        parent::createFromInterface($object);
+        return parent::createFromInterface($object);
     }
 
     public static function createFromMutable(\DateTime $object): static
     {
-        parent::createFromMutable($object);
+        return parent::createFromMutable($object);
     }
 
     public static function createFromTimestamp(float|int $timestamp): static
     {
-        parent::createFromTimestamp($timestamp);
+        return parent::createFromTimestamp($timestamp);
     }
 
     public static function createFromFormat(string $format, string $datetime, ?\DateTimeZone $timezone = null): static
     {
-        parent::createFromFormat($format, $datetime, $timezone) ?: throw new \DateMalformedStringException(static::getLastErrors()['errors'][0] ?? 'Invalid date string or format.');
+        return parent::createFromFormat($format, $datetime, $timezone) ?: throw new \DateMalformedStringException(static::getLastErrors()['errors'][0] ?? 'Invalid date string or format.');
     }
 
     public function add(\DateInterval|Duration $interval): static

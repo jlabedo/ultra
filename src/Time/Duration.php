@@ -11,7 +11,7 @@ final readonly class Duration
     private const int MICROSECONDS_PER_HOUR = 60 * self::MICROSECONDS_PER_MINUTE;
     private const int MICROSECONDS_PER_DAY = 24 * self::MICROSECONDS_PER_HOUR;
 
-    public int $microseconds;
+    private int $microseconds;
 
     public function __construct(
         int $microseconds = 0,
@@ -76,6 +76,31 @@ final readonly class Duration
     public function negate(): self
     {
         return new self(-$this->microseconds);
+    }
+
+    public function absolute(): self
+    {
+        return new self(abs($this->microseconds));
+    }
+
+    public function inMicroseconds(): int
+    {
+        return $this->microseconds;
+    }
+
+    public function inMilliseconds(): int
+    {
+        return (int) round($this->microseconds / 1_000);
+    }
+
+    public function inSeconds(): int
+    {
+        return (int) round($this->microseconds / 1_000_000);
+    }
+
+    public function inSecondsFloat(): float
+    {
+        return $this->microseconds / 1_000_000.0;
     }
 
     public function toDateInterval(): \DateInterval

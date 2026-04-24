@@ -24,7 +24,7 @@ final class InMemoryProjectionCoordinatorLeaseRepositoryTest extends TestCase
         self::assertTrue($repository->acquire('worker-1', Duration::seconds(30)));
         self::assertTrue($repository->hasLiveCoordinator());
 
-        $clock->advance(Duration::seconds(31));
+        $clock->sleep(Duration::seconds(31));
 
         self::assertFalse($repository->hasLiveCoordinator());
         self::assertTrue($repository->acquire('worker-2', Duration::seconds(30)));
@@ -38,7 +38,7 @@ final class InMemoryProjectionCoordinatorLeaseRepositoryTest extends TestCase
         self::assertTrue($repository->markWakeEnqueued(Duration::seconds(30)));
         self::assertFalse($repository->markWakeEnqueued(Duration::seconds(30)));
 
-        $clock->advance(Duration::seconds(31));
+        $clock->sleep(Duration::seconds(31));
 
         self::assertTrue($repository->markWakeEnqueued(Duration::seconds(30)));
     }

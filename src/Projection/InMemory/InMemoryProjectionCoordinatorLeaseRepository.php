@@ -4,22 +4,19 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\InMemory;
 
-use Psr\Clock\ClockInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
 use Ultra\Time\DatePoint;
+use Ultra\Time\ClockInterface;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
 
 final class InMemoryProjectionCoordinatorLeaseRepository implements ProjectionCoordinatorLeaseRepositoryInterface
 {
-    private readonly ClockInterface $clock;
-
     /** @var array{workerId: null|string, leaseExpiresAt: null|DatePoint, wakeEnqueuedUntil: null|DatePoint} */
     private array $row = ['workerId' => null, 'leaseExpiresAt' => null, 'wakeEnqueuedUntil' => null];
 
-    public function __construct(?ClockInterface $clock = null)
+    public function __construct(private ClockInterface $clock = new SystemClock())
     {
-        $this->clock = $clock ?? new SystemClock();
     }
 
     public function acquire(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
@@ -37,7 +34,7 @@ final class InMemoryProjectionCoordinatorLeaseRepository implements ProjectionCo
         }
 
         $row['workerId'] = $workerId;
-        $row['leaseExpiresAt'] = $this->now()->add($leaseDuration);
+        $row['leaseExpiresAt'] = $this->clock->now()->add($leaseDuration);
         $row['wakeEnqueuedUntil'] = null;
         $this->row = $row;
 
@@ -51,7 +48,7 @@ final class InMemoryProjectionCoordinatorLeaseRepository implements ProjectionCo
             return;
         }
 
-        $row['leaseExpiresAt'] = $this->now()->add($leaseDuration);
+        $row['leaseExpiresAt'] = $this->clock->now()->add($leaseDuration);
         $this->row = $row;
     }
 
@@ -87,7 +84,7 @@ final class InMemoryProjectionCoordinatorLeaseRepository implements ProjectionCo
             $row['leaseExpiresAt'] = null;
         }
 
-        $now = $this->now();
+        $now = $this->clock->now();
         if (null !== $row['workerId']) {
             $this->row = $row;
 
@@ -109,11 +106,6 @@ final class InMemoryProjectionCoordinatorLeaseRepository implements ProjectionCo
     /** @param array{workerId: null|string, leaseExpiresAt: null|int, wakeEnqueuedUntil: null|int} $row */
     private function isLeaseExpired(array $row): bool
     {
-        return null !== $row['leaseExpiresAt'] && $row['leaseExpiresAt'] < $this->now();
-    }
-
-    private function now(): DatePoint
-    {
-        return DatePoint::createFromInterface($this->clock->now());
+        return null !== $row['leaseExpiresAt'] && $row['leaseExpiresAt'] < $this->clock->now();
     }
 }

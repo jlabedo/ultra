@@ -26,7 +26,7 @@ final class StatickClockTest extends TestCase
     {
         $clock = new StatickClock(new \DateTimeImmutable('2026-04-22 10:11:12.123456', new \DateTimeZone('UTC')));
 
-        $clock->advance(Duration::seconds(30));
+        $clock->sleep(Duration::seconds(30));
 
         self::assertSame('2026-04-22 10:11:42.123456', $clock->now()->format('Y-m-d H:i:s.u'));
     }

@@ -94,7 +94,7 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
             self::assertTrue($leases->acquire('coordinator-1', Duration::seconds(30)));
             self::assertTrue($leases->hasLiveCoordinator());
 
-            $clock->advance(Duration::seconds(31));
+            $clock->sleep(Duration::seconds(31));
 
             self::assertFalse($leases->hasLiveCoordinator());
             self::assertTrue($leases->acquire('coordinator-2', Duration::seconds(30)));

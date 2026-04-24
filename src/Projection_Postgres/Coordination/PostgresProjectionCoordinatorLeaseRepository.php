@@ -6,8 +6,8 @@ namespace Ultra\Projection_Postgres\Coordination;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
-use Psr\Clock\ClockInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
+use Ultra\Time\ClockInterface;
 use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
@@ -16,14 +16,11 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
 {
     private const string COORDINATOR_KEY = 'global';
 
-    private ClockInterface $clock;
-
     public function __construct(
         private Connection $connection,
         private string $tablePrefix = 'projection_',
-        ?ClockInterface $clock = null,
+        private ClockInterface $clock = new SystemClock(),
     ) {
-        $this->clock = $clock ?? new SystemClock();
     }
 
     public function acquire(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
@@ -32,7 +29,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
 
         try {
             $row = $this->lockRow();
-            $now = $this->now();
+            $now = $this->clock->now();
             if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
                 $leaseExpiresAt = new DatePoint((string) $row['lease_expires_at']);
                 if ($leaseExpiresAt >= $now) {
@@ -69,7 +66,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
 
     public function renew(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): void
     {
-        $now = $this->now();
+        $now = $this->clock->now();
 
         $this->connection->executeStatement(
             sprintf(
@@ -85,7 +82,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
 
     public function release(string $workerId): void
     {
-        $now = $this->now();
+        $now = $this->clock->now();
 
         $this->connection->executeStatement(
             sprintf(
@@ -114,7 +111,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
             return false;
         }
 
-        return new \DateTimeImmutable((string) $row['lease_expires_at']) >= $this->now();
+        return new \DateTimeImmutable((string) $row['lease_expires_at']) >= $this->clock->now();
     }
 
     public function markWakeEnqueued(Duration $ttl = new Duration(seconds: 30)): bool
@@ -123,7 +120,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
 
         try {
             $row = $this->lockRow();
-            $now = $this->now();
+            $now = $this->clock->now();
             $this->upsertRow($now);
 
             if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
@@ -197,10 +194,5 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
     private function coordinatorsTable(): string
     {
         return $this->tablePrefix.'coordinators';
-    }
-
-    private function now(): DatePoint
-    {
-        return DatePoint::createFromInterface($this->clock->now());
     }
 }
