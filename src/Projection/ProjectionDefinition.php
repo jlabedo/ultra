@@ -9,6 +9,7 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Projection\Attribute\Projection;
+use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 
@@ -19,6 +20,7 @@ final readonly class ProjectionDefinition
         public string $projectionId,
         public string $partitionDimension,
         public ?string $initializerMethod,
+        public ?string $flushMethod,
         private array $handlers,
     ) {}
 
@@ -45,6 +47,7 @@ final readonly class ProjectionDefinition
             projectionId: $attribute->name,
             partitionDimension: $attribute->partitionBy,
             initializerMethod: self::resolveInitializerMethod($reflection),
+            flushMethod: self::resolveFlushMethod($reflection),
             handlers: self::resolveHandlers($reflection),
         );
     }
@@ -155,6 +158,25 @@ final readonly class ProjectionDefinition
                 if (0 !== count($method->getParameters())) {
                     throw new \LogicException(sprintf(
                         '#[ProjectionInitializer] method %s::%s must have no parameters.',
+                        $reflection->getName(),
+                        $method->getName(),
+                    ));
+                }
+
+                return $method->getName();
+            }
+        }
+
+        return null;
+    }
+
+    private static function resolveFlushMethod(\ReflectionClass $reflection): ?string
+    {
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            if ([] !== $method->getAttributes(ProjectionFlush::class)) {
+                if (0 !== count($method->getParameters())) {
+                    throw new \LogicException(sprintf(
+                        '#[ProjectionFlush] method %s::%s must have no parameters.',
                         $reflection->getName(),
                         $method->getName(),
                     ));

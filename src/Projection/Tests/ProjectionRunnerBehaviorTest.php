@@ -18,6 +18,7 @@ use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
+use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
@@ -68,6 +69,8 @@ final class TrackingProjection
     /** @var array<string, string> */
     public array $names = [];
 
+    public int $flushes = 0;
+
     #[ProjectionInitializer]
     public function initialize(): void
     {
@@ -78,6 +81,12 @@ final class TrackingProjection
     public function onCourseCreated(RunnerCourseCreated $event): void
     {
         $this->names[$event->courseId] = $event->name;
+    }
+
+    #[ProjectionFlush]
+    public function flush(): void
+    {
+        ++$this->flushes;
     }
 }
 
@@ -99,6 +108,24 @@ final class FailingTrackingProjection
     }
 }
 
+#[Projection(name: 'failing_flush_tracking_projection', partitionBy: 'courseId')]
+final class FailingFlushTrackingProjection
+{
+    public int $handled = 0;
+
+    #[ProjectionHandler]
+    public function onCourseCreated(RunnerCourseCreated $event): void
+    {
+        ++$this->handled;
+    }
+
+    #[ProjectionFlush]
+    public function flush(): void
+    {
+        throw new RuntimeException('Projection flush failed.');
+    }
+}
+
 #[CoversClass(ProjectionRunner::class)]
 final class ProjectionRunnerBehaviorTest extends TestCase
 {
@@ -117,8 +144,30 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame(1, $runner->runOnce($runtime, 'worker-1'));
         self::assertSame(0, $runner->runOnce($runtime, 'worker-1'));
         self::assertSame(1, $projection->initialized);
+        self::assertSame(2, $projection->flushes);
         self::assertSame(['course-1' => 'Math'], $projection->names);
         self::assertSame(1, $segments->readCurrentState('tracking_projection', 0)->checkpoint->gapFloor->value);
+    }
+
+    public function test_run_once_flushes_after_each_claimed_batch(): void
+    {
+        $projection = new TrackingProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $runner = new ProjectionRunner($eventStore, $segments);
+
+        $eventStore->append([
+            self::courseCreatedEvent('course-1', 'Math'),
+            self::courseCreatedEvent('course-2', 'Physics'),
+        ]);
+
+        self::assertSame(1, $runner->runOnce($runtime, 'worker-1', 1));
+        self::assertSame(1, $runner->runOnce($runtime, 'worker-1', 1));
+        self::assertSame(0, $runner->runOnce($runtime, 'worker-1', 1));
+
+        self::assertSame(3, $projection->flushes);
+        self::assertSame(['course-1' => 'Math', 'course-2' => 'Physics'], $projection->names);
     }
 
     public function test_run_once_result_reports_a_successful_claim_with_segment_details(): void
@@ -161,6 +210,33 @@ final class ProjectionRunnerBehaviorTest extends TestCase
 
         $segment = $segments->readCurrentState('failing_tracking_projection', 0);
 
+        self::assertSame('available', $segment->status);
+        self::assertNull($segment->pendingOperation);
+        self::assertSame(0, $segment->checkpoint->gapFloor->value);
+    }
+
+    public function test_run_once_releases_the_segment_without_advancing_the_checkpoint_when_flush_throws(): void
+    {
+        $projection = new FailingFlushTrackingProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $runner = new ProjectionRunner($eventStore, $segments);
+
+        $eventStore->append([
+            self::courseCreatedEvent('course-1', 'Math'),
+        ]);
+
+        try {
+            $runner->runOnce($runtime, 'worker-1');
+            self::fail('Expected the projection flush to throw.');
+        } catch (RuntimeException $e) {
+            self::assertSame('Projection flush failed.', $e->getMessage());
+        }
+
+        $segment = $segments->readCurrentState('failing_flush_tracking_projection', 0);
+
+        self::assertSame(1, $projection->handled);
         self::assertSame('available', $segment->status);
         self::assertNull($segment->pendingOperation);
         self::assertSame(0, $segment->checkpoint->gapFloor->value);

@@ -38,6 +38,15 @@ final readonly class ProjectionRuntime
         ($this->projection)->{$this->definition->initializerMethod}();
     }
 
+    public function flush(): void
+    {
+        if (null === $this->definition->flushMethod) {
+            return;
+        }
+
+        ($this->projection)->{$this->definition->flushMethod}();
+    }
+
     public function apply(Event $event): void
     {
         $handler = $this->definition->handlerFor($event);

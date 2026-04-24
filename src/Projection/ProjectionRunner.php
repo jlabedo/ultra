@@ -92,6 +92,7 @@ final readonly class ProjectionRunner
                 $runtime->apply($event);
             }
 
+            $runtime->flush();
             $this->segmentRepository->completeSegment($segment, $result->checkpoint);
 
             return new ProjectionRunResult(

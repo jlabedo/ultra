@@ -13,6 +13,7 @@ use Ultra\EventStore\Event;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
+use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\ProjectionDefinition;
@@ -41,6 +42,8 @@ final class TestProjectionClass
 {
     public bool $initialized = false;
 
+    public int $flushes = 0;
+
     /** @var list<string> */
     public array $handled = [];
 
@@ -48,6 +51,12 @@ final class TestProjectionClass
     public function initialize(): void
     {
         $this->initialized = true;
+    }
+
+    #[ProjectionFlush]
+    public function flush(): void
+    {
+        ++$this->flushes;
     }
 
     #[ProjectionHandler]
@@ -119,6 +128,13 @@ final class InvalidInitializerProjection
     public function initialize(string $projectionId): void {}
 }
 
+#[Projection(name: 'invalid_flush_projection', partitionBy: 'courseId')]
+final class InvalidFlushProjection
+{
+    #[ProjectionFlush]
+    public function flush(string $projectionId): void {}
+}
+
 #[CoversClass(ProjectionDefinition::class)]
 #[CoversClass(ProjectionRuntime::class)]
 final class ProjectionDefinitionRuntimeTest extends TestCase
@@ -129,6 +145,7 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
 
         self::assertSame('test_projection', $definition->projectionId);
         self::assertSame('courseId', $definition->partitionDimension);
+        self::assertSame('flush', $definition->flushMethod);
     }
 
     public function test_stream_query_covers_all_handled_event_types_globally(): void
@@ -216,6 +233,28 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
         $runtime->initialize();
     }
 
+    public function test_runtime_flush_calls_the_projection_flush_method(): void
+    {
+        $projection = new TestProjectionClass();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+
+        self::assertSame(0, $projection->flushes);
+
+        $runtime->flush();
+        $runtime->flush();
+
+        self::assertSame(2, $projection->flushes);
+    }
+
+    public function test_runtime_flush_is_a_no_op_when_no_projection_flush_method_is_present(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $runtime = new ProjectionRuntime(new TestProjectionClassWithoutInitializer(), new UltraNormalizer());
+
+        $runtime->flush();
+    }
+
     public function test_projection_definition_throws_when_class_has_no_projection_attribute(): void
     {
         $this->expectException(InvalidArgumentException::class);
@@ -261,5 +300,13 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
         $this->expectExceptionMessage('must have no parameters');
 
         ProjectionDefinition::fromClass(InvalidInitializerProjection::class);
+    }
+
+    public function test_projection_definition_throws_when_the_flush_method_declares_parameters(): void
+    {
+        $this->expectException(LogicException::class);
+        $this->expectExceptionMessage('must have no parameters');
+
+        ProjectionDefinition::fromClass(InvalidFlushProjection::class);
     }
 }

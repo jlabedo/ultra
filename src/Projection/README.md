@@ -20,6 +20,7 @@ It is built from attributes and reflection and contains:
 - `projectionId`
 - `partitionDimension`
 - initializer method, if any
+- flush method, if any
 - handler metadata per event type
 
 It also knows how to:
@@ -37,6 +38,7 @@ It is the execution-facing object used by workers:
 
 - `initialize()` runs the `#[ProjectionInitializer]` method once when the projection is first created
 - `apply(Event $event)` resolves the matching handler, deserializes the payload, and invokes the projection method
+- `flush()` runs the `#[ProjectionFlush]` method at the end of each claimed batch
 
 Rule of thumb:
 
@@ -66,8 +68,9 @@ Its job is:
 2. claim a segment, or the segment containing a specific bucket
 3. load matching events for that segment from the current checkpoint
 4. apply them through `ProjectionRuntime`
-5. release the segment with the new checkpoint
-6. finalize split/merge operations when needed
+5. flush the projection runtime
+6. release the segment with the new checkpoint
+7. finalize split/merge operations when needed
 
 The segment repository owns runtime state such as:
 
