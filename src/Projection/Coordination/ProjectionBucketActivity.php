@@ -10,7 +10,6 @@ final readonly class ProjectionBucketActivity
         public string $projectionId,
         public int $bucket,
         public int $counter,
-        public int $acknowledgedCounter = 0,
     ) {}
 
     public function isPending(): bool

@@ -267,7 +267,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                 ['course_id' => $leftCourseId, 'name' => 'Math 101'],
                 ['course_id' => $rightCourseId, 'name' => 'Physics 201'],
             ], $rows);
-            self::assertSame([], $activity->pendingBuckets('course_names'));
+            self::assertSame([], $activity->pendingBucketsForSegment('course_names', 0, 255));
             self::assertFalse($leases->hasLiveCoordinator());
         });
     }

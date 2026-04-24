@@ -22,7 +22,7 @@ final class InMemoryProjectionBucketActivityRepository implements ProjectionBuck
         $affected = [];
 
         foreach (array_keys($this->rows) as $projectionId) {
-            array_push($affected, ...$this->pendingBuckets($projectionId, $limit));
+            array_push($affected, ...$this->pendingBucketsForSegment($projectionId, 0, 255));
         }
 
         usort(
@@ -33,31 +33,6 @@ final class InMemoryProjectionBucketActivityRepository implements ProjectionBuck
         );
 
         return array_slice($affected, 0, $limit);
-    }
-
-    public function pendingBuckets(string $projectionId, int $limit = 32): array
-    {
-        $rows = $this->rows[$projectionId] ?? [];
-        ksort($rows);
-
-        $pending = [];
-        foreach ($rows as $bucket => $counter) {
-            $activity = new ProjectionBucketActivity(
-                $projectionId,
-                (int) $bucket,
-                $counter,
-            );
-            if ($activity->isPending()) {
-                $pending[] = $activity;
-            }
-        }
-
-        usort(
-            $pending,
-            static fn (ProjectionBucketActivity $a, ProjectionBucketActivity $b): int => ($b->counter <=> $a->counter) ?: ($a->bucket <=> $b->bucket),
-        );
-
-        return array_slice($pending, 0, $limit);
     }
 
     public function pendingBucketsForSegment(string $projectionId, int $bucketFrom, int $bucketTo): array

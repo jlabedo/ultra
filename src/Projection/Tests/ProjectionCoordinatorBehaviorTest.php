@@ -96,13 +96,6 @@ final class EmptyAfterFirstPollActivityRepository implements ProjectionBucketAct
         return [];
     }
 
-    public function pendingBuckets(string $projectionId, int $limit = 32): array
-    {
-        ++$this->pendingBucketsCalls;
-
-        return [];
-    }
-
     public function pendingBucketsForSegment(string $projectionId, int $bucketFrom, int $bucketTo): array
     {
         ++$this->pendingBucketsCalls;
@@ -135,13 +128,6 @@ final class CountingActivityRepository implements ProjectionBucketActivityReposi
         ++$this->affectedBucketsCalls;
 
         return $this->inner->affectedBuckets($limit);
-    }
-
-    public function pendingBuckets(string $projectionId, int $limit = 32): array
-    {
-        ++$this->pendingBucketsCalls;
-
-        return $this->inner->pendingBuckets($projectionId, $limit);
     }
 
     public function pendingBucketsForSegment(string $projectionId, int $bucketFrom, int $bucketTo): array
@@ -279,7 +265,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertLessThan(128, $leftBucket);
         self::assertGreaterThanOrEqual(128, $rightBucket);
 
-        $segments->claimSegmentForBucket('coordinator_projection', $leftBucket, 'other-worker');
+        self::assertNotNull($segments->assignSegment('coordinator_projection', 0, 'other-worker'));
 
         $eventStore->append([
             new Event(
@@ -304,7 +290,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertSame(1, $result->acknowledgedBuckets);
         self::assertSame(['beta' => 'Physics'], $projection->names);
 
-        $remaining = $activity->pendingBuckets('coordinator_projection');
+        $remaining = $activity->pendingBucketsForSegment('coordinator_projection', 0, 255);
 
         self::assertCount(1, $remaining);
         self::assertSame($leftBucket, $remaining[0]->bucket);
@@ -342,7 +328,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
 
         self::assertSame(2, $firstResult->processedEvents);
         self::assertSame(1, $firstResult->acknowledgedBuckets);
-        self::assertSame([], $activity->pendingBuckets('coordinator_projection'));
+        self::assertSame([], $activity->pendingBucketsForSegment('coordinator_projection', 0, 255));
         self::assertSame(['alpha' => 'Advanced Math'], $projection->names);
     }
 
@@ -378,7 +364,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $segments->ensureInitialized('coordinator_projection');
 
         $bucket = BucketHasher::bucketFor('alpha');
-        $segments->claimSegmentForBucket('coordinator_projection', $bucket, 'other-worker');
+        self::assertNotNull($segments->assignSegment('coordinator_projection', 0, 'other-worker'));
 
         $innerActivity = new InMemoryProjectionBucketActivityRepository();
         $innerActivity->bump('coordinator_projection', $bucket);

@@ -47,70 +47,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return true;
     }
 
-    public function claimSegment(string $projectionId, string $workerId, ?Duration $leaseDurationSeconds = null): ?ProjectionSegment
-    {
-        $leaseDurationSeconds ??= Duration::seconds(60);
-        $this->recoverExpiredLeases($projectionId);
-
-        foreach (array_keys($this->segments[$projectionId] ?? []) as $bucketFrom) {
-            $row = $this->segments[$projectionId][$bucketFrom];
-            if (!in_array($row['status'], ['available', 'draining'], true)) {
-                continue;
-            }
-
-            $now = $this->clock->now();
-            $row['status'] = $row['pendingOperation'] ? 'draining' : 'active';
-            $row['workerId'] = $workerId;
-            $row['leaseExpiresAt'] = $now->add($leaseDurationSeconds);
-            $this->segments[$projectionId][$bucketFrom] = $row;
-
-            return $this->toSegment($projectionId, $row);
-        }
-
-        return null;
-    }
-
-    public function claimSegmentForBucket(string $projectionId, int $bucket, string $workerId, ?Duration $leaseDurationSeconds = null): ?ProjectionSegment
-    {
-        $leaseDurationSeconds ??= Duration::seconds(60);
-        $this->recoverExpiredLeases($projectionId);
-
-        foreach (array_keys($this->segments[$projectionId] ?? []) as $bucketFrom) {
-            $row = $this->segments[$projectionId][$bucketFrom];
-            if (!in_array($row['status'], ['available', 'draining'], true)) {
-                continue;
-            }
-
-            if ($bucket < $row['bucketFrom'] || $bucket > $row['bucketTo']) {
-                continue;
-            }
-
-            $now = $this->clock->now();
-            $row['status'] = $row['pendingOperation'] ? 'draining' : 'active';
-            $row['workerId'] = $workerId;
-            $row['leaseExpiresAt'] = $now->add($leaseDurationSeconds);
-            $this->segments[$projectionId][$bucketFrom] = $row;
-
-            return $this->toSegment($projectionId, $row);
-        }
-
-        return null;
-    }
-
-    public function readCurrentState(string $projectionId, int $bucketFrom): ProjectionSegment
-    {
-        $row = $this->segments[$projectionId][$bucketFrom] ?? null;
-        if (null === $row) {
-            throw new \LogicException(sprintf(
-                'Segment [%d] not found for projection "%s".',
-                $bucketFrom,
-                $projectionId,
-            ));
-        }
-
-        return $this->toSegment($projectionId, $row);
-    }
-
     public function assignSegment(string $projectionId, int $bucketFrom, string $workerId, ?Duration $leaseDuration = null): ?ProjectionWorkAssignment
     {
         $leaseDuration ??= Duration::seconds(60);
@@ -150,21 +86,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return $this->toSegment($assignment->projectionId, $row);
     }
 
-    public function completeSegment(ProjectionSegment $segment, Checkpoint $checkpoint): void
-    {
-        $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
-        if (null === $row) {
-            return;
-        }
-
-        $row['status'] = null === $row['pendingOperation'] ? 'available' : 'drained';
-        $row['workerId'] = null;
-        $row['leaseExpiresAt'] = null;
-        $row['assignmentId'] = null;
-        $row['checkpoint'] = $checkpoint;
-        $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
-    }
-
     public function completeAssignedBatch(
         ProjectionSegment $segment,
         Checkpoint $checkpoint,
@@ -174,7 +95,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     ): void {
         $leaseDuration ??= Duration::seconds(60);
         $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
-        if (null === $row || 'active' !== $row['status'] || $row['workerId'] !== $workerId) {
+        if (null === $row || !in_array($row['status'], ['active', 'draining'], true) || $row['workerId'] !== $workerId) {
             return;
         }
 
@@ -185,24 +106,10 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             $row['leaseExpiresAt'] = null;
             $row['assignmentId'] = null;
         } else {
-            $row['status'] = 'assigned';
+            $row['status'] = null === $row['pendingOperation'] ? 'assigned' : 'draining';
             $row['leaseExpiresAt'] = $this->now()->add($leaseDuration);
         }
 
-        $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
-    }
-
-    public function abandonSegment(ProjectionSegment $segment): void
-    {
-        $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
-        if (null === $row) {
-            return;
-        }
-
-        $row['status'] = null === $row['pendingOperation'] ? 'available' : 'draining';
-        $row['workerId'] = null;
-        $row['leaseExpiresAt'] = null;
-        $row['assignmentId'] = null;
         $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
     }
 
@@ -220,19 +127,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
     }
 
-    public function renewLease(ProjectionSegment $segment, string $workerId, ?Duration $leaseDuration = null): void
-    {
-        $leaseDuration ??= Duration::seconds(60);
-        $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
-        if (null === $row || $row['workerId'] !== $workerId || 'active' !== $row['status']) {
-            return;
-        }
-
-        $row['leaseExpiresAt'] = $this->now()->add($leaseDuration);
-        $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
-    }
-
-    public function recoverExpiredLeases(string $projectionId): int
+    public function recoverExpiredAssignments(string $projectionId): int
     {
         $recovered = 0;
 
@@ -255,11 +150,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         }
 
         return $recovered;
-    }
-
-    public function recoverExpiredAssignments(string $projectionId): int
-    {
-        return $this->recoverExpiredLeases($projectionId);
     }
 
     public function splitSegment(string $projectionId, int $bucketFrom): void
@@ -313,7 +203,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         ], array_values($rows));
     }
 
-    public function finalizeSplit(ProjectionSegment $segment, Checkpoint $checkpoint): void
+    private function finalizeSplit(ProjectionSegment $segment, Checkpoint $checkpoint): void
     {
         $rangeSize = $segment->bucketTo - $segment->bucketFrom + 1;
         if ($rangeSize < 2) {
@@ -416,7 +306,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return $reconciled;
     }
 
-    public function finalizeMerge(ProjectionSegment $segment, Checkpoint $checkpoint): void
+    private function finalizeMerge(ProjectionSegment $segment, Checkpoint $checkpoint): void
     {
         [$parentFrom, $parentTo, $siblingFrom] = $this->resolveMergeSibling($segment);
         $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;

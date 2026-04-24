@@ -45,75 +45,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         return $affected > 0;
     }
 
-    /**
-     * Claims an available segment for a worker. Returns null if no segment is available.
-     */
-    public function claimSegment(
-        string $projectionId,
-        string $workerId,
-        Duration $leaseDurationSeconds = new Duration(seconds: 60),
-    ): ?ProjectionSegment {
-        return $this->claimByPredicate(
-            $projectionId,
-            $workerId,
-            $leaseDurationSeconds,
-            'AND status IN (\'available\', \'draining\')',
-            [],
-            [],
-        );
-    }
-
-    public function claimSegmentForBucket(
-        string $projectionId,
-        int $bucket,
-        string $workerId,
-        Duration $leaseDurationSeconds = new Duration(seconds: 60)
-    ): ?ProjectionSegment {
-        return $this->claimByPredicate(
-            $projectionId,
-            $workerId,
-            $leaseDurationSeconds,
-            'AND status IN (\'available\', \'draining\') AND bucket_from <= ? AND bucket_to >= ?',
-            [$bucket, $bucket],
-            [ParameterType::INTEGER, ParameterType::INTEGER],
-        );
-    }
-
-    /**
-     * Reads the current state of a segment from DB, without locking.
-     * Used by the runner to detect mid-batch draining requests.
-     */
-    public function readCurrentState(string $projectionId, int $bucketFrom): ProjectionSegment
-    {
-        $row = $this->connection->executeQuery(
-            sprintf(
-                'SELECT bucket_from, bucket_to, status, pending_operation, checkpoint
-                 FROM %s WHERE projection_id = ? AND bucket_from = ?',
-                $this->segmentsTable(),
-            ),
-            [$projectionId, $bucketFrom],
-            [ParameterType::STRING, ParameterType::INTEGER],
-        )->fetchAssociative();
-
-        if (false === $row) {
-            throw new \LogicException(sprintf(
-                'Segment [%d] not found for projection "%s".',
-                $bucketFrom,
-                $projectionId,
-            ));
-        }
-
-        return new ProjectionSegment(
-            projectionId: $projectionId,
-            bucketFrom: (int) $row['bucket_from'],
-            bucketTo: (int) $row['bucket_to'],
-            status: $row['status'],
-            pendingOperation: $row['pending_operation'] ?? null,
-            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-            wasCreated: false,
-        );
-    }
-
     public function assignSegment(
         string $projectionId,
         int $bucketFrom,
@@ -216,27 +147,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         }
     }
 
-    /**
-     * Releases a segment back to available status and saves its checkpoint.
-     */
-    public function completeSegment(ProjectionSegment $segment, Checkpoint $checkpoint): void
-    {
-        $now = $this->now();
-
-        $this->connection->executeStatement(
-            sprintf(
-                "UPDATE %s
-                 SET status = CASE WHEN pending_operation IS NULL THEN 'available' ELSE 'drained' END,
-                     worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL,
-                     checkpoint = ?, updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from = ?",
-                $this->segmentsTable(),
-            ),
-            [$checkpoint->serialize(), $now, $segment->projectionId, $segment->bucketFrom],
-            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER],
-        );
-    }
-
     public function completeAssignedBatch(
         ProjectionSegment $segment,
         Checkpoint $checkpoint,
@@ -253,7 +163,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                      SET status = CASE WHEN pending_operation IS NULL THEN 'available' ELSE 'drained' END,
                          worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL,
                          checkpoint = ?, updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status = 'active'",
+                     WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status IN ('active', 'draining')",
                     $this->segmentsTable(),
                 ),
                 [$checkpoint->serialize(), $now, $segment->projectionId, $segment->bucketFrom, $workerId],
@@ -266,32 +176,15 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET status = 'assigned',
+                 SET status = CASE WHEN pending_operation IS NULL THEN 'assigned' ELSE 'draining' END,
                      checkpoint = ?,
                      lease_expires_at = CAST(? AS TIMESTAMPTZ),
                      updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status = 'active'",
+                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status IN ('active', 'draining')",
                 $this->segmentsTable(),
             ),
             [$checkpoint->serialize(), $now->add($leaseDuration), $now, $segment->projectionId, $segment->bucketFrom, $workerId],
             [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
-        );
-    }
-
-    public function abandonSegment(ProjectionSegment $segment): void
-    {
-        $now = $this->clock->now();
-
-        $this->connection->executeStatement(
-            sprintf(
-                "UPDATE %s
-                 SET status = CASE WHEN pending_operation IS NULL THEN 'available' ELSE 'draining' END,
-                     worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from = ?",
-                $this->segmentsTable(),
-            ),
-            [$now, $segment->projectionId, $segment->bucketFrom],
-            [ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER],
         );
     }
 
@@ -312,41 +205,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         );
     }
 
-    /**
-     * Renews the worker's lease on a segment to prevent expiry during long batches.
-     */
-    public function renewLease(ProjectionSegment $segment, string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): void
-    {
-        $now = $this->now();
-
-        $this->connection->executeStatement(
-            sprintf(
-                "UPDATE %s
-                 SET lease_expires_at = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status = 'active'",
-                $this->segmentsTable(),
-            ),
-            [
-                $now->add($leaseDuration),
-                $now,
-                $segment->projectionId,
-                $segment->bucketFrom,
-                $workerId,
-            ],
-            [
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::INTEGER,
-                ParameterType::STRING,
-            ],
-        );
-    }
-
-    /**
-     * Reclaims segments whose worker lease has expired.
-     */
-    public function recoverExpiredLeases(string $projectionId): int
+    public function recoverExpiredAssignments(string $projectionId): int
     {
         $now = $this->clock->now();
 
@@ -363,11 +222,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         );
 
         return (int) $count;
-    }
-
-    public function recoverExpiredAssignments(string $projectionId): int
-    {
-        return $this->recoverExpiredLeases($projectionId);
     }
 
     /**
@@ -440,7 +294,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     /**
      * Executes the split transaction: creates two child segments, removes the parent.
      */
-    public function finalizeSplit(ProjectionSegment $segment, Checkpoint $checkpoint): void
+    private function finalizeSplit(ProjectionSegment $segment, Checkpoint $checkpoint): void
     {
         $rangeSize = $segment->bucketTo - $segment->bucketFrom + 1;
         if ($rangeSize < 2) {
@@ -616,7 +470,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     /**
      * Called by a worker draining for a merge. The last sibling to drain finalizes the merge.
      */
-    public function finalizeMerge(ProjectionSegment $segment, Checkpoint $checkpoint): void
+    private function finalizeMerge(ProjectionSegment $segment, Checkpoint $checkpoint): void
     {
         [$parentFrom, $parentTo, $siblingFrom] = $this->resolveMergeSibling($segment);
         $now = $this->clock->now();
@@ -726,82 +580,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             'status' => $row['status'],
             'pendingOperation' => $row['pending_operation'] ?? null,
         ], $rows);
-    }
-
-    private function claimByPredicate(
-        string $projectionId,
-        string $workerId,
-        Duration $leaseDurationSeconds,
-        string $extraWhereSql,
-        array $extraParams,
-        array $extraTypes,
-    ): ?ProjectionSegment {
-        $this->connection->beginTransaction();
-
-        try {
-            $row = $this->connection->executeQuery(
-                sprintf(
-                    'SELECT bucket_from, bucket_to, status, pending_operation, checkpoint
-                     FROM %s
-                     WHERE projection_id = ?
-                       %s
-                     ORDER BY bucket_from ASC
-                     FOR UPDATE SKIP LOCKED
-                     LIMIT 1',
-                    $this->segmentsTable(),
-                    $extraWhereSql,
-                ),
-                [$projectionId, ...$extraParams],
-                [ParameterType::STRING, ...$extraTypes],
-            )->fetchAssociative();
-
-            if (false === $row) {
-                $this->connection->rollBack();
-
-                return null;
-            }
-
-            $now = $this->now();
-            $this->connection->executeStatement(
-                sprintf(
-                    "UPDATE %s
-                     SET status = CASE WHEN pending_operation IS NULL THEN 'active' ELSE 'draining' END,
-                         worker_id = ?, assignment_id = NULL, lease_expires_at = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ?",
-                    $this->segmentsTable(),
-                ),
-                [
-                    $workerId,
-                    $now->add($leaseDurationSeconds),
-                    $now,
-                    $projectionId,
-                    $row['bucket_from'],
-                ],
-                [
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::INTEGER,
-                ],
-            );
-
-            $this->connection->commit();
-
-            return new ProjectionSegment(
-                projectionId: $projectionId,
-                bucketFrom: (int) $row['bucket_from'],
-                bucketTo: (int) $row['bucket_to'],
-                status: 'active',
-                pendingOperation: $row['pending_operation'] ?? null,
-                checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-                wasCreated: false,
-            );
-        } catch (\Throwable $e) {
-            $this->connection->rollBack();
-
-            throw $e;
-        }
     }
 
     /** @return array{0: int, 1: int, 2: int} [parentFrom, parentTo, siblingFrom] */

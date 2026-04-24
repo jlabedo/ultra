@@ -79,7 +79,7 @@ final class ProjectionRuntimeTest extends TestCase
             new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math again'], ['courseId' => 'course-1']),
         ]);
 
-        $pending = $activity->pendingBuckets('runtime_projection');
+        $pending = $activity->pendingBucketsForSegment('runtime_projection', 0, 255);
 
         self::assertCount(1, $pending);
         self::assertSame(1, $pending[0]->counter);
@@ -100,7 +100,7 @@ final class ProjectionRuntimeTest extends TestCase
             new Event('unrelated.event', [], ['courseId' => 'course-1']),
         ]);
 
-        self::assertSame([], $activity->pendingBuckets('runtime_projection'));
+        self::assertSame([], $activity->pendingBucketsForSegment('runtime_projection', 0, 255));
         self::assertSame(0, $activator->workSignals());
     }
 
@@ -124,8 +124,8 @@ final class ProjectionRuntimeTest extends TestCase
             new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['courseId' => 'course-1']),
         ]);
 
-        $primaryPending = $activity->pendingBuckets('runtime_projection');
-        $secondaryPending = $activity->pendingBuckets('secondary_runtime_projection');
+        $primaryPending = $activity->pendingBucketsForSegment('runtime_projection', 0, 255);
+        $secondaryPending = $activity->pendingBucketsForSegment('secondary_runtime_projection', 0, 255);
 
         self::assertCount(1, $primaryPending);
         self::assertSame(1, $primaryPending[0]->counter);
@@ -171,7 +171,7 @@ final class ProjectionRuntimeTest extends TestCase
             'course-1' => 'Math',
             'course-2' => 'Physics',
         ], $projection->names);
-        self::assertSame([], $activity->pendingBuckets('runtime_projection'));
+        self::assertSame([], $activity->pendingBucketsForSegment('runtime_projection', 0, 255));
     }
 
     public function test_global_coordinator_can_catch_up_multiple_projections_in_one_run(): void
@@ -203,8 +203,8 @@ final class ProjectionRuntimeTest extends TestCase
         self::assertSame(2, $result->processedEvents);
         self::assertSame(2, $result->acknowledgedBuckets);
         self::assertSame(['course-1' => 'Math'], $primaryProjection->names);
-        self::assertSame([], $activity->pendingBuckets('runtime_projection'));
-        self::assertSame([], $activity->pendingBuckets('secondary_runtime_projection'));
+        self::assertSame([], $activity->pendingBucketsForSegment('runtime_projection', 0, 255));
+        self::assertSame([], $activity->pendingBucketsForSegment('secondary_runtime_projection', 0, 255));
     }
 
     public function test_projection_catalog_tracks_constructor_and_added_runtimes(): void

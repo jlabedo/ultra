@@ -115,8 +115,14 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
                 new UltraNormalizer(),
             );
 
-            self::assertSame(2, $runner->runOnce($runtime, 'worker-1'));
-            self::assertSame(0, $runner->runOnce($runtime, 'worker-1'));
+            $runner->ensureInitialized($runtime);
+            $assignment = $runner->assignSegment('course_names', 0, 'worker-1');
+            self::assertNotNull($assignment);
+
+            $result = $runner->runAssignedOnce($runtime, $assignment);
+
+            self::assertSame(2, $result->processedEvents);
+            self::assertTrue($result->caughtUp);
 
             $rows = $connection->fetchAllAssociative(
                 sprintf('SELECT course_id, name FROM %s ORDER BY course_id ASC', $tableName),
@@ -127,9 +133,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
                 ['course_id' => 'course-2', 'name' => 'Physics 201'],
             ], $rows);
 
-            $segment = $segmentRepository->readCurrentState('course_names', 0);
-
-            self::assertSame(2, $segment->checkpoint->gapFloor->value);
+            self::assertSame('available', $segmentRepository->listSegments('course_names')[0]['status']);
         });
     }
 
@@ -158,7 +162,10 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
                 new UltraNormalizer(),
             );
 
-            self::assertSame(1, $runner->runOnce($runtime, 'worker-1'));
+            $runner->ensureInitialized($runtime);
+            $assignment = $runner->assignSegment('course_names', 0, 'worker-1');
+            self::assertNotNull($assignment);
+            self::assertSame(1, $runner->runAssignedOnce($runtime, $assignment)->processedEvents);
 
             $store->append([
                 new Event(
@@ -168,8 +175,9 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
                 ),
             ]);
 
-            self::assertSame(1, $runner->runOnce($runtime, 'worker-1'));
-            self::assertSame(0, $runner->runOnce($runtime, 'worker-1'));
+            $assignment = $runner->assignSegment('course_names', 0, 'worker-1');
+            self::assertNotNull($assignment);
+            self::assertSame(1, $runner->runAssignedOnce($runtime, $assignment)->processedEvents);
 
             $row = $connection->fetchAssociative(
                 sprintf('SELECT name FROM %s WHERE course_id = ?', $tableName),
@@ -195,17 +203,16 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
         ) use ($clock): void {
             $segmentRepository->ensureInitialized('course_names');
 
-            $segmentRepository->claimSegment('course_names', 'worker-stale', leaseDurationSeconds: Duration::seconds(30));
+            self::assertNotNull($segmentRepository->assignSegment('course_names', 0, 'worker-stale', Duration::seconds(30)));
             $clock->advance(Duration::seconds(31));
 
-            $recovered = $segmentRepository->recoverExpiredLeases('course_names');
+            $recovered = $segmentRepository->recoverExpiredAssignments('course_names');
 
             self::assertSame(1, $recovered);
 
-            $segment = $segmentRepository->claimSegment('course_names', 'worker-new');
+            $assignment = $segmentRepository->assignSegment('course_names', 0, 'worker-new');
 
-            self::assertNotNull($segment);
-            self::assertSame('active', $segment->status);
+            self::assertNotNull($assignment);
         }, $clock);
     }
 
@@ -234,7 +241,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
                 new UltraNormalizer(),
             );
 
-            $runner->runOnce($runtime, 'worker-1');
+            $runner->ensureInitialized($runtime);
             $segmentRepository->splitSegment('course_names', 0);
             $segmentRepository->reconcilePendingOperations('course_names');
 
@@ -275,7 +282,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
                 new UltraNormalizer(),
             );
 
-            $runner->runOnce($runtime, 'worker-1');
+            $runner->ensureInitialized($runtime);
             $segmentRepository->splitSegment('course_names', 0);
             $segmentRepository->reconcilePendingOperations('course_names');
             $segmentRepository->requestMerge('course_names', 0, 255);
@@ -325,15 +332,20 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
                 new UltraNormalizer(),
             );
 
-            $runner->runOnce($runtime, 'worker-1');
+            $runner->ensureInitialized($runtime);
+            $assignment = $runner->assignSegment('course_names', 0, 'worker-1');
+            self::assertNotNull($assignment);
+            $segment = $segmentRepository->claimAssignedSegment($assignment);
+            self::assertNotNull($segment);
             $segmentRepository->splitSegment('course_names', 0);
 
             $segments = $segmentRepository->listSegments('course_names');
 
             self::assertCount(1, $segments);
-            self::assertSame('drained', $segments[0]['status']);
+            self::assertSame('draining', $segments[0]['status']);
             self::assertSame('split', $segments[0]['pendingOperation']);
 
+            $segmentRepository->completeAssignedBatch($segment, \Ultra\EventStore\Checkpoint::beginning(), 'worker-1', true);
             $segmentRepository->reconcilePendingOperations('course_names');
 
             $segments = $segmentRepository->listSegments('course_names');

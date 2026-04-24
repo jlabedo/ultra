@@ -57,31 +57,6 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
         );
     }
 
-    public function pendingBuckets(string $projectionId, int $limit = 32): array
-    {
-        $rows = $this->connection->executeQuery(
-            sprintf(
-                'SELECT projection_id, bucket_no, counter
-                 FROM %s
-                 WHERE projection_id = ? AND counter > 0
-                 ORDER BY counter DESC, bucket_no ASC
-                 LIMIT ?',
-                $this->bucketActivityTable(),
-            ),
-            [$projectionId, $limit],
-            [ParameterType::STRING, ParameterType::INTEGER],
-        )->fetchAllAssociative();
-
-        return array_map(
-            static fn (array $row): ProjectionBucketActivity => new ProjectionBucketActivity(
-                $row['projection_id'],
-                (int) $row['bucket_no'],
-                (int) $row['counter'],
-            ),
-            $rows,
-        );
-    }
-
     public function pendingBucketsForSegment(string $projectionId, int $bucketFrom, int $bucketTo): array
     {
         $rows = $this->connection->executeQuery(

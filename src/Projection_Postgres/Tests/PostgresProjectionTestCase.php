@@ -48,29 +48,38 @@ abstract class PostgresProjectionTestCase extends TestCase
         $eventStorePrefix = postgresTestUniquePrefix();
         $projectionPrefix = 'ultra_projection_'.bin2hex(random_bytes(4)).'_';
         $eventSchema = postgresTestSchemaForImplementation($eventStorePrefix, 'query-streams');
-        $projectionSchema = new PostgresProjectionSegmentSchema($projectionPrefix);
+        $projectionSchemas = [
+            new PostgresProjectionSegmentSchema($projectionPrefix),
+            new PostgresProjectionBucketActivitySchema($projectionPrefix),
+        ];
 
         try {
             foreach ($eventSchema->createStatements() as $statement) {
                 $connection->executeStatement($statement);
             }
 
-            foreach ($projectionSchema->createStatements() as $statement) {
-                $connection->executeStatement($statement);
+            foreach ($projectionSchemas as $schema) {
+                foreach ($schema->createStatements() as $statement) {
+                    $connection->executeStatement($statement);
+                }
             }
 
             $store = postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams');
             $segmentRepository = new PostgresProjectionSegmentRepository($connection, $projectionPrefix, $clock);
+            $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
             $runner = new ProjectionRunner(
                 $store,
                 $segmentRepository,
                 new PostgresProjectionTransactionManager($connection),
+                $activityRepository,
             );
 
             $callback($connection, $store, $segmentRepository, $runner, $eventStorePrefix, $projectionPrefix);
         } finally {
-            foreach ($projectionSchema->dropStatements() as $statement) {
-                $connection->executeStatement($statement);
+            foreach (array_reverse($projectionSchemas) as $schema) {
+                foreach ($schema->dropStatements() as $statement) {
+                    $connection->executeStatement($statement);
+                }
             }
 
             foreach ($eventSchema->dropStatements() as $statement) {

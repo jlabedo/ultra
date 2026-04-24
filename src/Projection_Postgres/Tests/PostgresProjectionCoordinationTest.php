@@ -16,7 +16,7 @@ use Ultra\Time\Duration;
  */
 final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCase
 {
-    public function test_postgres_segment_repository_can_claim_the_segment_containing_a_bucket(): void
+    public function test_postgres_segment_repository_can_assign_and_claim_a_segment_for_a_worker(): void
     {
         $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
             $segments = new PostgresProjectionSegmentRepository($connection, $projectionPrefix);
@@ -24,7 +24,9 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
             $segments->splitSegment('courses', 0);
             $segments->reconcilePendingOperations('courses');
 
-            $segment = $segments->claimSegmentForBucket('courses', 200, 'worker-1');
+            $assignment = $segments->assignSegment('courses', 128, 'worker-1');
+            self::assertNotNull($assignment);
+            $segment = $segments->claimAssignedSegment($assignment);
 
             self::assertNotNull($segment);
             self::assertSame(128, $segment->bucketFrom);
@@ -42,13 +44,12 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
             $activity->bump('courses', 50);
             $activity->bump('other_courses', 3);
 
-            $pending = $activity->pendingBuckets('courses');
+            $pending = $activity->pendingBucketsForSegment('courses', 0, 255);
             $segmentPending = $activity->pendingBucketsForSegment('courses', 40, 45);
             $affectedBuckets = $activity->affectedBuckets();
 
             self::assertCount(2, $pending);
             self::assertSame(2, $pending[0]->counter);
-            self::assertSame(0, $pending[0]->acknowledgedCounter);
             self::assertCount(1, $segmentPending);
             self::assertSame(42, $segmentPending[0]->bucket);
             self::assertCount(3, $affectedBuckets);
