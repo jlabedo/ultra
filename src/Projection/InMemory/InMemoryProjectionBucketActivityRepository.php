@@ -9,14 +9,12 @@ use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
 
 final class InMemoryProjectionBucketActivityRepository implements ProjectionBucketActivityRepositoryInterface
 {
-    /** @var array<string, array<int, array{counter: int, acknowledgedCounter: int}>> */
+    /** @var array<string, array<int, int>> */
     private array $rows = [];
 
     public function bump(string $projectionId, int $bucket): void
     {
-        $row = $this->rows[$projectionId][$bucket] ?? ['counter' => 0, 'acknowledgedCounter' => 0];
-        ++$row['counter'];
-        $this->rows[$projectionId][$bucket] = $row;
+        $this->rows[$projectionId][$bucket] = ($this->rows[$projectionId][$bucket] ?? 0) + 1;
     }
 
     public function affectedBuckets(int $limit = 256): array
@@ -43,12 +41,11 @@ final class InMemoryProjectionBucketActivityRepository implements ProjectionBuck
         ksort($rows);
 
         $pending = [];
-        foreach ($rows as $bucket => $row) {
+        foreach ($rows as $bucket => $counter) {
             $activity = new ProjectionBucketActivity(
                 $projectionId,
                 (int) $bucket,
-                $row['counter'],
-                $row['acknowledgedCounter'],
+                $counter,
             );
             if ($activity->isPending()) {
                 $pending[] = $activity;
@@ -63,10 +60,41 @@ final class InMemoryProjectionBucketActivityRepository implements ProjectionBuck
         return array_slice($pending, 0, $limit);
     }
 
-    public function acknowledge(string $projectionId, int $bucket, int $counter): void
+    public function pendingBucketsForSegment(string $projectionId, int $bucketFrom, int $bucketTo): array
     {
-        $row = $this->rows[$projectionId][$bucket] ?? ['counter' => 0, 'acknowledgedCounter' => 0];
-        $row['acknowledgedCounter'] = max($row['acknowledgedCounter'], $counter);
-        $this->rows[$projectionId][$bucket] = $row;
+        $pending = [];
+
+        foreach ($this->rows[$projectionId] ?? [] as $bucket => $counter) {
+            if ($bucket < $bucketFrom || $bucket > $bucketTo || $counter <= 0) {
+                continue;
+            }
+
+            $pending[] = new ProjectionBucketActivity($projectionId, (int) $bucket, $counter);
+        }
+
+        usort(
+            $pending,
+            static fn (ProjectionBucketActivity $a, ProjectionBucketActivity $b): int => ($b->counter <=> $a->counter) ?: ($a->bucket <=> $b->bucket),
+        );
+
+        return $pending;
+    }
+
+    public function decrementSeenBuckets(string $projectionId, array $seenCounters): int
+    {
+        $decremented = 0;
+
+        foreach ($seenCounters as $bucket => $seenCounter) {
+            $current = $this->rows[$projectionId][(int) $bucket] ?? 0;
+            if ($current <= 0 || $seenCounter <= 0) {
+                continue;
+            }
+
+            $next = max(0, $current - $seenCounter);
+            $this->rows[$projectionId][(int) $bucket] = $next;
+            ++$decremented;
+        }
+
+        return $decremented;
     }
 }

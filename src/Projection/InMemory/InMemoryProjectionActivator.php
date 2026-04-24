@@ -5,26 +5,23 @@ declare(strict_types=1);
 namespace Ultra\Projection\InMemory;
 
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
+use Ultra\Projection\ProjectionWorkAssignment;
 
 final class InMemoryProjectionActivator implements ProjectionActivatorInterface
 {
     private int $workSignals = 0;
 
-    /** @var list<int> */
-    private array $workerRequests = [];
+    /** @var list<ProjectionWorkAssignment> */
+    private array $workerAssignments = [];
 
     public function signalWorkAvailable(): void
     {
         ++$this->workSignals;
     }
 
-    public function requestAdditionalWorkers(int $count): void
+    public function activateWorker(ProjectionWorkAssignment $assignment): void
     {
-        if ($count <= 0) {
-            return;
-        }
-
-        $this->workerRequests[] = $count;
+        $this->workerAssignments[] = $assignment;
     }
 
     public function workSignals(): int
@@ -32,9 +29,9 @@ final class InMemoryProjectionActivator implements ProjectionActivatorInterface
         return $this->workSignals;
     }
 
-    /** @return list<int> */
-    public function workerRequests(): array
+    /** @return list<ProjectionWorkAssignment> */
+    public function workerAssignments(): array
     {
-        return $this->workerRequests;
+        return $this->workerAssignments;
     }
 }

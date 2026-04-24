@@ -171,10 +171,12 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                         }
                     };
 
+                    $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
                     $runner = new ProjectionRunner(
                         $barrierStore,
                         new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
                         new PostgresProjectionTransactionManager($connection),
+                        $activityRepository,
                     );
                     $coordinator = new ProjectionCoordinator(
                         new ProjectionCatalog(
@@ -184,7 +186,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                             ),
                         ),
                         $runner,
-                        new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix),
+                        $activityRepository,
                         new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix),
                         new InMemoryProjectionActivator(),
                     );
@@ -209,10 +211,12 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                     require_once $testFile;
 
                     $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
+                    $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
                     $runner = new ProjectionRunner(
                         \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams'),
                         new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
                         new PostgresProjectionTransactionManager($connection),
+                        $activityRepository,
                     );
                     $coordinator = new ProjectionCoordinator(
                         new ProjectionCatalog(
@@ -222,7 +226,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                             ),
                         ),
                         $runner,
-                        new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix),
+                        $activityRepository,
                         new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix),
                         new InMemoryProjectionActivator(),
                     );

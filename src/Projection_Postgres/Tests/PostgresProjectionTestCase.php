@@ -150,12 +150,13 @@ abstract class PostgresProjectionTestCase extends TestCase
 
             $store = postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams');
             $segmentRepository = new PostgresProjectionSegmentRepository($connection, $projectionPrefix, $clock);
+            $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
             $runner = new ProjectionRunner(
                 $store,
                 $segmentRepository,
                 new PostgresProjectionTransactionManager($connection),
+                $activityRepository,
             );
-            $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
             $leaseRepository = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix);
 
             $callback(

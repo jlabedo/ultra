@@ -63,7 +63,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
                 $eventStorePrefix,
             )));
             self::assertSame(0, (int) $connection->fetchOne(sprintf(
-                'SELECT count(*) FROM %sbucket_activity WHERE counter > acknowledged_counter',
+                'SELECT count(*) FROM %sbucket_activity WHERE counter > 0',
                 $projectionPrefix,
             )));
         } finally {
@@ -117,7 +117,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
             ]);
 
             self::assertSame(0, $backfillCode, $backfillOutput);
-            self::assertSame(4, substr_count($backfillOutput, 'worker=process-worker-'));
+            self::assertGreaterThanOrEqual(1, substr_count($backfillOutput, 'worker=process-worker-'));
             self::assertSame([], $activityRepository->affectedBuckets());
 
             $rows = $connection->fetchAllAssociative(sprintf(

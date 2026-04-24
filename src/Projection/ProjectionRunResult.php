@@ -11,5 +11,6 @@ final readonly class ProjectionRunResult
         public bool $claimedSegment,
         public ?ProjectionSegment $segment,
         public bool $caughtUp = true,
+        public int $acknowledgedBuckets = 0,
     ) {}
 }

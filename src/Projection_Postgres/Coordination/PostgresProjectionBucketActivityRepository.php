@@ -20,8 +20,8 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
     {
         $this->connection->executeStatement(
             sprintf(
-                'INSERT INTO %s (projection_id, bucket_no, counter, acknowledged_counter)
-                 VALUES (?, ?, 1, 0)
+                'INSERT INTO %s (projection_id, bucket_no, counter)
+                 VALUES (?, ?, 1)
                  ON CONFLICT (projection_id, bucket_no)
                  DO UPDATE SET counter = %s.counter + 1, updated_at = statement_timestamp()',
                 $this->bucketActivityTable(),
@@ -36,9 +36,9 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
     {
         $rows = $this->connection->executeQuery(
             sprintf(
-                'SELECT projection_id, bucket_no, counter, acknowledged_counter
+                'SELECT projection_id, bucket_no, counter
                  FROM %s
-                 WHERE counter > acknowledged_counter
+                 WHERE counter > 0
                  ORDER BY projection_id ASC, counter DESC, bucket_no ASC
                  LIMIT ?',
                 $this->bucketActivityTable(),
@@ -52,7 +52,6 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
                 $row['projection_id'],
                 (int) $row['bucket_no'],
                 (int) $row['counter'],
-                (int) $row['acknowledged_counter'],
             ),
             $rows,
         );
@@ -62,9 +61,9 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
     {
         $rows = $this->connection->executeQuery(
             sprintf(
-                'SELECT projection_id, bucket_no, counter, acknowledged_counter
+                'SELECT projection_id, bucket_no, counter
                  FROM %s
-                 WHERE projection_id = ? AND counter > acknowledged_counter
+                 WHERE projection_id = ? AND counter > 0
                  ORDER BY counter DESC, bucket_no ASC
                  LIMIT ?',
                 $this->bucketActivityTable(),
@@ -78,23 +77,72 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
                 $row['projection_id'],
                 (int) $row['bucket_no'],
                 (int) $row['counter'],
-                (int) $row['acknowledged_counter'],
             ),
             $rows,
         );
     }
 
-    public function acknowledge(string $projectionId, int $bucket, int $counter): void
+    public function pendingBucketsForSegment(string $projectionId, int $bucketFrom, int $bucketTo): array
     {
-        $this->connection->executeStatement(
+        $rows = $this->connection->executeQuery(
             sprintf(
-                'UPDATE %s
-                 SET acknowledged_counter = GREATEST(acknowledged_counter, ?), updated_at = statement_timestamp()
-                 WHERE projection_id = ? AND bucket_no = ?',
+                'SELECT projection_id, bucket_no, counter
+                 FROM %s
+                 WHERE projection_id = ?
+                   AND bucket_no >= ?
+                   AND bucket_no <= ?
+                   AND counter > 0
+                 ORDER BY counter DESC, bucket_no ASC',
                 $this->bucketActivityTable(),
             ),
-            [$counter, $projectionId, $bucket],
-            [ParameterType::INTEGER, ParameterType::STRING, ParameterType::INTEGER],
+            [$projectionId, $bucketFrom, $bucketTo],
+            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
+        )->fetchAllAssociative();
+
+        return array_map(
+            static fn (array $row): ProjectionBucketActivity => new ProjectionBucketActivity(
+                $row['projection_id'],
+                (int) $row['bucket_no'],
+                (int) $row['counter'],
+            ),
+            $rows,
+        );
+    }
+
+    public function decrementSeenBuckets(string $projectionId, array $seenCounters): int
+    {
+        $seenCounters = array_filter($seenCounters, static fn (int $counter): bool => $counter > 0);
+        if ([] === $seenCounters) {
+            return 0;
+        }
+
+        $values = [];
+        $params = [];
+        $types = [];
+        foreach ($seenCounters as $bucket => $counter) {
+            $values[] = '(CAST(? AS SMALLINT), CAST(? AS INTEGER))';
+            $params[] = (int) $bucket;
+            $params[] = $counter;
+            $types[] = ParameterType::INTEGER;
+            $types[] = ParameterType::INTEGER;
+        }
+
+        $params[] = $projectionId;
+        $types[] = ParameterType::STRING;
+
+        return (int) $this->connection->executeStatement(
+            sprintf(
+                'UPDATE %s AS bucket_activity
+                 SET counter = GREATEST(bucket_activity.counter - seen.seen_counter, 0),
+                     updated_at = statement_timestamp()
+                 FROM (VALUES %s) AS seen(bucket_no, seen_counter)
+                 WHERE bucket_activity.projection_id = ?
+                   AND bucket_activity.bucket_no = seen.bucket_no',
+                $this->bucketActivityTable(),
+                implode(', ', $values),
+            ),
+            $params,
+            $types,
         );
     }
 

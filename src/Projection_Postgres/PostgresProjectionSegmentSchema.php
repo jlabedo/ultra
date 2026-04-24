@@ -21,6 +21,7 @@ final readonly class PostgresProjectionSegmentSchema
                     pending_operation TEXT        NULL,
                     checkpoint        TEXT        NOT NULL DEFAULT '{\"gapFloor\":0,\"gapSeqNos\":[]}',
                     worker_id         TEXT        NULL,
+                    assignment_id     TEXT        NULL,
                     lease_expires_at  TIMESTAMPTZ NULL,
                     updated_at        TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
                     PRIMARY KEY (projection_id, bucket_from)

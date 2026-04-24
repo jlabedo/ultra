@@ -14,5 +14,9 @@ interface ProjectionBucketActivityRepositoryInterface
     /** @return list<ProjectionBucketActivity> */
     public function pendingBuckets(string $projectionId, int $limit = 32): array;
 
-    public function acknowledge(string $projectionId, int $bucket, int $counter): void;
+    /** @return list<ProjectionBucketActivity> */
+    public function pendingBucketsForSegment(string $projectionId, int $bucketFrom, int $bucketTo): array;
+
+    /** @param array<int, int> $seenCounters bucket => seen pending counter */
+    public function decrementSeenBuckets(string $projectionId, array $seenCounters): int;
 }

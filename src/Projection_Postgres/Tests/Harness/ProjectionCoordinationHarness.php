@@ -27,10 +27,12 @@ use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
+use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\ProjectionWorkAssignment;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivitySchema;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
@@ -100,27 +102,25 @@ final class ProjectionCoordinationHarness
         $leases = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix);
         $runtime = self::runtime($connection, $projectionPrefix);
         $catalog = new ProjectionCatalog($runtime);
-        $runner = new ProjectionRunner($eventStore, $segments, new PostgresProjectionTransactionManager($connection));
+        $runner = new ProjectionRunner($eventStore, $segments, new PostgresProjectionTransactionManager($connection), $activity);
         $consolePath ??= __DIR__.'/projection-coordination-harness';
 
         $application = new Application('Projection Coordination Harness');
         $application->setAutoExit(false);
+        $processActivator = new ProcessProjectionActivator($consolePath, $dsn, $eventStorePrefix, $projectionPrefix);
+        $scalingPolicy = new ConfigurableProjectionScalingPolicy();
+        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $processActivator, $scalingPolicy);
+
         $application->addCommands([
             new CreateProjectionHarnessSchemaCommand($connection, $eventStorePrefix, $projectionPrefix),
             new SeedProjectionEventsCommand($eventStore, $activity),
             new BackfillProjectionCommand(
-                $runtime,
-                $segments,
-                new ProcessProjectionActivator($consolePath, $dsn, $eventStorePrefix, $projectionPrefix),
+                $coordinator,
+                $processActivator,
+                $scalingPolicy,
             ),
             new RunProjectionHarnessCommand($connection, $eventStorePrefix, $projectionPrefix),
-            new ProjectionWorkerCommand(new ProjectionCoordinator(
-                $catalog,
-                $runner,
-                $activity,
-                $leases,
-                new InMemoryProjectionActivator(),
-            )),
+            new ProjectionWorkerCommand($catalog, $runner),
         ]);
 
         return $application;
@@ -280,9 +280,9 @@ final class SeedProjectionEventsCommand extends Command
 final class BackfillProjectionCommand extends Command
 {
     public function __construct(
-        private readonly ProjectionRuntime $runtime,
-        private readonly PostgresProjectionSegmentRepository $segments,
+        private readonly ProjectionCoordinator $coordinator,
         private readonly ProcessProjectionActivator $activator,
+        private readonly ConfigurableProjectionScalingPolicy $scalingPolicy,
     ) {
         parent::__construct('harness:projection-backfill');
     }
@@ -309,47 +309,21 @@ final class BackfillProjectionCommand extends Command
             throw new \InvalidArgumentException('batch-size and max-cycles must be greater than zero.');
         }
 
-        $this->runtime->initialize();
-        $this->segments->ensureInitialized($this->runtime->projectionId());
-        $this->splitUntilWorkerCount($workers);
-
         $this->activator->configureRun($batchSize, $maxCycles);
-        $this->activator->requestAdditionalWorkers($workers);
+        $this->scalingPolicy->additionalWorkers = max(0, $workers - 1);
+        $this->coordinator->run('process-worker-coordinator', $batchSize, $maxCycles);
 
         return $this->activator->wait($output) ? Command::SUCCESS : Command::FAILURE;
     }
+}
 
-    private function splitUntilWorkerCount(int $workers): void
+final class ConfigurableProjectionScalingPolicy implements ProjectionScalingPolicyInterface
+{
+    public int $additionalWorkers = 0;
+
+    public function additionalWorkersRequested(array $affectedBuckets): int
     {
-        while (count($this->segments->listSegments($this->runtime->projectionId())) < $workers) {
-            $candidate = $this->largestSplittableSegment();
-            if (null === $candidate) {
-                return;
-            }
-
-            $this->segments->splitSegment($this->runtime->projectionId(), $candidate['bucketFrom']);
-            $this->segments->reconcilePendingOperations($this->runtime->projectionId());
-        }
-    }
-
-    /**
-     * @return null|array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: null|string}
-     */
-    private function largestSplittableSegment(): ?array
-    {
-        $candidates = array_filter(
-            $this->segments->listSegments($this->runtime->projectionId()),
-            static fn (array $segment): bool => 'available' === $segment['status']
-                && null === $segment['pendingOperation']
-                && $segment['bucketTo'] > $segment['bucketFrom'],
-        );
-        usort(
-            $candidates,
-            static fn (array $left, array $right): int => ($right['bucketTo'] - $right['bucketFrom'])
-                <=> ($left['bucketTo'] - $left['bucketFrom']),
-        );
-
-        return $candidates[0] ?? null;
+        return $this->additionalWorkers;
     }
 }
 
@@ -423,7 +397,7 @@ final class RunProjectionHarnessCommand extends Command
             ProjectionCoordinationHarness::readModelTable($this->projectionPrefix),
         ));
         $pendingBuckets = (int) $this->connection->fetchOne(sprintf(
-            'SELECT count(*) FROM %s WHERE counter > acknowledged_counter',
+            'SELECT count(*) FROM %s WHERE counter > 0',
             $this->projectionPrefix.'bucket_activity',
         ));
 
@@ -443,8 +417,10 @@ final class RunProjectionHarnessCommand extends Command
 
 final class ProjectionWorkerCommand extends Command
 {
-    public function __construct(private readonly ProjectionCoordinator $coordinator)
-    {
+    public function __construct(
+        private readonly ProjectionCatalog $catalog,
+        private readonly ProjectionRunner $runner,
+    ) {
         parent::__construct('harness:projection-worker');
     }
 
@@ -452,27 +428,51 @@ final class ProjectionWorkerCommand extends Command
     {
         $this
             ->addOption('worker-id', null, InputOption::VALUE_REQUIRED, 'Worker identifier.', gethostname() ?: 'worker')
+            ->addOption('assignment-id', null, InputOption::VALUE_REQUIRED, 'Projection assignment identifier.')
+            ->addOption('projection-id', null, InputOption::VALUE_REQUIRED, 'Projection identifier.')
+            ->addOption('bucket-from', null, InputOption::VALUE_REQUIRED, 'Assigned segment start bucket.')
             ->addOption('batch-size', null, InputOption::VALUE_REQUIRED, 'Events processed per claimed segment.', 5)
-            ->addOption('max-cycles', null, InputOption::VALUE_REQUIRED, 'Maximum coordinator cycles.', 64)
+            ->addOption('max-cycles', null, InputOption::VALUE_REQUIRED, 'Maximum worker cycles.', 64)
         ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $workerId = (string) $input->getOption('worker-id');
-        $result = $this->coordinator->run(
+        $assignment = new ProjectionWorkAssignment(
+            (string) $input->getOption('assignment-id'),
+            (string) $input->getOption('projection-id'),
+            (int) $input->getOption('bucket-from'),
             $workerId,
-            (int) $input->getOption('batch-size'),
-            (int) $input->getOption('max-cycles'),
         );
+        $runtime = $this->catalog->runtime($assignment->projectionId);
+        $batchSize = (int) $input->getOption('batch-size');
+        $maxCycles = (int) $input->getOption('max-cycles');
+
+        $processedEvents = 0;
+        $acknowledgedBuckets = 0;
+        $caughtUp = false;
+        for ($cycle = 0; $cycle < $maxCycles; ++$cycle) {
+            $result = $this->runner->runAssignedOnce($runtime, $assignment, $batchSize);
+            if (!$result->claimedSegment) {
+                break;
+            }
+
+            $processedEvents += $result->processedEvents;
+            $acknowledgedBuckets += $result->acknowledgedBuckets;
+            $caughtUp = $result->caughtUp;
+            if ($caughtUp) {
+                break;
+            }
+        }
 
         $output->writeln(sprintf(
-            'worker=%s lease=%s processed=%d acknowledged=%d requested=%d',
+            'worker=%s assignment=%s caught_up=%s processed=%d acknowledged=%d',
             $workerId,
-            $result->acquiredLease ? 'yes' : 'no',
-            $result->processedEvents,
-            $result->acknowledgedBuckets,
-            $result->requestedWorkerActivations,
+            $assignment->assignmentId,
+            $caughtUp ? 'yes' : 'no',
+            $processedEvents,
+            $acknowledgedBuckets,
         ));
 
         return Command::SUCCESS;
@@ -503,34 +503,34 @@ final class ProcessProjectionActivator implements ProjectionActivatorInterface
 
     public function signalWorkAvailable(): void
     {
-        $this->requestAdditionalWorkers(1);
+        // The harness uses the backfill command as the scheduler entrypoint.
     }
 
-    public function requestAdditionalWorkers(int $count): void
+    public function activateWorker(ProjectionWorkAssignment $assignment): void
     {
-        for ($i = 0; $i < $count; ++$i) {
-            ++$this->sequence;
-            $workerId = sprintf('process-worker-%02d', $this->sequence);
-            $process = new Process(
-                [
-                    PHP_BINARY,
-                    $this->consolePath,
-                    'harness:projection-worker',
-                    '--worker-id='.$workerId,
-                    '--batch-size='.$this->batchSize,
-                    '--max-cycles='.$this->maxCycles,
-                ],
-                null,
-                [
-                    'ULTRA_PROJECTION_HARNESS_DSN' => $this->dsn,
-                    'ULTRA_PROJECTION_HARNESS_EVENT_PREFIX' => $this->eventStorePrefix,
-                    'ULTRA_PROJECTION_HARNESS_PROJECTION_PREFIX' => $this->projectionPrefix,
-                ],
-            );
-            $process->setTimeout(60);
-            $process->start();
-            $this->processes[] = $process;
-        }
+        ++$this->sequence;
+        $process = new Process(
+            [
+                PHP_BINARY,
+                $this->consolePath,
+                'harness:projection-worker',
+                '--worker-id='.$assignment->workerId,
+                '--assignment-id='.$assignment->assignmentId,
+                '--projection-id='.$assignment->projectionId,
+                '--bucket-from='.(string) $assignment->bucketFrom,
+                '--batch-size='.$this->batchSize,
+                '--max-cycles='.$this->maxCycles,
+            ],
+            null,
+            [
+                'ULTRA_PROJECTION_HARNESS_DSN' => $this->dsn,
+                'ULTRA_PROJECTION_HARNESS_EVENT_PREFIX' => $this->eventStorePrefix,
+                'ULTRA_PROJECTION_HARNESS_PROJECTION_PREFIX' => $this->projectionPrefix,
+            ],
+        );
+        $process->setTimeout(60);
+        $process->start();
+        $this->processes[] = $process;
     }
 
     public function wait(OutputInterface $output): bool

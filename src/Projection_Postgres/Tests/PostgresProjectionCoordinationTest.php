@@ -32,29 +32,40 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
         });
     }
 
-    public function test_postgres_bucket_activity_repository_stores_counters_and_acknowledgements(): void
+    public function test_postgres_bucket_activity_repository_stores_pending_counters_and_decrements_seen_values(): void
     {
         $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
             $activity = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
 
             $activity->bump('courses', 42);
             $activity->bump('courses', 42);
+            $activity->bump('courses', 50);
             $activity->bump('other_courses', 3);
 
             $pending = $activity->pendingBuckets('courses');
+            $segmentPending = $activity->pendingBucketsForSegment('courses', 40, 45);
             $affectedBuckets = $activity->affectedBuckets();
 
-            self::assertCount(1, $pending);
+            self::assertCount(2, $pending);
             self::assertSame(2, $pending[0]->counter);
             self::assertSame(0, $pending[0]->acknowledgedCounter);
-            self::assertCount(2, $affectedBuckets);
+            self::assertCount(1, $segmentPending);
+            self::assertSame(42, $segmentPending[0]->bucket);
+            self::assertCount(3, $affectedBuckets);
             self::assertSame('courses', $affectedBuckets[0]->projectionId);
-            self::assertSame('other_courses', $affectedBuckets[1]->projectionId);
+            self::assertSame('courses', $affectedBuckets[1]->projectionId);
+            self::assertSame('other_courses', $affectedBuckets[2]->projectionId);
 
-            $activity->acknowledge('courses', 42, 2);
-            $activity->acknowledge('other_courses', 3, 1);
+            $seenCounter = $segmentPending[0]->counter;
+            $activity->bump('courses', 42);
+            self::assertSame(1, $activity->decrementSeenBuckets('courses', [42 => $seenCounter]));
 
-            self::assertSame([], $activity->pendingBuckets('courses'));
+            $remainingSegmentPending = $activity->pendingBucketsForSegment('courses', 40, 45);
+
+            self::assertCount(1, $remainingSegmentPending);
+            self::assertSame(1, $remainingSegmentPending[0]->counter);
+            self::assertSame(2, $activity->decrementSeenBuckets('courses', [42 => 1, 50 => 1]));
+            self::assertSame(1, $activity->decrementSeenBuckets('other_courses', [3 => 1]));
             self::assertSame([], $activity->affectedBuckets());
         });
     }

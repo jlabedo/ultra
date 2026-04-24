@@ -84,7 +84,7 @@ final class ProjectionRuntimeTest extends TestCase
         self::assertCount(1, $pending);
         self::assertSame(1, $pending[0]->counter);
         self::assertSame(1, $activator->workSignals());
-        self::assertSame([], $activator->workerRequests());
+        self::assertSame([], $activator->workerAssignments());
     }
 
     public function test_activity_recorder_ignores_events_missing_the_partition_dimension(): void
@@ -145,7 +145,7 @@ final class ProjectionRuntimeTest extends TestCase
         $leases = new InMemoryProjectionCoordinatorLeaseRepository();
         $activator = new InMemoryProjectionActivator();
         $recorder = new ProjectionActivityRecorder($catalog, $activity, $leases, $activator);
-        $runner = new ProjectionRunner($eventStore, $segments);
+        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
         $coordinator = new ProjectionCoordinator(
             $catalog,
             $runner,
@@ -187,7 +187,7 @@ final class ProjectionRuntimeTest extends TestCase
         $leases = new InMemoryProjectionCoordinatorLeaseRepository();
         $activator = new InMemoryProjectionActivator();
         $recorder = new ProjectionActivityRecorder($catalog, $activity, $leases, $activator);
-        $runner = new ProjectionRunner($eventStore, $segments);
+        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
         $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
 
         $events = [
