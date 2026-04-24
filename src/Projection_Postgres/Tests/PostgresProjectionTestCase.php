@@ -21,6 +21,7 @@ use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRep
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorSchema;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
+use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
 use Ultra\Time\StatickClock;
 use Ultra\Time\SystemClock;
 
@@ -60,7 +61,11 @@ abstract class PostgresProjectionTestCase extends TestCase
 
             $store = postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams');
             $segmentRepository = new PostgresProjectionSegmentRepository($connection, $projectionPrefix, $clock);
-            $runner = new ProjectionRunner($store, $segmentRepository);
+            $runner = new ProjectionRunner(
+                $store,
+                $segmentRepository,
+                new PostgresProjectionTransactionManager($connection),
+            );
 
             $callback($connection, $store, $segmentRepository, $runner, $eventStorePrefix, $projectionPrefix);
         } finally {
@@ -145,7 +150,11 @@ abstract class PostgresProjectionTestCase extends TestCase
 
             $store = postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams');
             $segmentRepository = new PostgresProjectionSegmentRepository($connection, $projectionPrefix, $clock);
-            $runner = new ProjectionRunner($store, $segmentRepository);
+            $runner = new ProjectionRunner(
+                $store,
+                $segmentRepository,
+                new PostgresProjectionTransactionManager($connection),
+            );
             $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
             $leaseRepository = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix);
 

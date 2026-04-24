@@ -21,8 +21,10 @@ use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
+use Ultra\Projection\NoOpProjectionTransactionManager;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\ProjectionTransactionManagerInterface;
 
 final class CallbackEventStore implements EventStore
 {
@@ -107,6 +109,16 @@ final class FailingTrackingProjection
     }
 }
 
+#[Projection(name: 'failing_initializer_projection', partitionBy: 'courseId')]
+final class FailingInitializerProjection
+{
+    #[ProjectionInitializer]
+    public function initialize(): void
+    {
+        throw new \RuntimeException('Projection initializer failed.');
+    }
+}
+
 #[Projection(name: 'failing_flush_tracking_projection', partitionBy: 'courseId')]
 final class FailingFlushTrackingProjection
 {
@@ -125,10 +137,60 @@ final class FailingFlushTrackingProjection
     }
 }
 
+final class RecordingProjectionTransactionManager implements ProjectionTransactionManagerInterface
+{
+    /** @var list<string> */
+    public array $events = [];
+
+    public function __construct(
+        private readonly ?InMemoryProjectionSegmentRepository $segments = null,
+    ) {}
+
+    public function transactional(callable $operation): mixed
+    {
+        $this->events[] = 'begin';
+        $snapshot = $this->snapshotSegments();
+
+        try {
+            $result = $operation();
+            $this->events[] = 'commit';
+
+            return $result;
+        } catch (\Throwable $exception) {
+            $this->restoreSegments($snapshot);
+            $this->events[] = 'rollback';
+
+            throw $exception;
+        }
+    }
+
+    private function snapshotSegments(): ?array
+    {
+        if (null === $this->segments) {
+            return null;
+        }
+
+        $property = new \ReflectionProperty($this->segments, 'segments');
+
+        return $property->getValue($this->segments);
+    }
+
+    private function restoreSegments(?array $snapshot): void
+    {
+        if (null === $this->segments || null === $snapshot) {
+            return;
+        }
+
+        $property = new \ReflectionProperty($this->segments, 'segments');
+        $property->setValue($this->segments, $snapshot);
+    }
+}
+
 /**
  * @internal
  */
 #[CoversClass(ProjectionRunner::class)]
+#[CoversClass(NoOpProjectionTransactionManager::class)]
 final class ProjectionRunnerBehaviorTest extends TestCase
 {
     public function test_run_once_initializes_the_projection_only_when_the_segment_repository_is_first_created(): void
@@ -137,7 +199,8 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $runner = new ProjectionRunner($eventStore, $segments);
+        $transactions = new RecordingProjectionTransactionManager();
+        $runner = new ProjectionRunner($eventStore, $segments, $transactions);
 
         $eventStore->append([
             self::courseCreatedEvent('course-1', 'Math'),
@@ -148,6 +211,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame(1, $projection->initialized);
         self::assertSame(2, $projection->flushes);
         self::assertSame(['course-1' => 'Math'], $projection->names);
+        self::assertSame(['begin', 'commit', 'begin', 'commit', 'begin', 'commit', 'begin', 'commit'], $transactions->events);
         self::assertSame(1, $segments->readCurrentState('tracking_projection', 0)->checkpoint->gapFloor->value);
     }
 
@@ -177,7 +241,8 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $runtime = new ProjectionRuntime(new TrackingProjection(), new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $runner = new ProjectionRunner($eventStore, $segments);
+        $transactions = new RecordingProjectionTransactionManager($segments);
+        $runner = new ProjectionRunner($eventStore, $segments, $transactions);
 
         $eventStore->append([
             self::courseCreatedEvent('course-1', 'Math'),
@@ -190,6 +255,29 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertNotNull($result->segment);
         self::assertSame(0, $result->segment->bucketFrom);
         self::assertSame(255, $result->segment->bucketTo);
+        self::assertSame(['begin', 'commit', 'begin', 'commit'], $transactions->events);
+    }
+
+    public function test_run_once_wraps_initialization_in_a_transaction(): void
+    {
+        $runtime = new ProjectionRuntime(new FailingInitializerProjection(), new UltraNormalizer());
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $transactions = new RecordingProjectionTransactionManager($segments);
+        $runner = new ProjectionRunner($eventStore, $segments, $transactions);
+
+        try {
+            $runner->runOnce($runtime, 'worker-1');
+            self::fail('Expected the projection initializer to throw.');
+        } catch (\RuntimeException $e) {
+            self::assertSame('Projection initializer failed.', $e->getMessage());
+        }
+
+        self::assertSame(['begin', 'rollback'], $transactions->events);
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Segment [0] not found');
+
+        $segments->readCurrentState('failing_initializer_projection', 0);
     }
 
     public function test_run_once_releases_the_segment_without_advancing_the_checkpoint_when_a_handler_throws(): void
@@ -197,7 +285,8 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $runtime = new ProjectionRuntime(new FailingTrackingProjection(), new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $runner = new ProjectionRunner($eventStore, $segments);
+        $transactions = new RecordingProjectionTransactionManager();
+        $runner = new ProjectionRunner($eventStore, $segments, $transactions);
 
         $eventStore->append([
             self::courseCreatedEvent('course-1', 'Math'),
@@ -212,6 +301,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
 
         $segment = $segments->readCurrentState('failing_tracking_projection', 0);
 
+        self::assertSame(['begin', 'commit', 'begin', 'rollback'], $transactions->events);
         self::assertSame('available', $segment->status);
         self::assertNull($segment->pendingOperation);
         self::assertSame(0, $segment->checkpoint->gapFloor->value);
@@ -223,7 +313,8 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $runner = new ProjectionRunner($eventStore, $segments);
+        $transactions = new RecordingProjectionTransactionManager();
+        $runner = new ProjectionRunner($eventStore, $segments, $transactions);
 
         $eventStore->append([
             self::courseCreatedEvent('course-1', 'Math'),
@@ -239,6 +330,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $segment = $segments->readCurrentState('failing_flush_tracking_projection', 0);
 
         self::assertSame(1, $projection->handled);
+        self::assertSame(['begin', 'commit', 'begin', 'rollback'], $transactions->events);
         self::assertSame('available', $segment->status);
         self::assertNull($segment->pendingOperation);
         self::assertSame(0, $segment->checkpoint->gapFloor->value);
@@ -250,7 +342,8 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $runner = new ProjectionRunner($eventStore, $segments);
+        $transactions = new RecordingProjectionTransactionManager();
+        $runner = new ProjectionRunner($eventStore, $segments, $transactions);
 
         $segments->ensureInitialized('tracking_projection');
         $segments->claimSegment('tracking_projection', 'other-worker');
@@ -261,6 +354,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertFalse($result->claimedSegment);
         self::assertNull($result->segment);
         self::assertSame(0, $projection->initialized);
+        self::assertSame(['begin', 'commit'], $transactions->events);
     }
 
     public function test_run_bucket_once_processes_only_the_segment_that_contains_the_requested_bucket(): void

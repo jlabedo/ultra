@@ -29,6 +29,7 @@ use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
+use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
 use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
@@ -173,6 +174,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                     $runner = new ProjectionRunner(
                         $barrierStore,
                         new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
+                        new PostgresProjectionTransactionManager($connection),
                     );
                     $coordinator = new ProjectionCoordinator(
                         new ProjectionCatalog(
@@ -210,6 +212,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                     $runner = new ProjectionRunner(
                         \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams'),
                         new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
+                        new PostgresProjectionTransactionManager($connection),
                     );
                     $coordinator = new ProjectionCoordinator(
                         new ProjectionCatalog(

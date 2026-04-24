@@ -37,6 +37,7 @@ use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRep
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorSchema;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
+use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
 
 #[EventAttribute('harness.course.created')]
 final readonly class HarnessCourseCreated
@@ -99,7 +100,7 @@ final class ProjectionCoordinationHarness
         $leases = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix);
         $runtime = self::runtime($connection, $projectionPrefix);
         $catalog = new ProjectionCatalog($runtime);
-        $runner = new ProjectionRunner($eventStore, $segments);
+        $runner = new ProjectionRunner($eventStore, $segments, new PostgresProjectionTransactionManager($connection));
         $consolePath ??= __DIR__.'/projection-coordination-harness';
 
         $application = new Application('Projection Coordination Harness');

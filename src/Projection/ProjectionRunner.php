@@ -11,7 +11,9 @@ final readonly class ProjectionRunner
     public function __construct(
         private EventStore $eventStore,
         private ProjectionSegmentRepositoryInterface $segmentRepository,
-    ) {}
+        private ProjectionTransactionManagerInterface $transactionManager = new NoOpProjectionTransactionManager(),
+    ) {
+    }
 
     public function recoverExpiredLeases(string $projectionId): int
     {
@@ -37,10 +39,12 @@ final readonly class ProjectionRunner
         int $limit = 100,
     ): ProjectionRunResult {
         $definition = $runtime->definition();
-        $created = $this->segmentRepository->ensureInitialized($definition->projectionId);
-        if ($created) {
-            $runtime->initialize();
-        }
+        $this->transactionManager->transactional(function () use ($definition, $runtime): void {
+            $created = $this->segmentRepository->ensureInitialized($definition->projectionId);
+            if ($created) {
+                $runtime->initialize();
+            }
+        });
 
         $segment = $this->segmentRepository->claimSegment($definition->projectionId, $workerId);
         if (null === $segment) {
@@ -66,10 +70,12 @@ final readonly class ProjectionRunner
         int $limit = 100,
     ): ProjectionRunResult {
         $definition = $runtime->definition();
-        $created = $this->segmentRepository->ensureInitialized($definition->projectionId);
-        if ($created) {
-            $runtime->initialize();
-        }
+        $this->transactionManager->transactional(function () use ($definition, $runtime): void {
+            $created = $this->segmentRepository->ensureInitialized($definition->projectionId);
+            if ($created) {
+                $runtime->initialize();
+            }
+        });
 
         $segment = $this->segmentRepository->claimSegmentForBucket($definition->projectionId, $bucket, $workerId);
         if (null === $segment) {
@@ -88,12 +94,14 @@ final readonly class ProjectionRunner
             $query = $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
             $result = $this->eventStore->load($query, $segment->checkpoint, null, $limit);
 
-            foreach ($result->events as $event) {
-                $runtime->apply($event);
-            }
+            $this->transactionManager->transactional(function () use ($runtime, $segment, $result): void {
+                foreach ($result->events as $event) {
+                    $runtime->apply($event);
+                }
 
-            $runtime->flush();
-            $this->segmentRepository->completeSegment($segment, $result->checkpoint);
+                $runtime->flush();
+                $this->segmentRepository->completeSegment($segment, $result->checkpoint);
+            });
 
             return new ProjectionRunResult(
                 processedEvents: count($result->events),

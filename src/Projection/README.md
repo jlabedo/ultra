@@ -64,13 +64,17 @@ It works with an `EventStore` and a [ProjectionSegmentRepositoryInterface.php](P
 
 Its job is:
 
-1. ensure the projection has an initial segment
-2. claim a segment, or the segment containing a specific bucket
-3. load matching events for that segment from the current checkpoint
-4. apply them through `ProjectionRuntime`
-5. flush the projection runtime
-6. release the segment with the new checkpoint
-7. finalize split/merge operations when needed
+1. open a projection transaction boundary for first-time setup
+2. ensure the projection has an initial segment and initialize it when the segment was just created
+3. claim a segment, or the segment containing a specific bucket
+4. load matching events for that segment from the current checkpoint
+5. open a projection transaction boundary
+6. apply them through `ProjectionRuntime`
+7. flush the projection runtime
+8. release the segment with the new checkpoint
+9. commit the projection transaction
+10. abandon the segment if the transaction fails
+11. finalize split/merge operations when needed
 
 The segment repository owns runtime state such as:
 
@@ -80,6 +84,14 @@ The segment repository owns runtime state such as:
 - pending split/merge operations
 
 Segments are represented by [ProjectionSegment.php](ProjectionSegment.php).
+
+`ProjectionRunner` accepts a [ProjectionTransactionManagerInterface.php](ProjectionTransactionManagerInterface.php).
+The default [NoOpProjectionTransactionManager.php](NoOpProjectionTransactionManager.php) keeps in-memory and custom
+storage usage lightweight. Postgres-backed read models should wire the DBAL-based transaction manager from
+`src/Projection_Postgres` with the same connection used by projection read-model repositories and the segment
+repository. This makes event application, `#[ProjectionFlush]`, and checkpoint advancement commit or roll back as
+one unit. First-time segment creation and `#[ProjectionInitializer]` execution are also wrapped together in the
+same transaction manager.
 
 ## Coordination
 
