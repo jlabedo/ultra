@@ -237,6 +237,7 @@ final class SeedProjectionEventsCommand extends Command
 
         $seeded = 0;
         $events = [];
+        $buckets = [];
         for ($i = 1; $i <= $eventCount; ++$i) {
             $courseId = sprintf('course-%03d', $i);
             $events[] = new Event(
@@ -244,17 +245,24 @@ final class SeedProjectionEventsCommand extends Command
                 payload: ['courseId' => $courseId, 'name' => sprintf('Course %03d', $i)],
                 domainIds: ['courseId' => $courseId],
             );
-            $this->activity->bump(ProjectionCoordinationHarness::PROJECTION_ID, BucketHasher::bucketFor($courseId));
+            $buckets[BucketHasher::bucketFor($courseId)] = true;
 
             if (self::BATCH_SIZE === count($events)) {
                 $this->eventStore->append($events);
+                foreach ($buckets as $bucket => $true) {
+                    $this->activity->bump(ProjectionCoordinationHarness::PROJECTION_ID, $bucket);
+                }
                 $seeded += count($events);
                 $events = [];
+                $buckets = [];
             }
         }
 
         if ([] !== $events) {
             $this->eventStore->append($events);
+            foreach ($buckets as $bucket => $true) {
+                $this->activity->bump(ProjectionCoordinationHarness::PROJECTION_ID, $bucket);
+            }
             $seeded += count($events);
         }
 
