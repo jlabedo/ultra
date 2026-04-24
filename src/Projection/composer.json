@@ -12,7 +12,10 @@
     "require": {
         "php": ">=8.4",
         "psr/clock": "^1.0",
+        "symfony/console": "7.*|8.*",
+        "symfony/dependency-injection": "7.*|8.*",
         "ultra/event-store": "self.version",
+        "ultra/mapper": "self.version",
         "ultra/time": "self.version"
     },
     "autoload": {
