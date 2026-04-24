@@ -118,7 +118,7 @@ final readonly class SharedExclusiveLockStrategy implements LockStrategy
 
     private function acquireAdvisoryLocksFunction(string $tablePrefix): string
     {
-        return $tablePrefix . 'acquire_advisory_locks';
+        return $tablePrefix.'acquire_advisory_locks';
     }
 
     private function advisoryLockId(string $queryStreamKey): int
@@ -131,7 +131,7 @@ final readonly class SharedExclusiveLockStrategy implements LockStrategy
      */
     private function postgresIntArrayLiteral(array $values): string
     {
-        return '{' . implode(',', $values) . '}';
+        return '{'.implode(',', $values).'}';
     }
 
     /**
@@ -140,10 +140,10 @@ final readonly class SharedExclusiveLockStrategy implements LockStrategy
     private function postgresBoolArrayLiteral(array $values): string
     {
         $encoded = array_map(
-            static fn(string $value): string => 'exclusive' === $value ? 'true' : 'false',
+            static fn (string $value): string => 'exclusive' === $value ? 'true' : 'false',
             $values,
         );
 
-        return '{' . implode(',', $encoded) . '}';
+        return '{'.implode(',', $encoded).'}';
     }
 }

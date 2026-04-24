@@ -16,7 +16,7 @@ class DateTimeCodeGeneratorBuilder implements CodeGeneratorBuilder
 
     public function supports(Type $type, CodeGeneratorContext $context): bool
     {
-        if (! $type instanceof ObjectType) {
+        if (!$type instanceof ObjectType) {
             return false;
         }
         $class = $type->getClassName();
@@ -26,11 +26,11 @@ class DateTimeCodeGeneratorBuilder implements CodeGeneratorBuilder
 
     public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
     {
-        if (! $type instanceof ObjectType) {
+        if (!$type instanceof ObjectType) {
             throw new \InvalidArgumentException('Type must be ObjectType');
         }
 
-        return new class ($type->getClassName(), $type->isNullable()) implements CodeGenerator {
+        return new class($type->getClassName(), $type->isNullable()) implements CodeGenerator {
             public function __construct(private string $class, private bool $isNullable) {}
 
             public function generateNormalization(string $objectVar): string

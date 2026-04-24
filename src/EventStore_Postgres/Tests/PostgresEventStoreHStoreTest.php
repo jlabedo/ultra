@@ -16,7 +16,6 @@ use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
 /**
  * @internal
- *
  */
 #[CoversNothing]
 final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
@@ -156,11 +155,11 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
             $replay = $store->load($query, to: $checkpoint);
 
             self::assertSame(['late', 'next'], array_map(
-                static fn(Event $event): string => $event->payload['name'],
+                static fn (Event $event): string => $event->payload['name'],
                 $catchUp->events,
             ));
             self::assertSame(['first', 'gap'], array_map(
-                static fn(Event $event): string => $event->payload['name'],
+                static fn (Event $event): string => $event->payload['name'],
                 $replay->events,
             ));
         });

@@ -20,7 +20,7 @@ final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
     public function test_it_autoconfigures_anonymous_handler_services(): void
     {
         $mediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
@@ -39,7 +39,7 @@ final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
 
         $eventBus = $this->ultraLight()
             ->withEventClass(RecordedEvent::class)
-            ->withService(new class ($recorded) {
+            ->withService(new class($recorded) {
                 /** @var list<RecordedEvent> */
                 public array $recorded;
 
@@ -68,7 +68,7 @@ final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
     public function test_it_builds_independent_router_implementations_in_the_same_build_directory(): void
     {
         $firstMediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
@@ -79,7 +79,7 @@ final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
         ;
 
         $secondMediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {

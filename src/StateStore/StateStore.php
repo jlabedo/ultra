@@ -88,7 +88,7 @@ final readonly class StateStore
     {
         $metadata = $this->metadataRegistry->metadataFor($state::class);
         $normalizedState = $this->normalizer->toScalar($state);
-        if (! is_array($normalizedState)) {
+        if (!is_array($normalizedState)) {
             throw new \LogicException(sprintf(
                 'State "%s" must normalize to an array.',
                 $metadata->stateClass,

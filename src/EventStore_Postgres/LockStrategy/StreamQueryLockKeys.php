@@ -49,7 +49,7 @@ final readonly class StreamQueryLockKeys
     /**
      * @param array<string, string> $criteria
      *
-     * Build the opaque lock key for one query branch.
+     * Build the opaque lock key for one query branch
      */
     public function buildKey(?string $eventType, array $criteria): string
     {

@@ -8,6 +8,12 @@ use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use Psr\Clock\ClockInterface;
 use Ultra\EventStore\EventStore;
+
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSchemaForImplementation;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation;
+use function Ultra\EventStore_Postgres\Tests\Support\postgresTestUniquePrefix;
+
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivitySchema;
@@ -18,12 +24,7 @@ use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use Ultra\Time\StatickClock;
 use Ultra\Time\SystemClock;
 
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSchemaForImplementation;
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation;
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestUniquePrefix;
-
-require_once __DIR__ . '/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
+require_once __DIR__.'/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
 
 abstract class PostgresProjectionTestCase extends TestCase
 {
@@ -40,11 +41,11 @@ abstract class PostgresProjectionTestCase extends TestCase
     /**
      * @param callable(Connection, EventStore, PostgresProjectionSegmentRepository, ProjectionRunner, string, string): void $callback
      */
-    protected function withPostgresProjectionRuntime(callable $callback, ClockInterface $clock = new SystemClock): void
+    protected function withPostgresProjectionRuntime(callable $callback, ClockInterface $clock = new SystemClock()): void
     {
         $connection = postgresTestConnection($this->postgresDsn());
         $eventStorePrefix = postgresTestUniquePrefix();
-        $projectionPrefix = 'ultra_projection_' . bin2hex(random_bytes(4)) . '_';
+        $projectionPrefix = 'ultra_projection_'.bin2hex(random_bytes(4)).'_';
         $eventSchema = postgresTestSchemaForImplementation($eventStorePrefix, 'query-streams');
         $projectionSchema = new PostgresProjectionSegmentSchema($projectionPrefix);
 
@@ -81,7 +82,7 @@ abstract class PostgresProjectionTestCase extends TestCase
     protected function withPostgresProjectionCoordination(callable $callback): void
     {
         $connection = postgresTestConnection($this->postgresDsn());
-        $projectionPrefix = 'ultra_projection_' . bin2hex(random_bytes(4)) . '_';
+        $projectionPrefix = 'ultra_projection_'.bin2hex(random_bytes(4)).'_';
         $schemas = [
             new PostgresProjectionSegmentSchema($projectionPrefix),
             new PostgresProjectionCoordinatorSchema($projectionPrefix),
@@ -123,7 +124,7 @@ abstract class PostgresProjectionTestCase extends TestCase
     {
         $connection = postgresTestConnection($this->postgresDsn());
         $eventStorePrefix = postgresTestUniquePrefix();
-        $projectionPrefix = 'ultra_projection_' . bin2hex(random_bytes(4)) . '_';
+        $projectionPrefix = 'ultra_projection_'.bin2hex(random_bytes(4)).'_';
         $eventSchema = postgresTestSchemaForImplementation($eventStorePrefix, 'query-streams');
         $schemas = [
             new PostgresProjectionSegmentSchema($projectionPrefix),

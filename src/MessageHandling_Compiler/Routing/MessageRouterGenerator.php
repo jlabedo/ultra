@@ -51,7 +51,7 @@ final class MessageRouterGenerator
 
         $filePath = rtrim($outputDir, '/').'/'.$className.'.php';
         $dir = dirname($filePath);
-        if (! is_dir($dir)) {
+        if (!is_dir($dir)) {
             mkdir($dir, 0o777, true);
         }
 
@@ -149,7 +149,7 @@ final class MessageRouterGenerator
     public function generateWrappersFile(array $wrapperClassToDescriptor, string $filePath): void
     {
         $dir = dirname($filePath);
-        if (! is_dir($dir)) {
+        if (!is_dir($dir)) {
             mkdir($dir, 0o777, true);
         }
 

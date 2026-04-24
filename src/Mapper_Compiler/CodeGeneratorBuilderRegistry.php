@@ -11,6 +11,7 @@ use Symfony\Component\TypeInfo\TypeResolver\TypeResolver;
 class CodeGeneratorBuilderRegistry
 {
     private readonly TypeResolver $typeResolver;
+
     /** @var CodeGeneratorBuilder[] */
     private array $builders = [];
 
@@ -39,7 +40,7 @@ class CodeGeneratorBuilderRegistry
 
     public function getCodeGenerator(mixed $type, CodeGeneratorContext $context): CodeGenerator
     {
-        if (! $type instanceof Type) {
+        if (!$type instanceof Type) {
             $type = $this->typeResolver->resolve($type);
         }
         foreach ($this->builders as $builder) {

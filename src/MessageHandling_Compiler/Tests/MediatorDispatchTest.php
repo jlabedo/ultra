@@ -21,7 +21,7 @@ final class MediatorDispatchTest extends MessageHandlingCompilerTestCase
     public function test_it_dispatches_registered_messages_and_returns_handler_results(): void
     {
         $mediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function greet(GreetingMessage $message): string
                 {
@@ -44,7 +44,7 @@ final class MediatorDispatchTest extends MessageHandlingCompilerTestCase
     public function test_it_throws_when_no_handler_is_registered_for_the_message(): void
     {
         $mediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function greet(GreetingMessage $message): string
                 {

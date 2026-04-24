@@ -30,7 +30,7 @@ final class UltraLightTest extends MessageHandlingCompilerTestCase
     public function test_it_decorates_booted_containers_with_the_default_ultra_light_container(): void
     {
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
@@ -47,7 +47,7 @@ final class UltraLightTest extends MessageHandlingCompilerTestCase
     public function test_it_can_decorate_booted_containers_with_a_custom_factory(): void
     {
         /** @var UltraLightContainerFactoryInterface<UltraLightTestContainer> $containerFactory */
-        $containerFactory = new class () implements UltraLightContainerFactoryInterface {
+        $containerFactory = new class implements UltraLightContainerFactoryInterface {
             public function create(Container $container): UltraLightTestContainer
             {
                 return new UltraLightTestContainer($container);
@@ -55,7 +55,7 @@ final class UltraLightTest extends MessageHandlingCompilerTestCase
         };
 
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {

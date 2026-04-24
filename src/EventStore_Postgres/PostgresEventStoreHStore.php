@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
@@ -15,7 +16,6 @@ use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\Sequence;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 
@@ -30,10 +30,10 @@ use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 final class PostgresEventStoreHStore implements EventStore
 {
     public function __construct(
-        private readonly Connection      $connection,
-        private readonly string          $tablePrefix = 'event_store_',
+        private readonly Connection $connection,
+        private readonly string $tablePrefix = 'event_store_',
         private readonly LoggerInterface $logger = new NullLogger(),
-        private readonly LockStrategy    $lockStrategy = new SharedExclusiveLockStrategy(),
+        private readonly LockStrategy $lockStrategy = new SharedExclusiveLockStrategy(),
     ) {}
 
     /**
@@ -44,8 +44,7 @@ final class PostgresEventStoreHStore implements EventStore
         ?Checkpoint $from = null,
         ?Checkpoint $to = null,
         int $batchSize = 1000,
-    ): LoadResult
-    {
+    ): LoadResult {
         if ($batchSize < 1) {
             throw new \InvalidArgumentException('Event-store batch size must be at least 1.');
         }
@@ -68,11 +67,11 @@ final class PostgresEventStoreHStore implements EventStore
             return;
         }
         $readQueries = array_map(
-            static fn(AppendCondition $appendCondition): StreamQuery => $appendCondition->query,
+            static fn (AppendCondition $appendCondition): StreamQuery => $appendCondition->query,
             $appendConditions,
         );
 
-        $ownsTransaction = ! $this->connection->isTransactionActive();
+        $ownsTransaction = !$this->connection->isTransactionActive();
         if ($ownsTransaction) {
             $this->connection->beginTransaction();
         }
@@ -226,7 +225,7 @@ final class PostgresEventStoreHStore implements EventStore
 
     private function eventsTable(): string
     {
-        return $this->tablePrefix . 'events';
+        return $this->tablePrefix.'events';
     }
 
     /**
@@ -340,7 +339,7 @@ final class PostgresEventStoreHStore implements EventStore
         return implode(
             ' AND ',
             array_map(
-                static fn(string $predicate): string => sprintf('(%s)', $predicate),
+                static fn (string $predicate): string => sprintf('(%s)', $predicate),
                 $predicates,
             ),
         );

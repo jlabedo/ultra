@@ -78,82 +78,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         );
     }
 
-    private function claimByPredicate(
-        string $projectionId,
-        string $workerId,
-        Duration $leaseDurationSeconds,
-        string $extraWhereSql,
-        array $extraParams,
-        array $extraTypes,
-    ): ?ProjectionSegment {
-        $this->connection->beginTransaction();
-
-        try {
-            $row = $this->connection->executeQuery(
-                sprintf(
-                    'SELECT bucket_from, bucket_to, status, pending_operation, checkpoint
-                     FROM %s
-                     WHERE projection_id = ?
-                       %s
-                     ORDER BY bucket_from ASC
-                     FOR UPDATE SKIP LOCKED
-                     LIMIT 1',
-                    $this->segmentsTable(),
-                    $extraWhereSql,
-                ),
-                [$projectionId, ...$extraParams],
-                [ParameterType::STRING, ...$extraTypes],
-            )->fetchAssociative();
-
-            if (false === $row) {
-                $this->connection->rollBack();
-
-                return null;
-            }
-
-            $now = $this->now();
-            $this->connection->executeStatement(
-                sprintf(
-                    "UPDATE %s
-                     SET status = CASE WHEN pending_operation IS NULL THEN 'active' ELSE 'draining' END,
-                         worker_id = ?, lease_expires_at = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ?",
-                    $this->segmentsTable(),
-                ),
-                [
-                    $workerId,
-                    $now->add($leaseDurationSeconds),
-                    $now,
-                    $projectionId,
-                    $row['bucket_from'],
-                ],
-                [
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::INTEGER,
-                ],
-            );
-
-            $this->connection->commit();
-
-            return new ProjectionSegment(
-                projectionId: $projectionId,
-                bucketFrom: (int) $row['bucket_from'],
-                bucketTo: (int) $row['bucket_to'],
-                status: 'active',
-                pendingOperation: $row['pending_operation'] ?? null,
-                checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-                wasCreated: false,
-            );
-        } catch (\Throwable $e) {
-            $this->connection->rollBack();
-
-            throw $e;
-        }
-    }
-
     /**
      * Reads the current state of a segment from DB, without locking.
      * Used by the runner to detect mid-batch draining requests.
@@ -591,6 +515,105 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         }
     }
 
+    /**
+     * @return list<array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: null|string}>
+     */
+    public function listSegments(string $projectionId): array
+    {
+        $rows = $this->connection->executeQuery(
+            sprintf(
+                'SELECT bucket_from, bucket_to, status, pending_operation
+                 FROM %s WHERE projection_id = ? ORDER BY bucket_from ASC',
+                $this->segmentsTable(),
+            ),
+            [$projectionId],
+            [ParameterType::STRING],
+        )->fetchAllAssociative();
+
+        return array_map(static fn (array $row): array => [
+            'bucketFrom' => (int) $row['bucket_from'],
+            'bucketTo' => (int) $row['bucket_to'],
+            'status' => $row['status'],
+            'pendingOperation' => $row['pending_operation'] ?? null,
+        ], $rows);
+    }
+
+    private function claimByPredicate(
+        string $projectionId,
+        string $workerId,
+        Duration $leaseDurationSeconds,
+        string $extraWhereSql,
+        array $extraParams,
+        array $extraTypes,
+    ): ?ProjectionSegment {
+        $this->connection->beginTransaction();
+
+        try {
+            $row = $this->connection->executeQuery(
+                sprintf(
+                    'SELECT bucket_from, bucket_to, status, pending_operation, checkpoint
+                     FROM %s
+                     WHERE projection_id = ?
+                       %s
+                     ORDER BY bucket_from ASC
+                     FOR UPDATE SKIP LOCKED
+                     LIMIT 1',
+                    $this->segmentsTable(),
+                    $extraWhereSql,
+                ),
+                [$projectionId, ...$extraParams],
+                [ParameterType::STRING, ...$extraTypes],
+            )->fetchAssociative();
+
+            if (false === $row) {
+                $this->connection->rollBack();
+
+                return null;
+            }
+
+            $now = $this->now();
+            $this->connection->executeStatement(
+                sprintf(
+                    "UPDATE %s
+                     SET status = CASE WHEN pending_operation IS NULL THEN 'active' ELSE 'draining' END,
+                         worker_id = ?, lease_expires_at = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
+                     WHERE projection_id = ? AND bucket_from = ?",
+                    $this->segmentsTable(),
+                ),
+                [
+                    $workerId,
+                    $now->add($leaseDurationSeconds),
+                    $now,
+                    $projectionId,
+                    $row['bucket_from'],
+                ],
+                [
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::INTEGER,
+                ],
+            );
+
+            $this->connection->commit();
+
+            return new ProjectionSegment(
+                projectionId: $projectionId,
+                bucketFrom: (int) $row['bucket_from'],
+                bucketTo: (int) $row['bucket_to'],
+                status: 'active',
+                pendingOperation: $row['pending_operation'] ?? null,
+                checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+                wasCreated: false,
+            );
+        } catch (\Throwable $e) {
+            $this->connection->rollBack();
+
+            throw $e;
+        }
+    }
+
     /** @return array{0: int, 1: int, 2: int} [parentFrom, parentTo, siblingFrom] */
     private function resolveMergeSibling(ProjectionSegment $segment): array
     {
@@ -615,32 +638,9 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         return $a->gapFloor->isAtOrBefore($b->gapFloor) ? $a : $b;
     }
 
-    /**
-     * @return list<array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: null|string}>
-     */
-    public function listSegments(string $projectionId): array
-    {
-        $rows = $this->connection->executeQuery(
-            sprintf(
-                'SELECT bucket_from, bucket_to, status, pending_operation
-                 FROM %s WHERE projection_id = ? ORDER BY bucket_from ASC',
-                $this->segmentsTable(),
-            ),
-            [$projectionId],
-            [ParameterType::STRING],
-        )->fetchAllAssociative();
-
-        return array_map(static fn(array $row): array => [
-            'bucketFrom' => (int) $row['bucket_from'],
-            'bucketTo' => (int) $row['bucket_to'],
-            'status' => $row['status'],
-            'pendingOperation' => $row['pending_operation'] ?? null,
-        ], $rows);
-    }
-
     private function segmentsTable(): string
     {
-        return $this->tablePrefix . 'segments';
+        return $this->tablePrefix.'segments';
     }
 
     private function now(): DatePoint

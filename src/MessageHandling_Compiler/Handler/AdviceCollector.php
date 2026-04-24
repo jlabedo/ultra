@@ -32,12 +32,12 @@ final readonly class AdviceCollector
             // - For sync handlers (Execute phase): both Dispatch and Execute phases match,
             //   since dispatch and execute are unified for sync.
             // - For async handlers: only the specific phase must be in the result's phases.
-            if (! $this->matchesPhase($context, $result->phases)) {
+            if (!$this->matchesPhase($context, $result->phases)) {
                 continue;
             }
 
             $canProvide = AdviceType::Around === $adviceDefinition->type || AdviceType::Before === $adviceDefinition->type;
-            if ([] !== $result->provides && ! $canProvide) {
+            if ([] !== $result->provides && !$canProvide) {
                 throw new \LogicException(sprintf(
                     'Advice "%s::%s" (#[%s]) returned a MatchResult with "provides" set, but only #[Around] and #[Before] advices may provide dep-param slots.',
                     $adviceDefinition->className,
@@ -68,7 +68,7 @@ final readonly class AdviceCollector
     {
         $currentPhase = $context->phase();
 
-        if (! $context->isAsync()) {
+        if (!$context->isAsync()) {
             // Sync handler: Execute is the only phase, and it represents both
             // dispatch and execute. Accept advices for either phase.
             return [] !== $resultPhases;

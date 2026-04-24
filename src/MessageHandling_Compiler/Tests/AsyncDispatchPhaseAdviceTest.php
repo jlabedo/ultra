@@ -26,7 +26,7 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $dispatchCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
@@ -34,7 +34,7 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class ($dispatchCalls) {
+            ->withService(new class($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -53,7 +53,6 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
             ->boot()
         ;
 
-
         // Dispatch-phase advice runs at send time (enqueue)
         $container->mediator()->send(new GreetingMessage('test'));
         self::assertSame(1, $dispatchCalls);
@@ -68,14 +67,14 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $dispatchCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
                     return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class ($dispatchCalls) {
+            ->withService(new class($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -104,7 +103,7 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $executeCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
@@ -112,7 +111,7 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class ($executeCalls) {
+            ->withService(new class($executeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -130,7 +129,6 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
             })
             ->boot()
         ;
-
 
         // Send — execute-phase advice does NOT run at dispatch time
         $container->mediator()->send(new GreetingMessage('test'));
@@ -147,7 +145,7 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
         $executeCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
@@ -155,7 +153,7 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class ($dispatchCalls) {
+            ->withService(new class($dispatchCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -171,7 +169,7 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->withService(new class ($executeCalls) {
+            ->withService(new class($executeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -189,7 +187,6 @@ final class AsyncDispatchPhaseAdviceTest extends MessageHandlingCompilerTestCase
             })
             ->boot()
         ;
-
 
         // Send: dispatch runs, execute does not
         $container->mediator()->send(new GreetingMessage('test'));

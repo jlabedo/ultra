@@ -13,12 +13,12 @@ class ObjectCodeGeneratorBuilder implements CodeGeneratorBuilder
     {
         return $type instanceof ObjectType
             && ($context->isRoot || $context->inline)
-            && ! self::isVisited($context, $type->getClassName());
+            && !self::isVisited($context, $type->getClassName());
     }
 
     public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
     {
-        if (! $type instanceof ObjectType) {
+        if (!$type instanceof ObjectType) {
             throw new \InvalidArgumentException('Type must be ObjectType');
         }
         $context = self::addVisitedClass($context, $type->getClassName());

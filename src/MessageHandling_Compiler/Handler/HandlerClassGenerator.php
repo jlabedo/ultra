@@ -45,7 +45,7 @@ final class HandlerClassGenerator
 
         $filePath = rtrim($outputDir, '/').'/'.$className.'.php';
         $dir = dirname($filePath);
-        if (! is_dir($dir)) {
+        if (!is_dir($dir)) {
             mkdir($dir, 0o777, true);
         }
 

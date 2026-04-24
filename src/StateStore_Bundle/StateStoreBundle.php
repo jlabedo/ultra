@@ -17,7 +17,7 @@ final class StateStoreBundle extends Bundle
     {
         parent::build($container);
 
-        if (! $container->hasParameter('ultra_state_store.state_classes')) {
+        if (!$container->hasParameter('ultra_state_store.state_classes')) {
             $container->setParameter('ultra_state_store.state_classes', []);
         }
 

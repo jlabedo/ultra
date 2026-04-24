@@ -16,7 +16,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
 {
     private readonly ClockInterface $clock;
 
-    /** @var array<string, array<int, array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: string|null, checkpoint: Checkpoint, workerId: string|null, leaseExpiresAt: int|null}>> */
+    /** @var array<string, array<int, array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: null|string, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|int}>> */
     private array $segments = [];
 
     public function __construct(?ClockInterface $clock = null)
@@ -140,7 +140,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     {
         $leaseDuration ??= Duration::seconds(60);
         $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
-        if (null === $row || $row['workerId'] !== $workerId || $row['status'] !== 'active') {
+        if (null === $row || $row['workerId'] !== $workerId || 'active' !== $row['status']) {
             return;
         }
 
@@ -154,7 +154,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
 
         foreach (array_keys($this->segments[$projectionId] ?? []) as $bucketFrom) {
             $row = $this->segments[$projectionId][$bucketFrom];
-            if ($row['status'] !== 'active') {
+            if ('active' !== $row['status']) {
                 continue;
             }
 
@@ -183,21 +183,23 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             ));
         }
 
-        if ($row['status'] === 'active') {
+        if ('active' === $row['status']) {
             $row['status'] = 'draining';
             $row['pendingOperation'] = 'split';
             $this->segments[$projectionId][$bucketFrom] = $row;
+
             return;
         }
 
-        if ($row['status'] === 'available') {
+        if ('available' === $row['status']) {
             $row['status'] = 'drained';
             $row['pendingOperation'] = 'split';
             $this->segments[$projectionId][$bucketFrom] = $row;
+
             return;
         }
 
-        if ($row['status'] !== 'drained') {
+        if ('drained' !== $row['status']) {
             throw new \LogicException(sprintf(
                 'Cannot split segment [%d-%d] of projection "%s": status is "%s".',
                 $row['bucketFrom'],
@@ -259,7 +261,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
                 ));
             }
 
-            $row['status'] = $row['status'] === 'active' ? 'draining' : 'drained';
+            $row['status'] = 'active' === $row['status'] ? 'draining' : 'drained';
             $row['pendingOperation'] = 'merge';
             $this->segments[$projectionId][$from] = $row;
         }
@@ -279,6 +281,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
                     $this->finalizeSplit($this->toSegment($projectionId, $row), $row['checkpoint']);
                     ++$reconciled;
                     $progressed = true;
+
                     break;
                 }
 
@@ -291,6 +294,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
                 if (count($this->segments[$projectionId]) !== $before) {
                     ++$reconciled;
                     $progressed = true;
+
                     break;
                 }
             }
@@ -314,7 +318,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
 
         $sibling = $this->segments[$segment->projectionId][$siblingFrom] ?? null;
-        if (null === $sibling || $sibling['status'] !== 'drained') {
+        if (null === $sibling || 'drained' !== $sibling['status']) {
             return;
         }
 
@@ -341,7 +345,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         $rangeSize = $segment->bucketTo - $segment->bucketFrom + 1;
         $parentRangeSize = $rangeSize * 2;
 
-        if ($segment->bucketFrom % $parentRangeSize === 0) {
+        if (0 === $segment->bucketFrom % $parentRangeSize) {
             $parentFrom = $segment->bucketFrom;
             $parentTo = $segment->bucketFrom + $parentRangeSize - 1;
             $siblingFrom = $segment->bucketTo + 1;
@@ -355,7 +359,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     }
 
     /**
-     * @param array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: string|null, checkpoint: Checkpoint, workerId: string|null, leaseExpiresAt: int|null} $row
+     * @param array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: null|string, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|int} $row
      */
     private function toSegment(string $projectionId, array $row): ProjectionSegment
     {

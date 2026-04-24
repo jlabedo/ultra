@@ -96,7 +96,7 @@ final readonly class StateMetadata
     {
         $id = $this->requireNormalizedValue($normalizedState, $this->idProperty);
 
-        if (! is_string($id) && ! is_int($id)) {
+        if (!is_string($id) && !is_int($id)) {
             throw new \LogicException(sprintf(
                 'State "%s" normalized id "%s" must be a string or int.',
                 $this->stateClass,
@@ -144,7 +144,7 @@ final readonly class StateMetadata
      */
     private function requireNormalizedValue(array $normalizedState, string $property): mixed
     {
-        if (! array_key_exists($property, $normalizedState)) {
+        if (!array_key_exists($property, $normalizedState)) {
             throw new \LogicException(sprintf(
                 'State "%s" is missing normalized property "%s".',
                 $this->stateClass,

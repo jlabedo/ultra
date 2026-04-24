@@ -21,7 +21,7 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
     public function test_async_handler_enqueues_message_and_returns_null(): void
     {
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 #[Asynchronous]
                 public function greet(GreetingMessage $message): string
@@ -43,7 +43,7 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
         $executed = false;
 
         $container = $this->ultraLight()
-            ->withService(new class ($executed) {
+            ->withService(new class($executed) {
                 public bool $executed;
 
                 public function __construct(bool &$executed)
@@ -76,7 +76,7 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
         $syncExecuted = false;
 
         $container = $this->ultraLight()
-            ->withService(new class ($syncExecuted) {
+            ->withService(new class($syncExecuted) {
                 public bool $syncExecuted;
 
                 public function __construct(bool &$syncExecuted)

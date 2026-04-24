@@ -30,8 +30,7 @@ abstract class PostgresEventStoreTestCase extends TestCase
         callable $callback,
         string $implementation = 'hstore',
         string $lockStrategy = 'shared-exclusive',
-    ): void
-    {
+    ): void {
         $connection = postgresTestConnection($this->postgresDsn());
         $prefix = postgresTestUniquePrefix();
         $schema = postgresTestSchemaForImplementation($prefix, $implementation, $lockStrategy);

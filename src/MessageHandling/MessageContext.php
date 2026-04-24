@@ -71,7 +71,7 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
 
     public function without(int|string $key): self
     {
-        if (! array_key_exists($key, $this->values)) {
+        if (!array_key_exists($key, $this->values)) {
             return $this;
         }
 
@@ -114,7 +114,7 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
 
     public function offsetGet(mixed $offset): mixed
     {
-        if (! is_string($offset) && ! is_int($offset)) {
+        if (!is_string($offset) && !is_int($offset)) {
             return null;
         }
 

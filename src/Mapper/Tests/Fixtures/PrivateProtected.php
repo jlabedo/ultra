@@ -6,12 +6,12 @@ namespace Ultra\Mapper\Tests\Fixtures;
 
 readonly class PrivateProtected
 {
-    private string $privateName;
-    protected int $protectedAge;
     public float $publicScore;
-    private bool $privateActive;
-    protected Address $protectedAddress;
     public array $publicTags;
+    protected int $protectedAge;
+    protected Address $protectedAddress;
+    private string $privateName;
+    private bool $privateActive;
     private \DateTimeImmutable $privateCreatedAt;
 
     public function __construct(

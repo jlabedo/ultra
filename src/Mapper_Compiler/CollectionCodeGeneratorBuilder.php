@@ -10,17 +10,17 @@ class CollectionCodeGeneratorBuilder implements CodeGeneratorBuilder
 {
     public function supports(Type $type, CodeGeneratorContext $context): bool
     {
-        if (! $type instanceof CollectionType) {
+        if (!$type instanceof CollectionType) {
             return false;
         }
         $valueType = $type->getCollectionValueType();
 
-        return ! $valueType instanceof BuiltinType;
+        return !$valueType instanceof BuiltinType;
     }
 
     public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
     {
-        if (! $type instanceof CollectionType) {
+        if (!$type instanceof CollectionType) {
             throw new \InvalidArgumentException('Type must be CollectionType');
         }
         $valueType = $type->getCollectionValueType();

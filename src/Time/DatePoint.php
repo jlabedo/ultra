@@ -6,6 +6,11 @@ namespace Ultra\Time;
 
 class DatePoint extends \DateTimeImmutable
 {
+    public function __toString(): string
+    {
+        return $this->format('Y-m-d H:i:s.u');
+    }
+
     public static function createFromInterface(\DateTimeInterface $object): static
     {
         if ($object instanceof static) {
@@ -54,10 +59,5 @@ class DatePoint extends \DateTimeImmutable
     private static function normalizeInterval(\DateInterval|Duration $interval): \DateInterval
     {
         return $interval instanceof Duration ? $interval->toDateInterval() : $interval;
-    }
-
-    public function __toString(): string
-    {
-        return $this->format('Y-m-d H:i:s.u');
     }
 }

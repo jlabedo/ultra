@@ -41,14 +41,14 @@ final readonly class Checkpoint
     public static function deserialize(string $serialized): self
     {
         $data = json_decode($serialized, true, 512, JSON_THROW_ON_ERROR);
-        if (! is_array($data)) {
+        if (!is_array($data)) {
             throw new \InvalidArgumentException('Checkpoint must deserialize to an object.');
         }
 
         $gapFloor = $data['gapFloor'] ?? null;
         $gapSeqNos = $data['gapSeqNos'] ?? null;
 
-        if (! is_int($gapFloor) || ! is_array($gapSeqNos)) {
+        if (!is_int($gapFloor) || !is_array($gapSeqNos)) {
             throw new \InvalidArgumentException('Checkpoint payload is missing gapFloor or gapSeqNos.');
         }
 
@@ -56,7 +56,7 @@ final readonly class Checkpoint
             new Sequence($gapFloor),
             array_map(
                 static function (mixed $sequence): Sequence {
-                    if (! is_int($sequence)) {
+                    if (!is_int($sequence)) {
                         throw new \InvalidArgumentException('Checkpoint gap sequence numbers must be integers.');
                     }
 
@@ -92,7 +92,7 @@ final readonly class Checkpoint
     public function gapSeqNoValues(): array
     {
         return array_map(
-            static fn(Sequence $sequence): int => $sequence->value,
+            static fn (Sequence $sequence): int => $sequence->value,
             $this->gapSeqNos,
         );
     }
@@ -122,7 +122,7 @@ final readonly class Checkpoint
     {
         $values = [];
         foreach ($gapSeqNos as $sequence) {
-            if (! $sequence instanceof Sequence) {
+            if (!$sequence instanceof Sequence) {
                 throw new \InvalidArgumentException('Checkpoint gap sequence numbers must be Sequence instances.');
             }
 

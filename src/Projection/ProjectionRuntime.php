@@ -35,7 +35,7 @@ final readonly class ProjectionRuntime
             return;
         }
 
-        ($this->projection)->{$this->definition->initializerMethod}();
+        $this->projection->{$this->definition->initializerMethod}();
     }
 
     public function flush(): void
@@ -44,7 +44,7 @@ final readonly class ProjectionRuntime
             return;
         }
 
-        ($this->projection)->{$this->definition->flushMethod}();
+        $this->projection->{$this->definition->flushMethod}();
     }
 
     public function apply(Event $event): void
@@ -56,6 +56,6 @@ final readonly class ProjectionRuntime
 
         $deserialized = $this->normalizer->fromScalar($event->payload, $handler->eventClass);
         $method = $handler->method;
-        $this->projection->$method($deserialized);
+        $this->projection->{$method}($deserialized);
     }
 }

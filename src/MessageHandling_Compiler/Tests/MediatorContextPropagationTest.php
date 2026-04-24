@@ -22,7 +22,7 @@ final class FixedMessageContextPropagator implements MessageContextPropagatorInt
 {
     public function createDispatchContext(MessageContext $context): MessageContext
     {
-        if ($context->has(MessageContextKeys::MESSAGE_ID) && ! $context->has(MessageContextKeys::CAUSATION_ID)) {
+        if ($context->has(MessageContextKeys::MESSAGE_ID) && !$context->has(MessageContextKeys::CAUSATION_ID)) {
             return $context
                 ->with(MessageContextKeys::MESSAGE_ID, 'fixed-child')
                 ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation')
@@ -70,21 +70,21 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
 
         $mediator = $this->ultraLight()
             ->withService($contexts)
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message, MediatorInterface $mediator): string
                 {
                     return $mediator->send(new FarewellMessage($message->name));
                 }
             })
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(FarewellMessage $message): string
                 {
                     return 'child: '.$message->name;
                 }
             })
-            ->withService(new class ($contexts) {
+            ->withService(new class($contexts) {
                 public function __construct(private readonly RecordedMessageContexts $contexts) {}
 
                 #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
@@ -120,21 +120,21 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
 
         $mediator = $this->ultraLight()
             ->withService($contexts)
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message, MediatorInterface $mediator): string
                 {
                     return $mediator->send(new FarewellMessage($message->name));
                 }
             })
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(FarewellMessage $message): string
                 {
                     return 'child: '.$message->name;
                 }
             })
-            ->withService(new class ($contexts) {
+            ->withService(new class($contexts) {
                 public function __construct(private readonly RecordedMessageContexts $contexts) {}
 
                 #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
@@ -174,21 +174,21 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
         $mediator = $this->ultraLight()
             ->withService(new FixedMessageContextPropagator(), MessageContextPropagatorInterface::class)
             ->withService($contexts)
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message, MediatorInterface $mediator): string
                 {
                     return $mediator->send(new FarewellMessage($message->name));
                 }
             })
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(FarewellMessage $message): string
                 {
                     return 'child: '.$message->name;
                 }
             })
-            ->withService(new class ($contexts) {
+            ->withService(new class($contexts) {
                 public function __construct(private readonly RecordedMessageContexts $contexts) {}
 
                 #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
@@ -228,7 +228,7 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
 
         $mediator = $this->ultraLight()
             ->withService($eventBus, EventBusInterface::class)
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message, EventBusInterface $eventBus): string
                 {

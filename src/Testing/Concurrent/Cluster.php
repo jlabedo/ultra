@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Testing\Concurrent;
 
+use Composer\Autoload\ClassLoader;
 use Ultra\Testing\Concurrent\Exception\ConcurrentTestTimeoutException;
 
 /**
@@ -30,6 +31,14 @@ final class Cluster
     ) {
         $this->autoloadPath = $autoloadPath ?? self::detectAutoloadPath();
         $this->bootstrapScript = __DIR__.'/Internal/worker_bootstrap.php';
+    }
+
+    /** Force-kill all still-running workers. Prevents zombies on test failure. */
+    public function __destruct()
+    {
+        foreach ($this->workers as $worker) {
+            $worker->stop();
+        }
     }
 
     /** Spawn a new worker process that will execute $fn in a subprocess. */
@@ -62,6 +71,7 @@ final class Cluster
      * Wait for every worker to finish and return their outcomes in spawn order.
      *
      * @return list<Outcome>
+     *
      * @throws ConcurrentTestTimeoutException if any worker does not finish within the timeout
      */
     public function joinAll(?float $timeout = null): array
@@ -76,19 +86,11 @@ final class Cluster
         return $outcomes;
     }
 
-    /** Force-kill all still-running workers. Prevents zombies on test failure. */
-    public function __destruct()
-    {
-        foreach ($this->workers as $worker) {
-            $worker->stop();
-        }
-    }
-
     private static function detectAutoloadPath(): string
     {
         // Find the Composer ClassLoader instance already registered in this process.
         foreach (spl_autoload_functions() as $loader) {
-            if (is_array($loader) && $loader[0] instanceof \Composer\Autoload\ClassLoader) {
+            if (is_array($loader) && $loader[0] instanceof ClassLoader) {
                 $ref = new \ReflectionClass($loader[0]);
                 // ClassLoader lives at vendor/composer/ClassLoader.php; autoload.php is two levels up.
                 $candidate = dirname($ref->getFileName(), 2).'/autoload.php';

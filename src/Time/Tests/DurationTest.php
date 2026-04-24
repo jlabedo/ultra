@@ -34,7 +34,8 @@ final class DurationTest extends TestCase
             ->add(Duration::hours(2))
             ->add(Duration::minutes(3))
             ->add(Duration::seconds(4.5))
-            ->toDateInterval();
+            ->toDateInterval()
+        ;
 
         self::assertSame(1, $interval->d);
         self::assertSame(2, $interval->h);

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests;
 
-use LogicException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\Checkpoint;
@@ -14,6 +13,9 @@ use Ultra\Projection\ProjectionSegment;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
 
+/**
+ * @internal
+ */
 #[CoversClass(InMemoryProjectionSegmentRepository::class)]
 #[CoversClass(ProjectionSegment::class)]
 final class InMemoryProjectionSegmentRepositoryTest extends TestCase
@@ -106,7 +108,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         try {
             $repository->readCurrentState('courses', 128);
             self::fail('Expected the drained sibling segment to be removed after merge finalization.');
-        } catch (LogicException $e) {
+        } catch (\LogicException $e) {
             self::assertStringContainsString('Segment [128] not found', $e->getMessage());
         }
     }
@@ -158,7 +160,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
     {
         $repository = new InMemoryProjectionSegmentRepository();
 
-        $this->expectException(LogicException::class);
+        $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('cannot be split');
 
         $repository->finalizeSplit(

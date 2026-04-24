@@ -80,7 +80,7 @@ final class DispatchPlanRenderer
         $isSelf = HandlerDescriptor::SELF_SERVICE_ID === $serviceId;
 
         $args = [];
-        if (! $isSelf) {
+        if (!$isSelf) {
             $args[] = $messageVar;
         }
 
@@ -148,8 +148,8 @@ final class DispatchPlanRenderer
         $needsFinally = [] !== $layer->afters;
         $hasArounds = [] !== $layer->arounds;
 
-        if (! $needsAfterReturning && ! $needsCatch && ! $needsFinally) {
-            if (! $hasArounds) {
+        if (!$needsAfterReturning && !$needsCatch && !$needsFinally) {
+            if (!$hasArounds) {
                 return [
                     ...$lines,
                     ...$this->renderExecutionLines(
@@ -194,7 +194,7 @@ final class DispatchPlanRenderer
         $syncResultContextAfterReturning = $wrapResults && $this->hasContextPatchReturningAdvice($layer->afterReturnings);
         $syncResultContextAfterFinally = $wrapResults && $this->hasContextPatchReturningAdvice($layer->afters);
 
-        if (! $needsCatch && ! $needsFinally) {
+        if (!$needsCatch && !$needsFinally) {
             if ($hasArounds) {
                 $aroundExpr = $this->renderAroundStackExpression(
                     $layer->arounds,
@@ -410,8 +410,8 @@ final class DispatchPlanRenderer
         ?string $resultVar = null,
         bool $wrapResults = true,
     ): array {
-        if (! $wrapResults) {
-            if (! $returnsVoid) {
+        if (!$wrapResults) {
+            if (!$returnsVoid) {
                 $lines = [];
                 $prefix = null === $resultVar ? 'return ' : $resultVar.' = ';
                 $this->appendExpression($lines, $indentLevel, $prefix, $handlerExpr, ';');
@@ -425,7 +425,7 @@ final class DispatchPlanRenderer
             return $lines;
         }
 
-        if (! $returnsVoid) {
+        if (!$returnsVoid) {
             $lines = [];
             $prefix = null === $resultVar ? 'return new \Ultra\MessageHandling\ProceedResult(' : $resultVar.' = new \Ultra\MessageHandling\ProceedResult(';
             $this->appendExpression($lines, $indentLevel, $prefix, $handlerExpr.', $c)', ';');
@@ -516,7 +516,7 @@ final class DispatchPlanRenderer
         string $expression,
         string $contextTmpVar,
     ): void {
-        if (! $advice->returnsContextPatch) {
+        if (!$advice->returnsContextPatch) {
             $lines[] = $this->indent($indentLevel).$expression.';';
 
             return;

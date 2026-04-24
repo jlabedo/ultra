@@ -10,6 +10,7 @@ use PHPUnit\Framework\TestCase;
 use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\Concurrent\Exception\ConcurrentTestTimeoutException;
 use Ultra\Testing\Concurrent\Exception\WorkerDiedException;
+use Ultra\Testing\Concurrent\Internal\WorkerRuntime;
 use Ultra\Testing\Concurrent\Worker;
 
 /**
@@ -18,7 +19,7 @@ use Ultra\Testing\Concurrent\Worker;
  * @internal
  */
 #[CoversClass(Worker::class)]
-#[Group('concurrent-testing')]
+#[Group('slow')]
 final class WorkerTest extends TestCase
 {
     private Cluster $cluster;
@@ -248,6 +249,7 @@ final class WorkerTest extends TestCase
     {
         $worker = $this->cluster->spawn(static function (): never {
             fwrite(STDERR, "boom from child\n");
+
             throw new \RuntimeException('child error');
         });
 
@@ -261,6 +263,7 @@ final class WorkerTest extends TestCase
     {
         $worker = $this->cluster->spawn(static function (): never {
             fwrite(STDERR, "fatal noise\n");
+
             exit(1);
         });
 
@@ -298,7 +301,7 @@ final class WorkerTest extends TestCase
     public function test_log_messages_are_collected(): void
     {
         $worker = $this->cluster->spawn(static function (): void {
-            \Ultra\Testing\Concurrent\Internal\WorkerRuntime::log('hello from worker', 'info');
+            WorkerRuntime::log('hello from worker', 'info');
         });
 
         $worker->join();

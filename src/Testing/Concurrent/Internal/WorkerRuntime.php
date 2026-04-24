@@ -35,13 +35,14 @@ final class WorkerRuntime
         while (true) {
             $line = fgets(STDIN);
 
-            if ($line === false) {
+            if (false === $line) {
                 fwrite(STDERR, sprintf("Unexpected EOF on stdin while waiting for release of checkpoint '%s'\n", $name));
+
                 exit(3);
             }
 
             $line = trim($line);
-            if ($line === '') {
+            if ('' === $line) {
                 continue;
             }
 
@@ -49,6 +50,7 @@ final class WorkerRuntime
                 $message = Codec::decode($line);
             } catch (\Throwable $e) {
                 fwrite(STDERR, sprintf("Protocol error: %s\n", $e->getMessage()));
+
                 exit(3);
             }
 
@@ -65,6 +67,7 @@ final class WorkerRuntime
                 $message->type(),
                 $name,
             ));
+
             exit(3);
         }
     }

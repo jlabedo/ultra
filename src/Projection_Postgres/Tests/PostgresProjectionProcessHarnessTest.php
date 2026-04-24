@@ -17,8 +17,11 @@ use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRep
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\Tests\Harness\ProjectionCoordinationHarness;
 
-require_once __DIR__ . '/Harness/ProjectionCoordinationHarness.php';
+require_once __DIR__.'/Harness/ProjectionCoordinationHarness.php';
 
+/**
+ * @internal
+ */
 #[CoversNothing]
 #[Group('slow')]
 final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestCase
@@ -27,13 +30,13 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
     {
         $dsn = $this->postgresDsn();
         $connection = ProjectionCoordinationHarness::connection($dsn);
-        $eventStorePrefix = 'projection_manual_event_' . bin2hex(random_bytes(4)) . '_';
-        $projectionPrefix = 'projection_manual_projection_' . bin2hex(random_bytes(4)) . '_';
+        $eventStorePrefix = 'projection_manual_event_'.bin2hex(random_bytes(4)).'_';
+        $projectionPrefix = 'projection_manual_projection_'.bin2hex(random_bytes(4)).'_';
         $application = ProjectionCoordinationHarness::createApplication(
             $dsn,
             $eventStorePrefix,
             $projectionPrefix,
-            __DIR__ . '/Harness/projection-coordination-harness',
+            __DIR__.'/Harness/projection-coordination-harness',
         );
 
         try {
@@ -94,7 +97,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
                 $this->postgresDsn(),
                 $eventStorePrefix,
                 $projectionPrefix,
-                __DIR__ . '/Harness/projection-coordination-harness',
+                __DIR__.'/Harness/projection-coordination-harness',
             );
 
             [$seedCode, $seedOutput] = $this->runHarnessCommand($application, [

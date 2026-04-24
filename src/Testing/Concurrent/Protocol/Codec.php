@@ -34,7 +34,7 @@ final class Codec
                 'message' => $message->message,
                 'trace' => $message->trace,
                 'serialized' => $message->serialized,
-            ], static fn (mixed $v): bool => $v !== null),
+            ], static fn (mixed $v): bool => null !== $v),
             $message instanceof InitMessage => [
                 'type' => 'init',
                 'closure' => $message->closure,

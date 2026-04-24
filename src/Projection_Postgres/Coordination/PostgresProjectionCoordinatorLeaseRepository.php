@@ -37,6 +37,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
                 $leaseExpiresAt = new DatePoint((string) $row['lease_expires_at']);
                 if ($leaseExpiresAt >= $now) {
                     $this->connection->rollBack();
+
                     return false;
                 }
             }
@@ -44,10 +45,10 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
             $this->upsertRow($now);
             $this->connection->executeStatement(
                 sprintf(
-                    "UPDATE %s
+                    'UPDATE %s
                      SET worker_id = ?, lease_expires_at = CAST(? AS TIMESTAMPTZ),
                          wake_enqueued_until = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE coordinator_key = ?",
+                     WHERE coordinator_key = ?',
                     $this->coordinatorsTable(),
                 ),
                 [$workerId, $now->add($leaseDuration), $now, self::COORDINATOR_KEY],
@@ -55,6 +56,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
             );
 
             $this->connection->commit();
+
             return true;
         } catch (\Throwable $e) {
             if ($this->connection->isTransactionActive()) {
@@ -71,9 +73,9 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
 
         $this->connection->executeStatement(
             sprintf(
-                "UPDATE %s
+                'UPDATE %s
                  SET lease_expires_at = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE coordinator_key = ? AND worker_id = ?",
+                 WHERE coordinator_key = ? AND worker_id = ?',
                 $this->coordinatorsTable(),
             ),
             [$now->add($leaseDuration), $now, self::COORDINATOR_KEY, $workerId],
@@ -87,9 +89,9 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
 
         $this->connection->executeStatement(
             sprintf(
-                "UPDATE %s
+                'UPDATE %s
                  SET worker_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE coordinator_key = ? AND worker_id = ?",
+                 WHERE coordinator_key = ? AND worker_id = ?',
                 $this->coordinatorsTable(),
             ),
             [$now, self::COORDINATOR_KEY, $workerId],
@@ -128,6 +130,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
                 $leaseExpiresAt = new DatePoint((string) $row['lease_expires_at']);
                 if ($leaseExpiresAt >= $now) {
                     $this->connection->commit();
+
                     return false;
                 }
             }
@@ -136,15 +139,16 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
                 $wakeEnqueuedUntil = new DatePoint((string) $row['wake_enqueued_until']);
                 if ($wakeEnqueuedUntil >= $now) {
                     $this->connection->commit();
+
                     return false;
                 }
             }
 
             $this->connection->executeStatement(
                 sprintf(
-                    "UPDATE %s
+                    'UPDATE %s
                      SET wake_enqueued_until = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE coordinator_key = ?",
+                     WHERE coordinator_key = ?',
                     $this->coordinatorsTable(),
                 ),
                 [$now->add($ttl), $now, self::COORDINATOR_KEY],
@@ -152,6 +156,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
             );
 
             $this->connection->commit();
+
             return true;
         } catch (\Throwable $e) {
             if ($this->connection->isTransactionActive()) {
@@ -162,7 +167,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
         }
     }
 
-    /** @return array{worker_id: string|null, lease_expires_at: string|null, wake_enqueued_until: string|null}|null */
+    /** @return null|array{worker_id: null|string, lease_expires_at: null|string, wake_enqueued_until: null|string} */
     private function lockRow(): ?array
     {
         $row = $this->connection->executeQuery(
@@ -191,7 +196,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
 
     private function coordinatorsTable(): string
     {
-        return $this->tablePrefix . 'coordinators';
+        return $this->tablePrefix.'coordinators';
     }
 
     private function now(): DatePoint

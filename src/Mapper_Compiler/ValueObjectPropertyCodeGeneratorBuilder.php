@@ -10,7 +10,7 @@ class ValueObjectPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
 {
     public function supports(Type $type, CodeGeneratorContext $context): bool
     {
-        if (! $type instanceof ObjectType) {
+        if (!$type instanceof ObjectType) {
             return false;
         }
         $ref = new \ReflectionClass($type->getClassName());
@@ -20,7 +20,7 @@ class ValueObjectPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
 
     public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
     {
-        if (! $type instanceof ObjectType) {
+        if (!$type instanceof ObjectType) {
             throw new \InvalidArgumentException('Type must be ObjectType');
         }
         $className = $type->getClassName();

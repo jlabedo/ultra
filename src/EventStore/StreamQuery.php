@@ -76,7 +76,7 @@ readonly class StreamQuery
         int $bucketTo,
         string ...$eventTypes,
     ): self {
-        $branch = (new StreamQueryBranch([]))->withBucketRange($identifierDimension, $bucketFrom, $bucketTo);
+        $branch = new StreamQueryBranch([])->withBucketRange($identifierDimension, $bucketFrom, $bucketTo);
         if ([] !== $eventTypes) {
             $branch = $branch->withEventTypes(...$eventTypes);
         }
@@ -136,7 +136,7 @@ readonly class StreamQuery
     {
         $description = json_encode([
             'branches' => array_map(
-                static fn(StreamQueryBranch $branch): array => [
+                static fn (StreamQueryBranch $branch): array => [
                     'domainIdentifiers' => $branch->domainIdentifiers,
                     'eventTypes' => $branch->eventTypes,
                 ],

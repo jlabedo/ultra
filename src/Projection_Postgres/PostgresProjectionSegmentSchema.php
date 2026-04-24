@@ -40,6 +40,6 @@ final readonly class PostgresProjectionSegmentSchema
 
     public function segmentsTable(): string
     {
-        return $this->tablePrefix . 'segments';
+        return $this->tablePrefix.'segments';
     }
 }

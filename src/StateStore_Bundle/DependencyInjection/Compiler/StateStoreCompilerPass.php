@@ -32,14 +32,14 @@ final class StateStoreCompilerPass implements CompilerPassInterface
         $stateMetadata = [];
         $tableReferences = [];
 
-        if ([] !== $stateClasses && ! $container->has(MappedTableAdapter::class)) {
+        if ([] !== $stateClasses && !$container->has(MappedTableAdapter::class)) {
             throw new \LogicException(sprintf(
                 'State store states were discovered, but no "%s" service is registered.',
                 MappedTableAdapter::class,
             ));
         }
 
-        if ([] !== $stateClasses && ! $container->has(UltraNormalizer::class)) {
+        if ([] !== $stateClasses && !$container->has(UltraNormalizer::class)) {
             throw new \LogicException(sprintf(
                 'State store states were discovered, but no "%s" service is registered.',
                 UltraNormalizer::class,
@@ -47,7 +47,7 @@ final class StateStoreCompilerPass implements CompilerPassInterface
         }
 
         foreach ($stateClasses as $stateClass) {
-            if (! class_exists($stateClass)) {
+            if (!class_exists($stateClass)) {
                 continue;
             }
 
@@ -59,7 +59,7 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             $metadata = $metadataFactory->create($stateClass);
             $stateMetadata[$stateClass] = $metadata->toArray();
 
-            if (! array_key_exists($metadata->tableKey, $tableReferences)) {
+            if (!array_key_exists($metadata->tableKey, $tableReferences)) {
                 $serviceId = 'ultra.state_store.table.'.substr(md5($metadata->tableKey), 0, 12);
                 $container->setDefinition(
                     $serviceId,
@@ -102,7 +102,7 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             ? $container->getParameter('ultra_state_store.state_classes')
             : [];
 
-        if (! is_array($classes)) {
+        if (!is_array($classes)) {
             $classes = [];
         }
 

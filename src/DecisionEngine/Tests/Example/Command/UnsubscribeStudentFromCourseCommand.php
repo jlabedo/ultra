@@ -27,10 +27,10 @@ readonly class UnsubscribeStudentFromCourseCommand
         StudentSubscriptionState $student,
     ): array {
         return array_values(array_filter([
-            ! $course->exists()
+            !$course->exists()
                 ? new Violation('course.not_found', 'Course does not exist')
                 : null,
-            ! $student->isSubscribedTo($this->courseId)
+            !$student->isSubscribedTo($this->courseId)
                 ? new Violation('student.not_subscribed', 'Student is not subscribed to this course')
                 : null,
         ]));

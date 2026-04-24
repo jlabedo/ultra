@@ -17,6 +17,7 @@ use Ultra\Testing\Concurrent\Protocol\InitMessage;
 use Ultra\Testing\Concurrent\Protocol\LogMessage;
 use Ultra\Testing\Concurrent\Protocol\Message;
 use Ultra\Testing\Concurrent\Protocol\ReadyMessage;
+use Ultra\Testing\Concurrent\Protocol\ReleaseMessage;
 use Ultra\Testing\Concurrent\Protocol\ResultMessage;
 
 final class Worker
@@ -78,7 +79,7 @@ final class Worker
      * released immediately as it arrives, letting the worker pass through
      * intermediate checkpoints without the caller needing to await each one.
      *
-     * @throws WorkerDiedException          if the worker process exits before hitting the checkpoint
+     * @throws WorkerDiedException            if the worker process exits before hitting the checkpoint
      * @throws ConcurrentTestTimeoutException if the timeout elapses first
      */
     public function awaitCheckpoint(string $name, ?float $timeout = null, bool $releaseOthers = false): Checkpoint
@@ -91,7 +92,7 @@ final class Worker
 
             if ($releaseOthers) {
                 foreach ($this->checkpointQueues as $otherName => $queue) {
-                    if ($otherName !== $name && $queue !== []) {
+                    if ($otherName !== $name && [] !== $queue) {
                         array_shift($this->checkpointQueues[$otherName]);
                         $this->release($otherName);
                     }
@@ -107,6 +108,7 @@ final class Worker
                 if ($this->checkpointQueues[$name] ?? [] !== []) {
                     return array_shift($this->checkpointQueues[$name]);
                 }
+
                 throw new WorkerDiedException($this->workerDiedMessage(
                     sprintf('before reaching checkpoint "%s"', $name),
                     $this->outcome,
@@ -131,7 +133,7 @@ final class Worker
      */
     public function release(string $name, mixed $inject = null): void
     {
-        $this->write(new \Ultra\Testing\Concurrent\Protocol\ReleaseMessage($name, $inject));
+        $this->write(new ReleaseMessage($name, $inject));
     }
 
     /**
@@ -150,7 +152,7 @@ final class Worker
     /**
      * Block until the worker exits and return its Outcome.
      *
-     * @throws WorkerDiedException          if the worker exits without emitting a result
+     * @throws WorkerDiedException            if the worker exits without emitting a result
      * @throws ConcurrentTestTimeoutException if the timeout elapses
      */
     public function join(?float $timeout = null): Outcome
@@ -161,15 +163,16 @@ final class Worker
         while (microtime(true) < $deadline) {
             $this->pump();
 
-            if ($this->outcome !== null) {
+            if (null !== $this->outcome) {
                 return $this->outcome;
             }
 
             if (!$this->process->isRunning()) {
                 $this->pump();
-                if ($this->outcome !== null) {
+                if (null !== $this->outcome) {
                     return $this->outcome;
                 }
+
                 throw new WorkerDiedException($this->workerDiedMessage('without emitting a result message'));
             }
 
@@ -221,13 +224,13 @@ final class Worker
     public function pump(): void
     {
         $chunk = $this->process->getIncrementalOutput();
-        if ($chunk !== '') {
+        if ('' !== $chunk) {
             $this->stdoutRemainder .= $chunk;
             $this->parseLines();
         }
 
         $errChunk = $this->process->getIncrementalErrorOutput();
-        if ($errChunk !== '') {
+        if ('' !== $errChunk) {
             $this->stderrBuffer .= $errChunk;
         }
     }
@@ -239,7 +242,7 @@ final class Worker
             $this->stdoutRemainder = substr($this->stdoutRemainder, $pos + 1);
 
             $line = trim($line);
-            if ($line === '') {
+            if ('' === $line) {
                 continue;
             }
 
@@ -247,6 +250,7 @@ final class Worker
                 $message = Codec::decode($line);
             } catch (ProtocolException $e) {
                 $this->process->stop(0.1);
+
                 throw new ProtocolException(
                     sprintf('Protocol error from worker: %s', $e->getMessage()),
                     previous: $e,
@@ -272,9 +276,10 @@ final class Worker
     private function decodeResult(ResultMessage $message): Outcome
     {
         $raw = base64_decode($message->value, true);
-        if ($raw === false) {
+        if (false === $raw) {
             return Outcome::success(null);
         }
+
         try {
             return Outcome::success(unserialize($raw));
         } catch (\Throwable) {
@@ -284,9 +289,9 @@ final class Worker
 
     private function decodeException(ExceptionMessage $message): Outcome
     {
-        if ($message->serialized !== null) {
+        if (null !== $message->serialized) {
             $raw = base64_decode($message->serialized, true);
-            if ($raw !== false) {
+            if (false !== $raw) {
                 try {
                     $exception = unserialize($raw);
                     if ($exception instanceof \Throwable) {
@@ -311,7 +316,7 @@ final class Worker
     private function workerDiedMessage(string $context, ?Outcome $outcome = null): string
     {
         $exceptionDetail = '';
-        if ($outcome !== null && $outcome->isFailure()) {
+        if (null !== $outcome && $outcome->isFailure()) {
             $exceptionDetail = sprintf(
                 ' Exception thrown in closure: [%s] %s.',
                 $outcome->exceptionClass(),

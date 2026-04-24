@@ -16,7 +16,7 @@ final class StateMetadataFactory
      */
     public function create(string $stateClass): StateMetadata
     {
-        if (! class_exists($stateClass)) {
+        if (!class_exists($stateClass)) {
             throw new InvalidStateConfigurationException(sprintf(
                 'Cannot map state "%s" because the class does not exist.',
                 $stateClass,
@@ -45,7 +45,7 @@ final class StateMetadataFactory
         $state = $attributes[0]->newInstance();
         $properties = array_values(array_filter(
             $reflection->getProperties(),
-            static fn (\ReflectionProperty $property): bool => ! $property->isStatic(),
+            static fn (\ReflectionProperty $property): bool => !$property->isStatic(),
         ));
         usort($properties, static fn (\ReflectionProperty $left, \ReflectionProperty $right): int => $left->getName() <=> $right->getName());
 

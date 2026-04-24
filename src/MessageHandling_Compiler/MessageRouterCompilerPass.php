@@ -70,6 +70,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         // ── Step 1: Discover router interfaces ────────────────────────────────
         /** @var array<string, array{descriptor: RouterDescriptor, baseName: string, outputDir: string}> $routers */
         $routers = [];
+
         /** @var array<string, array{descriptor: RouterDescriptor, baseName: string, wrapperClass: string}> $interfaceDescriptors keyed by interface FQCN */
         $interfaceDescriptors = [];
 
@@ -77,11 +78,11 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             foreach ($tags as $tagAttributes) {
                 $interfaceName = $tagAttributes['interface'] ?? $serviceId;
 
-                if (! interface_exists($interfaceName)) {
+                if (!interface_exists($interfaceName)) {
                     continue;
                 }
 
-                if (! isset($interfaceDescriptors[$interfaceName])) {
+                if (!isset($interfaceDescriptors[$interfaceName])) {
                     $classRef = $container->getReflectionClass($interfaceName); // trigger class loading for better error messages
                     $descriptor = $this->buildRouterDescriptor($classRef);
                     if (null === $descriptor) {
@@ -142,10 +143,13 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
             // Generate per-handler service classes and build simplified route map
             $handlerOutputDir = $routerOutputDir.'/handlers';
+
             /** @var array<class-string, list<string>|string> $routeMap */
             $routeMap = [];
+
             /** @var array<string, Reference> $routerLocatorRefs handler service IDs for router's locator */
             $routerLocatorRefs = [];
+
             /** @var array<string, string> $generatedHandlers dedup key => handler service ID */
             $generatedHandlers = [];
 
@@ -158,7 +162,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                         ? $messageClass.'::@self::'.$handler->method->getName()
                         : $handler->serviceId.'::'.$handler->method->getName();
 
-                    if (! isset($generatedHandlers[$handlerKey])) {
+                    if (!isset($generatedHandlers[$handlerKey])) {
                         $handlerServiceId = $this->generateHandlerService(
                             $handler,
                             $handlerClassGenerator,
@@ -214,7 +218,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             $definition = $container->getDefinition($serviceId);
             $class = $definition->getClass() ?? $serviceId;
 
-            if (! class_exists($class)) {
+            if (!class_exists($class)) {
                 continue;
             }
 
@@ -222,7 +226,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
             foreach ($tags as $tag) {
                 $methodName = $tag['method'] ?? null;
-                if (! $methodName || ! is_string($methodName)) {
+                if (!$methodName || !is_string($methodName)) {
                     throw new \LogicException(sprintf(
                         'Service "%s" tagged as "%s" must have a "method" attribute.',
                         $serviceId,
@@ -385,7 +389,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
         if (AdviceType::Around === $type) {
             if (
-                ! $returnType instanceof \ReflectionNamedType
+                !$returnType instanceof \ReflectionNamedType
                 || $returnType->isBuiltin()
                 || ProceedResult::class !== $returnType->getName()
             ) {
@@ -430,7 +434,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             $hasArray = false;
 
             foreach ($returnType->getTypes() as $namedType) {
-                if (! $namedType instanceof \ReflectionNamedType) {
+                if (!$namedType instanceof \ReflectionNamedType) {
                     throw new \LogicException(sprintf(
                         '%s advice "%s::%s" must declare no return type, "void", or return type "array" (optionally nullable).',
                         $type->name,
@@ -456,7 +460,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                     }
                 }
 
-                if (! $namedType->isBuiltin()) {
+                if (!$namedType->isBuiltin()) {
                     throw new \LogicException(sprintf(
                         '%s advice "%s::%s" must declare no return type, "void", or return type "array" (optionally nullable).',
                         $type->name,
@@ -600,7 +604,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             $matchedHandlers = [];
 
             foreach ($subscriptions as $subscriptionType => $entries) {
-                if (! is_a($messageClass, $subscriptionType, true)) {
+                if (!is_a($messageClass, $subscriptionType, true)) {
                     continue;
                 }
 
@@ -683,7 +687,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         // This covers cases where a test double or decorator is registered
         // directly under the interface name without the ROUTER tag.
         foreach ($container->getDefinitions() as $defId => $definition) {
-            if (! isset($mapping[$defId]) && isset($wrapperByInterface[$defId])) {
+            if (!isset($mapping[$defId]) && isset($wrapperByInterface[$defId])) {
                 $mapping[$defId] = $wrapperByInterface[$defId];
             }
         }
@@ -691,7 +695,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         // Also map aliases that point to known router services or interface names
         foreach ($container->getAliases() as $aliasId => $alias) {
             $target = (string) $alias;
-            if (isset($mapping[$target]) && ! isset($mapping[$aliasId])) {
+            if (isset($mapping[$target]) && !isset($mapping[$aliasId])) {
                 $mapping[$aliasId] = $mapping[$target];
             }
         }
@@ -701,14 +705,14 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
     private function ensureAsyncQueue(ContainerBuilder $container): void
     {
-        if (! $container->has(AsyncQueueInterface::class)) {
+        if (!$container->has(AsyncQueueInterface::class)) {
             $container->setDefinition(
                 AsyncQueueInterface::class,
                 new Definition(InMemoryQueue::class)->setPublic(true),
             );
         }
 
-        if (! $container->has(QueueWorker::class)) {
+        if (!$container->has(QueueWorker::class)) {
             $workerDef = new Definition(QueueWorker::class, [
                 new Reference(AsyncQueueInterface::class),
                 new Reference('service_container'),

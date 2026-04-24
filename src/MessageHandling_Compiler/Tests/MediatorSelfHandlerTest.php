@@ -41,7 +41,7 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
 
     public function test_it_injects_services_into_self_handling_methods(): void
     {
-        $message = new readonly class ('Bob') {
+        $message = new readonly class('Bob') {
             public function __construct(public string $name) {}
 
             #[SelfHandler]
@@ -62,7 +62,7 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
     {
         $mediator = $this->ultraLight()
             ->withClass(SelfGreetingMessage::class)
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function greet(GreetingMessage $message): string
                 {
@@ -83,7 +83,7 @@ final class MediatorSelfHandlerTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withClass(SelfGreetingMessage::class)
-            ->withService(new class ($log) {
+            ->withService(new class($log) {
                 /**
                  * @param list<object> $log
                  */

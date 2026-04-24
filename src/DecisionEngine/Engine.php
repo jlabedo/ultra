@@ -29,7 +29,7 @@ final readonly class Engine
     {
         $loader = $this->loader($entityClass);
 
-        if (! $this->eventStore instanceof EventStore) {
+        if (!$this->eventStore instanceof EventStore) {
             throw new \LogicException(sprintf(
                 'Engine cannot load %s because no event store was configured.',
                 $entityClass,
@@ -47,7 +47,7 @@ final readonly class Engine
     public function loader(string $entityClass): EventSourcedEntityLoader
     {
         $loader = $this->loaders[$entityClass] ?? null;
-        if (! $loader instanceof EventSourcedEntityLoader) {
+        if (!$loader instanceof EventSourcedEntityLoader) {
             throw new UnknownEventSourcedEntityException($entityClass);
         }
 

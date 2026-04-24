@@ -132,7 +132,7 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_requires_an_event_store_to_load_entities(): void
     {
-        $loader = new class () implements EventSourcedEntityLoader {
+        $loader = new class implements EventSourcedEntityLoader {
             public function query(StreamIdentifier ...$identifiers): StreamQuery
             {
                 return StreamQuery::forStream(new StreamIdentifier('course', 'course-1'));
@@ -166,7 +166,7 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
         ;
         $engine = $container->engine();
 
-        $unknownStateClass = new class () {};
+        $unknownStateClass = new class {};
 
         $this->expectException(UnknownEventSourcedEntityException::class);
 

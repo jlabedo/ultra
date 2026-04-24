@@ -29,11 +29,12 @@ abstract class DecisionEngineFunctionalTestCase extends TestCase
     protected function decisionUltraLight(array $eventClasses): UltraLight
     {
         $buildDir = dirname(__DIR__, 4).'/var/decision_engine_compiler_tests';
-        $eventBus = new class () implements EventBusInterface {
+        $eventBus = new class implements EventBusInterface {
             public function publish(object $event, array|MessageContext $context = []): void {}
         };
+
         /** @var UltraLightContainerFactoryInterface<DecisionEngineTestContainer> $containerFactory */
-        $containerFactory = new class () implements UltraLightContainerFactoryInterface {
+        $containerFactory = new class implements UltraLightContainerFactoryInterface {
             public function create(Container $container): DecisionEngineTestContainer
             {
                 return new DecisionEngineTestContainer($container);

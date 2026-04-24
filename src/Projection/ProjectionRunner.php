@@ -103,6 +103,7 @@ final readonly class ProjectionRunner
             );
         } catch (\Throwable $e) {
             $this->segmentRepository->abandonSegment($segment);
+
             throw $e;
         }
     }

@@ -9,10 +9,10 @@ use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
@@ -35,8 +35,7 @@ final class NullEventStore implements EventStore
         ?Checkpoint $from = null,
         ?Checkpoint $to = null,
         int $batchSize = 1000,
-    ): LoadResult
-    {
+    ): LoadResult {
         return new LoadResult([], $to ?? $from ?? Checkpoint::beginning(), $query);
     }
 

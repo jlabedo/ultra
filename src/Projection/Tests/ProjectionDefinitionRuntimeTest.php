@@ -4,13 +4,11 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests;
 
-use InvalidArgumentException;
-use LogicException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
-use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
@@ -62,13 +60,13 @@ final class TestProjectionClass
     #[ProjectionHandler]
     public function onStudentSubscribed(StudentSubscribed $event): void
     {
-        $this->handled[] = 'subscribed:' . $event->studentId;
+        $this->handled[] = 'subscribed:'.$event->studentId;
     }
 
     #[ProjectionHandler]
     public function onCourseCreated(CourseCreatedEvent $event): void
     {
-        $this->handled[] = 'created:' . $event->courseId;
+        $this->handled[] = 'created:'.$event->courseId;
     }
 }
 
@@ -135,6 +133,9 @@ final class InvalidFlushProjection
     public function flush(string $projectionId): void {}
 }
 
+/**
+ * @internal
+ */
 #[CoversClass(ProjectionDefinition::class)]
 #[CoversClass(ProjectionRuntime::class)]
 final class ProjectionDefinitionRuntimeTest extends TestCase
@@ -257,14 +258,14 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
 
     public function test_projection_definition_throws_when_class_has_no_projection_attribute(): void
     {
-        $this->expectException(InvalidArgumentException::class);
+        $this->expectException(\InvalidArgumentException::class);
 
         ProjectionDefinition::fromClass(\stdClass::class);
     }
 
     public function test_projection_definition_throws_when_a_handler_uses_a_builtin_parameter_type(): void
     {
-        $this->expectException(LogicException::class);
+        $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('must type-hint a specific event class');
 
         ProjectionDefinition::fromClass(BuiltinParameterProjection::class);
@@ -272,7 +273,7 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
 
     public function test_projection_definition_throws_when_a_handler_has_the_wrong_number_of_parameters(): void
     {
-        $this->expectException(LogicException::class);
+        $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('must have exactly one parameter');
 
         ProjectionDefinition::fromClass(InvalidParameterCountProjection::class);
@@ -280,7 +281,7 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
 
     public function test_projection_definition_throws_when_multiple_handlers_target_the_same_event_type(): void
     {
-        $this->expectException(LogicException::class);
+        $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('Duplicate #[ProjectionHandler]');
 
         ProjectionDefinition::fromClass(DuplicateHandlerProjection::class);
@@ -288,7 +289,7 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
 
     public function test_projection_definition_throws_when_the_event_class_has_no_event_attribute(): void
     {
-        $this->expectException(LogicException::class);
+        $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('has no #[Event] attribute');
 
         ProjectionDefinition::fromClass(MissingEventAttributeProjection::class);
@@ -296,7 +297,7 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
 
     public function test_projection_definition_throws_when_the_initializer_declares_parameters(): void
     {
-        $this->expectException(LogicException::class);
+        $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('must have no parameters');
 
         ProjectionDefinition::fromClass(InvalidInitializerProjection::class);
@@ -304,7 +305,7 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
 
     public function test_projection_definition_throws_when_the_flush_method_declares_parameters(): void
     {
-        $this->expectException(LogicException::class);
+        $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('must have no parameters');
 
         ProjectionDefinition::fromClass(InvalidFlushProjection::class);

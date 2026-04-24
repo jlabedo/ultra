@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
+use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
-use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
@@ -78,6 +78,11 @@ final class CourseNamesProjection
     }
 }
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 {
     public function test_runner_processes_events_and_advances_the_checkpoint(): void
@@ -90,7 +95,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             string $eventStorePrefix,
             string $projectionPrefix,
         ): void {
-            $tableName = $projectionPrefix . 'course_names_view';
+            $tableName = $projectionPrefix.'course_names_view';
 
             $store->append([
                 new Event(
@@ -138,7 +143,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             string $eventStorePrefix,
             string $projectionPrefix,
         ): void {
-            $tableName = $projectionPrefix . 'course_names_view';
+            $tableName = $projectionPrefix.'course_names_view';
 
             $store->append([
                 new Event(
@@ -214,7 +219,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             string $eventStorePrefix,
             string $projectionPrefix,
         ): void {
-            $tableName = $projectionPrefix . 'course_names_view';
+            $tableName = $projectionPrefix.'course_names_view';
 
             $store->append([
                 new Event(
@@ -255,7 +260,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             string $eventStorePrefix,
             string $projectionPrefix,
         ): void {
-            $tableName = $projectionPrefix . 'course_names_view';
+            $tableName = $projectionPrefix.'course_names_view';
 
             $store->append([
                 new Event(
@@ -305,7 +310,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             string $eventStorePrefix,
             string $projectionPrefix,
         ): void {
-            $tableName = $projectionPrefix . 'course_names_view';
+            $tableName = $projectionPrefix.'course_names_view';
 
             $store->append([
                 new Event(

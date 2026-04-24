@@ -12,14 +12,16 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
-use Ultra\Testing\Concurrent\Cluster;
-use Ultra\Testing\Concurrent\Outcome;
+
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSchemaForImplementation;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedImplementations;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedLockStrategies;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestUniquePrefix;
+
+use Ultra\Testing\Concurrent\Cluster;
+use Ultra\Testing\Concurrent\Outcome;
 
 require_once __DIR__.'/Support/PostgresTestSupport.php';
 
@@ -107,8 +109,8 @@ final class PostgresEventStoreConcurrentClusterTest extends PostgresEventStoreTe
 
             $outcomes = $cluster->joinAll();
 
-            $appended = array_filter($outcomes, static fn (Outcome $o): bool => $o->isSuccess() && $o->value() === 'appended');
-            $conflict = array_filter($outcomes, static fn (Outcome $o): bool => $o->isSuccess() && $o->value() === 'concurrency');
+            $appended = array_filter($outcomes, static fn (Outcome $o): bool => $o->isSuccess() && 'appended' === $o->value());
+            $conflict = array_filter($outcomes, static fn (Outcome $o): bool => $o->isSuccess() && 'concurrency' === $o->value());
 
             self::assertCount(1, $appended, sprintf(
                 'Expected exactly one worker to append. Outcomes: %s',

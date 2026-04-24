@@ -76,6 +76,7 @@ final class CompositeUnitOfWorkTest extends TestCase
 
         $composite = new CompositeUnitOfWork((static function () use (&$calls): \Generator {
             yield new RecordingUnitOfWork('event_store', $calls);
+
             yield new RecordingUnitOfWork('mapped_rows', $calls);
         })());
 

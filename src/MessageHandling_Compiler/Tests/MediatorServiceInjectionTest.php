@@ -130,7 +130,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
     {
         $mediator = $this->ultraLight()
             ->withService(new MediatorServiceInjectionGreeter())
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(EmptyMessage $message, MediatorServiceInjectionGreeter $greeter): string
                 {
@@ -149,7 +149,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($repository)
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(ProcessEntityMessage $message, MediatorServiceInjectionEntity $entity): string
                 {
@@ -158,7 +158,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     return $entity->id;
                 }
             })
-            ->withService(new class ($repository) {
+            ->withService(new class($repository) {
                 public function __construct(
                     private readonly MediatorServiceInjectionEntityRepository $repository,
                 ) {}
@@ -197,7 +197,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
     public function test_it_lets_one_around_advice_provide_multiple_handler_dependencies(): void
     {
         $mediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(
                     ProcessPairMessage $message,
@@ -207,7 +207,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     return $left->id.'+'.$right->id;
                 }
             })
-            ->withService(new class () {
+            ->withService(new class {
                 #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     $method = $ctx->method();
                     $indices = [];
@@ -252,7 +252,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
         $mediator = $this->ultraLight()
             ->withService($leftRepository)
             ->withService($rightRepository)
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(
                     ProcessPairMessage $message,
@@ -262,7 +262,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     return $left->id.'+'.$right->id;
                 }
             })
-            ->withService(new class ($leftRepository, $rightRepository) {
+            ->withService(new class($leftRepository, $rightRepository) {
                 public function __construct(
                     private readonly MediatorServiceInjectionLeftRepository $leftRepository,
                     private readonly MediatorServiceInjectionRightRepository $rightRepository,
@@ -322,7 +322,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
         $mediator = $this->ultraLight()
             ->withService($entityManager)
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(
                     ProcessPairMessage $message,
@@ -332,7 +332,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                     return $left->id.'+'.$right->id;
                 }
             })
-            ->withService(new class ($entityManager) {
+            ->withService(new class($entityManager) {
                 public function __construct(private readonly MediatorServiceInjectionEntityManager $entityManager) {}
 
                 #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
@@ -342,7 +342,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
                         $type = $parameter->getType();
-                        if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                        if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
                             continue;
                         }
 

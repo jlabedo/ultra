@@ -16,7 +16,7 @@ use Ultra\Testing\Concurrent\Outcome;
  * @internal
  */
 #[CoversClass(Cluster::class)]
-#[Group('concurrent-testing')]
+#[Group('slow')]
 final class ClusterTest extends TestCase
 {
     public function test_two_workers_reach_same_checkpoint_and_are_released_together(): void
@@ -164,12 +164,14 @@ final class ClusterTest extends TestCase
 
         $w1 = $cluster->spawn(static function (): string {
             checkpoint('read');
+
             // w1 wins the race — simulate a "success" write
             return 'appended';
         });
 
         $w2 = $cluster->spawn(static function (): string {
             checkpoint('read');
+
             // w2 loses — simulate a "conflict" exception path
             throw new \RuntimeException('ConcurrencyException: version mismatch');
         });

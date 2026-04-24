@@ -36,6 +36,7 @@ final class EventSourcedEntityAnalyzer
 
         /** @var array<string, array{tags: list<string>, eventNames: array<string, true>}> $criteriaGroups */
         $criteriaGroups = [];
+
         /** @var array<string, array{eventClass: string, eventName: string, method: string}> $dispatchEntries */
         $dispatchEntries = [];
 
@@ -51,7 +52,7 @@ final class EventSourcedEntityAnalyzer
                 continue;
             }
 
-            if (! $method->isPublic()) {
+            if (!$method->isPublic()) {
                 throw new \LogicException(sprintf(
                     'Handler %s::%s must be public.',
                     $entityClass,
@@ -65,7 +66,7 @@ final class EventSourcedEntityAnalyzer
             }
 
             $parameterType = $parameters[0]->getType();
-            if (! $parameterType instanceof \ReflectionNamedType || $parameterType->isBuiltin()) {
+            if (!$parameterType instanceof \ReflectionNamedType || $parameterType->isBuiltin()) {
                 throw new MissingTypeHintError($entityClass, $method->getName());
             }
 
@@ -89,7 +90,7 @@ final class EventSourcedEntityAnalyzer
 
             foreach ($resolvedGroups as $groupTags) {
                 $groupKey = implode("\0", $groupTags);
-                if (! isset($criteriaGroups[$groupKey])) {
+                if (!isset($criteriaGroups[$groupKey])) {
                     $criteriaGroups[$groupKey] = [
                         'tags' => $groupTags,
                         'eventNames' => [],
@@ -160,7 +161,7 @@ final class EventSourcedEntityAnalyzer
     {
         $normalized = [];
         foreach ($tags as $tag) {
-            if (! is_string($tag) || '' === $tag) {
+            if (!is_string($tag) || '' === $tag) {
                 throw new \LogicException('Event-sourced entity tags must be non-empty strings.');
             }
             $normalized[$tag] = true;
@@ -174,7 +175,7 @@ final class EventSourcedEntityAnalyzer
      */
     private function eventTags(string $eventClass): array
     {
-        if (! class_exists($eventClass)) {
+        if (!class_exists($eventClass)) {
             throw new \LogicException(sprintf('Event class %s does not exist.', $eventClass));
         }
 
@@ -246,7 +247,7 @@ final class EventSourcedEntityAnalyzer
             }
 
             foreach ($group as $tag) {
-                if (! in_array($tag, $intersection, true)) {
+                if (!in_array($tag, $intersection, true)) {
                     throw new InvalidMatchTagError($class, $method, $tag, $intersection);
                 }
             }

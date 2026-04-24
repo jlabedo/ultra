@@ -60,7 +60,7 @@ final readonly class ProjectionCoordinator
                     $result = $this->runner->runBucketOnceResult(
                         $runtime,
                         $bucketActivity->bucket,
-                        $workerId . '-segment',
+                        $workerId.'-segment',
                         $batchSize,
                     );
 

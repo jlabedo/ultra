@@ -37,6 +37,35 @@ final class HandlerDescriptorFactory
         );
     }
 
+    /**
+     * @return list<string>
+     */
+    public function resolveDepServiceIds(\ReflectionMethod $method, bool $skipFirstParameter = true): array
+    {
+        $ids = [];
+        foreach (array_slice($method->getParameters(), $skipFirstParameter ? 1 : 0) as $param) {
+            $type = $param->getType();
+            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                throw new \LogicException(sprintf(
+                    'Parameter "$%s" of handler method "%s::%s" must have a non-builtin type.',
+                    $param->getName(),
+                    $method->getDeclaringClass()->getName(),
+                    $method->getName(),
+                ));
+            }
+            $ids[] = $type->getName();
+        }
+
+        return $ids;
+    }
+
+    public function returnsVoid(\ReflectionMethod $method): bool
+    {
+        $returnType = $method->getReturnType();
+
+        return $returnType instanceof \ReflectionNamedType && 'void' === $returnType->getName();
+    }
+
     private function create(
         string $serviceId,
         string $className,
@@ -72,35 +101,6 @@ final class HandlerDescriptorFactory
         );
     }
 
-    /**
-     * @return list<string>
-     */
-    public function resolveDepServiceIds(\ReflectionMethod $method, bool $skipFirstParameter = true): array
-    {
-        $ids = [];
-        foreach (array_slice($method->getParameters(), $skipFirstParameter ? 1 : 0) as $param) {
-            $type = $param->getType();
-            if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
-                throw new \LogicException(sprintf(
-                    'Parameter "$%s" of handler method "%s::%s" must have a non-builtin type.',
-                    $param->getName(),
-                    $method->getDeclaringClass()->getName(),
-                    $method->getName(),
-                ));
-            }
-            $ids[] = $type->getName();
-        }
-
-        return $ids;
-    }
-
-    public function returnsVoid(\ReflectionMethod $method): bool
-    {
-        $returnType = $method->getReturnType();
-
-        return $returnType instanceof \ReflectionNamedType && 'void' === $returnType->getName();
-    }
-
     private function resolveMessageClass(\ReflectionMethod $method): ?string
     {
         $params = $method->getParameters();
@@ -109,7 +109,7 @@ final class HandlerDescriptorFactory
         }
 
         $firstType = $params[0]->getType();
-        if (! $firstType instanceof \ReflectionNamedType || $firstType->isBuiltin()) {
+        if (!$firstType instanceof \ReflectionNamedType || $firstType->isBuiltin()) {
             return null;
         }
 

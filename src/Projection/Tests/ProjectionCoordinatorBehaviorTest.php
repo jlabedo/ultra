@@ -103,9 +103,7 @@ final class EmptyAfterFirstPollActivityRepository implements ProjectionBucketAct
         return [];
     }
 
-    public function acknowledge(string $projectionId, int $bucket, int $counter): void
-    {
-    }
+    public function acknowledge(string $projectionId, int $bucket, int $counter): void {}
 }
 
 final class CountingActivityRepository implements ProjectionBucketActivityRepositoryInterface
@@ -142,6 +140,9 @@ final class CountingActivityRepository implements ProjectionBucketActivityReposi
     }
 }
 
+/**
+ * @internal
+ */
 #[CoversClass(ProjectionCoordinator::class)]
 final class ProjectionCoordinatorBehaviorTest extends TestCase
 {
@@ -162,7 +163,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
             $activity,
             $leases,
             $activator,
-            new readonly class () implements ProjectionScalingPolicyInterface {
+            new readonly class implements ProjectionScalingPolicyInterface {
                 public function additionalWorkersRequested(array $affectedBuckets): int
                 {
                     return 2;

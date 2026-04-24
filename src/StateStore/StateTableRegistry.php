@@ -22,7 +22,7 @@ final readonly class StateTableRegistry
     public function tableFor(StateMetadata $metadata): MappedTable
     {
         $table = $this->tables[$metadata->tableKey] ?? null;
-        if (! $table instanceof MappedTable) {
+        if (!$table instanceof MappedTable) {
             throw new \LogicException(sprintf(
                 'No mapped table service was registered for state "%s".',
                 $metadata->stateClass,

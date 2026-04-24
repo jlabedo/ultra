@@ -11,6 +11,17 @@ readonly class Path
      */
     private function __construct(private array $segments) {}
 
+    public function __toString(): string
+    {
+        if (empty($this->segments)) {
+            return '';
+        }
+
+        $path = implode('][', $this->segments);
+
+        return "[{$path}]";
+    }
+
     public static function new(): self
     {
         return new self([]);
@@ -61,17 +72,6 @@ readonly class Path
     public function generateRuntimeContextCall(array $rawSegments = []): string
     {
         return "\$context->path->add({$this->toList($rawSegments)})";
-    }
-
-    public function __toString(): string
-    {
-        if (empty($this->segments)) {
-            return '';
-        }
-
-        $path = implode('][', $this->segments);
-
-        return "[{$path}]";
     }
 
     /**

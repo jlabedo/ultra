@@ -10,16 +10,17 @@ use Doctrine\DBAL\ParameterType;
 use Doctrine\DBAL\Tools\DsnParser;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
 use Symfony\Component\Process\Process;
+use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
-use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
@@ -28,14 +29,14 @@ use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\ProjectionCatalog;
-use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivitySchema;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorSchema;
-use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
+use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 
 #[EventAttribute('harness.course.created')]
 final readonly class HarnessCourseCreated
@@ -99,7 +100,7 @@ final class ProjectionCoordinationHarness
         $runtime = self::runtime($connection, $projectionPrefix);
         $catalog = new ProjectionCatalog($runtime);
         $runner = new ProjectionRunner($eventStore, $segments);
-        $consolePath ??= __DIR__ . '/projection-coordination-harness';
+        $consolePath ??= __DIR__.'/projection-coordination-harness';
 
         $application = new Application('Projection Coordination Harness');
         $application->setAutoExit(false);
@@ -136,15 +137,7 @@ final class ProjectionCoordinationHarness
 
     public static function readModelTable(string $projectionPrefix): string
     {
-        return $projectionPrefix . 'harness_course_names_view';
-    }
-
-    private static function runtime(Connection $connection, string $projectionPrefix): ProjectionRuntime
-    {
-        return new ProjectionRuntime(
-            new HarnessCourseNamesProjection($connection, self::readModelTable($projectionPrefix)),
-            new UltraNormalizer(),
-        );
+        return $projectionPrefix.'harness_course_names_view';
     }
 
     /** @return list<object{createStatements(): list<string>, dropStatements(): list<string>}> */
@@ -157,6 +150,14 @@ final class ProjectionCoordinationHarness
             new PostgresProjectionBucketActivitySchema($projectionPrefix),
         ];
     }
+
+    private static function runtime(Connection $connection, string $projectionPrefix): ProjectionRuntime
+    {
+        return new ProjectionRuntime(
+            new HarnessCourseNamesProjection($connection, self::readModelTable($projectionPrefix)),
+            new UltraNormalizer(),
+        );
+    }
 }
 
 final class CreateProjectionHarnessSchemaCommand extends Command
@@ -167,23 +168,6 @@ final class CreateProjectionHarnessSchemaCommand extends Command
         private readonly string $projectionPrefix,
     ) {
         parent::__construct('harness:projection-schema:create');
-    }
-
-    protected function configure(): void
-    {
-        $this->addOption('reset', null, InputOption::VALUE_NONE, 'Drop harness tables before creating them.');
-    }
-
-    protected function execute(InputInterface $input, OutputInterface $output): int
-    {
-        $this->createSchema((bool) $input->getOption('reset'));
-        $output->writeln(sprintf(
-            'Projection harness schema is ready. event_prefix=%s projection_prefix=%s',
-            $this->eventStorePrefix,
-            $this->projectionPrefix,
-        ));
-
-        return Command::SUCCESS;
     }
 
     public function createSchema(bool $reset): void
@@ -208,6 +192,23 @@ final class CreateProjectionHarnessSchemaCommand extends Command
                 $this->connection->executeStatement($statement);
             }
         }
+    }
+
+    protected function configure(): void
+    {
+        $this->addOption('reset', null, InputOption::VALUE_NONE, 'Drop harness tables before creating them.');
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $this->createSchema((bool) $input->getOption('reset'));
+        $output->writeln(sprintf(
+            'Projection harness schema is ready. event_prefix=%s projection_prefix=%s',
+            $this->eventStorePrefix,
+            $this->projectionPrefix,
+        ));
+
+        return Command::SUCCESS;
     }
 }
 
@@ -282,7 +283,8 @@ final class BackfillProjectionCommand extends Command
         $this
             ->addArgument('workers', InputArgument::REQUIRED, 'Number of worker processes to start.')
             ->addOption('batch-size', null, InputOption::VALUE_REQUIRED, 'Events processed per claimed segment.', 5)
-            ->addOption('max-cycles', null, InputOption::VALUE_REQUIRED, 'Maximum coordinator cycles per worker.', 64);
+            ->addOption('max-cycles', null, InputOption::VALUE_REQUIRED, 'Maximum coordinator cycles per worker.', 64)
+        ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -328,13 +330,13 @@ final class BackfillProjectionCommand extends Command
     {
         $candidates = array_filter(
             $this->segments->listSegments($this->runtime->projectionId()),
-            static fn(array $segment): bool => 'available' === $segment['status']
+            static fn (array $segment): bool => 'available' === $segment['status']
                 && null === $segment['pendingOperation']
                 && $segment['bucketTo'] > $segment['bucketFrom'],
         );
         usort(
             $candidates,
-            static fn(array $left, array $right): int => ($right['bucketTo'] - $right['bucketFrom'])
+            static fn (array $left, array $right): int => ($right['bucketTo'] - $right['bucketFrom'])
                 <=> ($left['bucketTo'] - $left['bucketFrom']),
         );
 
@@ -359,7 +361,8 @@ final class RunProjectionHarnessCommand extends Command
             ->addOption('workers', null, InputOption::VALUE_REQUIRED, 'Number of worker processes to start.', 4)
             ->addOption('batch-size', null, InputOption::VALUE_REQUIRED, 'Events processed per claimed segment.', 3)
             ->addOption('max-cycles', null, InputOption::VALUE_REQUIRED, 'Maximum coordinator cycles per worker.', 128)
-            ->addOption('reset-schema', null, InputOption::VALUE_NONE, 'Drop harness tables before running.');
+            ->addOption('reset-schema', null, InputOption::VALUE_NONE, 'Drop harness tables before running.')
+        ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -387,7 +390,7 @@ final class RunProjectionHarnessCommand extends Command
         $output->writeln('Schema ready.');
 
         $seedCode = $application->find('harness:projection-seed')->run(
-            new \Symfony\Component\Console\Input\ArrayInput(['event-count' => (string) $events]),
+            new ArrayInput(['event-count' => (string) $events]),
             $output,
         );
         if (Command::SUCCESS !== $seedCode) {
@@ -395,7 +398,7 @@ final class RunProjectionHarnessCommand extends Command
         }
 
         $backfillCode = $application->find('harness:projection-backfill')->run(
-            new \Symfony\Component\Console\Input\ArrayInput([
+            new ArrayInput([
                 'workers' => (string) $workers,
                 '--batch-size' => (string) $batchSize,
                 '--max-cycles' => (string) $maxCycles,
@@ -412,7 +415,7 @@ final class RunProjectionHarnessCommand extends Command
         ));
         $pendingBuckets = (int) $this->connection->fetchOne(sprintf(
             'SELECT count(*) FROM %s WHERE counter > acknowledged_counter',
-            $this->projectionPrefix . 'bucket_activity',
+            $this->projectionPrefix.'bucket_activity',
         ));
 
         $output->writeln(sprintf('Projected rows: %d', $projectedRows));
@@ -441,7 +444,8 @@ final class ProjectionWorkerCommand extends Command
         $this
             ->addOption('worker-id', null, InputOption::VALUE_REQUIRED, 'Worker identifier.', gethostname() ?: 'worker')
             ->addOption('batch-size', null, InputOption::VALUE_REQUIRED, 'Events processed per claimed segment.', 5)
-            ->addOption('max-cycles', null, InputOption::VALUE_REQUIRED, 'Maximum coordinator cycles.', 64);
+            ->addOption('max-cycles', null, InputOption::VALUE_REQUIRED, 'Maximum coordinator cycles.', 64)
+        ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -503,9 +507,9 @@ final class ProcessProjectionActivator implements ProjectionActivatorInterface
                     PHP_BINARY,
                     $this->consolePath,
                     'harness:projection-worker',
-                    '--worker-id=' . $workerId,
-                    '--batch-size=' . $this->batchSize,
-                    '--max-cycles=' . $this->maxCycles,
+                    '--worker-id='.$workerId,
+                    '--batch-size='.$this->batchSize,
+                    '--max-cycles='.$this->maxCycles,
                 ],
                 null,
                 [

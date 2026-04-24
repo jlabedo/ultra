@@ -35,6 +35,7 @@ final class ListSegmentsCommand extends Command
 
         if ([] === $segments) {
             $output->writeln(sprintf('<comment>No segments found for "%s".</comment>', $projectionId));
+
             return Command::SUCCESS;
         }
 

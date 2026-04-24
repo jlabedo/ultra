@@ -19,6 +19,9 @@ const ULTRA_LIGHT_BUILD_DIR = __DIR__.'/../../../../var/message_handling_compile
  */
 final readonly class UltraLight
 {
+    /** @var UltraLightContainerFactoryInterface<TContainer> */
+    private UltraLightContainerFactoryInterface $containerFactory;
+
     /**
      * @param array<int|string, object>                            $services
      * @param list<class-string>                                   $classesToDiscover
@@ -46,9 +49,6 @@ final readonly class UltraLight
 
         $this->containerFactory = $resolvedContainerFactory;
     }
-
-    /** @var UltraLightContainerFactoryInterface<TContainer> */
-    private UltraLightContainerFactoryInterface $containerFactory;
 
     /**
      * @param class-string ...$classesToDiscover

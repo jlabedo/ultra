@@ -33,7 +33,7 @@ final class MapperCompilerPass implements CompilerPassInterface
             ? $container->getParameter('ultra_mapper.normalizable_classes')
             : [];
 
-        if (! is_array($classes)) {
+        if (!is_array($classes)) {
             $classes = [];
         }
 
@@ -75,7 +75,7 @@ final class MapperCompilerPass implements CompilerPassInterface
                 ));
             }
             $class = $container->getParameterBag()->resolveValue($class);
-            if (! is_a($class, RuntimeNormalizerInterface::class, true)) {
+            if (!is_a($class, RuntimeNormalizerInterface::class, true)) {
                 throw new \LogicException(sprintf(
                     'Service "%s" tagged "%s" must implement %s.',
                     $id,

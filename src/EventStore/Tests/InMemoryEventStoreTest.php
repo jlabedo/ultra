@@ -177,11 +177,11 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         $secondPage = $store->load($query, from: $firstPage->checkpoint, batchSize: 2);
 
         self::assertSame(['Math 101', 'Math 102'], array_map(
-            static fn(Event $event): string => $event->payload['name'],
+            static fn (Event $event): string => $event->payload['name'],
             $firstPage->events,
         ));
         self::assertSame(['Math 103'], array_map(
-            static fn(Event $event): string => $event->payload['name'],
+            static fn (Event $event): string => $event->payload['name'],
             $secondPage->events,
         ));
         self::assertSame(3, $secondPage->checkpoint->gapFloor->value);
@@ -207,12 +207,12 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         $secondPage = $store->load($query, from: $firstPage->checkpoint, to: $savedCheckpoint, batchSize: 2);
 
         self::assertSame(['Math 101', 'Math 102'], array_map(
-            static fn(Event $event): string => $event->payload['name'],
+            static fn (Event $event): string => $event->payload['name'],
             $firstPage->events,
         ));
         self::assertSame(2, $firstPage->checkpoint->gapFloor->value);
         self::assertSame(['Math 103'], array_map(
-            static fn(Event $event): string => $event->payload['name'],
+            static fn (Event $event): string => $event->payload['name'],
             $secondPage->events,
         ));
         self::assertEquals($savedCheckpoint, $secondPage->checkpoint);

@@ -28,7 +28,7 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $aroundCalls = 0;
 
         $container = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string
@@ -36,7 +36,7 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class ($beforeCalls) {
+            ->withService(new class($beforeCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -52,7 +52,7 @@ final class AsyncAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     ++$this->calls;
                 }
             })
-            ->withService(new class ($aroundCalls) {
+            ->withService(new class($aroundCalls) {
                 public int $calls;
 
                 public function __construct(int &$calls)

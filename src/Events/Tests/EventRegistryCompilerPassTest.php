@@ -115,7 +115,7 @@ final class EventRegistryCompilerPassTest extends TestCase
             $configure($container);
         }
 
-        $container->addCompilerPass(new class () implements CompilerPassInterface {
+        $container->addCompilerPass(new class implements CompilerPassInterface {
             public function process(ContainerBuilder $container): void
             {
                 if ($container->hasDefinition(EventRegistryInterface::class)) {
@@ -126,7 +126,7 @@ final class EventRegistryCompilerPassTest extends TestCase
 
         $container->compile();
 
-        /** @var EventRegistryInterface $registry */
+        // @var EventRegistryInterface $registry
         return $container->get(EventRegistryInterface::class);
     }
 }

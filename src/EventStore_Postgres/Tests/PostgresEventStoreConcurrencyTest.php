@@ -13,10 +13,12 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
-use Ultra\Testing\Concurrent\Cluster;
-use Ultra\Testing\Concurrent\Worker;
+
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedImplementations;
 use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedLockStrategies;
+
+use Ultra\Testing\Concurrent\Cluster;
+use Ultra\Testing\Concurrent\Worker;
 
 require_once __DIR__.'/Support/PostgresTestSupport.php';
 
@@ -295,7 +297,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
             $store = \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
             $appendConditions = [];
-            if ($appendQuery !== null) {
+            if (null !== $appendQuery) {
                 $appendConditions = [$store->load($appendQuery)->appendCondition()];
             }
 
@@ -334,12 +336,12 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
             $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
             $store = \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
-            if ($lockTimeoutMs !== null) {
+            if (null !== $lockTimeoutMs) {
                 $connection->executeStatement(sprintf("SET lock_timeout TO '%dms'", $lockTimeoutMs));
             }
 
             $appendConditions = [];
-            if ($appendQuery !== null) {
+            if (null !== $appendQuery) {
                 $appendConditions = [$store->load($appendQuery)->appendCondition()];
             }
 
@@ -350,7 +352,7 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
                 $connection->close();
 
                 return 'ok';
-            } catch (\Ultra\EventStore\Exception\ConcurrencyException) {
+            } catch (ConcurrencyException) {
                 if ($connection->isTransactionActive()) {
                     $connection->rollBack();
                 }

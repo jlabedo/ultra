@@ -26,13 +26,14 @@ final class SplitSegmentCommand extends Command
     {
         $this
             ->addArgument('projection-id', InputArgument::REQUIRED, 'The projection identifier (e.g. course_names).')
-            ->addArgument('bucket-from', InputArgument::REQUIRED, 'The bucket_from of the segment to split (e.g. 0).');
+            ->addArgument('bucket-from', InputArgument::REQUIRED, 'The bucket_from of the segment to split (e.g. 0).')
+        ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $projectionId = (string) $input->getArgument('projection-id');
-        $bucketFrom   = (int)    $input->getArgument('bucket-from');
+        $bucketFrom = (int) $input->getArgument('bucket-from');
 
         $this->repository->splitSegment($projectionId, $bucketFrom);
 

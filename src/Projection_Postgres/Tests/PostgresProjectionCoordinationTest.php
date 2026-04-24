@@ -9,6 +9,11 @@ use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRep
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Time\Duration;
 
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
 final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCase
 {
     public function test_postgres_segment_repository_can_claim_the_segment_containing_a_bucket(): void

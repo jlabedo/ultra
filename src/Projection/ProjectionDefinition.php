@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ultra\Projection;
 
+use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\StreamQuery;
-use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
@@ -200,7 +200,7 @@ final readonly class ProjectionDefinition
             ));
         }
 
-        $attributes = (new \ReflectionClass($eventClass))->getAttributes(EventAttribute::class);
+        $attributes = new \ReflectionClass($eventClass)->getAttributes(EventAttribute::class);
         if ([] === $attributes) {
             throw new \LogicException(sprintf(
                 'Event class %s has no #[Event] attribute (referenced in %s::%s).',

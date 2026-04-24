@@ -7,12 +7,12 @@ namespace Ultra\Projection_Postgres\Tests;
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\Group;
-use Ultra\EventStore\BucketHasher;
-use Ultra\EventStore\Event;
-use Ultra\EventStore\EventStore;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\AppendCondition;
+use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Checkpoint;
+use Ultra\EventStore\Event;
+use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
@@ -76,6 +76,9 @@ final class ConcurrencyCourseNamesProjection
     }
 }
 
+/**
+ * @internal
+ */
 #[CoversNothing]
 #[Group('slow')]
 #[Group('projection-concurrency')]
@@ -95,7 +98,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             string $eventStorePrefix,
             string $projectionPrefix,
         ) use ($dsn): void {
-            $tableName = $projectionPrefix . 'course_names_view';
+            $tableName = $projectionPrefix.'course_names_view';
             [$leftCourseId, $rightCourseId] = self::courseIdsAcrossSplit();
             $leftBucket = BucketHasher::bucketFor($leftCourseId);
             $rightBucket = BucketHasher::bucketFor($rightCourseId);
@@ -124,7 +127,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             $activity->bump('course_names', $leftBucket);
             $activity->bump('course_names', $rightBucket);
 
-            $supportFile = __DIR__ . '/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
+            $supportFile = __DIR__.'/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
             $testFile = __FILE__;
 
             $cluster = new Cluster(timeout: 10.0);
@@ -134,6 +137,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             $leader = $cluster->spawn(
                 static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $supportFile, $testFile): ProjectionCoordinatorResult {
                     require_once $supportFile;
+
                     require_once $testFile;
 
                     $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
@@ -168,7 +172,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
 
                     $runner = new ProjectionRunner(
                         $barrierStore,
-                        new \Ultra\Projection_Postgres\PostgresProjectionSegmentRepository($connection, $projectionPrefix),
+                        new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
                     );
                     $coordinator = new ProjectionCoordinator(
                         new ProjectionCatalog(
@@ -199,6 +203,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             $follower = $cluster->spawn(
                 static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $supportFile, $testFile): ProjectionCoordinatorResult {
                     require_once $supportFile;
+
                     require_once $testFile;
 
                     $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
@@ -233,6 +238,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             $leaderOutcome = $leader->join();
 
             self::assertTrue($leaderOutcome->isSuccess(), $leaderOutcome->exceptionMessage() ?? '');
+
             /** @var ProjectionCoordinatorResult $leaderResult */
             $leaderResult = $leaderOutcome->value();
             self::assertTrue($leaderResult->acquiredLease);
@@ -240,6 +246,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             self::assertGreaterThanOrEqual(1, $leaderResult->acknowledgedBuckets);
 
             self::assertTrue($followerOutcome->isSuccess(), $followerOutcome->exceptionMessage() ?? '');
+
             /** @var ProjectionCoordinatorResult $followerResult */
             $followerResult = $followerOutcome->value();
             self::assertFalse($followerResult->acquiredLease);
@@ -287,15 +294,15 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                     require_once $supportFile;
 
                     $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
-                    $clock = new \Ultra\Time\StatickClock(new \DateTimeImmutable('2000-01-01 00:00:00'));
-                    $leases = new \Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository(
+                    $clock = new StatickClock(new \DateTimeImmutable('2000-01-01 00:00:00'));
+                    $leases = new PostgresProjectionCoordinatorLeaseRepository(
                         $connection,
                         $projectionPrefix,
                         $clock,
                     );
 
                     try {
-                        $acquired = $leases->acquire('stalled-leader', new \Ultra\Time\Duration(seconds: 60));
+                        $acquired = $leases->acquire('stalled-leader', new Duration(seconds: 60));
                         checkpoint('lease_acquired');
 
                         return $acquired;
@@ -314,15 +321,15 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                     require_once $supportFile;
 
                     $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
-                    $clock = new \Ultra\Time\StatickClock(new \DateTimeImmutable('2000-01-01 00:00:00'));
-                    $leases = new \Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository(
+                    $clock = new StatickClock(new \DateTimeImmutable('2000-01-01 00:00:00'));
+                    $leases = new PostgresProjectionCoordinatorLeaseRepository(
                         $connection,
                         $projectionPrefix,
                         $clock,
                     );
 
                     try {
-                        return $leases->acquire('early-contender', new \Ultra\Time\Duration(seconds: 60));
+                        return $leases->acquire('early-contender', new Duration(seconds: 60));
                     } finally {
                         $connection->close();
                     }
@@ -341,15 +348,15 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                     // timestamp will be one second past the stalled leader's expiry.
                     $injectedTime = checkpoint('need_time');
 
-                    $clock = new \Ultra\Time\StatickClock(new \DateTimeImmutable($injectedTime));
-                    $leases = new \Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository(
+                    $clock = new StatickClock(new \DateTimeImmutable($injectedTime));
+                    $leases = new PostgresProjectionCoordinatorLeaseRepository(
                         $connection,
                         $projectionPrefix,
                         $clock,
                     );
 
                     try {
-                        return $leases->acquire('late-contender', new \Ultra\Time\Duration(seconds: 60));
+                        return $leases->acquire('late-contender', new Duration(seconds: 60));
                     } finally {
                         $connection->close();
                     }
@@ -389,7 +396,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
         $right = null;
 
         for ($i = 0; $i < 1024; ++$i) {
-            $courseId = 'course-' . $i;
+            $courseId = 'course-'.$i;
             $bucket = BucketHasher::bucketFor($courseId);
 
             if (null === $left && $bucket < 128) {

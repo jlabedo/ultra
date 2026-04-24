@@ -19,7 +19,7 @@ readonly class RuntimeNormalizerCallCodeGeneratorBuilder implements CodeGenerato
 
     public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
     {
-        if (! $type instanceof ObjectType) {
+        if (!$type instanceof ObjectType) {
             throw new \InvalidArgumentException('Type must be ObjectType');
         }
 

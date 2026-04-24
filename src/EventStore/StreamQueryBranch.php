@@ -24,14 +24,15 @@ readonly class StreamQueryBranch
 
     /**
      * When set, this branch matches by bucket range instead of exact identifier value.
-     * @var array{dimension: string, from: int, to: int}|null
+     *
+     * @var null|array{dimension: string, from: int, to: int}
      */
     public ?array $bucketRange;
 
     /**
-     * @param array<string, string>                            $domainIdentifiers
-     * @param list<string>                                     $eventTypes
-     * @param array{dimension: string, from: int, to: int}|null $bucketRange
+     * @param array<string, string>                             $domainIdentifiers
+     * @param list<string>                                      $eventTypes
+     * @param null|array{dimension: string, from: int, to: int} $bucketRange
      */
     public function __construct(array $domainIdentifiers, array $eventTypes = [], ?array $bucketRange = null)
     {

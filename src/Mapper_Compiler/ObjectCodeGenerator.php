@@ -30,7 +30,7 @@ class ObjectCodeGenerator implements CodeGenerator
 
         $hasNonPromotedProperties = false;
         foreach ($this->properties as $name => $generator) {
-            if (! $this->refClass->getProperty($name)->isPromoted()) {
+            if (!$this->refClass->getProperty($name)->isPromoted()) {
                 $hasNonPromotedProperties = true;
 
                 break;

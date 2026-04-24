@@ -27,7 +27,7 @@ readonly class SubscribeStudentToCourseCommand
         StudentSubscriptionState $student,
     ): array {
         return array_values(array_filter([
-            ! $course->exists()
+            !$course->exists()
                 ? new Violation('course.not_found', 'Course does not exist')
                 : null,
             $course->isFull()

@@ -13,14 +13,14 @@ final readonly class PostgresProjectionBucketActivitySchema
     {
         return [
             sprintf(
-                "CREATE TABLE IF NOT EXISTS %s (
+                'CREATE TABLE IF NOT EXISTS %s (
                     projection_id         TEXT        NOT NULL,
                     bucket_no             SMALLINT    NOT NULL,
                     counter               BIGINT      NOT NULL DEFAULT 0,
                     acknowledged_counter  BIGINT      NOT NULL DEFAULT 0,
                     updated_at            TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
                     PRIMARY KEY (projection_id, bucket_no)
-                )",
+                )',
                 $this->bucketActivityTable(),
             ),
         ];
@@ -36,6 +36,6 @@ final readonly class PostgresProjectionBucketActivitySchema
 
     private function bucketActivityTable(): string
     {
-        return $this->tablePrefix . 'bucket_activity';
+        return $this->tablePrefix.'bucket_activity';
     }
 }

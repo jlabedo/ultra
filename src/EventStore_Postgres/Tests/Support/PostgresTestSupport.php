@@ -70,8 +70,7 @@ function postgresTestStoreForImplementation(
     string $implementation,
     LoggerInterface $logger = new NullLogger(),
     string $lockStrategy = 'shared-exclusive',
-): EventStore
-{
+): EventStore {
     $strategy = postgresTestLockStrategy($lockStrategy);
 
     return match ($implementation) {
@@ -98,8 +97,7 @@ function postgresTestSchemaForImplementation(
     string $tablePrefix,
     string $implementation,
     string $lockStrategy = 'shared-exclusive',
-): PostgresEventStoreSchemaDefinition
-{
+): PostgresEventStoreSchemaDefinition {
     $strategy = postgresTestLockStrategy($lockStrategy);
 
     return match ($implementation) {
@@ -114,5 +112,5 @@ function postgresTestSchemaForImplementation(
 
 function postgresTestUniquePrefix(): string
 {
-    return 'ultra_event_store_' . bin2hex(random_bytes(4)) . '_';
+    return 'ultra_event_store_'.bin2hex(random_bytes(4)).'_';
 }

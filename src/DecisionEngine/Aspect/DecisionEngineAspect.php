@@ -50,11 +50,11 @@ final class DecisionEngineAspect
 
         foreach ($method->getParameters() as $index => $parameter) {
             $type = $parameter->getType();
-            if (! $type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
                 continue;
             }
             $typeClass = $type->getName();
-            if (! DecisionEngineAspect::isStateClass($typeClass)) {
+            if (!DecisionEngineAspect::isStateClass($typeClass)) {
                 continue;
             }
 
@@ -68,7 +68,7 @@ final class DecisionEngineAspect
             $commandProperty = null !== $bindTo
                 ? $bindTo->property
                 : $domainIdentifierName.'Id';
-            if (! $commandRef->hasProperty($commandProperty)) {
+            if (!$commandRef->hasProperty($commandProperty)) {
                 throw new \LogicException(sprintf(
                     'Command %s has no property "%s" required for decision handler parameter "%s" (domain identifier "%s"). '
                         .'Either add the property or use #[BindTo("propertyName")] to bind to a different command property.',
@@ -147,7 +147,7 @@ final class DecisionEngineAspect
 
         $proceedResult = $proceed(provided: $states);
         $emittedEvents = $proceedResult->value;
-        if (! is_array($emittedEvents)) {
+        if (!is_array($emittedEvents)) {
             return $proceedResult;
         }
 
@@ -190,7 +190,7 @@ final class DecisionEngineAspect
         }
 
         $payload = $this->normalizer->toScalar($event);
-        if (! is_array($payload)) {
+        if (!is_array($payload)) {
             throw new \LogicException(sprintf('Event %s normalized payload must be an array, got %s.', $event::class, get_debug_type($payload)));
         }
 
@@ -235,7 +235,7 @@ final class DecisionEngineAspect
             return $this->{$prop};
         };
         $value = $getter->call($command, $property);
-        if (! is_string($value)) {
+        if (!is_string($value)) {
             throw new \LogicException(sprintf('Command property "%s" must be string, got %s.', $property, get_debug_type($value)));
         }
 
@@ -244,7 +244,7 @@ final class DecisionEngineAspect
 
     private static function isStateClass(string $class): bool
     {
-        if (! class_exists($class)) {
+        if (!class_exists($class)) {
             return false;
         }
 

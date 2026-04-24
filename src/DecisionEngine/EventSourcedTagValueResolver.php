@@ -22,7 +22,7 @@ final class EventSourcedTagValueResolver
         $tagValues = [];
 
         foreach ($identifiers as $identifier) {
-            if (! isset($expectedTagLookup[$identifier->dimension])) {
+            if (!isset($expectedTagLookup[$identifier->dimension])) {
                 throw new UnexpectedTagValueException($entityClass, $identifier->dimension, $expectedTags);
             }
 
@@ -35,7 +35,7 @@ final class EventSourcedTagValueResolver
 
         $missingTags = [];
         foreach ($expectedTags as $tag) {
-            if (! isset($tagValues[$tag])) {
+            if (!isset($tagValues[$tag])) {
                 $missingTags[] = $tag;
             }
         }

@@ -15,10 +15,10 @@ class BackedEnumPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
         if ($type instanceof NullableType) {
             $type = $type->getWrappedType();
         }
-        if (! $type instanceof ObjectType) {
+        if (!$type instanceof ObjectType) {
             return false;
         }
-        if (! enum_exists($type->getClassName())) {
+        if (!enum_exists($type->getClassName())) {
             return false;
         }
         $ref = new \ReflectionEnum($type->getClassName());
@@ -34,7 +34,7 @@ class BackedEnumPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
             $enumType = $type->getWrappedType();
             $isNullable = true;
         }
-        if (! $enumType instanceof EnumType) {
+        if (!$enumType instanceof EnumType) {
             throw new \InvalidArgumentException('Type must be EnumType');
         }
         $enumClass = $enumType->getClassName();
@@ -46,7 +46,7 @@ class BackedEnumPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
             default => throw new \RuntimeException('Cannot denormalize a non backed enum'),
         };
 
-        return new class ($enumClass, $isNullable, $denormalizedType) implements CodeGenerator {
+        return new class($enumClass, $isNullable, $denormalizedType) implements CodeGenerator {
             public function __construct(private string $enumClass, private bool $isNullable, private Type $denormalizedType) {}
 
             public function generateNormalization(string $objectVar): string

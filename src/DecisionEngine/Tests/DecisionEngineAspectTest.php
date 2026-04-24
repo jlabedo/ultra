@@ -196,7 +196,7 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_resolves_non_state_dependencies_from_the_container(): void
     {
-        $command = new readonly class ('timed-1', 'Timed Course', 10) {
+        $command = new readonly class('timed-1', 'Timed Course', 10) {
             public function __construct(
                 public string $courseId,
                 public string $name,
@@ -291,7 +291,7 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_publishes_emitted_events_to_the_event_bus_when_available(): void
     {
-        $eventBus = new class () implements EventBusInterface {
+        $eventBus = new class implements EventBusInterface {
             /** @var list<array{event: object, context: array<string, mixed>}> */
             public array $calls = [];
 
@@ -320,7 +320,7 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
 
     public function test_it_publishes_emitted_events_with_the_final_context_from_inner_around_advices(): void
     {
-        $eventBus = new class () implements EventBusInterface {
+        $eventBus = new class implements EventBusInterface {
             /** @var list<array{event: object, context: array<string, mixed>}> */
             public array $calls = [];
 
@@ -333,7 +333,7 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
             }
         };
 
-        $aspect = new class () {
+        $aspect = new class {
             #[Around(priority: 10)]
             public function addPublishingContext(callable $proceed, object $message, MessageContext $context): ProceedResult
             {

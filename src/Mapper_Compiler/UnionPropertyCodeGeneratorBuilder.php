@@ -20,7 +20,7 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
 
     public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
     {
-        if (! $type instanceof UnionType) {
+        if (!$type instanceof UnionType) {
             throw new \InvalidArgumentException('Type must be UnionType');
         }
         $types = $type->getTypes();
@@ -32,7 +32,7 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
             ];
         }
 
-        return new class ($typeCodeGens) implements CodeGenerator {
+        return new class($typeCodeGens) implements CodeGenerator {
             /** @var array<array{type: Type, codegen: CodeGenerator}> */
             private array $typeCodeGens;
 
@@ -115,7 +115,7 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
                 // Array shape (object)
                 if ($type instanceof ArrayShapeType) {
                     $shape = $type->getShape();
-                    if (! empty($shape)) {
+                    if (!empty($shape)) {
                         $isset = implode(' && ', array_map(fn ($k) => "isset({$var}[{$k}])", array_keys($shape)));
 
                         return "is_array({$var}) && {$isset}";

@@ -33,7 +33,7 @@ final class EntityLoaderCompilerPass implements CompilerPassInterface
             $definition = $container->getDefinition($serviceId);
             $entityClass = $definition->getClass() ?? $serviceId;
 
-            if (! class_exists($entityClass)) {
+            if (!class_exists($entityClass)) {
                 continue;
             }
 

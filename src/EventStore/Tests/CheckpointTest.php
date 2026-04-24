@@ -39,7 +39,8 @@ final class CheckpointTest extends TestCase
     public function test_gap_sequence_is_recorded_above_the_floor(): void
     {
         $checkpoint = Checkpoint::at(new Sequence(2))
-            ->record(new Sequence(5), inGap: true);
+            ->record(new Sequence(5), inGap: true)
+        ;
 
         self::assertSame(2, $checkpoint->gapFloor->value);
         self::assertSame([5], $checkpoint->gapSeqNoValues());

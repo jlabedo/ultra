@@ -4,13 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests;
 
-use Closure;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
-use RuntimeException;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\BucketHasher;
+use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
@@ -29,13 +28,13 @@ final class CallbackEventStore implements EventStore
 {
     public function __construct(
         private readonly EventStore $inner,
-        private ?Closure $beforeLoad = null,
+        private ?\Closure $beforeLoad = null,
     ) {}
 
     public function load(
         StreamQuery $query,
-        ?\Ultra\EventStore\Checkpoint $from = null,
-        ?\Ultra\EventStore\Checkpoint $to = null,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
         int $batchSize = 1000,
     ): LoadResult {
         if (null !== $this->beforeLoad) {
@@ -104,7 +103,7 @@ final class FailingTrackingProjection
     #[ProjectionHandler]
     public function onCourseCreated(RunnerCourseCreated $event): void
     {
-        throw new RuntimeException('Projection handler failed.');
+        throw new \RuntimeException('Projection handler failed.');
     }
 }
 
@@ -122,10 +121,13 @@ final class FailingFlushTrackingProjection
     #[ProjectionFlush]
     public function flush(): void
     {
-        throw new RuntimeException('Projection flush failed.');
+        throw new \RuntimeException('Projection flush failed.');
     }
 }
 
+/**
+ * @internal
+ */
 #[CoversClass(ProjectionRunner::class)]
 final class ProjectionRunnerBehaviorTest extends TestCase
 {
@@ -204,7 +206,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         try {
             $runner->runOnce($runtime, 'worker-1');
             self::fail('Expected the projection handler to throw.');
-        } catch (RuntimeException $e) {
+        } catch (\RuntimeException $e) {
             self::assertSame('Projection handler failed.', $e->getMessage());
         }
 
@@ -230,7 +232,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         try {
             $runner->runOnce($runtime, 'worker-1');
             self::fail('Expected the projection flush to throw.');
-        } catch (RuntimeException $e) {
+        } catch (\RuntimeException $e) {
             self::assertSame('Projection flush failed.', $e->getMessage());
         }
 

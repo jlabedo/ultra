@@ -25,7 +25,7 @@ final class AdviceOrdering
 
         foreach ($advices as $advice) {
             $priority = $advice->priority;
-            if (! isset($grouped[$priority])) {
+            if (!isset($grouped[$priority])) {
                 $grouped[$priority] = [
                     AdviceType::Before->value => [],
                     AdviceType::Around->value => [],

@@ -6,7 +6,6 @@ namespace Ultra\DecisionEngine\Tests;
 
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Reference;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
 use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
@@ -112,8 +111,7 @@ final class DecisionEngineBundleTest extends TestCase
             ->setArguments([DECISION_ENGINE_BUNDLE_TEST_BUILD_DIR.'/normalizer'])
         ;
 
-        $container->register(InMemoryEventStore::class, InMemoryEventStore::class)
-        ;
+        $container->register(InMemoryEventStore::class, InMemoryEventStore::class);
         $container->setAlias(EventStore::class, InMemoryEventStore::class);
 
         $container->register(CompiledEventRegistry::class, CompiledEventRegistry::class)

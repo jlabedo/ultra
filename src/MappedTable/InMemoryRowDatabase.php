@@ -17,7 +17,7 @@ final class InMemoryRowDatabase
      */
     public function seedRow(string $tableName, string $idColumn, array $row): void
     {
-        if (! array_key_exists($idColumn, $row)) {
+        if (!array_key_exists($idColumn, $row)) {
             throw new \InvalidArgumentException(sprintf(
                 'Cannot seed table "%s" without id column "%s".',
                 $tableName,
@@ -35,7 +35,7 @@ final class InMemoryRowDatabase
 
     public function commit(): void
     {
-        if (! $this->isTransactionActive()) {
+        if (!$this->isTransactionActive()) {
             throw new \LogicException('Cannot commit because no transaction is active.');
         }
 
@@ -89,7 +89,7 @@ final class InMemoryRowDatabase
      */
     public function writeRow(string $tableName, string $idColumn, array $row): void
     {
-        if (! array_key_exists($idColumn, $row)) {
+        if (!array_key_exists($idColumn, $row)) {
             throw new \InvalidArgumentException(sprintf(
                 'Cannot write table "%s" row without id column "%s".',
                 $tableName,

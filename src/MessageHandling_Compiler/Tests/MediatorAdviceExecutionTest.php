@@ -31,14 +31,14 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $logged = [];
 
         $mediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
                     return 'handled: '.$message->name;
                 }
             })
-            ->withService(new class ($logged) {
+            ->withService(new class($logged) {
                 /** @var list<object> */
                 public array $logged;
 
@@ -70,14 +70,14 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $calls = 0;
 
         $mediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
                     return 'wrapped: '.$message->name;
                 }
             })
-            ->withService(new class ($calls) {
+            ->withService(new class($calls) {
                 public int $calls;
 
                 public function __construct(int &$calls)
@@ -107,7 +107,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $seen = [];
 
         $mediator = $this->ultraLight()
-            ->withService(new class ($seen) {
+            ->withService(new class($seen) {
                 /** @var array<string, mixed> */
                 public array $seen;
 
@@ -127,7 +127,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return 'handled: '.$context->get('executorId').':'.$context->get('traceId');
                 }
             })
-            ->withService(new class () {
+            ->withService(new class {
                 #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
@@ -149,14 +149,14 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $captured = null;
 
         $mediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
                     return 'observed: '.$message->name;
                 }
             })
-            ->withService(new class ($captured) {
+            ->withService(new class($captured) {
                 public mixed $captured;
 
                 public function __construct(mixed &$captured)
@@ -184,14 +184,14 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $caught = null;
 
         $mediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(EmptyMessage $message): string
                 {
                     throw new \RuntimeException('handler failed');
                 }
             })
-            ->withService(new class ($caught) {
+            ->withService(new class($caught) {
                 public ?\Throwable $caught;
 
                 public function __construct(?\Throwable &$caught)
@@ -224,7 +224,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
     {
         $calls = 0;
 
-        $cleaner = new class ($calls) {
+        $cleaner = new class($calls) {
             public int $calls;
 
             public function __construct(int &$calls)
@@ -242,7 +242,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         };
 
         $successfulMediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
@@ -256,7 +256,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         self::assertSame('observed: world', $successfulMediator->send(new GreetingMessage('world')));
 
         $failingMediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(EmptyMessage $message): string
                 {
@@ -282,14 +282,14 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $finalContext = [];
 
         $mediator = $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message, MessageContext $context): string
                 {
                     return $context->get('before').':'.$message->name;
                 }
             })
-            ->withService(new class () {
+            ->withService(new class {
                 #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 }, priority: 20)]
@@ -298,7 +298,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return ['before' => 'yes'];
                 }
             })
-            ->withService(new class () {
+            ->withService(new class {
                 #[AfterReturning(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 }, priority: 20)]
@@ -307,7 +307,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return ['afterReturning' => $returnValue];
                 }
             })
-            ->withService(new class () {
+            ->withService(new class {
                 #[After(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 }, priority: 20)]
@@ -316,7 +316,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                     return ['after' => 'done'];
                 }
             })
-            ->withService(new class ($finalContext) {
+            ->withService(new class($finalContext) {
                 /** @var array<string, mixed> */
                 public array $finalContext;
 
@@ -355,14 +355,14 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $this->expectExceptionMessageMatches('/Around advice "class@anonymous.*::execute" must declare return type "'.preg_quote(ProceedResult::class, '/').'"\./');
 
         $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
                     return $message->name;
                 }
             })
-            ->withService(new class () {
+            ->withService(new class {
                 #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
@@ -381,14 +381,14 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         $this->expectExceptionMessageMatches('/Before advice "class@anonymous.*::log" must declare no return type, "void", or return type "array" \(optionally nullable\)\./');
 
         $this->ultraLight()
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
                     return $message->name;
                 }
             })
-            ->withService(new class () {
+            ->withService(new class {
                 #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]

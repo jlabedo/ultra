@@ -56,7 +56,7 @@ class EventRegistryCompilerPass implements CompilerPassInterface
         foreach ($eventRef->getProperties() as $property) {
             foreach ($property->getAttributes(DomainIdentifier::class) as $attribute) {
                 $domainIdentifiers[$attribute->newInstance()->name] = $property->getName();
-                $requiresScope = $requiresScope || ! $property->isPublic();
+                $requiresScope = $requiresScope || !$property->isPublic();
             }
         }
 

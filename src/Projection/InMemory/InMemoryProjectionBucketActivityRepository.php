@@ -29,8 +29,7 @@ final class InMemoryProjectionBucketActivityRepository implements ProjectionBuck
 
         usort(
             $affected,
-            static fn(ProjectionBucketActivity $a, ProjectionBucketActivity $b): int =>
-                ($a->projectionId <=> $b->projectionId)
+            static fn (ProjectionBucketActivity $a, ProjectionBucketActivity $b): int => ($a->projectionId <=> $b->projectionId)
                 ?: ($b->counter <=> $a->counter)
                 ?: ($a->bucket <=> $b->bucket),
         );
@@ -58,8 +57,7 @@ final class InMemoryProjectionBucketActivityRepository implements ProjectionBuck
 
         usort(
             $pending,
-            static fn(ProjectionBucketActivity $a, ProjectionBucketActivity $b): int =>
-                ($b->counter <=> $a->counter) ?: ($a->bucket <=> $b->bucket),
+            static fn (ProjectionBucketActivity $a, ProjectionBucketActivity $b): int => ($b->counter <=> $a->counter) ?: ($a->bucket <=> $b->bucket),
         );
 
         return array_slice($pending, 0, $limit);

@@ -27,14 +27,15 @@ final class MergeSegmentCommand extends Command
         $this
             ->addArgument('projection-id', InputArgument::REQUIRED, 'The projection identifier (e.g. course_names).')
             ->addArgument('bucket-from', InputArgument::REQUIRED, 'The bucket_from of the parent range (e.g. 0).')
-            ->addArgument('bucket-to',   InputArgument::REQUIRED, 'The bucket_to of the parent range (e.g. 255).');
+            ->addArgument('bucket-to', InputArgument::REQUIRED, 'The bucket_to of the parent range (e.g. 255).')
+        ;
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $projectionId = (string) $input->getArgument('projection-id');
-        $bucketFrom   = (int)    $input->getArgument('bucket-from');
-        $bucketTo     = (int)    $input->getArgument('bucket-to');
+        $bucketFrom = (int) $input->getArgument('bucket-from');
+        $bucketTo = (int) $input->getArgument('bucket-to');
 
         $this->repository->requestMerge($projectionId, $bucketFrom, $bucketTo);
 

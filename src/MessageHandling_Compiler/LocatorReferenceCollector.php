@@ -35,7 +35,7 @@ final class LocatorReferenceCollector
         }
 
         foreach ($handler->depServiceIds as $index => $depId) {
-            if (! isset($claimedIndices[$index]) && ! $this->isRuntimeOnlyResolvedDependency($depId)) {
+            if (!isset($claimedIndices[$index]) && !$this->isRuntimeOnlyResolvedDependency($depId)) {
                 $this->addService($depId);
             }
         }

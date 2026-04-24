@@ -67,7 +67,7 @@ final class MessageHandlingBundle extends Bundle
     {
         if ($container->hasDefinition($interfaceClass)) {
             $definition = $container->getDefinition($interfaceClass);
-            if (! $definition->hasTag(TagNames::ROUTER)) {
+            if (!$definition->hasTag(TagNames::ROUTER)) {
                 $definition->addTag(TagNames::ROUTER, ['interface' => $interfaceClass]);
             }
 

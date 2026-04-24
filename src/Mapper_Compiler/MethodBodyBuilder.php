@@ -59,7 +59,7 @@ class MethodBodyBuilder
     {
         $lines = $this->statements;
         if (null !== $this->returnExpr) {
-            if (! empty($lines) && '' !== end($lines)) {
+            if (!empty($lines) && '' !== end($lines)) {
                 $lines[] = '';
             }
             $lines[] = 'return '.rtrim($this->returnExpr, '; ').';';

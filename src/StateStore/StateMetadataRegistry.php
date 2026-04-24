@@ -43,7 +43,7 @@ final readonly class StateMetadataRegistry
     public function metadataFor(string $stateClass): StateMetadata
     {
         $metadata = $this->metadata[$stateClass] ?? null;
-        if (! $metadata instanceof StateMetadata) {
+        if (!$metadata instanceof StateMetadata) {
             throw new UnknownStateException($stateClass);
         }
 

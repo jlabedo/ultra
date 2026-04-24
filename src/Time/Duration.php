@@ -33,27 +33,27 @@ final readonly class Duration
         return new self($microseconds);
     }
 
-    public static function milliseconds(int|float $milliseconds): self
+    public static function milliseconds(float|int $milliseconds): self
     {
         return self::fromUnit($milliseconds, 1_000);
     }
 
-    public static function seconds(int|float $seconds): self
+    public static function seconds(float|int $seconds): self
     {
         return self::fromUnit($seconds, self::MICROSECONDS_PER_SECOND);
     }
 
-    public static function minutes(int|float $minutes): self
+    public static function minutes(float|int $minutes): self
     {
         return self::fromUnit($minutes, self::MICROSECONDS_PER_MINUTE);
     }
 
-    public static function hours(int|float $hours): self
+    public static function hours(float|int $hours): self
     {
         return self::fromUnit($hours, self::MICROSECONDS_PER_HOUR);
     }
 
-    public static function days(int|float $days): self
+    public static function days(float|int $days): self
     {
         return self::fromUnit($days, self::MICROSECONDS_PER_DAY);
     }
@@ -105,7 +105,7 @@ final readonly class Duration
         return $interval;
     }
 
-    private static function fromUnit(int|float $value, int $microsecondsPerUnit): self
+    private static function fromUnit(float|int $value, int $microsecondsPerUnit): self
     {
         return new self((int) round($value * $microsecondsPerUnit));
     }

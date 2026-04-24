@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\TestCase;
+use Ultra\EventStore\AppendCondition;
+use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\StreamQuery;
 
 /**
@@ -251,11 +252,10 @@ final class RecordingEventStore implements EventStore
 
     public function load(
         StreamQuery $query,
-        ?\Ultra\EventStore\Checkpoint $from = null,
-        ?\Ultra\EventStore\Checkpoint $to = null,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
         int $batchSize = 1000,
-    ): LoadResult
-    {
+    ): LoadResult {
         return $this->inner->load($query, $from, $to, $batchSize);
     }
 

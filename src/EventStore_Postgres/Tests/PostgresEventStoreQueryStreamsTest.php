@@ -147,11 +147,11 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
             $replay = $store->load($query, to: $checkpoint);
 
             self::assertSame(['late', 'next'], array_map(
-                static fn(Event $event): string => $event->payload['name'],
+                static fn (Event $event): string => $event->payload['name'],
                 $catchUp->events,
             ));
             self::assertSame(['first', 'gap'], array_map(
-                static fn(Event $event): string => $event->payload['name'],
+                static fn (Event $event): string => $event->payload['name'],
                 $replay->events,
             ));
         }, 'query-streams');

@@ -37,7 +37,7 @@ final readonly class CompiledEventRegistry implements EventRegistryInterface
             return [];
         }
 
-        if (! ($this->domainIdentifierRequiresScope[$event::class] ?? false)) {
+        if (!($this->domainIdentifierRequiresScope[$event::class] ?? false)) {
             $identifiers = [];
             foreach ($eventClassIdentifiers as $name => $propertyName) {
                 $identifiers[$name] = $event->{$propertyName};

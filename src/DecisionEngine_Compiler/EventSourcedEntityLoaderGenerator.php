@@ -9,7 +9,7 @@ final class EventSourcedEntityLoaderGenerator
     public function generate(string $className, EventSourcedEntityDefinition $definition, string $filePath): void
     {
         $dir = dirname($filePath);
-        if (! is_dir($dir)) {
+        if (!is_dir($dir)) {
             mkdir($dir, 0o777, true);
         }
 

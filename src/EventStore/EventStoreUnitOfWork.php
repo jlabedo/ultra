@@ -29,8 +29,7 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
         ?Checkpoint $from = null,
         ?Checkpoint $to = null,
         int $batchSize = 1000,
-    ): LoadResult
-    {
+    ): LoadResult {
         $baseResult = $this->inner->load($query, $from, $to, $batchSize);
         $pendingEvents = null === $to ? $this->pendingEventsMatching($query) : [];
 
@@ -74,7 +73,7 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
         $pendingEvents = [];
 
         foreach ($this->bufferedEvents as $event) {
-            if (! $query->matches($event)) {
+            if (!$query->matches($event)) {
                 continue;
             }
 
@@ -83,5 +82,4 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
 
         return $pendingEvents;
     }
-
 }

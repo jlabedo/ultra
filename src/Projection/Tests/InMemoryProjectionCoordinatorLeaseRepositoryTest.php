@@ -10,6 +10,9 @@ use Ultra\Projection\InMemory\InMemoryProjectionCoordinatorLeaseRepository;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
 
+/**
+ * @internal
+ */
 #[CoversClass(InMemoryProjectionCoordinatorLeaseRepository::class)]
 final class InMemoryProjectionCoordinatorLeaseRepositoryTest extends TestCase
 {

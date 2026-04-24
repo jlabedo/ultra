@@ -27,7 +27,7 @@ final class AsyncMessageContextTest extends MessageHandlingCompilerTestCase
         $capturedContext = null;
 
         $container = $this->ultraLight()
-            ->withService(new class ($capturedContext) {
+            ->withService(new class($capturedContext) {
                 public ?MessageContext $captured;
 
                 public function __construct(?MessageContext &$captured)
@@ -45,7 +45,7 @@ final class AsyncMessageContextTest extends MessageHandlingCompilerTestCase
                     return $proceed();
                 }
             })
-            ->withService(new class () {
+            ->withService(new class {
                 #[Handles]
                 #[Asynchronous]
                 public function handle(GreetingMessage $message): string

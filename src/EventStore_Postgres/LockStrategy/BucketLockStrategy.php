@@ -26,192 +26,192 @@ final readonly class BucketLockStrategy implements LockStrategy
     {
         return [
             <<<SQL
-            CREATE FUNCTION {$tablePrefix}_lock_key(ns text, bucket char)
-            RETURNS integer
-            LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
-            AS $$
-                SELECT hashtext('pg_bucket_lock:' || ns || ':' || bucket);
-            $$;
-            SQL,
+                CREATE FUNCTION {$tablePrefix}_lock_key(ns text, bucket char)
+                RETURNS integer
+                LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+                AS $$
+                    SELECT hashtext('pg_bucket_lock:' || ns || ':' || bucket);
+                $$;
+                SQL,
             <<<SQL
-            CREATE FUNCTION {$tablePrefix}_normalize_bucket(bucket text)
-            RETURNS char
-            LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE
-            AS $$
-            BEGIN
-                IF upper(bucket) NOT IN ('A', 'B') THEN
-                    RAISE EXCEPTION 'bucket must be ''A'' or ''B'', got ''%''', bucket;
-                END IF;
-                RETURN upper(bucket)::char;
-            END;
-            $$;
-            SQL,
+                CREATE FUNCTION {$tablePrefix}_normalize_bucket(bucket text)
+                RETURNS char
+                LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE
+                AS $$
+                BEGIN
+                    IF upper(bucket) NOT IN ('A', 'B') THEN
+                        RAISE EXCEPTION 'bucket must be ''A'' or ''B'', got ''%''', bucket;
+                    END IF;
+                    RETURN upper(bucket)::char;
+                END;
+                $$;
+                SQL,
             <<<SQL
-            CREATE FUNCTION {$tablePrefix}_other_bucket(bucket char)
-            RETURNS char
-            LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
-            AS $$
-                SELECT CASE bucket WHEN 'A' THEN 'B'::char ELSE 'A'::char END;
-            $$;
-            SQL,
+                CREATE FUNCTION {$tablePrefix}_other_bucket(bucket char)
+                RETURNS char
+                LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
+                AS $$
+                    SELECT CASE bucket WHEN 'A' THEN 'B'::char ELSE 'A'::char END;
+                $$;
+                SQL,
             <<<SQL
-            CREATE FUNCTION {$tablePrefix}acquire(ns text, bucket text)
-            RETURNS void
-            LANGUAGE plpgsql
-            AS $$
-            DECLARE
-                b         char := {$tablePrefix}_normalize_bucket(bucket);
-                other     char := {$tablePrefix}_other_bucket(b);
-                my_key    integer := {$tablePrefix}_lock_key(ns, b);
-                other_key integer := {$tablePrefix}_lock_key(ns, other);
-                acquired  boolean;
-                retries   integer := 0;
-                max_retries integer := 1000;
-            BEGIN
-                LOOP
-                    PERFORM pg_advisory_lock(other_key);
+                CREATE FUNCTION {$tablePrefix}acquire(ns text, bucket text)
+                RETURNS void
+                LANGUAGE plpgsql
+                AS $$
+                DECLARE
+                    b         char := {$tablePrefix}_normalize_bucket(bucket);
+                    other     char := {$tablePrefix}_other_bucket(b);
+                    my_key    integer := {$tablePrefix}_lock_key(ns, b);
+                    other_key integer := {$tablePrefix}_lock_key(ns, other);
+                    acquired  boolean;
+                    retries   integer := 0;
+                    max_retries integer := 1000;
+                BEGIN
+                    LOOP
+                        PERFORM pg_advisory_lock(other_key);
+
+                        acquired := pg_try_advisory_lock_shared(my_key);
+
+                        PERFORM pg_advisory_unlock(other_key);
+
+                        IF acquired THEN
+                            RETURN;
+                        END IF;
+
+                        retries := retries + 1;
+                        IF retries >= max_retries THEN
+                            RAISE EXCEPTION 'pg_bucket_lock: acquire(%, %) failed after % retries',
+                                ns, b, max_retries;
+                        END IF;
+
+                        PERFORM pg_sleep(0.001 + random() * 0.049);
+                    END LOOP;
+                END;
+                $$;
+                SQL,
+            <<<SQL
+                CREATE FUNCTION {$tablePrefix}try_acquire(ns text, bucket text)
+                RETURNS boolean
+                LANGUAGE plpgsql
+                AS $$
+                DECLARE
+                    b         char := {$tablePrefix}_normalize_bucket(bucket);
+                    other     char := {$tablePrefix}_other_bucket(b);
+                    my_key    integer := {$tablePrefix}_lock_key(ns, b);
+                    other_key integer := {$tablePrefix}_lock_key(ns, other);
+                    acquired  boolean;
+                BEGIN
+                    IF NOT pg_try_advisory_lock(other_key) THEN
+                        RETURN false;
+                    END IF;
 
                     acquired := pg_try_advisory_lock_shared(my_key);
 
                     PERFORM pg_advisory_unlock(other_key);
 
-                    IF acquired THEN
-                        RETURN;
+                    RETURN acquired;
+                END;
+                $$;
+                SQL,
+            <<<SQL
+                CREATE FUNCTION {$tablePrefix}release(ns text, bucket text)
+                RETURNS boolean
+                LANGUAGE plpgsql
+                AS $$
+                DECLARE
+                    b      char := {$tablePrefix}_normalize_bucket(bucket);
+                    my_key integer := {$tablePrefix}_lock_key(ns, b);
+                BEGIN
+                    RETURN pg_advisory_unlock_shared(my_key);
+                END;
+                $$;
+                SQL,
+            <<<SQL
+                CREATE FUNCTION {$tablePrefix}acquire_xact(ns text, bucket text)
+                RETURNS void
+                LANGUAGE plpgsql
+                AS $$
+                DECLARE
+                    b         char := {$tablePrefix}_normalize_bucket(bucket);
+                    other     char := {$tablePrefix}_other_bucket(b);
+                    my_key    integer := {$tablePrefix}_lock_key(ns, b);
+                    other_key integer := {$tablePrefix}_lock_key(ns, other);
+                    acquired  boolean;
+                    retries   integer := 0;
+                    max_retries integer := 1000;
+                BEGIN
+                    LOOP
+                        PERFORM pg_advisory_lock(other_key);
+
+                        acquired := pg_try_advisory_xact_lock_shared(my_key);
+
+                        PERFORM pg_advisory_unlock(other_key);
+
+                        IF acquired THEN
+                            RETURN;
+                        END IF;
+
+                        retries := retries + 1;
+                        IF retries >= max_retries THEN
+                            RAISE EXCEPTION 'pg_bucket_lock: acquire_xact(%, %) failed after % retries',
+                                ns, b, max_retries;
+                        END IF;
+
+                        PERFORM pg_sleep(0.001 + random() * 0.049);
+                    END LOOP;
+                END;
+                $$;
+                SQL,
+            <<<SQL
+                CREATE FUNCTION {$tablePrefix}try_acquire_xact(ns text, bucket text)
+                RETURNS boolean
+                LANGUAGE plpgsql
+                AS $$
+                DECLARE
+                    b         char := {$tablePrefix}_normalize_bucket(bucket);
+                    other     char := {$tablePrefix}_other_bucket(b);
+                    my_key    integer := {$tablePrefix}_lock_key(ns, b);
+                    other_key integer := {$tablePrefix}_lock_key(ns, other);
+                    acquired  boolean;
+                BEGIN
+                    IF NOT pg_try_advisory_lock(other_key) THEN
+                        RETURN false;
                     END IF;
-
-                    retries := retries + 1;
-                    IF retries >= max_retries THEN
-                        RAISE EXCEPTION 'pg_bucket_lock: acquire(%, %) failed after % retries',
-                            ns, b, max_retries;
-                    END IF;
-
-                    PERFORM pg_sleep(0.001 + random() * 0.049);
-                END LOOP;
-            END;
-            $$;
-            SQL,
-            <<<SQL
-            CREATE FUNCTION {$tablePrefix}try_acquire(ns text, bucket text)
-            RETURNS boolean
-            LANGUAGE plpgsql
-            AS $$
-            DECLARE
-                b         char := {$tablePrefix}_normalize_bucket(bucket);
-                other     char := {$tablePrefix}_other_bucket(b);
-                my_key    integer := {$tablePrefix}_lock_key(ns, b);
-                other_key integer := {$tablePrefix}_lock_key(ns, other);
-                acquired  boolean;
-            BEGIN
-                IF NOT pg_try_advisory_lock(other_key) THEN
-                    RETURN false;
-                END IF;
-
-                acquired := pg_try_advisory_lock_shared(my_key);
-
-                PERFORM pg_advisory_unlock(other_key);
-
-                RETURN acquired;
-            END;
-            $$;
-            SQL,
-            <<<SQL
-            CREATE FUNCTION {$tablePrefix}release(ns text, bucket text)
-            RETURNS boolean
-            LANGUAGE plpgsql
-            AS $$
-            DECLARE
-                b      char := {$tablePrefix}_normalize_bucket(bucket);
-                my_key integer := {$tablePrefix}_lock_key(ns, b);
-            BEGIN
-                RETURN pg_advisory_unlock_shared(my_key);
-            END;
-            $$;
-            SQL,
-            <<<SQL
-            CREATE FUNCTION {$tablePrefix}acquire_xact(ns text, bucket text)
-            RETURNS void
-            LANGUAGE plpgsql
-            AS $$
-            DECLARE
-                b         char := {$tablePrefix}_normalize_bucket(bucket);
-                other     char := {$tablePrefix}_other_bucket(b);
-                my_key    integer := {$tablePrefix}_lock_key(ns, b);
-                other_key integer := {$tablePrefix}_lock_key(ns, other);
-                acquired  boolean;
-                retries   integer := 0;
-                max_retries integer := 1000;
-            BEGIN
-                LOOP
-                    PERFORM pg_advisory_lock(other_key);
 
                     acquired := pg_try_advisory_xact_lock_shared(my_key);
 
                     PERFORM pg_advisory_unlock(other_key);
 
-                    IF acquired THEN
-                        RETURN;
+                    RETURN acquired;
+                END;
+                $$;
+                SQL,
+            <<<SQL
+                CREATE FUNCTION {$tablePrefix}acquire_multi_xact(
+                    namespaces text[],
+                    buckets    text[]
+                )
+                RETURNS void
+                LANGUAGE plpgsql
+                AS $$
+                DECLARE
+                    r record;
+                BEGIN
+                    IF array_length(namespaces, 1) IS DISTINCT FROM array_length(buckets, 1) THEN
+                        RAISE EXCEPTION 'pg_bucket_lock: namespaces and buckets arrays must have the same length';
                     END IF;
 
-                    retries := retries + 1;
-                    IF retries >= max_retries THEN
-                        RAISE EXCEPTION 'pg_bucket_lock: acquire_xact(%, %) failed after % retries',
-                            ns, b, max_retries;
-                    END IF;
-
-                    PERFORM pg_sleep(0.001 + random() * 0.049);
-                END LOOP;
-            END;
-            $$;
-            SQL,
-            <<<SQL
-            CREATE FUNCTION {$tablePrefix}try_acquire_xact(ns text, bucket text)
-            RETURNS boolean
-            LANGUAGE plpgsql
-            AS $$
-            DECLARE
-                b         char := {$tablePrefix}_normalize_bucket(bucket);
-                other     char := {$tablePrefix}_other_bucket(b);
-                my_key    integer := {$tablePrefix}_lock_key(ns, b);
-                other_key integer := {$tablePrefix}_lock_key(ns, other);
-                acquired  boolean;
-            BEGIN
-                IF NOT pg_try_advisory_lock(other_key) THEN
-                    RETURN false;
-                END IF;
-
-                acquired := pg_try_advisory_xact_lock_shared(my_key);
-
-                PERFORM pg_advisory_unlock(other_key);
-
-                RETURN acquired;
-            END;
-            $$;
-            SQL,
-            <<<SQL
-            CREATE FUNCTION {$tablePrefix}acquire_multi_xact(
-                namespaces text[],
-                buckets    text[]
-            )
-            RETURNS void
-            LANGUAGE plpgsql
-            AS $$
-            DECLARE
-                r record;
-            BEGIN
-                IF array_length(namespaces, 1) IS DISTINCT FROM array_length(buckets, 1) THEN
-                    RAISE EXCEPTION 'pg_bucket_lock: namespaces and buckets arrays must have the same length';
-                END IF;
-
-                FOR r IN
-                    SELECT DISTINCT ns, bk
-                    FROM unnest(namespaces, buckets) AS t(ns, bk)
-                    ORDER BY ns, bk
-                LOOP
-                    PERFORM {$tablePrefix}acquire_xact(r.ns, r.bk);
-                END LOOP;
-            END;
-            $$;
-            SQL,
+                    FOR r IN
+                        SELECT DISTINCT ns, bk
+                        FROM unnest(namespaces, buckets) AS t(ns, bk)
+                        ORDER BY ns, bk
+                    LOOP
+                        PERFORM {$tablePrefix}acquire_xact(r.ns, r.bk);
+                    END LOOP;
+                END;
+                $$;
+                SQL,
         ];
     }
 
@@ -235,10 +235,10 @@ final readonly class BucketLockStrategy implements LockStrategy
         [$readKeys, $writeKeys] = $this->lockKeys($readQueries, $writeEvents);
         $lockInstructions = [];
         foreach ($readKeys as $readKey) {
-            $lockInstructions[$readKey . "\0A"] = [$readKey, 'A'];
+            $lockInstructions[$readKey."\0A"] = [$readKey, 'A'];
         }
         foreach ($writeKeys as $writeKey) {
-            $lockInstructions[$writeKey . "\0B"] = [$writeKey, 'B'];
+            $lockInstructions[$writeKey."\0B"] = [$writeKey, 'B'];
         }
 
         if ([] === $lockInstructions) {
@@ -291,7 +291,7 @@ final readonly class BucketLockStrategy implements LockStrategy
 
     private function acquireMultiXactFunction(string $tablePrefix): string
     {
-        return $tablePrefix . 'acquire_multi_xact';
+        return $tablePrefix.'acquire_multi_xact';
     }
 
     /**
@@ -300,13 +300,13 @@ final readonly class BucketLockStrategy implements LockStrategy
     private function postgresStringArrayLiteral(array $values): string
     {
         $encoded = array_map(
-            static fn(string $value): string => '"' . strtr($value, [
+            static fn (string $value): string => '"'.strtr($value, [
                 '\\' => '\\\\',
-                '"' => '\\"',
-            ]) . '"',
+                '"' => '\"',
+            ]).'"',
             $values,
         );
 
-        return '{' . implode(',', $encoded) . '}';
+        return '{'.implode(',', $encoded).'}';
     }
 }

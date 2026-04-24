@@ -13,7 +13,7 @@ use Ultra\EventStore_Postgres\LockStrategy\SharedExclusiveLockStrategy;
 final readonly class PostgresEventStoreHStoreSchema implements PostgresEventStoreSchemaDefinition
 {
     public function __construct(
-        private string       $tablePrefix = 'event_store_',
+        private string $tablePrefix = 'event_store_',
         private LockStrategy $lockStrategy = new SharedExclusiveLockStrategy(),
     ) {}
 

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests;
 
-use InvalidArgumentException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\Events\Attribute\Event as EventAttribute;
@@ -55,6 +54,9 @@ final class SecondaryRuntimeProjection
     public function onCourseCreated(RuntimeCourseCreated $event): void {}
 }
 
+/**
+ * @internal
+ */
 #[CoversClass(ProjectionActivityRecorder::class)]
 #[CoversClass(ProjectionCoordinator::class)]
 #[CoversClass(DefaultProjectionScalingPolicy::class)]
@@ -219,7 +221,7 @@ final class ProjectionRuntimeTest extends TestCase
         self::assertSame(
             ['runtime_projection', 'secondary_runtime_projection'],
             array_map(
-                static fn(ProjectionDefinition $definition): string => $definition->projectionId,
+                static fn (ProjectionDefinition $definition): string => $definition->projectionId,
                 $catalog->definitions(),
             ),
         );
@@ -232,14 +234,14 @@ final class ProjectionRuntimeTest extends TestCase
         try {
             $catalog->runtime('missing_projection');
             self::fail('Expected runtime lookup to fail for an unknown projection.');
-        } catch (InvalidArgumentException $e) {
+        } catch (\InvalidArgumentException $e) {
             self::assertStringContainsString('Unknown projection "missing_projection"', $e->getMessage());
         }
 
         try {
             $catalog->definition('missing_projection');
             self::fail('Expected definition lookup to fail for an unknown projection.');
-        } catch (InvalidArgumentException $e) {
+        } catch (\InvalidArgumentException $e) {
             self::assertStringContainsString('Unknown projection "missing_projection"', $e->getMessage());
         }
     }

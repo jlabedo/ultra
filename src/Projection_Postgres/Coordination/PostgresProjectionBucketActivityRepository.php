@@ -20,10 +20,10 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
     {
         $this->connection->executeStatement(
             sprintf(
-                "INSERT INTO %s (projection_id, bucket_no, counter, acknowledged_counter)
+                'INSERT INTO %s (projection_id, bucket_no, counter, acknowledged_counter)
                  VALUES (?, ?, 1, 0)
                  ON CONFLICT (projection_id, bucket_no)
-                 DO UPDATE SET counter = %s.counter + 1, updated_at = statement_timestamp()",
+                 DO UPDATE SET counter = %s.counter + 1, updated_at = statement_timestamp()',
                 $this->bucketActivityTable(),
                 $this->bucketActivityTable(),
             ),
@@ -48,7 +48,7 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
         )->fetchAllAssociative();
 
         return array_map(
-            static fn(array $row): ProjectionBucketActivity => new ProjectionBucketActivity(
+            static fn (array $row): ProjectionBucketActivity => new ProjectionBucketActivity(
                 $row['projection_id'],
                 (int) $row['bucket_no'],
                 (int) $row['counter'],
@@ -74,7 +74,7 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
         )->fetchAllAssociative();
 
         return array_map(
-            static fn(array $row): ProjectionBucketActivity => new ProjectionBucketActivity(
+            static fn (array $row): ProjectionBucketActivity => new ProjectionBucketActivity(
                 $row['projection_id'],
                 (int) $row['bucket_no'],
                 (int) $row['counter'],
@@ -88,9 +88,9 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
     {
         $this->connection->executeStatement(
             sprintf(
-                "UPDATE %s
+                'UPDATE %s
                  SET acknowledged_counter = GREATEST(acknowledged_counter, ?), updated_at = statement_timestamp()
-                 WHERE projection_id = ? AND bucket_no = ?",
+                 WHERE projection_id = ? AND bucket_no = ?',
                 $this->bucketActivityTable(),
             ),
             [$counter, $projectionId, $bucket],
@@ -100,6 +100,6 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
 
     private function bucketActivityTable(): string
     {
-        return $this->tablePrefix . 'bucket_activity';
+        return $this->tablePrefix.'bucket_activity';
     }
 }

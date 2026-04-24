@@ -23,7 +23,7 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
 
         $container = $this->ultraLight()
             ->withEventClass(RecordedEvent::class)
-            ->withService(new class ($syncLog) {
+            ->withService(new class($syncLog) {
                 /** @var list<string> */
                 public array $log;
 
@@ -39,7 +39,7 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
                     $this->log[] = 'sync: '.$event->payload;
                 }
             })
-            ->withService(new class ($asyncLog) {
+            ->withService(new class($asyncLog) {
                 /** @var list<string> */
                 public array $log;
 
@@ -80,7 +80,7 @@ final class AsyncEventBusDispatchTest extends MessageHandlingCompilerTestCase
 
         $container = $this->ultraLight()
             ->withEventClass(RecordedEvent::class)
-            ->withService(new class ($log) {
+            ->withService(new class($log) {
                 /** @var list<string> */
                 public array $log;
 

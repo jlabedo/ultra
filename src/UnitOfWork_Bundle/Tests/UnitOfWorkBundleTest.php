@@ -8,12 +8,12 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\StreamQuery;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
 use Ultra\UnitOfWork\UnitOfWork;
@@ -30,8 +30,7 @@ final class RecordingEventStore implements EventStore
         ?Checkpoint $from = null,
         ?Checkpoint $to = null,
         int $batchSize = 1000,
-    ): LoadResult
-    {
+    ): LoadResult {
         return new LoadResult([], $to ?? $from ?? Checkpoint::beginning(), $query);
     }
 
