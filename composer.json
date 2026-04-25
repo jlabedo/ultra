@@ -41,6 +41,7 @@
         "ultra/mapper-compiler": "self.version",
         "ultra/message-handling": "self.version",
         "ultra/message-handling-compiler": "self.version",
+        "ultra/schema": "self.version",
         "ultra/state-store": "self.version",
         "ultra/state-store-bundle": "self.version",
         "ultra/time": "self.version",
