@@ -5,11 +5,14 @@ declare(strict_types=1);
 namespace Ultra\Schema;
 
 use Ultra\Schema\Operations\AddColumn;
+use Ultra\Schema\Operations\AddIndex;
 use Ultra\Schema\Operations\AlterColumn;
 use Ultra\Schema\Operations\CreateTable;
 use Ultra\Schema\Operations\DropColumn;
+use Ultra\Schema\Operations\DropIndex;
 use Ultra\Schema\Operations\DropTable;
 use Ultra\Schema\Operations\RenameColumn;
+use Ultra\Schema\Operations\RenameIndex;
 use Ultra\Schema\Operations\RenameTable;
 use Ultra\Schema\Operations\SchemaOperation;
 
@@ -41,6 +44,7 @@ final class SchemaReconciler
             }
 
             $operations = [...$operations, ...$this->reconcileColumns($resolvedTableName, $currentTable, $targetTable)];
+            $operations = [...$operations, ...$this->reconcileIndexes($resolvedTableName, $currentTable, $targetTable)];
         }
 
         foreach ($currentTables as $tableId => $currentTable) {
@@ -99,6 +103,48 @@ final class SchemaReconciler
             }
 
             $operations[] = new DropColumn($tableName, $currentColumn->name);
+        }
+
+        return $operations;
+    }
+
+    /**
+     * @return list<SchemaOperation>
+     */
+    private function reconcileIndexes(string $tableName, TableDefinition $current, TableDefinition $target): array
+    {
+        $operations = [];
+
+        $currentIndexes = $current->indexesById();
+        $targetIndexes = $target->indexesById();
+
+        foreach ($targetIndexes as $indexId => $targetIndex) {
+            $currentIndex = $currentIndexes[$indexId] ?? null;
+
+            if ($currentIndex === null) {
+                $operations[] = new AddIndex($tableName, $targetIndex);
+                continue;
+            }
+
+            $resolvedIndexName = $currentIndex->name;
+
+            if ($currentIndex->name !== $targetIndex->name) {
+                $operations[] = new RenameIndex($tableName, $currentIndex->name, $targetIndex->name);
+                $resolvedIndexName = $targetIndex->name;
+            }
+
+            if (! $currentIndex->equivalentTo($targetIndex)) {
+                $operations[] = new DropIndex($tableName, $resolvedIndexName);
+                $operations[] = new AddIndex($tableName, $targetIndex);
+            }
+        }
+
+        foreach ($currentIndexes as $indexId => $currentIndex) {
+            if (isset($targetIndexes[$indexId])) {
+                continue;
+            }
+
+            $operations[] = new DropIndex($tableName, $currentIndex->name);
         }
 
         return $operations;
