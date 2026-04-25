@@ -7,6 +7,7 @@ namespace Ultra\Schema\Tests;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
@@ -86,6 +87,66 @@ final class PostgresSqlGeneratorTest extends TestCase
 
         self::assertSame([
             'ALTER TABLE "users" ALTER COLUMN "score" DROP DEFAULT;',
+        ], $sql);
+    }
+
+    public function test_it_generates_sql_for_index_rename_and_index_recreation(): void
+    {
+        $current = new SchemaDefinition([
+            new TableDefinition(
+                'table-users',
+                'users',
+                [new ColumnDefinition('col-email', 'email', 'text')],
+                [new IndexDefinition('idx-email', 'users_email_idx', ['email'])],
+            ),
+        ]);
+
+        $target = new SchemaDefinition([
+            new TableDefinition(
+                'table-users',
+                'users',
+                [new ColumnDefinition('col-email', 'email', 'text')],
+                [new IndexDefinition('idx-email', 'app_users_email_idx', ['email'], unique: true)],
+            ),
+        ]);
+
+        $operations = (new SchemaReconciler())->reconcile($current, $target);
+        $sql = (new PostgresSqlGenerator())->generate($operations);
+
+        self::assertSame([
+            'ALTER INDEX "users_email_idx" RENAME TO "app_users_email_idx";',
+            'DROP INDEX "app_users_email_idx";',
+            'CREATE UNIQUE INDEX "app_users_email_idx" ON "users" ("email");',
+        ], $sql);
+    }
+
+    public function test_it_supports_raw_sql_for_advanced_indexes(): void
+    {
+        $current = new SchemaDefinition([
+            new TableDefinition('table-documents', 'documents_table', []),
+        ]);
+
+        $target = new SchemaDefinition([
+            new TableDefinition(
+                'table-documents',
+                'documents_table',
+                [],
+                [
+                    new IndexDefinition(
+                        'idx-gin-locations',
+                        'gin_idx',
+                        [],
+                        rawSql: 'CREATE INDEX gin_idx ON documents_table USING GIN (locations) WITH (fastupdate = off)',
+                    ),
+                ],
+            ),
+        ]);
+
+        $operations = (new SchemaReconciler())->reconcile($current, $target);
+        $sql = (new PostgresSqlGenerator())->generate($operations);
+
+        self::assertSame([
+            'CREATE INDEX gin_idx ON documents_table USING GIN (locations) WITH (fastupdate = off);',
         ], $sql);
     }
 }

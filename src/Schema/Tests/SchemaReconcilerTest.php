@@ -7,12 +7,16 @@ namespace Ultra\Schema\Tests;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
 use Ultra\Schema\TableDefinition;
 use Ultra\Schema\Operations\AddColumn;
+use Ultra\Schema\Operations\AddIndex;
 use Ultra\Schema\Operations\AlterColumn;
+use Ultra\Schema\Operations\DropIndex;
 use Ultra\Schema\Operations\RenameColumn;
+use Ultra\Schema\Operations\RenameIndex;
 use Ultra\Schema\Operations\RenameTable;
 
 /**
@@ -78,5 +82,80 @@ final class SchemaReconcilerTest extends TestCase
         self::assertNull($operations[0]->nullable);
         self::assertNull($operations[0]->defaultExpression);
         self::assertFalse($operations[0]->dropDefault);
+    }
+
+    public function test_reconciler_detects_index_rename_and_index_recreation_when_definition_changes(): void
+    {
+        $current = new SchemaDefinition([
+            new TableDefinition(
+                'table-users',
+                'users',
+                [new ColumnDefinition('col-email', 'email', 'text')],
+                [new IndexDefinition('idx-email', 'users_email_idx', ['email'])],
+            ),
+        ]);
+
+        $target = new SchemaDefinition([
+            new TableDefinition(
+                'table-users',
+                'users',
+                [new ColumnDefinition('col-email', 'email', 'text')],
+                [new IndexDefinition('idx-email', 'app_users_email_idx', ['email'], unique: true)],
+            ),
+        ]);
+
+        $operations = (new SchemaReconciler())->reconcile($current, $target);
+
+        self::assertCount(3, $operations);
+        self::assertInstanceOf(RenameIndex::class, $operations[0]);
+        self::assertInstanceOf(DropIndex::class, $operations[1]);
+        self::assertInstanceOf(AddIndex::class, $operations[2]);
+        self::assertSame('users', $operations[0]->tableName);
+        self::assertSame('users_email_idx', $operations[0]->fromName);
+        self::assertSame('app_users_email_idx', $operations[0]->toName);
+        self::assertSame('app_users_email_idx', $operations[1]->indexName);
+        self::assertTrue($operations[2]->index->unique);
+    }
+
+    public function test_reconciler_recreates_index_when_raw_sql_changes(): void
+    {
+        $current = new SchemaDefinition([
+            new TableDefinition(
+                'table-documents',
+                'documents_table',
+                [],
+                [
+                    new IndexDefinition(
+                        'idx-gin-locations',
+                        'gin_idx',
+                        [],
+                        rawSql: 'CREATE INDEX gin_idx ON documents_table USING GIN (locations)',
+                    ),
+                ],
+            ),
+        ]);
+
+        $target = new SchemaDefinition([
+            new TableDefinition(
+                'table-documents',
+                'documents_table',
+                [],
+                [
+                    new IndexDefinition(
+                        'idx-gin-locations',
+                        'gin_idx',
+                        [],
+                        rawSql: 'CREATE INDEX gin_idx ON documents_table USING GIN (locations) WITH (fastupdate = off)',
+                    ),
+                ],
+            ),
+        ]);
+
+        $operations = (new SchemaReconciler())->reconcile($current, $target);
+
+        self::assertCount(2, $operations);
+        self::assertInstanceOf(DropIndex::class, $operations[0]);
+        self::assertInstanceOf(AddIndex::class, $operations[1]);
+        self::assertSame('gin_idx', $operations[0]->indexName);
     }
 }
