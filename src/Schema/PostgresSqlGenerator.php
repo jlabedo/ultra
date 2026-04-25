@@ -18,6 +18,8 @@ use Ultra\Schema\Operations\SchemaOperation;
 
 final class PostgresSqlGenerator
 {
+    private const MANAGED_BY_ULTRA_COMMENT = 'managed by: ultra';
+
     /**
      * @param list<SchemaOperation> $operations
      *
@@ -36,11 +38,7 @@ final class PostgresSqlGenerator
                     $this->quoteIdentifier($operation->fromName),
                     $this->quoteIdentifier($operation->toName),
                 ),
-                $operation instanceof AddColumn => sprintf(
-                    'ALTER TABLE %s ADD COLUMN %s;',
-                    $this->quoteIdentifier($operation->tableName),
-                    $this->renderColumnDefinition($operation->column),
-                ),
+                $operation instanceof AddColumn => $this->addColumn($operation),
                 $operation instanceof AddIndex => $this->createIndex($operation),
                 $operation instanceof DropColumn => sprintf(
                     'ALTER TABLE %s DROP COLUMN %s;',
@@ -73,17 +71,27 @@ final class PostgresSqlGenerator
     private function createIndex(AddIndex $operation): string
     {
         if ($operation->index->rawSql !== null) {
-            return $this->terminateStatement($operation->index->rawSql);
+            return sprintf(
+                '%s%s%s',
+                $this->terminateStatement($operation->index->rawSql),
+                $this->lineSeparator(),
+                $this->commentOnIndex($operation->index->name),
+            );
         }
 
         $columns = array_map($this->quoteIdentifier(...), $operation->index->columns);
 
         return sprintf(
-            'CREATE %sINDEX %s ON %s (%s);',
-            $operation->index->unique ? 'UNIQUE ' : '',
-            $this->quoteIdentifier($operation->index->name),
-            $this->quoteIdentifier($operation->tableName),
-            implode(', ', $columns),
+            "%s%s%s",
+            sprintf(
+                'CREATE %sINDEX %s ON %s (%s);',
+                $operation->index->unique ? 'UNIQUE ' : '',
+                $this->quoteIdentifier($operation->index->name),
+                $this->quoteIdentifier($operation->tableName),
+                implode(', ', $columns),
+            ),
+            $this->lineSeparator(),
+            $this->commentOnIndex($operation->index->name),
         );
     }
 
@@ -91,11 +99,21 @@ final class PostgresSqlGenerator
     {
         $columnDefinitions = array_map($this->renderColumnDefinition(...), $operation->table->columns);
 
-        return sprintf(
+        $sql = sprintf(
             "CREATE TABLE %s (\n    %s\n);",
             $this->quoteIdentifier($operation->table->name),
             implode(",\n    ", $columnDefinitions),
         );
+
+        $comments = [
+            $this->commentOnTable($operation->table->name),
+        ];
+
+        foreach ($operation->table->columns as $column) {
+            $comments[] = $this->commentOnColumn($operation->table->name, $column->name);
+        }
+
+        return sprintf('%s%s%s', $sql, $this->lineSeparator(), implode($this->lineSeparator(), $comments));
     }
 
     private function alterColumn(AlterColumn $operation): string
@@ -166,5 +184,57 @@ final class PostgresSqlGenerator
         }
 
         return str_ends_with($sql, ';') ? $sql : sprintf('%s;', $sql);
+    }
+
+    private function addColumn(AddColumn $operation): string
+    {
+        return sprintf(
+            '%s%s%s',
+            sprintf(
+                'ALTER TABLE %s ADD COLUMN %s;',
+                $this->quoteIdentifier($operation->tableName),
+                $this->renderColumnDefinition($operation->column),
+            ),
+            $this->lineSeparator(),
+            $this->commentOnColumn($operation->tableName, $operation->column->name),
+        );
+    }
+
+    private function commentOnTable(string $tableName): string
+    {
+        return sprintf(
+            'COMMENT ON TABLE %s IS %s;',
+            $this->quoteIdentifier($tableName),
+            $this->quoteLiteral(self::MANAGED_BY_ULTRA_COMMENT),
+        );
+    }
+
+    private function commentOnColumn(string $tableName, string $columnName): string
+    {
+        return sprintf(
+            'COMMENT ON COLUMN %s.%s IS %s;',
+            $this->quoteIdentifier($tableName),
+            $this->quoteIdentifier($columnName),
+            $this->quoteLiteral(self::MANAGED_BY_ULTRA_COMMENT),
+        );
+    }
+
+    private function commentOnIndex(string $indexName): string
+    {
+        return sprintf(
+            'COMMENT ON INDEX %s IS %s;',
+            $this->quoteIdentifier($indexName),
+            $this->quoteLiteral(self::MANAGED_BY_ULTRA_COMMENT),
+        );
+    }
+
+    private function quoteLiteral(string $literal): string
+    {
+        return sprintf('\'%s\'', str_replace('\'', '\'\'', $literal));
+    }
+
+    private function lineSeparator(): string
+    {
+        return "\n";
     }
 }
