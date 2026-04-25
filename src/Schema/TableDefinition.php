@@ -17,6 +17,29 @@ final readonly class TableDefinition
         public string $name,
         public array $columns,
     ) {
+        $columnIds = [];
+        $columnNames = [];
+
+        foreach ($this->columns as $column) {
+            if (isset($columnIds[$column->id])) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Duplicate column id "%s" in table "%s".',
+                    $column->id,
+                    $this->name,
+                ));
+            }
+
+            if (isset($columnNames[$column->name])) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Duplicate column name "%s" in table "%s".',
+                    $column->name,
+                    $this->name,
+                ));
+            }
+
+            $columnIds[$column->id] = true;
+            $columnNames[$column->name] = true;
+        }
     }
 
     /**

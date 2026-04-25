@@ -15,6 +15,21 @@ final readonly class SchemaDefinition
     public function __construct(
         public array $tables,
     ) {
+        $tableIds = [];
+        $tableNames = [];
+
+        foreach ($this->tables as $table) {
+            if (isset($tableIds[$table->id])) {
+                throw new \InvalidArgumentException(sprintf('Duplicate table id "%s".', $table->id));
+            }
+
+            if (isset($tableNames[$table->name])) {
+                throw new \InvalidArgumentException(sprintf('Duplicate table name "%s".', $table->name));
+            }
+
+            $tableIds[$table->id] = true;
+            $tableNames[$table->name] = true;
+        }
     }
 
     /**
