@@ -44,4 +44,48 @@ final class PostgresSqlGeneratorTest extends TestCase
             'ALTER TABLE "app_users" ADD COLUMN "created_at" timestamp with time zone NOT NULL DEFAULT now();',
         ], $sql);
     }
+
+    public function test_it_generates_only_the_required_alter_column_clauses(): void
+    {
+        $current = new SchemaDefinition([
+            new TableDefinition('table-users', 'users', [
+                new ColumnDefinition('col-score', 'score', 'integer', nullable: false, defaultExpression: '0'),
+            ]),
+        ]);
+
+        $target = new SchemaDefinition([
+            new TableDefinition('table-users', 'users', [
+                new ColumnDefinition('col-score', 'score', 'bigint', nullable: false, defaultExpression: '0'),
+            ]),
+        ]);
+
+        $operations = (new SchemaReconciler())->reconcile($current, $target);
+        $sql = (new PostgresSqlGenerator())->generate($operations);
+
+        self::assertSame([
+            'ALTER TABLE "users" ALTER COLUMN "score" TYPE bigint;',
+        ], $sql);
+    }
+
+    public function test_it_can_drop_a_default_without_unrelated_alter_clauses(): void
+    {
+        $current = new SchemaDefinition([
+            new TableDefinition('table-users', 'users', [
+                new ColumnDefinition('col-score', 'score', 'integer', nullable: false, defaultExpression: '0'),
+            ]),
+        ]);
+
+        $target = new SchemaDefinition([
+            new TableDefinition('table-users', 'users', [
+                new ColumnDefinition('col-score', 'score', 'integer', nullable: false, defaultExpression: null),
+            ]),
+        ]);
+
+        $operations = (new SchemaReconciler())->reconcile($current, $target);
+        $sql = (new PostgresSqlGenerator())->generate($operations);
+
+        self::assertSame([
+            'ALTER TABLE "users" ALTER COLUMN "score" DROP DEFAULT;',
+        ], $sql);
+    }
 }

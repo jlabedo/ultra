@@ -11,6 +11,7 @@ use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
 use Ultra\Schema\TableDefinition;
 use Ultra\Schema\Operations\AddColumn;
+use Ultra\Schema\Operations\AlterColumn;
 use Ultra\Schema\Operations\RenameColumn;
 use Ultra\Schema\Operations\RenameTable;
 
@@ -49,5 +50,33 @@ final class SchemaReconcilerTest extends TestCase
         self::assertSame('app_users', $operations[1]->tableName);
         self::assertSame('full_name', $operations[1]->fromName);
         self::assertSame('name', $operations[1]->toName);
+    }
+
+    public function test_reconciler_emits_minimal_alter_column_payload(): void
+    {
+        $current = new SchemaDefinition([
+            new TableDefinition('table-users', 'users', [
+                new ColumnDefinition('col-id', 'id', 'uuid'),
+                new ColumnDefinition('col-score', 'score', 'integer', nullable: false, defaultExpression: '0'),
+            ]),
+        ]);
+
+        $target = new SchemaDefinition([
+            new TableDefinition('table-users', 'users', [
+                new ColumnDefinition('col-id', 'id', 'uuid'),
+                new ColumnDefinition('col-score', 'score', 'bigint', nullable: false, defaultExpression: '0'),
+            ]),
+        ]);
+
+        $operations = (new SchemaReconciler())->reconcile($current, $target);
+
+        self::assertCount(1, $operations);
+        self::assertInstanceOf(AlterColumn::class, $operations[0]);
+        self::assertSame('users', $operations[0]->tableName);
+        self::assertSame('score', $operations[0]->columnName);
+        self::assertSame('bigint', $operations[0]->type);
+        self::assertNull($operations[0]->nullable);
+        self::assertNull($operations[0]->defaultExpression);
+        self::assertFalse($operations[0]->dropDefault);
     }
 }

@@ -80,7 +80,16 @@ final class SchemaReconciler
             }
 
             if (! $currentColumn->equivalentTo($targetColumn)) {
-                $operations[] = new AlterColumn($tableName, $resolvedColumnName, $targetColumn);
+                $operations[] = new AlterColumn(
+                    tableName: $tableName,
+                    columnName: $resolvedColumnName,
+                    type: $currentColumn->type !== $targetColumn->type ? $targetColumn->type : null,
+                    nullable: $currentColumn->nullable !== $targetColumn->nullable ? $targetColumn->nullable : null,
+                    defaultExpression: $currentColumn->defaultExpression !== $targetColumn->defaultExpression
+                        ? $targetColumn->defaultExpression
+                        : null,
+                    dropDefault: $currentColumn->defaultExpression !== null && $targetColumn->defaultExpression === null,
+                );
             }
         }
 

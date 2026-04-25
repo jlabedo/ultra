@@ -70,16 +70,32 @@ final class PostgresSqlGenerator
 
     private function alterColumn(AlterColumn $operation): string
     {
-        $column = $operation->targetDefinition;
-        $clauses = [
-            sprintf('ALTER COLUMN %s TYPE %s', $this->quoteIdentifier($operation->columnName), $column->type),
-            $column->nullable
-                ? sprintf('ALTER COLUMN %s DROP NOT NULL', $this->quoteIdentifier($operation->columnName))
-                : sprintf('ALTER COLUMN %s SET NOT NULL', $this->quoteIdentifier($operation->columnName)),
-            $column->defaultExpression === null
-                ? sprintf('ALTER COLUMN %s DROP DEFAULT', $this->quoteIdentifier($operation->columnName))
-                : sprintf('ALTER COLUMN %s SET DEFAULT %s', $this->quoteIdentifier($operation->columnName), $column->defaultExpression),
-        ];
+        $columnName = $this->quoteIdentifier($operation->columnName);
+        $clauses = [];
+
+        if ($operation->type !== null) {
+            $clauses[] = sprintf('ALTER COLUMN %s TYPE %s', $columnName, $operation->type);
+        }
+
+        if ($operation->nullable !== null) {
+            $clauses[] = $operation->nullable
+                ? sprintf('ALTER COLUMN %s DROP NOT NULL', $columnName)
+                : sprintf('ALTER COLUMN %s SET NOT NULL', $columnName);
+        }
+
+        if ($operation->dropDefault) {
+            $clauses[] = sprintf('ALTER COLUMN %s DROP DEFAULT', $columnName);
+        } elseif ($operation->defaultExpression !== null) {
+            $clauses[] = sprintf('ALTER COLUMN %s SET DEFAULT %s', $columnName, $operation->defaultExpression);
+        }
+
+        if ($clauses === []) {
+            throw new \LogicException(sprintf(
+                'AlterColumn operation for "%s"."%s" does not contain any effective change.',
+                $operation->tableName,
+                $operation->columnName,
+            ));
+        }
 
         return sprintf(
             'ALTER TABLE %s %s;',
