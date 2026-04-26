@@ -10,18 +10,28 @@ namespace Ultra\Schema;
  */
 final readonly class TableDefinition
 {
+    public string $name;
+
+    public bool $hasExplicitName;
+
     /**
      * @param list<ColumnDefinition> $columns
      * @param list<IndexDefinition> $indexes
      */
     public function __construct(
         public string $id,
-        public string $name,
-        public array $columns,
+        ?string $name = null,
+        public array $columns = [],
         public array $indexes = [],
+        ?bool $hasExplicitName = null,
     ) {
+        $this->name = $name ?? $this->id;
+        $this->hasExplicitName = $hasExplicitName ?? $name !== null;
+
         $columnIds = [];
         $columnNames = [];
+        $indexIds = [];
+        $indexNames = [];
 
         foreach ($this->columns as $column) {
             if (isset($columnIds[$column->id])) {
@@ -42,6 +52,27 @@ final readonly class TableDefinition
 
             $columnIds[$column->id] = true;
             $columnNames[$column->name] = true;
+        }
+
+        foreach ($this->indexes as $index) {
+            if (isset($indexIds[$index->id])) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Duplicate index id "%s" in table "%s".',
+                    $index->id,
+                    $this->name,
+                ));
+            }
+
+            if (isset($indexNames[$index->name])) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Duplicate index name "%s" in table "%s".',
+                    $index->name,
+                    $this->name,
+                ));
+            }
+
+            $indexIds[$index->id] = true;
+            $indexNames[$index->name] = true;
         }
     }
 

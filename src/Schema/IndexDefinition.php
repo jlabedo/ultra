@@ -6,16 +6,23 @@ namespace Ultra\Schema;
 
 final readonly class IndexDefinition
 {
+    public string $name;
+
+    public bool $hasExplicitName;
+
     /**
      * @param list<string> $columns
      */
     public function __construct(
         public string $id,
-        public string $name,
-        public array $columns,
+        ?string $name = null,
+        public array $columns = [],
         public bool $unique = false,
         public ?string $rawSql = null,
+        ?bool $hasExplicitName = null,
     ) {
+        $this->name = $name ?? $this->id;
+        $this->hasExplicitName = $hasExplicitName ?? $name !== null;
     }
 
     public function equivalentTo(self $other): bool
