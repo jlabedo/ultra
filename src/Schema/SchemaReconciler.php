@@ -83,6 +83,14 @@ final class SchemaReconciler
                 $resolvedColumnName = $targetColumn->name;
             }
 
+            if ($currentColumn->constraints !== $targetColumn->constraints) {
+                throw new \LogicException(sprintf(
+                    'Cannot reconcile changed constraints for column "%s"."%s".',
+                    $tableName,
+                    $resolvedColumnName,
+                ));
+            }
+
             if (! $currentColumn->equivalentTo($targetColumn)) {
                 $operations[] = new AlterColumn(
                     tableName: $tableName,

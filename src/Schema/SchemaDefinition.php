@@ -117,6 +117,7 @@ final readonly class SchemaDefinition
                 type: $column->type,
                 nullable: $column->nullable,
                 defaultExpression: $column->defaultExpression,
+                constraints: $column->constraints,
                 hasExplicitName: $existing->hasExplicitName || $column->hasExplicitName,
             );
         }

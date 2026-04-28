@@ -158,4 +158,24 @@ final class SchemaReconcilerTest extends TestCase
         self::assertInstanceOf(AddIndex::class, $operations[1]);
         self::assertSame('gin_idx', $operations[0]->indexName);
     }
+
+    public function test_reconciler_rejects_changed_column_constraints(): void
+    {
+        $current = new SchemaDefinition([
+            new TableDefinition('table-users', 'users', [
+                new ColumnDefinition('col-email', 'email', 'text'),
+            ]),
+        ]);
+
+        $target = new SchemaDefinition([
+            new TableDefinition('table-users', 'users', [
+                new ColumnDefinition('col-email', 'email', 'text', constraints: ['UNIQUE']),
+            ]),
+        ]);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Cannot reconcile changed constraints for column "users"."email".');
+
+        (new SchemaReconciler())->reconcile($current, $target);
+    }
 }

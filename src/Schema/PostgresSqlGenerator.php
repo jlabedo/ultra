@@ -167,6 +167,8 @@ final class PostgresSqlGenerator
             $parts[] = sprintf('DEFAULT %s', $column->defaultExpression);
         }
 
+        array_push($parts, ...$column->constraints);
+
         return implode(' ', $parts);
     }
 

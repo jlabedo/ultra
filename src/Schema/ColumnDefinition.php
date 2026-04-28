@@ -10,12 +10,16 @@ final readonly class ColumnDefinition
 
     public bool $hasExplicitName;
 
+    /**
+     * @param list<string> $constraints
+     */
     public function __construct(
         public string $id,
         ?string $name = null,
         public string $type = '',
         public bool $nullable = false,
         public ?string $defaultExpression = null,
+        public array $constraints = [],
         ?bool $hasExplicitName = null,
     ) {
         if ($type === '') {
@@ -30,6 +34,7 @@ final readonly class ColumnDefinition
     {
         return $this->type === $other->type
             && $this->nullable === $other->nullable
-            && $this->defaultExpression === $other->defaultExpression;
+            && $this->defaultExpression === $other->defaultExpression
+            && $this->constraints === $other->constraints;
     }
 }
