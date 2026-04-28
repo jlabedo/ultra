@@ -11,6 +11,7 @@ use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Bundle\Command\ProjectionWorkerCommand;
+use Ultra\Projection\Bundle\DependencyInjection\Compiler\MessageHandlingProjectionActivatorPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
 use Ultra\Projection\Coordination\DefaultProjectionScalingPolicy;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
@@ -19,6 +20,7 @@ use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
+use Ultra\Projection\MessageHandling\ProjectionMessageHandler;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
@@ -83,6 +85,26 @@ final class ProjectionBundle extends Bundle
             ->addTag('console.command')
         ;
 
+        $this->registerMessageHandlingIntegration($container);
+
         $container->addCompilerPass(new ProjectionCompilerPass());
+        $container->addCompilerPass(new MessageHandlingProjectionActivatorPass());
+    }
+
+    private function registerMessageHandlingIntegration(ContainerBuilder $container): void
+    {
+        if (!interface_exists('Ultra\\MessageHandling\\MediatorInterface')) {
+            return;
+        }
+
+        $container->register(ProjectionMessageHandler::class, ProjectionMessageHandler::class)
+            ->setArguments([
+                new Reference(ProjectionCatalog::class),
+                new Reference(ProjectionRunner::class),
+                new Reference(ProjectionCoordinator::class),
+            ])
+            ->addTag('ultra.message_handler', ['method' => 'handleWakeProjectionCoordinator'])
+            ->addTag('ultra.message_handler', ['method' => 'handleRunProjectionAssignment'])
+        ;
     }
 }

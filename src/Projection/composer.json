@@ -18,6 +18,10 @@
         "ultra/mapper": "self.version",
         "ultra/time": "self.version"
     },
+    "suggest": {
+        "ultra/message-handling": "Enables mediator-based projection worker activation.",
+        "ultra/message-handling-compiler": "Compiles the optional projection message handlers for Symfony applications."
+    },
     "autoload": {
         "psr-4": {
             "Ultra\\Projection\\": ""
