@@ -22,7 +22,6 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
             $segments = new PostgresProjectionSegmentRepository($connection, $projectionPrefix);
             $segments->ensureInitialized('courses');
             $segments->splitSegment('courses', 0);
-            $segments->reconcilePendingOperations('courses');
 
             $assignment = $segments->assignSegment('courses', 128, 'worker-1');
             self::assertNotNull($assignment);

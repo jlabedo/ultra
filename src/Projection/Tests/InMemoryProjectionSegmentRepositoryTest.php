@@ -20,17 +20,16 @@ use Ultra\Time\StatickClock;
 #[CoversClass(ProjectionSegment::class)]
 final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 {
-    public function test_split_of_an_available_segment_is_reconciled_into_two_children(): void
+    public function test_split_of_an_available_segment_creates_two_children_immediately(): void
     {
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
 
         $repository->splitSegment('courses', 0);
-        $repository->reconcilePendingOperations('courses');
 
         self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'available', 'pendingOperation' => null],
-            ['bucketFrom' => 128, 'bucketTo' => 255, 'status' => 'available', 'pendingOperation' => null],
+            ['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'available'],
+            ['bucketFrom' => 128, 'bucketTo' => 255, 'status' => 'available'],
         ], $repository->listSegments('courses'));
     }
 
@@ -41,11 +40,11 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         self::assertTrue($repository->ensureInitialized('courses'));
         self::assertFalse($repository->ensureInitialized('courses'));
         self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'available', 'pendingOperation' => null],
+            ['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'available'],
         ], $repository->listSegments('courses'));
     }
 
-    public function test_split_of_an_active_assignment_is_deferred_until_the_worker_completes(): void
+    public function test_split_of_an_active_assignment_is_taken_from_the_worker_immediately(): void
     {
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
@@ -57,24 +56,23 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         $repository->splitSegment('courses', 0);
 
         self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'draining', 'pendingOperation' => 'split'],
+            ['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'available'],
+            ['bucketFrom' => 128, 'bucketTo' => 255, 'status' => 'available'],
         ], $repository->listSegments('courses'));
 
         $repository->completeAssignedBatch($segment, Checkpoint::at(new Sequence(5)), 'worker-1', true);
-        $repository->reconcilePendingOperations('courses');
 
         self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'available', 'pendingOperation' => null],
-            ['bucketFrom' => 128, 'bucketTo' => 255, 'status' => 'available', 'pendingOperation' => null],
+            ['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'available'],
+            ['bucketFrom' => 128, 'bucketTo' => 255, 'status' => 'available'],
         ], $repository->listSegments('courses'));
     }
 
-    public function test_merge_waits_for_both_siblings_and_keeps_the_earliest_checkpoint(): void
+    public function test_take_segments_for_range_steals_active_assignments_before_merge_replacement(): void
     {
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
         $repository->splitSegment('courses', 0);
-        $repository->reconcilePendingOperations('courses');
         $leftAssignment = $repository->assignSegment('courses', 0, 'worker-left');
         $rightAssignment = $repository->assignSegment('courses', 128, 'worker-right');
         self::assertNotNull($leftAssignment);
@@ -84,20 +82,34 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         self::assertNotNull($left);
         self::assertNotNull($right);
 
-        $repository->requestMerge('courses', 0, 255);
-        $repository->completeAssignedBatch($left, Checkpoint::at(new Sequence(10)), 'worker-left', true);
+        $taken = $repository->takeSegmentsForRange('courses', 0, 255, 'coordinator');
 
-        self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'drained', 'pendingOperation' => 'merge'],
-            ['bucketFrom' => 128, 'bucketTo' => 255, 'status' => 'draining', 'pendingOperation' => 'merge'],
-        ], $repository->listSegments('courses'));
+        self::assertCount(2, $taken);
 
+        $repository->replaceSegmentsWithMergedSegment('courses', 0, 255, Checkpoint::at(new Sequence(10)));
+        $repository->completeAssignedBatch($left, Checkpoint::at(new Sequence(5)), 'worker-left', true);
         $repository->completeAssignedBatch($right, Checkpoint::at(new Sequence(7)), 'worker-right', true);
-        $repository->reconcilePendingOperations('courses');
 
         self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'available', 'pendingOperation' => null],
+            ['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'available'],
         ], $repository->listSegments('courses'));
+
+        $assignment = $repository->assignSegment('courses', 0, 'worker-merged');
+        self::assertNotNull($assignment);
+        $merged = $repository->claimAssignedSegment($assignment);
+        self::assertNotNull($merged);
+        self::assertSame(10, $merged->checkpoint->gapFloor->value);
+    }
+
+    public function test_replace_segments_with_merged_segment_rejects_ranges_that_are_not_fully_covered(): void
+    {
+        $repository = new InMemoryProjectionSegmentRepository();
+        $repository->ensureInitialized('courses');
+        $repository->splitSegment('courses', 0);
+
+        $this->expectException(\LogicException::class);
+
+        $repository->replaceSegmentsWithMergedSegment('courses', 64, 255, Checkpoint::beginning());
     }
 
     public function test_assign_segment_returns_null_when_the_segment_is_not_available(): void
@@ -111,13 +123,12 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
     public function test_projection_segment_exposes_its_state(): void
     {
-        $segment = new ProjectionSegment('courses', 128, 255, 'available', null, Checkpoint::beginning(), false);
+        $segment = new ProjectionSegment('courses', 128, 255, 'available', Checkpoint::beginning(), false);
 
         self::assertSame('courses', $segment->projectionId);
         self::assertSame(128, $segment->bucketFrom);
         self::assertSame(255, $segment->bucketTo);
         self::assertSame('available', $segment->status);
-        self::assertNull($segment->pendingOperation);
         self::assertSame(0, $segment->checkpoint->gapFloor->value);
         self::assertFalse($segment->wasCreated);
     }

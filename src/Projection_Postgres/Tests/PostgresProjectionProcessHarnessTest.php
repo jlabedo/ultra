@@ -134,7 +134,6 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
             self::assertGreaterThanOrEqual(4, count($segments));
             foreach ($segments as $segment) {
                 self::assertSame('available', $segment['status']);
-                self::assertNull($segment['pendingOperation']);
             }
         });
     }

@@ -192,7 +192,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame(1, $projection->initialized);
         self::assertSame(['begin', 'commit', 'begin', 'commit'], $transactions->events);
         self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'available', 'pendingOperation' => null],
+            ['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'available'],
         ], $segments->listSegments('tracking_projection'));
     }
 
@@ -340,6 +340,75 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame('available', $segments->listSegments('failing_tracking_projection')[0]['status']);
     }
 
+    public function test_merge_segments_projects_slower_segments_to_the_highest_checkpoint_before_replacing_them(): void
+    {
+        $projection = new TrackingProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $activity = new InMemoryProjectionBucketActivityRepository();
+        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
+        $leftCourseId = self::courseIdInBucketRange(0, 127);
+        $rightCourseId = self::courseIdInBucketRange(128, 255);
+
+        $eventStore->append([
+            self::courseCreatedEvent($leftCourseId, 'Math'),
+            self::courseCreatedEvent($rightCourseId, 'Science'),
+        ]);
+
+        $runner->ensureInitialized($runtime);
+        $runner->splitSegment('tracking_projection', 0);
+        $rightAssignment = $runner->assignSegment('tracking_projection', 128, 'worker-right');
+        self::assertNotNull($rightAssignment);
+
+        $runner->runAssignedOnce($runtime, $rightAssignment, limit: 10);
+
+        self::assertSame([$rightCourseId => 'Science'], $projection->names);
+
+        $runner->mergeSegments($runtime, 0, 255, 'coordinator-1', limit: 1);
+
+        self::assertSame([
+            $rightCourseId => 'Science',
+            $leftCourseId => 'Math',
+        ], $projection->names);
+
+        $mergedAssignment = $runner->assignSegment('tracking_projection', 0, 'worker-merged');
+        self::assertNotNull($mergedAssignment);
+        $merged = $segments->claimAssignedSegment($mergedAssignment);
+        self::assertNotNull($merged);
+        self::assertSame(2, $merged->checkpoint->gapFloor->value);
+    }
+
+    public function test_merge_segments_combines_gap_sequence_numbers_when_checkpoint_floors_are_equal(): void
+    {
+        $runtime = new ProjectionRuntime(new TrackingProjection(), new UltraNormalizer());
+        $segments = new InMemoryProjectionSegmentRepository();
+        $runner = new ProjectionRunner(new InMemoryEventStore(), $segments, activityRepository: new InMemoryProjectionBucketActivityRepository());
+
+        $runner->ensureInitialized($runtime);
+        $runner->splitSegment('tracking_projection', 0);
+        $leftAssignment = $runner->assignSegment('tracking_projection', 0, 'worker-left');
+        $rightAssignment = $runner->assignSegment('tracking_projection', 128, 'worker-right');
+        self::assertNotNull($leftAssignment);
+        self::assertNotNull($rightAssignment);
+        $left = $segments->claimAssignedSegment($leftAssignment);
+        $right = $segments->claimAssignedSegment($rightAssignment);
+        self::assertNotNull($left);
+        self::assertNotNull($right);
+
+        $segments->completeAssignedBatch($left, new Checkpoint(new \Ultra\EventStore\Sequence(10), [new \Ultra\EventStore\Sequence(12)]), 'worker-left', true);
+        $segments->completeAssignedBatch($right, new Checkpoint(new \Ultra\EventStore\Sequence(10), [new \Ultra\EventStore\Sequence(13)]), 'worker-right', true);
+
+        $runner->mergeSegments($runtime, 0, 255, 'coordinator-1');
+
+        $mergedAssignment = $runner->assignSegment('tracking_projection', 0, 'worker-merged');
+        self::assertNotNull($mergedAssignment);
+        $merged = $segments->claimAssignedSegment($mergedAssignment);
+        self::assertNotNull($merged);
+        self::assertSame(10, $merged->checkpoint->gapFloor->value);
+        self::assertSame([12, 13], $merged->checkpoint->gapSeqNoValues());
+    }
+
     private static function courseCreatedEvent(string $courseId, string $name): Event
     {
         return new Event(
@@ -347,5 +416,18 @@ final class ProjectionRunnerBehaviorTest extends TestCase
             payload: ['courseId' => $courseId, 'name' => $name],
             domainIds: ['courseId' => $courseId],
         );
+    }
+
+    private static function courseIdInBucketRange(int $from, int $to): string
+    {
+        for ($i = 0; $i < 10000; ++$i) {
+            $courseId = 'course-'.$i;
+            $bucket = BucketHasher::bucketFor($courseId);
+            if ($bucket >= $from && $bucket <= $to) {
+                return $courseId;
+            }
+        }
+
+        throw new \RuntimeException(sprintf('No course id found for bucket range [%d-%d].', $from, $to));
     }
 }

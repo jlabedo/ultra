@@ -40,7 +40,7 @@ final class ListSegmentsCommand extends Command
         }
 
         $table = new Table($output);
-        $table->setHeaders(['bucket_from', 'bucket_to', 'range_size', 'status', 'pending_operation']);
+        $table->setHeaders(['bucket_from', 'bucket_to', 'range_size', 'status']);
 
         foreach ($segments as $seg) {
             $table->addRow([
@@ -48,7 +48,6 @@ final class ListSegmentsCommand extends Command
                 $seg['bucketTo'],
                 $seg['bucketTo'] - $seg['bucketFrom'] + 1,
                 $seg['status'],
-                $seg['pendingOperation'] ?? '-',
             ]);
         }
 

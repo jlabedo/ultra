@@ -257,7 +257,6 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
 
         $segments->ensureInitialized('coordinator_projection');
         $segments->splitSegment('coordinator_projection', 0);
-        $segments->reconcilePendingOperations('coordinator_projection');
 
         $leftBucket = BucketHasher::bucketFor('alpha');
         $rightBucket = BucketHasher::bucketFor('beta');

@@ -64,8 +64,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                      updated_at = CAST(? AS TIMESTAMPTZ)
                  WHERE projection_id = ?
                    AND bucket_from = ?
-                   AND status = 'available'
-                   AND pending_operation IS NULL",
+                   AND status = 'available'",
                 $this->segmentsTable(),
             ),
             [$workerId, $assignmentId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom],
@@ -88,7 +87,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         try {
             $row = $this->connection->executeQuery(
                 sprintf(
-                    'SELECT bucket_from, bucket_to, status, pending_operation, checkpoint
+                    'SELECT bucket_from, bucket_to, status, checkpoint
                      FROM %s
                      WHERE projection_id = ?
                        AND bucket_from = ?
@@ -136,7 +135,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                 bucketFrom: (int) $row['bucket_from'],
                 bucketTo: (int) $row['bucket_to'],
                 status: 'active',
-                pendingOperation: $row['pending_operation'] ?? null,
                 checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
                 wasCreated: false,
             );
@@ -160,10 +158,10 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             $this->connection->executeStatement(
                 sprintf(
                     "UPDATE %s
-                     SET status = CASE WHEN pending_operation IS NULL THEN 'available' ELSE 'drained' END,
+                     SET status = 'available',
                          worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL,
                          checkpoint = ?, updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status IN ('active', 'draining')",
+                     WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status = 'active'",
                     $this->segmentsTable(),
                 ),
                 [$checkpoint->serialize(), $now, $segment->projectionId, $segment->bucketFrom, $workerId],
@@ -176,11 +174,11 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET status = CASE WHEN pending_operation IS NULL THEN 'assigned' ELSE 'draining' END,
+                 SET status = 'assigned',
                      checkpoint = ?,
                      lease_expires_at = CAST(? AS TIMESTAMPTZ),
                      updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status IN ('active', 'draining')",
+                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status = 'active'",
                 $this->segmentsTable(),
             ),
             [$checkpoint->serialize(), $now->add($leaseDuration), $now, $segment->projectionId, $segment->bucketFrom, $workerId],
@@ -195,7 +193,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET status = CASE WHEN pending_operation IS NULL THEN 'available' ELSE 'draining' END,
+                 SET status = 'available',
                      worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
                  WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status IN ('assigned', 'active')",
                 $this->segmentsTable(),
@@ -212,9 +210,9 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $count = $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET status = CASE WHEN pending_operation IS NULL THEN 'available' ELSE 'draining' END,
+                 SET status = 'available',
                      worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND status IN ('active', 'assigned', 'draining') AND lease_expires_at < CAST(? AS TIMESTAMPTZ)",
+                 WHERE projection_id = ? AND status IN ('active', 'assigned') AND lease_expires_at < CAST(? AS TIMESTAMPTZ)",
                 $this->segmentsTable(),
             ),
             [$now, $projectionId, $now],
@@ -225,14 +223,13 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     }
 
     /**
-     * Requests a split of the given segment.
-     * If available: executes immediately. If active: marks draining so the worker finalizes.
+     * Splits the given segment immediately.
      */
     public function splitSegment(string $projectionId, int $bucketFrom): void
     {
         $row = $this->connection->executeQuery(
             sprintf(
-                'SELECT bucket_from, bucket_to, status, pending_operation, checkpoint
+                'SELECT bucket_from, bucket_to, status, checkpoint
                  FROM %s WHERE projection_id = ? AND bucket_from = ?',
                 $this->segmentsTable(),
             ),
@@ -248,39 +245,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             ));
         }
 
-        if ('active' === $row['status']) {
-            $now = $this->clock->now();
-            $this->connection->executeStatement(
-                sprintf(
-                    "UPDATE %s
-                     SET status = 'draining', pending_operation = 'split', updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ? AND status = 'active'",
-                    $this->segmentsTable(),
-                ),
-                [$now, $projectionId, $bucketFrom],
-                [ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER],
-            );
-
-            return;
-        }
-
-        if ('available' === $row['status']) {
-            $now = $this->clock->now();
-            $this->connection->executeStatement(
-                sprintf(
-                    "UPDATE %s
-                     SET status = 'drained', pending_operation = 'split', updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ?",
-                    $this->segmentsTable(),
-                ),
-                [$now, $projectionId, $bucketFrom],
-                [ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER],
-            );
-
-            return;
-        }
-
-        if ('drained' !== $row['status']) {
+        if (!in_array($row['status'], ['available', 'assigned', 'active'], true)) {
             throw new \LogicException(sprintf(
                 'Cannot split segment [%d-%d] of projection "%s": status is "%s".',
                 $row['bucket_from'],
@@ -289,6 +254,18 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                 $row['status'],
             ));
         }
+
+        $this->finalizeSplit(
+            new ProjectionSegment(
+                projectionId: $projectionId,
+                bucketFrom: (int) $row['bucket_from'],
+                bucketTo: (int) $row['bucket_to'],
+                status: $row['status'],
+                checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+                wasCreated: false,
+            ),
+            Checkpoint::deserialize((string) $row['checkpoint']),
+        );
     }
 
     /**
@@ -360,160 +337,113 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         }
     }
 
-    /**
-     * Marks two sibling segments as draining for a merge.
-     */
-    public function requestMerge(string $projectionId, int $bucketFrom, int $bucketTo): void
+    private function segmentsForRange(string $projectionId, int $bucketFrom, int $bucketTo): array
     {
-        $rangeSize = $bucketTo - $bucketFrom + 1;
-        $mid = $bucketFrom + intdiv($rangeSize, 2);
-        $now = $this->clock->now();
-
-        $updated = $this->connection->executeStatement(
+        $rows = $this->connection->executeQuery(
             sprintf(
-                "UPDATE %s
-                 SET status = CASE WHEN status = 'active' THEN 'draining' ELSE 'drained' END,
-                     pending_operation = 'merge', updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from IN (?, ?) AND status IN ('available', 'active')",
+                'SELECT bucket_from, bucket_to, status, checkpoint
+                 FROM %s
+                 WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?
+                 ORDER BY bucket_from ASC',
                 $this->segmentsTable(),
             ),
-            [$now, $projectionId, $bucketFrom, $mid],
-            [ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
-        );
+            [$projectionId, $bucketFrom, $bucketTo],
+            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
+        )->fetchAllAssociative();
 
-        if (2 !== $updated) {
-            throw new \LogicException(sprintf(
-                'Cannot merge [%d-%d] for projection "%s": both siblings must be available or active (updated %d).',
-                $bucketFrom,
-                $bucketTo,
-                $projectionId,
-                $updated,
-            ));
+        return array_map(static fn (array $row): ProjectionSegment => new ProjectionSegment(
+            projectionId: $projectionId,
+            bucketFrom: (int) $row['bucket_from'],
+            bucketTo: (int) $row['bucket_to'],
+            status: $row['status'],
+            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+            wasCreated: false,
+        ), $rows);
+    }
+
+    public function takeSegmentsForRange(
+        string $projectionId,
+        int $bucketFrom,
+        int $bucketTo,
+        string $ownerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): array {
+        $now = $this->clock->now();
+        $this->connection->beginTransaction();
+
+        try {
+            $rows = $this->connection->executeQuery(
+                sprintf(
+                    'SELECT bucket_from, bucket_to, status, checkpoint
+                     FROM %s
+                     WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?
+                     ORDER BY bucket_from ASC
+                     FOR UPDATE',
+                    $this->segmentsTable(),
+                ),
+                [$projectionId, $bucketFrom, $bucketTo],
+                [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
+            )->fetchAllAssociative();
+
+            $segments = array_map(static fn (array $row): ProjectionSegment => new ProjectionSegment(
+                projectionId: $projectionId,
+                bucketFrom: (int) $row['bucket_from'],
+                bucketTo: (int) $row['bucket_to'],
+                status: $row['status'],
+                checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+                wasCreated: false,
+            ), $rows);
+            $this->assertSegmentsExactlyCoverRange($projectionId, $segments, $bucketFrom, $bucketTo);
+
+            $this->connection->executeStatement(
+                sprintf(
+                    "UPDATE %s
+                     SET status = 'active',
+                         worker_id = ?,
+                         assignment_id = NULL,
+                         lease_expires_at = CAST(? AS TIMESTAMPTZ),
+                         updated_at = CAST(? AS TIMESTAMPTZ)
+                     WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?",
+                    $this->segmentsTable(),
+                ),
+                [$ownerId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom, $bucketTo],
+                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
+            );
+
+            $this->connection->commit();
+
+            return $segments;
+        } catch (\Throwable $e) {
+            $this->connection->rollBack();
+
+            throw $e;
         }
     }
 
-    public function reconcilePendingOperations(string $projectionId): int
+    public function replaceSegmentsWithMergedSegment(string $projectionId, int $bucketFrom, int $bucketTo, Checkpoint $checkpoint): void
     {
-        $reconciled = 0;
+        $segments = $this->segmentsForRange($projectionId, $bucketFrom, $bucketTo);
+        if ([] === $segments) {
+            throw new \LogicException(sprintf(
+                'Cannot merge [%d-%d] for projection "%s": no matching segments found.',
+                $bucketFrom,
+                $bucketTo,
+                $projectionId,
+            ));
+        }
 
-        do {
-            $progressed = false;
+        $this->assertSegmentsExactlyCoverRange($projectionId, $segments, $bucketFrom, $bucketTo);
 
-            $rows = $this->connection->executeQuery(
-                sprintf(
-                    'SELECT bucket_from, bucket_to, status, pending_operation, checkpoint
-                     FROM %s
-                     WHERE projection_id = ? AND pending_operation IS NOT NULL
-                     ORDER BY bucket_from ASC',
-                    $this->segmentsTable(),
-                ),
-                [$projectionId],
-                [ParameterType::STRING],
-            )->fetchAllAssociative();
-
-            foreach ($rows as $row) {
-                if (($row['pending_operation'] ?? null) === 'split' && 'drained' === $row['status']) {
-                    $this->finalizeSplit(
-                        new ProjectionSegment(
-                            projectionId: $projectionId,
-                            bucketFrom: (int) $row['bucket_from'],
-                            bucketTo: (int) $row['bucket_to'],
-                            status: $row['status'],
-                            pendingOperation: $row['pending_operation'] ?? null,
-                            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-                            wasCreated: false,
-                        ),
-                        Checkpoint::deserialize((string) $row['checkpoint']),
-                    );
-                    ++$reconciled;
-                    $progressed = true;
-
-                    break;
-                }
-
-                if (($row['pending_operation'] ?? null) !== 'merge' || 'drained' !== $row['status']) {
-                    continue;
-                }
-
-                $before = count($rows);
-                $this->finalizeMerge(
-                    new ProjectionSegment(
-                        projectionId: $projectionId,
-                        bucketFrom: (int) $row['bucket_from'],
-                        bucketTo: (int) $row['bucket_to'],
-                        status: $row['status'],
-                        pendingOperation: $row['pending_operation'] ?? null,
-                        checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-                        wasCreated: false,
-                    ),
-                    Checkpoint::deserialize((string) $row['checkpoint']),
-                );
-
-                $after = $this->connection->fetchOne(
-                    sprintf('SELECT count(*) FROM %s WHERE projection_id = ?', $this->segmentsTable()),
-                    [$projectionId],
-                    [ParameterType::STRING],
-                );
-
-                if ((int) $after !== $before) {
-                    ++$reconciled;
-                    $progressed = true;
-
-                    break;
-                }
-            }
-        } while ($progressed);
-
-        return $reconciled;
-    }
-
-    /**
-     * Called by a worker draining for a merge. The last sibling to drain finalizes the merge.
-     */
-    private function finalizeMerge(ProjectionSegment $segment, Checkpoint $checkpoint): void
-    {
-        [$parentFrom, $parentTo, $siblingFrom] = $this->resolveMergeSibling($segment);
         $now = $this->clock->now();
-
         $this->connection->beginTransaction();
 
         try {
             $this->connection->executeStatement(
                 sprintf(
-                    "UPDATE %s
-                     SET status = 'drained', checkpoint = ?, worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ?",
+                    'DELETE FROM %s WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?',
                     $this->segmentsTable(),
                 ),
-                [$checkpoint->serialize(), $now, $segment->projectionId, $segment->bucketFrom],
-                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER],
-            );
-
-            $siblingRow = $this->connection->executeQuery(
-                sprintf(
-                    'SELECT status, checkpoint FROM %s WHERE projection_id = ? AND bucket_from = ? FOR UPDATE',
-                    $this->segmentsTable(),
-                ),
-                [$segment->projectionId, $siblingFrom],
-                [ParameterType::STRING, ParameterType::INTEGER],
-            )->fetchAssociative();
-
-            if (false === $siblingRow || 'drained' !== $siblingRow['status']) {
-                $this->connection->commit();
-
-                return;
-            }
-
-            $siblingCheckpoint = Checkpoint::deserialize((string) $siblingRow['checkpoint']);
-            $parentCheckpoint = $this->minCheckpoint($checkpoint, $siblingCheckpoint);
-
-            // Delete siblings before inserting parent: sibling-A shares bucket_from with the parent row.
-            $this->connection->executeStatement(
-                sprintf(
-                    'DELETE FROM %s WHERE projection_id = ? AND bucket_from IN (?, ?)',
-                    $this->segmentsTable(),
-                ),
-                [$segment->projectionId, $segment->bucketFrom, $siblingFrom],
+                [$projectionId, $bucketFrom, $bucketTo],
                 [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
             );
 
@@ -523,7 +453,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                      VALUES (?, ?, ?, 'available', ?, CAST(? AS TIMESTAMPTZ))",
                     $this->segmentsTable(),
                 ),
-                [$segment->projectionId, $parentFrom, $parentTo, $parentCheckpoint->serialize(), $now],
+                [$projectionId, $bucketFrom, $bucketTo, $checkpoint->serialize(), $now],
                 [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING],
             );
 
@@ -536,13 +466,13 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     }
 
     /**
-     * @return list<array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: null|string}>
+     * @return list<array{bucketFrom: int, bucketTo: int, status: string}>
      */
     public function listSegments(string $projectionId): array
     {
         $rows = $this->connection->executeQuery(
             sprintf(
-                'SELECT bucket_from, bucket_to, status, pending_operation
+                'SELECT bucket_from, bucket_to, status
                  FROM %s WHERE projection_id = ? ORDER BY bucket_from ASC',
                 $this->segmentsTable(),
             ),
@@ -554,7 +484,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             'bucketFrom' => (int) $row['bucket_from'],
             'bucketTo' => (int) $row['bucket_to'],
             'status' => $row['status'],
-            'pendingOperation' => $row['pending_operation'] ?? null,
         ], $rows);
     }
 
@@ -562,11 +491,10 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     {
         $rows = $this->connection->executeQuery(
             sprintf(
-                "SELECT bucket_from, bucket_to, status, pending_operation
+                "SELECT bucket_from, bucket_to, status
                  FROM %s
                  WHERE projection_id = ?
                    AND status = 'available'
-                   AND pending_operation IS NULL
                  ORDER BY bucket_from ASC",
                 $this->segmentsTable(),
             ),
@@ -578,32 +506,28 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             'bucketFrom' => (int) $row['bucket_from'],
             'bucketTo' => (int) $row['bucket_to'],
             'status' => $row['status'],
-            'pendingOperation' => $row['pending_operation'] ?? null,
         ], $rows);
     }
 
-    /** @return array{0: int, 1: int, 2: int} [parentFrom, parentTo, siblingFrom] */
-    private function resolveMergeSibling(ProjectionSegment $segment): array
+    /**
+     * @param list<ProjectionSegment> $segments
+     */
+    private function assertSegmentsExactlyCoverRange(string $projectionId, array $segments, int $bucketFrom, int $bucketTo): void
     {
-        $rangeSize = $segment->bucketTo - $segment->bucketFrom + 1;
-        $parentRangeSize = $rangeSize * 2;
+        usort($segments, static fn (ProjectionSegment $left, ProjectionSegment $right): int => $left->bucketFrom <=> $right->bucketFrom);
 
-        if (0 === $segment->bucketFrom % $parentRangeSize) {
-            $parentFrom = $segment->bucketFrom;
-            $parentTo = $segment->bucketFrom + $parentRangeSize - 1;
-            $siblingFrom = $segment->bucketTo + 1;
-        } else {
-            $parentFrom = $segment->bucketFrom - $rangeSize;
-            $parentTo = $segment->bucketTo;
-            $siblingFrom = $parentFrom;
+        $next = $bucketFrom;
+        foreach ($segments as $segment) {
+            if ($segment->bucketFrom !== $next) {
+                throw new \LogicException(sprintf('Cannot merge [%d-%d] for projection "%s": segments do not cover the range.', $bucketFrom, $bucketTo, $projectionId));
+            }
+
+            $next = $segment->bucketTo + 1;
         }
 
-        return [$parentFrom, $parentTo, $siblingFrom];
-    }
-
-    private function minCheckpoint(Checkpoint $a, Checkpoint $b): Checkpoint
-    {
-        return $a->gapFloor->isAtOrBefore($b->gapFloor) ? $a : $b;
+        if ($next !== $bucketTo + 1) {
+            throw new \LogicException(sprintf('Cannot merge [%d-%d] for projection "%s": segments do not cover the range.', $bucketFrom, $bucketTo, $projectionId));
+        }
     }
 
     private function segmentsTable(): string

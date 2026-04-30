@@ -52,7 +52,6 @@ final readonly class ProjectionCoordinator
 
                     $this->runner->ensureInitialized($runtime);
                     $this->runner->recoverExpiredAssignments($projectionId);
-                    $this->runner->reconcilePendingOperations($projectionId);
                     $this->splitUntilSegmentCount($projectionId, $additionalWorkers + 1);
 
                     foreach ($this->runner->availableSegments($projectionId) as $segment) {
@@ -143,19 +142,15 @@ final readonly class ProjectionCoordinator
             }
 
             $this->runner->splitSegment($projectionId, $candidate['bucketFrom']);
-            $this->runner->reconcilePendingOperations($projectionId);
         }
     }
 
-    /**
-     * @return null|array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: null|string}
-     */
+    /** @return null|array{bucketFrom: int, bucketTo: int, status: string} */
     private function largestSplittableSegment(string $projectionId): ?array
     {
         $candidates = array_filter(
             $this->runner->listSegments($projectionId),
             static fn (array $segment): bool => 'available' === $segment['status']
-                && null === $segment['pendingOperation']
                 && $segment['bucketTo'] > $segment['bucketFrom'],
         );
         usort(

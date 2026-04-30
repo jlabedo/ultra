@@ -124,7 +124,6 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
 
             $segments->ensureInitialized('course_names');
             $segments->splitSegment('course_names', 0);
-            $segments->reconcilePendingOperations('course_names');
             $activity->bump('course_names', $leftBucket);
             $activity->bump('course_names', $rightBucket);
 

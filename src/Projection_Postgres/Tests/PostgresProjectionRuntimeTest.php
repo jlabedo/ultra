@@ -243,7 +243,6 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
             $runner->ensureInitialized($runtime);
             $segmentRepository->splitSegment('course_names', 0);
-            $segmentRepository->reconcilePendingOperations('course_names');
 
             $segments = $segmentRepository->listSegments('course_names');
 
@@ -284,19 +283,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
             $runner->ensureInitialized($runtime);
             $segmentRepository->splitSegment('course_names', 0);
-            $segmentRepository->reconcilePendingOperations('course_names');
-            $segmentRepository->requestMerge('course_names', 0, 255);
-
-            $segments = $segmentRepository->listSegments('course_names');
-
-            self::assertCount(2, $segments);
-
-            foreach ($segments as $segment) {
-                self::assertSame('drained', $segment['status']);
-                self::assertSame('merge', $segment['pendingOperation']);
-            }
-
-            $segmentRepository->reconcilePendingOperations('course_names');
+            $runner->mergeSegments($runtime, 0, 255, 'coordinator-1');
 
             $segments = $segmentRepository->listSegments('course_names');
 
@@ -307,7 +294,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
         });
     }
 
-    public function test_draining_split_is_left_for_reconciliation_after_the_worker_finishes(): void
+    public function test_active_split_is_taken_from_the_worker_immediately(): void
     {
         $this->withPostgresProjectionRuntime(function (
             Connection $connection,
@@ -341,12 +328,11 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
             $segments = $segmentRepository->listSegments('course_names');
 
-            self::assertCount(1, $segments);
-            self::assertSame('draining', $segments[0]['status']);
-            self::assertSame('split', $segments[0]['pendingOperation']);
+            self::assertCount(2, $segments);
+            self::assertSame(0, $segments[0]['bucketFrom']);
+            self::assertSame(128, $segments[1]['bucketFrom']);
 
             $segmentRepository->completeAssignedBatch($segment, \Ultra\EventStore\Checkpoint::beginning(), 'worker-1', true);
-            $segmentRepository->reconcilePendingOperations('course_names');
 
             $segments = $segmentRepository->listSegments('course_names');
 

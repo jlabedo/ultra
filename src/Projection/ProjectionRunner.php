@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Projection;
 
+use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
 
@@ -22,27 +23,65 @@ final readonly class ProjectionRunner
         return $this->segmentRepository->recoverExpiredAssignments($projectionId);
     }
 
-    public function reconcilePendingOperations(string $projectionId): int
-    {
-        return $this->segmentRepository->reconcilePendingOperations($projectionId);
-    }
-
     public function splitSegment(string $projectionId, int $bucketFrom): void
     {
         $this->segmentRepository->splitSegment($projectionId, $bucketFrom);
     }
 
-    /**
-     * @return list<array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: null|string}>
-     */
+    public function mergeSegments(ProjectionRuntime $runtime, int $bucketFrom, int $bucketTo, string $ownerId, int $limit = 100): void
+    {
+        $projectionId = $runtime->projectionId();
+        $segments = $this->segmentRepository->takeSegmentsForRange($projectionId, $bucketFrom, $bucketTo, $ownerId);
+        if ([] === $segments) {
+            throw new \LogicException(sprintf(
+                'Cannot merge [%d-%d] for projection "%s": no matching segments found.',
+                $bucketFrom,
+                $bucketTo,
+                $projectionId,
+            ));
+        }
+
+        $targetCheckpoint = $this->mergeCheckpoint(...array_map(static fn (ProjectionSegment $segment): Checkpoint => $segment->checkpoint, $segments));
+
+        foreach ($segments as $segment) {
+            $checkpoint = $segment->checkpoint;
+            $query = $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
+
+            while ($checkpoint->serialize() !== $targetCheckpoint->serialize()) {
+                $result = $this->eventStore->load($query, $checkpoint, $targetCheckpoint, $limit);
+                $this->transactionManager->transactional(function () use ($runtime, $result): void {
+                    foreach ($result->events as $event) {
+                        $runtime->apply($event);
+                    }
+
+                    $runtime->flush();
+                });
+
+                if ($result->checkpoint->serialize() === $checkpoint->serialize()) {
+                    throw new \LogicException(sprintf(
+                        'Projection merge for "%s" [%d-%d] could not advance segment [%d-%d] to the target checkpoint.',
+                        $projectionId,
+                        $bucketFrom,
+                        $bucketTo,
+                        $segment->bucketFrom,
+                        $segment->bucketTo,
+                    ));
+                }
+
+                $checkpoint = $result->checkpoint;
+            }
+        }
+
+        $this->segmentRepository->replaceSegmentsWithMergedSegment($projectionId, $bucketFrom, $bucketTo, $targetCheckpoint);
+    }
+
+    /** @return list<array{bucketFrom: int, bucketTo: int, status: string}> */
     public function listSegments(string $projectionId): array
     {
         return $this->segmentRepository->listSegments($projectionId);
     }
 
-    /**
-     * @return list<array{bucketFrom: int, bucketTo: int, status: string, pendingOperation: null|string}>
-     */
+    /** @return list<array{bucketFrom: int, bucketTo: int, status: string}> */
     public function availableSegments(string $projectionId): array
     {
         return $this->segmentRepository->availableSegments($projectionId);
@@ -115,5 +154,24 @@ final readonly class ProjectionRunner
 
             throw $e;
         }
+    }
+
+    private function mergeCheckpoint(Checkpoint ...$checkpoints): Checkpoint
+    {
+        $highest = $checkpoints[0] ?? Checkpoint::beginning();
+
+        foreach ($checkpoints as $checkpoint) {
+            $comparison = $highest->gapFloor->compareTo($checkpoint->gapFloor);
+            if ($comparison < 0) {
+                $highest = $checkpoint;
+                continue;
+            }
+
+            if (0 === $comparison) {
+                $highest = new Checkpoint($highest->gapFloor, [...$highest->gapSeqNos, ...$checkpoint->gapSeqNos]);
+            }
+        }
+
+        return $highest;
     }
 }
