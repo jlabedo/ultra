@@ -18,9 +18,9 @@ final readonly class ProjectionRunner
     ) {
     }
 
-    public function recoverExpiredAssignments(string $projectionId): int
+    public function recoverExpiredClaims(string $projectionId): int
     {
-        return $this->segmentRepository->recoverExpiredAssignments($projectionId);
+        return $this->segmentRepository->recoverExpiredClaims($projectionId);
     }
 
     public function splitSegment(string $projectionId, int $bucketFrom): void
@@ -87,9 +87,9 @@ final readonly class ProjectionRunner
         return $this->segmentRepository->availableSegments($projectionId);
     }
 
-    public function assignSegment(string $projectionId, int $bucketFrom, string $workerId): ?ProjectionWorkAssignment
+    public function claimSegment(string $projectionId, int $bucketFrom, string $workerId): ?ProjectionSegment
     {
-        return $this->segmentRepository->assignSegment($projectionId, $bucketFrom, $workerId);
+        return $this->segmentRepository->claimSegment($projectionId, $bucketFrom, $workerId);
     }
 
     public function ensureInitialized(ProjectionRuntime $runtime): void
@@ -103,21 +103,23 @@ final readonly class ProjectionRunner
         });
     }
 
-    public function runAssignedOnce(
+    public function runClaimedOnce(
         ProjectionRuntime $runtime,
-        ProjectionWorkAssignment $assignment,
+        string $projectionId,
+        int $bucketFrom,
+        string $workerId,
         int $limit = 100,
     ): ProjectionRunResult {
         $this->ensureInitialized($runtime);
 
-        $segment = $this->segmentRepository->claimAssignedSegment($assignment);
+        $segment = $this->segmentRepository->claimSegment($projectionId, $bucketFrom, $workerId);
         if (null === $segment) {
             return new ProjectionRunResult(0, false, null);
         }
 
         try {
             if (null === $this->activityRepository) {
-                throw new \LogicException('ProjectionRunner requires a bucket activity repository to run assigned projection work.');
+                throw new \LogicException('ProjectionRunner requires a bucket activity repository to run claimed projection work.');
             }
 
             $seenCounters = [];
@@ -129,13 +131,13 @@ final readonly class ProjectionRunner
             $result = $this->eventStore->load($query, $segment->checkpoint, null, $limit);
             $caughtUp = count($result->events) < $limit;
 
-            $this->transactionManager->transactional(function () use ($runtime, $segment, $result, $assignment, $caughtUp, $seenCounters): void {
+            $this->transactionManager->transactional(function () use ($runtime, $segment, $result, $workerId, $caughtUp, $seenCounters): void {
                 foreach ($result->events as $event) {
                     $runtime->apply($event);
                 }
 
                 $runtime->flush();
-                $this->segmentRepository->completeAssignedBatch($segment, $result->checkpoint, $assignment->workerId, $caughtUp);
+                $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
 
                 if ($caughtUp && [] !== $seenCounters) {
                     $this->activityRepository?->decrementSeenBuckets($segment->projectionId, $seenCounters);
@@ -150,7 +152,7 @@ final readonly class ProjectionRunner
                 acknowledgedBuckets: $caughtUp ? count($seenCounters) : 0,
             );
         } catch (\Throwable $e) {
-            $this->segmentRepository->abandonAssignedSegment($segment, $assignment->workerId);
+            $this->segmentRepository->releaseClaimedSegment($segment, $workerId);
 
             throw $e;
         }

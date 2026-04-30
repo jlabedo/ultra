@@ -122,10 +122,10 @@ Important details:
 Each row is effectively a generation signal:
 
 - `counter` is bumped when the bucket is touched again
-- workers decrement the exact pending counter value they observed after their assigned segment catches up
+- workers decrement the exact pending counter value they observed after their claimed segment catches up
 
 The coordinator asks for global `affectedBuckets()` to find stale projections, maps those hints to available
-segments, and durably assigns only segments that still have pending bucket activity. Bucket activity is a liveness
+segments, and durably claims only segments that still have pending bucket activity. Bucket activity is a liveness
 signal; segments are the scheduling and checkpointing unit.
 
 ### Global Coordinator
@@ -141,9 +141,9 @@ It does not wake per projection. Instead it:
 5. ensures each touched projection is initialized
 6. splits available segments until the projection has enough segments for the requested workers plus itself
 7. maps pending bucket activity to affected segments
-8. durably assigns affected segments to itself or assignment-specific workers
-9. processes one local assignment itself through `ProjectionRunner`
-10. workers decrement the bucket counters they observed only after their assigned segment catches up
+8. durably claims affected segments for itself or activated workers
+9. processes one local claim itself through `ProjectionRunner`
+10. workers decrement the bucket counters they observed only after their claimed segment catches up
 11. exits when there is no work or no productive progress
 
 This is important: the coordinator is not only a scheduler. It is also a worker and always participates in processing.
@@ -200,8 +200,8 @@ At a high level, the runtime works like this:
 2. `ProjectionActivityRecorder` records touched `(projectionId, bucket)` pairs.
 3. A single global coordinator wake-up is enqueued.
 4. A worker becomes leader by acquiring the coordinator lease.
-5. The leader reads affected buckets, assigns affected segments, optionally wakes followers, and processes one assignment itself.
-6. `ProjectionRunner` claims the assigned segment from the segment repository and replays events from checkpoints.
+5. The leader reads affected buckets, claims affected segments, optionally wakes followers, and processes one claim itself.
+6. `ProjectionRunner` renews the claimed segment lease and replays events from checkpoints.
 7. Caught-up workers decrement the bucket counters they observed, and the loop continues until there is no productive work left.
 
 The key design choice is:

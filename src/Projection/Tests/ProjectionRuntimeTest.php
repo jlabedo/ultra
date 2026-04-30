@@ -84,7 +84,7 @@ final class ProjectionRuntimeTest extends TestCase
         self::assertCount(1, $pending);
         self::assertSame(1, $pending[0]->counter);
         self::assertSame(1, $activator->workSignals());
-        self::assertSame([], $activator->workerAssignments());
+        self::assertSame([], $activator->workerClaims());
     }
 
     public function test_activity_recorder_ignores_events_missing_the_partition_dimension(): void

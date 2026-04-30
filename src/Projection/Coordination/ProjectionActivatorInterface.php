@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Coordination;
 
-use Ultra\Projection\ProjectionWorkAssignment;
-
 interface ProjectionActivatorInterface
 {
     public function signalWorkAvailable(): void;
 
-    public function activateWorker(ProjectionWorkAssignment $assignment): void;
+    public function activateWorker(string $projectionId, int $bucketFrom, string $workerId): void;
 }

@@ -104,7 +104,7 @@ final class ProjectionBundle extends Bundle
                 new Reference(ProjectionCoordinator::class),
             ])
             ->addTag('ultra.message_handler', ['method' => 'handleWakeProjectionCoordinator'])
-            ->addTag('ultra.message_handler', ['method' => 'handleRunProjectionAssignment'])
+            ->addTag('ultra.message_handler', ['method' => 'handleRunProjectionSegment'])
         ;
     }
 }

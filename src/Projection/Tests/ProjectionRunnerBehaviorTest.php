@@ -26,7 +26,6 @@ use Ultra\Projection\NoOpProjectionTransactionManager;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
-use Ultra\Projection\ProjectionWorkAssignment;
 
 final class CallbackEventStore implements EventStore
 {
@@ -215,7 +214,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame([], $segments->listSegments('failing_initializer_projection'));
     }
 
-    public function test_run_assigned_once_claims_only_its_own_assignment(): void
+    public function test_run_claimed_once_claims_only_its_own_worker_segment(): void
     {
         $runtime = new ProjectionRuntime(new TrackingProjection(), new UltraNormalizer());
         $segments = new InMemoryProjectionSegmentRepository();
@@ -223,20 +222,20 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $runner = new ProjectionRunner(new InMemoryEventStore(), $segments, activityRepository: $activity);
 
         $runner->ensureInitialized($runtime);
-        $assignment = $runner->assignSegment('tracking_projection', 0, 'worker-1');
+        self::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
 
-        self::assertNotNull($assignment);
-
-        $result = $runner->runAssignedOnce(
+        $result = $runner->runClaimedOnce(
             $runtime,
-            new ProjectionWorkAssignment($assignment->assignmentId, 'tracking_projection', 0, 'worker-2'),
+            'tracking_projection',
+            0,
+            'worker-2',
         );
 
         self::assertFalse($result->claimedSegment);
         self::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]['workerId']);
     }
 
-    public function test_run_assigned_once_keeps_bucket_activity_pending_until_the_assignment_catches_up(): void
+    public function test_run_claimed_once_keeps_bucket_activity_pending_until_the_claim_catches_up(): void
     {
         $projection = new TrackingProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
@@ -253,11 +252,9 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $activity->bump('tracking_projection', $bucket);
 
         $runner->ensureInitialized($runtime);
-        $assignment = $runner->assignSegment('tracking_projection', 0, 'worker-1');
+        self::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
 
-        self::assertNotNull($assignment);
-
-        $firstResult = $runner->runAssignedOnce($runtime, $assignment, limit: 1);
+        $firstResult = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
 
         self::assertSame(1, $firstResult->processedEvents);
         self::assertFalse($firstResult->caughtUp);
@@ -265,7 +262,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]['workerId']);
         self::assertCount(1, $activity->pendingBucketsForSegment('tracking_projection', 0, 255));
 
-        $secondResult = $runner->runAssignedOnce($runtime, $assignment, limit: 10);
+        $secondResult = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 10);
 
         self::assertSame(1, $secondResult->processedEvents);
         self::assertTrue($secondResult->caughtUp);
@@ -275,7 +272,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame(['course-1' => 'Advanced Math'], $projection->names);
     }
 
-    public function test_run_assigned_once_decrements_only_the_seen_bucket_counters_after_a_concurrent_bump(): void
+    public function test_run_claimed_once_decrements_only_the_seen_bucket_counters_after_a_concurrent_bump(): void
     {
         $projection = new TrackingProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
@@ -297,11 +294,9 @@ final class ProjectionRunnerBehaviorTest extends TestCase
             activityRepository: $activity,
         );
         $runner->ensureInitialized($runtime);
-        $assignment = $runner->assignSegment('tracking_projection', 0, 'worker-1');
+        self::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
 
-        self::assertNotNull($assignment);
-
-        $result = $runner->runAssignedOnce($runtime, $assignment, limit: 10);
+        $result = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 10);
         $pending = $activity->pendingBucketsForSegment('tracking_projection', 0, 255);
 
         self::assertTrue($result->caughtUp);
@@ -310,7 +305,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame(1, $pending[0]->counter);
     }
 
-    public function test_run_assigned_once_does_not_decrement_bucket_activity_when_processing_fails(): void
+    public function test_run_claimed_once_does_not_decrement_bucket_activity_when_processing_fails(): void
     {
         $runtime = new ProjectionRuntime(new FailingTrackingProjection(), new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
@@ -325,12 +320,10 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $activity->bump('failing_tracking_projection', $bucket);
 
         $runner->ensureInitialized($runtime);
-        $assignment = $runner->assignSegment('failing_tracking_projection', 0, 'worker-1');
-
-        self::assertNotNull($assignment);
+        self::assertNotNull($runner->claimSegment('failing_tracking_projection', 0, 'worker-1'));
 
         try {
-            $runner->runAssignedOnce($runtime, $assignment, limit: 10);
+            $runner->runClaimedOnce($runtime, 'failing_tracking_projection', 0, 'worker-1', limit: 10);
             self::fail('Expected the projection handler to throw.');
         } catch (\RuntimeException $e) {
             self::assertSame('Projection handler failed.', $e->getMessage());
@@ -358,10 +351,9 @@ final class ProjectionRunnerBehaviorTest extends TestCase
 
         $runner->ensureInitialized($runtime);
         $runner->splitSegment('tracking_projection', 0);
-        $rightAssignment = $runner->assignSegment('tracking_projection', 128, 'worker-right');
-        self::assertNotNull($rightAssignment);
+        self::assertNotNull($runner->claimSegment('tracking_projection', 128, 'worker-right'));
 
-        $runner->runAssignedOnce($runtime, $rightAssignment, limit: 10);
+        $runner->runClaimedOnce($runtime, 'tracking_projection', 128, 'worker-right', limit: 10);
 
         self::assertSame([$rightCourseId => 'Science'], $projection->names);
 
@@ -372,9 +364,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
             $leftCourseId => 'Math',
         ], $projection->names);
 
-        $mergedAssignment = $runner->assignSegment('tracking_projection', 0, 'worker-merged');
-        self::assertNotNull($mergedAssignment);
-        $merged = $segments->claimAssignedSegment($mergedAssignment);
+        $merged = $runner->claimSegment('tracking_projection', 0, 'worker-merged');
         self::assertNotNull($merged);
         self::assertSame(2, $merged->checkpoint->gapFloor->value);
     }
@@ -387,23 +377,17 @@ final class ProjectionRunnerBehaviorTest extends TestCase
 
         $runner->ensureInitialized($runtime);
         $runner->splitSegment('tracking_projection', 0);
-        $leftAssignment = $runner->assignSegment('tracking_projection', 0, 'worker-left');
-        $rightAssignment = $runner->assignSegment('tracking_projection', 128, 'worker-right');
-        self::assertNotNull($leftAssignment);
-        self::assertNotNull($rightAssignment);
-        $left = $segments->claimAssignedSegment($leftAssignment);
-        $right = $segments->claimAssignedSegment($rightAssignment);
+        $left = $runner->claimSegment('tracking_projection', 0, 'worker-left');
+        $right = $runner->claimSegment('tracking_projection', 128, 'worker-right');
         self::assertNotNull($left);
         self::assertNotNull($right);
 
-        $segments->completeAssignedBatch($left, new Checkpoint(new \Ultra\EventStore\Sequence(10), [new \Ultra\EventStore\Sequence(12)]), 'worker-left', true);
-        $segments->completeAssignedBatch($right, new Checkpoint(new \Ultra\EventStore\Sequence(10), [new \Ultra\EventStore\Sequence(13)]), 'worker-right', true);
+        $segments->completeClaimedSegment($left, new Checkpoint(new \Ultra\EventStore\Sequence(10), [new \Ultra\EventStore\Sequence(12)]), 'worker-left', true);
+        $segments->completeClaimedSegment($right, new Checkpoint(new \Ultra\EventStore\Sequence(10), [new \Ultra\EventStore\Sequence(13)]), 'worker-right', true);
 
         $runner->mergeSegments($runtime, 0, 255, 'coordinator-1');
 
-        $mergedAssignment = $runner->assignSegment('tracking_projection', 0, 'worker-merged');
-        self::assertNotNull($mergedAssignment);
-        $merged = $segments->claimAssignedSegment($mergedAssignment);
+        $merged = $runner->claimSegment('tracking_projection', 0, 'worker-merged');
         self::assertNotNull($merged);
         self::assertSame(10, $merged->checkpoint->gapFloor->value);
         self::assertSame([12, 13], $merged->checkpoint->gapSeqNoValues());

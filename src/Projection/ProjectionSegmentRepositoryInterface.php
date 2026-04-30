@@ -11,19 +11,14 @@ interface ProjectionSegmentRepositoryInterface
 {
     public function ensureInitialized(string $projectionId): bool;
 
-    public function assignSegment(
+    public function claimSegment(
         string $projectionId,
         int $bucketFrom,
         string $workerId,
         Duration $leaseDuration = new Duration(seconds: 60),
-    ): ?ProjectionWorkAssignment;
-
-    public function claimAssignedSegment(
-        ProjectionWorkAssignment $assignment,
-        Duration $leaseDuration = new Duration(seconds: 60),
     ): ?ProjectionSegment;
 
-    public function completeAssignedBatch(
+    public function completeClaimedSegment(
         ProjectionSegment $segment,
         Checkpoint $checkpoint,
         string $workerId,
@@ -31,9 +26,9 @@ interface ProjectionSegmentRepositoryInterface
         Duration $leaseDuration = new Duration(seconds: 60),
     ): void;
 
-    public function abandonAssignedSegment(ProjectionSegment $segment, string $workerId): void;
+    public function releaseClaimedSegment(ProjectionSegment $segment, string $workerId): void;
 
-    public function recoverExpiredAssignments(string $projectionId): int;
+    public function recoverExpiredClaims(string $projectionId): int;
 
     public function splitSegment(string $projectionId, int $bucketFrom): void;
 

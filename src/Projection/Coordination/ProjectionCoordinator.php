@@ -6,7 +6,6 @@ namespace Ultra\Projection\Coordination;
 
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
-use Ultra\Projection\ProjectionWorkAssignment;
 
 final readonly class ProjectionCoordinator
 {
@@ -45,13 +44,13 @@ final readonly class ProjectionCoordinator
                 $additionalWorkers = $this->scalingPolicy->additionalWorkersRequested($affectedBuckets);
                 $localAssignments = [];
                 $remoteAssignments = 0;
-                $assignedAny = false;
+                $claimedAny = false;
 
                 foreach ($this->groupByProjection($affectedBuckets) as $projectionId => $_projectionBuckets) {
                     $runtime = $this->catalog->runtime($projectionId);
 
                     $this->runner->ensureInitialized($runtime);
-                    $this->runner->recoverExpiredAssignments($projectionId);
+                    $this->runner->recoverExpiredClaims($projectionId);
                     $this->splitUntilSegmentCount($projectionId, $additionalWorkers + 1);
 
                     foreach ($this->runner->availableSegments($projectionId) as $segment) {
@@ -65,34 +64,33 @@ final readonly class ProjectionCoordinator
                         }
 
                         if ([] === $localAssignments) {
-                            $assignmentWorkerId = $workerId;
+                            $claimWorkerId = $workerId;
                         } elseif ($remoteAssignments < $additionalWorkers) {
-                            $assignmentWorkerId = $this->workerIdFor($workerId, $projectionId, $segment['bucketFrom']);
+                            $claimWorkerId = $this->workerIdFor($workerId, $projectionId, $segment['bucketFrom']);
                         } else {
                             continue;
                         }
 
-                        $assignment = $this->runner->assignSegment($projectionId, $segment['bucketFrom'], $assignmentWorkerId);
-                        if (null === $assignment) {
+                        $claimedSegment = $this->runner->claimSegment($projectionId, $segment['bucketFrom'], $claimWorkerId);
+                        if (null === $claimedSegment) {
                             continue;
                         }
 
-                        $assignedAny = true;
-                        if ($assignment->workerId === $workerId && [] === $localAssignments) {
-                            $localAssignments[] = [$runtime, $assignment];
+                        $claimedAny = true;
+                        if ($claimWorkerId === $workerId && [] === $localAssignments) {
+                            $localAssignments[] = [$runtime, $projectionId, $segment['bucketFrom'], $workerId];
                             continue;
                         }
 
-                        $this->activator->activateWorker($assignment);
+                        $this->activator->activateWorker($projectionId, $segment['bucketFrom'], $claimWorkerId);
                         ++$remoteAssignments;
                         ++$requestedWorkerActivations;
                     }
                 }
 
-                foreach ($localAssignments as [$runtime, $assignment]) {
-                    /** @var ProjectionWorkAssignment $assignment */
+                foreach ($localAssignments as [$runtime, $projectionId, $bucketFrom, $claimWorkerId]) {
                     do {
-                        $result = $this->runner->runAssignedOnce($runtime, $assignment, $batchSize);
+                        $result = $this->runner->runClaimedOnce($runtime, $projectionId, $bucketFrom, $claimWorkerId, $batchSize);
                         if (!$result->claimedSegment) {
                             break;
                         }
@@ -102,7 +100,7 @@ final readonly class ProjectionCoordinator
                     } while (!$result->caughtUp);
                 }
 
-                if (!$assignedAny && [] === $localAssignments) {
+                if (!$claimedAny && [] === $localAssignments) {
                     break;
                 }
             }

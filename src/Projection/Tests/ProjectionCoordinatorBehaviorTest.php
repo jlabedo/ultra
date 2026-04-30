@@ -204,7 +204,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertSame(2, $result->requestedWorkerActivations);
         self::assertSame(['alpha' => 'Math'], $projection->names);
         self::assertCount(3, $segments->listSegments('coordinator_projection'));
-        self::assertCount(2, $activator->workerAssignments());
+        self::assertCount(2, $activator->workerClaims());
         self::assertFalse($leases->hasLiveCoordinator());
     }
 
@@ -239,7 +239,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertSame(0, $result->acknowledgedBuckets);
         self::assertSame(0, $result->requestedWorkerActivations);
         self::assertSame([], $projection->names);
-        self::assertSame([], $activator->workerAssignments());
+        self::assertSame([], $activator->workerClaims());
     }
 
     public function test_coordinator_continues_to_later_buckets_when_an_earlier_bucket_cannot_be_claimed(): void
@@ -264,7 +264,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertLessThan(128, $leftBucket);
         self::assertGreaterThanOrEqual(128, $rightBucket);
 
-        self::assertNotNull($segments->assignSegment('coordinator_projection', 0, 'other-worker'));
+        self::assertNotNull($segments->claimSegment('coordinator_projection', 0, 'other-worker'));
 
         $eventStore->append([
             new Event(
@@ -295,7 +295,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertSame($leftBucket, $remaining[0]->bucket);
     }
 
-    public function test_coordinator_processes_its_local_assignment_until_the_segment_catches_up(): void
+    public function test_coordinator_processes_its_local_claim_until_the_segment_catches_up(): void
     {
         $projection = new CoordinatorProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
@@ -352,7 +352,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertSame(1, $leases->releaseCalls);
         self::assertSame(1, $activity->affectedBucketsCalls);
         self::assertSame(0, $activity->pendingBucketsCalls);
-        self::assertSame([], $activator->workerAssignments());
+        self::assertSame([], $activator->workerClaims());
     }
 
     public function test_coordinator_stops_after_the_first_unproductive_cycle_when_all_pending_buckets_are_unclaimable(): void
@@ -363,7 +363,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $segments->ensureInitialized('coordinator_projection');
 
         $bucket = BucketHasher::bucketFor('alpha');
-        self::assertNotNull($segments->assignSegment('coordinator_projection', 0, 'other-worker'));
+        self::assertNotNull($segments->claimSegment('coordinator_projection', 0, 'other-worker'));
 
         $innerActivity = new InMemoryProjectionBucketActivityRepository();
         $innerActivity->bump('coordinator_projection', $bucket);

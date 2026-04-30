@@ -29,13 +29,18 @@ final readonly class ProjectionMessageHandler
 
     #[Handles]
     #[Asynchronous]
-    public function handleRunProjectionAssignment(RunProjectionAssignment $message): void
+    public function handleRunProjectionSegment(RunProjectionSegment $message): void
     {
         $runtime = $this->catalog->runtime($message->projectionId);
-        $assignment = $message->toAssignment();
 
         for ($cycle = 0; $cycle < $this->maxCycles; ++$cycle) {
-            $result = $this->runner->runAssignedOnce($runtime, $assignment, $this->batchSize);
+            $result = $this->runner->runClaimedOnce(
+                $runtime,
+                $message->projectionId,
+                $message->bucketFrom,
+                $message->workerId,
+                $this->batchSize,
+            );
             if (!$result->claimedSegment || $result->caughtUp) {
                 return;
             }

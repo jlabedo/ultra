@@ -2,12 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection;
+namespace Ultra\Projection\MessageHandling;
 
-final readonly class ProjectionWorkAssignment
+final readonly class RunProjectionSegment
 {
     public function __construct(
-        public string $assignmentId,
         public string $projectionId,
         public int $bucketFrom,
         public string $workerId,

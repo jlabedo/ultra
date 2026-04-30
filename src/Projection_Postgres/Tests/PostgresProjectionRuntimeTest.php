@@ -116,10 +116,9 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             );
 
             $runner->ensureInitialized($runtime);
-            $assignment = $runner->assignSegment('course_names', 0, 'worker-1');
-            self::assertNotNull($assignment);
+            self::assertNotNull($runner->claimSegment('course_names', 0, 'worker-1'));
 
-            $result = $runner->runAssignedOnce($runtime, $assignment);
+            $result = $runner->runClaimedOnce($runtime, 'course_names', 0, 'worker-1');
 
             self::assertSame(2, $result->processedEvents);
             self::assertTrue($result->caughtUp);
@@ -163,9 +162,8 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             );
 
             $runner->ensureInitialized($runtime);
-            $assignment = $runner->assignSegment('course_names', 0, 'worker-1');
-            self::assertNotNull($assignment);
-            self::assertSame(1, $runner->runAssignedOnce($runtime, $assignment)->processedEvents);
+            self::assertNotNull($runner->claimSegment('course_names', 0, 'worker-1'));
+            self::assertSame(1, $runner->runClaimedOnce($runtime, 'course_names', 0, 'worker-1')->processedEvents);
 
             $store->append([
                 new Event(
@@ -175,9 +173,8 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
                 ),
             ]);
 
-            $assignment = $runner->assignSegment('course_names', 0, 'worker-1');
-            self::assertNotNull($assignment);
-            self::assertSame(1, $runner->runAssignedOnce($runtime, $assignment)->processedEvents);
+            self::assertNotNull($runner->claimSegment('course_names', 0, 'worker-1'));
+            self::assertSame(1, $runner->runClaimedOnce($runtime, 'course_names', 0, 'worker-1')->processedEvents);
 
             $row = $connection->fetchAssociative(
                 sprintf('SELECT name FROM %s WHERE course_id = ?', $tableName),
@@ -203,16 +200,16 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
         ) use ($clock): void {
             $segmentRepository->ensureInitialized('course_names');
 
-            self::assertNotNull($segmentRepository->assignSegment('course_names', 0, 'worker-stale', Duration::seconds(30)));
+            self::assertNotNull($segmentRepository->claimSegment('course_names', 0, 'worker-stale', Duration::seconds(30)));
             $clock->sleep(Duration::seconds(31));
 
-            $recovered = $segmentRepository->recoverExpiredAssignments('course_names');
+            $recovered = $segmentRepository->recoverExpiredClaims('course_names');
 
             self::assertSame(1, $recovered);
 
-            $assignment = $segmentRepository->assignSegment('course_names', 0, 'worker-new');
+            $segment = $segmentRepository->claimSegment('course_names', 0, 'worker-new');
 
-            self::assertNotNull($assignment);
+            self::assertNotNull($segment);
         }, $clock);
     }
 
@@ -320,9 +317,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             );
 
             $runner->ensureInitialized($runtime);
-            $assignment = $runner->assignSegment('course_names', 0, 'worker-1');
-            self::assertNotNull($assignment);
-            $segment = $segmentRepository->claimAssignedSegment($assignment);
+            $segment = $runner->claimSegment('course_names', 0, 'worker-1');
             self::assertNotNull($segment);
             $segmentRepository->splitSegment('course_names', 0);
 
@@ -332,7 +327,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             self::assertSame(0, $segments[0]['bucketFrom']);
             self::assertSame(128, $segments[1]['bucketFrom']);
 
-            $segmentRepository->completeAssignedBatch($segment, \Ultra\EventStore\Checkpoint::beginning(), 'worker-1', true);
+            $segmentRepository->completeClaimedSegment($segment, \Ultra\EventStore\Checkpoint::beginning(), 'worker-1', true);
 
             $segments = $segmentRepository->listSegments('course_names');
 

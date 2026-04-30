@@ -44,13 +44,11 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         ], $repository->listSegments('courses'));
     }
 
-    public function test_split_of_an_active_assignment_is_taken_from_the_worker_immediately(): void
+    public function test_split_of_an_active_claim_is_taken_from_the_worker_immediately(): void
     {
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
-        $assignment = $repository->assignSegment('courses', 0, 'worker-1');
-        self::assertNotNull($assignment);
-        $segment = $repository->claimAssignedSegment($assignment);
+        $segment = $repository->claimSegment('courses', 0, 'worker-1');
         self::assertNotNull($segment);
 
         $repository->splitSegment('courses', 0);
@@ -60,7 +58,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
             ['bucketFrom' => 128, 'bucketTo' => 255, 'workerId' => null],
         ], $repository->listSegments('courses'));
 
-        $repository->completeAssignedBatch($segment, Checkpoint::at(new Sequence(5)), 'worker-1', true);
+        $repository->completeClaimedSegment($segment, Checkpoint::at(new Sequence(5)), 'worker-1', true);
 
         self::assertSame([
             ['bucketFrom' => 0, 'bucketTo' => 127, 'workerId' => null],
@@ -68,17 +66,13 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         ], $repository->listSegments('courses'));
     }
 
-    public function test_take_segments_for_range_steals_active_assignments_before_merge_replacement(): void
+    public function test_take_segments_for_range_steals_active_claims_before_merge_replacement(): void
     {
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
         $repository->splitSegment('courses', 0);
-        $leftAssignment = $repository->assignSegment('courses', 0, 'worker-left');
-        $rightAssignment = $repository->assignSegment('courses', 128, 'worker-right');
-        self::assertNotNull($leftAssignment);
-        self::assertNotNull($rightAssignment);
-        $left = $repository->claimAssignedSegment($leftAssignment);
-        $right = $repository->claimAssignedSegment($rightAssignment);
+        $left = $repository->claimSegment('courses', 0, 'worker-left');
+        $right = $repository->claimSegment('courses', 128, 'worker-right');
         self::assertNotNull($left);
         self::assertNotNull($right);
 
@@ -87,16 +81,14 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         self::assertCount(2, $taken);
 
         $repository->replaceSegmentsWithMergedSegment('courses', 0, 255, Checkpoint::at(new Sequence(10)));
-        $repository->completeAssignedBatch($left, Checkpoint::at(new Sequence(5)), 'worker-left', true);
-        $repository->completeAssignedBatch($right, Checkpoint::at(new Sequence(7)), 'worker-right', true);
+        $repository->completeClaimedSegment($left, Checkpoint::at(new Sequence(5)), 'worker-left', true);
+        $repository->completeClaimedSegment($right, Checkpoint::at(new Sequence(7)), 'worker-right', true);
 
         self::assertSame([
             ['bucketFrom' => 0, 'bucketTo' => 255, 'workerId' => null],
         ], $repository->listSegments('courses'));
 
-        $assignment = $repository->assignSegment('courses', 0, 'worker-merged');
-        self::assertNotNull($assignment);
-        $merged = $repository->claimAssignedSegment($assignment);
+        $merged = $repository->claimSegment('courses', 0, 'worker-merged');
         self::assertNotNull($merged);
         self::assertSame(10, $merged->checkpoint->gapFloor->value);
     }
@@ -112,13 +104,13 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         $repository->replaceSegmentsWithMergedSegment('courses', 64, 255, Checkpoint::beginning());
     }
 
-    public function test_assign_segment_returns_null_when_the_segment_is_not_available(): void
+    public function test_claim_segment_returns_null_when_the_segment_is_not_available(): void
     {
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
 
-        self::assertNotNull($repository->assignSegment('courses', 0, 'worker-1'));
-        self::assertNull($repository->assignSegment('courses', 0, 'worker-2'));
+        self::assertNotNull($repository->claimSegment('courses', 0, 'worker-1'));
+        self::assertNull($repository->claimSegment('courses', 0, 'worker-2'));
     }
 
     public function test_projection_segment_exposes_its_state(): void
@@ -132,17 +124,17 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         self::assertFalse($segment->wasCreated);
     }
 
-    public function test_expired_assignments_are_recovered_against_the_injected_clock(): void
+    public function test_expired_claims_are_recovered_against_the_injected_clock(): void
     {
         $clock = new StatickClock(new \DateTimeImmutable('2024-01-01T00:00:00+00:00'));
         $repository = new InMemoryProjectionSegmentRepository($clock);
         $repository->ensureInitialized('courses');
 
-        self::assertNotNull($repository->assignSegment('courses', 0, 'worker-1', Duration::seconds(30)));
+        self::assertNotNull($repository->claimSegment('courses', 0, 'worker-1', Duration::seconds(30)));
 
         $clock->sleep(Duration::seconds(31));
 
-        self::assertSame(1, $repository->recoverExpiredAssignments('courses'));
-        self::assertNotNull($repository->assignSegment('courses', 0, 'worker-2', Duration::seconds(30)));
+        self::assertSame(1, $repository->recoverExpiredClaims('courses'));
+        self::assertNotNull($repository->claimSegment('courses', 0, 'worker-2', Duration::seconds(30)));
     }
 }

@@ -34,7 +34,6 @@ use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
-use Ultra\Projection\ProjectionWorkAssignment;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivitySchema;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
@@ -435,9 +434,8 @@ final class ProjectionWorkerCommand extends Command
     {
         $this
             ->addOption('worker-id', null, InputOption::VALUE_REQUIRED, 'Worker identifier.', gethostname() ?: 'worker')
-            ->addOption('assignment-id', null, InputOption::VALUE_REQUIRED, 'Projection assignment identifier.')
             ->addOption('projection-id', null, InputOption::VALUE_REQUIRED, 'Projection identifier.')
-            ->addOption('bucket-from', null, InputOption::VALUE_REQUIRED, 'Assigned segment start bucket.')
+            ->addOption('bucket-from', null, InputOption::VALUE_REQUIRED, 'Claimed segment start bucket.')
             ->addOption('batch-size', null, InputOption::VALUE_REQUIRED, 'Events processed per claimed segment.', 5)
             ->addOption('max-cycles', null, InputOption::VALUE_REQUIRED, 'Maximum worker cycles.', 64)
         ;
@@ -446,13 +444,9 @@ final class ProjectionWorkerCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $workerId = (string) $input->getOption('worker-id');
-        $assignment = new ProjectionWorkAssignment(
-            (string) $input->getOption('assignment-id'),
-            (string) $input->getOption('projection-id'),
-            (int) $input->getOption('bucket-from'),
-            $workerId,
-        );
-        $runtime = $this->catalog->runtime($assignment->projectionId);
+        $projectionId = (string) $input->getOption('projection-id');
+        $bucketFrom = (int) $input->getOption('bucket-from');
+        $runtime = $this->catalog->runtime($projectionId);
         $batchSize = (int) $input->getOption('batch-size');
         $maxCycles = (int) $input->getOption('max-cycles');
 
@@ -460,7 +454,7 @@ final class ProjectionWorkerCommand extends Command
         $acknowledgedBuckets = 0;
         $caughtUp = false;
         for ($cycle = 0; $cycle < $maxCycles; ++$cycle) {
-            $result = $this->runner->runAssignedOnce($runtime, $assignment, $batchSize);
+            $result = $this->runner->runClaimedOnce($runtime, $projectionId, $bucketFrom, $workerId, $batchSize);
             if (!$result->claimedSegment) {
                 break;
             }
@@ -474,9 +468,10 @@ final class ProjectionWorkerCommand extends Command
         }
 
         $output->writeln(sprintf(
-            'worker=%s assignment=%s caught_up=%s processed=%d acknowledged=%d',
+            'worker=%s projection=%s bucket_from=%d caught_up=%s processed=%d acknowledged=%d',
             $workerId,
-            $assignment->assignmentId,
+            $projectionId,
+            $bucketFrom,
             $caughtUp ? 'yes' : 'no',
             $processedEvents,
             $acknowledgedBuckets,
@@ -513,7 +508,7 @@ final class ProcessProjectionActivator implements ProjectionActivatorInterface
         // The harness uses the backfill command as the scheduler entrypoint.
     }
 
-    public function activateWorker(ProjectionWorkAssignment $assignment): void
+    public function activateWorker(string $projectionId, int $bucketFrom, string $workerId): void
     {
         ++$this->sequence;
         $process = new Process(
@@ -521,10 +516,9 @@ final class ProcessProjectionActivator implements ProjectionActivatorInterface
                 PHP_BINARY,
                 $this->consolePath,
                 'harness:projection-worker',
-                '--worker-id='.$assignment->workerId,
-                '--assignment-id='.$assignment->assignmentId,
-                '--projection-id='.$assignment->projectionId,
-                '--bucket-from='.(string) $assignment->bucketFrom,
+                '--worker-id='.$workerId,
+                '--projection-id='.$projectionId,
+                '--bucket-from='.(string) $bucketFrom,
                 '--batch-size='.$this->batchSize,
                 '--max-cycles='.$this->maxCycles,
             ],

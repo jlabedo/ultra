@@ -6,7 +6,6 @@ namespace Ultra\Projection\MessageHandling;
 
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
-use Ultra\Projection\ProjectionWorkAssignment;
 
 final readonly class MessageHandlingProjectionActivator implements ProjectionActivatorInterface
 {
@@ -20,9 +19,9 @@ final readonly class MessageHandlingProjectionActivator implements ProjectionAct
         $this->mediator->send(new WakeProjectionCoordinator($this->workerId()));
     }
 
-    public function activateWorker(ProjectionWorkAssignment $assignment): void
+    public function activateWorker(string $projectionId, int $bucketFrom, string $workerId): void
     {
-        $this->mediator->send(RunProjectionAssignment::fromAssignment($assignment));
+        $this->mediator->send(new RunProjectionSegment($projectionId, $bucketFrom, $workerId));
     }
 
     private function workerId(): string
