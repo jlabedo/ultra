@@ -145,12 +145,12 @@ final readonly class ProjectionCoordinator
         }
     }
 
-    /** @return null|array{bucketFrom: int, bucketTo: int, status: string} */
+    /** @return null|array{bucketFrom: int, bucketTo: int, workerId: null|string} */
     private function largestSplittableSegment(string $projectionId): ?array
     {
         $candidates = array_filter(
             $this->runner->listSegments($projectionId),
-            static fn (array $segment): bool => 'available' === $segment['status']
+            static fn (array $segment): bool => null === $segment['workerId']
                 && $segment['bucketTo'] > $segment['bucketFrom'],
         );
         usort(

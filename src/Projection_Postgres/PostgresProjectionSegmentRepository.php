@@ -11,7 +11,6 @@ use Ultra\Projection\ProjectionSegment;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 use Ultra\Projection\ProjectionWorkAssignment;
 use Ultra\Time\ClockInterface;
-use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
 
@@ -33,8 +32,8 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
 
         $affected = $this->connection->executeStatement(
             sprintf(
-                "INSERT INTO %s (projection_id, bucket_from, bucket_to, status, checkpoint, updated_at)
-                 VALUES (?, 0, 255, 'available', ?, CAST(? AS TIMESTAMPTZ))
+                "INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
+                 VALUES (?, 0, 255, ?, CAST(? AS TIMESTAMPTZ))
                  ON CONFLICT (projection_id, bucket_from) DO NOTHING",
                 $this->segmentsTable(),
             ),
@@ -57,14 +56,13 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $affected = $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET status = 'assigned',
-                     worker_id = ?,
+                 SET worker_id = ?,
                      assignment_id = ?,
                      lease_expires_at = CAST(? AS TIMESTAMPTZ),
                      updated_at = CAST(? AS TIMESTAMPTZ)
                  WHERE projection_id = ?
                    AND bucket_from = ?
-                   AND status = 'available'",
+                   AND worker_id IS NULL",
                 $this->segmentsTable(),
             ),
             [$workerId, $assignmentId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom],
@@ -87,11 +85,10 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         try {
             $row = $this->connection->executeQuery(
                 sprintf(
-                    'SELECT bucket_from, bucket_to, status, checkpoint
+                    'SELECT bucket_from, bucket_to, checkpoint
                      FROM %s
                      WHERE projection_id = ?
                        AND bucket_from = ?
-                       AND status = \'assigned\'
                        AND worker_id = ?
                        AND assignment_id = ?
                        AND lease_expires_at >= CAST(? AS TIMESTAMPTZ)
@@ -118,8 +115,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             $this->connection->executeStatement(
                 sprintf(
                     "UPDATE %s
-                     SET status = 'active',
-                         lease_expires_at = CAST(? AS TIMESTAMPTZ),
+                     SET lease_expires_at = CAST(? AS TIMESTAMPTZ),
                          updated_at = CAST(? AS TIMESTAMPTZ)
                      WHERE projection_id = ? AND bucket_from = ?",
                     $this->segmentsTable(),
@@ -134,7 +130,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                 projectionId: $assignment->projectionId,
                 bucketFrom: (int) $row['bucket_from'],
                 bucketTo: (int) $row['bucket_to'],
-                status: 'active',
                 checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
                 wasCreated: false,
             );
@@ -158,10 +153,9 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             $this->connection->executeStatement(
                 sprintf(
                     "UPDATE %s
-                     SET status = 'available',
-                         worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL,
+                     SET worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL,
                          checkpoint = ?, updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status = 'active'",
+                     WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?",
                     $this->segmentsTable(),
                 ),
                 [$checkpoint->serialize(), $now, $segment->projectionId, $segment->bucketFrom, $workerId],
@@ -174,11 +168,10 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET status = 'assigned',
-                     checkpoint = ?,
+                 SET checkpoint = ?,
                      lease_expires_at = CAST(? AS TIMESTAMPTZ),
                      updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status = 'active'",
+                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?",
                 $this->segmentsTable(),
             ),
             [$checkpoint->serialize(), $now->add($leaseDuration), $now, $segment->projectionId, $segment->bucketFrom, $workerId],
@@ -193,9 +186,8 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET status = 'available',
-                     worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ? AND status IN ('assigned', 'active')",
+                 SET worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
+                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?",
                 $this->segmentsTable(),
             ),
             [$now, $segment->projectionId, $segment->bucketFrom, $workerId],
@@ -210,9 +202,8 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $count = $this->connection->executeStatement(
             sprintf(
                 "UPDATE %s
-                 SET status = 'available',
-                     worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND status IN ('active', 'assigned') AND lease_expires_at < CAST(? AS TIMESTAMPTZ)",
+                 SET worker_id = NULL, assignment_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
+                 WHERE projection_id = ? AND worker_id IS NOT NULL AND lease_expires_at < CAST(? AS TIMESTAMPTZ)",
                 $this->segmentsTable(),
             ),
             [$now, $projectionId, $now],
@@ -229,7 +220,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     {
         $row = $this->connection->executeQuery(
             sprintf(
-                'SELECT bucket_from, bucket_to, status, checkpoint
+                'SELECT bucket_from, bucket_to, checkpoint
                  FROM %s WHERE projection_id = ? AND bucket_from = ?',
                 $this->segmentsTable(),
             ),
@@ -245,22 +236,11 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             ));
         }
 
-        if (!in_array($row['status'], ['available', 'assigned', 'active'], true)) {
-            throw new \LogicException(sprintf(
-                'Cannot split segment [%d-%d] of projection "%s": status is "%s".',
-                $row['bucket_from'],
-                $row['bucket_to'],
-                $projectionId,
-                $row['status'],
-            ));
-        }
-
         $this->finalizeSplit(
             new ProjectionSegment(
                 projectionId: $projectionId,
                 bucketFrom: (int) $row['bucket_from'],
                 bucketTo: (int) $row['bucket_to'],
-                status: $row['status'],
                 checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
                 wasCreated: false,
             ),
@@ -299,8 +279,8 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
 
             $this->connection->executeStatement(
                 sprintf(
-                    "INSERT INTO %s (projection_id, bucket_from, bucket_to, status, checkpoint, updated_at)
-                     VALUES (?, ?, ?, 'available', ?, CAST(? AS TIMESTAMPTZ)), (?, ?, ?, 'available', ?, CAST(? AS TIMESTAMPTZ))",
+                    "INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
+                     VALUES (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ)), (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ))",
                     $this->segmentsTable(),
                 ),
                 [
@@ -341,7 +321,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     {
         $rows = $this->connection->executeQuery(
             sprintf(
-                'SELECT bucket_from, bucket_to, status, checkpoint
+                'SELECT bucket_from, bucket_to, checkpoint
                  FROM %s
                  WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?
                  ORDER BY bucket_from ASC',
@@ -355,7 +335,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             projectionId: $projectionId,
             bucketFrom: (int) $row['bucket_from'],
             bucketTo: (int) $row['bucket_to'],
-            status: $row['status'],
             checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
             wasCreated: false,
         ), $rows);
@@ -374,7 +353,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         try {
             $rows = $this->connection->executeQuery(
                 sprintf(
-                    'SELECT bucket_from, bucket_to, status, checkpoint
+                    'SELECT bucket_from, bucket_to, checkpoint
                      FROM %s
                      WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?
                      ORDER BY bucket_from ASC
@@ -389,7 +368,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                 projectionId: $projectionId,
                 bucketFrom: (int) $row['bucket_from'],
                 bucketTo: (int) $row['bucket_to'],
-                status: $row['status'],
                 checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
                 wasCreated: false,
             ), $rows);
@@ -398,8 +376,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             $this->connection->executeStatement(
                 sprintf(
                     "UPDATE %s
-                     SET status = 'active',
-                         worker_id = ?,
+                     SET worker_id = ?,
                          assignment_id = NULL,
                          lease_expires_at = CAST(? AS TIMESTAMPTZ),
                          updated_at = CAST(? AS TIMESTAMPTZ)
@@ -449,8 +426,8 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
 
             $this->connection->executeStatement(
                 sprintf(
-                    "INSERT INTO %s (projection_id, bucket_from, bucket_to, status, checkpoint, updated_at)
-                     VALUES (?, ?, ?, 'available', ?, CAST(? AS TIMESTAMPTZ))",
+                    "INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
+                     VALUES (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ))",
                     $this->segmentsTable(),
                 ),
                 [$projectionId, $bucketFrom, $bucketTo, $checkpoint->serialize(), $now],
@@ -466,13 +443,13 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     }
 
     /**
-     * @return list<array{bucketFrom: int, bucketTo: int, status: string}>
+     * @return list<array{bucketFrom: int, bucketTo: int, workerId: null|string}>
      */
     public function listSegments(string $projectionId): array
     {
         $rows = $this->connection->executeQuery(
             sprintf(
-                'SELECT bucket_from, bucket_to, status
+                'SELECT bucket_from, bucket_to, worker_id
                  FROM %s WHERE projection_id = ? ORDER BY bucket_from ASC',
                 $this->segmentsTable(),
             ),
@@ -483,7 +460,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         return array_map(static fn (array $row): array => [
             'bucketFrom' => (int) $row['bucket_from'],
             'bucketTo' => (int) $row['bucket_to'],
-            'status' => $row['status'],
+            'workerId' => $row['worker_id'] ?? null,
         ], $rows);
     }
 
@@ -491,10 +468,10 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     {
         $rows = $this->connection->executeQuery(
             sprintf(
-                "SELECT bucket_from, bucket_to, status
+                "SELECT bucket_from, bucket_to, worker_id
                  FROM %s
                  WHERE projection_id = ?
-                   AND status = 'available'
+                   AND worker_id IS NULL
                  ORDER BY bucket_from ASC",
                 $this->segmentsTable(),
             ),
@@ -505,7 +482,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         return array_map(static fn (array $row): array => [
             'bucketFrom' => (int) $row['bucket_from'],
             'bucketTo' => (int) $row['bucket_to'],
-            'status' => $row['status'],
+            'workerId' => $row['worker_id'] ?? null,
         ], $rows);
     }
 

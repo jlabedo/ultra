@@ -133,7 +133,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
                 ['course_id' => 'course-2', 'name' => 'Physics 201'],
             ], $rows);
 
-            self::assertSame('available', $segmentRepository->listSegments('course_names')[0]['status']);
+            self::assertSame(null, $segmentRepository->listSegments('course_names')[0]['workerId']);
         });
     }
 
@@ -249,10 +249,10 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             self::assertCount(2, $segments);
             self::assertSame(0, $segments[0]['bucketFrom']);
             self::assertSame(127, $segments[0]['bucketTo']);
-            self::assertSame('available', $segments[0]['status']);
+            self::assertSame(null, $segments[0]['workerId']);
             self::assertSame(128, $segments[1]['bucketFrom']);
             self::assertSame(255, $segments[1]['bucketTo']);
-            self::assertSame('available', $segments[1]['status']);
+            self::assertSame(null, $segments[1]['workerId']);
         });
     }
 
@@ -290,7 +290,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             self::assertCount(1, $segments);
             self::assertSame(0, $segments[0]['bucketFrom']);
             self::assertSame(255, $segments[0]['bucketTo']);
-            self::assertSame('available', $segments[0]['status']);
+            self::assertSame(null, $segments[0]['workerId']);
         });
     }
 

@@ -75,13 +75,13 @@ final readonly class ProjectionRunner
         $this->segmentRepository->replaceSegmentsWithMergedSegment($projectionId, $bucketFrom, $bucketTo, $targetCheckpoint);
     }
 
-    /** @return list<array{bucketFrom: int, bucketTo: int, status: string}> */
+    /** @return list<array{bucketFrom: int, bucketTo: int, workerId: null|string}> */
     public function listSegments(string $projectionId): array
     {
         return $this->segmentRepository->listSegments($projectionId);
     }
 
-    /** @return list<array{bucketFrom: int, bucketTo: int, status: string}> */
+    /** @return list<array{bucketFrom: int, bucketTo: int, workerId: null|string}> */
     public function availableSegments(string $projectionId): array
     {
         return $this->segmentRepository->availableSegments($projectionId);

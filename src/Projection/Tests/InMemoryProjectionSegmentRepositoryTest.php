@@ -28,8 +28,8 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         $repository->splitSegment('courses', 0);
 
         self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'available'],
-            ['bucketFrom' => 128, 'bucketTo' => 255, 'status' => 'available'],
+            ['bucketFrom' => 0, 'bucketTo' => 127, 'workerId' => null],
+            ['bucketFrom' => 128, 'bucketTo' => 255, 'workerId' => null],
         ], $repository->listSegments('courses'));
     }
 
@@ -40,7 +40,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         self::assertTrue($repository->ensureInitialized('courses'));
         self::assertFalse($repository->ensureInitialized('courses'));
         self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'available'],
+            ['bucketFrom' => 0, 'bucketTo' => 255, 'workerId' => null],
         ], $repository->listSegments('courses'));
     }
 
@@ -56,15 +56,15 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         $repository->splitSegment('courses', 0);
 
         self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'available'],
-            ['bucketFrom' => 128, 'bucketTo' => 255, 'status' => 'available'],
+            ['bucketFrom' => 0, 'bucketTo' => 127, 'workerId' => null],
+            ['bucketFrom' => 128, 'bucketTo' => 255, 'workerId' => null],
         ], $repository->listSegments('courses'));
 
         $repository->completeAssignedBatch($segment, Checkpoint::at(new Sequence(5)), 'worker-1', true);
 
         self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 127, 'status' => 'available'],
-            ['bucketFrom' => 128, 'bucketTo' => 255, 'status' => 'available'],
+            ['bucketFrom' => 0, 'bucketTo' => 127, 'workerId' => null],
+            ['bucketFrom' => 128, 'bucketTo' => 255, 'workerId' => null],
         ], $repository->listSegments('courses'));
     }
 
@@ -91,7 +91,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         $repository->completeAssignedBatch($right, Checkpoint::at(new Sequence(7)), 'worker-right', true);
 
         self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 255, 'status' => 'available'],
+            ['bucketFrom' => 0, 'bucketTo' => 255, 'workerId' => null],
         ], $repository->listSegments('courses'));
 
         $assignment = $repository->assignSegment('courses', 0, 'worker-merged');
@@ -123,12 +123,11 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
     public function test_projection_segment_exposes_its_state(): void
     {
-        $segment = new ProjectionSegment('courses', 128, 255, 'available', Checkpoint::beginning(), false);
+        $segment = new ProjectionSegment('courses', 128, 255, Checkpoint::beginning(), false);
 
         self::assertSame('courses', $segment->projectionId);
         self::assertSame(128, $segment->bucketFrom);
         self::assertSame(255, $segment->bucketTo);
-        self::assertSame('available', $segment->status);
         self::assertSame(0, $segment->checkpoint->gapFloor->value);
         self::assertFalse($segment->wasCreated);
     }

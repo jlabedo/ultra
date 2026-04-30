@@ -17,7 +17,6 @@ final readonly class PostgresProjectionSegmentSchema
                     projection_id     TEXT        NOT NULL,
                     bucket_from       SMALLINT    NOT NULL,
                     bucket_to         SMALLINT    NOT NULL,
-                    status            TEXT        NOT NULL DEFAULT 'available',
                     checkpoint        TEXT        NOT NULL DEFAULT '{\"gapFloor\":0,\"gapSeqNos\":[]}',
                     worker_id         TEXT        NULL,
                     assignment_id     TEXT        NULL,

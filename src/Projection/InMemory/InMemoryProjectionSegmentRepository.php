@@ -14,7 +14,7 @@ use Ultra\Time\SystemClock;
 
 final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepositoryInterface
 {
-    /** @var array<string, array<int, array{bucketFrom: int, bucketTo: int, status: string, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|int, assignmentId: null|string}>> */
+    /** @var array<string, array<int, array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|int, assignmentId: null|string}>> */
     private array $segments = [];
 
     public function __construct(private ClockInterface $clock = new SystemClock())
@@ -31,7 +31,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             0 => [
                 'bucketFrom' => 0,
                 'bucketTo' => 255,
-                'status' => 'available',
                 'checkpoint' => Checkpoint::beginning(),
                 'workerId' => null,
                 'leaseExpiresAt' => null,
@@ -46,12 +45,11 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     {
         $leaseDuration ??= Duration::seconds(60);
         $row = $this->segments[$projectionId][$bucketFrom] ?? null;
-        if (null === $row || 'available' !== $row['status']) {
+        if (null === $row || null !== $row['workerId']) {
             return null;
         }
 
         $assignmentId = bin2hex(random_bytes(16));
-        $row['status'] = 'assigned';
         $row['workerId'] = $workerId;
         $row['leaseExpiresAt'] = $this->clock->now()->add($leaseDuration);
         $row['assignmentId'] = $assignmentId;
@@ -66,7 +64,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         $row = $this->segments[$assignment->projectionId][$assignment->bucketFrom] ?? null;
         if (
             null === $row
-            || 'assigned' !== $row['status']
             || $row['workerId'] !== $assignment->workerId
             || $row['assignmentId'] !== $assignment->assignmentId
             || (null !== $row['leaseExpiresAt'] && $row['leaseExpiresAt'] < $this->clock->now())
@@ -74,7 +71,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             return null;
         }
 
-        $row['status'] = 'active';
         $row['leaseExpiresAt'] = $this->clock->now()->add($leaseDuration);
         $this->segments[$assignment->projectionId][$assignment->bucketFrom] = $row;
 
@@ -90,18 +86,16 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     ): void {
         $leaseDuration ??= Duration::seconds(60);
         $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
-        if (null === $row || 'active' !== $row['status'] || $row['workerId'] !== $workerId) {
+        if (null === $row || $row['workerId'] !== $workerId) {
             return;
         }
 
         $row['checkpoint'] = $checkpoint;
         if ($caughtUp) {
-            $row['status'] = 'available';
             $row['workerId'] = null;
             $row['leaseExpiresAt'] = null;
             $row['assignmentId'] = null;
         } else {
-            $row['status'] = 'assigned';
             $row['leaseExpiresAt'] = $this->clock->now()->add($leaseDuration);
         }
 
@@ -111,11 +105,10 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     public function abandonAssignedSegment(ProjectionSegment $segment, string $workerId): void
     {
         $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
-        if (null === $row || $row['workerId'] !== $workerId || !in_array($row['status'], ['assigned', 'active'], true)) {
+        if (null === $row || $row['workerId'] !== $workerId) {
             return;
         }
 
-        $row['status'] = 'available';
         $row['workerId'] = null;
         $row['leaseExpiresAt'] = null;
         $row['assignmentId'] = null;
@@ -128,7 +121,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
 
         foreach (array_keys($this->segments[$projectionId] ?? []) as $bucketFrom) {
             $row = $this->segments[$projectionId][$bucketFrom];
-            if (!in_array($row['status'], ['active', 'assigned'], true)) {
+            if (null === $row['workerId']) {
                 continue;
             }
 
@@ -136,7 +129,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
                 continue;
             }
 
-            $row['status'] = 'available';
             $row['workerId'] = null;
             $row['leaseExpiresAt'] = null;
             $row['assignmentId'] = null;
@@ -158,16 +150,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             ));
         }
 
-        if (!in_array($row['status'], ['available', 'assigned', 'active'], true)) {
-            throw new \LogicException(sprintf(
-                'Cannot split segment [%d-%d] of projection "%s": status is "%s".',
-                $row['bucketFrom'],
-                $row['bucketTo'],
-                $projectionId,
-                $row['status'],
-            ));
-        }
-
         $this->finalizeSplit($this->toSegment($projectionId, $row), $row['checkpoint']);
     }
 
@@ -179,7 +161,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return array_map(static fn (array $row): array => [
             'bucketFrom' => $row['bucketFrom'],
             'bucketTo' => $row['bucketTo'],
-            'status' => $row['status'],
+            'workerId' => $row['workerId'],
         ], array_values($rows));
     }
 
@@ -200,7 +182,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         $this->segments[$segment->projectionId][$segment->bucketFrom] = [
             'bucketFrom' => $segment->bucketFrom,
             'bucketTo' => $mid - 1,
-            'status' => 'available',
             'checkpoint' => $checkpoint,
             'workerId' => null,
             'leaseExpiresAt' => null,
@@ -209,7 +190,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         $this->segments[$segment->projectionId][$mid] = [
             'bucketFrom' => $mid,
             'bucketTo' => $segment->bucketTo,
-            'status' => 'available',
             'checkpoint' => $checkpoint,
             'workerId' => null,
             'leaseExpiresAt' => null,
@@ -242,7 +222,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
 
         foreach ($segments as $segment) {
             $row = $this->segments[$projectionId][$segment->bucketFrom];
-            $row['status'] = 'active';
             $row['workerId'] = $ownerId;
             $row['leaseExpiresAt'] = $this->clock->now()->add($leaseDuration);
             $row['assignmentId'] = null;
@@ -273,7 +252,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         $this->segments[$projectionId][$bucketFrom] = [
             'bucketFrom' => $bucketFrom,
             'bucketTo' => $bucketTo,
-            'status' => 'available',
             'checkpoint' => $checkpoint,
             'workerId' => null,
             'leaseExpiresAt' => null,
@@ -286,7 +264,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     {
         return array_values(array_filter(
             $this->listSegments($projectionId),
-            static fn (array $segment): bool => 'available' === $segment['status'],
+            static fn (array $segment): bool => null === $segment['workerId'],
         ));
     }
 
@@ -312,7 +290,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     }
 
     /**
-     * @param array{bucketFrom: int, bucketTo: int, status: string, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|int, assignmentId: null|string} $row
+     * @param array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|int, assignmentId: null|string} $row
      */
     private function toSegment(string $projectionId, array $row): ProjectionSegment
     {
@@ -320,7 +298,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             $projectionId,
             $row['bucketFrom'],
             $row['bucketTo'],
-            $row['status'],
             $row['checkpoint'],
             false,
         );
