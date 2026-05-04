@@ -4,22 +4,14 @@ declare(strict_types=1);
 
 namespace App\Faculty\Query;
 
-use App\Faculty\Read\FacultyReadModelState;
-use App\Faculty\Support\FacultyIds;
-use Ultra\DecisionEngine\Engine;
-use Ultra\EventStore\DomainIdentifier;
+use App\Faculty\Read\FacultyReadModelProjection;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final readonly class ListCourseStatsQuery
 {
     #[SelfHandler]
-    public function handle(Engine $engine): array
+    public function handle(FacultyReadModelProjection $readModel): array
     {
-        $state = $engine->load(
-            FacultyReadModelState::class,
-            new DomainIdentifier('faculty', FacultyIds::DEFAULT),
-        );
-
-        return $state->courses();
+        return $readModel->courses();
     }
 }

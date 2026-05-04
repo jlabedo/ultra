@@ -4,10 +4,7 @@ declare(strict_types=1);
 
 namespace App\Faculty\Query;
 
-use App\Faculty\Read\FacultyReadModelState;
-use App\Faculty\Support\FacultyIds;
-use Ultra\DecisionEngine\Engine;
-use Ultra\EventStore\DomainIdentifier;
+use App\Faculty\Read\FacultyReadModelProjection;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final readonly class GetStudentProfileByIdQuery
@@ -17,13 +14,8 @@ final readonly class GetStudentProfileByIdQuery
     ) {}
 
     #[SelfHandler]
-    public function handle(Engine $engine): mixed
+    public function handle(FacultyReadModelProjection $readModel): mixed
     {
-        $state = $engine->load(
-            FacultyReadModelState::class,
-            new DomainIdentifier('faculty', FacultyIds::DEFAULT),
-        );
-
-        return $state->student($this->studentId);
+        return $readModel->student($this->studentId);
     }
 }

@@ -19,6 +19,7 @@ use App\Faculty\Write\UnsubscribeStudentFromCourseCommand;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
+use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\MediatorInterface;
 
 /**
@@ -41,6 +42,7 @@ final class FacultyFlowTest extends FacultyKernelTestCase
         $mediator->send(new CreateCourseCommand('course-1', 'Event Sourcing', 2));
         $mediator->send(new EnrollStudentInFacultyCommand('student-1', 'Ada', 'Lovelace'));
         $mediator->send(new SubscribeStudentToCourseCommand('course-1', 'student-1'));
+        $this->drainQueue();
 
         $course = $mediator->send(new GetCourseStatsByIdQuery('course-1'));
         $student = $mediator->send(new GetStudentProfileByIdQuery('student-1'));
@@ -91,7 +93,6 @@ final class FacultyFlowTest extends FacultyKernelTestCase
         $mediator->send(new CreateCourseCommand('course-2', 'Symfony', 1));
         $mediator->send(new EnrollStudentInFacultyCommand('student-1', 'Ada', 'Lovelace'));
         $mediator->send(new EnrollStudentInFacultyCommand('student-2', 'Grace', 'Hopper'));
-
         $mediator->send(new SubscribeStudentToCourseCommand('course-1', 'student-1'));
 
         self::assertCount(1, $notifications->sent());
@@ -131,6 +132,7 @@ final class FacultyFlowTest extends FacultyKernelTestCase
         $mediator->send(new SubscribeStudentToCourseCommand('course-b', 'student-b'));
         $mediator->send(new SubscribeStudentToCourseCommand('course-a', 'student-a'));
         $mediator->send(new UnsubscribeStudentFromCourseCommand('course-b', 'student-b'));
+        $this->drainQueue();
 
         $courses = $mediator->send(new ListCourseStatsQuery());
         $students = $mediator->send(new ListStudentProfilesQuery());
@@ -226,6 +228,7 @@ final class FacultyFlowTest extends FacultyKernelTestCase
                 ],
             ),
         ]);
+        $this->drainQueue();
 
         $student = $mediator->send(new GetStudentProfileByIdQuery('student-1'));
 
@@ -233,5 +236,12 @@ final class FacultyFlowTest extends FacultyKernelTestCase
         self::assertSame('Augusta Ada', $student->firstName);
         self::assertSame('King', $student->lastName);
         self::assertSame(['course-1'], $student->subscribedCourseIds);
+    }
+
+    private function drainQueue(): void
+    {
+        /** @var QueueWorker $worker */
+        $worker = self::getContainer()->get(QueueWorker::class);
+        $worker->drain();
     }
 }

@@ -9,11 +9,12 @@ use App\Faculty\Event\CourseCreated;
 use App\Faculty\Event\StudentEnrolledInFaculty;
 use App\Faculty\Event\StudentSubscribedToCourse;
 use App\Faculty\Event\StudentUnsubscribedFromCourse;
-use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
-use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
+use Ultra\Projection\Attribute\Projection;
+use Ultra\Projection\Attribute\ProjectionHandler;
+use Ultra\Projection\Attribute\ProjectionResetter;
 
-#[EventSourcedEntity(tags: ['faculty'])]
-final class FacultyReadModelState
+#[Projection(name: 'faculty_read_model', partitionBy: 'faculty')]
+final class FacultyReadModelProjection
 {
     /**
      * @var array<string, array{name: string, capacity: int, subscribedStudents: int}>
@@ -111,7 +112,14 @@ final class FacultyReadModelState
         return $views;
     }
 
-    #[EventSourcingHandler]
+    #[ProjectionResetter]
+    public function reset(): void
+    {
+        $this->courses = [];
+        $this->students = [];
+    }
+
+    #[ProjectionHandler]
     public function onCourseCreated(CourseCreated $event): void
     {
         $this->courses[$event->courseId] = [
@@ -121,7 +129,7 @@ final class FacultyReadModelState
         ];
     }
 
-    #[EventSourcingHandler]
+    #[ProjectionHandler]
     public function onCourseCapacityChanged(CourseCapacityChanged $event): void
     {
         if (!isset($this->courses[$event->courseId])) {
@@ -131,7 +139,7 @@ final class FacultyReadModelState
         $this->courses[$event->courseId]['capacity'] = $event->capacity;
     }
 
-    #[EventSourcingHandler]
+    #[ProjectionHandler]
     public function onStudentEnrolledInFaculty(StudentEnrolledInFaculty $event): void
     {
         $this->students[$event->studentId] = [
@@ -141,7 +149,7 @@ final class FacultyReadModelState
         ];
     }
 
-    #[EventSourcingHandler]
+    #[ProjectionHandler]
     public function onStudentSubscribedToCourse(StudentSubscribedToCourse $event): void
     {
         if (isset($this->courses[$event->courseId])) {
@@ -155,7 +163,7 @@ final class FacultyReadModelState
         $this->students[$event->studentId]['subscribedCourseIds'][$event->courseId] = true;
     }
 
-    #[EventSourcingHandler]
+    #[ProjectionHandler]
     public function onStudentUnsubscribedFromCourse(StudentUnsubscribedFromCourse $event): void
     {
         if (isset($this->courses[$event->courseId])) {

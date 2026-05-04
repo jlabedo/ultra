@@ -27,6 +27,9 @@ services:
     Ultra\EventStore\EventStore:
         factory: ['@App\Faculty\Infrastructure\EventStore\FacultyEventStoreFactory', 'create']
 
+    Ultra\Projection\Bundle\ProjectionImplementationInterface:
+        class: Ultra\Projection\InMemory\InMemoryProjectionImplementation
+
     App\Faculty\Infrastructure\EventStore\FacultyEventStoreFactory:
         arguments:
             $tablePrefix: '%app.faculty_event_store_table_prefix%'
