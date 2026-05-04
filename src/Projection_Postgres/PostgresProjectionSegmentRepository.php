@@ -182,33 +182,89 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
      */
     public function splitSegment(string $projectionId, int $bucketFrom): void
     {
-        $row = $this->connection->executeQuery(
-            sprintf(
-                'SELECT bucket_from, bucket_to, checkpoint
-                 FROM %s WHERE projection_id = ? AND bucket_from = ?',
-                $this->segmentsTable(),
-            ),
-            [$projectionId, $bucketFrom],
-            [ParameterType::STRING, ParameterType::INTEGER],
-        )->fetchAssociative();
+        $this->connection->beginTransaction();
 
-        if (false === $row) {
-            throw new \InvalidArgumentException(sprintf(
-                'Segment [%d] not found for projection "%s".',
-                $bucketFrom,
-                $projectionId,
-            ));
+        try {
+            $row = $this->connection->executeQuery(
+                sprintf(
+                    'SELECT bucket_from, bucket_to, checkpoint, worker_id
+                     FROM %s WHERE projection_id = ? AND bucket_from = ?
+                     FOR UPDATE',
+                    $this->segmentsTable(),
+                ),
+                [$projectionId, $bucketFrom],
+                [ParameterType::STRING, ParameterType::INTEGER],
+            )->fetchAssociative();
+
+            if (false === $row) {
+                $this->connection->commit();
+
+                return;
+            }
+
+            if (null !== $row['worker_id']) {
+                $this->connection->commit();
+
+                return;
+            }
+
+            $rangeSize = (int) $row['bucket_to'] - (int) $row['bucket_from'] + 1;
+            if ($rangeSize < 2) {
+                throw new \LogicException(sprintf(
+                    'Segment [%d-%d] is at minimum granularity and cannot be split.',
+                    (int) $row['bucket_from'],
+                    (int) $row['bucket_to'],
+                ));
+            }
+
+            $mid = (int) $row['bucket_from'] + intdiv($rangeSize, 2);
+            $serializedCheckpoint = (string) $row['checkpoint'];
+            $now = $this->clock->now();
+
+            $this->connection->executeStatement(
+                sprintf('DELETE FROM %s WHERE projection_id = ? AND bucket_from = ?', $this->segmentsTable()),
+                [$projectionId, $bucketFrom],
+                [ParameterType::STRING, ParameterType::INTEGER],
+            );
+
+            $this->connection->executeStatement(
+                sprintf(
+                    "INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
+                     VALUES (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ)), (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ))",
+                    $this->segmentsTable(),
+                ),
+                [
+                    $projectionId,
+                    (int) $row['bucket_from'],
+                    $mid - 1,
+                    $serializedCheckpoint,
+                    $now,
+                    $projectionId,
+                    $mid,
+                    (int) $row['bucket_to'],
+                    $serializedCheckpoint,
+                    $now,
+                ],
+                [
+                    ParameterType::STRING,
+                    ParameterType::INTEGER,
+                    ParameterType::INTEGER,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::INTEGER,
+                    ParameterType::INTEGER,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                ],
+            );
+
+            $this->connection->commit();
+        } catch (\Throwable $e) {
+            $this->connection->rollBack();
+
+            throw $e;
         }
-
-        $this->finalizeSplit(
-            new ProjectionSegment(
-                projectionId: $projectionId,
-                bucketFrom: (int) $row['bucket_from'],
-                bucketTo: (int) $row['bucket_to'],
-                checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-            ),
-            Checkpoint::deserialize((string) $row['checkpoint']),
-        );
     }
 
     /**

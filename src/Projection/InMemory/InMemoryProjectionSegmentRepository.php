@@ -124,6 +124,10 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             ));
         }
 
+        if (null !== $row['workerId']) {
+            return;
+        }
+
         $this->finalizeSplit($this->toSegment($projectionId, $row), $row['checkpoint']);
     }
 

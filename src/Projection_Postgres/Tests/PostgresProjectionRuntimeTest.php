@@ -36,7 +36,7 @@ final readonly class CourseRenamed
 }
 
 #[Projection(name: 'course_names', partitionBy: 'courseId')]
-final class CourseNamesProjection
+class CourseNamesProjection
 {
     public function __construct(
         private readonly Connection $connection,
@@ -77,6 +77,9 @@ final class CourseNamesProjection
         );
     }
 }
+
+#[Projection(name: 'unpartitioned_course_names')]
+final class UnpartitionedCourseNamesProjection extends CourseNamesProjection {}
 
 /**
  * @internal
@@ -133,6 +136,56 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             ], $rows);
 
             self::assertNull($segmentRepository->listSegments('course_names')[0]->workerId);
+        });
+    }
+
+    public function test_unpartitioned_projection_processes_all_handled_events_in_one_lane(): void
+    {
+        $this->withPostgresProjectionRuntime(function (
+            Connection $connection,
+            EventStore $store,
+            PostgresProjectionSegmentRepository $segmentRepository,
+            ProjectionRunner $runner,
+            string $eventStorePrefix,
+            string $projectionPrefix,
+        ): void {
+            $tableName = $projectionPrefix.'unpartitioned_course_names_view';
+
+            $store->append([
+                new Event(
+                    eventType: 'course.created',
+                    payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
+                    domainIds: ['courseId' => 'course-1'],
+                ),
+                new Event(
+                    eventType: 'course.created',
+                    payload: ['courseId' => 'course-2', 'name' => 'Physics 201'],
+                    domainIds: ['courseId' => 'course-2'],
+                ),
+            ]);
+
+            $runtime = new ProjectionRuntime(
+                new UnpartitionedCourseNamesProjection($connection, $tableName),
+                new UltraNormalizer(),
+            );
+
+            $runner->ensureInitialized($runtime);
+            self::assertNotNull($runner->claimSegment('unpartitioned_course_names', 0, 'worker-1'));
+
+            $result = $runner->runClaimedOnce($runtime, 'unpartitioned_course_names', 0, 'worker-1');
+
+            self::assertSame(2, $result->processedEvents);
+            self::assertTrue($result->caughtUp);
+            self::assertCount(1, $segmentRepository->listSegments('unpartitioned_course_names'));
+
+            $rows = $connection->fetchAllAssociative(
+                sprintf('SELECT course_id, name FROM %s ORDER BY course_id ASC', $tableName),
+            );
+
+            self::assertSame([
+                ['course_id' => 'course-1', 'name' => 'Math 101'],
+                ['course_id' => 'course-2', 'name' => 'Physics 201'],
+            ], $rows);
         });
     }
 
@@ -291,7 +344,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
         });
     }
 
-    public function test_active_split_is_taken_from_the_worker_immediately(): void
+    public function test_active_split_is_ignored_until_the_claim_is_released(): void
     {
         $this->withPostgresProjectionRuntime(function (
             Connection $connection,
@@ -323,11 +376,13 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
             $segments = $segmentRepository->listSegments('course_names');
 
-            self::assertCount(2, $segments);
+            self::assertCount(1, $segments);
             self::assertSame(0, $segments[0]->bucketFrom);
-            self::assertSame(128, $segments[1]->bucketFrom);
+            self::assertSame(255, $segments[0]->bucketTo);
+            self::assertSame('worker-1', $segments[0]->workerId);
 
             $segmentRepository->completeClaimedSegment($segment, \Ultra\EventStore\Checkpoint::beginning(), 'worker-1', true);
+            $segmentRepository->splitSegment('course_names', 0);
 
             $segments = $segmentRepository->listSegments('course_names');
 

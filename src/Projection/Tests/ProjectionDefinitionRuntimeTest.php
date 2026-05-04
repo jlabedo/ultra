@@ -77,6 +77,13 @@ final class TestProjectionClassWithoutInitializer
     public function onStudentSubscribed(StudentSubscribed $event): void {}
 }
 
+#[Projection(name: 'unpartitioned_projection')]
+final class UnpartitionedProjectionClass
+{
+    #[ProjectionHandler]
+    public function onCourseCreated(CourseCreatedEvent $event): void {}
+}
+
 #[EventAttribute('student.subscribed')]
 final readonly class DuplicateStudentSubscribed
 {
@@ -146,7 +153,22 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
 
         self::assertSame('test_projection', $definition->projectionId);
         self::assertSame('courseId', $definition->partitionDimension);
+        self::assertTrue($definition->isPartitioned());
         self::assertSame('flush', $definition->flushMethod);
+    }
+
+    public function test_projection_definition_allows_unpartitioned_single_lane_projections(): void
+    {
+        $definition = ProjectionDefinition::fromClass(UnpartitionedProjectionClass::class);
+        $event = new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['eventId' => 'event-1']);
+        $query = $definition->streamQueryForSegment(0, 255);
+
+        self::assertSame('unpartitioned_projection', $definition->projectionId);
+        self::assertNull($definition->partitionDimension);
+        self::assertFalse($definition->isPartitioned());
+        self::assertSame(0, $definition->bucketFor($event));
+        self::assertTrue($query->hasGlobalBranch());
+        self::assertTrue($query->matches($event));
     }
 
     public function test_stream_query_covers_all_handled_event_types_globally(): void

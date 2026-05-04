@@ -50,7 +50,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         self::assertNull($segments[0]->workerId);
     }
 
-    public function test_split_of_an_active_claim_is_taken_from_the_worker_immediately(): void
+    public function test_split_of_an_active_claim_is_ignored_until_the_claim_is_released(): void
     {
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('courses');
@@ -60,15 +60,13 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         $repository->splitSegment('courses', 0);
 
         $segments = $repository->listSegments('courses');
-        self::assertCount(2, $segments);
+        self::assertCount(1, $segments);
         self::assertSame(0, $segments[0]->bucketFrom);
-        self::assertSame(127, $segments[0]->bucketTo);
-        self::assertNull($segments[0]->workerId);
-        self::assertSame(128, $segments[1]->bucketFrom);
-        self::assertSame(255, $segments[1]->bucketTo);
-        self::assertNull($segments[1]->workerId);
+        self::assertSame(255, $segments[0]->bucketTo);
+        self::assertSame('worker-1', $segments[0]->workerId);
 
         $repository->completeClaimedSegment($segment, Checkpoint::at(new Sequence(5)), 'worker-1', true);
+        $repository->splitSegment('courses', 0);
 
         $after = $repository->listSegments('courses');
         self::assertCount(2, $after);

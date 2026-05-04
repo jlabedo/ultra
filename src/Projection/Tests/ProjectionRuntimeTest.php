@@ -84,7 +84,6 @@ final class ProjectionRuntimeTest extends TestCase
         self::assertCount(1, $pending);
         self::assertSame(1, $pending[0]->counter);
         self::assertSame(1, $activator->workSignals());
-        self::assertSame([], $activator->workerClaims());
     }
 
     public function test_activity_recorder_ignores_events_missing_the_partition_dimension(): void
@@ -150,9 +149,6 @@ final class ProjectionRuntimeTest extends TestCase
             $catalog,
             $runner,
             $activity,
-            $leases,
-            $activator,
-            new DefaultProjectionScalingPolicy(),
         );
 
         $events = [
@@ -164,10 +160,8 @@ final class ProjectionRuntimeTest extends TestCase
         $recorder->record($events);
 
         $result = $coordinator->run('coordinator-1');
-
-        self::assertTrue($result->acquiredLease);
         self::assertSame(2, $result->processedEvents);
-        self::assertSame([
+        self::assertEqualsCanonicalizing([
             'course-1' => 'Math',
             'course-2' => 'Physics',
         ], $projection->names);
@@ -188,7 +182,7 @@ final class ProjectionRuntimeTest extends TestCase
         $activator = new InMemoryProjectionActivator();
         $recorder = new ProjectionActivityRecorder($catalog, $activity, $leases, $activator);
         $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
-        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
+        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity);
 
         $events = [
             new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['courseId' => 'course-1']),
@@ -198,8 +192,6 @@ final class ProjectionRuntimeTest extends TestCase
         $recorder->record($events);
 
         $result = $coordinator->run('coordinator-1');
-
-        self::assertTrue($result->acquiredLease);
         self::assertSame(2, $result->processedEvents);
         self::assertSame(2, $result->acknowledgedBuckets);
         self::assertSame(['course-1' => 'Math'], $primaryProjection->names);

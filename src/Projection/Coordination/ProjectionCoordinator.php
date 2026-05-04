@@ -6,6 +6,7 @@ namespace Ultra\Projection\Coordination;
 
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionSegment;
 
 final readonly class ProjectionCoordinator
@@ -14,9 +15,6 @@ final readonly class ProjectionCoordinator
         private ProjectionCatalog $catalog,
         private ProjectionRunner $runner,
         private ProjectionBucketActivityRepositoryInterface $activityRepository,
-        private ProjectionCoordinatorLeaseRepositoryInterface $leaseRepository,
-        private ProjectionActivatorInterface $activator,
-        private ProjectionScalingPolicyInterface $scalingPolicy = new DefaultProjectionScalingPolicy(),
     ) {}
 
     public function run(
@@ -24,98 +22,71 @@ final readonly class ProjectionCoordinator
         int $batchSize = 100,
         int $maxCycles = 32,
     ): ProjectionCoordinatorResult {
-        $acquiredLease = $this->leaseRepository->acquire($workerId);
-        if (!$acquiredLease) {
-            return new ProjectionCoordinatorResult(false, 0, 0, 0);
-        }
-
         $processedEvents = 0;
         $acknowledgedBuckets = 0;
-        $requestedWorkerActivations = 0;
 
-        try {
-            for ($cycle = 0; $cycle < $maxCycles; ++$cycle) {
-                $this->leaseRepository->renew($workerId);
-
-                $affectedBuckets = $this->activityRepository->affectedBuckets();
-                if ([] === $affectedBuckets) {
-                    break;
-                }
-
-                $additionalWorkers = $this->scalingPolicy->additionalWorkersRequested($affectedBuckets);
-                $localAssignment = null;
-                $remoteAssignments = 0;
-                $claimedAny = false;
-
-                foreach ($this->groupByProjection($affectedBuckets) as $projectionId => $_projectionBuckets) {
-                    $runtime = $this->catalog->runtime($projectionId);
-
-                    $this->runner->ensureInitialized($runtime);
-                    $this->runner->recoverExpiredClaims($projectionId);
-                    $this->splitUntilSegmentCount($projectionId, $additionalWorkers + 1);
-
-                    foreach ($this->runner->availableSegments($projectionId) as $segment) {
-                        $pending = $this->activityRepository->pendingBucketsForSegment(
-                            $projectionId,
-                            $segment->bucketFrom,
-                            $segment->bucketTo,
-                        );
-                        if ([] === $pending) {
-                            continue;
-                        }
-
-                        if (null === $localAssignment) {
-                            $claimWorkerId = $workerId;
-                        } elseif ($remoteAssignments < $additionalWorkers) {
-                            $claimWorkerId = $this->workerIdFor($workerId, $projectionId, $segment->bucketFrom);
-                        } else {
-                            continue;
-                        }
-
-                        $claimedSegment = $this->runner->claimSegment($projectionId, $segment->bucketFrom, $claimWorkerId);
-                        if (null === $claimedSegment) {
-                            continue;
-                        }
-
-                        $claimedAny = true;
-                        if (null === $localAssignment) {
-                            $localAssignment = [$runtime, $projectionId, $segment->bucketFrom, $workerId];
-                            continue;
-                        }
-
-                        $this->activator->activateWorker($projectionId, $segment->bucketFrom, $claimWorkerId);
-                        ++$remoteAssignments;
-                        ++$requestedWorkerActivations;
-                    }
-                }
-
-                if (null !== $localAssignment) {
-                    [$runtime, $projectionId, $bucketFrom, $claimWorkerId] = $localAssignment;
-                    do {
-                        $result = $this->runner->runClaimedOnce($runtime, $projectionId, $bucketFrom, $claimWorkerId, $batchSize);
-                        if (!$result->claimedSegment) {
-                            break;
-                        }
-
-                        $processedEvents += $result->processedEvents;
-                        $acknowledgedBuckets += $result->acknowledgedBuckets;
-                    } while (!$result->caughtUp);
-                }
-
-                if (!$claimedAny && null === $localAssignment) {
-                    break;
-                }
+        for ($cycle = 0; $cycle < $maxCycles; ++$cycle) {
+            $assignment = $this->claimNextAssignment($workerId);
+            if (null === $assignment) {
+                break;
             }
-        } finally {
-            $this->leaseRepository->release($workerId);
+
+            [$runtime, $projectionId, $bucketFrom] = $assignment;
+
+            do {
+                $result = $this->runner->runClaimedOnce($runtime, $projectionId, $bucketFrom, $workerId, $batchSize);
+                if (!$result->claimedSegment) {
+                    break;
+                }
+
+                $processedEvents += $result->processedEvents;
+                $acknowledgedBuckets += $result->acknowledgedBuckets;
+            } while (!$result->caughtUp);
         }
 
         return new ProjectionCoordinatorResult(
-            true,
             $processedEvents,
             $acknowledgedBuckets,
-            $requestedWorkerActivations,
         );
+    }
+
+    /**
+     * @return null|array{ProjectionRuntime, string, int}
+     */
+    private function claimNextAssignment(string $workerId): ?array
+    {
+        $affectedBuckets = $this->activityRepository->affectedBuckets();
+        if ([] === $affectedBuckets) {
+            return null;
+        }
+
+        foreach ($this->groupByProjection($affectedBuckets) as $projectionId => $projectionBuckets) {
+            $runtime = $this->catalog->runtime($projectionId);
+
+            $this->runner->ensureInitialized($runtime);
+            $this->runner->recoverExpiredClaims($projectionId);
+            if ($runtime->definition()->isPartitioned()) {
+                $this->splitAvailableSegmentsForPendingBuckets($projectionId, count($projectionBuckets));
+            }
+
+            foreach ($this->runner->availableSegments($projectionId) as $segment) {
+                $pending = $this->activityRepository->pendingBucketsForSegment(
+                    $projectionId,
+                    $segment->bucketFrom,
+                    $segment->bucketTo,
+                );
+                if ([] === $pending) {
+                    continue;
+                }
+
+                $claimedSegment = $this->runner->claimSegment($projectionId, $segment->bucketFrom, $workerId);
+                if (null !== $claimedSegment) {
+                    return [$runtime, $projectionId, $segment->bucketFrom];
+                }
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -133,8 +104,10 @@ final readonly class ProjectionCoordinator
         return $grouped;
     }
 
-    private function splitUntilSegmentCount(string $projectionId, int $targetSegmentCount): void
+    private function splitAvailableSegmentsForPendingBuckets(string $projectionId, int $pendingBucketCount): void
     {
+        $targetSegmentCount = max(1, $pendingBucketCount);
+
         while (count($this->runner->listSegments($projectionId)) < $targetSegmentCount) {
             $candidate = $this->largestSplittableSegment($projectionId);
             if (null === $candidate) {
@@ -159,10 +132,5 @@ final readonly class ProjectionCoordinator
         );
 
         return $candidates[0] ?? null;
-    }
-
-    private function workerIdFor(string $coordinatorWorkerId, string $projectionId, int $bucketFrom): string
-    {
-        return sprintf('%s-%s-%d', $coordinatorWorkerId, $projectionId, $bucketFrom);
     }
 }

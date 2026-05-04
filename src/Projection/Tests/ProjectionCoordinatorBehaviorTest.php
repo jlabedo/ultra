@@ -16,8 +16,6 @@ use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
-use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
-use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\InMemory\InMemoryProjectionBucketActivityRepository;
 use Ultra\Projection\InMemory\InMemoryProjectionCoordinatorLeaseRepository;
 use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
@@ -45,6 +43,19 @@ final class CoordinatorProjection
     public function onCourseCreated(CoordinatorCourseCreated $event): void
     {
         $this->names[$event->courseId] = $event->name;
+    }
+}
+
+#[Projection(name: 'unpartitioned_coordinator_projection')]
+final class UnpartitionedCoordinatorProjection
+{
+    /** @var list<string> */
+    public array $handled = [];
+
+    #[ProjectionHandler]
+    public function onCourseCreated(CoordinatorCourseCreated $event): void
+    {
+        $this->handled[] = $event->courseId.':'.$event->name;
     }
 }
 
@@ -149,7 +160,7 @@ final class CountingActivityRepository implements ProjectionBucketActivityReposi
 #[CoversClass(ProjectionCoordinator::class)]
 final class ProjectionCoordinatorBehaviorTest extends TestCase
 {
-    public function test_leader_requests_additional_workers_from_the_scaling_policy_and_acknowledges_processed_buckets(): void
+    public function test_worker_pulls_pending_projection_work_without_remote_assignments(): void
     {
         $projection = new CoordinatorProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
@@ -158,20 +169,11 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $segments = new InMemoryProjectionSegmentRepository();
         $activity = new InMemoryProjectionBucketActivityRepository();
         $leases = new InMemoryProjectionCoordinatorLeaseRepository();
-        $activator = new InMemoryProjectionActivator();
         $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
         $coordinator = new ProjectionCoordinator(
             $catalog,
             $runner,
             $activity,
-            $leases,
-            $activator,
-            new readonly class implements ProjectionScalingPolicyInterface {
-                public function additionalWorkersRequested(array $affectedBuckets): int
-                {
-                    return 2;
-                }
-            },
         );
 
         $eventStore->append([
@@ -197,18 +199,18 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $activity->bump('coordinator_projection', BucketHasher::bucketFor('beta'));
 
         $result = $coordinator->run('coordinator-1');
-
-        self::assertTrue($result->acquiredLease);
-        self::assertSame(1, $result->processedEvents);
-        self::assertSame(1, $result->acknowledgedBuckets);
-        self::assertSame(2, $result->requestedWorkerActivations);
-        self::assertSame(['alpha' => 'Math'], $projection->names);
+        self::assertSame(3, $result->processedEvents);
+        self::assertSame(3, $result->acknowledgedBuckets);
+        self::assertSame([
+            'alpha' => 'Math',
+            'delta' => 'Science',
+            'beta' => 'Physics',
+        ], $projection->names);
         self::assertCount(3, $segments->listSegments('coordinator_projection'));
-        self::assertCount(2, $activator->workerClaims());
         self::assertFalse($leases->hasLiveCoordinator());
     }
 
-    public function test_non_leader_does_not_poll_or_process_projection_work(): void
+    public function test_worker_processes_work_even_when_the_obsolete_global_leader_lease_is_held(): void
     {
         $projection = new CoordinatorProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
@@ -218,8 +220,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $activity = new InMemoryProjectionBucketActivityRepository();
         $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
         $leases = new InMemoryProjectionCoordinatorLeaseRepository();
-        $activator = new InMemoryProjectionActivator();
-        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
+        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity);
 
         self::assertTrue($leases->acquire('other-worker'));
 
@@ -233,13 +234,9 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $activity->bump('coordinator_projection', BucketHasher::bucketFor('alpha'));
 
         $result = $coordinator->run('coordinator-1');
-
-        self::assertFalse($result->acquiredLease);
-        self::assertSame(0, $result->processedEvents);
-        self::assertSame(0, $result->acknowledgedBuckets);
-        self::assertSame(0, $result->requestedWorkerActivations);
-        self::assertSame([], $projection->names);
-        self::assertSame([], $activator->workerClaims());
+        self::assertSame(1, $result->processedEvents);
+        self::assertSame(1, $result->acknowledgedBuckets);
+        self::assertSame(['alpha' => 'Math'], $projection->names);
     }
 
     public function test_coordinator_continues_to_later_buckets_when_an_earlier_bucket_cannot_be_claimed(): void
@@ -251,9 +248,8 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $segments = new InMemoryProjectionSegmentRepository();
         $activity = new InMemoryProjectionBucketActivityRepository();
         $leases = new InMemoryProjectionCoordinatorLeaseRepository();
-        $activator = new InMemoryProjectionActivator();
         $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
-        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
+        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity);
 
         $segments->ensureInitialized('coordinator_projection');
         $segments->splitSegment('coordinator_projection', 0);
@@ -283,8 +279,6 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $activity->bump('coordinator_projection', $rightBucket);
 
         $result = $coordinator->run('coordinator-1');
-
-        self::assertTrue($result->acquiredLease);
         self::assertSame(1, $result->processedEvents);
         self::assertSame(1, $result->acknowledgedBuckets);
         self::assertSame(['beta' => 'Physics'], $projection->names);
@@ -304,9 +298,8 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $segments = new InMemoryProjectionSegmentRepository();
         $activity = new InMemoryProjectionBucketActivityRepository();
         $leases = new InMemoryProjectionCoordinatorLeaseRepository();
-        $activator = new InMemoryProjectionActivator();
         $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
-        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
+        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity);
         $bucket = BucketHasher::bucketFor('alpha');
 
         $eventStore->append([
@@ -331,28 +324,56 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertSame(['alpha' => 'Advanced Math'], $projection->names);
     }
 
+    public function test_unpartitioned_projection_uses_one_ordered_lane(): void
+    {
+        $projection = new UnpartitionedCoordinatorProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $catalog = new ProjectionCatalog($runtime);
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $activity = new InMemoryProjectionBucketActivityRepository();
+        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
+        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity);
+
+        $eventStore->append([
+            new Event(
+                eventType: 'coordinator.course.created',
+                payload: ['courseId' => 'alpha', 'name' => 'Math'],
+                domainIds: ['eventId' => 'event-1'],
+            ),
+            new Event(
+                eventType: 'coordinator.course.created',
+                payload: ['courseId' => 'beta', 'name' => 'Physics'],
+                domainIds: ['eventId' => 'event-2'],
+            ),
+        ]);
+        $activity->bump('unpartitioned_coordinator_projection', 0);
+
+        $result = $coordinator->run('worker-1', batchSize: 1, maxCycles: 1);
+
+        self::assertSame(2, $result->processedEvents);
+        self::assertSame(1, $result->acknowledgedBuckets);
+        self::assertSame(['alpha:Math', 'beta:Physics'], $projection->handled);
+        self::assertCount(1, $segments->listSegments('unpartitioned_coordinator_projection'));
+    }
+
     public function test_coordinator_stops_after_the_first_empty_poll_instead_of_spinning_until_max_cycles(): void
     {
         $runtime = new ProjectionRuntime(new CoordinatorProjection(), new UltraNormalizer());
         $catalog = new ProjectionCatalog($runtime);
         $leases = new CountingLeaseRepository();
         $activity = new EmptyAfterFirstPollActivityRepository();
-        $activator = new InMemoryProjectionActivator();
         $runner = new ProjectionRunner(new InMemoryEventStore(), new InMemoryProjectionSegmentRepository(), activityRepository: $activity);
-        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
+        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity);
 
         $result = $coordinator->run('coordinator-1', maxCycles: 3);
-
-        self::assertTrue($result->acquiredLease);
         self::assertSame(0, $result->processedEvents);
         self::assertSame(0, $result->acknowledgedBuckets);
-        self::assertSame(0, $result->requestedWorkerActivations);
-        self::assertSame(1, $leases->acquireCalls);
-        self::assertSame(1, $leases->renewCalls);
-        self::assertSame(1, $leases->releaseCalls);
+        self::assertSame(0, $leases->acquireCalls);
+        self::assertSame(0, $leases->renewCalls);
+        self::assertSame(0, $leases->releaseCalls);
         self::assertSame(1, $activity->affectedBucketsCalls);
         self::assertSame(0, $activity->pendingBucketsCalls);
-        self::assertSame([], $activator->workerClaims());
     }
 
     public function test_coordinator_stops_after_the_first_unproductive_cycle_when_all_pending_buckets_are_unclaimable(): void
@@ -369,19 +390,15 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $innerActivity->bump('coordinator_projection', $bucket);
         $activity = new CountingActivityRepository($innerActivity);
         $leases = new CountingLeaseRepository();
-        $activator = new InMemoryProjectionActivator();
         $runner = new ProjectionRunner(new InMemoryEventStore(), $segments, activityRepository: $activity);
-        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
+        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity);
 
         $result = $coordinator->run('coordinator-1', maxCycles: 3);
-
-        self::assertTrue($result->acquiredLease);
         self::assertSame(0, $result->processedEvents);
         self::assertSame(0, $result->acknowledgedBuckets);
-        self::assertSame(0, $result->requestedWorkerActivations);
         self::assertSame(1, $activity->affectedBucketsCalls);
-        self::assertSame(1, $leases->renewCalls);
-        self::assertSame(1, $leases->releaseCalls);
+        self::assertSame(0, $leases->renewCalls);
+        self::assertSame(0, $leases->releaseCalls);
         self::assertSame(0, $activity->pendingBucketsCalls);
     }
 }
