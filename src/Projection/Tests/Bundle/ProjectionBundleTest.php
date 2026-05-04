@@ -5,16 +5,13 @@ declare(strict_types=1);
 namespace Ultra\Projection\Tests\Bundle;
 
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
 use Ultra\Events\Attribute\Event;
-use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Bundle\ProjectionBundle;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRuntime;
-use Ultra\Testing\UltraLight;
-use Ultra\Testing\UltraLightContainer;
+use Ultra\Projection\Tests\Support\ProjectionFunctionalTestCase;
 
 #[Event('projection.stubbed')]
 final readonly class StubProjectionEvent {}
@@ -44,13 +41,13 @@ final class ThirdStubProjection
  * @internal
  */
 #[CoversClass(ProjectionBundle::class)]
-final class ProjectionBundleTest extends TestCase
+final class ProjectionBundleTest extends ProjectionFunctionalTestCase
 {
     public function test_registers_empty_catalog_when_no_projections_are_discovered(): void
     {
         $catalog = $this->projectionUltraLight()
             ->boot()
-            ->get('test.projection_catalog')
+            ->projectionCatalog()
         ;
 
         self::assertInstanceOf(ProjectionCatalog::class, $catalog);
@@ -63,7 +60,7 @@ final class ProjectionBundleTest extends TestCase
         $catalog = $this->projectionUltraLight()
             ->withClass(StubProjection::class)
             ->boot()
-            ->get('test.projection_catalog')
+            ->projectionCatalog()
         ;
 
         self::assertInstanceOf(ProjectionCatalog::class, $catalog);
@@ -78,7 +75,7 @@ final class ProjectionBundleTest extends TestCase
         $catalog = $this->projectionUltraLight()
             ->withClass(StubProjection::class, OtherStubProjection::class, ThirdStubProjection::class)
             ->boot()
-            ->get('test.projection_catalog')
+            ->projectionCatalog()
         ;
 
         self::assertInstanceOf(ProjectionCatalog::class, $catalog);
@@ -92,15 +89,4 @@ final class ProjectionBundleTest extends TestCase
         ));
     }
 
-    /**
-     * @return UltraLight<UltraLightContainer>
-     */
-    private function projectionUltraLight(): UltraLight
-    {
-        return new UltraLight()
-            ->withBundle(new ProjectionBundle())
-            ->withService(new UltraNormalizer(), UltraNormalizer::class)
-            ->withAlias('test.projection_catalog', ProjectionCatalog::class)
-        ;
-    }
 }

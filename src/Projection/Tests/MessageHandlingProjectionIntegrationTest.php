@@ -5,27 +5,17 @@ declare(strict_types=1);
 namespace Ultra\Projection\Tests;
 
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\Event;
-use Ultra\EventStore\InMemoryEventStore;
-use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
-use Ultra\Projection\Coordination\ProjectionCoordinator;
-use Ultra\Projection\InMemory\InMemoryProjectionActivator;
-use Ultra\Projection\InMemory\InMemoryProjectionBucketActivityRepository;
-use Ultra\Projection\InMemory\InMemoryProjectionCoordinatorLeaseRepository;
-use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\MessageHandling\MessageHandlingProjectionActivator;
 use Ultra\Projection\MessageHandling\ProjectionMessageHandler;
 use Ultra\Projection\MessageHandling\RunProjectionSegment;
 use Ultra\Projection\MessageHandling\WakeProjectionCoordinator;
-use Ultra\Projection\ProjectionCatalog;
-use Ultra\Projection\ProjectionRunner;
-use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\Tests\Support\ProjectionFunctionalTestCase;
 
 final class RecordingMediator implements MediatorInterface
 {
@@ -69,7 +59,7 @@ final class MessageHandlingTrackingProjection
 #[CoversClass(ProjectionMessageHandler::class)]
 #[CoversClass(RunProjectionSegment::class)]
 #[CoversClass(WakeProjectionCoordinator::class)]
-final class MessageHandlingProjectionIntegrationTest extends TestCase
+final class MessageHandlingProjectionIntegrationTest extends ProjectionFunctionalTestCase
 {
     public function test_activator_dispatches_wake_and_segment_messages_through_the_mediator(): void
     {
@@ -92,15 +82,22 @@ final class MessageHandlingProjectionIntegrationTest extends TestCase
     public function test_projection_segment_message_runs_the_claimed_projection_segment(): void
     {
         $projection = new MessageHandlingTrackingProjection();
-        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
-        $catalog = new ProjectionCatalog($runtime);
-        $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new InMemoryProjectionBucketActivityRepository();
-        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
-        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
-        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, new InMemoryProjectionActivator());
-        $handler = new ProjectionMessageHandler($catalog, $runner, $coordinator, batchSize: 1, maxCycles: 3);
+        $container = $this->projectionUltraLight()
+            ->withService($projection, MessageHandlingTrackingProjection::class)
+            ->withAlias('test.tracking_projection', MessageHandlingTrackingProjection::class)
+            ->boot()
+        ;
+        $runtime = $container->projectionCatalog()->runtime('message_handling_tracking_projection');
+        $eventStore = $container->eventStore();
+        $activity = $container->projectionActivity();
+        $runner = $container->projectionRunner();
+        $handler = new ProjectionMessageHandler(
+            $container->projectionCatalog(),
+            $runner,
+            $container->projectionCoordinator(),
+            batchSize: 1,
+            maxCycles: 3,
+        );
 
         $event = self::courseCreatedEvent('course-1', 'Intro to Projections');
         $eventStore->append([$event]);

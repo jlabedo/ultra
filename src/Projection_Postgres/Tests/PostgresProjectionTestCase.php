@@ -5,22 +5,22 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
-use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\Tests\Support\ProjectionFunctionalTestCase;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivitySchema;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorSchema;
+use Ultra\Projection_Postgres\PostgresProjectionImplementation;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
-use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
 use Ultra\Testing\PostgresTestSupport;
 use Ultra\Time\ClockInterface;
 use Ultra\Time\StatickClock;
 use Ultra\Time\SystemClock;
 
-abstract class PostgresProjectionTestCase extends TestCase
+abstract class PostgresProjectionTestCase extends ProjectionFunctionalTestCase
 {
     protected function postgresDsn(): string
     {
@@ -58,14 +58,14 @@ abstract class PostgresProjectionTestCase extends TestCase
             }
 
             $store = PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams');
-            $segmentRepository = new PostgresProjectionSegmentRepository($connection, $projectionPrefix, $clock);
-            $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
-            $runner = new ProjectionRunner(
+            $container = $this->projectionUltraLight(
                 $store,
-                $segmentRepository,
-                new PostgresProjectionTransactionManager($connection),
-                $activityRepository,
-            );
+                new PostgresProjectionImplementation($connection, $projectionPrefix, $clock),
+            )->boot();
+            $segmentRepository = $container->projectionSegments();
+            $runner = $container->projectionRunner();
+
+            self::assertInstanceOf(PostgresProjectionSegmentRepository::class, $segmentRepository);
 
             $callback($connection, $store, $segmentRepository, $runner, $eventStorePrefix, $projectionPrefix);
         } finally {
@@ -84,10 +84,18 @@ abstract class PostgresProjectionTestCase extends TestCase
     }
 
     /**
-     * @param callable(Connection, string): void $callback
+     * @param callable(
+     *     Connection,
+     *     PostgresProjectionSegmentRepository,
+     *     PostgresProjectionBucketActivityRepository,
+     *     PostgresProjectionCoordinatorLeaseRepository,
+     *     string
+     * ): void $callback
      */
-    protected function withPostgresProjectionCoordination(callable $callback): void
-    {
+    protected function withPostgresProjectionCoordination(
+        callable $callback,
+        ClockInterface $clock = new SystemClock(),
+    ): void {
         $connection = PostgresTestSupport::sharedConnection($this->postgresDsn());
         $projectionPrefix = 'ultra_projection_'.bin2hex(random_bytes(4)).'_';
         $schemas = [
@@ -103,7 +111,18 @@ abstract class PostgresProjectionTestCase extends TestCase
                 }
             }
 
-            $callback($connection, $projectionPrefix);
+            $container = $this->projectionUltraLight(
+                implementation: new PostgresProjectionImplementation($connection, $projectionPrefix, $clock),
+            )->boot();
+            $segments = $container->projectionSegments();
+            $activity = $container->projectionActivity();
+            $leases = $container->projectionLeases();
+
+            self::assertInstanceOf(PostgresProjectionSegmentRepository::class, $segments);
+            self::assertInstanceOf(PostgresProjectionBucketActivityRepository::class, $activity);
+            self::assertInstanceOf(PostgresProjectionCoordinatorLeaseRepository::class, $leases);
+
+            $callback($connection, $segments, $activity, $leases, $projectionPrefix);
         } finally {
             PostgresTestSupport::resetSharedConnection($connection);
 
@@ -151,15 +170,18 @@ abstract class PostgresProjectionTestCase extends TestCase
             }
 
             $store = PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams');
-            $segmentRepository = new PostgresProjectionSegmentRepository($connection, $projectionPrefix, $clock);
-            $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
-            $runner = new ProjectionRunner(
+            $container = $this->projectionUltraLight(
                 $store,
-                $segmentRepository,
-                new PostgresProjectionTransactionManager($connection),
-                $activityRepository,
-            );
-            $leaseRepository = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix);
+                new PostgresProjectionImplementation($connection, $projectionPrefix, $clock),
+            )->boot();
+            $segmentRepository = $container->projectionSegments();
+            $runner = $container->projectionRunner();
+            $activityRepository = $container->projectionActivity();
+            $leaseRepository = $container->projectionLeases();
+
+            self::assertInstanceOf(PostgresProjectionSegmentRepository::class, $segmentRepository);
+            self::assertInstanceOf(PostgresProjectionBucketActivityRepository::class, $activityRepository);
+            self::assertInstanceOf(PostgresProjectionCoordinatorLeaseRepository::class, $leaseRepository);
 
             $callback(
                 $connection,

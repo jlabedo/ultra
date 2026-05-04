@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Projection_Postgres\Tests;
 
+use Doctrine\DBAL\Connection;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
@@ -18,8 +19,10 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
 {
     public function test_postgres_segment_repository_can_claim_a_segment_for_a_worker(): void
     {
-        $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
-            $segments = new PostgresProjectionSegmentRepository($connection, $projectionPrefix);
+        $this->withPostgresProjectionCoordination(function (
+            Connection $connection,
+            PostgresProjectionSegmentRepository $segments,
+        ): void {
             $segments->ensureInitialized('courses');
             $segments->splitSegment('courses', 0);
 
@@ -33,9 +36,11 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
 
     public function test_postgres_bucket_activity_repository_stores_pending_counters_and_decrements_seen_values(): void
     {
-        $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
-            $activity = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
-
+        $this->withPostgresProjectionCoordination(function (
+            Connection $connection,
+            PostgresProjectionSegmentRepository $segments,
+            PostgresProjectionBucketActivityRepository $activity,
+        ): void {
             $activity->bump('courses', 42);
             $activity->bump('courses', 42);
             $activity->bump('courses', 50);
@@ -70,24 +75,30 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
 
     public function test_postgres_coordinator_lease_repository_debounces_wakeups_until_a_coordinator_acquires_the_lease(): void
     {
-        $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
-            $clock = $this->staticClock('2024-01-01T00:00:00+00:00');
-            $leases = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix, $clock);
-
+        $this->withPostgresProjectionCoordination(function (
+            Connection $connection,
+            PostgresProjectionSegmentRepository $segments,
+            PostgresProjectionBucketActivityRepository $activity,
+            PostgresProjectionCoordinatorLeaseRepository $leases,
+        ): void {
             self::assertTrue($leases->markWakeEnqueued(Duration::seconds(30)));
             self::assertFalse($leases->markWakeEnqueued(Duration::seconds(30)));
             self::assertTrue($leases->acquire('coordinator-1'));
             self::assertTrue($leases->hasLiveCoordinator());
             self::assertFalse($leases->markWakeEnqueued(Duration::seconds(30)));
-        });
+        }, $this->staticClock('2024-01-01T00:00:00+00:00'));
     }
 
     public function test_postgres_coordinator_lease_expiry_follows_the_injected_clock(): void
     {
-        $this->withPostgresProjectionCoordination(function ($connection, string $projectionPrefix): void {
-            $clock = $this->staticClock('2024-01-01T00:00:00+00:00');
-            $leases = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix, $clock);
+        $clock = $this->staticClock('2024-01-01T00:00:00+00:00');
 
+        $this->withPostgresProjectionCoordination(function (
+            Connection $connection,
+            PostgresProjectionSegmentRepository $segments,
+            PostgresProjectionBucketActivityRepository $activity,
+            PostgresProjectionCoordinatorLeaseRepository $leases,
+        ) use ($clock): void {
             self::assertTrue($leases->acquire('coordinator-1', Duration::seconds(30)));
             self::assertTrue($leases->hasLiveCoordinator());
 
@@ -95,6 +106,6 @@ final class PostgresProjectionCoordinationTest extends PostgresProjectionTestCas
 
             self::assertFalse($leases->hasLiveCoordinator());
             self::assertTrue($leases->acquire('coordinator-2', Duration::seconds(30)));
-        });
+        }, $clock);
     }
 }
