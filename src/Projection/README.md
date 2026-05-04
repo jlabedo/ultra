@@ -2,6 +2,11 @@
 
 The `Projection` package defines how read models are described, replayed, and coordinated.
 
+The current coordination implementation is due for a rewrite. Use
+[COORDINATION_REWRITE_SPEC.md](COORDINATION_REWRITE_SPEC.md) as the source of
+truth for the next coordination design and for deciding which existing
+coordination tests should be discarded or replaced.
+
 It is intentionally split into two layers:
 
 - definition/runtime: what a projection is and how it applies events
@@ -18,7 +23,7 @@ Postgres-specific persistence lives in `src/Projection_Postgres`. This package k
 It is built from attributes and reflection and contains:
 
 - `projectionId`
-- `partitionDimension`
+- optional `partitionDimension`
 - initializer method, if any
 - flush method, if any
 - handler metadata per event type
@@ -27,7 +32,7 @@ It also knows how to:
 
 - list handled event types
 - check whether an event is handled
-- compute the event bucket from the partition dimension
+- compute the event bucket from the partition dimension, or use the single ordered lane for unpartitioned projections
 - build the event-store query for a whole projection or one segment
 
 ### `ProjectionRuntime`
@@ -107,7 +112,7 @@ It:
 2. finds which projections handle each committed event
 3. computes the touched bucket for each `(projection, event)` pair
 4. bumps the activity counter for each distinct `(projectionId, bucket)` pair
-5. enqueues one global `WakeProjectionCoordinator` message if no recent wake-up is already pending
+5. enqueues one coarse `WakeProjectionWork` message if no recent wake-up is already pending
 
 Important details:
 
@@ -128,52 +133,43 @@ The coordinator asks for global `affectedBuckets()` to find stale projections, m
 segments, and durably claims only segments that still have pending bucket activity. Bucket activity is a liveness
 signal; segments are the scheduling and checkpointing unit.
 
-### Global Coordinator
+### Worker-Pull Coordinator
 
-[ProjectionCoordinator.php](Coordination/ProjectionCoordinator.php) is a single leader worker for the whole app.
+[ProjectionCoordinator.php](Coordination/ProjectionCoordinator.php) is the worker-pull loop.
 
-It does not wake per projection. Instead it:
+Every worker runs the same loop:
 
-1. acquires the global coordinator lease
-2. reads all affected buckets across all projections
-3. decides the target worker/segment count through a scaling policy
-4. recovers expired segment leases for the touched projections
-5. ensures each touched projection is initialized
-6. splits available segments until the projection has enough segments for the requested workers plus itself
-7. maps pending bucket activity to affected segments
-8. durably claims affected segments for itself or activated workers
-9. processes one local claim itself through `ProjectionRunner`
-10. workers decrement the bucket counters they observed only after their claimed segment catches up
-11. exits when there is no work or no productive progress
+1. reads affected buckets across projections
+2. ensures touched projections are initialized
+3. recovers expired segment leases for touched projections
+4. splits available segments when pending buckets can be exposed to more workers
+5. atomically claims one available segment that still has pending activity
+6. processes that claim through `ProjectionRunner` until it catches up
+7. repeats while it keeps finding productive work
+8. exits when there is no work or no claimable work
 
-This is important: the coordinator is not only a scheduler. It is also a worker and always participates in processing.
+There is no global leader on the normal processing path. Queue wakeups invite any
+worker to pull work from durable coordination state; they do not assign internal
+segments to specific workers.
 
-Coordinator liveness is abstracted behind [ProjectionCoordinatorLeaseRepositoryInterface.php](Coordination/ProjectionCoordinatorLeaseRepositoryInterface.php).
+The coordinator lease repository is still used by activity recording to debounce
+coarse wake signals. It is no longer used to decide which worker may process
+projection work.
 
-### Wake Queue
+### Wake Messages
 
-[ProjectionWakeQueueInterface.php](Coordination/ProjectionWakeQueueInterface.php) is deliberately tiny:
+The package defines one queue-facing wake message:
 
-- `enqueue(object $message)`
-- `dequeue(): ?object`
-
-Today the package defines two wake-up messages:
-
-- [WakeProjectionCoordinator.php](Coordination/WakeProjectionCoordinator.php)
-- [WakeProjectionWorker.php](Coordination/WakeProjectionWorker.php)
+- [WakeProjectionWork.php](MessageHandling/WakeProjectionWork.php)
 
 The queue is only a wake-up mechanism. Scheduling truth remains in the repositories.
 
 ### Scaling Policy
 
-[ProjectionScalingPolicyInterface.php](Coordination/ProjectionScalingPolicyInterface.php) receives the current global affected-bucket view and decides how many extra worker wake-ups should be emitted.
-
-The default implementation, [DefaultProjectionScalingPolicy.php](Coordination/DefaultProjectionScalingPolicy.php), returns `0`.
-
-That means:
-
-- the leader worker still processes work itself
-- no follower workers are spawned unless a custom policy says so
+The current scaling policy abstraction is retained only as a compatibility seam
+while the rewrite proceeds. The worker-pull loop does not use it to spawn
+followers. Future scaling work should be based on automatic claimable-work
+discovery rather than leader-assigned worker counts.
 
 ## In-Memory Implementations
 
@@ -182,7 +178,7 @@ This package includes in-memory adapters for tests and local composition:
 - [InMemoryProjectionSegmentRepository.php](InMemoryProjectionSegmentRepository.php)
 - [InMemoryProjectionBucketActivityRepository.php](Coordination/InMemoryProjectionBucketActivityRepository.php)
 - [InMemoryProjectionCoordinatorLeaseRepository.php](Coordination/InMemoryProjectionCoordinatorLeaseRepository.php)
-- [InMemoryProjectionWakeQueue.php](Coordination/InMemoryProjectionWakeQueue.php)
+- [InMemoryProjectionActivator.php](InMemoryProjectionActivator.php)
 
 These are useful for:
 
@@ -198,9 +194,9 @@ At a high level, the runtime works like this:
 
 1. Events are appended successfully to the event store.
 2. `ProjectionActivityRecorder` records touched `(projectionId, bucket)` pairs.
-3. A single global coordinator wake-up is enqueued.
-4. A worker becomes leader by acquiring the coordinator lease.
-5. The leader reads affected buckets, claims affected segments, optionally wakes followers, and processes one claim itself.
+3. A coarse projection-work wake-up is enqueued.
+4. Any active worker can receive the wake-up or poll for work.
+5. The worker reads affected buckets, claims one available segment, and processes it.
 6. `ProjectionRunner` renews the claimed segment lease and replays events from checkpoints.
 7. Caught-up workers decrement the bucket counters they observed, and the loop continues until there is no productive work left.
 

@@ -18,7 +18,7 @@ final readonly class ProjectionDefinition
     /** @param array<string, ProjectionHandlerDefinition> $handlers */
     private function __construct(
         public string $projectionId,
-        public string $partitionDimension,
+        public ?string $partitionDimension,
         public ?string $initializerMethod,
         public ?string $flushMethod,
         private array $handlers,
@@ -70,6 +70,10 @@ final readonly class ProjectionDefinition
 
     public function streamQueryForSegment(int $bucketFrom, int $bucketTo): StreamQuery
     {
+        if (null === $this->partitionDimension) {
+            return $this->streamQuery();
+        }
+
         return StreamQuery::forSegment(
             $this->partitionDimension,
             $bucketFrom,
@@ -85,12 +89,21 @@ final readonly class ProjectionDefinition
 
     public function bucketFor(Event $event): ?int
     {
+        if (null === $this->partitionDimension) {
+            return 0;
+        }
+
         $value = $event->domainIds[$this->partitionDimension] ?? null;
         if (null === $value) {
             return null;
         }
 
         return BucketHasher::bucketFor($value);
+    }
+
+    public function isPartitioned(): bool
+    {
+        return null !== $this->partitionDimension;
     }
 
     public function handlerFor(Event|string $event): ?ProjectionHandlerDefinition

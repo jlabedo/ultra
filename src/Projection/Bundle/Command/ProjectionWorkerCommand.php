@@ -44,16 +44,14 @@ final class ProjectionWorkerCommand extends Command
 
             if ($output->isVerbose()) {
                 $output->writeln(sprintf(
-                    '[%s] lease=%s processed=%d acknowledged=%d activations=%d',
+                    '[%s] processed=%d acknowledged=%d',
                     date('H:i:s'),
-                    $result->acquiredLease ? 'yes' : 'no',
                     $result->processedEvents,
                     $result->acknowledgedBuckets,
-                    $result->requestedWorkerActivations,
                 ));
             }
 
-            if (!$result->acquiredLease || (0 === $result->processedEvents && 0 === $result->acknowledgedBuckets)) {
+            if (!$result->wasProductive()) {
                 usleep(100_000);
             }
         }

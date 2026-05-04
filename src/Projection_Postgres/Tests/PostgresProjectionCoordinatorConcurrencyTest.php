@@ -22,7 +22,6 @@ use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionCoordinatorResult;
-use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
@@ -85,7 +84,7 @@ final class ConcurrencyCourseNamesProjection
 #[Group('projection-concurrency')]
 final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProjectionTestCase
 {
-    public function test_leader_and_follower_can_process_different_segments_concurrently(): void
+    public function test_two_workers_can_process_different_segments_concurrently(): void
     {
         $dsn = $this->postgresDsn();
 
@@ -132,9 +131,10 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
 
             $cluster = new Cluster(timeout: 10.0);
 
-            // Leader: claims its segment, then pauses at 'segment_claimed' before loading
-            // events so the follower can concurrently claim the other segment.
-            $leader = $cluster->spawn(
+            // First worker: claims its segment, then pauses at 'segment_claimed'
+            // before loading events so the second worker can concurrently claim
+            // the other segment.
+            $firstWorker = $cluster->spawn(
                 static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $supportFile, $testFile): ProjectionCoordinatorResult {
                     require_once $supportFile;
 
@@ -144,7 +144,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                     $innerStore = \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams');
 
                     // Inline barrier: fires once on the first load(), holding the segment
-                    // claim open so the follower can grab the other segment concurrently.
+                    // claim open so the second worker can grab the other segment concurrently.
                     $barrierStore = new class($innerStore) implements EventStore {
                         private bool $checkpointed = false;
 
@@ -186,8 +186,6 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                         ),
                         $runner,
                         $activityRepository,
-                        new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix),
-                        new InMemoryProjectionActivator(),
                     );
 
                     try {
@@ -198,12 +196,13 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                 },
             );
 
-            // Wait until the leader holds a segment before spawning the follower, so it
-            // cannot race ahead and claim both segments.
-            $leader->awaitCheckpoint('segment_claimed');
+            // Wait until the first worker holds a segment before spawning the
+            // second worker, so it cannot race ahead and claim both segments.
+            $firstWorker->awaitCheckpoint('segment_claimed');
 
-            // Follower: no barrier, runs to completion while the leader is paused.
-            $follower = $cluster->spawn(
+            // Second worker: no barrier, runs to completion while the first
+            // worker is paused.
+            $secondWorker = $cluster->spawn(
                 static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $supportFile, $testFile): ProjectionCoordinatorResult {
                     require_once $supportFile;
 
@@ -226,8 +225,6 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                         ),
                         $runner,
                         $activityRepository,
-                        new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix),
-                        new InMemoryProjectionActivator(),
                     );
 
                     try {
@@ -238,26 +235,24 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                 },
             );
 
-            $followerOutcome = $follower->join();
+            $secondWorkerOutcome = $secondWorker->join();
 
-            $leader->release('segment_claimed');
-            $leaderOutcome = $leader->join();
+            $firstWorker->release('segment_claimed');
+            $firstWorkerOutcome = $firstWorker->join();
 
-            self::assertTrue($leaderOutcome->isSuccess(), $leaderOutcome->exceptionMessage() ?? '');
+            self::assertTrue($firstWorkerOutcome->isSuccess(), $firstWorkerOutcome->exceptionMessage() ?? '');
 
-            /** @var ProjectionCoordinatorResult $leaderResult */
-            $leaderResult = $leaderOutcome->value();
-            self::assertTrue($leaderResult->acquiredLease);
-            self::assertSame(1, $leaderResult->processedEvents);
-            self::assertGreaterThanOrEqual(1, $leaderResult->acknowledgedBuckets);
+            /** @var ProjectionCoordinatorResult $firstWorkerResult */
+            $firstWorkerResult = $firstWorkerOutcome->value();
+            self::assertSame(1, $firstWorkerResult->processedEvents);
+            self::assertGreaterThanOrEqual(1, $firstWorkerResult->acknowledgedBuckets);
 
-            self::assertTrue($followerOutcome->isSuccess(), $followerOutcome->exceptionMessage() ?? '');
+            self::assertTrue($secondWorkerOutcome->isSuccess(), $secondWorkerOutcome->exceptionMessage() ?? '');
 
-            /** @var ProjectionCoordinatorResult $followerResult */
-            $followerResult = $followerOutcome->value();
-            self::assertFalse($followerResult->acquiredLease);
-            self::assertSame(1, $followerResult->processedEvents);
-            self::assertGreaterThanOrEqual(1, $followerResult->acknowledgedBuckets);
+            /** @var ProjectionCoordinatorResult $secondWorkerResult */
+            $secondWorkerResult = $secondWorkerOutcome->value();
+            self::assertSame(1, $secondWorkerResult->processedEvents);
+            self::assertGreaterThanOrEqual(1, $secondWorkerResult->acknowledgedBuckets);
 
             $rows = $connection->fetchAllAssociative(
                 sprintf('SELECT course_id, name FROM %s ORDER BY course_id ASC', $tableName),

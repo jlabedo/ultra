@@ -9,7 +9,7 @@ final readonly class Projection
 {
     public function __construct(
         public string $name,
-        public string $partitionBy,
+        public ?string $partitionBy = null,
     ) {
         if ('' === $this->name) {
             throw new \InvalidArgumentException('Projection name must be a non-empty string.');

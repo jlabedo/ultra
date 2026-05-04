@@ -74,9 +74,6 @@ final class ProjectionBundle extends Bundle
                 new Reference(ProjectionCatalog::class),
                 new Reference(ProjectionRunner::class),
                 new Reference(ProjectionBucketActivityRepositoryInterface::class),
-                new Reference(ProjectionCoordinatorLeaseRepositoryInterface::class),
-                new Reference(ProjectionActivatorInterface::class),
-                new Reference(ProjectionScalingPolicyInterface::class),
             ])
         ;
 
@@ -99,12 +96,9 @@ final class ProjectionBundle extends Bundle
 
         $container->register(ProjectionMessageHandler::class, ProjectionMessageHandler::class)
             ->setArguments([
-                new Reference(ProjectionCatalog::class),
-                new Reference(ProjectionRunner::class),
                 new Reference(ProjectionCoordinator::class),
             ])
-            ->addTag('ultra.message_handler', ['method' => 'handleWakeProjectionCoordinator'])
-            ->addTag('ultra.message_handler', ['method' => 'handleRunProjectionSegment'])
+            ->addTag('ultra.message_handler', ['method' => 'handleWakeProjectionWork'])
         ;
     }
 }

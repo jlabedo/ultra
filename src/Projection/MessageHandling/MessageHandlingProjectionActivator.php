@@ -16,12 +16,7 @@ final readonly class MessageHandlingProjectionActivator implements ProjectionAct
 
     public function signalWorkAvailable(): void
     {
-        $this->mediator->send(new WakeProjectionCoordinator($this->workerId()));
-    }
-
-    public function activateWorker(string $projectionId, int $bucketFrom, string $workerId): void
-    {
-        $this->mediator->send(new RunProjectionSegment($projectionId, $bucketFrom, $workerId));
+        $this->mediator->send(new WakeProjectionWork($this->workerId()));
     }
 
     private function workerId(): string
