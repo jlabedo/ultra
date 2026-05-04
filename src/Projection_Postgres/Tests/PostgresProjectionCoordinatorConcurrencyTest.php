@@ -127,7 +127,6 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             $activity->bump('course_names', $leftBucket);
             $activity->bump('course_names', $rightBucket);
 
-            $supportFile = __DIR__.'/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
             $testFile = __FILE__;
 
             $cluster = new Cluster(timeout: 10.0);
@@ -135,13 +134,11 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             // Leader: claims its segment, then pauses at 'segment_claimed' before loading
             // events so the follower can concurrently claim the other segment.
             $leader = $cluster->spawn(
-                static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $supportFile, $testFile): ProjectionCoordinatorResult {
-                    require_once $supportFile;
-
+                static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $testFile): ProjectionCoordinatorResult {
                     require_once $testFile;
 
-                    $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
-                    $innerStore = \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams');
+                    $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
+                    $innerStore = \Ultra\Testing\PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams');
 
                     // Inline barrier: fires once on the first load(), holding the segment
                     // claim open so the follower can grab the other segment concurrently.
@@ -204,15 +201,13 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
 
             // Follower: no barrier, runs to completion while the leader is paused.
             $follower = $cluster->spawn(
-                static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $supportFile, $testFile): ProjectionCoordinatorResult {
-                    require_once $supportFile;
-
+                static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $testFile): ProjectionCoordinatorResult {
                     require_once $testFile;
 
-                    $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
+                    $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
                     $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
                     $runner = new ProjectionRunner(
-                        \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $eventStorePrefix, 'query-streams'),
+                        \Ultra\Testing\PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams'),
                         new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
                         new PostgresProjectionTransactionManager($connection),
                         $activityRepository,
@@ -288,7 +283,6 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             Connection $connection,
             string $projectionPrefix,
         ) use ($dsn): void {
-            $supportFile = __DIR__.'/../../EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
 
             $cluster = new Cluster(timeout: 10.0);
 
@@ -296,10 +290,8 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             // parent can verify the lease is visible before spawning the contenders.
             // The lease is intentionally never released, simulating a coordinator crash.
             $stalledLeader = $cluster->spawn(
-                static function () use ($dsn, $projectionPrefix, $supportFile): bool {
-                    require_once $supportFile;
-
-                    $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
+                static function () use ($dsn, $projectionPrefix): bool {
+                    $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
                     $clock = new StatickClock(new \DateTimeImmutable('2000-01-01 00:00:00'));
                     $leases = new PostgresProjectionCoordinatorLeaseRepository(
                         $connection,
@@ -323,10 +315,8 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
 
             // Worker B — early contender: sees the same T=0, must fail to acquire.
             $earlyContender = $cluster->spawn(
-                static function () use ($dsn, $projectionPrefix, $supportFile): bool {
-                    require_once $supportFile;
-
-                    $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
+                static function () use ($dsn, $projectionPrefix): bool {
+                    $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
                     $clock = new StatickClock(new \DateTimeImmutable('2000-01-01 00:00:00'));
                     $leases = new PostgresProjectionCoordinatorLeaseRepository(
                         $connection,
@@ -345,10 +335,8 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             // Worker C — late contender: waits for the parent to inject a timestamp that
             // is past the stalled leader's lease expiry, then tries to acquire.
             $lateContender = $cluster->spawn(
-                static function () use ($dsn, $projectionPrefix, $supportFile): bool {
-                    require_once $supportFile;
-
-                    $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
+                static function () use ($dsn, $projectionPrefix): bool {
+                    $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
 
                     // Block until the parent tells us what "now" is.  The injected
                     // timestamp will be one second past the stalled leader's expiry.

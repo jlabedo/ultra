@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 
-require_once __DIR__.'/PostgresTestSupport.php';
+
 
 abstract class PostgresEventStoreTestCase extends TestCase
 {
@@ -31,24 +31,24 @@ abstract class PostgresEventStoreTestCase extends TestCase
         string $implementation = 'hstore',
         string $lockStrategy = 'shared-exclusive',
     ): void {
-        $connection = postgresTestConnection($this->postgresDsn());
-        $prefix = postgresTestUniquePrefix();
-        $schema = postgresTestSchemaForImplementation($prefix, $implementation, $lockStrategy);
+        $connection = \Ultra\Testing\PostgresTestSupport::sharedConnection($this->postgresDsn());
+        $prefix = \Ultra\Testing\PostgresTestSupport::uniquePrefix();
+        $schema = \Ultra\Testing\PostgresTestSupport::schemaForImplementation($prefix, $implementation, $lockStrategy);
 
         try {
             foreach ($schema->createStatements() as $statement) {
                 $connection->executeStatement($statement);
             }
 
-            $store = postgresTestStoreForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
+            $store = \Ultra\Testing\PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
             $callback($store, $connection, $prefix);
         } finally {
+            \Ultra\Testing\PostgresTestSupport::resetSharedConnection($connection);
+
             foreach ($schema->dropStatements() as $statement) {
                 $connection->executeStatement($statement);
             }
-
-            $connection->close();
         }
     }
 

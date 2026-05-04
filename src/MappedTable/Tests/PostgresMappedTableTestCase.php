@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Ultra\MappedTable\Tests;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
-use Doctrine\DBAL\Tools\DsnParser;
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\MappedTable;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+
+
 
 abstract class PostgresMappedTableTestCase extends TestCase
 {
@@ -20,13 +20,7 @@ abstract class PostgresMappedTableTestCase extends TestCase
             self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres mapped-table integration tests.');
         }
 
-        $connection = DriverManager::getConnection(
-            new DsnParser([
-                'postgres' => 'pgsql',
-                'postgresql' => 'pgsql',
-            ])->parse($dsn),
-        );
-
+        $connection = \Ultra\Testing\PostgresTestSupport::sharedConnection($dsn);
         $tableName = 'ultra_mapped_table_'.bin2hex(random_bytes(4));
 
         try {
@@ -43,11 +37,12 @@ abstract class PostgresMappedTableTestCase extends TestCase
 
             $callback($connection, new MappedTable(new PostgresMappedTableAdapter($connection), $tableName), $tableName);
         } finally {
+            \Ultra\Testing\PostgresTestSupport::resetSharedConnection($connection);
+
             $connection->executeStatement(sprintf(
                 'DROP TABLE IF EXISTS %s',
                 $connection->quoteSingleIdentifier($tableName),
             ));
-            $connection->close();
         }
     }
 

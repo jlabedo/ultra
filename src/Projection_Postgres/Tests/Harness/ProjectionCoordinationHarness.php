@@ -5,9 +5,7 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres\Tests\Harness;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\ParameterType;
-use Doctrine\DBAL\Tools\DsnParser;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -42,6 +40,8 @@ use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorSchema;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
+
+
 
 #[EventAttribute('harness.course.created')]
 final readonly class HarnessCourseCreated
@@ -142,12 +142,7 @@ final class ProjectionCoordinationHarness
 
     public static function connection(string $dsn): Connection
     {
-        return DriverManager::getConnection(
-            new DsnParser([
-                'postgres' => 'pgsql',
-                'postgresql' => 'pgsql',
-            ])->parse($dsn),
-        );
+        return \Ultra\Testing\PostgresTestSupport::sharedConnection($dsn);
     }
 
     public static function readModelTable(string $projectionPrefix): string

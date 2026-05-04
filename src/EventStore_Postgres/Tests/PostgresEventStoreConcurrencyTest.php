@@ -14,13 +14,10 @@ use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
 
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedImplementations;
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedLockStrategies;
 
 use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\Concurrent\Worker;
 
-require_once __DIR__.'/Support/PostgresTestSupport.php';
 
 /**
  * @internal
@@ -267,8 +264,8 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
      */
     public static function implementationAndLockStrategyProvider(): iterable
     {
-        foreach (postgresTestSupportedImplementations() as $implementation) {
-            foreach (postgresTestSupportedLockStrategies() as $lockStrategy) {
+        foreach (\Ultra\Testing\PostgresTestSupport::supportedImplementations() as $implementation) {
+            foreach (\Ultra\Testing\PostgresTestSupport::supportedLockStrategies() as $lockStrategy) {
                 yield sprintf('%s/%s', $implementation, $lockStrategy) => [$implementation, $lockStrategy];
             }
         }
@@ -288,13 +285,10 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
         Event $event,
         ?StreamQuery $appendQuery = null,
     ): Worker {
-        $supportFile = __DIR__.'/Support/PostgresTestSupport.php';
 
-        return $cluster->spawn(static function () use ($dsn, $prefix, $implementation, $lockStrategy, $event, $appendQuery, $supportFile): string {
-            require_once $supportFile;
-
-            $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
-            $store = \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
+        return $cluster->spawn(static function () use ($dsn, $prefix, $implementation, $lockStrategy, $event, $appendQuery): string {
+            $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
+            $store = \Ultra\Testing\PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
             $appendConditions = [];
             if (null !== $appendQuery) {
@@ -328,13 +322,10 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
         ?StreamQuery $appendQuery = null,
         ?int $lockTimeoutMs = null,
     ): Worker {
-        $supportFile = __DIR__.'/Support/PostgresTestSupport.php';
 
-        return $cluster->spawn(static function () use ($dsn, $prefix, $implementation, $lockStrategy, $event, $appendQuery, $lockTimeoutMs, $supportFile): string {
-            require_once $supportFile;
-
-            $connection = \Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection($dsn);
-            $store = \Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
+        return $cluster->spawn(static function () use ($dsn, $prefix, $implementation, $lockStrategy, $event, $appendQuery, $lockTimeoutMs): string {
+            $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
+            $store = \Ultra\Testing\PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
             if (null !== $lockTimeoutMs) {
                 $connection->executeStatement(sprintf("SET lock_timeout TO '%dms'", $lockTimeoutMs));

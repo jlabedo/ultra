@@ -17,6 +17,7 @@ use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRep
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\Tests\Harness\ProjectionCoordinationHarness;
 
+
 require_once __DIR__.'/Harness/ProjectionCoordinationHarness.php';
 
 /**
@@ -97,6 +98,8 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
                 $projectionPrefix.'bucket_activity',
             )));
         } finally {
+            \Ultra\Testing\PostgresTestSupport::resetSharedConnection($connection);
+
             foreach (array_reverse(ProjectionCoordinationHarness::schemas($eventStorePrefix, $projectionPrefix)) as $schema) {
                 foreach ($schema->dropStatements() as $statement) {
                     $connection->executeStatement($statement);
@@ -107,7 +110,6 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
                 'DROP TABLE IF EXISTS %s',
                 ProjectionCoordinationHarness::readModelTable($projectionPrefix),
             ));
-            $connection->close();
         }
     }
 
