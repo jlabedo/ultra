@@ -39,6 +39,11 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return true;
     }
 
+    public function deleteProjection(string $projectionId): void
+    {
+        unset($this->segments[$projectionId]);
+    }
+
     public function claimSegment(string $projectionId, int $bucketFrom, string $workerId, ?Duration $leaseDuration = null): ?ProjectionSegment
     {
         $leaseDuration ??= Duration::seconds(60);

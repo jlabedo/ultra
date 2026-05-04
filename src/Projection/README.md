@@ -20,6 +20,7 @@ It is built from attributes and reflection and contains:
 - `projectionId`
 - `partitionDimension`
 - initializer method, if any
+- resetter method, if any
 - flush method, if any
 - handler metadata per event type
 
@@ -37,6 +38,7 @@ It also knows how to:
 It is the execution-facing object used by workers:
 
 - `initialize()` runs the `#[ProjectionInitializer]` method once when the projection is first created
+- `reset()` runs the `#[ProjectionResetter]` method when projection state is deleted
 - `apply(Event $event)` resolves the matching handler, deserializes the payload, and invokes the projection method
 - `flush()` runs the `#[ProjectionFlush]` method at the end of each claimed batch
 
@@ -91,7 +93,8 @@ storage usage lightweight. Postgres-backed read models should wire the DBAL-base
 `src/Projection_Postgres` with the same connection used by projection read-model repositories and the segment
 repository. This makes event application, `#[ProjectionFlush]`, and checkpoint advancement commit or roll back as
 one unit. First-time segment creation and `#[ProjectionInitializer]` execution are also wrapped together in the
-same transaction manager.
+same transaction manager. Projection deletion likewise wraps `#[ProjectionResetter]` execution and segment-state
+deletion together.
 
 ## Coordination
 

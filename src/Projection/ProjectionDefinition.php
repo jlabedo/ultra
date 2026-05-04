@@ -12,6 +12,7 @@ use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
+use Ultra\Projection\Attribute\ProjectionResetter;
 
 final readonly class ProjectionDefinition
 {
@@ -20,6 +21,7 @@ final readonly class ProjectionDefinition
         public string $projectionId,
         public string $partitionDimension,
         public ?string $initializerMethod,
+        public ?string $resetterMethod,
         public ?string $flushMethod,
         private array $handlers,
     ) {}
@@ -47,6 +49,7 @@ final readonly class ProjectionDefinition
             projectionId: $attribute->name,
             partitionDimension: $attribute->partitionBy,
             initializerMethod: self::resolveInitializerMethod($reflection),
+            resetterMethod: self::resolveResetterMethod($reflection),
             flushMethod: self::resolveFlushMethod($reflection),
             handlers: self::resolveHandlers($reflection),
         );
@@ -177,6 +180,25 @@ final readonly class ProjectionDefinition
                 if (0 !== count($method->getParameters())) {
                     throw new \LogicException(sprintf(
                         '#[ProjectionFlush] method %s::%s must have no parameters.',
+                        $reflection->getName(),
+                        $method->getName(),
+                    ));
+                }
+
+                return $method->getName();
+            }
+        }
+
+        return null;
+    }
+
+    private static function resolveResetterMethod(\ReflectionClass $reflection): ?string
+    {
+        foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
+            if ([] !== $method->getAttributes(ProjectionResetter::class)) {
+                if (0 !== count($method->getParameters())) {
+                    throw new \LogicException(sprintf(
+                        '#[ProjectionResetter] method %s::%s must have no parameters.',
                         $reflection->getName(),
                         $method->getName(),
                     ));

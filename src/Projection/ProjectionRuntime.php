@@ -38,6 +38,15 @@ final readonly class ProjectionRuntime
         $this->projection->{$this->definition->initializerMethod}();
     }
 
+    public function reset(): void
+    {
+        if (null === $this->definition->resetterMethod) {
+            return;
+        }
+
+        $this->projection->{$this->definition->resetterMethod}();
+    }
+
     public function flush(): void
     {
         if (null === $this->definition->flushMethod) {

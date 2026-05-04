@@ -103,6 +103,15 @@ final readonly class ProjectionRunner
         });
     }
 
+    public function deleteProjection(ProjectionRuntime $runtime): void
+    {
+        $definition = $runtime->definition();
+        $this->transactionManager->transactional(function () use ($definition, $runtime): void {
+            $runtime->reset();
+            $this->segmentRepository->deleteProjection($definition->projectionId);
+        });
+    }
+
     public function runClaimedOnce(
         ProjectionRuntime $runtime,
         string $projectionId,

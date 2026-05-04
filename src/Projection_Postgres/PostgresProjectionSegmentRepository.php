@@ -43,6 +43,15 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         return $affected > 0;
     }
 
+    public function deleteProjection(string $projectionId): void
+    {
+        $this->connection->executeStatement(
+            sprintf('DELETE FROM %s WHERE projection_id = ?', $this->segmentsTable()),
+            [$projectionId],
+            [ParameterType::STRING],
+        );
+    }
+
     public function claimSegment(
         string $projectionId,
         int $bucketFrom,

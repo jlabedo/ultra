@@ -28,6 +28,7 @@ use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
+use Ultra\Projection\Attribute\ProjectionResetter;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
@@ -73,6 +74,12 @@ final readonly class HarnessCourseNamesProjection
             )',
             $this->tableName,
         ));
+    }
+
+    #[ProjectionResetter]
+    public function reset(): void
+    {
+        $this->connection->executeStatement(sprintf('DROP TABLE IF EXISTS %s', $this->tableName));
     }
 
     #[ProjectionHandler]
@@ -125,6 +132,7 @@ final class ProjectionCoordinationHarness
                 $processActivator,
                 $scalingPolicy,
             ),
+            new ResetProjectionCommand($catalog, $runner),
             new RunProjectionHarnessCommand($connection, $eventStorePrefix, $projectionPrefix),
             new ProjectionWorkerCommand($catalog, $runner),
         ]);
@@ -320,6 +328,38 @@ final class BackfillProjectionCommand extends Command
         $this->coordinator->run('process-worker-coordinator', $batchSize, $maxCycles);
 
         return $this->activator->wait($output) ? Command::SUCCESS : Command::FAILURE;
+    }
+}
+
+final class ResetProjectionCommand extends Command
+{
+    public function __construct(
+        private readonly ProjectionCatalog $catalog,
+        private readonly ProjectionRunner $runner,
+    ) {
+        parent::__construct('harness:projection-reset');
+    }
+
+    protected function configure(): void
+    {
+        $this->addOption(
+            'projection-id',
+            null,
+            InputOption::VALUE_REQUIRED,
+            'Projection identifier.',
+            ProjectionCoordinationHarness::PROJECTION_ID,
+        );
+    }
+
+    protected function execute(InputInterface $input, OutputInterface $output): int
+    {
+        $projectionId = (string) $input->getOption('projection-id');
+
+        $this->runner->deleteProjection($this->catalog->runtime($projectionId));
+
+        $output->writeln(sprintf('Projection "%s" was reset.', $projectionId));
+
+        return Command::SUCCESS;
     }
 }
 

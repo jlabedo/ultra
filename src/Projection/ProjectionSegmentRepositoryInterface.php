@@ -11,6 +11,8 @@ interface ProjectionSegmentRepositoryInterface
 {
     public function ensureInitialized(string $projectionId): bool;
 
+    public function deleteProjection(string $projectionId): void;
+
     public function claimSegment(
         string $projectionId,
         int $bucketFrom,

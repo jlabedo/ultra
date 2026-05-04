@@ -20,6 +20,7 @@ use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
+use Ultra\Projection\Attribute\ProjectionResetter;
 use Ultra\Projection\InMemory\InMemoryProjectionBucketActivityRepository;
 use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\NoOpProjectionTransactionManager;
@@ -73,6 +74,8 @@ final class TrackingProjection
 
     public int $flushes = 0;
 
+    public int $resets = 0;
+
     #[ProjectionInitializer]
     public function initialize(): void
     {
@@ -89,6 +92,13 @@ final class TrackingProjection
     public function flush(): void
     {
         ++$this->flushes;
+    }
+
+    #[ProjectionResetter]
+    public function reset(): void
+    {
+        ++$this->resets;
+        $this->names = [];
     }
 }
 
@@ -117,6 +127,16 @@ final class FailingInitializerProjection
     public function initialize(): void
     {
         throw new \RuntimeException('Projection initializer failed.');
+    }
+}
+
+#[Projection(name: 'failing_resetter_projection', partitionBy: 'courseId')]
+final class FailingResetterProjection
+{
+    #[ProjectionResetter]
+    public function reset(): void
+    {
+        throw new \RuntimeException('Projection resetter failed.');
     }
 }
 
@@ -214,6 +234,48 @@ final class ProjectionRunnerBehaviorTest extends TestCase
 
         self::assertSame(['begin', 'rollback'], $transactions->events);
         self::assertSame([], $segments->listSegments('failing_initializer_projection'));
+    }
+
+    public function test_delete_projection_runs_projection_resetter_and_deletes_segments_inside_a_transaction(): void
+    {
+        $projection = new TrackingProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $transactions = new RecordingProjectionTransactionManager();
+        $runner = new ProjectionRunner($eventStore, $segments, $transactions);
+
+        $runner->ensureInitialized($runtime);
+        $segments->splitSegment('tracking_projection', 0);
+        $projection->names = ['course-1' => 'Math'];
+
+        $runner->deleteProjection($runtime);
+
+        self::assertSame(1, $projection->resets);
+        self::assertSame([], $projection->names);
+        self::assertSame([], $segments->listSegments('tracking_projection'));
+        self::assertSame(['begin', 'commit', 'begin', 'commit'], $transactions->events);
+    }
+
+    public function test_delete_projection_rolls_back_segment_deletion_when_resetter_fails(): void
+    {
+        $runtime = new ProjectionRuntime(new FailingResetterProjection(), new UltraNormalizer());
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $transactions = new RecordingProjectionTransactionManager($segments);
+        $runner = new ProjectionRunner($eventStore, $segments, $transactions);
+
+        $segments->ensureInitialized('failing_resetter_projection');
+
+        try {
+            $runner->deleteProjection($runtime);
+            self::fail('Expected the projection resetter to throw.');
+        } catch (\RuntimeException $e) {
+            self::assertSame('Projection resetter failed.', $e->getMessage());
+        }
+
+        self::assertSame(['begin', 'rollback'], $transactions->events);
+        self::assertCount(1, $segments->listSegments('failing_resetter_projection'));
     }
 
     public function test_run_claimed_once_claims_only_its_own_worker_segment(): void

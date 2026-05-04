@@ -14,6 +14,7 @@ use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
+use Ultra\Projection\Attribute\ProjectionResetter;
 use Ultra\Projection\ProjectionDefinition;
 use Ultra\Projection\ProjectionRuntime;
 
@@ -42,6 +43,8 @@ final class TestProjectionClass
 
     public int $flushes = 0;
 
+    public bool $reset = false;
+
     /** @var list<string> */
     public array $handled = [];
 
@@ -55,6 +58,12 @@ final class TestProjectionClass
     public function flush(): void
     {
         ++$this->flushes;
+    }
+
+    #[ProjectionResetter]
+    public function reset(): void
+    {
+        $this->reset = true;
     }
 
     #[ProjectionHandler]
@@ -133,6 +142,13 @@ final class InvalidFlushProjection
     public function flush(string $projectionId): void {}
 }
 
+#[Projection(name: 'invalid_resetter_projection', partitionBy: 'courseId')]
+final class InvalidResetterProjection
+{
+    #[ProjectionResetter]
+    public function reset(string $projectionId): void {}
+}
+
 /**
  * @internal
  */
@@ -146,6 +162,8 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
 
         self::assertSame('test_projection', $definition->projectionId);
         self::assertSame('courseId', $definition->partitionDimension);
+        self::assertSame('initialize', $definition->initializerMethod);
+        self::assertSame('reset', $definition->resetterMethod);
         self::assertSame('flush', $definition->flushMethod);
     }
 
@@ -256,6 +274,27 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
         $runtime->flush();
     }
 
+    public function test_runtime_reset_calls_the_projection_resetter_method(): void
+    {
+        $projection = new TestProjectionClass();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+
+        self::assertFalse($projection->reset);
+
+        $runtime->reset();
+
+        self::assertTrue($projection->reset);
+    }
+
+    public function test_runtime_reset_is_a_no_op_when_no_projection_resetter_method_is_present(): void
+    {
+        $this->expectNotToPerformAssertions();
+
+        $runtime = new ProjectionRuntime(new TestProjectionClassWithoutInitializer(), new UltraNormalizer());
+
+        $runtime->reset();
+    }
+
     public function test_projection_definition_throws_when_class_has_no_projection_attribute(): void
     {
         $this->expectException(\InvalidArgumentException::class);
@@ -309,5 +348,13 @@ final class ProjectionDefinitionRuntimeTest extends TestCase
         $this->expectExceptionMessage('must have no parameters');
 
         ProjectionDefinition::fromClass(InvalidFlushProjection::class);
+    }
+
+    public function test_projection_definition_throws_when_the_resetter_declares_parameters(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('must have no parameters');
+
+        ProjectionDefinition::fromClass(InvalidResetterProjection::class);
     }
 }
