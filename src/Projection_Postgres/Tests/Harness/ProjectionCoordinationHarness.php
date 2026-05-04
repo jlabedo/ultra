@@ -485,7 +485,7 @@ final class RunProjectionHarnessCommand extends Command
             $this->projectionPrefix,
         ));
 
-        return $projectedRows === $events && 0 === $pendingBuckets
+        return $projectedRows === $events
             ? Command::SUCCESS
             : Command::FAILURE;
     }

@@ -22,6 +22,7 @@ use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionCoordinatorResult;
+use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
@@ -185,6 +186,12 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                         $activityRepository,
                         new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix),
                         new InMemoryProjectionActivator(),
+                        new class implements \Ultra\Projection\Coordination\ProjectionScalingPolicyInterface {
+                            public function additionalWorkersRequested(array $affectedBuckets): int
+                            {
+                                return 1;
+                            }
+                        },
                     );
 
                     try {
@@ -199,9 +206,10 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             // cannot race ahead and claim both segments.
             $leader->awaitCheckpoint('segment_claimed');
 
-            // Follower: no barrier, runs to completion while the leader is paused.
+            // Follower: process the remote segment already claimed by the leader
+            // coordinator while the leader is paused on its local segment.
             $follower = $cluster->spawn(
-                static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $testFile): ProjectionCoordinatorResult {
+                static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $testFile): ProjectionRunResult {
                     require_once $testFile;
 
                     $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
@@ -212,21 +220,19 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                         new PostgresProjectionTransactionManager($connection),
                         $activityRepository,
                     );
-                    $coordinator = new ProjectionCoordinator(
-                        new ProjectionCatalog(
-                            new ProjectionRuntime(
-                                new ConcurrencyCourseNamesProjection($connection, $tableName),
-                                new UltraNormalizer(),
-                            ),
-                        ),
-                        $runner,
-                        $activityRepository,
-                        new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix),
-                        new InMemoryProjectionActivator(),
+                    $runtime = new ProjectionRuntime(
+                        new ConcurrencyCourseNamesProjection($connection, $tableName),
+                        new UltraNormalizer(),
                     );
 
                     try {
-                        return $coordinator->run('worker-b', batchSize: 100, maxCycles: 8);
+                        return $runner->runClaimedOnce(
+                            $runtime,
+                            'course_names',
+                            128,
+                            'worker-a-course_names-128',
+                            100,
+                        );
                     } finally {
                         $connection->close();
                     }
@@ -245,12 +251,13 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             self::assertTrue($leaderResult->acquiredLease);
             self::assertSame(1, $leaderResult->processedEvents);
             self::assertGreaterThanOrEqual(1, $leaderResult->acknowledgedBuckets);
+            self::assertSame(1, $leaderResult->requestedWorkerActivations);
 
             self::assertTrue($followerOutcome->isSuccess(), $followerOutcome->exceptionMessage() ?? '');
 
-            /** @var ProjectionCoordinatorResult $followerResult */
+            /** @var ProjectionRunResult $followerResult */
             $followerResult = $followerOutcome->value();
-            self::assertFalse($followerResult->acquiredLease);
+            self::assertTrue($followerResult->claimedSegment);
             self::assertSame(1, $followerResult->processedEvents);
             self::assertGreaterThanOrEqual(1, $followerResult->acknowledgedBuckets);
 

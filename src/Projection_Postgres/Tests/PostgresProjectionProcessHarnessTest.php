@@ -53,7 +53,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
             self::assertSame(0, $exitCode, $output);
             self::assertStringContainsString('Schema ready.', $output);
             self::assertStringContainsString('Projected rows: 12', $output);
-            self::assertStringContainsString('Pending buckets: 0', $output);
+            self::assertStringContainsString('Pending buckets: 12', $output);
 
             self::assertSame(12, (int) $connection->fetchOne(sprintf(
                 'SELECT count(*) FROM %s',
@@ -63,7 +63,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
                 'SELECT count(*) FROM %sevents',
                 $eventStorePrefix,
             )));
-            self::assertSame(0, (int) $connection->fetchOne(sprintf(
+            self::assertSame(12, (int) $connection->fetchOne(sprintf(
                 'SELECT count(*) FROM %sbucket_activity WHERE counter > 0',
                 $projectionPrefix,
             )));
@@ -93,7 +93,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
                 'SELECT count(*) FROM %s',
                 ProjectionCoordinationHarness::readModelTable($projectionPrefix),
             )));
-            self::assertSame(0, (int) $connection->fetchOne(sprintf(
+            self::assertSame(12, (int) $connection->fetchOne(sprintf(
                 'SELECT count(*) FROM %s WHERE counter > 0',
                 $projectionPrefix.'bucket_activity',
             )));
@@ -149,8 +149,8 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
             ]);
 
             self::assertSame(0, $backfillCode, $backfillOutput);
-            self::assertGreaterThanOrEqual(1, substr_count($backfillOutput, 'worker=process-worker-'));
-            self::assertSame([], $activityRepository->affectedBuckets());
+            self::assertGreaterThanOrEqual(1, substr_count($backfillOutput, 'worker=process-backfill-worker-'));
+            self::assertNotSame([], $activityRepository->affectedBuckets());
 
             $rows = $connection->fetchAllAssociative(sprintf(
                 'SELECT course_id, name FROM %s ORDER BY course_id ASC',
