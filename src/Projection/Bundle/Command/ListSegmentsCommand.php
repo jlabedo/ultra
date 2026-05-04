@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection_Postgres\Console;
+namespace Ultra\Projection\Bundle\Command;
 
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
@@ -10,7 +10,7 @@ use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
+use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 
 #[AsCommand(
     name: 'projection:segment:list',
@@ -18,7 +18,7 @@ use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 )]
 final class ListSegmentsCommand extends Command
 {
-    public function __construct(private readonly PostgresProjectionSegmentRepository $repository)
+    public function __construct(private readonly ProjectionSegmentRepositoryInterface $repository)
     {
         parent::__construct();
     }
@@ -42,12 +42,12 @@ final class ListSegmentsCommand extends Command
         $table = new Table($output);
         $table->setHeaders(['bucket_from', 'bucket_to', 'range_size', 'worker_id']);
 
-        foreach ($segments as $seg) {
+        foreach ($segments as $segment) {
             $table->addRow([
-                $seg->bucketFrom,
-                $seg->bucketTo,
-                $seg->bucketTo - $seg->bucketFrom + 1,
-                $seg->workerId ?? '-',
+                $segment->bucketFrom,
+                $segment->bucketTo,
+                $segment->bucketTo - $segment->bucketFrom + 1,
+                $segment->workerId ?? '-',
             ]);
         }
 

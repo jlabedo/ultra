@@ -10,6 +10,7 @@ use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\Attribute\Projection;
+use Ultra\Projection\Bundle\Command\ListSegmentsCommand;
 use Ultra\Projection\Bundle\Command\ProjectionWorkerCommand;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\MessageHandlingProjectionActivatorPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
@@ -82,6 +83,11 @@ final class ProjectionBundle extends Bundle
 
         $container->register(ProjectionWorkerCommand::class, ProjectionWorkerCommand::class)
             ->setArguments([new Reference(ProjectionCoordinator::class)])
+            ->addTag('console.command')
+        ;
+
+        $container->register(ListSegmentsCommand::class, ListSegmentsCommand::class)
+            ->setArguments([new Reference(ProjectionSegmentRepositoryInterface::class)])
             ->addTag('console.command')
         ;
 
