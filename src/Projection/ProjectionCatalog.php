@@ -9,9 +9,6 @@ final class ProjectionCatalog
     /** @var array<string, ProjectionRuntime> */
     private array $runtimes = [];
 
-    /** @var array<string, ProjectionDefinition> */
-    private array $definitions = [];
-
     public function __construct(ProjectionRuntime ...$runtimes)
     {
         foreach ($runtimes as $runtime) {
@@ -21,9 +18,7 @@ final class ProjectionCatalog
 
     public function add(ProjectionRuntime $runtime): void
     {
-        $projectionId = $runtime->projectionId();
-        $this->runtimes[$projectionId] = $runtime;
-        $this->definitions[$projectionId] = $runtime->definition();
+        $this->runtimes[$runtime->projectionId()] = $runtime;
     }
 
     public function runtime(string $projectionId): ProjectionRuntime
@@ -37,17 +32,13 @@ final class ProjectionCatalog
 
     public function definition(string $projectionId): ProjectionDefinition
     {
-        if (!isset($this->definitions[$projectionId])) {
-            throw new \InvalidArgumentException(sprintf('Unknown projection "%s".', $projectionId));
-        }
-
-        return $this->definitions[$projectionId];
+        return $this->runtime($projectionId)->definition();
     }
 
     /** @return list<ProjectionDefinition> */
     public function definitions(): array
     {
-        return array_values($this->definitions);
+        return array_map(static fn (ProjectionRuntime $r): ProjectionDefinition => $r->definition(), array_values($this->runtimes));
     }
 
     /** @return list<ProjectionRuntime> */

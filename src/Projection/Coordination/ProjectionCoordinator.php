@@ -6,6 +6,7 @@ namespace Ultra\Projection\Coordination;
 
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionSegment;
 
 final readonly class ProjectionCoordinator
 {
@@ -42,7 +43,7 @@ final readonly class ProjectionCoordinator
                 }
 
                 $additionalWorkers = $this->scalingPolicy->additionalWorkersRequested($affectedBuckets);
-                $localAssignments = [];
+                $localAssignment = null;
                 $remoteAssignments = 0;
                 $claimedAny = false;
 
@@ -56,39 +57,40 @@ final readonly class ProjectionCoordinator
                     foreach ($this->runner->availableSegments($projectionId) as $segment) {
                         $pending = $this->activityRepository->pendingBucketsForSegment(
                             $projectionId,
-                            $segment['bucketFrom'],
-                            $segment['bucketTo'],
+                            $segment->bucketFrom,
+                            $segment->bucketTo,
                         );
                         if ([] === $pending) {
                             continue;
                         }
 
-                        if ([] === $localAssignments) {
+                        if (null === $localAssignment) {
                             $claimWorkerId = $workerId;
                         } elseif ($remoteAssignments < $additionalWorkers) {
-                            $claimWorkerId = $this->workerIdFor($workerId, $projectionId, $segment['bucketFrom']);
+                            $claimWorkerId = $this->workerIdFor($workerId, $projectionId, $segment->bucketFrom);
                         } else {
                             continue;
                         }
 
-                        $claimedSegment = $this->runner->claimSegment($projectionId, $segment['bucketFrom'], $claimWorkerId);
+                        $claimedSegment = $this->runner->claimSegment($projectionId, $segment->bucketFrom, $claimWorkerId);
                         if (null === $claimedSegment) {
                             continue;
                         }
 
                         $claimedAny = true;
-                        if ($claimWorkerId === $workerId && [] === $localAssignments) {
-                            $localAssignments[] = [$runtime, $projectionId, $segment['bucketFrom'], $workerId];
+                        if (null === $localAssignment) {
+                            $localAssignment = [$runtime, $projectionId, $segment->bucketFrom, $workerId];
                             continue;
                         }
 
-                        $this->activator->activateWorker($projectionId, $segment['bucketFrom'], $claimWorkerId);
+                        $this->activator->activateWorker($projectionId, $segment->bucketFrom, $claimWorkerId);
                         ++$remoteAssignments;
                         ++$requestedWorkerActivations;
                     }
                 }
 
-                foreach ($localAssignments as [$runtime, $projectionId, $bucketFrom, $claimWorkerId]) {
+                if (null !== $localAssignment) {
+                    [$runtime, $projectionId, $bucketFrom, $claimWorkerId] = $localAssignment;
                     do {
                         $result = $this->runner->runClaimedOnce($runtime, $projectionId, $bucketFrom, $claimWorkerId, $batchSize);
                         if (!$result->claimedSegment) {
@@ -100,7 +102,7 @@ final readonly class ProjectionCoordinator
                     } while (!$result->caughtUp);
                 }
 
-                if (!$claimedAny && [] === $localAssignments) {
+                if (!$claimedAny && null === $localAssignment) {
                     break;
                 }
             }
@@ -139,22 +141,21 @@ final readonly class ProjectionCoordinator
                 return;
             }
 
-            $this->runner->splitSegment($projectionId, $candidate['bucketFrom']);
+            $this->runner->splitSegment($projectionId, $candidate->bucketFrom);
         }
     }
 
-    /** @return null|array{bucketFrom: int, bucketTo: int, workerId: null|string} */
-    private function largestSplittableSegment(string $projectionId): ?array
+    private function largestSplittableSegment(string $projectionId): ?ProjectionSegment
     {
         $candidates = array_filter(
             $this->runner->listSegments($projectionId),
-            static fn (array $segment): bool => null === $segment['workerId']
-                && $segment['bucketTo'] > $segment['bucketFrom'],
+            static fn (ProjectionSegment $segment): bool => null === $segment->workerId
+                && $segment->bucketTo > $segment->bucketFrom,
         );
         usort(
             $candidates,
-            static fn (array $left, array $right): int => ($right['bucketTo'] - $right['bucketFrom'])
-                <=> ($left['bucketTo'] - $left['bucketFrom']),
+            static fn (ProjectionSegment $left, ProjectionSegment $right): int => ($right->bucketTo - $right->bucketFrom)
+                <=> ($left->bucketTo - $left->bucketFrom),
         );
 
         return $candidates[0] ?? null;

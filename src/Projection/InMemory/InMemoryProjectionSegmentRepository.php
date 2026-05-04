@@ -132,11 +132,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         $rows = $this->segments[$projectionId] ?? [];
         ksort($rows);
 
-        return array_map(static fn (array $row): array => [
-            'bucketFrom' => $row['bucketFrom'],
-            'bucketTo' => $row['bucketTo'],
-            'workerId' => $row['workerId'],
-        ], array_values($rows));
+        return array_map(fn (array $row): ProjectionSegment => $this->toSegment($projectionId, $row), array_values($rows));
     }
 
     private function finalizeSplit(ProjectionSegment $segment, Checkpoint $checkpoint): void
@@ -234,7 +230,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     {
         return array_values(array_filter(
             $this->listSegments($projectionId),
-            static fn (array $segment): bool => null === $segment['workerId'],
+            static fn (ProjectionSegment $segment): bool => null === $segment->workerId,
         ));
     }
 
@@ -269,7 +265,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             $row['bucketFrom'],
             $row['bucketTo'],
             $row['checkpoint'],
-            false,
+            $row['workerId'],
         );
     }
 }

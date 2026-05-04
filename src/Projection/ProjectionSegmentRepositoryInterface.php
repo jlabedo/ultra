@@ -45,9 +45,9 @@ interface ProjectionSegmentRepositoryInterface
 
     public function replaceSegmentsWithMergedSegment(string $projectionId, int $bucketFrom, int $bucketTo, Checkpoint $checkpoint): void;
 
-    /** @return list<array{bucketFrom: int, bucketTo: int, workerId: null|string}> */
+    /** @return list<ProjectionSegment> */
     public function listSegments(string $projectionId): array;
 
-    /** @return list<array{bucketFrom: int, bucketTo: int, workerId: null|string}> */
+    /** @return list<ProjectionSegment> */
     public function availableSegments(string $projectionId): array;
 }

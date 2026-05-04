@@ -190,9 +190,11 @@ final class ProjectionRunnerBehaviorTest extends TestCase
 
         self::assertSame(1, $projection->initialized);
         self::assertSame(['begin', 'commit', 'begin', 'commit'], $transactions->events);
-        self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 255, 'workerId' => null],
-        ], $segments->listSegments('tracking_projection'));
+        $listed = $segments->listSegments('tracking_projection');
+        self::assertCount(1, $listed);
+        self::assertSame(0, $listed[0]->bucketFrom);
+        self::assertSame(255, $listed[0]->bucketTo);
+        self::assertNull($listed[0]->workerId);
     }
 
     public function test_ensure_initialized_rolls_back_segment_creation_when_initializer_fails(): void
@@ -232,7 +234,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         );
 
         self::assertFalse($result->claimedSegment);
-        self::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]['workerId']);
+        self::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
     }
 
     public function test_run_claimed_once_keeps_bucket_activity_pending_until_the_claim_catches_up(): void
@@ -259,7 +261,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame(1, $firstResult->processedEvents);
         self::assertFalse($firstResult->caughtUp);
         self::assertSame(0, $firstResult->acknowledgedBuckets);
-        self::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]['workerId']);
+        self::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
         self::assertCount(1, $activity->pendingBucketsForSegment('tracking_projection', 0, 255));
 
         $secondResult = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 10);
@@ -267,7 +269,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame(1, $secondResult->processedEvents);
         self::assertTrue($secondResult->caughtUp);
         self::assertSame(1, $secondResult->acknowledgedBuckets);
-        self::assertSame(null, $segments->listSegments('tracking_projection')[0]['workerId']);
+        self::assertSame(null, $segments->listSegments('tracking_projection')[0]->workerId);
         self::assertSame([], $activity->pendingBucketsForSegment('tracking_projection', 0, 255));
         self::assertSame(['course-1' => 'Advanced Math'], $projection->names);
     }
@@ -330,7 +332,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         }
 
         self::assertCount(1, $activity->pendingBucketsForSegment('failing_tracking_projection', 0, 255));
-        self::assertSame(null, $segments->listSegments('failing_tracking_projection')[0]['workerId']);
+        self::assertSame(null, $segments->listSegments('failing_tracking_projection')[0]->workerId);
     }
 
     public function test_merge_segments_projects_slower_segments_to_the_highest_checkpoint_before_replacing_them(): void

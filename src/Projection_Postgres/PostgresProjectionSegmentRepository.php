@@ -95,7 +95,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                 bucketFrom: (int) $row['bucket_from'],
                 bucketTo: (int) $row['bucket_to'],
                 checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-                wasCreated: false,
+                workerId: $workerId,
             );
         } catch (\Throwable $e) {
             $this->connection->rollBack();
@@ -206,7 +206,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                 bucketFrom: (int) $row['bucket_from'],
                 bucketTo: (int) $row['bucket_to'],
                 checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-                wasCreated: false,
             ),
             Checkpoint::deserialize((string) $row['checkpoint']),
         );
@@ -300,7 +299,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             bucketFrom: (int) $row['bucket_from'],
             bucketTo: (int) $row['bucket_to'],
             checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-            wasCreated: false,
         ), $rows);
     }
 
@@ -333,7 +331,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                 bucketFrom: (int) $row['bucket_from'],
                 bucketTo: (int) $row['bucket_to'],
                 checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-                wasCreated: false,
             ), $rows);
             $this->assertSegmentsExactlyCoverRange($projectionId, $segments, $bucketFrom, $bucketTo);
 
@@ -405,14 +402,12 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         }
     }
 
-    /**
-     * @return list<array{bucketFrom: int, bucketTo: int, workerId: null|string}>
-     */
+    /** @return list<ProjectionSegment> */
     public function listSegments(string $projectionId): array
     {
         $rows = $this->connection->executeQuery(
             sprintf(
-                'SELECT bucket_from, bucket_to, worker_id
+                'SELECT bucket_from, bucket_to, checkpoint, worker_id
                  FROM %s WHERE projection_id = ? ORDER BY bucket_from ASC',
                 $this->segmentsTable(),
             ),
@@ -420,33 +415,37 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             [ParameterType::STRING],
         )->fetchAllAssociative();
 
-        return array_map(static fn (array $row): array => [
-            'bucketFrom' => (int) $row['bucket_from'],
-            'bucketTo' => (int) $row['bucket_to'],
-            'workerId' => $row['worker_id'] ?? null,
-        ], $rows);
+        return array_map(static fn (array $row): ProjectionSegment => new ProjectionSegment(
+            projectionId: $projectionId,
+            bucketFrom: (int) $row['bucket_from'],
+            bucketTo: (int) $row['bucket_to'],
+            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+            workerId: $row['worker_id'] ?? null,
+        ), $rows);
     }
 
+    /** @return list<ProjectionSegment> */
     public function availableSegments(string $projectionId): array
     {
         $rows = $this->connection->executeQuery(
             sprintf(
-                "SELECT bucket_from, bucket_to, worker_id
+                'SELECT bucket_from, bucket_to, checkpoint
                  FROM %s
                  WHERE projection_id = ?
                    AND worker_id IS NULL
-                 ORDER BY bucket_from ASC",
+                 ORDER BY bucket_from ASC',
                 $this->segmentsTable(),
             ),
             [$projectionId],
             [ParameterType::STRING],
         )->fetchAllAssociative();
 
-        return array_map(static fn (array $row): array => [
-            'bucketFrom' => (int) $row['bucket_from'],
-            'bucketTo' => (int) $row['bucket_to'],
-            'workerId' => $row['worker_id'] ?? null,
-        ], $rows);
+        return array_map(static fn (array $row): ProjectionSegment => new ProjectionSegment(
+            projectionId: $projectionId,
+            bucketFrom: (int) $row['bucket_from'],
+            bucketTo: (int) $row['bucket_to'],
+            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+        ), $rows);
     }
 
     /**

@@ -44,10 +44,10 @@ final class ListSegmentsCommand extends Command
 
         foreach ($segments as $seg) {
             $table->addRow([
-                $seg['bucketFrom'],
-                $seg['bucketTo'],
-                $seg['bucketTo'] - $seg['bucketFrom'] + 1,
-                $seg['workerId'] ?? '-',
+                $seg->bucketFrom,
+                $seg->bucketTo,
+                $seg->bucketTo - $seg->bucketFrom + 1,
+                $seg->workerId ?? '-',
             ]);
         }
 

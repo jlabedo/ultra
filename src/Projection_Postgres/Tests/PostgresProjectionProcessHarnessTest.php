@@ -133,7 +133,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
 
             self::assertGreaterThanOrEqual(4, count($segments));
             foreach ($segments as $segment) {
-                self::assertSame(null, $segment['workerId']);
+                self::assertNull($segment->workerId);
             }
         });
     }

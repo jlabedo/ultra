@@ -27,10 +27,14 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
         $repository->splitSegment('courses', 0);
 
-        self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 127, 'workerId' => null],
-            ['bucketFrom' => 128, 'bucketTo' => 255, 'workerId' => null],
-        ], $repository->listSegments('courses'));
+        $segments = $repository->listSegments('courses');
+        self::assertCount(2, $segments);
+        self::assertSame(0, $segments[0]->bucketFrom);
+        self::assertSame(127, $segments[0]->bucketTo);
+        self::assertNull($segments[0]->workerId);
+        self::assertSame(128, $segments[1]->bucketFrom);
+        self::assertSame(255, $segments[1]->bucketTo);
+        self::assertNull($segments[1]->workerId);
     }
 
     public function test_ensure_initialized_returns_false_when_the_projection_already_exists(): void
@@ -39,9 +43,11 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
         self::assertTrue($repository->ensureInitialized('courses'));
         self::assertFalse($repository->ensureInitialized('courses'));
-        self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 255, 'workerId' => null],
-        ], $repository->listSegments('courses'));
+        $segments = $repository->listSegments('courses');
+        self::assertCount(1, $segments);
+        self::assertSame(0, $segments[0]->bucketFrom);
+        self::assertSame(255, $segments[0]->bucketTo);
+        self::assertNull($segments[0]->workerId);
     }
 
     public function test_split_of_an_active_claim_is_taken_from_the_worker_immediately(): void
@@ -53,17 +59,21 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
         $repository->splitSegment('courses', 0);
 
-        self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 127, 'workerId' => null],
-            ['bucketFrom' => 128, 'bucketTo' => 255, 'workerId' => null],
-        ], $repository->listSegments('courses'));
+        $segments = $repository->listSegments('courses');
+        self::assertCount(2, $segments);
+        self::assertSame(0, $segments[0]->bucketFrom);
+        self::assertSame(127, $segments[0]->bucketTo);
+        self::assertNull($segments[0]->workerId);
+        self::assertSame(128, $segments[1]->bucketFrom);
+        self::assertSame(255, $segments[1]->bucketTo);
+        self::assertNull($segments[1]->workerId);
 
         $repository->completeClaimedSegment($segment, Checkpoint::at(new Sequence(5)), 'worker-1', true);
 
-        self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 127, 'workerId' => null],
-            ['bucketFrom' => 128, 'bucketTo' => 255, 'workerId' => null],
-        ], $repository->listSegments('courses'));
+        $after = $repository->listSegments('courses');
+        self::assertCount(2, $after);
+        self::assertNull($after[0]->workerId);
+        self::assertNull($after[1]->workerId);
     }
 
     public function test_take_segments_for_range_steals_active_claims_before_merge_replacement(): void
@@ -84,9 +94,11 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
         $repository->completeClaimedSegment($left, Checkpoint::at(new Sequence(5)), 'worker-left', true);
         $repository->completeClaimedSegment($right, Checkpoint::at(new Sequence(7)), 'worker-right', true);
 
-        self::assertSame([
-            ['bucketFrom' => 0, 'bucketTo' => 255, 'workerId' => null],
-        ], $repository->listSegments('courses'));
+        $merged_list = $repository->listSegments('courses');
+        self::assertCount(1, $merged_list);
+        self::assertSame(0, $merged_list[0]->bucketFrom);
+        self::assertSame(255, $merged_list[0]->bucketTo);
+        self::assertNull($merged_list[0]->workerId);
 
         $merged = $repository->claimSegment('courses', 0, 'worker-merged');
         self::assertNotNull($merged);
@@ -115,13 +127,13 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
     public function test_projection_segment_exposes_its_state(): void
     {
-        $segment = new ProjectionSegment('courses', 128, 255, Checkpoint::beginning(), false);
+        $segment = new ProjectionSegment('courses', 128, 255, Checkpoint::beginning(), 'worker-1');
 
         self::assertSame('courses', $segment->projectionId);
         self::assertSame(128, $segment->bucketFrom);
         self::assertSame(255, $segment->bucketTo);
         self::assertSame(0, $segment->checkpoint->gapFloor->value);
-        self::assertFalse($segment->wasCreated);
+        self::assertSame('worker-1', $segment->workerId);
     }
 
     public function test_expired_claims_are_recovered_against_the_injected_clock(): void

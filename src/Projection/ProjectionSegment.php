@@ -13,6 +13,6 @@ readonly class ProjectionSegment
         public int $bucketFrom,
         public int $bucketTo,
         public Checkpoint $checkpoint,
-        public bool $wasCreated,
+        public ?string $workerId = null,
     ) {}
 }
