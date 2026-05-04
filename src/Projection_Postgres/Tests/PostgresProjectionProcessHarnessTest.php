@@ -79,6 +79,23 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
                 "SELECT to_regclass('%s')",
                 ProjectionCoordinationHarness::readModelTable($projectionPrefix),
             )));
+
+            [$secondBackfillCode, $secondBackfillOutput] = $this->runHarnessCommand($application, [
+                'command' => 'harness:projection-backfill',
+                'workers' => '3',
+                '--batch-size' => '2',
+                '--max-cycles' => '64',
+            ]);
+
+            self::assertSame(0, $secondBackfillCode, $secondBackfillOutput);
+            self::assertSame(12, (int) $connection->fetchOne(sprintf(
+                'SELECT count(*) FROM %s',
+                ProjectionCoordinationHarness::readModelTable($projectionPrefix),
+            )));
+            self::assertSame(0, (int) $connection->fetchOne(sprintf(
+                'SELECT count(*) FROM %s WHERE counter > 0',
+                $projectionPrefix.'bucket_activity',
+            )));
         } finally {
             foreach (array_reverse(ProjectionCoordinationHarness::schemas($eventStorePrefix, $projectionPrefix)) as $schema) {
                 foreach ($schema->dropStatements() as $statement) {

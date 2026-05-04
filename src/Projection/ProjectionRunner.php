@@ -167,6 +167,47 @@ final readonly class ProjectionRunner
         }
     }
 
+    public function backfillClaimedOnce(
+        ProjectionRuntime $runtime,
+        string $projectionId,
+        int $bucketFrom,
+        string $workerId,
+        int $limit = 100,
+    ): ProjectionRunResult {
+        $this->ensureInitialized($runtime);
+
+        $segment = $this->segmentRepository->claimSegment($projectionId, $bucketFrom, $workerId);
+        if (null === $segment) {
+            return new ProjectionRunResult(0, false, null);
+        }
+
+        try {
+            $query = $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
+            $result = $this->eventStore->load($query, $segment->checkpoint, null, $limit);
+            $caughtUp = count($result->events) < $limit;
+
+            $this->transactionManager->transactional(function () use ($runtime, $segment, $result, $workerId, $caughtUp): void {
+                foreach ($result->events as $event) {
+                    $runtime->apply($event);
+                }
+
+                $runtime->flush();
+                $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
+            });
+
+            return new ProjectionRunResult(
+                processedEvents: count($result->events),
+                claimedSegment: true,
+                segment: $segment,
+                caughtUp: $caughtUp,
+            );
+        } catch (\Throwable $e) {
+            $this->segmentRepository->releaseClaimedSegment($segment, $workerId);
+
+            throw $e;
+        }
+    }
+
     private function mergeCheckpoint(Checkpoint ...$checkpoints): Checkpoint
     {
         $highest = $checkpoints[0] ?? Checkpoint::beginning();

@@ -128,9 +128,9 @@ final class ProjectionCoordinationHarness
             new CreateProjectionHarnessSchemaCommand($connection, $eventStorePrefix, $projectionPrefix),
             new SeedProjectionEventsCommand($eventStore, $activity),
             new BackfillProjectionCommand(
-                $coordinator,
+                $catalog,
+                $runner,
                 $processActivator,
-                $scalingPolicy,
             ),
             new ResetProjectionCommand($catalog, $runner),
             new RunProjectionHarnessCommand($connection, $eventStorePrefix, $projectionPrefix),
@@ -294,9 +294,9 @@ final class SeedProjectionEventsCommand extends Command
 final class BackfillProjectionCommand extends Command
 {
     public function __construct(
-        private readonly ProjectionCoordinator $coordinator,
+        private readonly ProjectionCatalog $catalog,
+        private readonly ProjectionRunner $runner,
         private readonly ProcessProjectionActivator $activator,
-        private readonly ConfigurableProjectionScalingPolicy $scalingPolicy,
     ) {
         parent::__construct('harness:projection-backfill');
     }
@@ -305,6 +305,7 @@ final class BackfillProjectionCommand extends Command
     {
         $this
             ->addArgument('workers', InputArgument::REQUIRED, 'Number of worker processes to start.')
+            ->addOption('projection-id', null, InputOption::VALUE_REQUIRED, 'Projection identifier.', ProjectionCoordinationHarness::PROJECTION_ID)
             ->addOption('batch-size', null, InputOption::VALUE_REQUIRED, 'Events processed per claimed segment.', 5)
             ->addOption('max-cycles', null, InputOption::VALUE_REQUIRED, 'Maximum coordinator cycles per worker.', 64)
         ;
@@ -323,11 +324,45 @@ final class BackfillProjectionCommand extends Command
             throw new \InvalidArgumentException('batch-size and max-cycles must be greater than zero.');
         }
 
-        $this->activator->configureRun($batchSize, $maxCycles);
-        $this->scalingPolicy->additionalWorkers = max(0, $workers - 1);
-        $this->coordinator->run('process-worker-coordinator', $batchSize, $maxCycles);
+        $projectionId = (string) $input->getOption('projection-id');
+        $runtime = $this->catalog->runtime($projectionId);
+
+        $this->runner->ensureInitialized($runtime);
+        $this->runner->recoverExpiredClaims($projectionId);
+        $this->splitUntilSegmentCount($projectionId, $workers);
+
+        $this->activator->configureRun($batchSize, $maxCycles, backfill: true);
+        foreach (array_slice($this->runner->availableSegments($projectionId), 0, $workers) as $segment) {
+            $this->activator->activateWorker(
+                $projectionId,
+                $segment->bucketFrom,
+                sprintf('process-backfill-worker-%d', $segment->bucketFrom),
+            );
+        }
 
         return $this->activator->wait($output) ? Command::SUCCESS : Command::FAILURE;
+    }
+
+    private function splitUntilSegmentCount(string $projectionId, int $targetSegmentCount): void
+    {
+        while (count($this->runner->listSegments($projectionId)) < $targetSegmentCount) {
+            $candidate = null;
+            foreach ($this->runner->listSegments($projectionId) as $segment) {
+                if (null !== $segment->workerId || $segment->bucketTo <= $segment->bucketFrom) {
+                    continue;
+                }
+
+                if (null === $candidate || ($segment->bucketTo - $segment->bucketFrom) > ($candidate->bucketTo - $candidate->bucketFrom)) {
+                    $candidate = $segment;
+                }
+            }
+
+            if (null === $candidate) {
+                return;
+            }
+
+            $this->runner->splitSegment($projectionId, $candidate->bucketFrom);
+        }
     }
 }
 
@@ -478,6 +513,7 @@ final class ProjectionWorkerCommand extends Command
             ->addOption('bucket-from', null, InputOption::VALUE_REQUIRED, 'Claimed segment start bucket.')
             ->addOption('batch-size', null, InputOption::VALUE_REQUIRED, 'Events processed per claimed segment.', 5)
             ->addOption('max-cycles', null, InputOption::VALUE_REQUIRED, 'Maximum worker cycles.', 64)
+            ->addOption('backfill', null, InputOption::VALUE_NONE, 'Run claimed work without consulting bucket activity.')
         ;
     }
 
@@ -489,12 +525,15 @@ final class ProjectionWorkerCommand extends Command
         $runtime = $this->catalog->runtime($projectionId);
         $batchSize = (int) $input->getOption('batch-size');
         $maxCycles = (int) $input->getOption('max-cycles');
+        $backfill = (bool) $input->getOption('backfill');
 
         $processedEvents = 0;
         $acknowledgedBuckets = 0;
         $caughtUp = false;
         for ($cycle = 0; $cycle < $maxCycles; ++$cycle) {
-            $result = $this->runner->runClaimedOnce($runtime, $projectionId, $bucketFrom, $workerId, $batchSize);
+            $result = $backfill
+                ? $this->runner->backfillClaimedOnce($runtime, $projectionId, $bucketFrom, $workerId, $batchSize)
+                : $this->runner->runClaimedOnce($runtime, $projectionId, $bucketFrom, $workerId, $batchSize);
             if (!$result->claimedSegment) {
                 break;
             }
@@ -517,7 +556,7 @@ final class ProjectionWorkerCommand extends Command
             $acknowledgedBuckets,
         ));
 
-        return Command::SUCCESS;
+        return $backfill && !$caughtUp ? Command::FAILURE : Command::SUCCESS;
     }
 }
 
@@ -529,6 +568,7 @@ final class ProcessProjectionActivator implements ProjectionActivatorInterface
     private int $sequence = 0;
     private int $batchSize = 5;
     private int $maxCycles = 64;
+    private bool $backfill = false;
 
     public function __construct(
         private readonly string $consolePath,
@@ -537,10 +577,11 @@ final class ProcessProjectionActivator implements ProjectionActivatorInterface
         private readonly string $projectionPrefix,
     ) {}
 
-    public function configureRun(int $batchSize, int $maxCycles): void
+    public function configureRun(int $batchSize, int $maxCycles, bool $backfill = false): void
     {
         $this->batchSize = $batchSize;
         $this->maxCycles = $maxCycles;
+        $this->backfill = $backfill;
     }
 
     public function signalWorkAvailable(): void
@@ -561,6 +602,7 @@ final class ProcessProjectionActivator implements ProjectionActivatorInterface
                 '--bucket-from='.(string) $bucketFrom,
                 '--batch-size='.$this->batchSize,
                 '--max-cycles='.$this->maxCycles,
+                ...($this->backfill ? ['--backfill'] : []),
             ],
             null,
             [

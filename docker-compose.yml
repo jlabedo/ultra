@@ -1,6 +1,7 @@
 services:
   postgres:
     image: postgres:18-alpine
+    shm_size: 1g
     environment:
       POSTGRES_DB: ultra_test
       POSTGRES_USER: ultra

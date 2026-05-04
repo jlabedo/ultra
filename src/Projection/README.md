@@ -131,6 +131,9 @@ The coordinator asks for global `affectedBuckets()` to find stale projections, m
 segments, and durably claims only segments that still have pending bucket activity. Bucket activity is a liveness
 signal; segments are the scheduling and checkpointing unit.
 
+Explicit rebuilds should not depend on bucket activity. Use `ProjectionRunner::backfillClaimedOnce()` for claimed
+segments that must be replayed from their checkpoints regardless of whether activity hints exist.
+
 ### Global Coordinator
 
 [ProjectionCoordinator.php](Coordination/ProjectionCoordinator.php) is a single leader worker for the whole app.

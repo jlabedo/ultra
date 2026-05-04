@@ -299,6 +299,36 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
     }
 
+    public function test_backfill_claimed_once_processes_a_segment_without_bucket_activity(): void
+    {
+        $projection = new TrackingProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $activity = new InMemoryProjectionBucketActivityRepository();
+        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
+
+        $eventStore->append([
+            self::courseCreatedEvent('course-1', 'Math'),
+            self::courseCreatedEvent('course-2', 'Science'),
+        ]);
+
+        $runner->ensureInitialized($runtime);
+        $firstResult = $runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
+        $secondResult = $runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 10);
+
+        self::assertSame(1, $firstResult->processedEvents);
+        self::assertFalse($firstResult->caughtUp);
+        self::assertSame(1, $secondResult->processedEvents);
+        self::assertTrue($secondResult->caughtUp);
+        self::assertSame([
+            'course-1' => 'Math',
+            'course-2' => 'Science',
+        ], $projection->names);
+        self::assertSame([], $activity->affectedBuckets());
+        self::assertNull($segments->listSegments('tracking_projection')[0]->workerId);
+    }
+
     public function test_run_claimed_once_keeps_bucket_activity_pending_until_the_claim_catches_up(): void
     {
         $projection = new TrackingProjection();
