@@ -101,9 +101,6 @@ final class MessageHandlingProjectionIntegrationTest extends ProjectionFunctiona
 
         $event = self::courseCreatedEvent('course-1', 'Intro to Projections');
         $eventStore->append([$event]);
-        $bucket = $runtime->definition()->bucketFor($event);
-        self::assertNotNull($bucket);
-        $activity->bump($runtime->projectionId(), $bucket);
 
         $runner->ensureInitialized($runtime);
         self::assertNotNull($runner->claimSegment($runtime->projectionId(), 0, 'worker-1'));

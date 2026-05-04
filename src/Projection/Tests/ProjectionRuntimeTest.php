@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ultra\Projection\Tests;
 
 use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\InMemoryEventStore;
@@ -24,6 +23,7 @@ use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionDefinition;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\Tests\Support\ProjectionFunctionalTestCase;
 
 #[EventAttribute('course.created')]
 final readonly class RuntimeCourseCreated
@@ -62,7 +62,7 @@ final class SecondaryRuntimeProjection
 #[CoversClass(DefaultProjectionScalingPolicy::class)]
 #[CoversClass(ProjectionCatalog::class)]
 #[CoversClass(ProjectionRuntime::class)]
-final class ProjectionRuntimeTest extends TestCase
+final class ProjectionRuntimeTest extends ProjectionFunctionalTestCase
 {
     public function test_activity_recorder_deduplicates_buckets_per_append_and_enqueues_a_single_coordinator_wakeup(): void
     {
@@ -137,23 +137,13 @@ final class ProjectionRuntimeTest extends TestCase
     public function test_coordinator_catches_up_a_stale_projection_and_acknowledges_processed_buckets(): void
     {
         $projection = new RuntimeProjection();
-        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
-        $catalog = new ProjectionCatalog($runtime);
-        $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new InMemoryProjectionBucketActivityRepository();
-        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
-        $activator = new InMemoryProjectionActivator();
-        $recorder = new ProjectionActivityRecorder($catalog, $activity, $leases, $activator);
-        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
-        $coordinator = new ProjectionCoordinator(
-            $catalog,
-            $runner,
-            $activity,
-            $leases,
-            $activator,
-            new DefaultProjectionScalingPolicy(),
-        );
+        $container = $this->projectionUltraLight()
+            ->withService($projection, RuntimeProjection::class)
+            ->boot()
+        ;
+        $eventStore = $container->eventStore();
+        $activity = $container->projectionActivity();
+        $coordinator = $container->projectionCoordinator();
 
         $events = [
             new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['courseId' => 'course-1']),
@@ -161,7 +151,6 @@ final class ProjectionRuntimeTest extends TestCase
         ];
 
         $eventStore->append($events);
-        $recorder->record($events);
 
         $result = $coordinator->run('coordinator-1');
 
@@ -177,25 +166,21 @@ final class ProjectionRuntimeTest extends TestCase
     public function test_global_coordinator_can_catch_up_multiple_projections_in_one_run(): void
     {
         $primaryProjection = new RuntimeProjection();
-        $primaryRuntime = new ProjectionRuntime($primaryProjection, new UltraNormalizer());
         $secondaryProjection = new SecondaryRuntimeProjection();
-        $secondaryRuntime = new ProjectionRuntime($secondaryProjection, new UltraNormalizer());
-        $catalog = new ProjectionCatalog($primaryRuntime, $secondaryRuntime);
-        $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new InMemoryProjectionBucketActivityRepository();
-        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
-        $activator = new InMemoryProjectionActivator();
-        $recorder = new ProjectionActivityRecorder($catalog, $activity, $leases, $activator);
-        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
-        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
+        $container = $this->projectionUltraLight()
+            ->withService($primaryProjection, RuntimeProjection::class)
+            ->withService($secondaryProjection, SecondaryRuntimeProjection::class)
+            ->boot()
+        ;
+        $eventStore = $container->eventStore();
+        $activity = $container->projectionActivity();
+        $coordinator = $container->projectionCoordinator();
 
         $events = [
             new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['courseId' => 'course-1']),
         ];
 
         $eventStore->append($events);
-        $recorder->record($events);
 
         $result = $coordinator->run('coordinator-1');
 
