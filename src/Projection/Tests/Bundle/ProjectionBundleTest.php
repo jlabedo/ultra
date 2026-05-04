@@ -6,9 +6,14 @@ namespace Ultra\Projection\Tests\Bundle;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use Ultra\Events\Attribute\Event;
+use Ultra\EventStore\Event as StoredEvent;
+use Ultra\EventStore\EventStore;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Bundle\ProjectionBundle;
+use Ultra\Projection\Coordination\ProjectionActivityEventStore;
+use Ultra\Projection\Coordination\ProjectionActivityRecorder;
+use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Tests\Support\ProjectionFunctionalTestCase;
@@ -41,6 +46,8 @@ final class ThirdStubProjection
  * @internal
  */
 #[CoversClass(ProjectionBundle::class)]
+#[CoversClass(ProjectionActivityEventStore::class)]
+#[CoversClass(ProjectionActivityRecorder::class)]
 final class ProjectionBundleTest extends ProjectionFunctionalTestCase
 {
     public function test_registers_empty_catalog_when_no_projections_are_discovered(): void
@@ -89,4 +96,37 @@ final class ProjectionBundleTest extends ProjectionFunctionalTestCase
         ));
     }
 
+    public function test_decorated_event_store_records_projection_activity_after_appending_events(): void
+    {
+        $container = $this->projectionUltraLight()
+            ->withClass(StubProjection::class)
+            ->boot()
+        ;
+
+        $eventStore = $container->eventStore();
+        $activity = $container->projectionActivity();
+        $activator = $container->projectionActivator();
+
+        self::assertInstanceOf(EventStore::class, $eventStore);
+        self::assertInstanceOf(InMemoryProjectionActivator::class, $activator);
+
+        $eventStore->append([
+            new StoredEvent(
+                eventType: 'projection.stubbed',
+                payload: [],
+                domainIds: ['id' => 'stub-1'],
+            ),
+            new StoredEvent(
+                eventType: 'projection.stubbed',
+                payload: [],
+                domainIds: ['id' => 'stub-1'],
+            ),
+        ]);
+
+        $pending = $activity->pendingBucketsForSegment('stub_projection', 0, 255);
+
+        self::assertCount(1, $pending);
+        self::assertSame(1, $pending[0]->counter);
+        self::assertSame(1, $activator->workSignals());
+    }
 }

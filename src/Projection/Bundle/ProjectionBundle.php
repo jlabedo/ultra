@@ -15,6 +15,8 @@ use Ultra\Projection\Bundle\Command\ProjectionWorkerCommand;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\MessageHandlingProjectionActivatorPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
 use Ultra\Projection\Coordination\DefaultProjectionScalingPolicy;
+use Ultra\Projection\Coordination\ProjectionActivityEventStore;
+use Ultra\Projection\Coordination\ProjectionActivityRecorder;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
@@ -60,6 +62,23 @@ final class ProjectionBundle extends Bundle
 
         $container->register(ProjectionActivatorInterface::class, InMemoryProjectionActivator::class);
         $container->register(ProjectionScalingPolicyInterface::class, DefaultProjectionScalingPolicy::class);
+
+        $container->register(ProjectionActivityRecorder::class, ProjectionActivityRecorder::class)
+            ->setArguments([
+                new Reference(ProjectionCatalog::class),
+                new Reference(ProjectionBucketActivityRepositoryInterface::class),
+                new Reference(ProjectionCoordinatorLeaseRepositoryInterface::class),
+                new Reference(ProjectionActivatorInterface::class),
+            ])
+        ;
+
+        $container->register(ProjectionActivityEventStore::class, ProjectionActivityEventStore::class)
+            ->setDecoratedService(EventStore::class, null, 100)
+            ->setArguments([
+                new Reference(ProjectionActivityEventStore::class.'.inner'),
+                new Reference(ProjectionActivityRecorder::class),
+            ])
+        ;
 
         $container->register(ProjectionRunner::class, ProjectionRunner::class)
             ->setArguments([

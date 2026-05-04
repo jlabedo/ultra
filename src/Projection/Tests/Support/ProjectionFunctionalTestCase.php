@@ -6,6 +6,9 @@ namespace Ultra\Projection\Tests\Support;
 
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Container;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Reference;
+use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\Mapper\UltraNormalizer;
@@ -43,9 +46,20 @@ abstract class ProjectionFunctionalTestCase extends TestCase
         return new UltraLight()
             ->withBuildDir(dirname(__DIR__, 4).'/var/projection_tests')
             ->withContainerFactory($containerFactory)
+            ->withBundle(new class ($eventStore ?? new InMemoryEventStore()) extends Bundle {
+                public function __construct(private EventStore $eventStore){}
+                public function build(ContainerBuilder $container): void
+                {
+                    $container->register(ProjectionTestEventStoreFactory::class)
+                        ->setArguments([$this->eventStore])
+                    ;
+                    $container->register(EventStore::class, $this->eventStore::class)
+                        ->setFactory([new Reference(ProjectionTestEventStoreFactory::class), 'create'])
+                    ;
+                }
+            })
             ->withBundle(new MapperBundle())
             ->withBundle(new ProjectionBundle())
-            ->withService($eventStore ?? new InMemoryEventStore(), EventStore::class)
             ->withService($implementation ?? new InMemoryProjectionImplementation(), ProjectionImplementationInterface::class)
             ->withAlias('test.event_store', EventStore::class)
             ->withAlias('test.normalizer', UltraNormalizer::class)
@@ -57,5 +71,17 @@ abstract class ProjectionFunctionalTestCase extends TestCase
             ->withAlias('test.projection_leases', ProjectionCoordinatorLeaseRepositoryInterface::class)
             ->withAlias('test.projection_activator', ProjectionActivatorInterface::class)
         ;
+    }
+}
+
+final readonly class ProjectionTestEventStoreFactory
+{
+    public function __construct(
+        private EventStore $eventStore,
+    ) {}
+
+    public function create(): EventStore
+    {
+        return $this->eventStore;
     }
 }
