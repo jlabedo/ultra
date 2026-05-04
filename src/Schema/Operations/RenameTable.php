@@ -9,6 +9,5 @@ final readonly class RenameTable implements SchemaOperation
     public function __construct(
         public string $fromName,
         public string $toName,
-    ) {
-    }
+    ) {}
 }

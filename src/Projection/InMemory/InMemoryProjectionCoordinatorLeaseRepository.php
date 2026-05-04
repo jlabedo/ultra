@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ultra\Projection\InMemory;
 
 use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
-use Ultra\Time\DatePoint;
 use Ultra\Time\ClockInterface;
+use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
 
@@ -15,9 +15,7 @@ final class InMemoryProjectionCoordinatorLeaseRepository implements ProjectionCo
     /** @var array{workerId: null|string, leaseExpiresAt: null|DatePoint, wakeEnqueuedUntil: null|DatePoint} */
     private array $row = ['workerId' => null, 'leaseExpiresAt' => null, 'wakeEnqueuedUntil' => null];
 
-    public function __construct(private ClockInterface $clock = new SystemClock())
-    {
-    }
+    public function __construct(private ClockInterface $clock = new SystemClock()) {}
 
     public function acquire(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
     {

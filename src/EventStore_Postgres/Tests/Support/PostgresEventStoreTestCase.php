@@ -8,8 +8,7 @@ use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
-
-
+use Ultra\Testing\PostgresTestSupport;
 
 abstract class PostgresEventStoreTestCase extends TestCase
 {
@@ -31,20 +30,20 @@ abstract class PostgresEventStoreTestCase extends TestCase
         string $implementation = 'hstore',
         string $lockStrategy = 'shared-exclusive',
     ): void {
-        $connection = \Ultra\Testing\PostgresTestSupport::sharedConnection($this->postgresDsn());
-        $prefix = \Ultra\Testing\PostgresTestSupport::uniquePrefix();
-        $schema = \Ultra\Testing\PostgresTestSupport::schemaForImplementation($prefix, $implementation, $lockStrategy);
+        $connection = PostgresTestSupport::sharedConnection($this->postgresDsn());
+        $prefix = PostgresTestSupport::uniquePrefix();
+        $schema = PostgresTestSupport::schemaForImplementation($prefix, $implementation, $lockStrategy);
 
         try {
             foreach ($schema->createStatements() as $statement) {
                 $connection->executeStatement($statement);
             }
 
-            $store = \Ultra\Testing\PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
+            $store = PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
             $callback($store, $connection, $prefix);
         } finally {
-            \Ultra\Testing\PostgresTestSupport::resetSharedConnection($connection);
+            PostgresTestSupport::resetSharedConnection($connection);
 
             foreach ($schema->dropStatements() as $statement) {
                 $connection->executeStatement($statement);

@@ -99,7 +99,7 @@ final class ProjectionBundle extends Bundle
 
     private function registerMessageHandlingIntegration(ContainerBuilder $container): void
     {
-        if (!interface_exists('Ultra\\MessageHandling\\MediatorInterface')) {
+        if (!interface_exists('Ultra\MessageHandling\MediatorInterface')) {
             return;
         }
 

@@ -8,9 +8,6 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\IndexDefinition;
-use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\SchemaReconciler;
-use Ultra\Schema\TableDefinition;
 use Ultra\Schema\Operations\AddColumn;
 use Ultra\Schema\Operations\AddIndex;
 use Ultra\Schema\Operations\AlterColumn;
@@ -18,6 +15,9 @@ use Ultra\Schema\Operations\DropIndex;
 use Ultra\Schema\Operations\RenameColumn;
 use Ultra\Schema\Operations\RenameIndex;
 use Ultra\Schema\Operations\RenameTable;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SchemaReconciler;
+use Ultra\Schema\TableDefinition;
 
 /**
  * @internal
@@ -42,7 +42,7 @@ final class SchemaReconcilerTest extends TestCase
             ]),
         ]);
 
-        $operations = (new SchemaReconciler())->reconcile($current, $target);
+        $operations = new SchemaReconciler()->reconcile($current, $target);
 
         self::assertCount(3, $operations);
         self::assertInstanceOf(RenameTable::class, $operations[0]);
@@ -72,7 +72,7 @@ final class SchemaReconcilerTest extends TestCase
             ]),
         ]);
 
-        $operations = (new SchemaReconciler())->reconcile($current, $target);
+        $operations = new SchemaReconciler()->reconcile($current, $target);
 
         self::assertCount(1, $operations);
         self::assertInstanceOf(AlterColumn::class, $operations[0]);
@@ -104,7 +104,7 @@ final class SchemaReconcilerTest extends TestCase
             ),
         ]);
 
-        $operations = (new SchemaReconciler())->reconcile($current, $target);
+        $operations = new SchemaReconciler()->reconcile($current, $target);
 
         self::assertCount(3, $operations);
         self::assertInstanceOf(RenameIndex::class, $operations[0]);
@@ -151,7 +151,7 @@ final class SchemaReconcilerTest extends TestCase
             ),
         ]);
 
-        $operations = (new SchemaReconciler())->reconcile($current, $target);
+        $operations = new SchemaReconciler()->reconcile($current, $target);
 
         self::assertCount(2, $operations);
         self::assertInstanceOf(DropIndex::class, $operations[0]);
@@ -176,6 +176,6 @@ final class SchemaReconcilerTest extends TestCase
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('Cannot reconcile changed constraints for column "users"."email".');
 
-        (new SchemaReconciler())->reconcile($current, $target);
+        new SchemaReconciler()->reconcile($current, $target);
     }
 }

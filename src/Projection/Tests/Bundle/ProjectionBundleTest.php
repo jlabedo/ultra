@@ -14,6 +14,7 @@ use Ultra\Projection\Bundle\ProjectionBundle;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Testing\UltraLight;
+use Ultra\Testing\UltraLightContainer;
 
 #[Event('projection.stubbed')]
 final readonly class StubProjectionEvent {}
@@ -39,6 +40,9 @@ final class ThirdStubProjection
     public function onSomething(StubProjectionEvent $event): void {}
 }
 
+/**
+ * @internal
+ */
 #[CoversClass(ProjectionBundle::class)]
 final class ProjectionBundleTest extends TestCase
 {
@@ -89,11 +93,11 @@ final class ProjectionBundleTest extends TestCase
     }
 
     /**
-     * @return UltraLight<\Ultra\Testing\UltraLightContainer>
+     * @return UltraLight<UltraLightContainer>
      */
     private function projectionUltraLight(): UltraLight
     {
-        return (new UltraLight())
+        return new UltraLight()
             ->withBundle(new ProjectionBundle())
             ->withService(new UltraNormalizer(), UltraNormalizer::class)
             ->withAlias('test.projection_catalog', ProjectionCatalog::class)

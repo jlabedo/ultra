@@ -10,6 +10,5 @@ final readonly class RenameIndex implements SchemaOperation
         public string $tableName,
         public string $fromName,
         public string $toName,
-    ) {
-    }
+    ) {}
 }

@@ -22,16 +22,18 @@ use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionCoordinatorResult;
-use Ultra\Projection\ProjectionRunResult;
+use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
 use Ultra\Testing\Concurrent\Cluster;
+use Ultra\Testing\PostgresTestSupport;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
 
@@ -138,8 +140,8 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                 static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $testFile): ProjectionCoordinatorResult {
                     require_once $testFile;
 
-                    $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
-                    $innerStore = \Ultra\Testing\PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams');
+                    $connection = PostgresTestSupport::connection($dsn);
+                    $innerStore = PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams');
 
                     // Inline barrier: fires once on the first load(), holding the segment
                     // claim open so the follower can grab the other segment concurrently.
@@ -186,7 +188,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                         $activityRepository,
                         new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix),
                         new InMemoryProjectionActivator(),
-                        new class implements \Ultra\Projection\Coordination\ProjectionScalingPolicyInterface {
+                        new class implements ProjectionScalingPolicyInterface {
                             public function additionalWorkersRequested(array $affectedBuckets): int
                             {
                                 return 1;
@@ -212,10 +214,10 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                 static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $testFile): ProjectionRunResult {
                     require_once $testFile;
 
-                    $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
+                    $connection = PostgresTestSupport::connection($dsn);
                     $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
                     $runner = new ProjectionRunner(
-                        \Ultra\Testing\PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams'),
+                        PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams'),
                         new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
                         new PostgresProjectionTransactionManager($connection),
                         $activityRepository,
@@ -290,7 +292,6 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             Connection $connection,
             string $projectionPrefix,
         ) use ($dsn): void {
-
             $cluster = new Cluster(timeout: 10.0);
 
             // Worker A — stalled leader: acquires the lease at T=0 then pauses so the
@@ -298,7 +299,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             // The lease is intentionally never released, simulating a coordinator crash.
             $stalledLeader = $cluster->spawn(
                 static function () use ($dsn, $projectionPrefix): bool {
-                    $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
+                    $connection = PostgresTestSupport::connection($dsn);
                     $clock = new StatickClock(new \DateTimeImmutable('2000-01-01 00:00:00'));
                     $leases = new PostgresProjectionCoordinatorLeaseRepository(
                         $connection,
@@ -323,7 +324,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             // Worker B — early contender: sees the same T=0, must fail to acquire.
             $earlyContender = $cluster->spawn(
                 static function () use ($dsn, $projectionPrefix): bool {
-                    $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
+                    $connection = PostgresTestSupport::connection($dsn);
                     $clock = new StatickClock(new \DateTimeImmutable('2000-01-01 00:00:00'));
                     $leases = new PostgresProjectionCoordinatorLeaseRepository(
                         $connection,
@@ -343,7 +344,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             // is past the stalled leader's lease expiry, then tries to acquire.
             $lateContender = $cluster->spawn(
                 static function () use ($dsn, $projectionPrefix): bool {
-                    $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
+                    $connection = PostgresTestSupport::connection($dsn);
 
                     // Block until the parent tells us what "now" is.  The injected
                     // timestamp will be one second past the stalled leader's expiry.

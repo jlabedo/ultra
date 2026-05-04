@@ -13,6 +13,5 @@ final readonly class AlterColumn implements SchemaOperation
         public ?bool $nullable = null,
         public ?string $defaultExpression = null,
         public bool $dropDefault = false,
-    ) {
-    }
+    ) {}
 }

@@ -9,6 +9,5 @@ final readonly class DropIndex implements SchemaOperation
     public function __construct(
         public string $tableName,
         public string $indexName,
-    ) {
-    }
+    ) {}
 }

@@ -94,7 +94,7 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         foreach ($rowUpdates as $update) {
             $key = $this->batchKey($update);
             if ($key !== $currentKey) {
-                if ($currentGroup !== []) {
+                if ([] !== $currentGroup) {
                     $groups[] = $currentGroup;
                 }
                 $currentKey = $key;
@@ -103,7 +103,7 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
             $currentGroup[] = $update;
         }
 
-        if ($currentGroup !== []) {
+        if ([] !== $currentGroup) {
             $groups[] = $currentGroup;
         }
 
@@ -113,21 +113,21 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
     private function batchKey(RowUpdatePlan $update): string
     {
         return match ($update->mode) {
-            RowUpdatePlan::MODE_INSERT => 'insert:' . implode(',', array_keys($update->setColumns)),
-            RowUpdatePlan::MODE_UPSERT => 'upsert:' . implode(',', array_keys($update->setColumns)),
-            RowUpdatePlan::MODE_DELETE => $update->expectedColumns === []
+            RowUpdatePlan::MODE_INSERT => 'insert:'.implode(',', array_keys($update->setColumns)),
+            RowUpdatePlan::MODE_UPSERT => 'upsert:'.implode(',', array_keys($update->setColumns)),
+            RowUpdatePlan::MODE_DELETE => [] === $update->expectedColumns
                 ? 'delete'
-                : 'delete:' . (string) $update->id,
-            RowUpdatePlan::MODE_REPLACE => $update->expectedColumns === []
-                ? 'replace:' . implode(',', array_keys($update->setColumns))
-                : 'replace:' . (string) $update->id,
-            default => $update->mode . ':' . (string) $update->id,
+                : 'delete:'.(string) $update->id,
+            RowUpdatePlan::MODE_REPLACE => [] === $update->expectedColumns
+                ? 'replace:'.implode(',', array_keys($update->setColumns))
+                : 'replace:'.(string) $update->id,
+            default => $update->mode.':'.(string) $update->id,
         };
     }
 
     private function flushBatchDelete(string $tableName, string $idColumn, array $updates): void
     {
-        $ids = array_map(static fn($u) => $u->id, $updates);
+        $ids = array_map(static fn ($u) => $u->id, $updates);
 
         $affectedRows = $this->connection->executeStatement(
             sprintf(
@@ -153,7 +153,7 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
     {
         $columns = [$idColumn, ...array_keys($updates[0]->setColumns)];
         $quotedColumns = array_map($this->connection->quoteSingleIdentifier(...), $columns);
-        $rowPlaceholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
+        $rowPlaceholder = '('.implode(', ', array_fill(0, count($columns), '?')).')';
 
         $params = [];
         foreach ($updates as $update) {
@@ -194,7 +194,7 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
     {
         $columns = [$idColumn, ...array_keys($updates[0]->setColumns)];
         $quotedColumns = array_map($this->connection->quoteSingleIdentifier(...), $columns);
-        $rowPlaceholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
+        $rowPlaceholder = '('.implode(', ', array_fill(0, count($columns), '?')).')';
         $allPlaceholders = implode(', ', array_fill(0, count($updates), $rowPlaceholder));
 
         $params = [];

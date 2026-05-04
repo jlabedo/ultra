@@ -10,6 +10,5 @@ final readonly class CreateTable implements SchemaOperation
 {
     public function __construct(
         public TableDefinition $table,
-    ) {
-    }
+    ) {}
 }

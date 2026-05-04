@@ -16,7 +16,7 @@ use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepos
 use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\Tests\Harness\ProjectionCoordinationHarness;
-
+use Ultra\Testing\PostgresTestSupport;
 
 require_once __DIR__.'/Harness/ProjectionCoordinationHarness.php';
 
@@ -74,7 +74,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
 
             self::assertSame(0, $resetCode, $resetOutput);
             self::assertStringContainsString('Projection "harness_course_names" was reset.', $resetOutput);
-            self::assertSame([], (new PostgresProjectionSegmentRepository($connection, $projectionPrefix))
+            self::assertSame([], new PostgresProjectionSegmentRepository($connection, $projectionPrefix)
                 ->listSegments(ProjectionCoordinationHarness::PROJECTION_ID));
             self::assertNull($connection->fetchOne(sprintf(
                 "SELECT to_regclass('%s')",
@@ -98,7 +98,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
                 $projectionPrefix.'bucket_activity',
             )));
         } finally {
-            \Ultra\Testing\PostgresTestSupport::resetSharedConnection($connection);
+            PostgresTestSupport::resetSharedConnection($connection);
 
             foreach (array_reverse(ProjectionCoordinationHarness::schemas($eventStorePrefix, $projectionPrefix)) as $schema) {
                 foreach ($schema->dropStatements() as $statement) {

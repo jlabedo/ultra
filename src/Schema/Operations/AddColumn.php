@@ -11,6 +11,5 @@ final readonly class AddColumn implements SchemaOperation
     public function __construct(
         public string $tableName,
         public ColumnDefinition $column,
-    ) {
-    }
+    ) {}
 }

@@ -22,12 +22,12 @@ final readonly class ColumnDefinition
         public array $constraints = [],
         ?bool $hasExplicitName = null,
     ) {
-        if ($type === '') {
+        if ('' === $type) {
             throw new \InvalidArgumentException(sprintf('Column "%s" must define a type.', $this->id));
         }
 
         $this->name = $name ?? $this->id;
-        $this->hasExplicitName = $hasExplicitName ?? $name !== null;
+        $this->hasExplicitName = $hasExplicitName ?? null !== $name;
     }
 
     public function equivalentTo(self $other): bool

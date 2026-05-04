@@ -16,7 +16,7 @@ final readonly class TableDefinition
 
     /**
      * @param list<ColumnDefinition> $columns
-     * @param list<IndexDefinition> $indexes
+     * @param list<IndexDefinition>  $indexes
      */
     public function __construct(
         public string $id,
@@ -26,7 +26,7 @@ final readonly class TableDefinition
         ?bool $hasExplicitName = null,
     ) {
         $this->name = $name ?? $this->id;
-        $this->hasExplicitName = $hasExplicitName ?? $name !== null;
+        $this->hasExplicitName = $hasExplicitName ?? null !== $name;
 
         $columnIds = [];
         $columnNames = [];

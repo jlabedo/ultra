@@ -89,14 +89,15 @@ final readonly class SchemaDefinition
         $columns = [];
 
         foreach ([...$left->columns, ...$right->columns] as $column) {
-            if (! isset($columns[$column->id])) {
+            if (!isset($columns[$column->id])) {
                 $columns[$column->id] = $column;
+
                 continue;
             }
 
             $existing = $columns[$column->id];
 
-            if (! $existing->equivalentTo($column)) {
+            if (!$existing->equivalentTo($column)) {
                 throw new \InvalidArgumentException(sprintf(
                     'Conflicting column definition for "%s" in table "%s".',
                     $column->id,
@@ -133,14 +134,15 @@ final readonly class SchemaDefinition
         $indexes = [];
 
         foreach ([...$left->indexes, ...$right->indexes] as $index) {
-            if (! isset($indexes[$index->id])) {
+            if (!isset($indexes[$index->id])) {
                 $indexes[$index->id] = $index;
+
                 continue;
             }
 
             $existing = $indexes[$index->id];
 
-            if (! $existing->equivalentTo($index)) {
+            if (!$existing->equivalentTo($index)) {
                 throw new \InvalidArgumentException(sprintf(
                     'Conflicting index definition for "%s" in table "%s".',
                     $index->id,

@@ -13,11 +13,9 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
-
-
 use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\Concurrent\Worker;
-
+use Ultra\Testing\PostgresTestSupport;
 
 /**
  * @internal
@@ -264,8 +262,8 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
      */
     public static function implementationAndLockStrategyProvider(): iterable
     {
-        foreach (\Ultra\Testing\PostgresTestSupport::supportedImplementations() as $implementation) {
-            foreach (\Ultra\Testing\PostgresTestSupport::supportedLockStrategies() as $lockStrategy) {
+        foreach (PostgresTestSupport::supportedImplementations() as $implementation) {
+            foreach (PostgresTestSupport::supportedLockStrategies() as $lockStrategy) {
                 yield sprintf('%s/%s', $implementation, $lockStrategy) => [$implementation, $lockStrategy];
             }
         }
@@ -285,10 +283,9 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
         Event $event,
         ?StreamQuery $appendQuery = null,
     ): Worker {
-
         return $cluster->spawn(static function () use ($dsn, $prefix, $implementation, $lockStrategy, $event, $appendQuery): string {
-            $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
-            $store = \Ultra\Testing\PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
+            $connection = PostgresTestSupport::connection($dsn);
+            $store = PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
             $appendConditions = [];
             if (null !== $appendQuery) {
@@ -322,10 +319,9 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
         ?StreamQuery $appendQuery = null,
         ?int $lockTimeoutMs = null,
     ): Worker {
-
         return $cluster->spawn(static function () use ($dsn, $prefix, $implementation, $lockStrategy, $event, $appendQuery, $lockTimeoutMs): string {
-            $connection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
-            $store = \Ultra\Testing\PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
+            $connection = PostgresTestSupport::connection($dsn);
+            $store = PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
             if (null !== $lockTimeoutMs) {
                 $connection->executeStatement(sprintf("SET lock_timeout TO '%dms'", $lockTimeoutMs));

@@ -16,9 +16,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     /** @var array<string, array<int, array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|int}>> */
     private array $segments = [];
 
-    public function __construct(private ClockInterface $clock = new SystemClock())
-    {
-    }
+    public function __construct(private ClockInterface $clock = new SystemClock()) {}
 
     public function ensureInitialized(string $projectionId): bool
     {
@@ -140,48 +138,6 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return array_map(fn (array $row): ProjectionSegment => $this->toSegment($projectionId, $row), array_values($rows));
     }
 
-    private function finalizeSplit(ProjectionSegment $segment, Checkpoint $checkpoint): void
-    {
-        $rangeSize = $segment->bucketTo - $segment->bucketFrom + 1;
-        if ($rangeSize < 2) {
-            throw new \LogicException(sprintf(
-                'Segment [%d-%d] is at minimum granularity and cannot be split.',
-                $segment->bucketFrom,
-                $segment->bucketTo,
-            ));
-        }
-
-        $mid = $segment->bucketFrom + intdiv($rangeSize, 2);
-        unset($this->segments[$segment->projectionId][$segment->bucketFrom]);
-
-        $this->segments[$segment->projectionId][$segment->bucketFrom] = [
-            'bucketFrom' => $segment->bucketFrom,
-            'bucketTo' => $mid - 1,
-            'checkpoint' => $checkpoint,
-            'workerId' => null,
-            'leaseExpiresAt' => null,
-        ];
-        $this->segments[$segment->projectionId][$mid] = [
-            'bucketFrom' => $mid,
-            'bucketTo' => $segment->bucketTo,
-            'checkpoint' => $checkpoint,
-            'workerId' => null,
-            'leaseExpiresAt' => null,
-        ];
-        ksort($this->segments[$segment->projectionId]);
-    }
-
-    private function segmentsForRange(string $projectionId, int $bucketFrom, int $bucketTo): array
-    {
-        return array_values(array_map(
-            fn (array $row): ProjectionSegment => $this->toSegment($projectionId, $row),
-            array_filter(
-                $this->segments[$projectionId] ?? [],
-                static fn (array $row): bool => $row['bucketFrom'] >= $bucketFrom && $row['bucketTo'] <= $bucketTo,
-            ),
-        ));
-    }
-
     public function takeSegmentsForRange(
         string $projectionId,
         int $bucketFrom,
@@ -236,6 +192,48 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return array_values(array_filter(
             $this->listSegments($projectionId),
             static fn (ProjectionSegment $segment): bool => null === $segment->workerId,
+        ));
+    }
+
+    private function finalizeSplit(ProjectionSegment $segment, Checkpoint $checkpoint): void
+    {
+        $rangeSize = $segment->bucketTo - $segment->bucketFrom + 1;
+        if ($rangeSize < 2) {
+            throw new \LogicException(sprintf(
+                'Segment [%d-%d] is at minimum granularity and cannot be split.',
+                $segment->bucketFrom,
+                $segment->bucketTo,
+            ));
+        }
+
+        $mid = $segment->bucketFrom + intdiv($rangeSize, 2);
+        unset($this->segments[$segment->projectionId][$segment->bucketFrom]);
+
+        $this->segments[$segment->projectionId][$segment->bucketFrom] = [
+            'bucketFrom' => $segment->bucketFrom,
+            'bucketTo' => $mid - 1,
+            'checkpoint' => $checkpoint,
+            'workerId' => null,
+            'leaseExpiresAt' => null,
+        ];
+        $this->segments[$segment->projectionId][$mid] = [
+            'bucketFrom' => $mid,
+            'bucketTo' => $segment->bucketTo,
+            'checkpoint' => $checkpoint,
+            'workerId' => null,
+            'leaseExpiresAt' => null,
+        ];
+        ksort($this->segments[$segment->projectionId]);
+    }
+
+    private function segmentsForRange(string $projectionId, int $bucketFrom, int $bucketTo): array
+    {
+        return array_values(array_map(
+            fn (array $row): ProjectionSegment => $this->toSegment($projectionId, $row),
+            array_filter(
+                $this->segments[$projectionId] ?? [],
+                static fn (array $row): bool => $row['bucketFrom'] >= $bucketFrom && $row['bucketTo'] <= $bucketTo,
+            ),
         ));
     }
 

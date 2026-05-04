@@ -70,7 +70,7 @@ final class PostgresSqlGenerator
 
     private function createIndex(AddIndex $operation): string
     {
-        if ($operation->index->rawSql !== null) {
+        if (null !== $operation->index->rawSql) {
             return sprintf(
                 '%s%s%s',
                 $this->terminateStatement($operation->index->rawSql),
@@ -82,7 +82,7 @@ final class PostgresSqlGenerator
         $columns = array_map($this->quoteIdentifier(...), $operation->index->columns);
 
         return sprintf(
-            "%s%s%s",
+            '%s%s%s',
             sprintf(
                 'CREATE %sINDEX %s ON %s (%s);',
                 $operation->index->unique ? 'UNIQUE ' : '',
@@ -121,11 +121,11 @@ final class PostgresSqlGenerator
         $columnName = $this->quoteIdentifier($operation->columnName);
         $clauses = [];
 
-        if ($operation->type !== null) {
+        if (null !== $operation->type) {
             $clauses[] = sprintf('ALTER COLUMN %s TYPE %s', $columnName, $operation->type);
         }
 
-        if ($operation->nullable !== null) {
+        if (null !== $operation->nullable) {
             $clauses[] = $operation->nullable
                 ? sprintf('ALTER COLUMN %s DROP NOT NULL', $columnName)
                 : sprintf('ALTER COLUMN %s SET NOT NULL', $columnName);
@@ -133,11 +133,11 @@ final class PostgresSqlGenerator
 
         if ($operation->dropDefault) {
             $clauses[] = sprintf('ALTER COLUMN %s DROP DEFAULT', $columnName);
-        } elseif ($operation->defaultExpression !== null) {
+        } elseif (null !== $operation->defaultExpression) {
             $clauses[] = sprintf('ALTER COLUMN %s SET DEFAULT %s', $columnName, $operation->defaultExpression);
         }
 
-        if ($clauses === []) {
+        if ([] === $clauses) {
             throw new \LogicException(sprintf(
                 'AlterColumn operation for "%s"."%s" does not contain any effective change.',
                 $operation->tableName,
@@ -159,11 +159,11 @@ final class PostgresSqlGenerator
             $column->type,
         ];
 
-        if (! $column->nullable) {
+        if (!$column->nullable) {
             $parts[] = 'NOT NULL';
         }
 
-        if ($column->defaultExpression !== null) {
+        if (null !== $column->defaultExpression) {
             $parts[] = sprintf('DEFAULT %s', $column->defaultExpression);
         }
 
@@ -181,7 +181,7 @@ final class PostgresSqlGenerator
     {
         $sql = trim($sql);
 
-        if ($sql === '') {
+        if ('' === $sql) {
             throw new \LogicException('Raw SQL statement cannot be empty.');
         }
 

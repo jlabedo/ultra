@@ -12,11 +12,9 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
-
-
 use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\Concurrent\Outcome;
-
+use Ultra\Testing\PostgresTestSupport;
 
 /**
  * End-to-end concurrency smoke test using the Cluster framework.
@@ -38,9 +36,9 @@ final class PostgresEventStoreConcurrentClusterTest extends PostgresEventStoreTe
         string $lockStrategy,
     ): void {
         $dsn = $this->postgresDsn();
-        $prefix = \Ultra\Testing\PostgresTestSupport::uniquePrefix();
-        $schema = \Ultra\Testing\PostgresTestSupport::schemaForImplementation($prefix, $implementation, $lockStrategy);
-        $connection = \Ultra\Testing\PostgresTestSupport::sharedConnection($dsn);
+        $prefix = PostgresTestSupport::uniquePrefix();
+        $schema = PostgresTestSupport::schemaForImplementation($prefix, $implementation, $lockStrategy);
+        $connection = PostgresTestSupport::sharedConnection($dsn);
 
         try {
             foreach ($schema->createStatements() as $statement) {
@@ -59,14 +57,14 @@ final class PostgresEventStoreConcurrentClusterTest extends PostgresEventStoreTe
             );
 
             // Append one event so both workers load a non-empty append condition.
-            $store = \Ultra\Testing\PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
+            $store = PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
             $store->append([$event]);
 
             $cluster = new Cluster(timeout: 10.0);
             $makeWorker = static function () use ($dsn, $prefix, $implementation, $lockStrategy, $query, $event): string {
                 // Each worker opens its own connection — connections are not fork-safe.
-                $workerConnection = \Ultra\Testing\PostgresTestSupport::connection($dsn);
-                $workerStore = \Ultra\Testing\PostgresTestSupport::storeForImplementation($workerConnection, $prefix, $implementation, lockStrategy: $lockStrategy);
+                $workerConnection = PostgresTestSupport::connection($dsn);
+                $workerStore = PostgresTestSupport::storeForImplementation($workerConnection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
                 $appendCondition = $workerStore->load($query)->appendCondition();
 
@@ -106,7 +104,7 @@ final class PostgresEventStoreConcurrentClusterTest extends PostgresEventStoreTe
             ));
             self::assertCount(1, $conflict, 'Expected exactly one worker to get a ConcurrencyException.');
         } finally {
-            \Ultra\Testing\PostgresTestSupport::resetSharedConnection($connection);
+            PostgresTestSupport::resetSharedConnection($connection);
 
             foreach ($schema->dropStatements() as $statement) {
                 $connection->executeStatement($statement);
@@ -119,8 +117,8 @@ final class PostgresEventStoreConcurrentClusterTest extends PostgresEventStoreTe
      */
     public static function implementationAndLockStrategyProvider(): iterable
     {
-        foreach (\Ultra\Testing\PostgresTestSupport::supportedImplementations() as $implementation) {
-            foreach (\Ultra\Testing\PostgresTestSupport::supportedLockStrategies() as $lockStrategy) {
+        foreach (PostgresTestSupport::supportedImplementations() as $implementation) {
+            foreach (PostgresTestSupport::supportedLockStrategies() as $lockStrategy) {
                 yield sprintf('%s/%s', $implementation, $lockStrategy) => [$implementation, $lockStrategy];
             }
         }

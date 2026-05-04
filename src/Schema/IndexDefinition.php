@@ -22,7 +22,7 @@ final readonly class IndexDefinition
         ?bool $hasExplicitName = null,
     ) {
         $this->name = $name ?? $this->id;
-        $this->hasExplicitName = $hasExplicitName ?? $name !== null;
+        $this->hasExplicitName = $hasExplicitName ?? null !== $name;
     }
 
     public function equivalentTo(self $other): bool

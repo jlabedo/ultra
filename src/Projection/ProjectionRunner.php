@@ -15,8 +15,7 @@ final readonly class ProjectionRunner
         private ProjectionSegmentRepositoryInterface $segmentRepository,
         private ProjectionTransactionManagerInterface $transactionManager = new NoOpProjectionTransactionManager(),
         private ?ProjectionBucketActivityRepositoryInterface $activityRepository = null,
-    ) {
-    }
+    ) {}
 
     public function recoverExpiredClaims(string $projectionId): int
     {
@@ -216,6 +215,7 @@ final readonly class ProjectionRunner
             $comparison = $highest->gapFloor->compareTo($checkpoint->gapFloor);
             if ($comparison < 0) {
                 $highest = $checkpoint;
+
                 continue;
             }
 

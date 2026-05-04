@@ -16,6 +16,7 @@ class DatePoint extends \DateTimeImmutable
         if ($object instanceof static) {
             return $object;
         }
+
         return parent::createFromInterface($object);
     }
 
@@ -37,6 +38,7 @@ class DatePoint extends \DateTimeImmutable
     public static function create(int $year = 0, int $month = 1, int $day = 1, int $hour = 0, int $minute = 0, int $second = 0, int $microsecond = 0, ?\DateTimeZone $timezone = null): static
     {
         $instance = new static('1900-01-01 00:00:00', $timezone);
+
         return $instance->setDate($year, $month, $day)->setTime($hour, $minute, $second, $microsecond);
     }
 

@@ -62,6 +62,9 @@ final class MessageHandlingTrackingProjection
     }
 }
 
+/**
+ * @internal
+ */
 #[CoversClass(MessageHandlingProjectionActivator::class)]
 #[CoversClass(ProjectionMessageHandler::class)]
 #[CoversClass(RunProjectionSegment::class)]

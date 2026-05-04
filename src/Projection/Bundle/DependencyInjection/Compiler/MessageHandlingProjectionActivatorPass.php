@@ -15,7 +15,7 @@ final class MessageHandlingProjectionActivatorPass implements CompilerPassInterf
 {
     public function process(ContainerBuilder $container): void
     {
-        $mediator = 'Ultra\\MessageHandling\\MediatorInterface';
+        $mediator = 'Ultra\MessageHandling\MediatorInterface';
         if (!$container->hasDefinition($mediator) && !$container->hasAlias($mediator)) {
             return;
         }

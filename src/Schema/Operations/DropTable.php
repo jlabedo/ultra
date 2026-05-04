@@ -8,6 +8,5 @@ final readonly class DropTable implements SchemaOperation
 {
     public function __construct(
         public string $tableName,
-    ) {
-    }
+    ) {}
 }

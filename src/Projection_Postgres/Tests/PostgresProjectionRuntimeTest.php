@@ -6,6 +6,7 @@ namespace Ultra\Projection_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
 use Ultra\Events\Attribute\Event as EventAttribute;
+use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\Mapper\UltraNormalizer;
@@ -327,7 +328,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             self::assertSame(0, $segments[0]->bucketFrom);
             self::assertSame(128, $segments[1]->bucketFrom);
 
-            $segmentRepository->completeClaimedSegment($segment, \Ultra\EventStore\Checkpoint::beginning(), 'worker-1', true);
+            $segmentRepository->completeClaimedSegment($segment, Checkpoint::beginning(), 'worker-1', true);
 
             $segments = $segmentRepository->listSegments('course_names');
 

@@ -80,6 +80,7 @@ final readonly class ProjectionCoordinator
                         $claimedAny = true;
                         if (null === $localAssignment) {
                             $localAssignment = [$runtime, $projectionId, $segment->bucketFrom, $workerId];
+
                             continue;
                         }
 
@@ -120,6 +121,7 @@ final readonly class ProjectionCoordinator
 
     /**
      * @param list<ProjectionBucketActivity> $activities
+     *
      * @return array<string, list<ProjectionBucketActivity>>
      */
     private function groupByProjection(array $activities): array

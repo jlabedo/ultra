@@ -31,8 +31,9 @@ final class SchemaReconciler
         foreach ($targetTables as $tableId => $targetTable) {
             $currentTable = $currentTables[$tableId] ?? null;
 
-            if ($currentTable === null) {
+            if (null === $currentTable) {
                 $operations[] = new CreateTable($targetTable);
+
                 continue;
             }
 
@@ -71,8 +72,9 @@ final class SchemaReconciler
         foreach ($targetColumns as $columnId => $targetColumn) {
             $currentColumn = $currentColumns[$columnId] ?? null;
 
-            if ($currentColumn === null) {
+            if (null === $currentColumn) {
                 $operations[] = new AddColumn($tableName, $targetColumn);
+
                 continue;
             }
 
@@ -91,7 +93,7 @@ final class SchemaReconciler
                 ));
             }
 
-            if (! $currentColumn->equivalentTo($targetColumn)) {
+            if (!$currentColumn->equivalentTo($targetColumn)) {
                 $operations[] = new AlterColumn(
                     tableName: $tableName,
                     columnName: $resolvedColumnName,
@@ -100,7 +102,7 @@ final class SchemaReconciler
                     defaultExpression: $currentColumn->defaultExpression !== $targetColumn->defaultExpression
                         ? $targetColumn->defaultExpression
                         : null,
-                    dropDefault: $currentColumn->defaultExpression !== null && $targetColumn->defaultExpression === null,
+                    dropDefault: null !== $currentColumn->defaultExpression && null === $targetColumn->defaultExpression,
                 );
             }
         }
@@ -129,8 +131,9 @@ final class SchemaReconciler
         foreach ($targetIndexes as $indexId => $targetIndex) {
             $currentIndex = $currentIndexes[$indexId] ?? null;
 
-            if ($currentIndex === null) {
+            if (null === $currentIndex) {
                 $operations[] = new AddIndex($tableName, $targetIndex);
+
                 continue;
             }
 
@@ -141,7 +144,7 @@ final class SchemaReconciler
                 $resolvedIndexName = $targetIndex->name;
             }
 
-            if (! $currentIndex->equivalentTo($targetIndex)) {
+            if (!$currentIndex->equivalentTo($targetIndex)) {
                 $operations[] = new DropIndex($tableName, $resolvedIndexName);
                 $operations[] = new AddIndex($tableName, $targetIndex);
             }

@@ -20,8 +20,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
         private Connection $connection,
         private string $tablePrefix = 'projection_',
         private ClockInterface $clock = new SystemClock(),
-    ) {
-    }
+    ) {}
 
     public function acquire(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
     {

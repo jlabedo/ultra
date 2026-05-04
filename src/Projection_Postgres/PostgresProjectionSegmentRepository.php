@@ -31,9 +31,9 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
 
         $affected = $this->connection->executeStatement(
             sprintf(
-                "INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
+                'INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
                  VALUES (?, 0, 255, ?, CAST(? AS TIMESTAMPTZ))
-                 ON CONFLICT (projection_id, bucket_from) DO NOTHING",
+                 ON CONFLICT (projection_id, bucket_from) DO NOTHING',
                 $this->segmentsTable(),
             ),
             [$projectionId, Checkpoint::beginning()->serialize(), $now],
@@ -86,11 +86,11 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
 
             $this->connection->executeStatement(
                 sprintf(
-                    "UPDATE %s
+                    'UPDATE %s
                      SET worker_id = ?,
                          lease_expires_at = CAST(? AS TIMESTAMPTZ),
                          updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ?",
+                     WHERE projection_id = ? AND bucket_from = ?',
                     $this->segmentsTable(),
                 ),
                 [$workerId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom],
@@ -125,10 +125,10 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         if ($caughtUp) {
             $this->connection->executeStatement(
                 sprintf(
-                    "UPDATE %s
+                    'UPDATE %s
                      SET worker_id = NULL, lease_expires_at = NULL,
                          checkpoint = ?, updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?",
+                     WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?',
                     $this->segmentsTable(),
                 ),
                 [$checkpoint->serialize(), $now, $segment->projectionId, $segment->bucketFrom, $workerId],
@@ -140,11 +140,11 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
 
         $this->connection->executeStatement(
             sprintf(
-                "UPDATE %s
+                'UPDATE %s
                  SET checkpoint = ?,
                      lease_expires_at = CAST(? AS TIMESTAMPTZ),
                      updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?",
+                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?',
                 $this->segmentsTable(),
             ),
             [$checkpoint->serialize(), $now->add($leaseDuration), $now, $segment->projectionId, $segment->bucketFrom, $workerId],
@@ -158,9 +158,9 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
 
         $this->connection->executeStatement(
             sprintf(
-                "UPDATE %s
+                'UPDATE %s
                  SET worker_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?",
+                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?',
                 $this->segmentsTable(),
             ),
             [$now, $segment->projectionId, $segment->bucketFrom, $workerId],
@@ -174,9 +174,9 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
 
         $count = $this->connection->executeStatement(
             sprintf(
-                "UPDATE %s
+                'UPDATE %s
                  SET worker_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND worker_id IS NOT NULL AND lease_expires_at < CAST(? AS TIMESTAMPTZ)",
+                 WHERE projection_id = ? AND worker_id IS NOT NULL AND lease_expires_at < CAST(? AS TIMESTAMPTZ)',
                 $this->segmentsTable(),
             ),
             [$now, $projectionId, $now],
@@ -220,97 +220,6 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         );
     }
 
-    /**
-     * Executes the split transaction: creates two child segments, removes the parent.
-     */
-    private function finalizeSplit(ProjectionSegment $segment, Checkpoint $checkpoint): void
-    {
-        $rangeSize = $segment->bucketTo - $segment->bucketFrom + 1;
-        if ($rangeSize < 2) {
-            throw new \LogicException(sprintf(
-                'Segment [%d-%d] is at minimum granularity and cannot be split.',
-                $segment->bucketFrom,
-                $segment->bucketTo,
-            ));
-        }
-
-        $mid = $segment->bucketFrom + intdiv($rangeSize, 2);
-        $serializedCheckpoint = $checkpoint->serialize();
-        $now = $this->clock->now();
-
-        $this->connection->beginTransaction();
-
-        try {
-            // Delete parent first: child-1 reuses the same bucket_from as the parent,
-            // so INSERT must not occur while the parent row still holds the PK.
-            $this->connection->executeStatement(
-                sprintf('DELETE FROM %s WHERE projection_id = ? AND bucket_from = ?', $this->segmentsTable()),
-                [$segment->projectionId, $segment->bucketFrom],
-                [ParameterType::STRING, ParameterType::INTEGER],
-            );
-
-            $this->connection->executeStatement(
-                sprintf(
-                    "INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
-                     VALUES (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ)), (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ))",
-                    $this->segmentsTable(),
-                ),
-                [
-                    $segment->projectionId,
-                    $segment->bucketFrom,
-                    $mid - 1,
-                    $serializedCheckpoint,
-                    $now,
-                    $segment->projectionId,
-                    $mid,
-                    $segment->bucketTo,
-                    $serializedCheckpoint,
-                    $now,
-                ],
-                [
-                    ParameterType::STRING,
-                    ParameterType::INTEGER,
-                    ParameterType::INTEGER,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::INTEGER,
-                    ParameterType::INTEGER,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                ],
-            );
-
-            $this->connection->commit();
-        } catch (\Throwable $e) {
-            $this->connection->rollBack();
-
-            throw $e;
-        }
-    }
-
-    private function segmentsForRange(string $projectionId, int $bucketFrom, int $bucketTo): array
-    {
-        $rows = $this->connection->executeQuery(
-            sprintf(
-                'SELECT bucket_from, bucket_to, checkpoint
-                 FROM %s
-                 WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?
-                 ORDER BY bucket_from ASC',
-                $this->segmentsTable(),
-            ),
-            [$projectionId, $bucketFrom, $bucketTo],
-            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
-        )->fetchAllAssociative();
-
-        return array_map(static fn (array $row): ProjectionSegment => new ProjectionSegment(
-            projectionId: $projectionId,
-            bucketFrom: (int) $row['bucket_from'],
-            bucketTo: (int) $row['bucket_to'],
-            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-        ), $rows);
-    }
-
     public function takeSegmentsForRange(
         string $projectionId,
         int $bucketFrom,
@@ -345,11 +254,11 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
 
             $this->connection->executeStatement(
                 sprintf(
-                    "UPDATE %s
+                    'UPDATE %s
                      SET worker_id = ?,
                          lease_expires_at = CAST(? AS TIMESTAMPTZ),
                          updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?",
+                     WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?',
                     $this->segmentsTable(),
                 ),
                 [$ownerId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom, $bucketTo],
@@ -395,8 +304,8 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
 
             $this->connection->executeStatement(
                 sprintf(
-                    "INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
-                     VALUES (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ))",
+                    'INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
+                     VALUES (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ))',
                     $this->segmentsTable(),
                 ),
                 [$projectionId, $bucketFrom, $bucketTo, $checkpoint->serialize(), $now],
@@ -447,6 +356,97 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             ),
             [$projectionId],
             [ParameterType::STRING],
+        )->fetchAllAssociative();
+
+        return array_map(static fn (array $row): ProjectionSegment => new ProjectionSegment(
+            projectionId: $projectionId,
+            bucketFrom: (int) $row['bucket_from'],
+            bucketTo: (int) $row['bucket_to'],
+            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+        ), $rows);
+    }
+
+    /**
+     * Executes the split transaction: creates two child segments, removes the parent.
+     */
+    private function finalizeSplit(ProjectionSegment $segment, Checkpoint $checkpoint): void
+    {
+        $rangeSize = $segment->bucketTo - $segment->bucketFrom + 1;
+        if ($rangeSize < 2) {
+            throw new \LogicException(sprintf(
+                'Segment [%d-%d] is at minimum granularity and cannot be split.',
+                $segment->bucketFrom,
+                $segment->bucketTo,
+            ));
+        }
+
+        $mid = $segment->bucketFrom + intdiv($rangeSize, 2);
+        $serializedCheckpoint = $checkpoint->serialize();
+        $now = $this->clock->now();
+
+        $this->connection->beginTransaction();
+
+        try {
+            // Delete parent first: child-1 reuses the same bucket_from as the parent,
+            // so INSERT must not occur while the parent row still holds the PK.
+            $this->connection->executeStatement(
+                sprintf('DELETE FROM %s WHERE projection_id = ? AND bucket_from = ?', $this->segmentsTable()),
+                [$segment->projectionId, $segment->bucketFrom],
+                [ParameterType::STRING, ParameterType::INTEGER],
+            );
+
+            $this->connection->executeStatement(
+                sprintf(
+                    'INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
+                     VALUES (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ)), (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ))',
+                    $this->segmentsTable(),
+                ),
+                [
+                    $segment->projectionId,
+                    $segment->bucketFrom,
+                    $mid - 1,
+                    $serializedCheckpoint,
+                    $now,
+                    $segment->projectionId,
+                    $mid,
+                    $segment->bucketTo,
+                    $serializedCheckpoint,
+                    $now,
+                ],
+                [
+                    ParameterType::STRING,
+                    ParameterType::INTEGER,
+                    ParameterType::INTEGER,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::INTEGER,
+                    ParameterType::INTEGER,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                ],
+            );
+
+            $this->connection->commit();
+        } catch (\Throwable $e) {
+            $this->connection->rollBack();
+
+            throw $e;
+        }
+    }
+
+    private function segmentsForRange(string $projectionId, int $bucketFrom, int $bucketTo): array
+    {
+        $rows = $this->connection->executeQuery(
+            sprintf(
+                'SELECT bucket_from, bucket_to, checkpoint
+                 FROM %s
+                 WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?
+                 ORDER BY bucket_from ASC',
+                $this->segmentsTable(),
+            ),
+            [$projectionId, $bucketFrom, $bucketTo],
+            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
         )->fetchAllAssociative();
 
         return array_map(static fn (array $row): ProjectionSegment => new ProjectionSegment(

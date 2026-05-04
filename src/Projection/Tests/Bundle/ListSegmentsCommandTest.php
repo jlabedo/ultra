@@ -10,6 +10,9 @@ use Symfony\Component\Console\Tester\CommandTester;
 use Ultra\Projection\Bundle\Command\ListSegmentsCommand;
 use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 
+/**
+ * @internal
+ */
 #[CoversClass(ListSegmentsCommand::class)]
 final class ListSegmentsCommandTest extends TestCase
 {

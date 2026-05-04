@@ -74,9 +74,8 @@
     },
     "scripts": {
         "bench:event-store-postgres": "php benchmark_event_store_postgres.php",
-        "test": "pest",
-        "test:event-store-concurrency": "pest --all --group event-store-concurrency",
-        "test:coverage": "pest --coverage",
+        "test": "ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' pest --compact",
+        "test:coverage": "ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' pest --compact --coverage",
         "cs-fix": "php-cs-fixer fix"
     }
 }

@@ -11,6 +11,5 @@ final readonly class AddIndex implements SchemaOperation
     public function __construct(
         public string $tableName,
         public IndexDefinition $index,
-    ) {
-    }
+    ) {}
 }

@@ -10,6 +10,5 @@ final readonly class RenameColumn implements SchemaOperation
         public string $tableName,
         public string $fromName,
         public string $toName,
-    ) {
-    }
+    ) {}
 }

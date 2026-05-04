@@ -14,6 +14,7 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\LoadResult;
+use Ultra\EventStore\Sequence;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
@@ -476,8 +477,8 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertNotNull($left);
         self::assertNotNull($right);
 
-        $segments->completeClaimedSegment($left, new Checkpoint(new \Ultra\EventStore\Sequence(10), [new \Ultra\EventStore\Sequence(12)]), 'worker-left', true);
-        $segments->completeClaimedSegment($right, new Checkpoint(new \Ultra\EventStore\Sequence(10), [new \Ultra\EventStore\Sequence(13)]), 'worker-right', true);
+        $segments->completeClaimedSegment($left, new Checkpoint(new Sequence(10), [new Sequence(12)]), 'worker-left', true);
+        $segments->completeClaimedSegment($right, new Checkpoint(new Sequence(10), [new Sequence(13)]), 'worker-right', true);
 
         $runner->mergeSegments($runtime, 0, 255, 'coordinator-1');
 

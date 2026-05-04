@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres\Tests\Harness;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\ParameterType;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Input\ArrayInput;
@@ -40,8 +39,7 @@ use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorSchema;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
-
-
+use Ultra\Testing\PostgresTestSupport;
 
 #[EventAttribute('harness.course.created')]
 final readonly class HarnessCourseCreated
@@ -61,7 +59,7 @@ final readonly class HarnessCourseNamesProjection
         private Connection $connection,
         private string $tableName,
     ) {
-        $this->table = new MappedTable(new PostgresMappedTableAdapter($this->connection),$this->tableName, 'course_id');
+        $this->table = new MappedTable(new PostgresMappedTableAdapter($this->connection), $this->tableName, 'course_id');
     }
 
     #[ProjectionInitializer]
@@ -87,7 +85,8 @@ final readonly class HarnessCourseNamesProjection
     {
         $this->table->withId($event->courseId)
             ->upsert()
-            ->setColumn('name', $event->name);
+            ->setColumn('name', $event->name)
+        ;
     }
 
     #[ProjectionFlush]
@@ -142,7 +141,7 @@ final class ProjectionCoordinationHarness
 
     public static function connection(string $dsn): Connection
     {
-        return \Ultra\Testing\PostgresTestSupport::sharedConnection($dsn);
+        return PostgresTestSupport::sharedConnection($dsn);
     }
 
     public static function readModelTable(string $projectionPrefix): string
