@@ -1,7 +1,0 @@
-{
-    "patches": {
-        "symfony/dependency-injection": {
-            "Sanitize null bytes in instanceof parent service ids": "patches/symfony-dependency-injection-instanceof-parent-id.patch"
-        }
-    }
-}
