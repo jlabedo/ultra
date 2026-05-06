@@ -13,6 +13,9 @@
         "php": ">=8.5",
         "ultra/time": "self.version"
     },
+    "suggest": {
+        "ultra/unit-of-work": "Buffer async queue enqueues and flush them transactionally with the surrounding unit of work."
+    },
     "autoload": {
         "psr-4": {
             "Ultra\\MessageHandling\\": ""

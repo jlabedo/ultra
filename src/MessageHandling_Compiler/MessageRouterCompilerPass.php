@@ -11,6 +11,7 @@ use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MessageHandling\Async\AsyncHandlerProxy;
 use Ultra\MessageHandling\Async\AsyncQueueInterface;
+use Ultra\MessageHandling\Async\AsyncQueueUnitOfWork;
 use Ultra\MessageHandling\Async\InMemoryQueue;
 use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\Attribute\Advice;
@@ -33,6 +34,7 @@ use Ultra\MessageHandling_Compiler\Handler\HandlerDescriptorFactory;
 use Ultra\MessageHandling_Compiler\Routing\ContextualRouterDependencyResolver;
 use Ultra\MessageHandling_Compiler\Routing\MessageRouterGenerator;
 use Ultra\MessageHandling_Compiler\Routing\RouterDescriptor;
+use Ultra\UnitOfWork\UnitOfWork;
 
 /**
  * Unified Symfony DI compiler pass that generates compiled router classes for
@@ -66,6 +68,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
     {
         $this->ensureMessageContextPropagator($container);
         $this->ensureAsyncQueue($container);
+        $this->ensureAsyncQueueUnitOfWork($container);
 
         // ── Step 1: Discover router interfaces ────────────────────────────────
         /** @var array<string, array{descriptor: RouterDescriptor, baseName: string, outputDir: string}> $routers */
@@ -720,6 +723,23 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             $workerDef->setPublic(true);
             $container->setDefinition(QueueWorker::class, $workerDef);
         }
+    }
+
+    private function ensureAsyncQueueUnitOfWork(ContainerBuilder $container): void
+    {
+        if (!$container->has(UnitOfWork::class) || $container->hasDefinition(AsyncQueueUnitOfWork::class)) {
+            return;
+        }
+
+        $definition = new Definition(AsyncQueueUnitOfWork::class, [
+            new Reference(AsyncQueueUnitOfWork::class.'.inner'),
+        ]);
+        $definition
+            ->setDecoratedService(AsyncQueueInterface::class)
+            ->addTag('ultra_unit_of_work.unit_of_work', ['priority' => -100])
+        ;
+
+        $container->setDefinition(AsyncQueueUnitOfWork::class, $definition);
     }
 
     private function ensureMessageContextPropagator(ContainerBuilder $container): void
