@@ -5,7 +5,7 @@ Event-sourcing decision pipeline built on the mediator. Commands declare their c
 ## Design
 
 - **Decider pattern**: Each command owns the decision logic in a method marked with `#[DecisionHandler]`. The decision aspect discovers what to load and inject by reflecting on that method.
-- **States are event-sourced entities**: State classes use `#[EventSourcedEntity]` plus public `#[EventSourcingHandler]` methods (one typed event parameter) to fold events from a single stream. No aggregate root is required.
+- **States are event-sourced entities**: State classes come from `ultra/event-sourced-state` and use `#[EventSourcedEntity]` plus public `#[EventSourcingHandler]` methods (one typed event parameter) to fold events from a single stream. No aggregate root is required.
 - **Consistency by signature**: Parameters of the decision handler are either **state** (hydrated from the event store by stream) or **services** (resolved from the container). The aspect infers which is which and loads only the streams needed for that command.
 - **Identity by convention**: A state’s stream dimension comes from its single `#[EventSourcedEntity(tags: ['name'])]` tag; the engine reads the value from the command’s `{name}Id` property (or a custom property via `#[BindTo]`).
 - **Events are DTOs**: Events are plain classes with `#[Event('type.name')]` and `#[DomainIdentifier]` on properties. Stream routing is derived from those attributes when appending.
@@ -98,7 +98,7 @@ A full course/student subscription example (events, states, commands, and tests)
 
 ## Symfony
 
-When using Symfony, register `Ultra\DecisionEngine\DecisionEngineBundle`. The package suggests `symfony/dependency-injection` and `ultra/decision-engine-compiler` because the bundle uses Symfony DI autoconfiguration plus compiled entity loaders.
+When using Symfony, register `Ultra\EventSourcedState\EventSourcedStateBundle` for entity loader compilation and `Ultra\DecisionEngine\DecisionEngineBundle` for the decision aspect.
 
 ## Notes
 

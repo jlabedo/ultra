@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Exception;
+namespace Ultra\EventSourcedState\Exception;
 
 class NoTagOverlapError extends \LogicException
 {

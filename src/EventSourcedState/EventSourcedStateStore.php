@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine;
+namespace Ultra\EventSourcedState;
 
-use Ultra\DecisionEngine\Exception\UnknownEventSourcedEntityException;
+use Ultra\EventSourcedState\Exception\UnknownEventSourcedEntityException;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 
-final readonly class Engine
+final readonly class EventSourcedStateStore
 {
     /**
      * @param array<class-string, EventSourcedEntityLoader> $loaders
@@ -31,7 +31,7 @@ final readonly class Engine
 
         if (!$this->eventStore instanceof EventStore) {
             throw new \LogicException(sprintf(
-                'Engine cannot load %s because no event store was configured.',
+                'EventSourcedStateStore cannot load %s because no event store was configured.',
                 $entityClass,
             ));
         }

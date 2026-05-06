@@ -6,9 +6,9 @@ namespace Ultra\DecisionEngine\Aspect;
 
 use Ultra\DecisionEngine\Attribute\BindTo;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
-use Ultra\DecisionEngine\Engine;
-use Ultra\DecisionEngine\EventSourcedEntityLoader;
+use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
+use Ultra\EventSourcedState\EventSourcedStateStore;
+use Ultra\EventSourcedState\EventSourcedEntityLoader;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
@@ -29,7 +29,7 @@ final class DecisionEngineAspect
     private const MODE_CHECK = 'check';
 
     public function __construct(
-        private readonly Engine $engine,
+        private readonly EventSourcedStateStore $stateStore,
         private readonly EventStore $eventStore,
         private readonly EventRegistryInterface $eventClassRegistry,
         private readonly UltraNormalizer $normalizer,
@@ -211,7 +211,7 @@ final class DecisionEngineAspect
         $preparedStates = [];
         foreach ($stateParams as $stateParam) {
             $streamValue = $this->getCommandPropertyValue($command, $stateParam['commandProperty']);
-            $loader = $this->engine->loader($stateParam['stateClass']);
+            $loader = $this->stateStore->loader($stateParam['stateClass']);
             $identifier = new EventStoreDomainIdentifier(
                 $stateParam['domainIdentifierName'],
                 $streamValue,

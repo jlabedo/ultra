@@ -1,6 +1,6 @@
 {
-    "name": "ultra/decision-engine-compiler",
-    "description": "Ultra Framework - Decision Engine compiled entity loaders",
+    "name": "ultra/event-sourced-state",
+    "description": "Ultra Framework - Event-sourced state loading",
     "type": "library",
     "license": "MIT",
     "authors": [
@@ -11,15 +11,13 @@
     ],
     "require": {
         "php": ">=8.5",
-        "symfony/dependency-injection": "7.*|8.*",
-        "ultra/decision-engine": "*",
         "ultra/event-store": "*",
-        "ultra/mapper": "*",
-        "ultra/message-handling": "*"
+        "ultra/events": "*",
+        "ultra/mapper": "*"
     },
     "autoload": {
         "psr-4": {
-            "Ultra\\DecisionEngine_Compiler\\": ""
+            "Ultra\\EventSourcedState\\": ""
         },
         "exclude-from-classmap": [
             "/Tests/"

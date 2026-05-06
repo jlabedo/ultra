@@ -7,6 +7,7 @@ namespace Ultra\DecisionEngine\Tests\Support;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Container;
 use Ultra\DecisionEngine\DecisionEngineBundle;
+use Ultra\EventSourcedState\EventSourcedStateBundle;
 use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Events\CompiledEventRegistry;
@@ -47,6 +48,7 @@ abstract class DecisionEngineFunctionalTestCase extends TestCase
             ->withContainerFactory($containerFactory)
             ->withBuildDir($buildDir)
             ->withBundle(new MessageHandlingBundle())
+            ->withBundle(new EventSourcedStateBundle())
             ->withBundle(new DecisionEngineBundle())
             ->withBundle(new MapperBundle())
             ->withService(new InMemoryEventStore(), InMemoryEventStore::class)

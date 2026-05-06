@@ -4,16 +4,16 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests;
 
-use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
-use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
-use Ultra\DecisionEngine\Attribute\MatchTag;
-use Ultra\DecisionEngine\Exception\AmbiguousTagError;
-use Ultra\DecisionEngine\Exception\DuplicateEventSourcingHandlerError;
-use Ultra\DecisionEngine\Exception\InvalidMatchTagError;
-use Ultra\DecisionEngine\Exception\MissingEventSourcingHandlerError;
-use Ultra\DecisionEngine\Exception\MissingTypeHintError;
-use Ultra\DecisionEngine\Exception\NoTagOverlapError;
-use Ultra\DecisionEngine\Exception\UnnecessaryMatchTagError;
+use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
+use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
+use Ultra\EventSourcedState\Attribute\MatchTag;
+use Ultra\EventSourcedState\Exception\AmbiguousTagError;
+use Ultra\EventSourcedState\Exception\DuplicateEventSourcingHandlerError;
+use Ultra\EventSourcedState\Exception\InvalidMatchTagError;
+use Ultra\EventSourcedState\Exception\MissingEventSourcingHandlerError;
+use Ultra\EventSourcedState\Exception\MissingTypeHintError;
+use Ultra\EventSourcedState\Exception\NoTagOverlapError;
+use Ultra\EventSourcedState\Exception\UnnecessaryMatchTagError;
 use Ultra\DecisionEngine\Tests\Support\DecisionEngineFunctionalTestCase;
 use Ultra\DecisionEngine\Tests\Support\DecisionEngineTestContainer;
 use Ultra\Events\Attribute\DomainIdentifier;

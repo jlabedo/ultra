@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests;
 
-use Ultra\DecisionEngine\Engine;
-use Ultra\DecisionEngine\EventSourcedEntityLoader;
-use Ultra\DecisionEngine\Exception\DuplicateTagValueException;
-use Ultra\DecisionEngine\Exception\MissingTagValueException;
-use Ultra\DecisionEngine\Exception\UnexpectedTagValueException;
-use Ultra\DecisionEngine\Exception\UnknownEventSourcedEntityException;
+use Ultra\EventSourcedState\EventSourcedStateStore;
+use Ultra\EventSourcedState\EventSourcedEntityLoader;
+use Ultra\EventSourcedState\Exception\DuplicateTagValueException;
+use Ultra\EventSourcedState\Exception\MissingTagValueException;
+use Ultra\EventSourcedState\Exception\UnexpectedTagValueException;
+use Ultra\EventSourcedState\Exception\UnknownEventSourcedEntityException;
 use Ultra\DecisionEngine\Tests\Example\Event\CourseCapacityChanged;
 use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentEnrolled;
@@ -30,7 +30,7 @@ use Ultra\Testing\UltraLight;
  *
  * @coversNothing
  */
-final class EngineTest extends DecisionEngineFunctionalTestCase
+final class EventSourcedStateStoreTest extends DecisionEngineFunctionalTestCase
 {
     public function test_it_loads_entities_across_single_tag_and_pair_events(): void
     {
@@ -50,8 +50,8 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
             new StoredEvent('student.unsubscribed', ['courseId' => 'course-1', 'studentId' => 'student-1'], ['course' => 'course-1', 'student' => 'student-1']),
         ]);
 
-        $engine = $container->engine();
-        $state = $engine->load(
+        $stateStore = $container->eventSourcedStateStore();
+        $state = $stateStore->load(
             CourseStudentActivityState::class,
             new StreamIdentifier('course', 'course-1'),
             new StreamIdentifier('student', 'student-1'),
@@ -82,8 +82,8 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
             new StoredEvent('subscription.pair_confirmed', ['courseId' => 'course-1', 'studentId' => 'student-2', 'status' => 'other-student'], ['course' => 'course-1', 'student' => 'student-2']),
         ]);
 
-        $engine = $container->engine();
-        $state = $engine->load(
+        $stateStore = $container->eventSourcedStateStore();
+        $state = $stateStore->load(
             SubscriptionPairStatusState::class,
             new StreamIdentifier('course', 'course-1'),
             new StreamIdentifier('student', 'student-1'),
@@ -98,10 +98,10 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
             ->withClass(CourseStudentActivityState::class)
             ->boot()
         ;
-        $engine = $container->engine();
+        $stateStore = $container->eventSourcedStateStore();
 
         try {
-            $engine->load(
+            $stateStore->load(
                 CourseStudentActivityState::class,
                 new StreamIdentifier('course', 'course-1'),
             );
@@ -110,7 +110,7 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
         }
 
         try {
-            $engine->load(
+            $stateStore->load(
                 CourseStudentActivityState::class,
                 new StreamIdentifier('course', 'course-1'),
                 new StreamIdentifier('student', 'student-1'),
@@ -122,7 +122,7 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
 
         $this->expectException(DuplicateTagValueException::class);
 
-        $engine->load(
+        $stateStore->load(
             CourseStudentActivityState::class,
             new StreamIdentifier('course', 'course-1'),
             new StreamIdentifier('course', 'course-1b'),
@@ -144,14 +144,14 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
             }
         };
 
-        $engine = new Engine([
+        $stateStore = new EventSourcedStateStore([
             CourseStudentActivityState::class => $loader,
         ]);
 
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('Engine cannot load '.CourseStudentActivityState::class.' because no event store was configured.');
+        $this->expectExceptionMessage('EventSourcedStateStore cannot load '.CourseStudentActivityState::class.' because no event store was configured.');
 
-        $engine->load(
+        $stateStore->load(
             CourseStudentActivityState::class,
             new StreamIdentifier('course', 'course-1'),
             new StreamIdentifier('student', 'student-1'),
@@ -164,13 +164,13 @@ final class EngineTest extends DecisionEngineFunctionalTestCase
             ->withClass(CourseStudentActivityState::class)
             ->boot()
         ;
-        $engine = $container->engine();
+        $stateStore = $container->eventSourcedStateStore();
 
         $unknownStateClass = new class {};
 
         $this->expectException(UnknownEventSourcedEntityException::class);
 
-        $engine->load($unknownStateClass::class);
+        $stateStore->load($unknownStateClass::class);
     }
 
     /**

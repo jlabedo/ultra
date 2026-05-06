@@ -7,8 +7,9 @@ namespace Ultra\DecisionEngine\Tests;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
-use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
+use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
+use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
+use Ultra\EventSourcedState\EventSourcedStateBundle;
 use Ultra\DecisionEngine\DecisionEngineBundle;
 use Ultra\DecisionEngine\Tests\Support\DecisionEngineTestContainer;
 use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
@@ -92,8 +93,8 @@ final class DecisionEngineBundleTest extends TestCase
             $events,
         );
 
-        $engine = $container->engine();
-        $state = $engine->load(
+        $stateStore = $container->eventSourcedStateStore();
+        $state = $stateStore->load(
             CourseStateForDecisionEngineBundleTest::class,
             new DomainIdentifier('course', 'course-1'),
         );
@@ -143,6 +144,7 @@ final class DecisionEngineBundleTest extends TestCase
         ;
 
         new MessageHandlingBundle()->build($container);
+        new EventSourcedStateBundle()->build($container);
         new DecisionEngineBundle()->build($container);
         $container->compile();
 

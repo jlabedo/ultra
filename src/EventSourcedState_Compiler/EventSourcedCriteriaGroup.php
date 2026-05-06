@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine_Compiler;
+namespace Ultra\EventSourcedState_Compiler;
 
 final readonly class EventSourcedCriteriaGroup
 {

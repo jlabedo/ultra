@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine;
+namespace Ultra\EventSourcedState;
 
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Event;

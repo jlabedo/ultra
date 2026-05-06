@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Faculty\State;
 
 use App\Faculty\Event\AllCoursesFullyBookedNotificationSent;
-use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
-use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
+use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
+use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
 
 #[EventSourcedEntity(tags: ['faculty'])]
 final class FacultyAdminNotificationState

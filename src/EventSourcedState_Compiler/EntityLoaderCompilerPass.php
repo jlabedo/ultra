@@ -2,13 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine_Compiler;
+namespace Ultra\EventSourcedState_Compiler;
 
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Ultra\DecisionEngine\Engine;
+use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventStore\EventStore;
 use Ultra\Mapper\UltraNormalizer;
 
@@ -16,7 +16,7 @@ final class EntityLoaderCompilerPass implements CompilerPassInterface
 {
     public function __construct(
         private readonly string $outputDir,
-        private readonly string $entityTag = 'decision_engine.entity',
+        private readonly string $entityTag = 'ultra_event_sourced_state.entity',
         private readonly ?EventSourcedEntityAnalyzer $analyzer = null,
         private readonly ?EventSourcedEntityLoaderGenerator $generator = null,
     ) {}
@@ -47,7 +47,7 @@ final class EntityLoaderCompilerPass implements CompilerPassInterface
             $filePath = rtrim($this->outputDir, '/').'/'.$loaderClass.'.php';
             $generator->generate($loaderClass, $entityDefinition, $filePath);
 
-            $loaderServiceId = 'ultra.decision_engine.loader.'.substr(md5($entityClass), 0, 12);
+            $loaderServiceId = 'ultra.event_sourced_state.loader.'.substr(md5($entityClass), 0, 12);
             $loaderDefinition = new Definition($loaderClass, [
                 new Reference(UltraNormalizer::class),
             ]);
@@ -56,12 +56,12 @@ final class EntityLoaderCompilerPass implements CompilerPassInterface
             $loaderReferences[$entityClass] = new Reference($loaderServiceId);
         }
 
-        $engineDefinition = new Definition(Engine::class, [
+        $storeDefinition = new Definition(EventSourcedStateStore::class, [
             $loaderReferences,
             new Reference(EventStore::class),
         ]);
-        $engineDefinition->setPublic(true);
-        $container->setDefinition(Engine::class, $engineDefinition);
+        $storeDefinition->setPublic(true);
+        $container->setDefinition(EventSourcedStateStore::class, $storeDefinition);
     }
 
     /**

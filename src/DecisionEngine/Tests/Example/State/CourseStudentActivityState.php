@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests\Example\State;
 
-use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
-use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
-use Ultra\DecisionEngine\Attribute\MatchTag;
+use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
+use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
+use Ultra\EventSourcedState\Attribute\MatchTag;
 use Ultra\DecisionEngine\Tests\Example\Event\CourseCapacityChanged;
 use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
 use Ultra\DecisionEngine\Tests\Example\Event\StudentEnrolled;

@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine;
+namespace Ultra\EventSourcedState;
 
-use Ultra\DecisionEngine\Exception\DuplicateTagValueException;
-use Ultra\DecisionEngine\Exception\MissingTagValueException;
-use Ultra\DecisionEngine\Exception\UnexpectedTagValueException;
+use Ultra\EventSourcedState\Exception\DuplicateTagValueException;
+use Ultra\EventSourcedState\Exception\MissingTagValueException;
+use Ultra\EventSourcedState\Exception\UnexpectedTagValueException;
 use Ultra\EventStore\DomainIdentifier;
 
 final class EventSourcedTagValueResolver
