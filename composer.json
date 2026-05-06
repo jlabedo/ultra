@@ -39,6 +39,7 @@
         "ultra/mapper-compiler": "self.version",
         "ultra/message-handling": "self.version",
         "ultra/message-handling-compiler": "self.version",
+        "ultra/message-handling-postgres-queue": "self.version",
         "ultra/schema": "self.version",
         "ultra/state-store": "self.version",
         "ultra/state-store-bundle": "self.version",

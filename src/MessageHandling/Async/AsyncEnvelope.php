@@ -7,14 +7,17 @@ namespace Ultra\MessageHandling\Async;
 use Ultra\MessageHandling\MessageContext;
 
 /**
- * Immutable envelope carrying everything needed to replay a handler invocation.
+ * Immutable async message envelope.
  */
 final readonly class AsyncEnvelope
 {
+    public AsyncHeaders $headers;
+
     public function __construct(
         public object $message,
         public MessageContext $messageContext,
-        /** The container service ID of the original handler (before async swap). */
-        public string $handlerServiceId,
-    ) {}
+        ?AsyncHeaders $headers = null,
+    ) {
+        $this->headers = $headers ?? AsyncHeaders::empty();
+    }
 }

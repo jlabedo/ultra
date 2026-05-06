@@ -18,7 +18,7 @@ final readonly class AsyncHandlerProxy implements MessageHandlerInterface
 {
     public function __construct(
         private AsyncQueueInterface $queue,
-        private string $originalHandlerServiceId,
+        private string $route,
     ) {}
 
     public function __invoke(object $message, MessageContext $context): mixed
@@ -26,7 +26,7 @@ final readonly class AsyncHandlerProxy implements MessageHandlerInterface
         $this->queue->enqueue(new AsyncEnvelope(
             $message,
             $context,
-            $this->originalHandlerServiceId,
+            AsyncHeaders::empty()->with(AsyncHeaderNames::ROUTE, $this->route),
         ));
 
         return null;

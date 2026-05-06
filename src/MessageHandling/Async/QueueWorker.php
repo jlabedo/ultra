@@ -19,20 +19,36 @@ final readonly class QueueWorker
     ) {}
 
     /**
-     * Process one envelope from the queue.
+     * Process one delivery from the queue.
      *
-     * @return bool true if an envelope was processed, false if queue was empty
+     * @return bool true if a delivery was processed, false if queue was empty
      */
     public function processOne(): bool
     {
-        $envelope = $this->queue->dequeue();
-        if (null === $envelope) {
+        $delivery = $this->queue->reserve();
+        if (null === $delivery) {
             return false;
         }
 
+        $envelope = $delivery->envelope;
+        $route = $envelope->headers->getString(AsyncHeaderNames::ROUTE);
+        if (null === $route || '' === $route) {
+            $this->queue->release($delivery);
+
+            throw new \LogicException(sprintf('Async delivery "%s" is missing the "%s" route header.', $delivery->messageId->value, AsyncHeaderNames::ROUTE));
+        }
+
         /** @var MessageHandlerInterface $handler */
-        $handler = $this->container->get($envelope->handlerServiceId);
-        $handler->__invoke($envelope->message, $envelope->messageContext);
+        $handler = $this->container->get($route);
+
+        try {
+            $handler->__invoke($envelope->message, $envelope->messageContext);
+            $this->queue->acknowledge($delivery);
+        } catch (\Throwable $e) {
+            $this->queue->release($delivery, reason: $e);
+
+            throw $e;
+        }
 
         return true;
     }

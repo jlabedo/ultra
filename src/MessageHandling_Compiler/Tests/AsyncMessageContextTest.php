@@ -22,7 +22,7 @@ use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase
  */
 final class AsyncMessageContextTest extends MessageHandlingCompilerTestCase
 {
-    public function test_message_context_is_preserved_through_enqueue_dequeue(): void
+    public function test_message_context_is_preserved_through_enqueue_and_delivery(): void
     {
         $capturedContext = null;
 
