@@ -12,16 +12,20 @@ final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
         private readonly InMemoryRowDatabase $database,
         private readonly string $tableName,
         private readonly string $idColumn = 'id',
+        /** @var array<string, int|string> */
+        private readonly array $scopeColumns = [],
     ) {}
 
     public function row(int|string $id, array $columns = []): array|false
     {
-        return $this->database->row($this->tableName, $this->idColumn, $id, $columns);
+        $row = $this->database->row($this->tableName, $this->idColumn, id: $id, columns: $columns, scopeColumns: $this->scopeColumns);
+
+        return $row;
     }
 
     public function rows(array $columns = []): array
     {
-        return $this->database->rows($this->tableName, $columns);
+        return $this->database->rows($this->tableName, $columns, $this->scopeColumns);
     }
 
     public function apply(RowSetUpdatePlan $plan): void
@@ -74,7 +78,7 @@ final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
             return;
         }
 
-        $actualRowIds = array_keys($this->database->rows($this->tableName));
+        $actualRowIds = array_keys($this->database->rows($this->tableName, scopeColumns: $this->scopeColumns));
         sort($actualRowIds, SORT_STRING);
         $expectedRowKeys = array_map(static fn (int|string $id): string => (string) $id, $expectedRowIds);
         sort($expectedRowKeys, SORT_STRING);
@@ -94,12 +98,12 @@ final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
             $this->tableName,
             (string) $update->id,
         ));
-        $this->database->deleteRow($this->tableName, $this->idColumn, $update->id);
+        $this->database->deleteRow($this->tableName, $this->idColumn, $update->id, $this->scopeColumns);
     }
 
     private function applyInsert(RowUpdatePlan $update): void
     {
-        if (false !== $this->database->row($this->tableName, $this->idColumn, $update->id)) {
+        if (false !== $this->database->row($this->tableName, $this->idColumn, $update->id, scopeColumns: $this->scopeColumns)) {
             throw new ConcurrencyException(sprintf(
                 'Insert failed for table "%s" and row "%s" because the row already exists.',
                 $this->tableName,
@@ -107,7 +111,7 @@ final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
             ));
         }
 
-        $this->database->writeRow($this->tableName, $this->idColumn, $this->newRow($update));
+        $this->database->writeRow($this->tableName, $this->idColumn, $this->newRow($update), $this->scopeColumns);
     }
 
     private function applyReplace(RowUpdatePlan $update): void
@@ -117,14 +121,14 @@ final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
             $this->tableName,
             (string) $update->id,
         ));
-        $this->database->writeRow($this->tableName, $this->idColumn, $this->newRow($update));
+        $this->database->writeRow($this->tableName, $this->idColumn, $this->newRow($update), $this->scopeColumns);
     }
 
     private function applyUpsert(RowUpdatePlan $update): void
     {
-        $row = $this->database->row($this->tableName, $this->idColumn, $update->id);
+        $row = $this->database->row($this->tableName, $this->idColumn, $update->id, scopeColumns: $this->scopeColumns);
         if (false === $row) {
-            $this->database->writeRow($this->tableName, $this->idColumn, $this->newRow($update));
+            $this->database->writeRow($this->tableName, $this->idColumn, $this->newRow($update), $this->scopeColumns);
 
             return;
         }
@@ -133,7 +137,7 @@ final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
             $row[$column] = $value;
         }
 
-        $this->database->writeRow($this->tableName, $this->idColumn, $row);
+        $this->database->writeRow($this->tableName, $this->idColumn, $row, $this->scopeColumns);
     }
 
     private function applyUpdate(RowUpdatePlan $update): void
@@ -148,7 +152,7 @@ final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
             $row[$column] = $value;
         }
 
-        $this->database->writeRow($this->tableName, $this->idColumn, $row);
+        $this->database->writeRow($this->tableName, $this->idColumn, $row, $this->scopeColumns);
     }
 
     /**
@@ -158,7 +162,7 @@ final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
         RowUpdatePlan $update,
         string $message,
     ): array {
-        $row = $this->database->row($this->tableName, $this->idColumn, $update->id);
+        $row = $this->database->row($this->tableName, $this->idColumn, $update->id, scopeColumns: $this->scopeColumns);
         if (false === $row) {
             throw new ConcurrencyException($message);
         }
@@ -178,6 +182,9 @@ final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
     private function newRow(RowUpdatePlan $update): array
     {
         $row = [$this->idColumn => $update->id];
+        foreach ($this->scopeColumns as $column => $value) {
+            $row[$column] = $value;
+        }
 
         foreach ($update->setColumns as $column => $value) {
             $row[$column] = $value;

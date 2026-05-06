@@ -75,7 +75,6 @@ final class StateStoreCompilerPass implements CompilerPassInterface
                     new Definition(MappedRowSet::class, [
                         new Reference($adapterServiceId),
                     ])
-                        ->addTag(self::UNIT_OF_WORK_TAG)
                 );
 
                 $tableReferences[$metadata->tableKey] = new Reference($serviceId);
@@ -89,9 +88,15 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             $stateMetadata,
         ])->setPublic(false));
 
-        $container->setDefinition(StateTableRegistry::class, new Definition(StateTableRegistry::class, [
-            $tableReferences,
-        ])->setPublic(false));
+        $stateTableRegistryArguments = [$tableReferences];
+        if ($container->has(MappedRowSetAdapterFactory::class)) {
+            $stateTableRegistryArguments[] = new Reference(MappedRowSetAdapterFactory::class);
+        }
+
+        $container->setDefinition(StateTableRegistry::class, new Definition(StateTableRegistry::class, $stateTableRegistryArguments)
+            ->setPublic(false)
+            ->addTag(self::UNIT_OF_WORK_TAG)
+        );
 
         $container->setDefinition(StateStore::class, new Definition(StateStore::class, [
             new Reference(StateMetadataRegistry::class),

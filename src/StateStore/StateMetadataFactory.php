@@ -6,6 +6,7 @@ namespace Ultra\StateStore;
 
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
+use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\Exception\InvalidStateConfigurationException;
 
@@ -52,10 +53,12 @@ final class StateMetadataFactory
         $idProperty = null;
         $propertyColumns = [];
         $optimisticPropertyColumns = [];
+        $collections = [];
 
         foreach ($properties as $property) {
             $idAttributes = $property->getAttributes(StateId::class);
             $columnAttributes = $property->getAttributes(StateColumn::class);
+            $collectionAttributes = $property->getAttributes(StateCollection::class);
 
             if (\count($idAttributes) > 1) {
                 throw new InvalidStateConfigurationException(sprintf(
@@ -75,9 +78,18 @@ final class StateMetadataFactory
                 ));
             }
 
-            if ([] !== $idAttributes && [] !== $columnAttributes) {
+            if (\count($collectionAttributes) > 1) {
                 throw new InvalidStateConfigurationException(sprintf(
-                    'State "%s" property "%s" cannot be both the state id and a mapped column.',
+                    'State "%s" property "%s" declares #[%s] more than once.',
+                    $stateClass,
+                    $property->getName(),
+                    StateCollection::class,
+                ));
+            }
+
+            if (1 < \count(array_filter([$idAttributes, $columnAttributes, $collectionAttributes]))) {
+                throw new InvalidStateConfigurationException(sprintf(
+                    'State "%s" property "%s" cannot declare more than one state mapping attribute.',
                     $stateClass,
                     $property->getName(),
                 ));
@@ -93,6 +105,13 @@ final class StateMetadataFactory
                 }
 
                 $idProperty = $property->getName();
+
+                continue;
+            }
+
+            if ([] !== $collectionAttributes) {
+                $collection = $collectionAttributes[0]->newInstance();
+                $collections[$property->getName()] = $this->createCollectionMetadata($property, $collection);
 
                 continue;
             }
@@ -140,11 +159,54 @@ final class StateMetadataFactory
             idColumn: $state->idColumn,
             propertyColumns: $propertyColumns,
             optimisticPropertyColumns: $optimisticPropertyColumns,
+            collections: $collections,
         );
     }
 
     public static function tableKey(string $tableName, string $idColumn): string
     {
         return $tableName.'#'.$idColumn;
+    }
+
+    private function createCollectionMetadata(\ReflectionProperty $property, StateCollection $collection): StateCollectionMetadata
+    {
+        if (!class_exists($collection->itemClass)) {
+            throw new InvalidStateConfigurationException(sprintf(
+                'State collection property "%s" item class "%s" does not exist.',
+                $property->getName(),
+                $collection->itemClass,
+            ));
+        }
+
+        $itemReflection = new \ReflectionClass($collection->itemClass);
+        if (!$itemReflection->hasProperty($collection->itemIdProperty)) {
+            throw new InvalidStateConfigurationException(sprintf(
+                'State collection property "%s" item class "%s" does not have id property "%s".',
+                $property->getName(),
+                $collection->itemClass,
+                $collection->itemIdProperty,
+            ));
+        }
+
+        $itemPropertyColumns = [];
+        foreach ($itemReflection->getProperties() as $itemProperty) {
+            if ($itemProperty->isStatic() || $itemProperty->getName() === $collection->itemIdProperty) {
+                continue;
+            }
+
+            $itemPropertyColumns[$itemProperty->getName()] = $itemProperty->getName();
+        }
+        ksort($itemPropertyColumns);
+
+        return new StateCollectionMetadata(
+            property: $property->getName(),
+            tableName: $collection->table,
+            tableKey: self::tableKey($collection->table, $collection->idColumn),
+            ownerColumn: $collection->ownerColumn,
+            idColumn: $collection->idColumn,
+            itemClass: $collection->itemClass,
+            itemIdProperty: $collection->itemIdProperty,
+            itemPropertyColumns: $itemPropertyColumns,
+        );
     }
 }

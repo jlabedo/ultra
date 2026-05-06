@@ -44,12 +44,51 @@ final readonly class OrderState
 }
 ```
 
+Collection properties can be persisted in a separate mapped row set with `#[Ultra\StateStore\Attribute\StateCollection(...)]`.
+The parent state id is written to the configured owner column, and each collection item is normalized into one row keyed by its item id property.
+
+```php
+use Ultra\StateStore\Attribute\StateCollection;
+
+final readonly class OrderLineState
+{
+    public function __construct(
+        public string $lineId,
+        public string $sku,
+        public int $quantity,
+    ) {}
+}
+
+#[State(table: 'orders', idColumn: 'order_id')]
+final readonly class OrderWithLinesState
+{
+    /**
+     * @param list<OrderLineState> $lines
+     */
+    public function __construct(
+        #[StateId]
+        public string $orderId,
+        #[StateColumn('status')]
+        public string $status,
+        #[StateCollection(
+            table: 'order_lines',
+            ownerColumn: 'order_id',
+            idColumn: 'line_id',
+            itemClass: OrderLineState::class,
+            itemIdProperty: 'lineId',
+        )]
+        public array $lines,
+    ) {}
+}
+```
+
 ## Save Semantics
 
 - `save($state)` buffers an upsert for the mapped row
 - `expect($loadedState)` buffers optimistic expectations for that mapped row without writing anything by itself
 - `expectMissing(StateClass::class, $id)` buffers an optimistic expectation that the mapped row is still absent
 - a later `save(...)` against the same mapped row uses the buffered expectation automatically
+- collection expectations use the loaded item id set to reject concurrent inserts or deletes in the collection
 - buffered writes are committed later by flushing the underlying `MappedRowSet` unit of work
 
 When several state classes target the same physical table, they share the same `MappedRowSet` unit of work but only read and write the columns each class maps.

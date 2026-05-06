@@ -14,4 +14,9 @@ final readonly class InMemoryMappedRowSetAdapterFactory implements MappedRowSetA
     {
         return new InMemoryMappedRowSetAdapter($this->database, $tableName, $idColumn);
     }
+
+    public function createScoped(string $tableName, string $idColumn, array $scopeColumns): MappedRowSetAdapter
+    {
+        return new InMemoryMappedRowSetAdapter($this->database, $tableName, $idColumn, $scopeColumns);
+    }
 }

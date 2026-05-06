@@ -17,6 +17,8 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         private readonly string $tableName,
         private readonly string $idColumn = 'id',
         private readonly array $columnTypes = [],
+        /** @var array<string, int|string> */
+        private readonly array $scopeColumns = [],
     ) {}
 
     public function row(int|string $id, array $columns = []): array|false
@@ -29,12 +31,12 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
         $row = $this->connection->fetchAssociative(
             sprintf(
-                'SELECT %s FROM %s WHERE %s = ?',
+                'SELECT %s FROM %s WHERE %s',
                 implode(', ', $quotedColumns),
                 $this->connection->quoteSingleIdentifier($this->tableName),
-                $this->connection->quoteSingleIdentifier($this->idColumn),
+                implode(' AND ', $this->idWhereClauses()),
             ),
-            [$id],
+            [$id, ...array_values($this->scopeColumns)],
         );
 
         return false === $row ? false : $this->decodeRow($row);
@@ -48,11 +50,12 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
             : array_map($this->connection->quoteSingleIdentifier(...), $selectColumns);
 
         $rows = $this->connection->fetchAllAssociative(sprintf(
-            'SELECT %s FROM %s ORDER BY %s',
+            'SELECT %s FROM %s%s ORDER BY %s',
             implode(', ', $quotedColumns),
             $this->connection->quoteSingleIdentifier($this->tableName),
+            $this->scopeWhereSql(),
             $this->connection->quoteSingleIdentifier($this->idColumn),
-        ));
+        ), array_values($this->scopeColumns));
 
         $mappedRows = [];
         foreach ($rows as $row) {
@@ -137,17 +140,18 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
         $this->connection->executeStatement(
             'SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))',
-            [$this->tableName, $this->idColumn],
+            [$this->tableName, $this->idColumn.':'.json_encode($this->scopeColumns, JSON_THROW_ON_ERROR)],
         );
 
         $actualRowIds = array_map(
             static fn (mixed $id): string => (string) $id,
             $this->connection->fetchFirstColumn(sprintf(
-                'SELECT %s FROM %s ORDER BY %s',
+                'SELECT %s FROM %s%s ORDER BY %s',
                 $this->connection->quoteSingleIdentifier($this->idColumn),
                 $this->connection->quoteSingleIdentifier($this->tableName),
+                $this->scopeWhereSql(),
                 $this->connection->quoteSingleIdentifier($this->idColumn),
-            )),
+            ), array_values($this->scopeColumns)),
         );
         $expectedRowKeys = array_map(static fn (int|string $id): string => (string) $id, $expectedRowIds);
         sort($actualRowIds, SORT_STRING);
@@ -211,12 +215,13 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
         $affectedRows = $this->connection->executeStatement(
             sprintf(
-                'DELETE FROM %s WHERE %s IN (%s)',
+                'DELETE FROM %s WHERE %s IN (%s)%s',
                 $this->connection->quoteSingleIdentifier($this->tableName),
                 $this->connection->quoteSingleIdentifier($this->idColumn),
                 implode(', ', array_fill(0, count($ids), '?')),
+                $this->scopeAndSql(),
             ),
-            $ids,
+            [...$ids, ...array_values($this->scopeColumns)],
         );
 
         if ($affectedRows !== count($updates)) {
@@ -234,13 +239,16 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
      */
     private function flushBatchInsert(array $updates): void
     {
-        $columns = [$this->idColumn, ...array_keys($updates[0]->setColumns)];
+        $columns = [$this->idColumn, ...array_keys($this->scopeColumns), ...array_keys($updates[0]->setColumns)];
         $quotedColumns = array_map($this->connection->quoteSingleIdentifier(...), $columns);
         $rowPlaceholder = '('.implode(', ', array_map($this->placeholder(...), $columns)).')';
 
         $params = [];
         foreach ($updates as $update) {
             $params[] = $update->id;
+            foreach ($this->scopeColumns as $value) {
+                $params[] = $value;
+            }
             foreach ($update->setColumns as $column => $value) {
                 $params[] = $this->encodeColumnValue($column, $value);
             }
@@ -252,7 +260,7 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
                 $this->connection->quoteSingleIdentifier($this->tableName),
                 implode(', ', $quotedColumns),
                 implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
-                $this->connection->quoteSingleIdentifier($this->idColumn),
+                $this->conflictTargetSql(),
             ),
             $params,
         );
@@ -281,7 +289,7 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
      */
     private function flushBatchUpsert(array $updates): void
     {
-        $columns = [$this->idColumn, ...array_keys($updates[0]->setColumns)];
+        $columns = [$this->idColumn, ...array_keys($this->scopeColumns), ...array_keys($updates[0]->setColumns)];
         $quotedColumns = array_map($this->connection->quoteSingleIdentifier(...), $columns);
         $rowPlaceholder = '('.implode(', ', array_map($this->placeholder(...), $columns)).')';
         $allPlaceholders = implode(', ', array_fill(0, count($updates), $rowPlaceholder));
@@ -289,6 +297,9 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         $params = [];
         foreach ($updates as $update) {
             $params[] = $update->id;
+            foreach ($this->scopeColumns as $value) {
+                $params[] = $value;
+            }
             foreach ($update->setColumns as $column => $value) {
                 $params[] = $this->encodeColumnValue($column, $value);
             }
@@ -301,7 +312,7 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
                     $this->connection->quoteSingleIdentifier($this->tableName),
                     implode(', ', $quotedColumns),
                     $allPlaceholders,
-                    $this->connection->quoteSingleIdentifier($this->idColumn),
+                    $this->conflictTargetSql(),
                 ),
                 $params,
             );
@@ -310,7 +321,7 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         }
 
         $assignments = [];
-        foreach (array_slice($columns, 1) as $column) {
+        foreach (array_slice($columns, 1 + count($this->scopeColumns)) as $column) {
             $quotedColumn = $this->connection->quoteSingleIdentifier($column);
             $assignments[] = sprintf('%1$s = EXCLUDED.%1$s', $quotedColumn);
         }
@@ -321,7 +332,7 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
                 $this->connection->quoteSingleIdentifier($this->tableName),
                 implode(', ', $quotedColumns),
                 $allPlaceholders,
-                $this->connection->quoteSingleIdentifier($this->idColumn),
+                $this->conflictTargetSql(),
                 implode(', ', $assignments),
             ),
             $params,
@@ -331,9 +342,9 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
     private function flushDelete(RowUpdatePlan $update): void
     {
         $whereClauses = [
-            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($this->idColumn)),
+            ...$this->idWhereClauses(),
         ];
-        $params = [$update->id];
+        $params = [$update->id, ...array_values($this->scopeColumns)];
 
         foreach ($update->expectedColumns as $column => $value) {
             $whereClauses[] = sprintf(
@@ -364,8 +375,8 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
     private function flushInsert(RowUpdatePlan $update): void
     {
-        $columns = [$this->idColumn];
-        $params = [$update->id];
+        $columns = [$this->idColumn, ...array_keys($this->scopeColumns)];
+        $params = [$update->id, ...array_values($this->scopeColumns)];
 
         foreach ($update->setColumns as $column => $value) {
             $columns[] = $column;
@@ -383,7 +394,7 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
                 $this->connection->quoteSingleIdentifier($this->tableName),
                 implode(', ', $quotedColumns),
                 implode(', ', array_map($this->placeholder(...), $columns)),
-                $this->connection->quoteSingleIdentifier($this->idColumn),
+                $this->conflictTargetSql(),
             ),
             $params,
         );
@@ -405,8 +416,8 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
     private function flushUpsert(RowUpdatePlan $update): void
     {
-        $columns = [$this->idColumn];
-        $params = [$update->id];
+        $columns = [$this->idColumn, ...array_keys($this->scopeColumns)];
+        $params = [$update->id, ...array_values($this->scopeColumns)];
 
         foreach ($update->setColumns as $column => $value) {
             $columns[] = $column;
@@ -425,7 +436,7 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
                     $this->connection->quoteSingleIdentifier($this->tableName),
                     implode(', ', $quotedColumns),
                     implode(', ', array_map($this->placeholder(...), $columns)),
-                    $this->connection->quoteSingleIdentifier($this->idColumn),
+                    $this->conflictTargetSql(),
                 ),
                 $params,
             );
@@ -434,7 +445,7 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         }
 
         $assignments = [];
-        foreach (array_slice($columns, 1) as $column) {
+        foreach (array_slice($columns, 1 + count($this->scopeColumns)) as $column) {
             $quotedColumn = $this->connection->quoteSingleIdentifier($column);
             $assignments[] = sprintf('%1$s = EXCLUDED.%1$s', $quotedColumn);
         }
@@ -445,7 +456,7 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
                 $this->connection->quoteSingleIdentifier($this->tableName),
                 implode(', ', $quotedColumns),
                 implode(', ', array_map($this->placeholder(...), $columns)),
-                $this->connection->quoteSingleIdentifier($this->idColumn),
+                $this->conflictTargetSql(),
                 implode(', ', $assignments),
             ),
             $params,
@@ -467,9 +478,10 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         }
 
         $whereClauses = [
-            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($this->idColumn)),
+            ...$this->idWhereClauses(),
         ];
         $params[] = $update->id;
+        array_push($params, ...array_values($this->scopeColumns));
 
         foreach ($update->expectedColumns as $column => $value) {
             $whereClauses[] = sprintf(
@@ -497,6 +509,54 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
                 (string) $update->id,
             ));
         }
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function idWhereClauses(): array
+    {
+        $clauses = [
+            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($this->idColumn)),
+        ];
+
+        foreach ($this->scopeColumns as $column => $_) {
+            $clauses[] = sprintf('%s = ?', $this->connection->quoteSingleIdentifier($column));
+        }
+
+        return $clauses;
+    }
+
+    private function scopeWhereSql(): string
+    {
+        if ([] === $this->scopeColumns) {
+            return '';
+        }
+
+        return ' WHERE '.implode(' AND ', array_map(
+            fn (string $column): string => sprintf('%s = ?', $this->connection->quoteSingleIdentifier($column)),
+            array_keys($this->scopeColumns),
+        ));
+    }
+
+    private function scopeAndSql(): string
+    {
+        if ([] === $this->scopeColumns) {
+            return '';
+        }
+
+        return ' AND '.implode(' AND ', array_map(
+            fn (string $column): string => sprintf('%s = ?', $this->connection->quoteSingleIdentifier($column)),
+            array_keys($this->scopeColumns),
+        ));
+    }
+
+    private function conflictTargetSql(): string
+    {
+        return implode(', ', array_map(
+            $this->connection->quoteSingleIdentifier(...),
+            [$this->idColumn, ...array_keys($this->scopeColumns)],
+        ));
     }
 
     private function placeholder(string $column): string

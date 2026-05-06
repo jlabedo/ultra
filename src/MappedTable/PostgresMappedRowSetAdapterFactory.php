@@ -25,4 +25,15 @@ final readonly class PostgresMappedRowSetAdapterFactory implements MappedRowSetA
             $this->columnTypesByTable[$tableName] ?? [],
         );
     }
+
+    public function createScoped(string $tableName, string $idColumn, array $scopeColumns): MappedRowSetAdapter
+    {
+        return new PostgresMappedRowSetAdapter(
+            $this->connection,
+            $tableName,
+            $idColumn,
+            $this->columnTypesByTable[$tableName] ?? [],
+            $scopeColumns,
+        );
+    }
 }

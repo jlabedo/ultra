@@ -12,7 +12,8 @@ namespace Ultra\StateStore;
  *     idProperty: string,
  *     idColumn: string,
  *     propertyColumns: array<string, string>,
- *     optimisticPropertyColumns: array<string, string>
+ *     optimisticPropertyColumns: array<string, string>,
+ *     collections: array<string, StateCollectionMetadataDefinition>
  * }
  */
 final readonly class StateMetadata
@@ -20,6 +21,7 @@ final readonly class StateMetadata
     /**
      * @param array<string, string> $propertyColumns
      * @param array<string, string> $optimisticPropertyColumns
+     * @param array<string, StateCollectionMetadata> $collections
      */
     public function __construct(
         public string $stateClass,
@@ -29,6 +31,7 @@ final readonly class StateMetadata
         public string $idColumn,
         public array $propertyColumns,
         public array $optimisticPropertyColumns,
+        public array $collections = [],
     ) {}
 
     /**
@@ -44,6 +47,10 @@ final readonly class StateMetadata
             idColumn: $definition['idColumn'],
             propertyColumns: $definition['propertyColumns'],
             optimisticPropertyColumns: $definition['optimisticPropertyColumns'],
+            collections: array_map(
+                StateCollectionMetadata::fromArray(...),
+                $definition['collections'] ?? [],
+            ),
         );
     }
 
@@ -60,6 +67,10 @@ final readonly class StateMetadata
             'idColumn' => $this->idColumn,
             'propertyColumns' => $this->propertyColumns,
             'optimisticPropertyColumns' => $this->optimisticPropertyColumns,
+            'collections' => array_map(
+                static fn (StateCollectionMetadata $collection): array => $collection->toArray(),
+                $this->collections,
+            ),
         ];
     }
 
