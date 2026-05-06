@@ -14,9 +14,9 @@ use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
-use Ultra\MappedTable\InMemoryMappedTableAdapterFactory;
+use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedTableAdapterFactory;
+use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\Mapper_Bundle\MapperBundle;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
 use Ultra\StateStore\Attribute\State;
@@ -83,7 +83,7 @@ final readonly class BundleOrderStatusView
  */
 final class StateStoreBundleTest extends TestCase
 {
-    public function test_bundle_registers_state_store_and_shared_mapped_table_services(): void
+    public function test_bundle_registers_state_store_and_shared_mapped_row_set_services(): void
     {
         $container = $this->createContainer();
         $database = $container->get(InMemoryRowDatabase::class);
@@ -150,11 +150,11 @@ final class StateStoreBundleTest extends TestCase
         $container->register(InMemoryRowDatabase::class, InMemoryRowDatabase::class)
             ->setPublic(true)
         ;
-        $container->register(InMemoryMappedTableAdapterFactory::class, InMemoryMappedTableAdapterFactory::class)
+        $container->register(InMemoryMappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
             ->setArguments([new Reference(InMemoryRowDatabase::class)])
             ->setPublic(true)
         ;
-        $container->setAlias(MappedTableAdapterFactory::class, InMemoryMappedTableAdapterFactory::class)->setPublic(true);
+        $container->setAlias(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)->setPublic(true);
 
         $container->setDefinition(
             BundleOrderState::class,

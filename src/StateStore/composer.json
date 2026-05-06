@@ -1,6 +1,6 @@
 {
     "name": "ultra/state-store",
-    "description": "Ultra Framework - Mapper-backed state store on top of mapped tables",
+    "description": "Ultra Framework - Mapper-backed state store on top of mapped row sets",
     "type": "library",
     "license": "MIT",
     "authors": [

@@ -8,9 +8,9 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Ultra\MappedTable\MappedTable;
-use Ultra\MappedTable\MappedTableAdapter;
-use Ultra\MappedTable\MappedTableAdapterFactory;
+use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetAdapter;
+use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
@@ -33,10 +33,10 @@ final class StateStoreCompilerPass implements CompilerPassInterface
         $stateMetadata = [];
         $tableReferences = [];
 
-        if ([] !== $stateClasses && !$container->has(MappedTableAdapterFactory::class)) {
+        if ([] !== $stateClasses && !$container->has(MappedRowSetAdapterFactory::class)) {
             throw new \LogicException(sprintf(
                 'State store states were discovered, but no "%s" service is registered.',
-                MappedTableAdapterFactory::class,
+                MappedRowSetAdapterFactory::class,
             ));
         }
 
@@ -65,17 +65,16 @@ final class StateStoreCompilerPass implements CompilerPassInterface
                 $adapterServiceId = $serviceId.'.adapter';
                 $container->setDefinition(
                     $adapterServiceId,
-                    (new Definition(MappedTableAdapter::class))
-                        ->setFactory([new Reference(MappedTableAdapterFactory::class), 'create'])
+                    (new Definition(MappedRowSetAdapter::class))
+                        ->setFactory([new Reference(MappedRowSetAdapterFactory::class), 'create'])
                         ->setArguments([$metadata->tableName, $metadata->idColumn])
                 );
 
                 $container->setDefinition(
                     $serviceId,
-                    new Definition(MappedTable::class, [
+                    new Definition(MappedRowSet::class, [
                         new Reference($adapterServiceId),
                     ])
-                        ->addTag(self::UNIT_OF_WORK_TAG)
                 );
 
                 $tableReferences[$metadata->tableKey] = new Reference($serviceId);
@@ -89,9 +88,15 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             $stateMetadata,
         ])->setPublic(false));
 
-        $container->setDefinition(StateTableRegistry::class, new Definition(StateTableRegistry::class, [
-            $tableReferences,
-        ])->setPublic(false));
+        $stateTableRegistryArguments = [$tableReferences];
+        if ($container->has(MappedRowSetAdapterFactory::class)) {
+            $stateTableRegistryArguments[] = new Reference(MappedRowSetAdapterFactory::class);
+        }
+
+        $container->setDefinition(StateTableRegistry::class, new Definition(StateTableRegistry::class, $stateTableRegistryArguments)
+            ->setPublic(false)
+            ->addTag(self::UNIT_OF_WORK_TAG)
+        );
 
         $container->setDefinition(StateStore::class, new Definition(StateStore::class, [
             new Reference(StateMetadataRegistry::class),

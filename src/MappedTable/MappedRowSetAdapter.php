@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-interface MappedTableAdapter
+interface MappedRowSetAdapter
 {
     /**
      * @param list<string> $columns
@@ -14,7 +14,11 @@ interface MappedTableAdapter
     public function row(int|string $id, array $columns = []): array|false;
 
     /**
-     * @param list<RowUpdatePlan> $rowUpdates
+     * @param list<string> $columns
+     *
+     * @return array<string, array<string, mixed>>
      */
-    public function apply(array $rowUpdates): void;
+    public function rows(array $columns = []): array;
+
+    public function apply(RowSetUpdatePlan $plan): void;
 }

@@ -6,25 +6,25 @@ namespace Ultra\MappedTable\Tests;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
-use Ultra\MappedTable\MappedTable;
+use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\PostgresMappedRowSetAdapter;
 use Ultra\Testing\PostgresTestSupport;
 
-abstract class PostgresMappedTableTestCase extends TestCase
+abstract class PostgresMappedRowSetTestCase extends TestCase
 {
     /**
      * @param array<string, PostgresMappedColumnType> $columnTypes
      */
-    protected function withMappedTable(callable $callback, array $columnTypes = []): void
+    protected function withMappedRowSet(callable $callback, array $columnTypes = []): void
     {
         $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
         if (false === $dsn || '' === $dsn) {
-            self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres mapped-table integration tests.');
+            self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres mapped-row-set integration tests.');
         }
 
         $connection = PostgresTestSupport::sharedConnection($dsn);
-        $tableName = 'ultra_mapped_table_'.bin2hex(random_bytes(4));
+        $tableName = 'ultra_mapped_row_set_'.bin2hex(random_bytes(4));
 
         try {
             $connection->executeStatement(sprintf(
@@ -41,7 +41,7 @@ abstract class PostgresMappedTableTestCase extends TestCase
 
             $callback(
                 $connection,
-                new MappedTable(new PostgresMappedTableAdapter($connection, $tableName, columnTypes: $columnTypes)),
+                new MappedRowSet(new PostgresMappedRowSetAdapter($connection, $tableName, columnTypes: $columnTypes)),
                 $tableName,
             );
         } finally {

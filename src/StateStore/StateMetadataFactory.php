@@ -6,6 +6,7 @@ namespace Ultra\StateStore;
 
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
+use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\Exception\InvalidStateConfigurationException;
 
@@ -52,10 +53,12 @@ final class StateMetadataFactory
         $idProperty = null;
         $propertyColumns = [];
         $optimisticPropertyColumns = [];
+        $collections = [];
 
         foreach ($properties as $property) {
             $idAttributes = $property->getAttributes(StateId::class);
             $columnAttributes = $property->getAttributes(StateColumn::class);
+            $collectionAttributes = $property->getAttributes(StateCollection::class);
 
             if (\count($idAttributes) > 1) {
                 throw new InvalidStateConfigurationException(sprintf(
@@ -75,9 +78,18 @@ final class StateMetadataFactory
                 ));
             }
 
-            if ([] !== $idAttributes && [] !== $columnAttributes) {
+            if (\count($collectionAttributes) > 1) {
                 throw new InvalidStateConfigurationException(sprintf(
-                    'State "%s" property "%s" cannot be both the state id and a mapped column.',
+                    'State "%s" property "%s" declares #[%s] more than once.',
+                    $stateClass,
+                    $property->getName(),
+                    StateCollection::class,
+                ));
+            }
+
+            if (1 < \count(array_filter([$idAttributes, $columnAttributes, $collectionAttributes]))) {
+                throw new InvalidStateConfigurationException(sprintf(
+                    'State "%s" property "%s" cannot declare more than one state mapping attribute.',
                     $stateClass,
                     $property->getName(),
                 ));
@@ -93,6 +105,13 @@ final class StateMetadataFactory
                 }
 
                 $idProperty = $property->getName();
+
+                continue;
+            }
+
+            if ([] !== $collectionAttributes) {
+                $collection = $collectionAttributes[0]->newInstance();
+                $collections[$property->getName()] = $this->createCollectionMetadata($property, $collection);
 
                 continue;
             }
@@ -140,11 +159,48 @@ final class StateMetadataFactory
             idColumn: $state->idColumn,
             propertyColumns: $propertyColumns,
             optimisticPropertyColumns: $optimisticPropertyColumns,
+            collections: $collections,
         );
     }
 
     public static function tableKey(string $tableName, string $idColumn): string
     {
         return $tableName.'#'.$idColumn;
+    }
+
+    private function createCollectionMetadata(\ReflectionProperty $property, StateCollection $collection): StateCollectionMetadata
+    {
+        $itemMetadata = $this->create($collection->itemClass);
+
+        if ([] !== $itemMetadata->collections) {
+            throw new InvalidStateConfigurationException(sprintf(
+                'State collection "%s" item class "%s" cannot declare nested state collections.',
+                $property->getName(),
+                $collection->itemClass,
+            ));
+        }
+
+        if (
+            $itemMetadata->idColumn === $collection->ownerColumn
+            || in_array($collection->ownerColumn, $itemMetadata->propertyColumns, true)
+        ) {
+            throw new InvalidStateConfigurationException(sprintf(
+                'State collection "%s" item class "%s" cannot map to owner column "%s".',
+                $property->getName(),
+                $collection->itemClass,
+                $collection->ownerColumn,
+            ));
+        }
+
+        return new StateCollectionMetadata(
+            property: $property->getName(),
+            tableName: $itemMetadata->tableName,
+            tableKey: $itemMetadata->tableKey,
+            ownerColumn: $collection->ownerColumn,
+            idColumn: $itemMetadata->idColumn,
+            itemClass: $itemMetadata->stateClass,
+            itemIdProperty: $itemMetadata->idProperty,
+            itemPropertyColumns: $itemMetadata->propertyColumns,
+        );
     }
 }

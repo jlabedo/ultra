@@ -5,12 +5,13 @@ declare(strict_types=1);
 namespace Ultra\StateStore\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Ultra\MappedTable\InMemoryMappedTableAdapter;
+use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedTable;
+use Ultra\MappedTable\MappedRowSet;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
+use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\Exception\StateNotFoundException;
 use Ultra\StateStore\StateMetadataFactory;
@@ -51,6 +52,38 @@ final readonly class OrderStatusView
     {
         return new self($this->orderId, $status);
     }
+}
+
+#[State(table: 'order_lines', idColumn: 'line_id')]
+final readonly class OrderLineState
+{
+    public function __construct(
+        #[StateId]
+        public string $lineId,
+        #[StateColumn]
+        public string $sku,
+        #[StateColumn]
+        public int $quantity,
+    ) {}
+}
+
+#[State(table: 'orders', idColumn: 'order_id')]
+final readonly class OrderWithLinesState
+{
+    /**
+     * @param list<OrderLineState> $lines
+     */
+    public function __construct(
+        #[StateId]
+        public string $orderId,
+        #[StateColumn('status')]
+        public string $status,
+        #[StateCollection(
+            ownerColumn: 'order_id',
+            itemClass: OrderLineState::class,
+        )]
+        public array $lines,
+    ) {}
 }
 
 /**
@@ -225,15 +258,121 @@ final class StateStoreTest extends TestCase
         $this->flushInTransaction($database, $table);
     }
 
+    public function test_load_hydrates_state_collection_from_scoped_row_set(): void
+    {
+        [$database, , $store] = $this->newStore([OrderWithLinesState::class]);
+        $database->seedRow('orders', 'order_id', [
+            'order_id' => 'order-123',
+            'status' => 'pending',
+        ]);
+        $database->seedRow('order_lines', 'line_id', [
+            'order_id' => 'order-123',
+            'line_id' => 'line-2',
+            'sku' => 'SKU-2',
+            'quantity' => 1,
+        ]);
+        $database->seedRow('order_lines', 'line_id', [
+            'order_id' => 'order-123',
+            'line_id' => 'line-1',
+            'sku' => 'SKU-1',
+            'quantity' => 2,
+        ]);
+        $database->seedRow('order_lines', 'line_id', [
+            'order_id' => 'other-order',
+            'line_id' => 'line-3',
+            'sku' => 'SKU-3',
+            'quantity' => 9,
+        ]);
+
+        $state = $store->load(OrderWithLinesState::class, 'order-123');
+
+        self::assertInstanceOf(OrderWithLinesState::class, $state);
+        self::assertSame('pending', $state->status);
+        self::assertContainsOnlyInstancesOf(OrderLineState::class, $state->lines);
+        self::assertSame(['line-1', 'line-2'], array_map(
+            static fn (OrderLineState $line): string => $line->lineId,
+            $state->lines,
+        ));
+    }
+
+    public function test_save_persists_collection_rows_and_deletes_removed_rows(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderWithLinesState::class]);
+        $database->seedRow('orders', 'order_id', [
+            'order_id' => 'order-123',
+            'status' => 'pending',
+        ]);
+        $database->seedRow('order_lines', 'line_id', [
+            'order_id' => 'order-123',
+            'line_id' => 'line-1',
+            'sku' => 'OLD',
+            'quantity' => 1,
+        ]);
+        $database->seedRow('order_lines', 'line_id', [
+            'order_id' => 'order-123',
+            'line_id' => 'line-2',
+            'sku' => 'REMOVED',
+            'quantity' => 1,
+        ]);
+
+        $store->save(new OrderWithLinesState('order-123', 'paid', [
+            new OrderLineState('line-1', 'SKU-1', 3),
+            new OrderLineState('line-3', 'SKU-3', 1),
+        ]));
+
+        $this->flushRegistryInTransaction($database, $registry);
+
+        self::assertSame([
+            'order_id' => 'order-123',
+            'sku' => 'SKU-1',
+            'quantity' => 3,
+        ], $database->row('order_lines', 'line_id', 'line-1', ['order_id', 'sku', 'quantity'], ['order_id' => 'order-123']));
+        self::assertFalse($database->row('order_lines', 'line_id', 'line-2'));
+        self::assertSame([
+            'order_id' => 'order-123',
+            'sku' => 'SKU-3',
+            'quantity' => 1,
+        ], $database->row('order_lines', 'line_id', 'line-3', ['order_id', 'sku', 'quantity'], ['order_id' => 'order-123']));
+    }
+
+    public function test_expect_rejects_collection_insert_or_delete(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderWithLinesState::class]);
+        $database->seedRow('orders', 'order_id', [
+            'order_id' => 'order-123',
+            'status' => 'pending',
+        ]);
+        $database->seedRow('order_lines', 'line_id', [
+            'order_id' => 'order-123',
+            'line_id' => 'line-1',
+            'sku' => 'SKU-1',
+            'quantity' => 1,
+        ]);
+
+        $loaded = $store->load(OrderWithLinesState::class, 'order-123');
+        $store->expect($loaded);
+        $database->seedRow('order_lines', 'line_id', [
+            'order_id' => 'order-123',
+            'line_id' => 'line-2',
+            'sku' => 'SKU-2',
+            'quantity' => 1,
+        ]);
+        $store->save($loaded);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushRegistryInTransaction($database, $registry);
+    }
+
     /**
      * @param list<class-string> $stateClasses
      *
-     * @return array{InMemoryRowDatabase, MappedTable, StateStore}
+     * @return array{InMemoryRowDatabase, MappedRowSet, StateStore, StateTableRegistry}
      */
     private function newStore(array $stateClasses): array
     {
         $database = new InMemoryRowDatabase();
-        $table = new MappedTable(new InMemoryMappedTableAdapter($database, 'orders', 'order_id'));
+        $table = new MappedRowSet(new InMemoryMappedRowSetAdapter($database, 'orders', 'order_id'));
+        $adapterFactory = new \Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory($database);
         $factory = new StateMetadataFactory();
 
         $metadata = [];
@@ -242,21 +381,38 @@ final class StateStoreTest extends TestCase
             $metadata[$stateClass] = $resolvedMetadata->toArray();
         }
 
+        $registry = new StateTableRegistry(['orders#order_id' => $table], $adapterFactory);
         $store = new StateStore(
             new StateMetadataRegistry($metadata),
-            new StateTableRegistry(['orders#order_id' => $table]),
+            $registry,
             new UltraNormalizer(),
         );
 
-        return [$database, $table, $store];
+        return [$database, $table, $store, $registry];
     }
 
-    private function flushInTransaction(InMemoryRowDatabase $database, MappedTable $table): void
+    private function flushInTransaction(InMemoryRowDatabase $database, MappedRowSet $table): void
     {
         $database->beginTransaction();
 
         try {
             $table->flush();
+            $database->commit();
+        } catch (\Throwable $exception) {
+            if ($database->isTransactionActive()) {
+                $database->rollBack();
+            }
+
+            throw $exception;
+        }
+    }
+
+    private function flushRegistryInTransaction(InMemoryRowDatabase $database, StateTableRegistry $registry): void
+    {
+        $database->beginTransaction();
+
+        try {
+            $registry->flush();
             $database->commit();
         } catch (\Throwable $exception) {
             if ($database->isTransactionActive()) {

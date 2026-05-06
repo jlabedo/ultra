@@ -18,8 +18,8 @@ use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
-use Ultra\MappedTable\MappedTable;
-use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\PostgresMappedRowSetAdapter;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
@@ -53,14 +53,14 @@ final readonly class HarnessCourseCreated
 #[Projection(name: ProjectionCoordinationHarness::PROJECTION_ID, partitionBy: 'courseId')]
 final readonly class HarnessCourseNamesProjection
 {
-    private MappedTable $table;
+    private MappedRowSet $table;
 
     public function __construct(
         private Connection $connection,
         private string $tableName,
     ) {
-        $this->table = new MappedTable(
-            new PostgresMappedTableAdapter($this->connection, $this->tableName, 'course_id'),
+        $this->table = new MappedRowSet(
+            new PostgresMappedRowSetAdapter($this->connection, $this->tableName, 'course_id'),
         );
     }
 

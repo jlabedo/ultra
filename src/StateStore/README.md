@@ -1,10 +1,10 @@
 # State Store
 
-Mapper-backed object state loading and saving on top of `Ultra\MappedTable\MappedTable`.
+Mapper-backed object state loading and saving on top of `Ultra\MappedTable\MappedRowSet`.
 
 ## Purpose
 
-`Ultra\StateStore\StateStore` lets you treat one mapped-table row as a typed readonly state object:
+`Ultra\StateStore\StateStore` lets you treat one mapped row as a typed readonly state object:
 
 ```php
 $state = $stateStore->load(OrderState::class, 'order-123');
@@ -44,12 +44,52 @@ final readonly class OrderState
 }
 ```
 
+Collection properties can be persisted in a separate mapped row set with `#[Ultra\StateStore\Attribute\StateCollection(...)]`.
+The parent state id is written to the configured owner column, and each collection item is normalized into one row keyed by its item id property.
+
+```php
+use Ultra\StateStore\Attribute\StateCollection;
+
+#[State(table: 'order_lines', idColumn: 'line_id')]
+final readonly class OrderLineState
+{
+    public function __construct(
+        #[StateId]
+        public string $lineId,
+        #[StateColumn]
+        public string $sku,
+        #[StateColumn]
+        public int $quantity,
+    ) {}
+}
+
+#[State(table: 'orders', idColumn: 'order_id')]
+final readonly class OrderWithLinesState
+{
+    /**
+     * @param list<OrderLineState> $lines
+     */
+    public function __construct(
+        #[StateId]
+        public string $orderId,
+        #[StateColumn('status')]
+        public string $status,
+        #[StateCollection(
+            ownerColumn: 'order_id',
+            itemClass: OrderLineState::class,
+        )]
+        public array $lines,
+    ) {}
+}
+```
+
 ## Save Semantics
 
 - `save($state)` buffers an upsert for the mapped row
 - `expect($loadedState)` buffers optimistic expectations for that mapped row without writing anything by itself
 - `expectMissing(StateClass::class, $id)` buffers an optimistic expectation that the mapped row is still absent
 - a later `save(...)` against the same mapped row uses the buffered expectation automatically
-- buffered writes are committed later by flushing the underlying `MappedTable` unit of work
+- collection expectations use the loaded item id set to reject concurrent inserts or deletes in the collection
+- buffered writes are committed later by flushing the underlying `MappedRowSet` unit of work
 
-When several state classes target the same physical table, they share the same mapped-table unit of work but only read and write the columns each class maps.
+When several state classes target the same physical table, they share the same `MappedRowSet` unit of work but only read and write the columns each class maps.
