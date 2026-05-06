@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\DecisionEngine\Tests\Support;
 
-use Ultra\DecisionEngine\Engine;
+use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\Mapper\UltraNormalizer;
@@ -13,9 +13,9 @@ use Ultra\Testing\UltraLightContainer;
 
 final readonly class DecisionEngineTestContainer extends UltraLightContainer
 {
-    public function engine(): Engine
+    public function eventSourcedStateStore(): EventSourcedStateStore
     {
-        return $this->get(Engine::class);
+        return $this->get(EventSourcedStateStore::class);
     }
 
     public function mediator(): MediatorInterface

@@ -1,0 +1,36 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ultra\EventSourcedState;
+
+use Symfony\Component\DependencyInjection\ChildDefinition;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
+use Ultra\EventSourcedState_Compiler\EntityLoaderCompilerPass;
+
+final class EventSourcedStateBundle extends Bundle
+{
+    public function build(ContainerBuilder $container): void
+    {
+        parent::build($container);
+
+        $container->registerAttributeForAutoconfiguration(
+            EventSourcedEntity::class,
+            static function (ChildDefinition $definition, EventSourcedEntity $attribute, \Reflector $reflector): void {
+                if ($reflector instanceof \ReflectionClass) {
+                    $definition->addResourceTag(TagNames::ENTITY);
+                }
+            }
+        );
+
+        $buildDir = (string) $container->getParameter('kernel.build_dir');
+        $outputDir = $buildDir.'/event_sourced_state';
+
+        $container->addCompilerPass(new EntityLoaderCompilerPass(
+            $outputDir,
+            TagNames::ENTITY,
+        ), priority: -95);
+    }
+}

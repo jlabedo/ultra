@@ -8,8 +8,8 @@ use App\Faculty\Event\CourseCapacityChanged;
 use App\Faculty\Event\CourseCreated;
 use App\Faculty\Event\StudentSubscribedToCourse;
 use App\Faculty\Event\StudentUnsubscribedFromCourse;
-use Ultra\DecisionEngine\Attribute\EventSourcedEntity;
-use Ultra\DecisionEngine\Attribute\EventSourcingHandler;
+use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
+use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
 
 #[EventSourcedEntity(tags: ['course'])]
 final class CourseState

@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ultra\DecisionEngine\Tests\Example\Command;
 
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
-use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
+use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
+use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 
 readonly class CreateCourseCommand
