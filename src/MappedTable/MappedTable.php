@@ -16,8 +16,6 @@ final class MappedTable implements UnitOfWork
 
     public function __construct(
         private readonly MappedTableAdapter $adapter,
-        private readonly string $tableName,
-        private readonly string $idColumn = 'id',
     ) {}
 
     public function withId(int|string $id): PendingRowUpdate
@@ -25,7 +23,7 @@ final class MappedTable implements UnitOfWork
         $updateKey = self::updateKey($id);
         $update = $this->updates[$updateKey] ??= new BufferedRowUpdate($id);
 
-        return new PendingRowUpdate($update, $this->tableName);
+        return new PendingRowUpdate($update);
     }
 
     /**
@@ -35,7 +33,7 @@ final class MappedTable implements UnitOfWork
      */
     public function row(int|string $id, array $columns = []): array|false
     {
-        $row = $this->adapter->row($this->tableName, $this->idColumn, $id, $columns);
+        $row = $this->adapter->row($id, $columns);
         $update = $this->updates[self::updateKey($id)] ?? null;
         $plan = $update?->toPlan();
 
@@ -59,7 +57,7 @@ final class MappedTable implements UnitOfWork
             }
         }
 
-        $this->adapter->apply($this->tableName, $this->idColumn, $plans);
+        $this->adapter->apply($plans);
     }
 
     public function clear(): void
@@ -98,9 +96,8 @@ final class MappedTable implements UnitOfWork
                 ? false
                 : $this->mergeColumns($row, $plan->setColumns),
             default => throw new \LogicException(sprintf(
-                'Unsupported row update mode "%s" for table "%s".',
+                'Unsupported row update mode "%s".',
                 $plan->mode,
-                $this->tableName,
             )),
         };
     }
@@ -125,13 +122,7 @@ final class MappedTable implements UnitOfWork
      */
     private function newRow(RowUpdatePlan $plan): array
     {
-        $row = [$this->idColumn => $plan->id];
-
-        foreach ($plan->setColumns as $column => $value) {
-            $row[$column] = $value;
-        }
-
-        return $row;
+        return $plan->setColumns;
     }
 
     /**
@@ -146,9 +137,7 @@ final class MappedTable implements UnitOfWork
             return $row;
         }
 
-        $projectedRow = [
-            $this->idColumn => $row[$this->idColumn],
-        ];
+        $projectedRow = [];
 
         foreach ($columns as $column) {
             $projectedRow[$column] = $row[$column] ?? null;

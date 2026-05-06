@@ -32,7 +32,7 @@ final class MappedTableTest extends TestCase
     public function test_flush_passes_sorted_plans_to_adapter(): void
     {
         $adapter = new RecordingMappedTableAdapter();
-        $table = new MappedTable($adapter, self::TABLE_NAME, self::ID_COLUMN);
+        $table = new MappedTable($adapter);
 
         $table->withId('row-2')
             ->setColumn('status', 'second')
@@ -46,8 +46,6 @@ final class MappedTableTest extends TestCase
         $table->flush();
 
         self::assertCount(1, $adapter->batches);
-        self::assertSame(self::TABLE_NAME, $adapter->batches[0]['tableName']);
-        self::assertSame(self::ID_COLUMN, $adapter->batches[0]['idColumn']);
         self::assertSame(
             ['row-1', 'row-2'],
             array_map(static fn (RowUpdatePlan $rowUpdate): int|string => $rowUpdate->id, $adapter->batches[0]['rowUpdates']),
@@ -79,7 +77,6 @@ final class MappedTableTest extends TestCase
         $this->flushInTransaction($database, $table);
 
         self::assertSame([
-            'id' => 'row-1',
             'status' => 'active',
             'note' => 'published',
             'version_a' => 'A1',
@@ -126,7 +123,6 @@ final class MappedTableTest extends TestCase
         ;
 
         self::assertSame([
-            'id' => 'row-1',
             'status' => 'active',
             'note' => 'published',
             'version_a' => 'A1',
@@ -144,7 +140,6 @@ final class MappedTableTest extends TestCase
         ;
 
         self::assertSame([
-            'id' => 'row-1',
             'status' => 'pending',
             'note' => 'draft',
             'version_a' => null,
@@ -183,7 +178,6 @@ final class MappedTableTest extends TestCase
         $this->flushInTransaction($database, $table);
 
         self::assertSame([
-            'id' => 'row-1',
             'status' => 'pending',
             'note' => 'draft',
             'version_a' => null,
@@ -260,7 +254,6 @@ final class MappedTableTest extends TestCase
         $this->flushInTransaction($database, $table);
 
         self::assertSame([
-            'id' => 'row-1',
             'status' => 'recreated',
             'note' => 'fresh',
             'version_a' => 'A2',
@@ -293,7 +286,6 @@ final class MappedTableTest extends TestCase
         $this->flushInTransaction($database, $table);
 
         self::assertSame([
-            'id' => 'row-1',
             'status' => 'upserted',
             'note' => null,
             'version_a' => 'A2',
@@ -445,9 +437,9 @@ final class MappedTableTest extends TestCase
     private function newTable(): array
     {
         $database = new InMemoryRowDatabase();
-        $adapter = new InMemoryMappedTableAdapter($database);
+        $adapter = new InMemoryMappedTableAdapter($database, self::TABLE_NAME, self::ID_COLUMN);
 
-        return [$database, new MappedTable($adapter, self::TABLE_NAME, self::ID_COLUMN)];
+        return [$database, new MappedTable($adapter)];
     }
 
     /**
@@ -485,19 +477,17 @@ final class MappedTableTest extends TestCase
 
 final class RecordingMappedTableAdapter implements MappedTableAdapter
 {
-    /** @var list<array{tableName: string, idColumn: string, rowUpdates: list<RowUpdatePlan>}> */
+    /** @var list<array{rowUpdates: list<RowUpdatePlan>}> */
     public array $batches = [];
 
-    public function row(string $tableName, string $idColumn, int|string $id, array $columns = []): array|false
+    public function row(int|string $id, array $columns = []): array|false
     {
         return false;
     }
 
-    public function apply(string $tableName, string $idColumn, array $rowUpdates): void
+    public function apply(array $rowUpdates): void
     {
         $this->batches[] = [
-            'tableName' => $tableName,
-            'idColumn' => $idColumn,
             'rowUpdates' => $rowUpdates,
         ];
     }

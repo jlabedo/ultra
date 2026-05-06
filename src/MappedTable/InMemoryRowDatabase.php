@@ -73,9 +73,7 @@ final class InMemoryRowDatabase
             return $row;
         }
 
-        $projectedRow = [
-            $idColumn => $row[$idColumn],
-        ];
+        $projectedRow = [];
 
         foreach ($columns as $column) {
             $projectedRow[$column] = $row[$column] ?? null;

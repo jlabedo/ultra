@@ -7,12 +7,16 @@ namespace Ultra\MappedTable\Tests;
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\MappedTable;
+use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Testing\PostgresTestSupport;
 
 abstract class PostgresMappedTableTestCase extends TestCase
 {
-    protected function withMappedTable(callable $callback): void
+    /**
+     * @param array<string, PostgresMappedColumnType> $columnTypes
+     */
+    protected function withMappedTable(callable $callback, array $columnTypes = []): void
     {
         $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
         if (false === $dsn || '' === $dsn) {
@@ -29,12 +33,17 @@ abstract class PostgresMappedTableTestCase extends TestCase
                     status TEXT NULL,
                     note TEXT NULL,
                     version_a TEXT NULL,
-                    version_b TEXT NULL
+                    version_b TEXT NULL,
+                    tags TEXT[] NULL
                 )',
                 $connection->quoteSingleIdentifier($tableName),
             ));
 
-            $callback($connection, new MappedTable(new PostgresMappedTableAdapter($connection), $tableName), $tableName);
+            $callback(
+                $connection,
+                new MappedTable(new PostgresMappedTableAdapter($connection, $tableName, columnTypes: $columnTypes)),
+                $tableName,
+            );
         } finally {
             PostgresTestSupport::resetSharedConnection($connection);
 
@@ -62,5 +71,24 @@ abstract class PostgresMappedTableTestCase extends TestCase
             sprintf('SELECT id, status, note, version_a, version_b FROM %s WHERE id = ?', $connection->quoteSingleIdentifier($tableName)),
             [$id],
         );
+    }
+
+    /**
+     * @return array<string, mixed>|false
+     */
+    protected function fetchRowWithTags(Connection $connection, string $tableName, string $id): array|false
+    {
+        $row = $connection->fetchAssociative(
+            sprintf('SELECT id, status, note, version_a, version_b, tags FROM %s WHERE id = ?', $connection->quoteSingleIdentifier($tableName)),
+            [$id],
+        );
+
+        if (false === $row || null === $row['tags']) {
+            return $row;
+        }
+
+        $row['tags'] = PostgresMappedColumnType::textArray()->decode($row['tags']);
+
+        return $row;
     }
 }

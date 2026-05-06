@@ -14,9 +14,9 @@ use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
-use Ultra\MappedTable\InMemoryMappedTableAdapter;
+use Ultra\MappedTable\InMemoryMappedTableAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedTableAdapter;
+use Ultra\MappedTable\MappedTableAdapterFactory;
 use Ultra\Mapper_Bundle\MapperBundle;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
 use Ultra\StateStore\Attribute\State;
@@ -96,7 +96,6 @@ final class StateStoreBundleTest extends TestCase
         $unitOfWork->flush();
 
         self::assertSame([
-            'order_id' => 'order-123',
             'status' => 'pending',
             'note' => 'draft',
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
@@ -109,7 +108,6 @@ final class StateStoreBundleTest extends TestCase
         $unitOfWork->flush();
 
         self::assertSame([
-            'order_id' => 'order-123',
             'status' => 'shipped',
             'note' => 'draft',
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
@@ -152,11 +150,11 @@ final class StateStoreBundleTest extends TestCase
         $container->register(InMemoryRowDatabase::class, InMemoryRowDatabase::class)
             ->setPublic(true)
         ;
-        $container->register(InMemoryMappedTableAdapter::class, InMemoryMappedTableAdapter::class)
+        $container->register(InMemoryMappedTableAdapterFactory::class, InMemoryMappedTableAdapterFactory::class)
             ->setArguments([new Reference(InMemoryRowDatabase::class)])
             ->setPublic(true)
         ;
-        $container->setAlias(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setPublic(true);
+        $container->setAlias(MappedTableAdapterFactory::class, InMemoryMappedTableAdapterFactory::class)->setPublic(true);
 
         $container->setDefinition(
             BundleOrderState::class,

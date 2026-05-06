@@ -10,6 +10,7 @@ use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\MappedTable;
 use Ultra\MappedTable\MappedTableAdapter;
+use Ultra\MappedTable\MappedTableAdapterFactory;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
@@ -32,10 +33,10 @@ final class StateStoreCompilerPass implements CompilerPassInterface
         $stateMetadata = [];
         $tableReferences = [];
 
-        if ([] !== $stateClasses && !$container->has(MappedTableAdapter::class)) {
+        if ([] !== $stateClasses && !$container->has(MappedTableAdapterFactory::class)) {
             throw new \LogicException(sprintf(
                 'State store states were discovered, but no "%s" service is registered.',
-                MappedTableAdapter::class,
+                MappedTableAdapterFactory::class,
             ));
         }
 
@@ -61,12 +62,18 @@ final class StateStoreCompilerPass implements CompilerPassInterface
 
             if (!array_key_exists($metadata->tableKey, $tableReferences)) {
                 $serviceId = 'ultra.state_store.table.'.substr(md5($metadata->tableKey), 0, 12);
+                $adapterServiceId = $serviceId.'.adapter';
+                $container->setDefinition(
+                    $adapterServiceId,
+                    (new Definition(MappedTableAdapter::class))
+                        ->setFactory([new Reference(MappedTableAdapterFactory::class), 'create'])
+                        ->setArguments([$metadata->tableName, $metadata->idColumn])
+                );
+
                 $container->setDefinition(
                     $serviceId,
                     new Definition(MappedTable::class, [
-                        new Reference(MappedTableAdapter::class),
-                        $metadata->tableName,
-                        $metadata->idColumn,
+                        new Reference($adapterServiceId),
                     ])
                         ->addTag(self::UNIT_OF_WORK_TAG)
                 );

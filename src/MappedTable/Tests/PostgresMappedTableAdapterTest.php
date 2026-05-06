@@ -7,6 +7,7 @@ namespace Ultra\MappedTable\Tests;
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Ultra\MappedTable\MappedTable;
+use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
@@ -14,6 +15,7 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
  * @internal
  */
 #[CoversClass(PostgresMappedTableAdapter::class)]
+#[CoversClass(PostgresMappedColumnType::class)]
 final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 {
     public function test_row_returns_projected_columns(): void
@@ -28,7 +30,6 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
             ]);
 
             self::assertSame([
-                'id' => 'row-1',
                 'status' => 'pending',
                 'version_b' => 'B1',
             ], $table->row('row-1', ['status', 'version_b']));
@@ -769,5 +770,126 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
             self::assertSame('pending', $this->fetchRow($connection, $tableName, 'row-1')['status']);
         });
+    }
+
+    public function test_insert_round_trips_text_array_columns(): void
+    {
+        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+            $table->withId('row-1')
+                ->insert()
+                ->setColumn('status', 'pending')
+                ->setColumn('tags', ['alpha', 'beta'])
+            ;
+
+            $this->flush($connection, $table);
+
+            self::assertSame([
+                'status' => 'pending',
+                'tags' => ['alpha', 'beta'],
+            ], $table->row('row-1', ['status', 'tags']));
+
+            self::assertSame([
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => null,
+                'version_a' => null,
+                'version_b' => null,
+                'tags' => ['alpha', 'beta'],
+            ], $this->fetchRowWithTags($connection, $tableName, 'row-1'));
+        }, [
+            'tags' => PostgresMappedColumnType::textArray(),
+        ]);
+    }
+
+    public function test_update_supports_empty_array_columns_and_optimistic_expectations(): void
+    {
+        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+            $table->withId('row-1')
+                ->insert()
+                ->setColumn('status', 'pending')
+                ->setColumn('tags', ['alpha'])
+            ;
+            $this->flush($connection, $table);
+            $table->clear();
+
+            $table->withId('row-1')
+                ->expectColumnValue('tags', ['alpha'])
+                ->setColumn('tags', [])
+            ;
+
+            $this->flush($connection, $table);
+
+            self::assertSame([], $this->fetchRowWithTags($connection, $tableName, 'row-1')['tags']);
+        }, [
+            'tags' => PostgresMappedColumnType::textArray(),
+        ]);
+    }
+
+    public function test_update_rejects_stale_array_expectations(): void
+    {
+        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+            $table->withId('row-1')
+                ->insert()
+                ->setColumn('status', 'pending')
+                ->setColumn('tags', ['alpha'])
+            ;
+            $this->flush($connection, $table);
+            $table->clear();
+
+            $table->withId('row-1')
+                ->expectColumnValue('tags', ['beta'])
+                ->setColumn('status', 'active')
+            ;
+
+            $this->expectException(ConcurrencyException::class);
+
+            try {
+                $this->flush($connection, $table);
+            } finally {
+                self::assertSame(['alpha'], $this->fetchRowWithTags($connection, $tableName, 'row-1')['tags']);
+            }
+        }, [
+            'tags' => PostgresMappedColumnType::textArray(),
+        ]);
+    }
+
+    public function test_batch_upsert_supports_array_columns(): void
+    {
+        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+            $table->withId('row-1')
+                ->upsert()
+                ->setColumn('status', 'pending')
+                ->setColumn('tags', ['alpha'])
+            ;
+
+            $table->withId('row-2')
+                ->upsert()
+                ->setColumn('status', 'active')
+                ->setColumn('tags', ['beta', 'gamma'])
+            ;
+
+            $this->flush($connection, $table);
+
+            self::assertSame(['alpha'], $this->fetchRowWithTags($connection, $tableName, 'row-1')['tags']);
+            self::assertSame(['beta', 'gamma'], $this->fetchRowWithTags($connection, $tableName, 'row-2')['tags']);
+        }, [
+            'tags' => PostgresMappedColumnType::textArray(),
+        ]);
+    }
+
+    private function flush(Connection $connection, MappedTable $table): void
+    {
+        $connection->beginTransaction();
+
+        try {
+            $table->flush();
+            $connection->commit();
+        } catch (\Throwable $exception) {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+
+            throw $exception;
+        }
     }
 }

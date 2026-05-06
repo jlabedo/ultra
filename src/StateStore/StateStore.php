@@ -31,7 +31,7 @@ final readonly class StateStore
             throw new StateNotFoundException($stateClass, $id);
         }
 
-        return $this->normalizer->fromScalar($metadata->payloadFromRow($row), $stateClass);
+        return $this->normalizer->fromScalar($metadata->payloadFromRow($id, $row), $stateClass);
     }
 
     public function save(object $state): void

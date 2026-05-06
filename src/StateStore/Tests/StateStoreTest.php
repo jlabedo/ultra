@@ -27,7 +27,7 @@ final readonly class OrderState
         public string $orderId,
         #[StateColumn('status')]
         public string $orderStatus,
-        #[StateColumn('note')]
+        #[StateColumn]
         public ?string $note,
     ) {}
 
@@ -76,7 +76,6 @@ final class StateStoreTest extends TestCase
         self::assertSame('pending', $state->orderStatus);
         self::assertSame('draft', $state->note);
         self::assertSame([
-            'order_id' => 'order-123',
             'status' => 'pending',
             'note' => 'draft',
         ], $table->row('order-123', ['status', 'note']));
@@ -93,7 +92,6 @@ final class StateStoreTest extends TestCase
         self::assertSame('pending', $loaded->orderStatus);
 
         self::assertSame([
-            'order_id' => 'order-123',
             'status' => 'pending',
             'note' => 'draft',
         ], $table->row('order-123', ['status', 'note']));
@@ -101,7 +99,6 @@ final class StateStoreTest extends TestCase
         $this->flushInTransaction($database, $table);
 
         self::assertSame([
-            'order_id' => 'order-123',
             'status' => 'pending',
             'note' => 'draft',
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
@@ -149,7 +146,6 @@ final class StateStoreTest extends TestCase
         $this->flushInTransaction($database, $table);
 
         self::assertSame([
-            'order_id' => 'order-123',
             'status' => 'pending',
             'note' => 'draft',
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
@@ -172,7 +168,6 @@ final class StateStoreTest extends TestCase
         $this->flushInTransaction($database, $table);
 
         self::assertSame([
-            'order_id' => 'order-123',
             'status' => 'shipped',
             'note' => 'confirmed',
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
@@ -197,7 +192,6 @@ final class StateStoreTest extends TestCase
         $this->flushInTransaction($database, $table);
 
         self::assertSame([
-            'order_id' => 'order-123',
             'status' => 'pending',
             'note' => 'draft',
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
@@ -239,7 +233,7 @@ final class StateStoreTest extends TestCase
     private function newStore(array $stateClasses): array
     {
         $database = new InMemoryRowDatabase();
-        $table = new MappedTable(new InMemoryMappedTableAdapter($database), 'orders', 'order_id');
+        $table = new MappedTable(new InMemoryMappedTableAdapter($database, 'orders', 'order_id'));
         $factory = new StateMetadataFactory();
 
         $metadata = [];

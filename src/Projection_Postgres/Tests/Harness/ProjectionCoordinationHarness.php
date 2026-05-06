@@ -59,7 +59,9 @@ final readonly class HarnessCourseNamesProjection
         private Connection $connection,
         private string $tableName,
     ) {
-        $this->table = new MappedTable(new PostgresMappedTableAdapter($this->connection), $this->tableName, 'course_id');
+        $this->table = new MappedTable(
+            new PostgresMappedTableAdapter($this->connection, $this->tableName, 'course_id'),
+        );
     }
 
     #[ProjectionInitializer]

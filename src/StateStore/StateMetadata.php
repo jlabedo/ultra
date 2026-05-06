@@ -76,10 +76,10 @@ final readonly class StateMetadata
      *
      * @return array<string, mixed>
      */
-    public function payloadFromRow(array $row): array
+    public function payloadFromRow(int|string $id, array $row): array
     {
         $payload = [
-            $this->idProperty => $row[$this->idColumn],
+            $this->idProperty => $id,
         ];
 
         foreach ($this->propertyColumns as $property => $column) {

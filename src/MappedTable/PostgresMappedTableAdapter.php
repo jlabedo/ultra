@@ -9,13 +9,19 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 final class PostgresMappedTableAdapter implements MappedTableAdapter
 {
+    /**
+     * @param array<string, PostgresMappedColumnType> $columnTypes
+     */
     public function __construct(
         private readonly Connection $connection,
+        private readonly string $tableName,
+        private readonly string $idColumn = 'id',
+        private readonly array $columnTypes = [],
     ) {}
 
-    public function row(string $tableName, string $idColumn, int|string $id, array $columns = []): array|false
+    public function row(int|string $id, array $columns = []): array|false
     {
-        $selectColumns = [$idColumn, ...$columns];
+        $selectColumns = [] === $columns ? [$this->idColumn] : $columns;
         $quotedColumns = array_map(
             $this->connection->quoteSingleIdentifier(...),
             array_values(array_unique($selectColumns)),
@@ -25,16 +31,16 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
             sprintf(
                 'SELECT %s FROM %s WHERE %s = ?',
                 implode(', ', $quotedColumns),
-                $this->connection->quoteSingleIdentifier($tableName),
-                $this->connection->quoteSingleIdentifier($idColumn),
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                $this->connection->quoteSingleIdentifier($this->idColumn),
             ),
             [$id],
         );
 
-        return false === $row ? false : $row;
+        return false === $row ? false : $this->decodeRow($row);
     }
 
-    public function apply(string $tableName, string $idColumn, array $rowUpdates): void
+    public function apply(array $rowUpdates): void
     {
         foreach ($this->groupConsecutive($rowUpdates) as $batch) {
             $mode = $batch[0]->mode;
@@ -43,34 +49,34 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
             switch ($mode) {
                 case RowUpdatePlan::MODE_DELETE:
                     $count > 1
-                        ? $this->flushBatchDelete($tableName, $idColumn, $batch)
-                        : $this->flushDelete($tableName, $idColumn, $batch[0]);
+                        ? $this->flushBatchDelete($batch)
+                        : $this->flushDelete($batch[0]);
 
                     break;
 
                 case RowUpdatePlan::MODE_INSERT:
                     $count > 1
-                        ? $this->flushBatchInsert($tableName, $idColumn, $batch)
-                        : $this->flushInsert($tableName, $idColumn, $batch[0]);
+                        ? $this->flushBatchInsert($batch)
+                        : $this->flushInsert($batch[0]);
 
                     break;
 
                 case RowUpdatePlan::MODE_REPLACE:
                     $count > 1
-                        ? $this->flushBatchReplace($tableName, $idColumn, $batch)
-                        : $this->flushReplace($tableName, $idColumn, $batch[0]);
+                        ? $this->flushBatchReplace($batch)
+                        : $this->flushReplace($batch[0]);
 
                     break;
 
                 case RowUpdatePlan::MODE_UPSERT:
                     $count > 1
-                        ? $this->flushBatchUpsert($tableName, $idColumn, $batch)
-                        : $this->flushUpsert($tableName, $idColumn, $batch[0]);
+                        ? $this->flushBatchUpsert($batch)
+                        : $this->flushUpsert($batch[0]);
 
                     break;
 
                 case RowUpdatePlan::MODE_UPDATE:
-                    $this->flushUpdate($tableName, $idColumn, $batch[0]);
+                    $this->flushUpdate($batch[0]);
 
                     break;
 
@@ -78,7 +84,7 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
                     throw new \LogicException(sprintf(
                         'Unsupported row update mode "%s" for table "%s".',
                         $mode,
-                        $tableName,
+                        $this->tableName,
                     ));
             }
         }
@@ -125,15 +131,18 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         };
     }
 
-    private function flushBatchDelete(string $tableName, string $idColumn, array $updates): void
+    /**
+     * @param list<RowUpdatePlan> $updates
+     */
+    private function flushBatchDelete(array $updates): void
     {
         $ids = array_map(static fn ($u) => $u->id, $updates);
 
         $affectedRows = $this->connection->executeStatement(
             sprintf(
                 'DELETE FROM %s WHERE %s IN (%s)',
-                $this->connection->quoteSingleIdentifier($tableName),
-                $this->connection->quoteSingleIdentifier($idColumn),
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                $this->connection->quoteSingleIdentifier($this->idColumn),
                 implode(', ', array_fill(0, count($ids), '?')),
             ),
             $ids,
@@ -142,34 +151,37 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         if ($affectedRows !== count($updates)) {
             throw new ConcurrencyException(sprintf(
                 'Batch delete failed for table "%s": expected %d deletions, got %d.',
-                $tableName,
+                $this->tableName,
                 count($updates),
                 $affectedRows,
             ));
         }
     }
 
-    private function flushBatchInsert(string $tableName, string $idColumn, array $updates): void
+    /**
+     * @param list<RowUpdatePlan> $updates
+     */
+    private function flushBatchInsert(array $updates): void
     {
-        $columns = [$idColumn, ...array_keys($updates[0]->setColumns)];
+        $columns = [$this->idColumn, ...array_keys($updates[0]->setColumns)];
         $quotedColumns = array_map($this->connection->quoteSingleIdentifier(...), $columns);
-        $rowPlaceholder = '('.implode(', ', array_fill(0, count($columns), '?')).')';
+        $rowPlaceholder = '('.implode(', ', array_map($this->placeholder(...), $columns)).')';
 
         $params = [];
         foreach ($updates as $update) {
             $params[] = $update->id;
-            foreach ($update->setColumns as $value) {
-                $params[] = $value;
+            foreach ($update->setColumns as $column => $value) {
+                $params[] = $this->encodeColumnValue($column, $value);
             }
         }
 
         $affectedRows = $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO NOTHING',
-                $this->connection->quoteSingleIdentifier($tableName),
+                $this->connection->quoteSingleIdentifier($this->tableName),
                 implode(', ', $quotedColumns),
                 implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
-                $this->connection->quoteSingleIdentifier($idColumn),
+                $this->connection->quoteSingleIdentifier($this->idColumn),
             ),
             $params,
         );
@@ -177,31 +189,37 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         if ($affectedRows !== count($updates)) {
             throw new ConcurrencyException(sprintf(
                 'Batch insert failed for table "%s": %d of %d rows already existed.',
-                $tableName,
+                $this->tableName,
                 count($updates) - $affectedRows,
                 count($updates),
             ));
         }
     }
 
-    private function flushBatchReplace(string $tableName, string $idColumn, array $updates): void
+    /**
+     * @param list<RowUpdatePlan> $updates
+     */
+    private function flushBatchReplace(array $updates): void
     {
-        $this->flushBatchDelete($tableName, $idColumn, $updates);
-        $this->flushBatchInsert($tableName, $idColumn, $updates);
+        $this->flushBatchDelete($updates);
+        $this->flushBatchInsert($updates);
     }
 
-    private function flushBatchUpsert(string $tableName, string $idColumn, array $updates): void
+    /**
+     * @param list<RowUpdatePlan> $updates
+     */
+    private function flushBatchUpsert(array $updates): void
     {
-        $columns = [$idColumn, ...array_keys($updates[0]->setColumns)];
+        $columns = [$this->idColumn, ...array_keys($updates[0]->setColumns)];
         $quotedColumns = array_map($this->connection->quoteSingleIdentifier(...), $columns);
-        $rowPlaceholder = '('.implode(', ', array_fill(0, count($columns), '?')).')';
+        $rowPlaceholder = '('.implode(', ', array_map($this->placeholder(...), $columns)).')';
         $allPlaceholders = implode(', ', array_fill(0, count($updates), $rowPlaceholder));
 
         $params = [];
         foreach ($updates as $update) {
             $params[] = $update->id;
-            foreach ($update->setColumns as $value) {
-                $params[] = $value;
+            foreach ($update->setColumns as $column => $value) {
+                $params[] = $this->encodeColumnValue($column, $value);
             }
         }
 
@@ -209,10 +227,10 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
             $this->connection->executeStatement(
                 sprintf(
                     'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO NOTHING',
-                    $this->connection->quoteSingleIdentifier($tableName),
+                    $this->connection->quoteSingleIdentifier($this->tableName),
                     implode(', ', $quotedColumns),
                     $allPlaceholders,
-                    $this->connection->quoteSingleIdentifier($idColumn),
+                    $this->connection->quoteSingleIdentifier($this->idColumn),
                 ),
                 $params,
             );
@@ -229,32 +247,36 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO UPDATE SET %s',
-                $this->connection->quoteSingleIdentifier($tableName),
+                $this->connection->quoteSingleIdentifier($this->tableName),
                 implode(', ', $quotedColumns),
                 $allPlaceholders,
-                $this->connection->quoteSingleIdentifier($idColumn),
+                $this->connection->quoteSingleIdentifier($this->idColumn),
                 implode(', ', $assignments),
             ),
             $params,
         );
     }
 
-    private function flushDelete(string $tableName, string $idColumn, RowUpdatePlan $update): void
+    private function flushDelete(RowUpdatePlan $update): void
     {
         $whereClauses = [
-            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($idColumn)),
+            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($this->idColumn)),
         ];
         $params = [$update->id];
 
         foreach ($update->expectedColumns as $column => $value) {
-            $whereClauses[] = sprintf('%s IS NOT DISTINCT FROM ?', $this->connection->quoteSingleIdentifier($column));
-            $params[] = $value;
+            $whereClauses[] = sprintf(
+                '%s IS NOT DISTINCT FROM %s',
+                $this->connection->quoteSingleIdentifier($column),
+                $this->placeholder($column),
+            );
+            $params[] = $this->encodeColumnValue($column, $value);
         }
 
         $affectedRows = $this->connection->executeStatement(
             sprintf(
                 'DELETE FROM %s WHERE %s',
-                $this->connection->quoteSingleIdentifier($tableName),
+                $this->connection->quoteSingleIdentifier($this->tableName),
                 implode(' AND ', $whereClauses),
             ),
             $params,
@@ -263,20 +285,20 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         if (1 !== $affectedRows) {
             throw new ConcurrencyException(sprintf(
                 'Conditional delete failed for table "%s" and row "%s".',
-                $tableName,
+                $this->tableName,
                 (string) $update->id,
             ));
         }
     }
 
-    private function flushInsert(string $tableName, string $idColumn, RowUpdatePlan $update): void
+    private function flushInsert(RowUpdatePlan $update): void
     {
-        $columns = [$idColumn];
+        $columns = [$this->idColumn];
         $params = [$update->id];
 
         foreach ($update->setColumns as $column => $value) {
             $columns[] = $column;
-            $params[] = $value;
+            $params[] = $this->encodeColumnValue($column, $value);
         }
 
         $quotedColumns = array_map(
@@ -287,10 +309,10 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         $affectedRows = $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
-                $this->connection->quoteSingleIdentifier($tableName),
+                $this->connection->quoteSingleIdentifier($this->tableName),
                 implode(', ', $quotedColumns),
-                implode(', ', array_fill(0, count($columns), '?')),
-                $this->connection->quoteSingleIdentifier($idColumn),
+                implode(', ', array_map($this->placeholder(...), $columns)),
+                $this->connection->quoteSingleIdentifier($this->idColumn),
             ),
             $params,
         );
@@ -298,26 +320,26 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         if (1 !== $affectedRows) {
             throw new ConcurrencyException(sprintf(
                 'Insert failed for table "%s" and row "%s" because the row already exists.',
-                $tableName,
+                $this->tableName,
                 (string) $update->id,
             ));
         }
     }
 
-    private function flushReplace(string $tableName, string $idColumn, RowUpdatePlan $update): void
+    private function flushReplace(RowUpdatePlan $update): void
     {
-        $this->flushDelete($tableName, $idColumn, $update);
-        $this->flushInsert($tableName, $idColumn, $update);
+        $this->flushDelete($update);
+        $this->flushInsert($update);
     }
 
-    private function flushUpsert(string $tableName, string $idColumn, RowUpdatePlan $update): void
+    private function flushUpsert(RowUpdatePlan $update): void
     {
-        $columns = [$idColumn];
+        $columns = [$this->idColumn];
         $params = [$update->id];
 
         foreach ($update->setColumns as $column => $value) {
             $columns[] = $column;
-            $params[] = $value;
+            $params[] = $this->encodeColumnValue($column, $value);
         }
 
         $quotedColumns = array_map(
@@ -329,10 +351,10 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
             $this->connection->executeStatement(
                 sprintf(
                     'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
-                    $this->connection->quoteSingleIdentifier($tableName),
+                    $this->connection->quoteSingleIdentifier($this->tableName),
                     implode(', ', $quotedColumns),
-                    implode(', ', array_fill(0, count($columns), '?')),
-                    $this->connection->quoteSingleIdentifier($idColumn),
+                    implode(', ', array_map($this->placeholder(...), $columns)),
+                    $this->connection->quoteSingleIdentifier($this->idColumn),
                 ),
                 $params,
             );
@@ -349,40 +371,48 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s',
-                $this->connection->quoteSingleIdentifier($tableName),
+                $this->connection->quoteSingleIdentifier($this->tableName),
                 implode(', ', $quotedColumns),
-                implode(', ', array_fill(0, count($columns), '?')),
-                $this->connection->quoteSingleIdentifier($idColumn),
+                implode(', ', array_map($this->placeholder(...), $columns)),
+                $this->connection->quoteSingleIdentifier($this->idColumn),
                 implode(', ', $assignments),
             ),
             $params,
         );
     }
 
-    private function flushUpdate(string $tableName, string $idColumn, RowUpdatePlan $update): void
+    private function flushUpdate(RowUpdatePlan $update): void
     {
         $setClauses = [];
         $params = [];
 
         foreach ($update->setColumns as $column => $value) {
-            $setClauses[] = sprintf('%s = ?', $this->connection->quoteSingleIdentifier($column));
-            $params[] = $value;
+            $setClauses[] = sprintf(
+                '%s = %s',
+                $this->connection->quoteSingleIdentifier($column),
+                $this->placeholder($column),
+            );
+            $params[] = $this->encodeColumnValue($column, $value);
         }
 
         $whereClauses = [
-            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($idColumn)),
+            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($this->idColumn)),
         ];
         $params[] = $update->id;
 
         foreach ($update->expectedColumns as $column => $value) {
-            $whereClauses[] = sprintf('%s IS NOT DISTINCT FROM ?', $this->connection->quoteSingleIdentifier($column));
-            $params[] = $value;
+            $whereClauses[] = sprintf(
+                '%s IS NOT DISTINCT FROM %s',
+                $this->connection->quoteSingleIdentifier($column),
+                $this->placeholder($column),
+            );
+            $params[] = $this->encodeColumnValue($column, $value);
         }
 
         $affectedRows = $this->connection->executeStatement(
             sprintf(
                 'UPDATE %s SET %s WHERE %s',
-                $this->connection->quoteSingleIdentifier($tableName),
+                $this->connection->quoteSingleIdentifier($this->tableName),
                 implode(', ', $setClauses),
                 implode(' AND ', $whereClauses),
             ),
@@ -392,9 +422,37 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         if (1 !== $affectedRows) {
             throw new ConcurrencyException(sprintf(
                 'Conditional update failed for table "%s" and row "%s".',
-                $tableName,
+                $this->tableName,
                 (string) $update->id,
             ));
         }
+    }
+
+    private function placeholder(string $column): string
+    {
+        $type = $this->columnTypes[$column] ?? null;
+
+        return null === $type ? '?' : sprintf('?::%s', $type->sqlType);
+    }
+
+    private function encodeColumnValue(string $column, mixed $value): mixed
+    {
+        return ($this->columnTypes[$column] ?? null)?->encode($value) ?? $value;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     *
+     * @return array<string, mixed>
+     */
+    private function decodeRow(array $row): array
+    {
+        foreach ($this->columnTypes as $column => $type) {
+            if (array_key_exists($column, $row)) {
+                $row[$column] = $type->decode($row[$column]);
+            }
+        }
+
+        return $row;
     }
 }

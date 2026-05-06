@@ -11,10 +11,10 @@ interface MappedTableAdapter
      *
      * @return array<string, mixed>|false
      */
-    public function row(string $tableName, string $idColumn, int|string $id, array $columns = []): array|false;
+    public function row(int|string $id, array $columns = []): array|false;
 
     /**
      * @param list<RowUpdatePlan> $rowUpdates
      */
-    public function apply(string $tableName, string $idColumn, array $rowUpdates): void;
+    public function apply(array $rowUpdates): void;
 }

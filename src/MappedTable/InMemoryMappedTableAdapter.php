@@ -10,39 +10,41 @@ final class InMemoryMappedTableAdapter implements MappedTableAdapter
 {
     public function __construct(
         private readonly InMemoryRowDatabase $database,
+        private readonly string $tableName,
+        private readonly string $idColumn = 'id',
     ) {}
 
-    public function row(string $tableName, string $idColumn, int|string $id, array $columns = []): array|false
+    public function row(int|string $id, array $columns = []): array|false
     {
-        return $this->database->row($tableName, $idColumn, $id, $columns);
+        return $this->database->row($this->tableName, $this->idColumn, $id, $columns);
     }
 
-    public function apply(string $tableName, string $idColumn, array $rowUpdates): void
+    public function apply(array $rowUpdates): void
     {
         foreach ($rowUpdates as $rowUpdate) {
             switch ($rowUpdate->mode) {
                 case RowUpdatePlan::MODE_DELETE:
-                    $this->applyDelete($tableName, $idColumn, $rowUpdate);
+                    $this->applyDelete($rowUpdate);
 
                     break;
 
                 case RowUpdatePlan::MODE_INSERT:
-                    $this->applyInsert($tableName, $idColumn, $rowUpdate);
+                    $this->applyInsert($rowUpdate);
 
                     break;
 
                 case RowUpdatePlan::MODE_REPLACE:
-                    $this->applyReplace($tableName, $idColumn, $rowUpdate);
+                    $this->applyReplace($rowUpdate);
 
                     break;
 
                 case RowUpdatePlan::MODE_UPSERT:
-                    $this->applyUpsert($tableName, $idColumn, $rowUpdate);
+                    $this->applyUpsert($rowUpdate);
 
                     break;
 
                 case RowUpdatePlan::MODE_UPDATE:
-                    $this->applyUpdate($tableName, $idColumn, $rowUpdate);
+                    $this->applyUpdate($rowUpdate);
 
                     break;
 
@@ -50,50 +52,50 @@ final class InMemoryMappedTableAdapter implements MappedTableAdapter
                     throw new \LogicException(sprintf(
                         'Unsupported row update mode "%s" for table "%s".',
                         $rowUpdate->mode,
-                        $tableName,
+                        $this->tableName,
                     ));
             }
         }
     }
 
-    private function applyDelete(string $tableName, string $idColumn, RowUpdatePlan $update): void
+    private function applyDelete(RowUpdatePlan $update): void
     {
-        $this->requireMatchingRow($tableName, $idColumn, $update, sprintf(
+        $this->requireMatchingRow($update, sprintf(
             'Conditional delete failed for table "%s" and row "%s".',
-            $tableName,
+            $this->tableName,
             (string) $update->id,
         ));
-        $this->database->deleteRow($tableName, $idColumn, $update->id);
+        $this->database->deleteRow($this->tableName, $this->idColumn, $update->id);
     }
 
-    private function applyInsert(string $tableName, string $idColumn, RowUpdatePlan $update): void
+    private function applyInsert(RowUpdatePlan $update): void
     {
-        if (false !== $this->database->row($tableName, $idColumn, $update->id)) {
+        if (false !== $this->database->row($this->tableName, $this->idColumn, $update->id)) {
             throw new ConcurrencyException(sprintf(
                 'Insert failed for table "%s" and row "%s" because the row already exists.',
-                $tableName,
+                $this->tableName,
                 (string) $update->id,
             ));
         }
 
-        $this->database->writeRow($tableName, $idColumn, $this->newRow($idColumn, $update));
+        $this->database->writeRow($this->tableName, $this->idColumn, $this->newRow($update));
     }
 
-    private function applyReplace(string $tableName, string $idColumn, RowUpdatePlan $update): void
+    private function applyReplace(RowUpdatePlan $update): void
     {
-        $this->requireMatchingRow($tableName, $idColumn, $update, sprintf(
+        $this->requireMatchingRow($update, sprintf(
             'Conditional delete failed for table "%s" and row "%s".',
-            $tableName,
+            $this->tableName,
             (string) $update->id,
         ));
-        $this->database->writeRow($tableName, $idColumn, $this->newRow($idColumn, $update));
+        $this->database->writeRow($this->tableName, $this->idColumn, $this->newRow($update));
     }
 
-    private function applyUpsert(string $tableName, string $idColumn, RowUpdatePlan $update): void
+    private function applyUpsert(RowUpdatePlan $update): void
     {
-        $row = $this->database->row($tableName, $idColumn, $update->id);
+        $row = $this->database->row($this->tableName, $this->idColumn, $update->id);
         if (false === $row) {
-            $this->database->writeRow($tableName, $idColumn, $this->newRow($idColumn, $update));
+            $this->database->writeRow($this->tableName, $this->idColumn, $this->newRow($update));
 
             return;
         }
@@ -102,14 +104,14 @@ final class InMemoryMappedTableAdapter implements MappedTableAdapter
             $row[$column] = $value;
         }
 
-        $this->database->writeRow($tableName, $idColumn, $row);
+        $this->database->writeRow($this->tableName, $this->idColumn, $row);
     }
 
-    private function applyUpdate(string $tableName, string $idColumn, RowUpdatePlan $update): void
+    private function applyUpdate(RowUpdatePlan $update): void
     {
-        $row = $this->requireMatchingRow($tableName, $idColumn, $update, sprintf(
+        $row = $this->requireMatchingRow($update, sprintf(
             'Conditional update failed for table "%s" and row "%s".',
-            $tableName,
+            $this->tableName,
             (string) $update->id,
         ));
 
@@ -117,19 +119,17 @@ final class InMemoryMappedTableAdapter implements MappedTableAdapter
             $row[$column] = $value;
         }
 
-        $this->database->writeRow($tableName, $idColumn, $row);
+        $this->database->writeRow($this->tableName, $this->idColumn, $row);
     }
 
     /**
      * @return array<string, mixed>
      */
     private function requireMatchingRow(
-        string $tableName,
-        string $idColumn,
         RowUpdatePlan $update,
         string $message,
     ): array {
-        $row = $this->database->row($tableName, $idColumn, $update->id);
+        $row = $this->database->row($this->tableName, $this->idColumn, $update->id);
         if (false === $row) {
             throw new ConcurrencyException($message);
         }
@@ -146,9 +146,9 @@ final class InMemoryMappedTableAdapter implements MappedTableAdapter
     /**
      * @return array<string, mixed>
      */
-    private function newRow(string $idColumn, RowUpdatePlan $update): array
+    private function newRow(RowUpdatePlan $update): array
     {
-        $row = [$idColumn => $update->id];
+        $row = [$this->idColumn => $update->id];
 
         foreach ($update->setColumns as $column => $value) {
             $row[$column] = $value;
