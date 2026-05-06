@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ultra\MappedTable;
 
 /**
- * Immutable row mutation plan prepared by MappedTable before it reaches an adapter.
+ * Immutable row mutation plan prepared by MappedRowSet before it reaches an adapter.
  */
 final readonly class RowUpdatePlan
 {

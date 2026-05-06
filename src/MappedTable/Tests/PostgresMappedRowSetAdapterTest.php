@@ -6,21 +6,21 @@ namespace Ultra\MappedTable\Tests;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Attributes\CoversClass;
-use Ultra\MappedTable\MappedTable;
+use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\PostgresMappedRowSetAdapter;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /**
  * @internal
  */
-#[CoversClass(PostgresMappedTableAdapter::class)]
+#[CoversClass(PostgresMappedRowSetAdapter::class)]
 #[CoversClass(PostgresMappedColumnType::class)]
-final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
+final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
 {
     public function test_row_returns_projected_columns(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -36,9 +36,100 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         });
     }
 
+    public function test_rows_returns_projected_rows(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-2',
+                'status' => 'active',
+                'note' => 'published',
+            ]);
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+            ]);
+
+            self::assertSame([
+                'row-1' => [
+                    'status' => 'pending',
+                    'note' => 'draft',
+                ],
+                'row-2' => [
+                    'status' => 'active',
+                    'note' => 'published',
+                ],
+            ], $table->rows(['status', 'note']));
+        });
+    }
+
+    public function test_expect_same_row_ids_succeeds_when_ids_match(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, ['id' => 'row-2']);
+            $this->insertRow($connection, $tableName, ['id' => 'row-1']);
+
+            $table->expectSameRowIds(['row-1', 'row-2']);
+            $this->flush($connection, $table);
+
+            self::assertSame(['row-1', 'row-2'], $connection->fetchFirstColumn(sprintf(
+                'SELECT id FROM %s ORDER BY id',
+                $connection->quoteSingleIdentifier($tableName),
+            )));
+        });
+    }
+
+    public function test_expect_same_row_ids_throws_when_row_was_inserted(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, ['id' => 'row-1']);
+
+            $table->expectSameRowIds(['row-1']);
+            $this->insertRow($connection, $tableName, ['id' => 'row-2']);
+
+            $this->expectException(ConcurrencyException::class);
+            $this->flush($connection, $table);
+        });
+    }
+
+    public function test_expect_same_row_ids_throws_when_row_was_deleted(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, ['id' => 'row-1']);
+            $this->insertRow($connection, $tableName, ['id' => 'row-2']);
+
+            $table->expectSameRowIds(['row-1', 'row-2']);
+            $connection->delete($tableName, ['id' => 'row-2']);
+
+            $this->expectException(ConcurrencyException::class);
+            $this->flush($connection, $table);
+        });
+    }
+
+    public function test_row_level_expectations_still_work_with_row_set_expectations(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-1',
+                'status' => 'pending',
+                'version_a' => 'A1',
+            ]);
+
+            $table->expectSameRowIds(['row-1']);
+            $table->withId('row-1')
+                ->expectColumnValue('version_a', 'A1')
+                ->setColumn('status', 'active')
+            ;
+
+            $this->flush($connection, $table);
+
+            self::assertSame('active', $this->fetchRow($connection, $tableName, 'row-1')['status']);
+        });
+    }
+
     public function test_expect_absent_turns_later_column_writes_into_insert(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $table->withId('row-1')
                 ->expectAbsent()
                 ->setColumn('status', 'pending')
@@ -70,7 +161,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_deletes_row(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -102,7 +193,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_throws_when_delete_expected_columns_do_not_match(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -133,7 +224,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_merges_delete_with_prior_buffered_updates_for_the_same_row(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -171,7 +262,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_delete_cancels_pending_insert_for_the_same_row(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $table->withId('row-1')
                 ->insert()
                 ->setColumn('status', 'pending')
@@ -200,7 +291,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_insert_after_delete_replaces_row_and_keeps_its_initial_expectation(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -246,7 +337,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_insert_after_delete_fails_when_the_initial_expectation_is_stale(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -288,7 +379,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_delete_rejects_subsequent_column_updates(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->expectException(ConcurrencyException::class);
 
             $table->withId('row-1')
@@ -300,7 +391,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_upserts_row_by_inserting_when_absent(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $table->withId('row-1')
                 ->upsert()
                 ->setColumn('status', 'pending')
@@ -333,7 +424,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_upserts_row_by_updating_when_present(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'existing',
@@ -373,7 +464,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_upsert_works_when_called_after_set_column(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $table->withId('row-1')
                 ->setColumn('status', 'pending')
                 ->setColumn('note', 'draft')
@@ -405,7 +496,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_upsert_after_delete_replaces_row_and_keeps_its_initial_expectation(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -450,7 +541,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_inserts_row(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $table->withId('row-1')
                 ->insert()
                 ->setColumn('status', 'pending')
@@ -483,7 +574,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_merges_insert_with_other_buffered_changes_for_the_same_row(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $table->withId('row-1')
                 ->setColumn('status', 'pending')
             ;
@@ -519,7 +610,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_throws_when_insert_targets_an_existing_row(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'existing',
@@ -550,7 +641,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_insert_rejects_expected_column_values(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->expectException(ConcurrencyException::class);
 
             $table->withId('row-1')
@@ -562,7 +653,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_updates_row_when_expected_columns_match(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -603,7 +694,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_supports_null_expected_values(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -637,7 +728,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_throws_when_expected_columns_do_not_match(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'active',
@@ -671,7 +762,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_flush_merges_operations_targeting_the_same_row(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -715,7 +806,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_conflicting_expectations_for_the_same_row_throw_immediately(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -739,7 +830,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_clear_drops_buffered_updates(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, [
                 'id' => 'row-1',
                 'status' => 'pending',
@@ -774,7 +865,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_insert_round_trips_text_array_columns(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $table->withId('row-1')
                 ->insert()
                 ->setColumn('status', 'pending')
@@ -803,7 +894,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_update_supports_empty_array_columns_and_optimistic_expectations(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $table->withId('row-1')
                 ->insert()
                 ->setColumn('status', 'pending')
@@ -827,7 +918,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_update_rejects_stale_array_expectations(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $table->withId('row-1')
                 ->insert()
                 ->setColumn('status', 'pending')
@@ -855,7 +946,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
 
     public function test_batch_upsert_supports_array_columns(): void
     {
-        $this->withMappedTable(function (Connection $connection, MappedTable $table, string $tableName): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $table->withId('row-1')
                 ->upsert()
                 ->setColumn('status', 'pending')
@@ -877,7 +968,7 @@ final class PostgresMappedTableAdapterTest extends PostgresMappedTableTestCase
         ]);
     }
 
-    private function flush(Connection $connection, MappedTable $table): void
+    private function flush(Connection $connection, MappedRowSet $table): void
     {
         $connection->beginTransaction();
 

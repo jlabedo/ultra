@@ -6,7 +6,7 @@ namespace Ultra\MappedTable;
 
 use Doctrine\DBAL\Connection;
 
-final readonly class PostgresMappedTableAdapterFactory implements MappedTableAdapterFactory
+final readonly class PostgresMappedRowSetAdapterFactory implements MappedRowSetAdapterFactory
 {
     /**
      * @param array<string, array<string, PostgresMappedColumnType>> $columnTypesByTable
@@ -16,9 +16,9 @@ final readonly class PostgresMappedTableAdapterFactory implements MappedTableAda
         private array $columnTypesByTable = [],
     ) {}
 
-    public function create(string $tableName, string $idColumn = 'id'): MappedTableAdapter
+    public function create(string $tableName, string $idColumn = 'id'): MappedRowSetAdapter
     {
-        return new PostgresMappedTableAdapter(
+        return new PostgresMappedRowSetAdapter(
             $this->connection,
             $tableName,
             $idColumn,

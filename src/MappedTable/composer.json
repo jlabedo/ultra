@@ -1,6 +1,6 @@
 {
     "name": "ultra/mapped-table",
-    "description": "Ultra Framework - Adapter-backed mapped table unit of work",
+    "description": "Ultra Framework - Adapter-backed mapped row set unit of work",
     "type": "library",
     "license": "MIT",
     "authors": [
@@ -14,7 +14,7 @@
         "ultra/unit-of-work": "*"
     },
     "suggest": {
-        "doctrine/dbal": "Required to use the PostgresMappedTableAdapter."
+        "doctrine/dbal": "Required to use the PostgresMappedRowSetAdapter."
     },
     "autoload": {
         "psr-4": {

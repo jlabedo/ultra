@@ -7,23 +7,25 @@ namespace Ultra\MappedTable\Tests;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\BufferedRowUpdate;
-use Ultra\MappedTable\InMemoryMappedTableAdapter;
+use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedTable;
-use Ultra\MappedTable\MappedTableAdapter;
+use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetAdapter;
 use Ultra\MappedTable\PendingRowUpdate;
+use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\MappedTable\RowUpdatePlan;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /**
  * @internal
  */
-#[CoversClass(MappedTable::class)]
+#[CoversClass(MappedRowSet::class)]
 #[CoversClass(PendingRowUpdate::class)]
 #[CoversClass(BufferedRowUpdate::class)]
+#[CoversClass(RowSetUpdatePlan::class)]
 #[CoversClass(RowUpdatePlan::class)]
-#[CoversClass(InMemoryMappedTableAdapter::class)]
-final class MappedTableTest extends TestCase
+#[CoversClass(InMemoryMappedRowSetAdapter::class)]
+final class MappedRowSetTest extends TestCase
 {
     private const TABLE_NAME = 'users';
     private const ID_COLUMN = 'id';
@@ -31,8 +33,8 @@ final class MappedTableTest extends TestCase
 
     public function test_flush_passes_sorted_plans_to_adapter(): void
     {
-        $adapter = new RecordingMappedTableAdapter();
-        $table = new MappedTable($adapter);
+        $adapter = new RecordingMappedRowSetAdapter();
+        $table = new MappedRowSet($adapter);
 
         $table->withId('row-2')
             ->setColumn('status', 'second')
@@ -152,6 +154,70 @@ final class MappedTableTest extends TestCase
         self::assertFalse($table->row('row-1', ['status']));
     }
 
+    public function test_rows_returns_all_rows_in_deterministic_order(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, [
+            'id' => 'row-2',
+            'status' => 'active',
+            'note' => 'published',
+        ]);
+        $this->seedRow($database, [
+            'id' => 'row-1',
+            'status' => 'pending',
+            'note' => 'draft',
+        ]);
+
+        self::assertSame([
+            'row-1' => [
+                'status' => 'pending',
+                'note' => 'draft',
+            ],
+            'row-2' => [
+                'status' => 'active',
+                'note' => 'published',
+            ],
+        ], $table->rows(['status', 'note']));
+    }
+
+    public function test_rows_reflects_buffered_changes_before_flush(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, [
+            'id' => 'row-1',
+            'status' => 'pending',
+            'note' => 'draft',
+        ]);
+        $this->seedRow($database, [
+            'id' => 'row-2',
+            'status' => 'pending',
+            'note' => 'draft',
+        ]);
+
+        $table->withId('row-1')
+            ->setColumn('status', 'active')
+        ;
+        $table->withId('row-2')
+            ->delete()
+        ;
+        $table->withId('row-3')
+            ->insert()
+            ->setColumn('status', 'new')
+            ->setColumn('note', 'fresh')
+        ;
+
+        self::assertSame([
+            'row-1' => [
+                'status' => 'active',
+                'note' => 'draft',
+            ],
+            'row-3' => [
+                'status' => 'new',
+                'note' => 'fresh',
+            ],
+        ], $table->rows(['status', 'note']));
+    }
+
     public function test_expect_absent_does_not_write_without_subsequent_changes(): void
     {
         [$database, $table] = $this->newTable();
@@ -163,6 +229,61 @@ final class MappedTableTest extends TestCase
         $this->flushInTransaction($database, $table);
 
         self::assertFalse($this->row($database, 'row-1'));
+    }
+
+    public function test_expect_same_row_ids_succeeds_when_ids_match(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-2']);
+        $this->seedRow($database, ['id' => 'row-1']);
+
+        $table->expectSameRowIds(['row-1', 'row-2']);
+        $this->flushInTransaction($database, $table);
+
+        self::assertSame(['row-1', 'row-2'], array_keys($database->rows(self::TABLE_NAME)));
+    }
+
+    public function test_expect_same_row_ids_throws_when_row_was_inserted(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1']);
+
+        $table->expectSameRowIds(['row-1']);
+        $this->seedRow($database, ['id' => 'row-2']);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
+    }
+
+    public function test_expect_same_row_ids_throws_when_row_was_deleted(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1']);
+        $this->seedRow($database, ['id' => 'row-2']);
+
+        $table->expectSameRowIds(['row-1', 'row-2']);
+        $database->deleteRow(self::TABLE_NAME, self::ID_COLUMN, 'row-2');
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
+    }
+
+    public function test_expect_same_row_ids_rejects_duplicate_ids(): void
+    {
+        [, $table] = $this->newTable();
+
+        $this->expectException(\InvalidArgumentException::class);
+        $table->expectSameRowIds(['row-1', 'row-1']);
+    }
+
+    public function test_conflicting_row_set_expectations_throw_immediately(): void
+    {
+        [, $table] = $this->newTable();
+
+        $table->expectSameRowIds(['row-1', 'row-2']);
+
+        $this->expectException(ConcurrencyException::class);
+        $table->expectSameRowIds(['row-1']);
     }
 
     public function test_expect_absent_turns_later_column_writes_into_insert(): void
@@ -432,14 +553,14 @@ final class MappedTableTest extends TestCase
     }
 
     /**
-     * @return array{InMemoryRowDatabase, MappedTable}
+     * @return array{InMemoryRowDatabase, MappedRowSet}
      */
     private function newTable(): array
     {
         $database = new InMemoryRowDatabase();
-        $adapter = new InMemoryMappedTableAdapter($database, self::TABLE_NAME, self::ID_COLUMN);
+        $adapter = new InMemoryMappedRowSetAdapter($database, self::TABLE_NAME, self::ID_COLUMN);
 
-        return [$database, new MappedTable($adapter)];
+        return [$database, new MappedRowSet($adapter)];
     }
 
     /**
@@ -458,7 +579,7 @@ final class MappedTableTest extends TestCase
         return $database->row(self::TABLE_NAME, self::ID_COLUMN, $id, self::COLUMNS);
     }
 
-    private function flushInTransaction(InMemoryRowDatabase $database, MappedTable $table): void
+    private function flushInTransaction(InMemoryRowDatabase $database, MappedRowSet $table): void
     {
         $database->beginTransaction();
 
@@ -475,9 +596,9 @@ final class MappedTableTest extends TestCase
     }
 }
 
-final class RecordingMappedTableAdapter implements MappedTableAdapter
+final class RecordingMappedRowSetAdapter implements MappedRowSetAdapter
 {
-    /** @var list<array{rowUpdates: list<RowUpdatePlan>}> */
+    /** @var list<array{expectedRowIds: list<int|string>|null, rowUpdates: list<RowUpdatePlan>}> */
     public array $batches = [];
 
     public function row(int|string $id, array $columns = []): array|false
@@ -485,10 +606,16 @@ final class RecordingMappedTableAdapter implements MappedTableAdapter
         return false;
     }
 
-    public function apply(array $rowUpdates): void
+    public function rows(array $columns = []): array
+    {
+        return [];
+    }
+
+    public function apply(RowSetUpdatePlan $plan): void
     {
         $this->batches[] = [
-            'rowUpdates' => $rowUpdates,
+            'expectedRowIds' => $plan->expectedRowIds,
+            'rowUpdates' => $plan->rowUpdates,
         ];
     }
 }

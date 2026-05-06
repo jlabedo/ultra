@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Ultra\StateStore\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Ultra\MappedTable\InMemoryMappedTableAdapter;
+use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedTable;
+use Ultra\MappedTable\MappedRowSet;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
@@ -228,12 +228,12 @@ final class StateStoreTest extends TestCase
     /**
      * @param list<class-string> $stateClasses
      *
-     * @return array{InMemoryRowDatabase, MappedTable, StateStore}
+     * @return array{InMemoryRowDatabase, MappedRowSet, StateStore}
      */
     private function newStore(array $stateClasses): array
     {
         $database = new InMemoryRowDatabase();
-        $table = new MappedTable(new InMemoryMappedTableAdapter($database, 'orders', 'order_id'));
+        $table = new MappedRowSet(new InMemoryMappedRowSetAdapter($database, 'orders', 'order_id'));
         $factory = new StateMetadataFactory();
 
         $metadata = [];
@@ -251,7 +251,7 @@ final class StateStoreTest extends TestCase
         return [$database, $table, $store];
     }
 
-    private function flushInTransaction(InMemoryRowDatabase $database, MappedTable $table): void
+    private function flushInTransaction(InMemoryRowDatabase $database, MappedRowSet $table): void
     {
         $database->beginTransaction();
 

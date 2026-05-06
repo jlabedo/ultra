@@ -1,10 +1,10 @@
 # State Store
 
-Mapper-backed object state loading and saving on top of `Ultra\MappedTable\MappedTable`.
+Mapper-backed object state loading and saving on top of `Ultra\MappedTable\MappedRowSet`.
 
 ## Purpose
 
-`Ultra\StateStore\StateStore` lets you treat one mapped-table row as a typed readonly state object:
+`Ultra\StateStore\StateStore` lets you treat one mapped row as a typed readonly state object:
 
 ```php
 $state = $stateStore->load(OrderState::class, 'order-123');
@@ -50,6 +50,6 @@ final readonly class OrderState
 - `expect($loadedState)` buffers optimistic expectations for that mapped row without writing anything by itself
 - `expectMissing(StateClass::class, $id)` buffers an optimistic expectation that the mapped row is still absent
 - a later `save(...)` against the same mapped row uses the buffered expectation automatically
-- buffered writes are committed later by flushing the underlying `MappedTable` unit of work
+- buffered writes are committed later by flushing the underlying `MappedRowSet` unit of work
 
-When several state classes target the same physical table, they share the same mapped-table unit of work but only read and write the columns each class maps.
+When several state classes target the same physical table, they share the same `MappedRowSet` unit of work but only read and write the columns each class maps.

@@ -7,7 +7,7 @@ namespace Ultra\MappedTable;
 use Doctrine\DBAL\Connection;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-final class PostgresMappedTableAdapter implements MappedTableAdapter
+final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 {
     /**
      * @param array<string, PostgresMappedColumnType> $columnTypes
@@ -40,9 +40,38 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
         return false === $row ? false : $this->decodeRow($row);
     }
 
-    public function apply(array $rowUpdates): void
+    public function rows(array $columns = []): array
     {
-        foreach ($this->groupConsecutive($rowUpdates) as $batch) {
+        $selectColumns = [] === $columns ? ['*'] : array_values(array_unique([$this->idColumn, ...$columns]));
+        $quotedColumns = '*' === $selectColumns[0]
+            ? ['*']
+            : array_map($this->connection->quoteSingleIdentifier(...), $selectColumns);
+
+        $rows = $this->connection->fetchAllAssociative(sprintf(
+            'SELECT %s FROM %s ORDER BY %s',
+            implode(', ', $quotedColumns),
+            $this->connection->quoteSingleIdentifier($this->tableName),
+            $this->connection->quoteSingleIdentifier($this->idColumn),
+        ));
+
+        $mappedRows = [];
+        foreach ($rows as $row) {
+            $id = $row[$this->idColumn];
+            if ([] !== $columns && !in_array($this->idColumn, $columns, true)) {
+                unset($row[$this->idColumn]);
+            }
+
+            $mappedRows[(string) $id] = $this->decodeRow($row);
+        }
+
+        return $mappedRows;
+    }
+
+    public function apply(RowSetUpdatePlan $plan): void
+    {
+        $this->assertExpectedRowIds($plan->expectedRowIds);
+
+        foreach ($this->groupConsecutive($plan->rowUpdates) as $batch) {
             $mode = $batch[0]->mode;
             $count = count($batch);
 
@@ -87,6 +116,48 @@ final class PostgresMappedTableAdapter implements MappedTableAdapter
                         $this->tableName,
                     ));
             }
+        }
+    }
+
+    /**
+     * @param list<int|string>|null $expectedRowIds
+     */
+    private function assertExpectedRowIds(?array $expectedRowIds): void
+    {
+        if (null === $expectedRowIds) {
+            return;
+        }
+
+        if (!$this->connection->isTransactionActive()) {
+            throw new \LogicException(sprintf(
+                'Row-set expectations for table "%s" require an active transaction.',
+                $this->tableName,
+            ));
+        }
+
+        $this->connection->executeStatement(
+            'SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))',
+            [$this->tableName, $this->idColumn],
+        );
+
+        $actualRowIds = array_map(
+            static fn (mixed $id): string => (string) $id,
+            $this->connection->fetchFirstColumn(sprintf(
+                'SELECT %s FROM %s ORDER BY %s',
+                $this->connection->quoteSingleIdentifier($this->idColumn),
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                $this->connection->quoteSingleIdentifier($this->idColumn),
+            )),
+        );
+        $expectedRowKeys = array_map(static fn (int|string $id): string => (string) $id, $expectedRowIds);
+        sort($actualRowIds, SORT_STRING);
+        sort($expectedRowKeys, SORT_STRING);
+
+        if ($actualRowIds !== $expectedRowKeys) {
+            throw new ConcurrencyException(sprintf(
+                'Row-set expectation failed for table "%s": row ids changed.',
+                $this->tableName,
+            ));
         }
     }
 

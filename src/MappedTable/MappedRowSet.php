@@ -4,18 +4,22 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\UnitOfWork;
 
 /**
- * Per-table unit of work that buffers conditional row changes and flushes them through an adapter.
+ * Logical row-set unit of work that buffers conditional row changes and flushes them through an adapter.
  */
-final class MappedTable implements UnitOfWork
+final class MappedRowSet implements UnitOfWork
 {
     /** @var array<string, BufferedRowUpdate> */
     private array $updates = [];
 
+    /** @var list<int|string>|null */
+    private ?array $expectedRowIds = null;
+
     public function __construct(
-        private readonly MappedTableAdapter $adapter,
+        private readonly MappedRowSetAdapter $adapter,
     ) {}
 
     public function withId(int|string $id): PendingRowUpdate
@@ -44,25 +48,59 @@ final class MappedTable implements UnitOfWork
         return $this->projectRow($this->applyPlanToRow($row, $plan), $columns);
     }
 
-    public function flush(): void
+    /**
+     * @param list<string> $columns
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function rows(array $columns = []): array
     {
-        $updates = array_values($this->updates);
-        usort($updates, static fn (BufferedRowUpdate $left, BufferedRowUpdate $right): int => self::compareIds($left->id, $right->id));
+        $rows = $this->adapter->rows($columns);
 
-        $plans = [];
-        foreach ($updates as $update) {
-            $plan = $update->toPlan();
-            if (null !== $plan) {
-                $plans[] = $plan;
+        foreach ($this->sortedPlans() as $plan) {
+            $rowKey = self::updateKey($plan->id);
+            $row = $this->projectRow($this->applyPlanToRow($rows[$rowKey] ?? false, $plan), $columns);
+
+            if (false === $row) {
+                unset($rows[$rowKey]);
+
+                continue;
             }
+
+            $rows[$rowKey] = $row;
         }
 
-        $this->adapter->apply($plans);
+        ksort($rows, SORT_STRING);
+
+        return $rows;
+    }
+
+    /**
+     * @param list<int|string> $ids
+     */
+    public function expectSameRowIds(array $ids): void
+    {
+        $expectedRowIds = $this->normalizeRowIds($ids);
+
+        if (null !== $this->expectedRowIds && $this->expectedRowIds !== $expectedRowIds) {
+            throw new ConcurrencyException('Conflicting row-set id expectations were registered.');
+        }
+
+        $this->expectedRowIds = $expectedRowIds;
+    }
+
+    public function flush(): void
+    {
+        $this->adapter->apply(new RowSetUpdatePlan(
+            expectedRowIds: $this->expectedRowIds,
+            rowUpdates: $this->sortedPlans(),
+        ));
     }
 
     public function clear(): void
     {
         $this->updates = [];
+        $this->expectedRowIds = null;
     }
 
     private static function compareIds(int|string $left, int|string $right): int
@@ -77,6 +115,57 @@ final class MappedTable implements UnitOfWork
     private static function updateKey(int|string $id): string
     {
         return (string) $id;
+    }
+
+    /**
+     * @return list<RowUpdatePlan>
+     */
+    private function sortedPlans(): array
+    {
+        $updates = array_values($this->updates);
+        usort($updates, static fn (BufferedRowUpdate $left, BufferedRowUpdate $right): int => self::compareIds($left->id, $right->id));
+
+        $plans = [];
+        foreach ($updates as $update) {
+            $plan = $update->toPlan();
+            if (null !== $plan) {
+                $plans[] = $plan;
+            }
+        }
+
+        return $plans;
+    }
+
+    /**
+     * @param list<int|string> $ids
+     *
+     * @return list<int|string>
+     */
+    private function normalizeRowIds(array $ids): array
+    {
+        $rowIds = [];
+        $seen = [];
+
+        foreach ($ids as $id) {
+            if (!is_int($id) && !is_string($id)) {
+                throw new \InvalidArgumentException('Expected row ids must be strings or integers.');
+            }
+
+            $rowKey = self::updateKey($id);
+            if (array_key_exists($rowKey, $seen)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Duplicate expected row id "%s".',
+                    $rowKey,
+                ));
+            }
+
+            $seen[$rowKey] = true;
+            $rowIds[] = $rowKey;
+        }
+
+        usort($rowIds, self::compareIds(...));
+
+        return $rowIds;
     }
 
     /**

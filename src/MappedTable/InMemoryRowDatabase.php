@@ -83,6 +83,33 @@ final class InMemoryRowDatabase
     }
 
     /**
+     * @param list<string> $columns
+     *
+     * @return array<string, array<string, mixed>>
+     */
+    public function rows(string $tableName, array $columns = []): array
+    {
+        $rows = $this->tables[$tableName] ?? [];
+        ksort($rows, SORT_STRING);
+
+        if ([] === $columns) {
+            return $rows;
+        }
+
+        $projectedRows = [];
+
+        foreach ($rows as $rowKey => $row) {
+            $projectedRows[$rowKey] = [];
+
+            foreach ($columns as $column) {
+                $projectedRows[$rowKey][$column] = $row[$column] ?? null;
+            }
+        }
+
+        return $projectedRows;
+    }
+
+    /**
      * @param array<string, mixed> $row
      */
     public function writeRow(string $tableName, string $idColumn, array $row): void

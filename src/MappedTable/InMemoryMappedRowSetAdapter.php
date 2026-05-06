@@ -6,7 +6,7 @@ namespace Ultra\MappedTable;
 
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-final class InMemoryMappedTableAdapter implements MappedTableAdapter
+final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
 {
     public function __construct(
         private readonly InMemoryRowDatabase $database,
@@ -19,9 +19,16 @@ final class InMemoryMappedTableAdapter implements MappedTableAdapter
         return $this->database->row($this->tableName, $this->idColumn, $id, $columns);
     }
 
-    public function apply(array $rowUpdates): void
+    public function rows(array $columns = []): array
     {
-        foreach ($rowUpdates as $rowUpdate) {
+        return $this->database->rows($this->tableName, $columns);
+    }
+
+    public function apply(RowSetUpdatePlan $plan): void
+    {
+        $this->assertExpectedRowIds($plan->expectedRowIds);
+
+        foreach ($plan->rowUpdates as $rowUpdate) {
             switch ($rowUpdate->mode) {
                 case RowUpdatePlan::MODE_DELETE:
                     $this->applyDelete($rowUpdate);
@@ -55,6 +62,28 @@ final class InMemoryMappedTableAdapter implements MappedTableAdapter
                         $this->tableName,
                     ));
             }
+        }
+    }
+
+    /**
+     * @param list<int|string>|null $expectedRowIds
+     */
+    private function assertExpectedRowIds(?array $expectedRowIds): void
+    {
+        if (null === $expectedRowIds) {
+            return;
+        }
+
+        $actualRowIds = array_keys($this->database->rows($this->tableName));
+        sort($actualRowIds, SORT_STRING);
+        $expectedRowKeys = array_map(static fn (int|string $id): string => (string) $id, $expectedRowIds);
+        sort($expectedRowKeys, SORT_STRING);
+
+        if ($actualRowIds !== $expectedRowKeys) {
+            throw new ConcurrencyException(sprintf(
+                'Row-set expectation failed for table "%s": row ids changed.',
+                $this->tableName,
+            ));
         }
     }
 
