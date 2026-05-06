@@ -54,11 +54,15 @@ final readonly class OrderStatusView
     }
 }
 
+#[State(table: 'order_lines', idColumn: 'line_id')]
 final readonly class OrderLineState
 {
     public function __construct(
+        #[StateId]
         public string $lineId,
+        #[StateColumn]
         public string $sku,
+        #[StateColumn]
         public int $quantity,
     ) {}
 }
@@ -75,11 +79,8 @@ final readonly class OrderWithLinesState
         #[StateColumn('status')]
         public string $status,
         #[StateCollection(
-            table: 'order_lines',
             ownerColumn: 'order_id',
-            idColumn: 'line_id',
             itemClass: OrderLineState::class,
-            itemIdProperty: 'lineId',
         )]
         public array $lines,
     ) {}

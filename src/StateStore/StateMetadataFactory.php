@@ -170,43 +170,37 @@ final class StateMetadataFactory
 
     private function createCollectionMetadata(\ReflectionProperty $property, StateCollection $collection): StateCollectionMetadata
     {
-        if (!class_exists($collection->itemClass)) {
+        $itemMetadata = $this->create($collection->itemClass);
+
+        if ([] !== $itemMetadata->collections) {
             throw new InvalidStateConfigurationException(sprintf(
-                'State collection property "%s" item class "%s" does not exist.',
+                'State collection "%s" item class "%s" cannot declare nested state collections.',
                 $property->getName(),
                 $collection->itemClass,
             ));
         }
 
-        $itemReflection = new \ReflectionClass($collection->itemClass);
-        if (!$itemReflection->hasProperty($collection->itemIdProperty)) {
+        if (
+            $itemMetadata->idColumn === $collection->ownerColumn
+            || in_array($collection->ownerColumn, $itemMetadata->propertyColumns, true)
+        ) {
             throw new InvalidStateConfigurationException(sprintf(
-                'State collection property "%s" item class "%s" does not have id property "%s".',
+                'State collection "%s" item class "%s" cannot map to owner column "%s".',
                 $property->getName(),
                 $collection->itemClass,
-                $collection->itemIdProperty,
+                $collection->ownerColumn,
             ));
         }
-
-        $itemPropertyColumns = [];
-        foreach ($itemReflection->getProperties() as $itemProperty) {
-            if ($itemProperty->isStatic() || $itemProperty->getName() === $collection->itemIdProperty) {
-                continue;
-            }
-
-            $itemPropertyColumns[$itemProperty->getName()] = $itemProperty->getName();
-        }
-        ksort($itemPropertyColumns);
 
         return new StateCollectionMetadata(
             property: $property->getName(),
-            tableName: $collection->table,
-            tableKey: self::tableKey($collection->table, $collection->idColumn),
+            tableName: $itemMetadata->tableName,
+            tableKey: $itemMetadata->tableKey,
             ownerColumn: $collection->ownerColumn,
-            idColumn: $collection->idColumn,
-            itemClass: $collection->itemClass,
-            itemIdProperty: $collection->itemIdProperty,
-            itemPropertyColumns: $itemPropertyColumns,
+            idColumn: $itemMetadata->idColumn,
+            itemClass: $itemMetadata->stateClass,
+            itemIdProperty: $itemMetadata->idProperty,
+            itemPropertyColumns: $itemMetadata->propertyColumns,
         );
     }
 }
