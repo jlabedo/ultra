@@ -2,18 +2,18 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests\Example\Event;
+namespace Ultra\EventSourcedState\Tests\Example\Event;
 
 use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\Attribute\Event;
 
-#[Event('course.created')]
-readonly class CourseCreated
+#[Event('student.unsubscribed')]
+readonly class StudentUnsubscribed
 {
     public function __construct(
         #[DomainIdentifier('course')]
         public string $courseId,
-        public string $name,
-        public int $maxCapacity,
+        #[DomainIdentifier('student')]
+        public string $studentId,
     ) {}
 }

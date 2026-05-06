@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests\Example\State;
+namespace Ultra\EventSourcedState\Tests\Example\State;
 
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
-use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
-use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed;
 
 #[EventSourcedEntity(tags: ['student'])]
 class StudentSubscriptionState

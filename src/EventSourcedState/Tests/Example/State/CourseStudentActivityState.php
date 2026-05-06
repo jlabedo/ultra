@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests\Example\State;
+namespace Ultra\EventSourcedState\Tests\Example\State;
 
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
 use Ultra\EventSourcedState\Attribute\MatchTag;
-use Ultra\DecisionEngine\Tests\Example\Event\CourseCapacityChanged;
-use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
-use Ultra\DecisionEngine\Tests\Example\Event\StudentEnrolled;
-use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
-use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
+use Ultra\EventSourcedState\Tests\Example\Event\CourseCapacityChanged;
+use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentEnrolled;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed;
 
 #[EventSourcedEntity(tags: ['course', 'student'])]
 final class CourseStudentActivityState

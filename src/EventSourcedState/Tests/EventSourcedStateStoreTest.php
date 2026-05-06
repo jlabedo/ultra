@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests;
+namespace Ultra\EventSourcedState\Tests;
 
 use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventSourcedState\EventSourcedEntityLoader;
@@ -10,16 +10,16 @@ use Ultra\EventSourcedState\Exception\DuplicateTagValueException;
 use Ultra\EventSourcedState\Exception\MissingTagValueException;
 use Ultra\EventSourcedState\Exception\UnexpectedTagValueException;
 use Ultra\EventSourcedState\Exception\UnknownEventSourcedEntityException;
-use Ultra\DecisionEngine\Tests\Example\Event\CourseCapacityChanged;
-use Ultra\DecisionEngine\Tests\Example\Event\CourseCreated;
-use Ultra\DecisionEngine\Tests\Example\Event\StudentEnrolled;
-use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
-use Ultra\DecisionEngine\Tests\Example\Event\StudentUnsubscribed;
-use Ultra\DecisionEngine\Tests\Example\Event\SubscriptionPairConfirmed;
-use Ultra\DecisionEngine\Tests\Example\State\CourseStudentActivityState;
-use Ultra\DecisionEngine\Tests\Example\State\SubscriptionPairStatusState;
-use Ultra\DecisionEngine\Tests\Support\DecisionEngineFunctionalTestCase;
-use Ultra\DecisionEngine\Tests\Support\DecisionEngineTestContainer;
+use Ultra\EventSourcedState\Tests\Example\Event\CourseCapacityChanged;
+use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentEnrolled;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed;
+use Ultra\EventSourcedState\Tests\Example\Event\SubscriptionPairConfirmed;
+use Ultra\EventSourcedState\Tests\Example\State\CourseStudentActivityState;
+use Ultra\EventSourcedState\Tests\Example\State\SubscriptionPairStatusState;
+use Ultra\EventSourcedState\Tests\Support\EventSourcedStateFunctionalTestCase;
+use Ultra\EventSourcedState\Tests\Support\EventSourcedStateTestContainer;
 use Ultra\EventStore\DomainIdentifier as StreamIdentifier;
 use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\StreamQuery;
@@ -30,7 +30,7 @@ use Ultra\Testing\UltraLight;
  *
  * @coversNothing
  */
-final class EventSourcedStateStoreTest extends DecisionEngineFunctionalTestCase
+final class EventSourcedStateStoreTest extends EventSourcedStateFunctionalTestCase
 {
     public function test_it_loads_entities_across_single_tag_and_pair_events(): void
     {
@@ -174,11 +174,11 @@ final class EventSourcedStateStoreTest extends DecisionEngineFunctionalTestCase
     }
 
     /**
-     * @return UltraLight<DecisionEngineTestContainer>
+     * @return UltraLight<EventSourcedStateTestContainer>
      */
     private function ultraLight(): UltraLight
     {
-        return $this->decisionUltraLight(self::eventClasses());
+        return $this->eventSourcedStateUltraLight(self::eventClasses());
     }
 
     /**

@@ -6,9 +6,9 @@ namespace Ultra\DecisionEngine\Tests\Example\Command;
 
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
 use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\DecisionEngine\Tests\Example\Event\StudentSubscribed;
-use Ultra\DecisionEngine\Tests\Example\State\CourseCapacityState;
-use Ultra\DecisionEngine\Tests\Example\State\StudentSubscriptionState;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed;
+use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
+use Ultra\EventSourcedState\Tests\Example\State\StudentSubscriptionState;
 use Ultra\DecisionEngine\Violation;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 

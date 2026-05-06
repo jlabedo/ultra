@@ -2,12 +2,12 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests\Example\State;
+namespace Ultra\EventSourcedState\Tests\Example\State;
 
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
 use Ultra\EventSourcedState\Attribute\MatchTag;
-use Ultra\DecisionEngine\Tests\Example\Event\SubscriptionPairConfirmed;
+use Ultra\EventSourcedState\Tests\Example\Event\SubscriptionPairConfirmed;
 
 #[EventSourcedEntity(tags: ['course', 'student'])]
 final class SubscriptionPairStatusState

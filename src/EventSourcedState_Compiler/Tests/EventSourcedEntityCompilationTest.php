@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests;
+namespace Ultra\EventSourcedState_Compiler\Tests;
 
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
@@ -14,8 +14,8 @@ use Ultra\EventSourcedState\Exception\MissingEventSourcingHandlerError;
 use Ultra\EventSourcedState\Exception\MissingTypeHintError;
 use Ultra\EventSourcedState\Exception\NoTagOverlapError;
 use Ultra\EventSourcedState\Exception\UnnecessaryMatchTagError;
-use Ultra\DecisionEngine\Tests\Support\DecisionEngineFunctionalTestCase;
-use Ultra\DecisionEngine\Tests\Support\DecisionEngineTestContainer;
+use Ultra\EventSourcedState\Tests\Support\EventSourcedStateFunctionalTestCase;
+use Ultra\EventSourcedState\Tests\Support\EventSourcedStateTestContainer;
 use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\Attribute\Event;
 use Ultra\Testing\UltraLight;
@@ -108,7 +108,7 @@ final class CompilerDuplicateHandlerState
  *
  * @coversNothing
  */
-final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTestCase
+final class EventSourcedEntityCompilationTest extends EventSourcedStateFunctionalTestCase
 {
     public function test_container_compilation_rejects_handlers_whose_events_share_no_tags_with_the_entity(): void
     {
@@ -181,11 +181,11 @@ final class EventSourcedEntityCompilationTest extends DecisionEngineFunctionalTe
     }
 
     /**
-     * @return UltraLight<DecisionEngineTestContainer>
+     * @return UltraLight<EventSourcedStateTestContainer>
      */
     private function ultraLight(): UltraLight
     {
-        return $this->decisionUltraLight(self::eventClasses());
+        return $this->eventSourcedStateUltraLight(self::eventClasses());
     }
 
     /**

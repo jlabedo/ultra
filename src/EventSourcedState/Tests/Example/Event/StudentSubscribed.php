@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests\Example\Event;
+namespace Ultra\EventSourcedState\Tests\Example\Event;
 
 use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\Attribute\Event;
