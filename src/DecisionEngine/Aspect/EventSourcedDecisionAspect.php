@@ -23,7 +23,7 @@ use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\ProceedResult;
 
-final class DecisionEngineAspect
+final class EventSourcedDecisionAspect
 {
     private const CONTEXT_DECISION_MODE = 'decision_mode';
     private const MODE_CHECK = 'check';
@@ -54,11 +54,11 @@ final class DecisionEngineAspect
                 continue;
             }
             $typeClass = $type->getName();
-            if (!DecisionEngineAspect::isStateClass($typeClass)) {
+            if (!EventSourcedDecisionAspect::isStateClass($typeClass)) {
                 continue;
             }
 
-            $domainIdentifierName = DecisionEngineAspect::getDomainIdentifierName($typeClass);
+            $domainIdentifierName = EventSourcedDecisionAspect::getDomainIdentifierName($typeClass);
             $bindTo = null;
             foreach ($parameter->getAttributes(BindTo::class) as $attr) {
                 $bindTo = $attr->newInstance();
@@ -95,6 +95,10 @@ final class DecisionEngineAspect
             foreach ($checkMethod->getParameters() as $param) {
                 $checkParamNames[] = $param->getName();
             }
+        }
+
+        if ([] === $provides) {
+            return null;
         }
 
         return MatchResult::apply(
@@ -146,8 +150,8 @@ final class DecisionEngineAspect
         }
 
         $proceedResult = $proceed(provided: $states);
-        $emittedEvents = $proceedResult->value;
-        if (!is_array($emittedEvents)) {
+        $emittedEvents = $this->eventEffectsFrom($proceedResult->value);
+        if ([] === $emittedEvents) {
             return $proceedResult;
         }
 
@@ -162,6 +166,48 @@ final class DecisionEngineAspect
         }
 
         return $proceedResult;
+    }
+
+    /**
+     * @return list<object>
+     */
+    private function eventEffectsFrom(mixed $value): array
+    {
+        $effects = [];
+        foreach ($this->objectsFrom($value) as $object) {
+            if (null !== $this->eventClassRegistry->getName($object::class)) {
+                $effects[] = $object;
+            }
+        }
+
+        return $effects;
+    }
+
+    /**
+     * @return list<object>
+     */
+    private function objectsFrom(mixed $value): array
+    {
+        if (null === $value) {
+            return [];
+        }
+
+        if (is_object($value)) {
+            return [$value];
+        }
+
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $objects = [];
+        foreach ($value as $item) {
+            if (is_object($item)) {
+                $objects[] = $item;
+            }
+        }
+
+        return $objects;
     }
 
     /**

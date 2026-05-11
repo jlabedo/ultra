@@ -31,6 +31,6 @@ final class StateStoreBundle extends Bundle
             }
         );
 
-        $container->addCompilerPass(new StateStoreCompilerPass());
+        $container->addCompilerPass(new StateStoreCompilerPass(), priority: 50);
     }
 }
