@@ -9,8 +9,6 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
-use Ultra\DecisionEngine\Aspect\EventSourcedDecisionAspect;
-use Ultra\DecisionEngine\Aspect\StateStoreDecisionAspect;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventStore\EventStore;

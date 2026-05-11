@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Aspect;
+namespace Ultra\DecisionEngine;
 
 use Ultra\DecisionEngine\Attribute\BindTo;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;

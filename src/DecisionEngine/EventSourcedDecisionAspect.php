@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Aspect;
+namespace Ultra\DecisionEngine;
 
 use Ultra\DecisionEngine\Attribute\BindTo;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
-use Ultra\EventSourcedState\EventSourcedStateStore;
-use Ultra\EventSourcedState\EventSourcedEntityLoader;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\Events\EventRegistryInterface;
-use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
+use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
+use Ultra\EventSourcedState\EventSourcedEntityLoader;
+use Ultra\EventSourcedState\EventSourcedStateStore;
+use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
@@ -122,7 +122,7 @@ final class EventSourcedDecisionAspect
         foreach ($preparedStates as $preparedState) {
             $state = $preparedState['loader']->hydrate(
                 $loadResult->events,
-                new EventStoreDomainIdentifier(
+                new DomainIdentifier(
                     $preparedState['domainIdentifierName'],
                     $preparedState['streamValue'],
                 ),
@@ -258,7 +258,7 @@ final class EventSourcedDecisionAspect
         foreach ($stateParams as $stateParam) {
             $streamValue = $this->getCommandPropertyValue($command, $stateParam['commandProperty']);
             $loader = $this->stateStore->loader($stateParam['stateClass']);
-            $identifier = new EventStoreDomainIdentifier(
+            $identifier = new DomainIdentifier(
                 $stateParam['domainIdentifierName'],
                 $streamValue,
             );
