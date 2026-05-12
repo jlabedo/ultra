@@ -6,9 +6,15 @@ namespace Ultra\StateStore_Bundle;
 
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
 use Ultra\StateStore\Attribute\State;
+use Ultra\StateStore\StateMetadataRegistry;
+use Ultra\StateStore\StateStore;
+use Ultra\StateStore\StateTableRegistry;
 use Ultra\StateStore_Bundle\DependencyInjection\Compiler\StateStoreCompilerPass;
 
 final class StateStoreBundle extends Bundle
@@ -31,6 +37,12 @@ final class StateStoreBundle extends Bundle
             }
         );
 
-        $container->addCompilerPass(new StateStoreCompilerPass(), priority: 50);
+        $container->register(StateStore::class)->setArguments([
+            new Reference(StateMetadataRegistry::class),
+            new Reference(StateTableRegistry::class),
+            new Reference(UltraNormalizer::class),
+        ]);
+
+        $container->addCompilerPass(new StateStoreCompilerPass());
     }
 }

@@ -52,7 +52,7 @@ final class StateStoreCompilerPass implements CompilerPassInterface
                 continue;
             }
 
-            $reflection = new \ReflectionClass($stateClass);
+            $reflection = $container->getReflectionClass($stateClass);
             if ($reflection->isAbstract()) {
                 continue;
             }
@@ -94,15 +94,8 @@ final class StateStoreCompilerPass implements CompilerPassInterface
         }
 
         $container->setDefinition(StateTableRegistry::class, new Definition(StateTableRegistry::class, $stateTableRegistryArguments)
-            ->setPublic(false)
             ->addTag(self::UNIT_OF_WORK_TAG)
         );
-
-        $container->setDefinition(StateStore::class, new Definition(StateStore::class, [
-            new Reference(StateMetadataRegistry::class),
-            new Reference(StateTableRegistry::class),
-            new Reference(UltraNormalizer::class),
-        ])->setPublic(true));
     }
 
     /**

@@ -87,7 +87,7 @@ final class StateStoreBundleTest extends TestCase
     {
         $container = $this->createContainer();
         $database = $container->get(InMemoryRowDatabase::class);
-        $store = $container->get(StateStore::class);
+        $store = $container->get('test.state_store');
         $unitOfWork = $container->get(UnitOfWork::class);
 
         self::assertInstanceOf(StateStore::class, $store);
@@ -155,6 +155,7 @@ final class StateStoreBundleTest extends TestCase
             ->setPublic(true)
         ;
         $container->setAlias(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)->setPublic(true);
+        $container->setAlias('test.state_store', StateStore::class)->setPublic(true);
 
         $container->setDefinition(
             BundleOrderState::class,

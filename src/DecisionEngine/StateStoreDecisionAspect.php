@@ -30,8 +30,8 @@ final readonly class StateStoreDecisionAspect
             return null;
         }
 
-        $commandClass = $method->getDeclaringClass()->getName();
-        $commandRef = new \ReflectionClass($commandClass);
+        $commandRef = $method->getDeclaringClass();
+        $commandClass = $commandRef->getName();
 
         $stateParams = [];
         $provides = [];
@@ -93,16 +93,15 @@ final readonly class StateStoreDecisionAspect
             $id = $this->getCommandPropertyValue($message, $stateParam['commandProperty']);
             $stateClass = $stateParam['stateClass'];
 
-            try {
-                $state = $this->stateStore->load($stateClass, $id);
-                $this->stateStore->expect($state);
-            } catch (StateNotFoundException $exception) {
+            $state = $this->stateStore->load($stateClass, $id);
+            if (null === $state) {
                 if (true !== $stateParam['allowsMissing']) {
-                    throw $exception;
+                    throw new StateNotFoundException($stateClass, $id);
                 }
 
-                $state = null;
                 $this->stateStore->expectMissing($stateClass, $id);
+            } else {
+                $this->stateStore->expect($state);
             }
 
             $states[] = $state;

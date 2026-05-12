@@ -126,7 +126,8 @@ final class StateStoreDecisionAspectTest extends TestCase
         $result = $container->get('test.mediator')->send(new ShipDecisionOrderCommand('order-1'));
 
         self::assertEquals(new DecisionOrderState('order-1', 'shipped'), $result);
-        $state = $container->get(StateStore::class)->load(DecisionOrderState::class, 'order-1');
+        $state = $container->get('test.state_store')->load(DecisionOrderState::class, 'order-1');
+        self::assertInstanceOf(DecisionOrderState::class, $state);
         self::assertSame('shipped', $state->status);
     }
 
@@ -137,7 +138,8 @@ final class StateStoreDecisionAspectTest extends TestCase
         $result = $container->get('test.mediator')->send(new CreateDecisionOrderCommand('order-2'));
 
         self::assertEquals(new DecisionOrderState('order-2', 'pending'), $result);
-        $state = $container->get(StateStore::class)->load(DecisionOrderState::class, 'order-2');
+        $state = $container->get('test.state_store')->load(DecisionOrderState::class, 'order-2');
+        self::assertInstanceOf(DecisionOrderState::class, $state);
         self::assertSame('pending', $state->status);
     }
 
@@ -163,7 +165,8 @@ final class StateStoreDecisionAspectTest extends TestCase
         self::assertCount(1, $events);
         self::assertSame('course.created', $events[0]->eventType);
 
-        $state = $container->get(StateStore::class)->load(DecisionOrderState::class, 'order-3');
+        $state = $container->get('test.state_store')->load(DecisionOrderState::class, 'order-3');
+        self::assertInstanceOf(DecisionOrderState::class, $state);
         self::assertSame('confirmed', $state->status);
     }
 
@@ -190,6 +193,7 @@ final class StateStoreDecisionAspectTest extends TestCase
             ->withService(new InMemoryMappedRowSetAdapterFactory($database), InMemoryMappedRowSetAdapterFactory::class)
             ->withAlias(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
             ->withAlias('test.mediator', MediatorInterface::class)
+            ->withAlias('test.state_store', StateStore::class)
             ->withClass(
                 DecisionOrderState::class,
                 CourseCapacityState::class,

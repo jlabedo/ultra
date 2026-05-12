@@ -42,8 +42,8 @@ final class EventSourcedDecisionAspect
             return null;
         }
 
-        $commandClass = $method->getDeclaringClass()->getName();
-        $commandRef = new \ReflectionClass($commandClass);
+        $commandRef = $method->getDeclaringClass();
+        $commandClass = $commandRef->getName();
 
         $stateParams = [];
         $provides = [];

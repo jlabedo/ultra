@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ultra\StateStore;
 
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\StateStore\Exception\StateNotFoundException;
 
 final readonly class StateStore
 {
@@ -20,15 +19,15 @@ final readonly class StateStore
      *
      * @param class-string<T> $stateClass
      *
-     * @return T
+     * @return T|null
      */
-    public function load(string $stateClass, int|string $id): object
+    public function load(string $stateClass, int|string $id): ?object
     {
         $metadata = $this->metadataRegistry->metadataFor($stateClass);
         $row = $this->tableRegistry->tableFor($metadata)->row($id, $metadata->selectedColumns());
 
         if (false === $row) {
-            throw new StateNotFoundException($stateClass, $id);
+            return null;
         }
 
         $payload = $metadata->payloadFromRow($id, $row);
