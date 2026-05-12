@@ -13,7 +13,6 @@ use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
 use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateId;
-use Ultra\StateStore\Exception\StateNotFoundException;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateStore;
@@ -206,13 +205,11 @@ final class StateStoreTest extends TestCase
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
     }
 
-    public function test_load_throws_for_missing_state(): void
+    public function test_load_returns_null_for_missing_state(): void
     {
         [, , $store] = $this->newStore([OrderState::class]);
 
-        $this->expectException(StateNotFoundException::class);
-
-        $store->load(OrderState::class, 'missing-order');
+        self::assertNull($store->load(OrderState::class, 'missing-order'));
     }
 
     public function test_expect_missing_turns_later_save_into_insert(): void
@@ -350,6 +347,7 @@ final class StateStoreTest extends TestCase
         ]);
 
         $loaded = $store->load(OrderWithLinesState::class, 'order-123');
+        self::assertInstanceOf(OrderWithLinesState::class, $loaded);
         $store->expect($loaded);
         $database->seedRow('order_lines', 'line_id', [
             'order_id' => 'order-123',

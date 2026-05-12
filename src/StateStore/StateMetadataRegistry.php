@@ -49,4 +49,12 @@ final readonly class StateMetadataRegistry
 
         return $metadata;
     }
+
+    /**
+     * @param class-string $stateClass
+     */
+    public function has(string $stateClass): bool
+    {
+        return isset($this->metadata[$stateClass]);
+    }
 }

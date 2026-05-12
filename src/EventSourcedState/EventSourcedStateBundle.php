@@ -31,6 +31,6 @@ final class EventSourcedStateBundle extends Bundle
         $container->addCompilerPass(new EntityLoaderCompilerPass(
             $outputDir,
             TagNames::ENTITY,
-        ), priority: -95);
+        ), priority: 50);
     }
 }

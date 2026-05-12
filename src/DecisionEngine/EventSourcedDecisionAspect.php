@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Aspect;
+namespace Ultra\DecisionEngine;
 
 use Ultra\DecisionEngine\Attribute\BindTo;
 use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
-use Ultra\EventSourcedState\EventSourcedStateStore;
-use Ultra\EventSourcedState\EventSourcedEntityLoader;
 use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
 use Ultra\Events\EventRegistryInterface;
-use Ultra\EventStore\DomainIdentifier as EventStoreDomainIdentifier;
+use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
+use Ultra\EventSourcedState\EventSourcedEntityLoader;
+use Ultra\EventSourcedState\EventSourcedStateStore;
+use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
@@ -23,7 +23,7 @@ use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\ProceedResult;
 
-final class DecisionEngineAspect
+final class EventSourcedDecisionAspect
 {
     private const CONTEXT_DECISION_MODE = 'decision_mode';
     private const MODE_CHECK = 'check';
@@ -42,8 +42,8 @@ final class DecisionEngineAspect
             return null;
         }
 
-        $commandClass = $method->getDeclaringClass()->getName();
-        $commandRef = new \ReflectionClass($commandClass);
+        $commandRef = $method->getDeclaringClass();
+        $commandClass = $commandRef->getName();
 
         $stateParams = [];
         $provides = [];
@@ -54,11 +54,11 @@ final class DecisionEngineAspect
                 continue;
             }
             $typeClass = $type->getName();
-            if (!DecisionEngineAspect::isStateClass($typeClass)) {
+            if (!EventSourcedDecisionAspect::isStateClass($typeClass)) {
                 continue;
             }
 
-            $domainIdentifierName = DecisionEngineAspect::getDomainIdentifierName($typeClass);
+            $domainIdentifierName = EventSourcedDecisionAspect::getDomainIdentifierName($typeClass);
             $bindTo = null;
             foreach ($parameter->getAttributes(BindTo::class) as $attr) {
                 $bindTo = $attr->newInstance();
@@ -97,6 +97,10 @@ final class DecisionEngineAspect
             }
         }
 
+        if ([] === $provides) {
+            return null;
+        }
+
         return MatchResult::apply(
             config: [
                 'stateParams' => $stateParams,
@@ -118,7 +122,7 @@ final class DecisionEngineAspect
         foreach ($preparedStates as $preparedState) {
             $state = $preparedState['loader']->hydrate(
                 $loadResult->events,
-                new EventStoreDomainIdentifier(
+                new DomainIdentifier(
                     $preparedState['domainIdentifierName'],
                     $preparedState['streamValue'],
                 ),
@@ -146,8 +150,8 @@ final class DecisionEngineAspect
         }
 
         $proceedResult = $proceed(provided: $states);
-        $emittedEvents = $proceedResult->value;
-        if (!is_array($emittedEvents)) {
+        $emittedEvents = $this->eventEffectsFrom($proceedResult->value);
+        if ([] === $emittedEvents) {
             return $proceedResult;
         }
 
@@ -162,6 +166,48 @@ final class DecisionEngineAspect
         }
 
         return $proceedResult;
+    }
+
+    /**
+     * @return list<object>
+     */
+    private function eventEffectsFrom(mixed $value): array
+    {
+        $effects = [];
+        foreach ($this->objectsFrom($value) as $object) {
+            if (null !== $this->eventClassRegistry->getName($object::class)) {
+                $effects[] = $object;
+            }
+        }
+
+        return $effects;
+    }
+
+    /**
+     * @return list<object>
+     */
+    private function objectsFrom(mixed $value): array
+    {
+        if (null === $value) {
+            return [];
+        }
+
+        if (is_object($value)) {
+            return [$value];
+        }
+
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $objects = [];
+        foreach ($value as $item) {
+            if (is_object($item)) {
+                $objects[] = $item;
+            }
+        }
+
+        return $objects;
     }
 
     /**
@@ -212,7 +258,7 @@ final class DecisionEngineAspect
         foreach ($stateParams as $stateParam) {
             $streamValue = $this->getCommandPropertyValue($command, $stateParam['commandProperty']);
             $loader = $this->stateStore->loader($stateParam['stateClass']);
-            $identifier = new EventStoreDomainIdentifier(
+            $identifier = new DomainIdentifier(
                 $stateParam['domainIdentifierName'],
                 $streamValue,
             );

@@ -1,0 +1,208 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ultra\DecisionEngine\Tests;
+
+use PHPUnit\Framework\TestCase;
+use Ultra\DecisionEngine\Attribute\DecisionHandler;
+use Ultra\DecisionEngine\DecisionEngineBundle;
+use Ultra\EventSourcedState\EventSourcedStateBundle;
+use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
+use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
+use Ultra\Events\EventsBundle;
+use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\EventStore;
+use Ultra\EventStore\InMemoryEventStore;
+use Ultra\EventStore\StreamQuery;
+use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
+use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MappedTable\MappedRowSetAdapterFactory;
+use Ultra\Mapper_Bundle\MapperBundle;
+use Ultra\MessageHandling\Attribute\EventHandler;
+use Ultra\MessageHandling\Attribute\SelfHandler;
+use Ultra\MessageHandling\MediatorInterface;
+use Ultra\MessageHandling\MessageHandlingBundle;
+use Ultra\StateStore\Attribute\State;
+use Ultra\StateStore\Attribute\StateColumn;
+use Ultra\StateStore\Attribute\StateId;
+use Ultra\StateStore\StateStore;
+use Ultra\StateStore_Bundle\StateStoreBundle;
+use Ultra\Testing\UltraLight;
+use Ultra\Testing\UltraLightContainer;
+
+#[State(table: 'decision_orders', idColumn: 'order_id')]
+final readonly class DecisionOrderState
+{
+    public function __construct(
+        #[StateId]
+        public string $orderId,
+        #[StateColumn('status')]
+        public string $status,
+    ) {}
+
+    public function withStatus(string $status): self
+    {
+        return new self($this->orderId, $status);
+    }
+}
+
+final readonly class ShipDecisionOrderCommand
+{
+    public function __construct(
+        public string $orderId,
+    ) {}
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(DecisionOrderState $order): DecisionOrderState
+    {
+        return $order->withStatus('shipped');
+    }
+}
+
+final readonly class CreateDecisionOrderCommand
+{
+    public function __construct(
+        public string $orderId,
+    ) {}
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(?DecisionOrderState $order): DecisionOrderState
+    {
+        if (null !== $order) {
+            throw new \LogicException('Order already exists.');
+        }
+
+        return new DecisionOrderState($this->orderId, 'pending');
+    }
+}
+
+final readonly class CreateCourseAndConfirmDecisionOrderCommand
+{
+    public function __construct(
+        public string $courseId,
+        public string $orderId,
+    ) {}
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(CourseCapacityState $course, DecisionOrderState $order): array
+    {
+        if ($course->exists()) {
+            throw new \LogicException('Course already exists.');
+        }
+
+        return [
+            new CourseCreated($this->courseId, 'Math', 10),
+            $order->withStatus('confirmed'),
+        ];
+    }
+}
+
+final class RecordDecisionCourseCreated
+{
+    #[EventHandler]
+    public function onCourseCreated(CourseCreated $event): void {}
+}
+
+/**
+ * @internal
+ *
+ * @coversNothing
+ */
+final class StateStoreDecisionAspectTest extends TestCase
+{
+    public function test_it_injects_loaded_state_and_saves_returned_state(): void
+    {
+        $container = $this->ultraLight()->boot();
+        $database = $container->get(InMemoryRowDatabase::class);
+        $database->seedRow('decision_orders', 'order_id', [
+            'order_id' => 'order-1',
+            'status' => 'paid',
+        ]);
+
+        $result = $container->get('test.mediator')->send(new ShipDecisionOrderCommand('order-1'));
+
+        self::assertEquals(new DecisionOrderState('order-1', 'shipped'), $result);
+        $state = $container->get('test.state_store')->load(DecisionOrderState::class, 'order-1');
+        self::assertInstanceOf(DecisionOrderState::class, $state);
+        self::assertSame('shipped', $state->status);
+    }
+
+    public function test_nullable_state_parameter_allows_missing_state_and_saves_returned_state(): void
+    {
+        $container = $this->ultraLight()->boot();
+
+        $result = $container->get('test.mediator')->send(new CreateDecisionOrderCommand('order-2'));
+
+        self::assertEquals(new DecisionOrderState('order-2', 'pending'), $result);
+        $state = $container->get('test.state_store')->load(DecisionOrderState::class, 'order-2');
+        self::assertInstanceOf(DecisionOrderState::class, $state);
+        self::assertSame('pending', $state->status);
+    }
+
+    public function test_event_sourced_and_state_store_aspects_can_share_one_handler(): void
+    {
+        $container = $this->ultraLight()->boot();
+        $database = $container->get(InMemoryRowDatabase::class);
+        $database->seedRow('decision_orders', 'order_id', [
+            'order_id' => 'order-3',
+            'status' => 'paid',
+        ]);
+
+        $result = $container->get('test.mediator')->send(new CreateCourseAndConfirmDecisionOrderCommand('course-1', 'order-3'));
+
+        self::assertEquals([
+            new CourseCreated('course-1', 'Math', 10),
+            new DecisionOrderState('order-3', 'confirmed'),
+        ], $result);
+
+        $events = $container->get(InMemoryEventStore::class)
+            ->load(StreamQuery::forStream(new DomainIdentifier('course', 'course-1')))
+            ->events;
+        self::assertCount(1, $events);
+        self::assertSame('course.created', $events[0]->eventType);
+
+        $state = $container->get('test.state_store')->load(DecisionOrderState::class, 'order-3');
+        self::assertInstanceOf(DecisionOrderState::class, $state);
+        self::assertSame('confirmed', $state->status);
+    }
+
+    /**
+     * @return UltraLight<UltraLightContainer>
+     */
+    private function ultraLight(): UltraLight
+    {
+        $database = new InMemoryRowDatabase();
+
+        return (new UltraLight())
+            ->withBuildDir(sys_get_temp_dir().'/ultra_state_store_decision_aspect_tests_'.uniqid())
+            ->withBundle(
+                new MessageHandlingBundle(),
+                new MapperBundle(),
+                new EventsBundle(),
+                new EventSourcedStateBundle(),
+                new StateStoreBundle(),
+                new DecisionEngineBundle(),
+            )
+            ->withService(new InMemoryEventStore(), InMemoryEventStore::class)
+            ->withAlias(EventStore::class, InMemoryEventStore::class)
+            ->withService($database, InMemoryRowDatabase::class)
+            ->withService(new InMemoryMappedRowSetAdapterFactory($database), InMemoryMappedRowSetAdapterFactory::class)
+            ->withAlias(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
+            ->withAlias('test.mediator', MediatorInterface::class)
+            ->withAlias('test.state_store', StateStore::class)
+            ->withClass(
+                DecisionOrderState::class,
+                CourseCapacityState::class,
+                CourseCreated::class,
+                ShipDecisionOrderCommand::class,
+                CreateDecisionOrderCommand::class,
+                CreateCourseAndConfirmDecisionOrderCommand::class,
+                RecordDecisionCourseCreated::class,
+            )
+        ;
+    }
+}
