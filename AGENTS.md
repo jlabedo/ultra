@@ -17,13 +17,23 @@ This file is for coding agents working in the Ultra monorepo.
 - `EventStore`: Core event store contracts, stream queries, stored-event types, and optimistic concurrency primitives.
 - `EventStore_Postgres`: Postgres-backed event store implementation.
 - `Events`: Event metadata and registry support for mapping event names, classes, and domain identifiers.
+- `MappedTable`: Adapter-backed mapped row-set unit of work with in-memory and Postgres adapters.
 - `Mapper`: Runtime normalization and denormalization API centered on `UltraNormalizer`.
 - `Mapper_Bundle`: Symfony bundle wiring the mapper, runtime normalizers, and generated normalizer support.
 - `Mapper_Compiler`: Code generation for high-performance normalizers.
 - `MessageHandling`: Core mediator and event-bus abstractions, message context, advice attributes, async primitives, and Symfony bundle wiring.
 - `MessageHandling_Compiler`: Compiler support that generates routers and handler wrappers from handler and advice metadata.
+- `MessageHandling_PostgresQueue`: Postgres-backed async queue implementation for message-handling dispatch.
 - `Projection`: Projection definitions and plans for applying stored events to read models.
 - `Projection_Postgres`: Postgres projection runtime, including state tracking, runners, and partition support.
+- `Schema`: Schema definition, reconciliation, and Postgres SQL generation primitives.
+- `StateStore`: Mapper-backed object state loading and saving on top of mapped row sets.
+- `StateStore_Bundle`: Symfony bundle wiring for state-store metadata and registries.
+- `Time`: Clock, date point, duration, system clock, and static test clock primitives.
+- `UnitOfWork`: Minimal unit-of-work contract plus deterministic composite flushing.
+- `UnitOfWork_Bundle`: Symfony bundle wiring for unit-of-work services.
+
+Shared test and support utilities live under `src/Testing`; this directory is autoloaded by the root package but is not currently listed as a standalone Composer package.
 
 ## Source of truth
 
@@ -42,8 +52,8 @@ This file is for coding agents working in the Ultra monorepo.
 
 - Files use `declare(strict_types=1);`.
 - The codebase uses modern PHP features heavily, including typed properties, `readonly`, attributes, and constructor promotion.
-- The test suite is currently run via Pest, but test authoring is moving from Pest-style function tests to PHPUnit-style class tests.
-- The `MessageHandling` and `MessageHandling_Compiler` packages have already been migrated to PHPUnit-style tests.
+- The test suite is run through Pest, but most current tests are PHPUnit-style class tests.
+- Prefer PHPUnit-style class tests for new coverage.
 - Docblocks are used where they add value, especially for generics, array shapes, or intent that PHP types cannot express directly.
 
 ## Testing expectations
@@ -59,13 +69,12 @@ Useful commands:
 
 - `composer test`
 - `composer test:coverage`
-- `composer test:event-store-concurrency`
 - `ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' composer test`
 
 Notes about the test suite:
 
-- The default PHPUnit config excludes the `slow` group.
-- Some Postgres integration tests skip unless `ULTRA_TEST_POSTGRES_DSN` is set.
+- The root Composer `test` script currently sets `ULTRA_TEST_POSTGRES_DSN` and runs `pest --compact`.
+- Postgres integration tests skip themselves when `ULTRA_TEST_POSTGRES_DSN` is not set.
 
 ## Change strategy
 
