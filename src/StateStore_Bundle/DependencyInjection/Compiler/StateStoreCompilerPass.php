@@ -14,7 +14,6 @@ use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
-use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
 use Ultra\StateStore_Bundle\TagNames;
 
@@ -103,13 +102,7 @@ final class StateStoreCompilerPass implements CompilerPassInterface
      */
     private function collectStateClasses(ContainerBuilder $container): array
     {
-        $classes = $container->hasParameter('ultra_state_store.state_classes')
-            ? $container->getParameter('ultra_state_store.state_classes')
-            : [];
-
-        if (!is_array($classes)) {
-            $classes = [];
-        }
+        $classes = [];
 
         foreach ($container->findTaggedResourceIds(TagNames::STATE) as $id => $tags) {
             foreach ($tags as $tag) {

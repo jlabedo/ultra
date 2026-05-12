@@ -6,7 +6,6 @@ namespace Ultra\StateStore_Bundle;
 
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\Mapper\UltraNormalizer;
@@ -22,10 +21,6 @@ final class StateStoreBundle extends Bundle
     public function build(ContainerBuilder $container): void
     {
         parent::build($container);
-
-        if (!$container->hasParameter('ultra_state_store.state_classes')) {
-            $container->setParameter('ultra_state_store.state_classes', []);
-        }
 
         $container->registerAttributeForAutoconfiguration(
             State::class,
