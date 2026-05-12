@@ -1,0 +1,83 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ultra\Mapper_Compiler;
+
+use Ultra\Mapper\DenormalizationContext;
+use Ultra\Mapper\NormalizerInterface;
+use Ultra\Mapper\UltraNormalizer;
+
+/**
+ * Minimal generated PHP file representation for compiled normalizers.
+ */
+readonly class GeneratedNormalizerFile
+{
+    public function __construct(
+        private string $normalizerClass,
+        private string $toScalarBody,
+        private string $fromScalarBody,
+    ) {}
+
+    public function generate(): string
+    {
+        [$namespace, $shortName] = self::splitClassName($this->normalizerClass);
+        $namespaceDeclaration = $namespace === null ? '' : "\nnamespace {$namespace};\n";
+
+        return sprintf(
+            <<<'PHP'
+<?php
+%s
+class %s implements \%s
+{
+    public function toScalar(mixed $value, \%s $normalizer): array|bool|float|int|string|null
+    {
+%s
+    }
+
+    public function fromScalar(array|bool|float|int|string|null $value, string $type, \%s $normalizer, \%s $context): object
+    {
+%s
+    }
+}
+
+PHP,
+            $namespaceDeclaration,
+            $shortName,
+            NormalizerInterface::class,
+            UltraNormalizer::class,
+            self::indent($this->toScalarBody, 2),
+            UltraNormalizer::class,
+            DenormalizationContext::class,
+            self::indent($this->fromScalarBody, 2),
+        );
+    }
+
+    /**
+     * @return array{0: string|null, 1: string}
+     */
+    private static function splitClassName(string $className): array
+    {
+        $className = ltrim($className, '\\');
+        $lastSeparator = strrpos($className, '\\');
+
+        if ($lastSeparator === false) {
+            return [null, $className];
+        }
+
+        return [
+            substr($className, 0, $lastSeparator),
+            substr($className, $lastSeparator + 1),
+        ];
+    }
+
+    private static function indent(string $code, int $levels): string
+    {
+        $prefix = str_repeat('    ', $levels);
+
+        return implode("\n", array_map(
+            static fn (string $line): string => $line === '' ? '' : $prefix.$line,
+            explode("\n", $code),
+        ));
+    }
+}
