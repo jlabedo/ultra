@@ -63,6 +63,31 @@ try {
 }
 ```
 
+## Application lifecycle
+
+`ApplicationLifecycle` owns the common application boundary while delegating transaction mechanics:
+
+```php
+$result = $applicationLifecycle->run(
+    fn () => $mediator->send($command),
+);
+```
+
+The runner performs:
+
+```php
+begin
+execute operation
+flush before-commit unit-of-work participants
+commit
+flush after-commit unit-of-work participants
+clear all participants
+```
+
+If the operation or before-commit flush fails, the active transaction is rolled back and all participants are cleared. If after-commit work fails, the transaction has already committed; the error is rethrown after clearing buffered work.
+
+Nested `run()` calls join the active lifecycle. Only the outermost call begins, commits, flushes, and clears.
+
 ## Typical Usage
 
 ```php

@@ -15,9 +15,12 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
+use Ultra\UnitOfWork\ApplicationLifecycle;
 use Ultra\UnitOfWork\Attribute\FlushAfterCommit;
 use Ultra\UnitOfWork\Attribute\FlushBeforeCommit;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
+use Ultra\UnitOfWork\NoOpTransactionManager;
+use Ultra\UnitOfWork\TransactionManager;
 use Ultra\UnitOfWork\UnitOfWork;
 use Ultra\UnitOfWork\UnitOfWorkLifecycle;
 use Ultra\UnitOfWork_Bundle\TagNames;
@@ -195,6 +198,14 @@ final class UnitOfWorkBundleTest extends TestCase
         self::assertContains('after:clear', UnitOfWorkCallRecorder::$calls);
     }
 
+    public function test_bundle_registers_application_lifecycle_with_default_transaction_manager(): void
+    {
+        $container = $this->createContainer();
+
+        self::assertInstanceOf(NoOpTransactionManager::class, $container->get(TransactionManager::class));
+        self::assertInstanceOf(ApplicationLifecycle::class, $container->get(ApplicationLifecycle::class));
+    }
+
     private function createContainer(): ContainerBuilder
     {
         $container = new ContainerBuilder();
@@ -227,6 +238,8 @@ final class UnitOfWorkBundleTest extends TestCase
         );
         $container->getAlias(UnitOfWork::class)->setPublic(true);
         $container->getDefinition(UnitOfWorkLifecycle::class)->setPublic(true);
+        $container->getDefinition(TransactionManager::class)->setPublic(true);
+        $container->getDefinition(ApplicationLifecycle::class)->setPublic(true);
 
         $container->compile();
 

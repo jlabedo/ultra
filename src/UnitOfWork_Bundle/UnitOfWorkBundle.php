@@ -14,9 +14,12 @@ use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
+use Ultra\UnitOfWork\ApplicationLifecycle;
 use Ultra\UnitOfWork\Attribute\FlushAfterCommit;
 use Ultra\UnitOfWork\Attribute\FlushBeforeCommit;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
+use Ultra\UnitOfWork\NoOpTransactionManager;
+use Ultra\UnitOfWork\TransactionManager;
 use Ultra\UnitOfWork\UnitOfWork;
 use Ultra\UnitOfWork\UnitOfWorkLifecycle;
 
@@ -70,6 +73,17 @@ final class UnitOfWorkBundle extends Bundle
             ->setArguments([
                 new Reference(CompositeUnitOfWork::class),
                 new Reference('ultra_unit_of_work.after_commit_composite'),
+            ])
+        ;
+
+        if (!$container->has(TransactionManager::class)) {
+            $container->register(TransactionManager::class, NoOpTransactionManager::class);
+        }
+
+        $container->register(ApplicationLifecycle::class, ApplicationLifecycle::class)
+            ->setArguments([
+                new Reference(TransactionManager::class),
+                new Reference(UnitOfWorkLifecycle::class),
             ])
         ;
 
