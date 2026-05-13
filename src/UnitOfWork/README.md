@@ -29,73 +29,23 @@ $unitOfWork = new CompositeUnitOfWork([
 ]);
 ```
 
-## Lifecycle phases
+## Priority
 
-Most unit-of-work participants flush before the surrounding transaction commits. Services can opt into a different phase with attributes:
-
-```php
-#[FlushBeforeCommit(priority: 0)]
-final class TransactionalOutbox implements UnitOfWork {}
-
-#[FlushAfterCommit(priority: 0)]
-final class ExternalBrokerSender implements UnitOfWork {}
-```
-
-`UnitOfWorkLifecycle` coordinates both phases without owning the database transaction:
+When using the Symfony bundle, autoconfigured unit-of-work services are collected with Symfony's tagged-iterator support. Use Symfony's `AsTaggedItem` attribute to tune flush order:
 
 ```php
-$connection->beginTransaction();
-
-try {
-    $handler($message);
-
-    $lifecycle->flushBeforeCommit();
-    $connection->commit();
-    $lifecycle->flushAfterCommit();
-} catch (\Throwable $exception) {
-    if ($connection->isTransactionActive()) {
-        $connection->rollBack();
-    }
-
-    $lifecycle->clear();
-
-    throw $exception;
-}
+#[AsTaggedItem(priority: -100)]
+final class TransactionalOutboxSender implements UnitOfWork {}
 ```
-
-## Application lifecycle
-
-`ApplicationLifecycle` owns the common application boundary while delegating transaction mechanics:
-
-```php
-$result = $applicationLifecycle->run(
-    fn () => $mediator->send($command),
-);
-```
-
-The runner performs:
-
-```php
-begin
-execute operation
-flush before-commit unit-of-work participants
-commit
-flush after-commit unit-of-work participants
-clear all participants
-```
-
-If the operation or before-commit flush fails, the active transaction is rolled back and all participants are cleared. If after-commit work fails, the transaction has already committed; the error is rethrown after clearing buffered work.
-
-Nested `run()` calls join the active lifecycle. Only the outermost call begins, commits, flushes, and clears.
 
 ## Typical Usage
 
 ```php
+$handler($message);
+
 $connection->beginTransaction();
 
 try {
-    $handler($message);
-
     $unitOfWork->flush();
 
     $connection->commit();

@@ -6,6 +6,7 @@ namespace Ultra\UnitOfWork_Bundle\Tests;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\DependencyInjection\Attribute\AsTaggedItem;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Ultra\EventStore\AppendCondition;
@@ -15,14 +16,8 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
-use Ultra\UnitOfWork\ApplicationLifecycle;
-use Ultra\UnitOfWork\Attribute\FlushAfterCommit;
-use Ultra\UnitOfWork\Attribute\FlushBeforeCommit;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
-use Ultra\UnitOfWork\NoOpTransactionManager;
-use Ultra\UnitOfWork\TransactionManager;
 use Ultra\UnitOfWork\UnitOfWork;
-use Ultra\UnitOfWork\UnitOfWorkLifecycle;
 use Ultra\UnitOfWork_Bundle\TagNames;
 use Ultra\UnitOfWork_Bundle\UnitOfWorkBundle;
 
@@ -83,31 +78,17 @@ final class TaggedUnitOfWork implements UnitOfWork
     }
 }
 
-#[FlushBeforeCommit(priority: 50)]
-final class AttributedBeforeCommitUnitOfWork implements UnitOfWork
+#[AsTaggedItem(priority: 50)]
+final class HighPriorityUnitOfWork implements UnitOfWork
 {
     public function flush(): void
     {
-        UnitOfWorkCallRecorder::$calls[] = 'before:flush';
+        UnitOfWorkCallRecorder::$calls[] = 'high:flush';
     }
 
     public function clear(): void
     {
-        UnitOfWorkCallRecorder::$calls[] = 'before:clear';
-    }
-}
-
-#[FlushAfterCommit(priority: 50)]
-final class AttributedAfterCommitUnitOfWork implements UnitOfWork
-{
-    public function flush(): void
-    {
-        UnitOfWorkCallRecorder::$calls[] = 'after:flush';
-    }
-
-    public function clear(): void
-    {
-        UnitOfWorkCallRecorder::$calls[] = 'after:clear';
+        UnitOfWorkCallRecorder::$calls[] = 'high:clear';
     }
 }
 
@@ -141,9 +122,9 @@ final class UnitOfWorkBundleTest extends TestCase
 
         self::assertCount(1, $innerEventStore->appendCalls);
         self::assertCount(1, $innerEventStore->appendCalls[0]);
-        self::assertEqualsCanonicalizing([
+        self::assertSame([
+            'high:flush',
             'autoconfigured:flush',
-            'before:flush',
             'tagged:flush',
         ], UnitOfWorkCallRecorder::$calls);
     }
@@ -166,44 +147,11 @@ final class UnitOfWorkBundleTest extends TestCase
         $eventStore->flush();
 
         self::assertSame([], $innerEventStore->appendCalls);
-        self::assertEqualsCanonicalizing([
+        self::assertSame([
+            'high:clear',
             'autoconfigured:clear',
-            'before:clear',
             'tagged:clear',
         ], UnitOfWorkCallRecorder::$calls);
-    }
-
-    public function test_lifecycle_flushes_before_and_after_commit_phases_separately(): void
-    {
-        $container = $this->createContainer();
-
-        $lifecycle = $container->get(UnitOfWorkLifecycle::class);
-        self::assertInstanceOf(UnitOfWorkLifecycle::class, $lifecycle);
-
-        $lifecycle->flushBeforeCommit();
-        self::assertContains('before:flush', UnitOfWorkCallRecorder::$calls);
-        self::assertNotContains('after:flush', UnitOfWorkCallRecorder::$calls);
-
-        $lifecycle->flushAfterCommit();
-        self::assertContains('after:flush', UnitOfWorkCallRecorder::$calls);
-    }
-
-    public function test_lifecycle_clear_delegates_to_both_phases(): void
-    {
-        $container = $this->createContainer();
-
-        $container->get(UnitOfWorkLifecycle::class)->clear();
-
-        self::assertContains('before:clear', UnitOfWorkCallRecorder::$calls);
-        self::assertContains('after:clear', UnitOfWorkCallRecorder::$calls);
-    }
-
-    public function test_bundle_registers_application_lifecycle_with_default_transaction_manager(): void
-    {
-        $container = $this->createContainer();
-
-        self::assertInstanceOf(NoOpTransactionManager::class, $container->get(TransactionManager::class));
-        self::assertInstanceOf(ApplicationLifecycle::class, $container->get(ApplicationLifecycle::class));
     }
 
     private function createContainer(): ContainerBuilder
@@ -227,19 +175,11 @@ final class UnitOfWorkBundleTest extends TestCase
                 ->addTag(TagNames::UNIT_OF_WORK)
         );
         $container->setDefinition(
-            AttributedBeforeCommitUnitOfWork::class,
-            new Definition(AttributedBeforeCommitUnitOfWork::class)
-                ->setAutoconfigured(true)
-        );
-        $container->setDefinition(
-            AttributedAfterCommitUnitOfWork::class,
-            new Definition(AttributedAfterCommitUnitOfWork::class)
+            HighPriorityUnitOfWork::class,
+            new Definition(HighPriorityUnitOfWork::class)
                 ->setAutoconfigured(true)
         );
         $container->getAlias(UnitOfWork::class)->setPublic(true);
-        $container->getDefinition(UnitOfWorkLifecycle::class)->setPublic(true);
-        $container->getDefinition(TransactionManager::class)->setPublic(true);
-        $container->getDefinition(ApplicationLifecycle::class)->setPublic(true);
 
         $container->compile();
 
