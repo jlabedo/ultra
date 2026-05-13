@@ -11,13 +11,14 @@ use Ultra\MessageHandling\Async\AsyncEnvelope;
 use Ultra\MessageHandling\Async\AsyncEnqueueOptions;
 use Ultra\MessageHandling\Async\AsyncHeaders;
 use Ultra\MessageHandling\Async\AsyncMessageId;
-use Ultra\MessageHandling\Async\AsyncQueueInterface;
+use Ultra\MessageHandling\Async\AsyncMessageReceiver;
+use Ultra\MessageHandling\Async\AsyncMessageSender;
 use Ultra\Time\ClockInterface;
 use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
 
-final readonly class PostgresAsyncQueue implements AsyncQueueInterface
+final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMessageReceiver
 {
     private string $workerId;
 

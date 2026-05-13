@@ -15,8 +15,11 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
+use Ultra\UnitOfWork\Attribute\FlushAfterCommit;
+use Ultra\UnitOfWork\Attribute\FlushBeforeCommit;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
 use Ultra\UnitOfWork\UnitOfWork;
+use Ultra\UnitOfWork\UnitOfWorkLifecycle;
 use Ultra\UnitOfWork_Bundle\TagNames;
 use Ultra\UnitOfWork_Bundle\UnitOfWorkBundle;
 
@@ -77,6 +80,34 @@ final class TaggedUnitOfWork implements UnitOfWork
     }
 }
 
+#[FlushBeforeCommit(priority: 50)]
+final class AttributedBeforeCommitUnitOfWork implements UnitOfWork
+{
+    public function flush(): void
+    {
+        UnitOfWorkCallRecorder::$calls[] = 'before:flush';
+    }
+
+    public function clear(): void
+    {
+        UnitOfWorkCallRecorder::$calls[] = 'before:clear';
+    }
+}
+
+#[FlushAfterCommit(priority: 50)]
+final class AttributedAfterCommitUnitOfWork implements UnitOfWork
+{
+    public function flush(): void
+    {
+        UnitOfWorkCallRecorder::$calls[] = 'after:flush';
+    }
+
+    public function clear(): void
+    {
+        UnitOfWorkCallRecorder::$calls[] = 'after:clear';
+    }
+}
+
 /**
  * @internal
  */
@@ -109,6 +140,7 @@ final class UnitOfWorkBundleTest extends TestCase
         self::assertCount(1, $innerEventStore->appendCalls[0]);
         self::assertEqualsCanonicalizing([
             'autoconfigured:flush',
+            'before:flush',
             'tagged:flush',
         ], UnitOfWorkCallRecorder::$calls);
     }
@@ -133,8 +165,34 @@ final class UnitOfWorkBundleTest extends TestCase
         self::assertSame([], $innerEventStore->appendCalls);
         self::assertEqualsCanonicalizing([
             'autoconfigured:clear',
+            'before:clear',
             'tagged:clear',
         ], UnitOfWorkCallRecorder::$calls);
+    }
+
+    public function test_lifecycle_flushes_before_and_after_commit_phases_separately(): void
+    {
+        $container = $this->createContainer();
+
+        $lifecycle = $container->get(UnitOfWorkLifecycle::class);
+        self::assertInstanceOf(UnitOfWorkLifecycle::class, $lifecycle);
+
+        $lifecycle->flushBeforeCommit();
+        self::assertContains('before:flush', UnitOfWorkCallRecorder::$calls);
+        self::assertNotContains('after:flush', UnitOfWorkCallRecorder::$calls);
+
+        $lifecycle->flushAfterCommit();
+        self::assertContains('after:flush', UnitOfWorkCallRecorder::$calls);
+    }
+
+    public function test_lifecycle_clear_delegates_to_both_phases(): void
+    {
+        $container = $this->createContainer();
+
+        $container->get(UnitOfWorkLifecycle::class)->clear();
+
+        self::assertContains('before:clear', UnitOfWorkCallRecorder::$calls);
+        self::assertContains('after:clear', UnitOfWorkCallRecorder::$calls);
     }
 
     private function createContainer(): ContainerBuilder
@@ -157,7 +215,18 @@ final class UnitOfWorkBundleTest extends TestCase
             new Definition(TaggedUnitOfWork::class)
                 ->addTag(TagNames::UNIT_OF_WORK)
         );
+        $container->setDefinition(
+            AttributedBeforeCommitUnitOfWork::class,
+            new Definition(AttributedBeforeCommitUnitOfWork::class)
+                ->setAutoconfigured(true)
+        );
+        $container->setDefinition(
+            AttributedAfterCommitUnitOfWork::class,
+            new Definition(AttributedAfterCommitUnitOfWork::class)
+                ->setAutoconfigured(true)
+        );
         $container->getAlias(UnitOfWork::class)->setPublic(true);
+        $container->getDefinition(UnitOfWorkLifecycle::class)->setPublic(true);
 
         $container->compile();
 

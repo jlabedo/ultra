@@ -14,7 +14,7 @@ use Ultra\MessageHandling\Handler\MessageHandlerInterface;
 final readonly class QueueWorker
 {
     public function __construct(
-        private AsyncQueueInterface $queue,
+        private AsyncMessageReceiver $receiver,
         private ContainerInterface $container,
     ) {}
 
@@ -25,7 +25,7 @@ final readonly class QueueWorker
      */
     public function processOne(): bool
     {
-        $delivery = $this->queue->reserve();
+        $delivery = $this->receiver->reserve();
         if (null === $delivery) {
             return false;
         }
@@ -33,7 +33,7 @@ final readonly class QueueWorker
         $envelope = $delivery->envelope;
         $route = $envelope->headers->getString(AsyncHeaderNames::ROUTE);
         if (null === $route || '' === $route) {
-            $this->queue->release($delivery);
+            $this->receiver->release($delivery);
 
             throw new \LogicException(sprintf('Async delivery "%s" is missing the "%s" route header.', $delivery->messageId->value, AsyncHeaderNames::ROUTE));
         }
@@ -43,9 +43,9 @@ final readonly class QueueWorker
 
         try {
             $handler->__invoke($envelope->message, $envelope->messageContext);
-            $this->queue->acknowledge($delivery);
+            $this->receiver->acknowledge($delivery);
         } catch (\Throwable $e) {
-            $this->queue->release($delivery, reason: $e);
+            $this->receiver->release($delivery, reason: $e);
 
             throw $e;
         }

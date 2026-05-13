@@ -8,7 +8,7 @@ use Ultra\Time\ClockInterface;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
 
-final class InMemoryQueue implements AsyncQueueInterface
+final class InMemoryQueue implements AsyncMessageSender, AsyncMessageReceiver
 {
     /**
      * @var array<string, array{

@@ -74,7 +74,9 @@ final class HandlerDescriptorFactory
         bool $skipFirstParameter,
     ): HandlerDescriptor {
         $depServiceIds = $this->resolveDepServiceIds($method, $skipFirstParameter);
-        $isAsync = [] !== $method->getAttributes(Asynchronous::class);
+        $asyncAttrs = $method->getAttributes(Asynchronous::class);
+        $isAsync = [] !== $asyncAttrs;
+        $asyncChannel = $isAsync ? $asyncAttrs[0]->newInstance()->channel : 'default';
         $isSelfHandler = HandlerDescriptor::SELF_SERVICE_ID === $serviceId;
 
         // For sync handlers, Execute is the only phase (dispatch = execute).
@@ -98,6 +100,7 @@ final class HandlerDescriptorFactory
             returnsVoid: $this->returnsVoid($method),
             messageClass: $messageClass,
             isAsync: $isAsync,
+            asyncChannel: $asyncChannel,
         );
     }
 

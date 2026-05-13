@@ -10,7 +10,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MessageHandling\Async\AsyncHandlerProxy;
-use Ultra\MessageHandling\Async\AsyncQueueInterface;
+use Ultra\MessageHandling\Async\AsyncMessageReceiver;
+use Ultra\MessageHandling\Async\AsyncMessageSender;
 use Ultra\MessageHandling\Async\AsyncQueueUnitOfWork;
 use Ultra\MessageHandling\Async\InMemoryQueue;
 use Ultra\MessageHandling\Async\QueueWorker;
@@ -69,6 +70,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         $this->ensureMessageContextPropagator($container);
         $this->ensureAsyncQueue($container);
         $this->ensureAsyncQueueUnitOfWork($container);
+        $asyncSenderChannels = $this->collectAsyncSenderChannels($container);
 
         // ── Step 1: Discover router interfaces ────────────────────────────────
         /** @var array<string, array{descriptor: RouterDescriptor, baseName: string, outputDir: string}> $routers */
@@ -174,6 +176,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                             $handlerOutputDir,
                             $wrappersFilePath,
                             $container,
+                            $asyncSenderChannels,
                         );
                         $generatedHandlers[$handlerKey] = $handlerServiceId;
                     }
@@ -266,6 +269,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         string $outputDir,
         string $wrappersFilePath,
         ContainerBuilder $container,
+        array $asyncSenderChannels,
     ): string {
         $baseName = 'Handler_'.preg_replace('/[^A-Za-z0-9_]/', '_', $handler->serviceId).'_'.$handler->method->getName();
 
@@ -296,7 +300,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             // Register the proxy under a ".proxy" ID
             $proxyServiceId = $handlerServiceId.'.proxy';
             $proxyDef = new Definition(AsyncHandlerProxy::class, [
-                new Reference(AsyncQueueInterface::class),
+                new Reference($this->asyncSenderServiceId($handler->asyncChannel, $asyncSenderChannels)),
                 $originalServiceId,
             ]);
             $proxyDef->setPublic(false);
@@ -326,6 +330,7 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
                     returnsVoid: true,
                     messageClass: $handler->messageClass,
                     isAsync: false,
+                    asyncChannel: $handler->asyncChannel,
                 );
 
                 $dispatchBaseName = $baseName.'_dispatch';
@@ -708,19 +713,26 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
 
     private function ensureAsyncQueue(ContainerBuilder $container): void
     {
-        if (!$container->has(AsyncQueueInterface::class)) {
+        if (!$container->has(InMemoryQueue::class)) {
             $container->setDefinition(
-                AsyncQueueInterface::class,
-                new Definition(InMemoryQueue::class)->setPublic(true),
+                InMemoryQueue::class,
+                new Definition(InMemoryQueue::class),
             );
+        }
+
+        if (!$container->has(AsyncMessageSender::class)) {
+            $container->setAlias(AsyncMessageSender::class, InMemoryQueue::class);
+        }
+
+        if (!$container->has(AsyncMessageReceiver::class)) {
+            $container->setAlias(AsyncMessageReceiver::class, InMemoryQueue::class);
         }
 
         if (!$container->has(QueueWorker::class)) {
             $workerDef = new Definition(QueueWorker::class, [
-                new Reference(AsyncQueueInterface::class),
+                new Reference(AsyncMessageReceiver::class),
                 new Reference('service_container'),
             ]);
-            $workerDef->setPublic(true);
             $container->setDefinition(QueueWorker::class, $workerDef);
         }
     }
@@ -735,11 +747,59 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
             new Reference(AsyncQueueUnitOfWork::class.'.inner'),
         ]);
         $definition
-            ->setDecoratedService(AsyncQueueInterface::class)
+            ->setDecoratedService(AsyncMessageSender::class)
+            ->addTag(TagNames::ASYNC_SENDER, ['channel' => 'default'])
             ->addTag('ultra_unit_of_work.unit_of_work', ['priority' => -100])
         ;
 
         $container->setDefinition(AsyncQueueUnitOfWork::class, $definition);
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function collectAsyncSenderChannels(ContainerBuilder $container): array
+    {
+        $channels = [];
+
+        foreach ($container->findTaggedServiceIds(TagNames::ASYNC_SENDER) as $serviceId => $tags) {
+            foreach ($tags as $tag) {
+                $channel = $tag['channel'] ?? null;
+                if (!is_string($channel) || '' === $channel) {
+                    throw new \LogicException(sprintf(
+                        'Async sender service "%s" must declare a non-empty "channel" tag attribute.',
+                        $serviceId,
+                    ));
+                }
+
+                if (isset($channels[$channel]) && $channels[$channel] !== $serviceId) {
+                    throw new \LogicException(sprintf(
+                        'Async sender channel "%s" is registered by both "%s" and "%s".',
+                        $channel,
+                        $channels[$channel],
+                        $serviceId,
+                    ));
+                }
+
+                $channels[$channel] = $serviceId;
+            }
+        }
+
+        $channels['default'] ??= AsyncMessageSender::class;
+
+        return $channels;
+    }
+
+    /**
+     * @param array<string, string> $channels
+     */
+    private function asyncSenderServiceId(string $channel, array $channels): string
+    {
+        if (!isset($channels[$channel])) {
+            throw new \LogicException(sprintf('No async message sender is registered for channel "%s".', $channel));
+        }
+
+        return $channels[$channel];
     }
 
     private function ensureMessageContextPropagator(ContainerBuilder $container): void

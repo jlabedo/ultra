@@ -17,13 +17,13 @@ use Ultra\MessageHandling\MessageContext;
 final readonly class AsyncHandlerProxy implements MessageHandlerInterface
 {
     public function __construct(
-        private AsyncQueueInterface $queue,
+        private AsyncMessageSender $sender,
         private string $route,
     ) {}
 
     public function __invoke(object $message, MessageContext $context): mixed
     {
-        $this->queue->enqueue(new AsyncEnvelope(
+        $this->sender->enqueue(new AsyncEnvelope(
             $message,
             $context,
             AsyncHeaders::empty()->with(AsyncHeaderNames::ROUTE, $this->route),

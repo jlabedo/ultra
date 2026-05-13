@@ -6,7 +6,7 @@ namespace Ultra\MessageHandling_Compiler\Tests\Support;
 
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Container;
-use Ultra\MessageHandling\Async\AsyncQueueInterface;
+use Ultra\MessageHandling\Async\InMemoryQueue;
 use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
@@ -35,7 +35,7 @@ abstract class MessageHandlingFunctionalTestCase extends TestCase
             ->withBundle(new MessageHandlingBundle())
             ->withAlias('test.event_bus', EventBusInterface::class)
             ->withAlias('test.mediator', MediatorInterface::class)
-            ->withAlias('test.async_queue', AsyncQueueInterface::class)
+            ->withAlias('test.async_queue', InMemoryQueue::class)
             ->withAlias('test.queue_worker', QueueWorker::class)
         ;
     }

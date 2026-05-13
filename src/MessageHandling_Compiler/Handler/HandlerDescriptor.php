@@ -25,6 +25,7 @@ final readonly class HandlerDescriptor
         public bool $returnsVoid = false,
         public string $messageClass = '',
         public bool $isAsync = false,
+        public string $asyncChannel = 'default',
     ) {}
 
     /** @param list<AdviceDescriptor> $advices */

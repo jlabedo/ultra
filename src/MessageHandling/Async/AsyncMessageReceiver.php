@@ -6,10 +6,8 @@ namespace Ultra\MessageHandling\Async;
 
 use Ultra\Time\Duration;
 
-interface AsyncQueueInterface
+interface AsyncMessageReceiver
 {
-    public function enqueue(AsyncEnvelope $envelope, ?AsyncEnqueueOptions $options = null): AsyncMessageId;
-
     public function reserve(Duration $leaseDuration = new Duration(seconds: 30)): ?AsyncDelivery;
 
     public function acknowledge(AsyncDelivery $delivery): void;
