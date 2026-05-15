@@ -7,8 +7,6 @@ namespace Ultra\UnitOfWork_Bundle\Tests;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Attribute\AsTaggedItem;
-use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Definition;
 use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
@@ -18,8 +16,10 @@ use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
 use Ultra\UnitOfWork\UnitOfWork;
-use Ultra\UnitOfWork_Bundle\TagNames;
 use Ultra\UnitOfWork_Bundle\UnitOfWorkBundle;
+use Ultra\Testing\UltraLight;
+use Ultra\Testing\UltraLightContainer;
+use Ultra\Testing\UltraLightContainerFactoryInterface;
 
 final class RecordingEventStore implements EventStore
 {
@@ -105,11 +105,11 @@ final class UnitOfWorkBundleTest extends TestCase
 
     public function test_bundle_decorates_the_event_store_and_aggregates_tagged_unit_of_works(): void
     {
-        $container = $this->createContainer();
+        $container = $this->ultraLight()->boot();
 
-        $eventStore = $container->get(EventStore::class);
-        $unitOfWork = $container->get(UnitOfWork::class);
-        $innerEventStore = $container->get(RecordingEventStore::class);
+        $eventStore = $container->eventStore();
+        $unitOfWork = $container->unitOfWork();
+        $innerEventStore = $container->recordingEventStore();
 
         self::assertInstanceOf(EventStoreUnitOfWork::class, $eventStore);
         self::assertInstanceOf(CompositeUnitOfWork::class, $unitOfWork);
@@ -131,11 +131,11 @@ final class UnitOfWorkBundleTest extends TestCase
 
     public function test_bundle_clear_delegates_to_every_registered_unit_of_work(): void
     {
-        $container = $this->createContainer();
+        $container = $this->ultraLight()->boot();
 
-        $eventStore = $container->get(EventStore::class);
-        $unitOfWork = $container->get(UnitOfWork::class);
-        $innerEventStore = $container->get(RecordingEventStore::class);
+        $eventStore = $container->eventStore();
+        $unitOfWork = $container->unitOfWork();
+        $innerEventStore = $container->recordingEventStore();
 
         self::assertInstanceOf(EventStoreUnitOfWork::class, $eventStore);
 
@@ -154,35 +154,51 @@ final class UnitOfWorkBundleTest extends TestCase
         ], UnitOfWorkCallRecorder::$calls);
     }
 
-    private function createContainer(): ContainerBuilder
+    /**
+     * @return UltraLight<UnitOfWorkTestContainer>
+     */
+    private function ultraLight(): UltraLight
     {
-        $container = new ContainerBuilder();
-        new UnitOfWorkBundle()->build($container);
+        /** @var UltraLightContainerFactoryInterface<UnitOfWorkTestContainer> $containerFactory */
+        $containerFactory = new class implements UltraLightContainerFactoryInterface {
+            public function create(\Symfony\Component\DependencyInjection\Container $container): UnitOfWorkTestContainer
+            {
+                return new UnitOfWorkTestContainer($container);
+            }
+        };
 
-        $container->register(RecordingEventStore::class, RecordingEventStore::class)
-            ->setPublic(true)
+        return new UltraLight()
+            ->withBuildDir(dirname(__DIR__, 3).'/var/unit_of_work_bundle_tests')
+            ->withContainerFactory($containerFactory)
+            ->withBundle(new UnitOfWorkBundle())
+            ->withClass(
+                RecordingEventStore::class,
+                AutoconfiguredUnitOfWork::class,
+                TaggedUnitOfWork::class,
+                HighPriorityUnitOfWork::class,
+            )
+            ->withAlias(EventStore::class, RecordingEventStore::class)
+            ->withAlias('test.event_store', EventStore::class)
+            ->withAlias('test.recording_event_store', RecordingEventStore::class)
+            ->withAlias('test.unit_of_work', UnitOfWork::class)
         ;
-        $container->setAlias(EventStore::class, RecordingEventStore::class)->setPublic(true);
+    }
+}
 
-        $container->setDefinition(
-            AutoconfiguredUnitOfWork::class,
-            new Definition(AutoconfiguredUnitOfWork::class)
-                ->setAutoconfigured(true)
-        );
-        $container->setDefinition(
-            TaggedUnitOfWork::class,
-            new Definition(TaggedUnitOfWork::class)
-                ->addTag(TagNames::UNIT_OF_WORK)
-        );
-        $container->setDefinition(
-            HighPriorityUnitOfWork::class,
-            new Definition(HighPriorityUnitOfWork::class)
-                ->setAutoconfigured(true)
-        );
-        $container->getAlias(UnitOfWork::class)->setPublic(true);
+final readonly class UnitOfWorkTestContainer extends UltraLightContainer
+{
+    public function eventStore(): EventStore
+    {
+        return $this->get('test.event_store');
+    }
 
-        $container->compile();
+    public function recordingEventStore(): RecordingEventStore
+    {
+        return $this->get('test.recording_event_store');
+    }
 
-        return $container;
+    public function unitOfWork(): UnitOfWork
+    {
+        return $this->get('test.unit_of_work');
     }
 }
