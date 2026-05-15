@@ -13,10 +13,23 @@ interface UnitOfWork
 }
 ```
 
-This package does not open transactions itself.
+`UnitOfWork` implementations do not open transactions themselves.
 
 - `flush()` assumes the caller has already opened the surrounding transaction, if one is needed.
 - `clear()` drops in-memory buffered work after commit or rollback.
+
+## Transaction Manager
+
+`TransactionManager` is the minimal abstraction for code that needs to run a unit-of-work flush inside a transaction boundary:
+
+```php
+interface TransactionManager
+{
+    public function transactional(callable $callback): mixed;
+}
+```
+
+Implementations commit when the callback returns and roll back when it throws. `NoTransactionManager` is provided for packages that do not need a real transaction boundary.
 
 ## CompositeUnitOfWork
 

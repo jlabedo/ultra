@@ -16,6 +16,9 @@
         "ultra/event-store": "*",
         "ultra/unit-of-work": "*"
     },
+    "suggest": {
+        "ultra/message-handling": "Register the handler-level UnitOfWork aspect when MessageHandlingBundle is installed."
+    },
     "autoload": {
         "psr-4": {
             "Ultra\\UnitOfWork_Bundle\\": ""

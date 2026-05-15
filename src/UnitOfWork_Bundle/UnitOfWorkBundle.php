@@ -10,8 +10,12 @@ use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
+use Ultra\MessageHandling\TagNames as MessageHandlingTagNames;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
+use Ultra\UnitOfWork\NoTransactionManager;
+use Ultra\UnitOfWork\TransactionManager;
 use Ultra\UnitOfWork\UnitOfWork;
+use Ultra\UnitOfWork_Bundle\MessageHandling\UnitOfWorkAspect;
 
 final class UnitOfWorkBundle extends Bundle
 {
@@ -38,5 +42,18 @@ final class UnitOfWorkBundle extends Bundle
         ;
 
         $container->setAlias(UnitOfWork::class, CompositeUnitOfWork::class);
+
+        if (!$container->has(TransactionManager::class)) {
+            $container->register(NoTransactionManager::class, NoTransactionManager::class);
+            $container->setAlias(TransactionManager::class, NoTransactionManager::class);
+        }
+
+        $container->register(UnitOfWorkAspect::class, UnitOfWorkAspect::class)
+            ->setArguments([
+                new Reference(UnitOfWork::class),
+                new Reference(TransactionManager::class),
+            ])
+            ->addTag(MessageHandlingTagNames::ASPECT)
+        ;
     }
 }
