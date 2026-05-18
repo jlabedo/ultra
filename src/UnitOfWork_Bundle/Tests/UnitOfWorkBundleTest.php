@@ -15,7 +15,11 @@ use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
+use Ultra\UnitOfWork\NoTransactionManager;
+use Ultra\UnitOfWork\TransactionManager;
+use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
 use Ultra\UnitOfWork\UnitOfWork;
+use Ultra\UnitOfWork\UnitOfWorkRunner;
 use Ultra\UnitOfWork_Bundle\UnitOfWorkBundle;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
@@ -154,6 +158,20 @@ final class UnitOfWorkBundleTest extends TestCase
         ], UnitOfWorkCallRecorder::$calls);
     }
 
+    public function test_bundle_registers_a_noop_transaction_manager_by_default(): void
+    {
+        $container = $this->ultraLight()->boot();
+
+        self::assertInstanceOf(NoTransactionManager::class, $container->transactionManager());
+    }
+
+    public function test_bundle_registers_the_transactional_unit_of_work_runner(): void
+    {
+        $container = $this->ultraLight()->boot();
+
+        self::assertInstanceOf(TransactionalUnitOfWorkRunner::class, $container->unitOfWorkRunner());
+    }
+
     /**
      * @return UltraLight<UnitOfWorkTestContainer>
      */
@@ -180,7 +198,9 @@ final class UnitOfWorkBundleTest extends TestCase
             ->withAlias(EventStore::class, RecordingEventStore::class)
             ->withAlias('test.event_store', EventStore::class)
             ->withAlias('test.recording_event_store', RecordingEventStore::class)
+            ->withAlias('test.transaction_manager', TransactionManager::class)
             ->withAlias('test.unit_of_work', UnitOfWork::class)
+            ->withAlias('test.unit_of_work_runner', UnitOfWorkRunner::class)
         ;
     }
 }
@@ -200,5 +220,15 @@ final readonly class UnitOfWorkTestContainer extends UltraLightContainer
     public function unitOfWork(): UnitOfWork
     {
         return $this->get('test.unit_of_work');
+    }
+
+    public function transactionManager(): TransactionManager
+    {
+        return $this->get('test.transaction_manager');
+    }
+
+    public function unitOfWorkRunner(): UnitOfWorkRunner
+    {
+        return $this->get('test.unit_of_work_runner');
     }
 }
