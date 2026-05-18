@@ -36,7 +36,6 @@ Backward compatibility is not currently required. APIs may change while the conc
 
 ## Package map
 
-- `StatefulMessageHandling`: Stateful message-handling layer built on the mediator; loads state parameters, invokes handlers, and saves emitted state changes.
 - `EventSourcedState`: Event-sourced state loader runtime; maps stored events to object state and owns its Symfony bundle wiring.
 - `EventSourcedState_Compiler`: Compiler support that analyzes event-sourced entities and generates typed entity loaders.
 - `EventStore`: Core event store contracts, stream queries, stored-event types, and optimistic concurrency primitives.
@@ -52,6 +51,7 @@ Backward compatibility is not currently required. APIs may change while the conc
 - `Projection`: Projection definitions and plans for applying stored events to read models.
 - `Projection_Postgres`: Postgres projection runtime, including state tracking, runners, and partition support.
 - `Schema`: Schema definition, reconciliation, and Postgres SQL generation primitives.
+- `StatefulMessageHandling`: Stateful message-handling layer built on the mediator; loads state parameters, invokes handlers, and saves emitted state changes.
 - `StateStore`: Mapper-backed object state loading and saving on top of mapped row sets.
 - `StateStore_Bundle`: Symfony bundle wiring for state-store metadata and registries.
 - `Time`: Clock, date point, duration, system clock, and static test clock primitives.
