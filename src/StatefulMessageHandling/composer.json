@@ -1,6 +1,6 @@
 {
-    "name": "ultra/decision-engine",
-    "description": "Ultra Framework - Decision Engine (CQRS + Event Sourcing)",
+    "name": "ultra/stateful-message-handling",
+    "description": "Ultra Framework - Stateful Message Handling (CQRS + Event Sourcing)",
     "type": "library",
     "license": "proprietary",
     "authors": [
@@ -19,12 +19,12 @@
         "ultra/state-store": "*"
     },
     "suggest": {
-        "symfony/dependency-injection": "Required to use Ultra\\DecisionEngine\\DecisionEngineBundle.",
+        "symfony/dependency-injection": "Required to use Ultra\\StatefulMessageHandling\\StatefulMessageHandlingBundle.",
         "ultra/event-sourced-state-compiler": "Compiles event-sourced entity loaders for the Symfony bundle."
     },
     "autoload": {
         "psr-4": {
-            "Ultra\\DecisionEngine\\": ""
+            "Ultra\\StatefulMessageHandling\\": ""
         },
         "exclude-from-classmap": [
             "/Tests/"

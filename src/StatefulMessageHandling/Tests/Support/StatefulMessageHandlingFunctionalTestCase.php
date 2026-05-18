@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests\Support;
+namespace Ultra\StatefulMessageHandling\Tests\Support;
 
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Container;
-use Ultra\DecisionEngine\DecisionEngineBundle;
+use Ultra\StatefulMessageHandling\StatefulMessageHandlingBundle;
 use Ultra\EventSourcedState\EventSourcedStateBundle;
 use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\Events\Attribute\Event as EventAttribute;
@@ -22,25 +22,25 @@ use Ultra\MessageHandling\MessageHandlingBundle;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
 
-abstract class DecisionEngineFunctionalTestCase extends TestCase
+abstract class StatefulMessageHandlingFunctionalTestCase extends TestCase
 {
     /**
      * @param list<class-string> $eventClasses
      *
-     * @return UltraLight<DecisionEngineTestContainer>
+     * @return UltraLight<StatefulMessageHandlingTestContainer>
      */
     protected function decisionUltraLight(array $eventClasses): UltraLight
     {
-        $buildDir = dirname(__DIR__, 4).'/var/decision_engine_compiler_tests';
+        $buildDir = dirname(__DIR__, 4).'/var/stateful_message_handling_compiler_tests';
         $eventBus = new class implements EventBusInterface {
             public function publish(object $event, array|MessageContext $context = []): void {}
         };
 
-        /** @var UltraLightContainerFactoryInterface<DecisionEngineTestContainer> $containerFactory */
+        /** @var UltraLightContainerFactoryInterface<StatefulMessageHandlingTestContainer> $containerFactory */
         $containerFactory = new class implements UltraLightContainerFactoryInterface {
-            public function create(Container $container): DecisionEngineTestContainer
+            public function create(Container $container): StatefulMessageHandlingTestContainer
             {
-                return new DecisionEngineTestContainer($container);
+                return new StatefulMessageHandlingTestContainer($container);
             }
         };
 
@@ -49,7 +49,7 @@ abstract class DecisionEngineFunctionalTestCase extends TestCase
             ->withBuildDir($buildDir)
             ->withBundle(new MessageHandlingBundle())
             ->withBundle(new EventSourcedStateBundle())
-            ->withBundle(new DecisionEngineBundle())
+            ->withBundle(new StatefulMessageHandlingBundle())
             ->withBundle(new MapperBundle())
             ->withService(new InMemoryEventStore(), InMemoryEventStore::class)
             ->withAlias(EventStore::class, InMemoryEventStore::class)

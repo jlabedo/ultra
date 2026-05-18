@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine;
+namespace Ultra\StatefulMessageHandling;
 
 final readonly class Violation
 {

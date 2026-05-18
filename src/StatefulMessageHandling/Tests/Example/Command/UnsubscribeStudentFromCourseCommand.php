@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests\Example\Command;
+namespace Ultra\StatefulMessageHandling\Tests\Example\Command;
 
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
 use Ultra\EventSourcedState\Tests\Example\State\StudentSubscriptionState;
-use Ultra\DecisionEngine\Violation;
+use Ultra\StatefulMessageHandling\Violation;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 
-readonly class SubscribeStudentToCourseCommand
+readonly class UnsubscribeStudentFromCourseCommand
 {
     public function __construct(
         public string $courseId,
@@ -30,17 +30,14 @@ readonly class SubscribeStudentToCourseCommand
             !$course->exists()
                 ? new Violation('course.not_found', 'Course does not exist')
                 : null,
-            $course->isFull()
-                ? new Violation('course.full', 'Course has reached maximum capacity')
-                : null,
-            $student->isSubscribedTo($this->courseId)
-                ? new Violation('student.already_subscribed', 'Student is already subscribed')
+            !$student->isSubscribedTo($this->courseId)
+                ? new Violation('student.not_subscribed', 'Student is not subscribed to this course')
                 : null,
         ]));
     }
 
     /**
-     * @return list<StudentSubscribed>
+     * @return list<StudentUnsubscribed>
      */
     #[SelfHandler]
     #[DecisionHandler]
@@ -55,7 +52,7 @@ readonly class SubscribeStudentToCourseCommand
         }
 
         return [
-            new StudentSubscribed($this->courseId, $this->studentId),
+            new StudentUnsubscribed($this->courseId, $this->studentId),
         ];
     }
 }

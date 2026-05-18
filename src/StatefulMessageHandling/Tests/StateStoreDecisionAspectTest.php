@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests;
+namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\DecisionEngineBundle;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\StatefulMessageHandlingBundle;
 use Ultra\EventSourcedState\EventSourcedStateBundle;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
@@ -185,7 +185,7 @@ final class StateStoreDecisionAspectTest extends TestCase
                 new EventsBundle(),
                 new EventSourcedStateBundle(),
                 new StateStoreBundle(),
-                new DecisionEngineBundle(),
+                new StatefulMessageHandlingBundle(),
             )
             ->withService(new InMemoryEventStore(), InMemoryEventStore::class)
             ->withAlias(EventStore::class, InMemoryEventStore::class)

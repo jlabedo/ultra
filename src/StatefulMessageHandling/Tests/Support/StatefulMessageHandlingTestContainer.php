@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests\Support;
+namespace Ultra\StatefulMessageHandling\Tests\Support;
 
 use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\Events\EventRegistryInterface;
@@ -11,7 +11,7 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\Testing\UltraLightContainer;
 
-final readonly class DecisionEngineTestContainer extends UltraLightContainer
+final readonly class StatefulMessageHandlingTestContainer extends UltraLightContainer
 {
     public function eventSourcedStateStore(): EventSourcedStateStore
     {

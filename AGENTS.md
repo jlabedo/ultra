@@ -11,7 +11,7 @@ This file is for coding agents working in the Ultra monorepo.
 
 ## Package map
 
-- `DecisionEngine`: Decision-handler aspect built on the mediator; loads state parameters, invokes decision handlers, and appends emitted events.
+- `StatefulMessageHandling`: Stateful message-handling layer built on the mediator; loads state parameters, invokes handlers, and saves emitted state changes.
 - `EventSourcedState`: Event-sourced state loader runtime; maps stored events to object state and owns its Symfony bundle wiring.
 - `EventSourcedState_Compiler`: Compiler support that analyzes event-sourced entities and generates typed entity loaders.
 - `EventStore`: Core event store contracts, stream queries, stored-event types, and optimistic concurrency primitives.

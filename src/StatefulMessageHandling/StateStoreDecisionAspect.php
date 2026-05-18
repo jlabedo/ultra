@@ -2,10 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine;
+namespace Ultra\StatefulMessageHandling;
 
-use Ultra\DecisionEngine\Attribute\BindTo;
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Attribute\BindTo;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\MatchResult;

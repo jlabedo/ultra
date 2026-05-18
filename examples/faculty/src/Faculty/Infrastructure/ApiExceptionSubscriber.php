@@ -8,8 +8,8 @@ use Symfony\Component\EventDispatcher\EventSubscriberInterface;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpKernel\Event\ExceptionEvent;
 use Symfony\Component\HttpKernel\KernelEvents;
-use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\DecisionEngine\Violation;
+use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
+use Ultra\StatefulMessageHandling\Violation;
 
 final class ApiExceptionSubscriber implements EventSubscriberInterface
 {

@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Exception;
+namespace Ultra\StatefulMessageHandling\Exception;
 
-use Ultra\DecisionEngine\Violation;
+use Ultra\StatefulMessageHandling\Violation;
 
 class InvariantViolation extends \DomainException
 {

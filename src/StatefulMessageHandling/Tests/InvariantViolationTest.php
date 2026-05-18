@@ -2,16 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests;
+namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\TestCase;
-use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\DecisionEngine\Violation;
+use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
+use Ultra\StatefulMessageHandling\Violation;
 
 /**
  * @internal
  *
- * @covers \Ultra\DecisionEngine\Exception\InvariantViolation
+ * @covers \Ultra\StatefulMessageHandling\Exception\InvariantViolation
  */
 final class InvariantViolationTest extends TestCase
 {

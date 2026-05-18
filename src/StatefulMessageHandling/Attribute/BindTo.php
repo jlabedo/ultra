@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Attribute;
+namespace Ultra\StatefulMessageHandling\Attribute;
 
 #[\Attribute(\Attribute::TARGET_PARAMETER)]
 final readonly class BindTo

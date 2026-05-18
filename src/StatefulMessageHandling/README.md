@@ -1,4 +1,4 @@
-# Decision Engine
+# Stateful Message Handling
 
 Event-sourcing decision pipeline built on the mediator. Commands declare their consistency boundary via their `decide()` method signature; a single decision aspect loads the right streams, hydrates **states**, resolves services, and appends emitted **events** with optimistic concurrency.
 
@@ -41,7 +41,7 @@ $events = $mediator->send($command);  // returns emitted event DTOs
 Decision commands are self-handling messages:
 
 ```php
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final class CreateCourseCommand
@@ -98,7 +98,7 @@ A full course/student subscription example (events, states, commands, and tests)
 
 ## Symfony
 
-When using Symfony, register `Ultra\EventSourcedState\EventSourcedStateBundle` for entity loader compilation and `Ultra\DecisionEngine\DecisionEngineBundle` for the decision aspect.
+When using Symfony, register `Ultra\EventSourcedState\EventSourcedStateBundle` for entity loader compilation and `Ultra\StatefulMessageHandling\StatefulMessageHandlingBundle` for the decision aspect.
 
 ## Notes
 

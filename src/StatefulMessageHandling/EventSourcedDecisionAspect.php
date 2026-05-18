@@ -2,11 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine;
+namespace Ultra\StatefulMessageHandling;
 
-use Ultra\DecisionEngine\Attribute\BindTo;
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
+use Ultra\StatefulMessageHandling\Attribute\BindTo;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Exception\CommandHasNoCheckException;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\EventSourcedEntityLoader;

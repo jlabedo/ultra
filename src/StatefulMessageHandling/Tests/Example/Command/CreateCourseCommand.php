@@ -2,9 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests\Example\Command;
+namespace Ultra\StatefulMessageHandling\Tests\Example\Command;
 
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
 use Ultra\MessageHandling\Attribute\SelfHandler;

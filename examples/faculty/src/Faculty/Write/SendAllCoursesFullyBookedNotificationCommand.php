@@ -8,7 +8,7 @@ use App\Faculty\Event\AllCoursesFullyBookedNotificationSent;
 use App\Faculty\State\FacultyAdminNotificationState;
 use App\Faculty\State\FacultyCourseAvailabilityState;
 use App\Faculty\Support\FacultyIds;
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final readonly class SendAllCoursesFullyBookedNotificationCommand

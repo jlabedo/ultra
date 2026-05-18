@@ -7,7 +7,7 @@ namespace App\Faculty\Write;
 use App\Faculty\Event\StudentEnrolledInFaculty;
 use App\Faculty\State\StudentState;
 use App\Faculty\Support\FacultyIds;
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final readonly class EnrollStudentInFacultyCommand

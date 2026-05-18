@@ -2,17 +2,17 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests\Example\Command;
+namespace Ultra\StatefulMessageHandling\Tests\Example\Command;
 
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed;
 use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
 use Ultra\EventSourcedState\Tests\Example\State\StudentSubscriptionState;
-use Ultra\DecisionEngine\Violation;
+use Ultra\StatefulMessageHandling\Violation;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 
-readonly class UnsubscribeStudentFromCourseCommand
+readonly class SubscribeStudentToCourseCommand
 {
     public function __construct(
         public string $courseId,
@@ -30,14 +30,17 @@ readonly class UnsubscribeStudentFromCourseCommand
             !$course->exists()
                 ? new Violation('course.not_found', 'Course does not exist')
                 : null,
-            !$student->isSubscribedTo($this->courseId)
-                ? new Violation('student.not_subscribed', 'Student is not subscribed to this course')
+            $course->isFull()
+                ? new Violation('course.full', 'Course has reached maximum capacity')
+                : null,
+            $student->isSubscribedTo($this->courseId)
+                ? new Violation('student.already_subscribed', 'Student is already subscribed')
                 : null,
         ]));
     }
 
     /**
-     * @return list<StudentUnsubscribed>
+     * @return list<StudentSubscribed>
      */
     #[SelfHandler]
     #[DecisionHandler]
@@ -52,7 +55,7 @@ readonly class UnsubscribeStudentFromCourseCommand
         }
 
         return [
-            new StudentUnsubscribed($this->courseId, $this->studentId),
+            new StudentSubscribed($this->courseId, $this->studentId),
         ];
     }
 }

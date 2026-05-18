@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine;
+namespace Ultra\StatefulMessageHandling;
 
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -18,7 +18,7 @@ use Ultra\MessageHandling\TagNames as MessageHandlingTagNames;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateStore;
 
-final class DecisionEngineBundle extends Bundle
+final class StatefulMessageHandlingBundle extends Bundle
 {
     public function build(ContainerBuilder $container): void
     {

@@ -16,7 +16,7 @@ use App\Faculty\Write\CreateCourseCommand;
 use App\Faculty\Write\EnrollStudentInFacultyCommand;
 use App\Faculty\Write\SubscribeStudentToCourseCommand;
 use App\Faculty\Write\UnsubscribeStudentFromCourseCommand;
-use Ultra\DecisionEngine\Exception\InvariantViolation;
+use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\MessageHandling\Async\QueueWorker;

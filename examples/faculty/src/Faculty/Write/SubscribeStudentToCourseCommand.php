@@ -9,9 +9,9 @@ use App\Faculty\State\CourseState;
 use App\Faculty\State\StudentState;
 use App\Faculty\Support\FacultyIds;
 use App\Faculty\Support\SubscriptionPolicy;
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\DecisionEngine\Violation;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
+use Ultra\StatefulMessageHandling\Violation;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final readonly class SubscribeStudentToCourseCommand

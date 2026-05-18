@@ -2,22 +2,22 @@
 
 declare(strict_types=1);
 
-namespace Ultra\DecisionEngine\Tests;
+namespace Ultra\StatefulMessageHandling\Tests;
 
-use Ultra\DecisionEngine\Attribute\DecisionHandler;
-use Ultra\DecisionEngine\Exception\CommandHasNoCheckException;
-use Ultra\DecisionEngine\Exception\InvariantViolation;
-use Ultra\DecisionEngine\Tests\Example\Command\CreateCourseCommand;
-use Ultra\DecisionEngine\Tests\Example\Command\SubscribeStudentToCourseCommand;
-use Ultra\DecisionEngine\Tests\Example\Command\UnsubscribeStudentFromCourseCommand;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Exception\CommandHasNoCheckException;
+use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
+use Ultra\StatefulMessageHandling\Tests\Example\Command\CreateCourseCommand;
+use Ultra\StatefulMessageHandling\Tests\Example\Command\SubscribeStudentToCourseCommand;
+use Ultra\StatefulMessageHandling\Tests\Example\Command\UnsubscribeStudentFromCourseCommand;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed;
 use Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
 use Ultra\EventSourcedState\Tests\Example\State\StudentSubscriptionState;
-use Ultra\DecisionEngine\Tests\Support\DecisionEngineFunctionalTestCase;
-use Ultra\DecisionEngine\Tests\Support\DecisionEngineTestContainer;
-use Ultra\DecisionEngine\Violation;
+use Ultra\StatefulMessageHandling\Tests\Support\StatefulMessageHandlingFunctionalTestCase;
+use Ultra\StatefulMessageHandling\Tests\Support\StatefulMessageHandlingTestContainer;
+use Ultra\StatefulMessageHandling\Violation;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MessageHandling\Attribute\Around;
@@ -32,7 +32,7 @@ use Ultra\Testing\UltraLight;
  *
  * @coversNothing
  */
-final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
+final class StatefulMessageHandlingAspectTest extends StatefulMessageHandlingFunctionalTestCase
 {
     public function test_it_creates_a_course_and_subscribes_a_student_through_the_mediator(): void
     {
@@ -358,7 +358,7 @@ final class DecisionEngineAspectTest extends DecisionEngineFunctionalTestCase
     }
 
     /**
-     * @return UltraLight<DecisionEngineTestContainer>
+     * @return UltraLight<StatefulMessageHandlingTestContainer>
      */
     private function ultraLight(): UltraLight
     {
