@@ -2,7 +2,7 @@
     "name": "ultra/decision-engine",
     "description": "Ultra Framework - Decision Engine (CQRS + Event Sourcing)",
     "type": "library",
-    "license": "MIT",
+    "license": "proprietary",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

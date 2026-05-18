@@ -2,7 +2,7 @@
     "name": "ultra/event-sourced-state",
     "description": "Ultra Framework - Event-sourced state loading",
     "type": "library",
-    "license": "MIT",
+    "license": "proprietary",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

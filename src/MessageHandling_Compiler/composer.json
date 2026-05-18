@@ -2,7 +2,7 @@
     "name": "ultra/message-handling-compiler",
     "description": "Ultra Framework - Message Handling Compiler Support",
     "type": "library",
-    "license": "MIT",
+    "license": "proprietary",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

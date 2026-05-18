@@ -2,7 +2,7 @@
     "name": "ultra/projection-postgres",
     "description": "Ultra Framework - Postgres Projection Runtime",
     "type": "library",
-    "license": "MIT",
+    "license": "proprietary",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

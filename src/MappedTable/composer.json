@@ -2,7 +2,7 @@
     "name": "ultra/mapped-table",
     "description": "Ultra Framework - Adapter-backed mapped row set unit of work",
     "type": "library",
-    "license": "MIT",
+    "license": "proprietary",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

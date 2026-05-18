@@ -2,7 +2,7 @@
     "name": "ultra/mapper-compiler",
     "description": "Normalizer made fast - compiler",
     "type": "library",
-    "license": "MIT",
+    "license": "proprietary",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

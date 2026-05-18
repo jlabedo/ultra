@@ -2,7 +2,7 @@
     "name": "ultra/state-store",
     "description": "Ultra Framework - Mapper-backed state store on top of mapped row sets",
     "type": "library",
-    "license": "MIT",
+    "license": "proprietary",
     "authors": [
         {
             "name": "Jean de La Bédoyère",
