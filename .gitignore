@@ -10,5 +10,6 @@ composer.lock
 *.swo
 *~
 .DS_Store
+.codex/
 .claude/worktrees/
 .claude/settings.local.json
