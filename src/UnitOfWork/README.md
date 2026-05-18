@@ -31,6 +31,19 @@ interface TransactionManager
 
 Implementations commit when the callback returns and roll back when it throws. `NoTransactionManager` is provided for packages that do not need a real transaction boundary.
 
+## UnitOfWorkRunner
+
+`UnitOfWorkRunner` is the user-facing API for application work that should flush on success and clear afterward:
+
+```php
+$runner->run(function () use ($mediator, $context): void {
+    $mediator->send(new A(), $context);
+    $mediator->send(new B(), $context);
+});
+```
+
+`TransactionalUnitOfWorkRunner` runs the callback first, flushes the unit of work through `TransactionManager`, and clears the unit of work after success or failure.
+
 ## CompositeUnitOfWork
 
 `CompositeUnitOfWork` lets you compose several unit-of-work instances and flush them in a deterministic caller-defined order.
@@ -51,7 +64,7 @@ When using the Symfony bundle, autoconfigured unit-of-work services are collecte
 final class TransactionalOutboxSender implements UnitOfWork {}
 ```
 
-## Typical Usage
+## Low-Level Usage
 
 ```php
 $handler($message);
