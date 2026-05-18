@@ -1,0 +1,8 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$toolName = 'php-cs-fixer';
+
+require dirname(__DIR__) . '/tools/bootstrap/tool-proxy.php';

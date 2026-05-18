@@ -18,9 +18,7 @@
     },
     "require-dev": {
         "doctrine/dbal": "^4.0",
-        "friendsofphp/php-cs-fixer": "^3.0",
         "opis/closure": "^4.0",
-        "pestphp/pest": "^4",
         "symfony/config": "7.*|8.*",
         "symfony/console": "7.*|8.*",
         "symfony/framework-bundle": "7.*|8.*",
@@ -65,15 +63,15 @@
         }
     },
     "config": {
-        "sort-packages": true,
-        "allow-plugins": {
-            "pestphp/pest-plugin": true
-        }
+        "sort-packages": true
     },
     "scripts": {
         "bench:event-store-postgres": "php benchmark_event_store_postgres.php",
-        "test": "ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' pest --compact",
-        "test:coverage": "ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' pest --compact --coverage",
-        "cs-fix": "php-cs-fixer fix"
+        "install-tools": "php tools/bootstrap/install.php",
+        "post-install-cmd": "@install-tools",
+        "post-update-cmd": "@install-tools",
+        "test": "ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' bin/phpunit",
+        "test:coverage": "ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' bin/phpunit --coverage",
+        "cs-fix": "bin/php-cs-fixer fix"
     }
 }
