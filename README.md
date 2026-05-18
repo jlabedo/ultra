@@ -78,7 +78,13 @@ Run the test suite:
 composer test
 ```
 
-Postgres integration tests use `ULTRA_TEST_POSTGRES_DSN` and skip themselves when no suitable database is configured.
+Launch the test Postgres database with Docker Compose:
+
+```bash
+docker compose up
+```
+
+Postgres integration tests use `ULTRA_TEST_POSTGRES_DSN`. The root `composer test` script sets it to `pgsql://ultra:ultra@127.0.0.1:55432/ultra_test`, which matches the database started by `docker compose up`.
 
 ## License
 
