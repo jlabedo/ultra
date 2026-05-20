@@ -25,7 +25,7 @@ final class MapperBundleTest extends KernelTestCase
         restore_exception_handler();
     }
 
-    public function test_cache_warmup_uses_runtime_normalizers(): void
+    public function test_container_compilation_generates_normalizers_with_runtime_normalizers(): void
     {
         self::bootKernel();
 

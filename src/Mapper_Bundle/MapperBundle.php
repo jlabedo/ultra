@@ -22,10 +22,6 @@ final class MapperBundle extends Bundle
             ->setArguments(['%kernel.build_dir%/mapper'])
         ;
 
-        if (!$container->hasParameter('ultra_mapper.normalizable_classes')) {
-            $container->setParameter('ultra_mapper.normalizable_classes', []);
-        }
-
         $container->registerForAutoconfiguration(RuntimeNormalizerInterface::class)
             ->addTag(TagNames::RUNTIME_NORMALIZER)
         ;
@@ -39,6 +35,8 @@ final class MapperBundle extends Bundle
             }
         );
 
-        $container->addCompilerPass(new MapperCompilerPass());
+        $buildDir = (string) $container->getParameter('kernel.build_dir');
+
+        $container->addCompilerPass(new MapperCompilerPass($buildDir.'/mapper'));
     }
 }

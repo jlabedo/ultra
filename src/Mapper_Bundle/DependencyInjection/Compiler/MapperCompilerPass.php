@@ -7,21 +7,20 @@ namespace Ultra\Mapper_Bundle\DependencyInjection\Compiler;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\Mapper\RuntimeNormalizerInterface;
-use Ultra\Mapper_Bundle\Cache\MapperCacheWarmer;
 use Ultra\Mapper_Bundle\TagNames;
+use Ultra\Mapper_Compiler\NormalizerGenerator;
 
-final class MapperCompilerPass implements CompilerPassInterface
+final readonly class MapperCompilerPass implements CompilerPassInterface
 {
+    public function __construct(private string $outputDir) {}
+
     public function process(ContainerBuilder $container): void
     {
         $classes = $this->collectTaggedClasses($container);
 
         $runtimeTypes = $this->collectRuntimeNormalizedTypes($container);
 
-        $container->register(MapperCacheWarmer::class, MapperCacheWarmer::class)
-            ->setArguments([$classes, $runtimeTypes])
-            ->addTag('kernel.cache_warmer')
-        ;
+        $this->generateNormalizers($classes, $runtimeTypes);
     }
 
     /**
@@ -29,13 +28,7 @@ final class MapperCompilerPass implements CompilerPassInterface
      */
     private function collectTaggedClasses(ContainerBuilder $container): array
     {
-        $classes = $container->hasParameter('ultra_mapper.normalizable_classes')
-            ? $container->getParameter('ultra_mapper.normalizable_classes')
-            : [];
-
-        if (!is_array($classes)) {
-            $classes = [];
-        }
+        $classes = [];
 
         foreach ($container->findTaggedResourceIds(TagNames::NORMALIZABLE) as $id => $tags) {
             foreach ($tags as $tag) {
@@ -91,5 +84,37 @@ final class MapperCompilerPass implements CompilerPassInterface
         ksort($types);
 
         return $types;
+    }
+
+    /**
+     * @param list<class-string>        $classes
+     * @param array<class-string, true> $runtimeNormalizedTypes
+     */
+    private function generateNormalizers(array $classes, array $runtimeNormalizedTypes): void
+    {
+        if ([] === $classes) {
+            return;
+        }
+
+        if (!class_exists(NormalizerGenerator::class)) {
+            throw new \RuntimeException('Cannot compile mapper normalizers because ultra/mapper-compiler is not installed.');
+        }
+
+        if (!is_dir($this->outputDir)) {
+            mkdir($this->outputDir, 0o777, true);
+        }
+
+        foreach ($classes as $className) {
+            if (!class_exists($className)) {
+                throw new \RuntimeException(sprintf('Cannot compile mapper normalizer for missing class "%s".', $className));
+            }
+
+            $normalizerClassBaseName = '__Normalizer_'.str_replace('\\', '_', ltrim($className, '\\'));
+            $normalizerClass = 'Ultra\Normalizer\Generated\\'.$normalizerClassBaseName;
+            $cacheFile = rtrim($this->outputDir, '/').'/'.$normalizerClassBaseName.'.php';
+            $fileGen = NormalizerGenerator::for($className, $normalizerClass, $runtimeNormalizedTypes);
+
+            file_put_contents($cacheFile, $fileGen->generate());
+        }
     }
 }
