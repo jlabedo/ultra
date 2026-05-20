@@ -63,6 +63,11 @@ readonly class CustomerWithRuntimeEmail
 #[CoversNamespace('Ultra\Mapper_Compiler')]
 final class UltraNormalizerTest extends TestCase
 {
+    public static function setUpBeforeClass(): void
+    {
+        self::removeDirectory(__DIR__.'/../../../var/normalizer_cache');
+    }
+
     public function test_ultra_normalizer_round_trip(): void
     {
         $normalizer = new UltraNormalizer();
@@ -519,5 +524,29 @@ final class UltraNormalizerTest extends TestCase
                 self::assertStringContainsString($needle, $exception->getMessage());
             }
         }
+    }
+
+    private static function removeDirectory(string $directory): void
+    {
+        if (!is_dir($directory)) {
+            return;
+        }
+
+        $files = new \RecursiveIteratorIterator(
+            new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS),
+            \RecursiveIteratorIterator::CHILD_FIRST,
+        );
+
+        foreach ($files as $file) {
+            if ($file->isDir()) {
+                rmdir($file->getPathname());
+
+                continue;
+            }
+
+            unlink($file->getPathname());
+        }
+
+        rmdir($directory);
     }
 }
