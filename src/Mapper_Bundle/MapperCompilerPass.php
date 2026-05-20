@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Mapper_Bundle\DependencyInjection\Compiler;
+namespace Ultra\Mapper_Bundle;
 
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;

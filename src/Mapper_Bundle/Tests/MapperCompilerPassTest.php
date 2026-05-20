@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
-use Ultra\Mapper_Bundle\DependencyInjection\Compiler\MapperCompilerPass;
+use Ultra\Mapper_Bundle\MapperCompilerPass;
 use Ultra\Mapper_Bundle\TagNames;
 
 final readonly class MapperCompilerPassFixture

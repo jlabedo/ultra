@@ -10,7 +10,6 @@ use Ultra\Container\ContainerExtension;
 use Ultra\Mapper\Attribute\AsValue;
 use Ultra\Mapper\RuntimeNormalizerInterface;
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\Mapper_Bundle\DependencyInjection\Compiler\MapperCompilerPass;
 
 final class MapperExtension implements ContainerExtension
 {

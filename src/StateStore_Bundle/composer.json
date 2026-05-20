@@ -16,10 +16,6 @@
         "ultra/mapper-bundle": "*",
         "ultra/state-store": "*"
     },
-    "require-dev": {
-        "symfony/config": "7.*|8.*",
-        "symfony/framework-bundle": "7.*|8.*"
-    },
     "autoload": {
         "psr-4": {
             "Ultra\\StateStore_Bundle\\": ""
