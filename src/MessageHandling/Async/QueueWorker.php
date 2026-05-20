@@ -39,10 +39,10 @@ final readonly class QueueWorker
             throw new \LogicException(sprintf('Async delivery "%s" is missing the "%s" route header.', $delivery->messageId->value, AsyncHeaderNames::ROUTE));
         }
 
-        /** @var MessageHandlerInterface $handler */
-        $handler = $this->container->get($route);
-
         try {
+            /** @var MessageHandlerInterface $handler */
+            $handler = $this->container->get($route);
+
             $work = function () use ($handler, $envelope, $delivery): void {
                 $handler->__invoke($envelope->message, $envelope->messageContext);
                 $this->receiver->acknowledge($delivery);
