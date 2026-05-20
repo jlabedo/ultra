@@ -12,6 +12,7 @@
     "require": {
         "php": ">=8.5",
         "symfony/dependency-injection": "7.*|8.*",
+        "ultra/container": "*",
         "ultra/mapper-bundle": "*",
         "ultra/state-store": "*"
     },

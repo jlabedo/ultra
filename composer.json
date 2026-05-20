@@ -27,7 +27,7 @@
         "symfony/process": "7.*|8.*"
     },
     "replace": {
-        "ultra/stateful-message-handling": "self.version",
+        "ultra/container": "self.version",
         "ultra/event-sourced-state": "self.version",
         "ultra/event-sourced-state-compiler": "self.version",
         "ultra/event-store": "self.version",
@@ -35,13 +35,18 @@
         "ultra/events": "self.version",
         "ultra/mapped-table": "self.version",
         "ultra/mapper": "self.version",
+        "ultra/mapper-bundle": "self.version",
         "ultra/mapper-compiler": "self.version",
         "ultra/message-handling": "self.version",
         "ultra/message-handling-compiler": "self.version",
         "ultra/message-handling-postgres-queue": "self.version",
+        "ultra/projection": "self.version",
+        "ultra/projection-postgres": "self.version",
         "ultra/schema": "self.version",
         "ultra/state-store": "self.version",
         "ultra/state-store-bundle": "self.version",
+        "ultra/stateful-message-handling": "self.version",
+        "ultra/symfony-bundle": "self.version",
         "ultra/time": "self.version",
         "ultra/unit-of-work": "self.version"
     },

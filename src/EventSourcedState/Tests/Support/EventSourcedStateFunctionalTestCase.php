@@ -6,14 +6,14 @@ namespace Ultra\EventSourcedState\Tests\Support;
 
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Container;
-use Ultra\EventSourcedState\EventSourcedStateBundle;
+use Ultra\EventSourcedState\EventSourcedStateExtension;
 use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Events\CompiledEventRegistry;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
-use Ultra\Mapper_Bundle\MapperBundle;
+use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
 
@@ -39,8 +39,8 @@ abstract class EventSourcedStateFunctionalTestCase extends TestCase
         return new UltraLight()
             ->withContainerFactory($containerFactory)
             ->withBuildDir($buildDir)
-            ->withBundle(new EventSourcedStateBundle())
-            ->withBundle(new MapperBundle())
+            ->withBundle(new EventSourcedStateExtension())
+            ->withBundle(new MapperExtension())
             ->withService(new InMemoryEventStore(), InMemoryEventStore::class)
             ->withAlias(EventStore::class, InMemoryEventStore::class)
             ->withService(new CompiledEventRegistry(

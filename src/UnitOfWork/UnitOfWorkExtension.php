@@ -7,15 +7,14 @@ namespace Ultra\UnitOfWork;
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Container\ContainerExtension;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 
-final class UnitOfWorkBundle extends Bundle
+final class UnitOfWorkExtension implements ContainerExtension
 {
     public function build(ContainerBuilder $container): void
     {
-        parent::build($container);
 
         $container->registerForAutoconfiguration(UnitOfWork::class)
             ->addTag(TagNames::UNIT_OF_WORK)

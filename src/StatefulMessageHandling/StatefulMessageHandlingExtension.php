@@ -8,7 +8,7 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Container\ContainerExtension;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventStore\EventStore;
@@ -18,11 +18,10 @@ use Ultra\MessageHandling\TagNames as MessageHandlingTagNames;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateStore;
 
-final class StatefulMessageHandlingBundle extends Bundle
+final class StatefulMessageHandlingExtension implements ContainerExtension
 {
     public function build(ContainerBuilder $container): void
     {
-        parent::build($container);
 
         $container->addCompilerPass(new class implements CompilerPassInterface {
             public function process(ContainerBuilder $container): void

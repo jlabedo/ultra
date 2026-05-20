@@ -16,7 +16,7 @@ use Ultra\Mapper_Example\Kernel;
  *
  * @coversNothing
  */
-final class MapperBundleTest extends KernelTestCase
+final class MapperExtensionTest extends KernelTestCase
 {
     protected function tearDown(): void
     {

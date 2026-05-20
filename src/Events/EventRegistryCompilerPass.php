@@ -16,7 +16,7 @@ class EventRegistryCompilerPass implements CompilerPassInterface
         $eventMap = [];
         $domainIdentifierMap = [];
         $domainIdentifierRequiresScope = [];
-        foreach ($container->findTaggedResourceIds(EventsBundle::EVENT_TAG) as $serviceId => $tags) {
+        foreach ($container->findTaggedResourceIds(EventsExtension::EVENT_TAG) as $serviceId => $tags) {
             $class = $container->getDefinition($serviceId)->getClass();
             foreach ($tags as $tag) {
                 $name = $tag['name'] ?? $class;

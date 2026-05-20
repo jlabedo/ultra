@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ultra\MessageHandling_Compiler\Tests;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Container\ContainerExtension;
 use Ultra\MessageHandling\Async\AsyncEnvelope;
 use Ultra\MessageHandling\Async\AsyncEnqueueOptions;
 use Ultra\MessageHandling\Async\AsyncMessageId;
@@ -23,7 +23,7 @@ use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase
  *
  * @coversNothing
  */
-final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
+final class MessageHandlingExtensionTest extends MessageHandlingCompilerTestCase
 {
     public function test_it_autoconfigures_anonymous_handler_services(): void
     {
@@ -108,7 +108,7 @@ final class MessageHandlingBundleTest extends MessageHandlingCompilerTestCase
 
         $container = $this->ultraLight()
             ->withService($sender, 'test.email_sender')
-            ->withBundle(new class extends Bundle {
+            ->withBundle(new class implements ContainerExtension {
                 public function build(ContainerBuilder $container): void
                 {
                     $container->getDefinition('test.email_sender')

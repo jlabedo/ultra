@@ -8,12 +8,12 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Container\ContainerExtension;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\Mapper_Bundle\MapperBundle;
-use Ultra\Projection\Bundle\ProjectionBundle;
+use Ultra\Mapper_Bundle\MapperExtension;
+use Ultra\Projection\Bundle\ProjectionExtension;
 use Ultra\Projection\Bundle\ProjectionImplementationInterface;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
@@ -46,7 +46,7 @@ abstract class ProjectionFunctionalTestCase extends TestCase
         return new UltraLight()
             ->withBuildDir(dirname(__DIR__, 4).'/var/projection_tests')
             ->withContainerFactory($containerFactory)
-            ->withBundle(new class ($eventStore ?? new InMemoryEventStore()) extends Bundle {
+            ->withBundle(new class ($eventStore ?? new InMemoryEventStore()) implements ContainerExtension {
                 public function __construct(private EventStore $eventStore){}
                 public function build(ContainerBuilder $container): void
                 {
@@ -58,8 +58,8 @@ abstract class ProjectionFunctionalTestCase extends TestCase
                     ;
                 }
             })
-            ->withBundle(new MapperBundle())
-            ->withBundle(new ProjectionBundle())
+            ->withBundle(new MapperExtension())
+            ->withBundle(new ProjectionExtension())
             ->withService($implementation ?? new InMemoryProjectionImplementation(), ProjectionImplementationInterface::class)
             ->withAlias('test.event_store', EventStore::class)
             ->withAlias('test.normalizer', UltraNormalizer::class)

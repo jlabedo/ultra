@@ -18,13 +18,13 @@ use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
-use Ultra\MessageHandling\MessageHandlingBundle;
+use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
 use Ultra\UnitOfWork\TransactionManager;
 use Ultra\UnitOfWork\UnitOfWork;
-use Ultra\UnitOfWork\UnitOfWorkBundle;
+use Ultra\UnitOfWork\UnitOfWorkExtension;
 
 /**
  * @internal
@@ -135,7 +135,7 @@ final class TransactionalUnitOfWorkAdviceTest extends TestCase
             ->withAlias('test.event_bus', EventBusInterface::class)
             ->withAlias('test.queue_worker', QueueWorker::class)
             ->withAlias('test.unit_of_work', UnitOfWork::class)
-            ->withBundle(new UnitOfWorkBundle(), new MessageHandlingBundle())
+            ->withBundle(new UnitOfWorkExtension(), new MessageHandlingExtension())
         ;
     }
 }

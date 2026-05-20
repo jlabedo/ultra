@@ -6,18 +6,16 @@ namespace Ultra\Events;
 
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Container\ContainerExtension;
 use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\Attribute\Event;
 
-final class EventsBundle extends Bundle
+final class EventsExtension implements ContainerExtension
 {
     public const string EVENT_TAG = 'ultra_events.event';
 
     public function build(ContainerBuilder $container): void
     {
-        parent::build($container);
-
         $container->registerAttributeForAutoconfiguration(
             Event::class,
             static function (ChildDefinition $definition, Event $attribute, \Reflector $reflector): void {

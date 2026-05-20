@@ -10,7 +10,7 @@ use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
-use Ultra\Projection\Bundle\ProjectionBundle;
+use Ultra\Projection\Bundle\ProjectionExtension;
 use Ultra\Projection\Coordination\ProjectionActivityEventStore;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
@@ -45,10 +45,10 @@ final class ThirdStubProjection
 /**
  * @internal
  */
-#[CoversClass(ProjectionBundle::class)]
+#[CoversClass(ProjectionExtension::class)]
 #[CoversClass(ProjectionActivityEventStore::class)]
 #[CoversClass(ProjectionActivityRecorder::class)]
-final class ProjectionBundleTest extends ProjectionFunctionalTestCase
+final class ProjectionExtensionTest extends ProjectionFunctionalTestCase
 {
     public function test_registers_empty_catalog_when_no_projections_are_discovered(): void
     {

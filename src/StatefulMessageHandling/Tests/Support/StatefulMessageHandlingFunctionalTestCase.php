@@ -6,19 +6,19 @@ namespace Ultra\StatefulMessageHandling\Tests\Support;
 
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Container;
-use Ultra\StatefulMessageHandling\StatefulMessageHandlingBundle;
-use Ultra\EventSourcedState\EventSourcedStateBundle;
+use Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension;
+use Ultra\EventSourcedState\EventSourcedStateExtension;
 use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Events\CompiledEventRegistry;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
-use Ultra\Mapper_Bundle\MapperBundle;
+use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
-use Ultra\MessageHandling\MessageHandlingBundle;
+use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
 
@@ -47,10 +47,10 @@ abstract class StatefulMessageHandlingFunctionalTestCase extends TestCase
         return new UltraLight()
             ->withContainerFactory($containerFactory)
             ->withBuildDir($buildDir)
-            ->withBundle(new MessageHandlingBundle())
-            ->withBundle(new EventSourcedStateBundle())
-            ->withBundle(new StatefulMessageHandlingBundle())
-            ->withBundle(new MapperBundle())
+            ->withBundle(new MessageHandlingExtension())
+            ->withBundle(new EventSourcedStateExtension())
+            ->withBundle(new StatefulMessageHandlingExtension())
+            ->withBundle(new MapperExtension())
             ->withService(new InMemoryEventStore(), InMemoryEventStore::class)
             ->withAlias(EventStore::class, InMemoryEventStore::class)
             ->withAlias('test.mediator', MediatorInterface::class)

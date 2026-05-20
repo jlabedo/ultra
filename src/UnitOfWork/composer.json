@@ -10,11 +10,11 @@
         }
     ],
     "require": {
-        "php": ">=8.5"
+        "php": ">=8.5",
+        "ultra/container": "*"
     },
     "suggest": {
-        "symfony/dependency-injection": "Register UnitOfWork services and mediator transaction advice through the Symfony bundle.",
-        "symfony/http-kernel": "Use Ultra\\UnitOfWork\\UnitOfWorkBundle as a Symfony bundle.",
+        "symfony/dependency-injection": "Register UnitOfWork services and mediator transaction advice through the Ultra container extension.",
         "ultra/event-store": "Decorate EventStore with EventStoreUnitOfWork when the bundle is used.",
         "ultra/message-handling": "Wrap compiled mediator handlers in the transactional unit-of-work runner."
     },

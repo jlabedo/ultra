@@ -6,15 +6,14 @@ namespace Ultra\EventSourcedState;
 
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Container\ContainerExtension;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState_Compiler\EntityLoaderCompilerPass;
 
-final class EventSourcedStateBundle extends Bundle
+final class EventSourcedStateExtension implements ContainerExtension
 {
     public function build(ContainerBuilder $container): void
     {
-        parent::build($container);
 
         $container->registerAttributeForAutoconfiguration(
             EventSourcedEntity::class,

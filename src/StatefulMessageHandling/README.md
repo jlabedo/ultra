@@ -98,7 +98,7 @@ A full course/student subscription example (events, states, commands, and tests)
 
 ## Symfony
 
-When using Symfony, register `Ultra\EventSourcedState\EventSourcedStateBundle` for entity loader compilation and `Ultra\StatefulMessageHandling\StatefulMessageHandlingBundle` for the decision aspect.
+When using Symfony, register `Ultra\EventSourcedState\EventSourcedStateExtension` for entity loader compilation and `Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension` for the decision aspect.
 
 ## Notes
 

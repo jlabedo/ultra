@@ -11,6 +11,7 @@
     ],
     "require": {
         "php": ">=8.5",
+        "ultra/container": "*",
         "ultra/time": "self.version"
     },
     "suggest": {

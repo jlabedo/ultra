@@ -8,7 +8,8 @@ use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
-use Ultra\Mapper_Bundle\MapperBundle;
+use Ultra\Mapper_Bundle\MapperExtension;
+use Ultra\SymfonyBundle\UltraBundle;
 use Ultra\Mapper_Bundle\TagNames;
 use Ultra\Mapper_Example\Domain\UserRegistered;
 
@@ -20,7 +21,9 @@ final class Kernel extends BaseKernel
     {
         yield new FrameworkBundle();
 
-        yield new MapperBundle();
+        yield new UltraBundle([
+            new MapperExtension(),
+        ]);
     }
 
     protected function configureContainer(ContainerConfigurator $container): void

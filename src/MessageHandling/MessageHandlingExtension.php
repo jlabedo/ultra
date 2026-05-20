@@ -6,18 +6,17 @@ namespace Ultra\MessageHandling;
 
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Container\ContainerExtension;
 use Ultra\MessageHandling\Attribute\Advice;
 use Ultra\MessageHandling\Attribute\EventHandler;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling_Compiler\MessageRouterCompilerPass;
 
-final class MessageHandlingBundle extends Bundle
+final class MessageHandlingExtension implements ContainerExtension
 {
     public function build(ContainerBuilder $container): void
     {
-        parent::build($container);
 
         $container->registerAttributeForAutoconfiguration(
             Advice::class,

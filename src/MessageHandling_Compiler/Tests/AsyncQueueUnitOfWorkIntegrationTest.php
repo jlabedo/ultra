@@ -15,12 +15,12 @@ use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\Attribute\Asynchronous;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\MediatorInterface;
-use Ultra\MessageHandling\MessageHandlingBundle;
+use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
 use Ultra\UnitOfWork\UnitOfWork;
-use Ultra\UnitOfWork\UnitOfWorkBundle;
+use Ultra\UnitOfWork\UnitOfWorkExtension;
 
 /**
  * @internal
@@ -81,7 +81,7 @@ final class AsyncQueueUnitOfWorkIntegrationTest extends \PHPUnit\Framework\TestC
         return new UltraLight()
             ->withBuildDir(dirname(__DIR__, 3).'/var/message_handling_uow_tests')
             ->withContainerFactory($containerFactory)
-            ->withBundle(new UnitOfWorkBundle(), new MessageHandlingBundle())
+            ->withBundle(new UnitOfWorkExtension(), new MessageHandlingExtension())
             ->withAlias('test.mediator', MediatorInterface::class)
             ->withAlias('test.queue_worker', QueueWorker::class)
             ->withAlias('test.unit_of_work', UnitOfWork::class)
