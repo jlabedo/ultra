@@ -7,7 +7,7 @@ namespace Ultra\Projection\Bundle;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Container\ContainerExtension;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Bundle\Command\ListSegmentsCommand;
@@ -29,11 +29,10 @@ use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
 
-final class ProjectionBundle extends Bundle
+final class ProjectionExtension implements ContainerExtension
 {
     public function build(ContainerBuilder $container): void
     {
-        parent::build($container);
 
         $container->registerAttributeForAutoconfiguration(
             Projection::class,

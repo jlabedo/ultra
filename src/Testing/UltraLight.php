@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ultra\Testing;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Container\ContainerExtension;
 
 const ULTRA_LIGHT_BUILD_DIR = __DIR__.'/../../var/ultra_light_tests';
 
@@ -22,7 +22,7 @@ final readonly class UltraLight
      * @param list<class-string>                                   $classesToDiscover
      * @param list<class-string>                                   $eventClasses
      * @param array<string, string>                                $publicAliases
-     * @param list<Bundle>                                         $extraBundles
+     * @param list<ContainerExtension>                             $extraExtensions
      * @param null|UltraLightContainerFactoryInterface<TContainer> $containerFactory
      */
     public function __construct(
@@ -30,7 +30,7 @@ final readonly class UltraLight
         private array $classesToDiscover = [],
         private array $eventClasses = [],
         private array $publicAliases = [],
-        private array $extraBundles = [],
+        private array $extraExtensions = [],
         private string $buildDir = ULTRA_LIGHT_BUILD_DIR,
         ?UltraLightContainerFactoryInterface $containerFactory = null,
     ) {
@@ -52,7 +52,7 @@ final readonly class UltraLight
             classesToDiscover: [...$this->classesToDiscover, ...$classesToDiscover],
             eventClasses: $this->eventClasses,
             publicAliases: $this->publicAliases,
-            extraBundles: $this->extraBundles,
+            extraExtensions: $this->extraExtensions,
             buildDir: $this->buildDir,
             containerFactory: $this->containerFactory,
         );
@@ -70,7 +70,7 @@ final readonly class UltraLight
             classesToDiscover: $this->classesToDiscover,
             eventClasses: [...$this->eventClasses, ...$eventClasses],
             publicAliases: $this->publicAliases,
-            extraBundles: $this->extraBundles,
+            extraExtensions: $this->extraExtensions,
             buildDir: $this->buildDir,
             containerFactory: $this->containerFactory,
         );
@@ -93,7 +93,7 @@ final readonly class UltraLight
             classesToDiscover: $this->classesToDiscover,
             eventClasses: $this->eventClasses,
             publicAliases: $this->publicAliases,
-            extraBundles: $this->extraBundles,
+            extraExtensions: $this->extraExtensions,
             buildDir: $this->buildDir,
             containerFactory: $this->containerFactory,
         );
@@ -109,7 +109,7 @@ final readonly class UltraLight
             classesToDiscover: $this->classesToDiscover,
             eventClasses: $this->eventClasses,
             publicAliases: [...$this->publicAliases, $alias => $serviceId],
-            extraBundles: $this->extraBundles,
+            extraExtensions: $this->extraExtensions,
             buildDir: $this->buildDir,
             containerFactory: $this->containerFactory,
         );
@@ -118,17 +118,25 @@ final readonly class UltraLight
     /**
      * @return UltraLight<TContainer>
      */
-    public function withBundle(Bundle ...$extraBundles): self
+    public function withExtension(ContainerExtension ...$extraExtensions): self
     {
         return new self(
             services: $this->services,
             classesToDiscover: $this->classesToDiscover,
             eventClasses: $this->eventClasses,
             publicAliases: $this->publicAliases,
-            extraBundles: [...$this->extraBundles, ...$extraBundles],
+            extraExtensions: [...$this->extraExtensions, ...$extraExtensions],
             buildDir: $this->buildDir,
             containerFactory: $this->containerFactory,
         );
+    }
+
+    /**
+     * @return UltraLight<TContainer>
+     */
+    public function withBundle(ContainerExtension ...$extraExtensions): self
+    {
+        return $this->withExtension(...$extraExtensions);
     }
 
     /**
@@ -141,7 +149,7 @@ final readonly class UltraLight
             classesToDiscover: $this->classesToDiscover,
             eventClasses: $this->eventClasses,
             publicAliases: $this->publicAliases,
-            extraBundles: $this->extraBundles,
+            extraExtensions: $this->extraExtensions,
             buildDir: $buildDir,
             containerFactory: $this->containerFactory,
         );
@@ -161,7 +169,7 @@ final readonly class UltraLight
             classesToDiscover: $this->classesToDiscover,
             eventClasses: $this->eventClasses,
             publicAliases: $this->publicAliases,
-            extraBundles: $this->extraBundles,
+            extraExtensions: $this->extraExtensions,
             buildDir: $this->buildDir,
             containerFactory: $containerFactory,
         );
@@ -195,8 +203,8 @@ final readonly class UltraLight
             $container->setAlias($alias, $serviceId)->setPublic(true);
         }
 
-        foreach ($this->extraBundles as $bundle) {
-            $bundle->build($container);
+        foreach ($this->extraExtensions as $extension) {
+            $extension->build($container);
         }
         $container->compile();
 

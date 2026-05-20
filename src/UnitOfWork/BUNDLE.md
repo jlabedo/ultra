@@ -15,4 +15,4 @@ $runner->run(function () use ($mediator, $context): void {
 
 The runner executes the callback, flushes the configured `UnitOfWork` through `TransactionManager` only when pending changes exist, and clears the unit of work afterward. Nested runner calls join the active run; nested exceptions mark the active run rollback-only so swallowed failures cannot later commit buffered writes.
 
-When `MessageHandlingBundle` is installed, the bundle also registers a mediator around advice that runs every compiled handler through `TransactionalUnitOfWorkRunner`. Read-only handlers are cheap because no transaction is opened unless a unit of work reports pending changes.
+When `MessageHandlingExtension` is installed, the bundle also registers a mediator around advice that runs every compiled handler through `TransactionalUnitOfWorkRunner`. Read-only handlers are cheap because no transaction is opened unless a unit of work reports pending changes.

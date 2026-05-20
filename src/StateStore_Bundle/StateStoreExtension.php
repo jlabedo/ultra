@@ -7,7 +7,7 @@ namespace Ultra\StateStore_Bundle;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Container\ContainerExtension;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
 use Ultra\StateStore\Attribute\State;
@@ -16,11 +16,10 @@ use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
 use Ultra\StateStore_Bundle\DependencyInjection\Compiler\StateStoreCompilerPass;
 
-final class StateStoreBundle extends Bundle
+final class StateStoreExtension implements ContainerExtension
 {
     public function build(ContainerBuilder $container): void
     {
-        parent::build($container);
 
         $container->registerAttributeForAutoconfiguration(
             State::class,

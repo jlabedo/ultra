@@ -12,14 +12,15 @@
     "require": {
         "php": ">=8.5",
         "psr/container": "^2.0",
+        "ultra/container": "*",
         "ultra/event-sourced-state": "*",
         "ultra/event-store": "*",
-        "ultra/message-handling": "*",
         "ultra/mapper": "*",
+        "ultra/message-handling": "*",
         "ultra/state-store": "*"
     },
     "suggest": {
-        "symfony/dependency-injection": "Required to use Ultra\\StatefulMessageHandling\\StatefulMessageHandlingBundle.",
+        "symfony/dependency-injection": "Required to use Ultra\\StatefulMessageHandling\\StatefulMessageHandlingExtension.",
         "ultra/event-sourced-state-compiler": "Compiles event-sourced entity loaders for the Symfony bundle."
     },
     "autoload": {

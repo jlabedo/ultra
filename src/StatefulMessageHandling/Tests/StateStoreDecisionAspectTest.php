@@ -6,11 +6,11 @@ namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\TestCase;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
-use Ultra\StatefulMessageHandling\StatefulMessageHandlingBundle;
-use Ultra\EventSourcedState\EventSourcedStateBundle;
+use Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension;
+use Ultra\EventSourcedState\EventSourcedStateExtension;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
-use Ultra\Events\EventsBundle;
+use Ultra\Events\EventsExtension;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
@@ -18,16 +18,16 @@ use Ultra\EventStore\StreamQuery;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
-use Ultra\Mapper_Bundle\MapperBundle;
+use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\MessageHandling\Attribute\EventHandler;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\MediatorInterface;
-use Ultra\MessageHandling\MessageHandlingBundle;
+use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\StateStore;
-use Ultra\StateStore_Bundle\StateStoreBundle;
+use Ultra\StateStore_Bundle\StateStoreExtension;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
 
@@ -180,12 +180,12 @@ final class StateStoreDecisionAspectTest extends TestCase
         return (new UltraLight())
             ->withBuildDir(sys_get_temp_dir().'/ultra_state_store_decision_aspect_tests_'.uniqid())
             ->withBundle(
-                new MessageHandlingBundle(),
-                new MapperBundle(),
-                new EventsBundle(),
-                new EventSourcedStateBundle(),
-                new StateStoreBundle(),
-                new StatefulMessageHandlingBundle(),
+                new MessageHandlingExtension(),
+                new MapperExtension(),
+                new EventsExtension(),
+                new EventSourcedStateExtension(),
+                new StateStoreExtension(),
+                new StatefulMessageHandlingExtension(),
             )
             ->withService(new InMemoryEventStore(), InMemoryEventStore::class)
             ->withAlias(EventStore::class, InMemoryEventStore::class)

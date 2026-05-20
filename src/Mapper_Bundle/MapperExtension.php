@@ -6,17 +6,16 @@ namespace Ultra\Mapper_Bundle;
 
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Ultra\Container\ContainerExtension;
 use Ultra\Mapper\Attribute\AsValue;
 use Ultra\Mapper\RuntimeNormalizerInterface;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Bundle\DependencyInjection\Compiler\MapperCompilerPass;
 
-final class MapperBundle extends Bundle
+final class MapperExtension implements ContainerExtension
 {
     public function build(ContainerBuilder $container): void
     {
-        parent::build($container);
 
         $container->register(UltraNormalizer::class, UltraNormalizer::class)
             ->setArguments(['%kernel.build_dir%/mapper'])

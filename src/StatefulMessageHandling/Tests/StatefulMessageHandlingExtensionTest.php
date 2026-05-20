@@ -9,8 +9,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
-use Ultra\EventSourcedState\EventSourcedStateBundle;
-use Ultra\StatefulMessageHandling\StatefulMessageHandlingBundle;
+use Ultra\EventSourcedState\EventSourcedStateExtension;
+use Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension;
 use Ultra\StatefulMessageHandling\Tests\Support\StatefulMessageHandlingTestContainer;
 use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\Events\Attribute\Event;
@@ -23,12 +23,12 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\EventHandler;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\MediatorInterface;
-use Ultra\MessageHandling\MessageHandlingBundle;
+use Ultra\MessageHandling\MessageHandlingExtension;
 
 const STATEFUL_MESSAGE_HANDLING_BUNDLE_TEST_BUILD_DIR = __DIR__.'/../../../var/stateful_message_handling_bundle_tests';
 
 #[Event('stateful_message_handling_bundle.course_created')]
-final readonly class CourseCreatedForStatefulMessageHandlingBundleTest
+final readonly class CourseCreatedForStatefulMessageHandlingExtensionTest
 {
     public function __construct(
         #[DomainIdentifierAttribute('course')]
@@ -38,18 +38,18 @@ final readonly class CourseCreatedForStatefulMessageHandlingBundleTest
 }
 
 #[EventSourcedEntity(tags: ['course'])]
-final class CourseStateForStatefulMessageHandlingBundleTest
+final class CourseStateForStatefulMessageHandlingExtensionTest
 {
     public ?string $name = null;
 
     #[EventSourcingHandler]
-    public function onCourseCreated(CourseCreatedForStatefulMessageHandlingBundleTest $event): void
+    public function onCourseCreated(CourseCreatedForStatefulMessageHandlingExtensionTest $event): void
     {
         $this->name = $event->name;
     }
 }
 
-final readonly class CreateCourseForStatefulMessageHandlingBundleTest
+final readonly class CreateCourseForStatefulMessageHandlingExtensionTest
 {
     public function __construct(
         public string $courseId,
@@ -58,20 +58,20 @@ final readonly class CreateCourseForStatefulMessageHandlingBundleTest
 
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(CourseStateForStatefulMessageHandlingBundleTest $course): array
+    public function decide(CourseStateForStatefulMessageHandlingExtensionTest $course): array
     {
         if (null !== $course->name) {
             throw new \LogicException('Course already exists.');
         }
 
-        return [new CourseCreatedForStatefulMessageHandlingBundleTest($this->courseId, $this->name)];
+        return [new CourseCreatedForStatefulMessageHandlingExtensionTest($this->courseId, $this->name)];
     }
 }
 
-final class RecordCourseCreatedForStatefulMessageHandlingBundleTest
+final class RecordCourseCreatedForStatefulMessageHandlingExtensionTest
 {
     #[EventHandler]
-    public function onCourseCreated(CourseCreatedForStatefulMessageHandlingBundleTest $event): void {}
+    public function onCourseCreated(CourseCreatedForStatefulMessageHandlingExtensionTest $event): void {}
 }
 
 /**
@@ -79,23 +79,23 @@ final class RecordCourseCreatedForStatefulMessageHandlingBundleTest
  *
  * @coversNothing
  */
-final class StatefulMessageHandlingBundleTest extends TestCase
+final class StatefulMessageHandlingExtensionTest extends TestCase
 {
     public function test_it_wires_the_stateful_message_handling_into_the_message_handling_bundle(): void
     {
         $container = $this->createContainer();
 
         $mediator = $container->mediator();
-        $events = $mediator->send(new CreateCourseForStatefulMessageHandlingBundleTest('course-1', 'Math'));
+        $events = $mediator->send(new CreateCourseForStatefulMessageHandlingExtensionTest('course-1', 'Math'));
 
         self::assertEquals(
-            [new CourseCreatedForStatefulMessageHandlingBundleTest('course-1', 'Math')],
+            [new CourseCreatedForStatefulMessageHandlingExtensionTest('course-1', 'Math')],
             $events,
         );
 
         $stateStore = $container->eventSourcedStateStore();
         $state = $stateStore->load(
-            CourseStateForStatefulMessageHandlingBundleTest::class,
+            CourseStateForStatefulMessageHandlingExtensionTest::class,
             new DomainIdentifier('course', 'course-1'),
         );
 
@@ -117,35 +117,35 @@ final class StatefulMessageHandlingBundleTest extends TestCase
 
         $container->register(CompiledEventRegistry::class, CompiledEventRegistry::class)
             ->setArguments([[
-                'stateful_message_handling_bundle.course_created' => CourseCreatedForStatefulMessageHandlingBundleTest::class,
+                'stateful_message_handling_bundle.course_created' => CourseCreatedForStatefulMessageHandlingExtensionTest::class,
             ], [
-                CourseCreatedForStatefulMessageHandlingBundleTest::class => [
+                CourseCreatedForStatefulMessageHandlingExtensionTest::class => [
                     'course' => 'courseId',
                 ],
             ]])
         ;
         $container->setAlias(EventRegistryInterface::class, CompiledEventRegistry::class);
 
-        $container->register(CourseCreatedForStatefulMessageHandlingBundleTest::class, CourseCreatedForStatefulMessageHandlingBundleTest::class)
+        $container->register(CourseCreatedForStatefulMessageHandlingExtensionTest::class, CourseCreatedForStatefulMessageHandlingExtensionTest::class)
             ->setAutowired(false)
             ->addResourceTag('ultra_event_bus.event')
         ;
-        $container->register(CourseStateForStatefulMessageHandlingBundleTest::class, CourseStateForStatefulMessageHandlingBundleTest::class)
+        $container->register(CourseStateForStatefulMessageHandlingExtensionTest::class, CourseStateForStatefulMessageHandlingExtensionTest::class)
             ->setAutoconfigured(true)
             ->setAutowired(true)
         ;
-        $container->register(CreateCourseForStatefulMessageHandlingBundleTest::class, CreateCourseForStatefulMessageHandlingBundleTest::class)
+        $container->register(CreateCourseForStatefulMessageHandlingExtensionTest::class, CreateCourseForStatefulMessageHandlingExtensionTest::class)
             ->setAutoconfigured(true)
             ->setAutowired(true)
         ;
-        $container->register(RecordCourseCreatedForStatefulMessageHandlingBundleTest::class, RecordCourseCreatedForStatefulMessageHandlingBundleTest::class)
+        $container->register(RecordCourseCreatedForStatefulMessageHandlingExtensionTest::class, RecordCourseCreatedForStatefulMessageHandlingExtensionTest::class)
             ->setAutoconfigured(true)
             ->setAutowired(true)
         ;
 
-        new MessageHandlingBundle()->build($container);
-        new EventSourcedStateBundle()->build($container);
-        new StatefulMessageHandlingBundle()->build($container);
+        new MessageHandlingExtension()->build($container);
+        new EventSourcedStateExtension()->build($container);
+        new StatefulMessageHandlingExtension()->build($container);
         $container->compile();
 
         return new StatefulMessageHandlingTestContainer($container);

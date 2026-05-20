@@ -14,7 +14,7 @@ use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\Attribute\Event;
 use Ultra\Events\EventRegistryCompilerPass;
 use Ultra\Events\EventRegistryInterface;
-use Ultra\Events\EventsBundle;
+use Ultra\Events\EventsExtension;
 
 final readonly class EventRegistryCompilerPassTestEvent {}
 
@@ -51,7 +51,7 @@ final class EventRegistryCompilerPassTest extends TestCase
         $container->setDefinition(
             EventRegistryCompilerPassTestEvent::class,
             new Definition(EventRegistryCompilerPassTestEvent::class)
-                ->addResourceTag(EventsBundle::EVENT_TAG, ['name' => 'faculty.course_created'])
+                ->addResourceTag(EventsExtension::EVENT_TAG, ['name' => 'faculty.course_created'])
         );
 
         $registry = $this->compileRegistry($container, static function (ContainerBuilder $container): void {
@@ -75,7 +75,7 @@ final class EventRegistryCompilerPassTest extends TestCase
     public function test_it_compiles_event_names_and_domain_identifiers_from_bundle_autoconfiguration(): void
     {
         $container = new ContainerBuilder();
-        new EventsBundle()->build($container);
+        new EventsExtension()->build($container);
 
         $container->register(EventRegistryBundleTaggedEvent::class, EventRegistryBundleTaggedEvent::class)
             ->setAutoconfigured(true)

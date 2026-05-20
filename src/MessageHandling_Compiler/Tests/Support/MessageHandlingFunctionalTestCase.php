@@ -10,7 +10,7 @@ use Ultra\MessageHandling\Async\InMemoryQueue;
 use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
-use Ultra\MessageHandling\MessageHandlingBundle;
+use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
 
@@ -32,7 +32,7 @@ abstract class MessageHandlingFunctionalTestCase extends TestCase
         return new UltraLight()
             ->withBuildDir(dirname(__DIR__, 4).'/var/message_handling_compiler_tests')
             ->withContainerFactory($containerFactory)
-            ->withBundle(new MessageHandlingBundle())
+            ->withBundle(new MessageHandlingExtension())
             ->withAlias('test.event_bus', EventBusInterface::class)
             ->withAlias('test.mediator', MediatorInterface::class)
             ->withAlias('test.async_queue', InMemoryQueue::class)

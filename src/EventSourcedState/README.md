@@ -66,4 +66,4 @@ attributes, and `#[MatchTag]` on methods that are not also `#[EventSourcingHandl
 
 ## Symfony
 
-Register `Ultra\EventSourcedState\EventSourcedStateBundle` to autoconfigure `#[EventSourcedEntity]` services and compile entity loaders.
+Register `Ultra\EventSourcedState\EventSourcedStateExtension` to autoconfigure `#[EventSourcedEntity]` services and compile entity loaders.

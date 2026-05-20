@@ -6,7 +6,7 @@
     "repositories": [
         {
             "type": "path",
-            "url": "../../",
+            "url": "../../src/*",
             "options": {
                 "symlink": true
             }
@@ -26,7 +26,24 @@
         "symfony/framework-bundle": "8.0.*",
         "symfony/runtime": "8.0.*",
         "symfony/yaml": "8.0.*",
-        "ultra/ultra": "dev-main"
+        "ultra/event-sourced-state": "dev-main",
+        "ultra/event-sourced-state-compiler": "dev-main",
+        "ultra/event-store": "dev-main",
+        "ultra/event-store-postgres": "dev-main",
+        "ultra/events": "dev-main",
+        "ultra/mapper": "dev-main",
+        "ultra/mapper-bundle": "dev-main",
+        "ultra/mapper-compiler": "dev-main",
+        "ultra/message-handling": "dev-main",
+        "ultra/message-handling-compiler": "dev-main",
+        "ultra/projection": "dev-main",
+        "ultra/projection-postgres": "dev-main",
+        "ultra/state-store": "dev-main",
+        "ultra/state-store-bundle": "dev-main",
+        "ultra/stateful-message-handling": "dev-main",
+        "ultra/symfony-bundle": "dev-main",
+        "ultra/time": "dev-main",
+        "ultra/unit-of-work": "dev-main"
     },
     "require-dev": {
         "phpunit/phpunit": "^12.1"

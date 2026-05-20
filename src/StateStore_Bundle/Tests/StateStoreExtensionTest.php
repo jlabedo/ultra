@@ -17,16 +17,16 @@ use Ultra\EventStore\StreamQuery;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
-use Ultra\Mapper_Bundle\MapperBundle;
+use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\StateStore;
-use Ultra\StateStore_Bundle\StateStoreBundle;
+use Ultra\StateStore_Bundle\StateStoreExtension;
 use Ultra\StateStore_Bundle\TagNames;
 use Ultra\UnitOfWork\UnitOfWork;
-use Ultra\UnitOfWork\UnitOfWorkBundle;
+use Ultra\UnitOfWork\UnitOfWorkExtension;
 
 final class NullEventStore implements EventStore
 {
@@ -81,7 +81,7 @@ final readonly class BundleOrderStatusView
  *
  * @coversNothing
  */
-final class StateStoreBundleTest extends TestCase
+final class StateStoreExtensionTest extends TestCase
 {
     public function test_bundle_registers_state_store_and_shared_mapped_row_set_services(): void
     {
@@ -116,7 +116,7 @@ final class StateStoreBundleTest extends TestCase
     public function test_bundle_autoconfiguration_marks_states_as_normalizable_resources(): void
     {
         $container = new ContainerBuilder();
-        new StateStoreBundle()->build($container);
+        new StateStoreExtension()->build($container);
 
         $definition = new ChildDefinition('');
         $configurator = $container->getAttributeAutoconfigurators()[State::class][0];
@@ -138,9 +138,9 @@ final class StateStoreBundleTest extends TestCase
     {
         $container = new ContainerBuilder();
         $container->setParameter('kernel.build_dir', sys_get_temp_dir().'/ultra_state_store_bundle_test');
-        new MapperBundle()->build($container);
-        new UnitOfWorkBundle()->build($container);
-        new StateStoreBundle()->build($container);
+        new MapperExtension()->build($container);
+        new UnitOfWorkExtension()->build($container);
+        new StateStoreExtension()->build($container);
 
         $container->register(NullEventStore::class, NullEventStore::class)
             ->setPublic(true)

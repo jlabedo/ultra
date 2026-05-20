@@ -8,11 +8,12 @@ use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
-use Ultra\Events\EventsBundle;
+use Ultra\Events\EventsExtension;
 use Ultra\Mediator_Example\OrderProcessing\Message\SelfHandledPing;
 use Ultra\MessageHandling\MediatorInterface;
-use Ultra\MessageHandling\MessageHandlingBundle;
+use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\MessageHandling\TagNames;
+use Ultra\SymfonyBundle\UltraBundle;
 
 final class Kernel extends BaseKernel
 {
@@ -22,9 +23,10 @@ final class Kernel extends BaseKernel
     {
         yield new FrameworkBundle();
 
-        yield new EventsBundle();
-
-        yield new MessageHandlingBundle();
+        yield new UltraBundle([
+            new EventsExtension(),
+            new MessageHandlingExtension(),
+        ]);
     }
 
     protected function configureContainer(ContainerConfigurator $container): void

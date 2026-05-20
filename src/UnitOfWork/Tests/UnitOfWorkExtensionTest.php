@@ -20,7 +20,7 @@ use Ultra\UnitOfWork\TransactionManager;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
 use Ultra\UnitOfWork\UnitOfWork;
 use Ultra\UnitOfWork\UnitOfWorkRunner;
-use Ultra\UnitOfWork\UnitOfWorkBundle;
+use Ultra\UnitOfWork\UnitOfWorkExtension;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
@@ -114,8 +114,8 @@ final class HighPriorityUnitOfWork implements UnitOfWork
 /**
  * @internal
  */
-#[CoversClass(UnitOfWorkBundle::class)]
-final class UnitOfWorkBundleTest extends TestCase
+#[CoversClass(UnitOfWorkExtension::class)]
+final class UnitOfWorkExtensionTest extends TestCase
 {
     protected function setUp(): void
     {
@@ -203,7 +203,7 @@ final class UnitOfWorkBundleTest extends TestCase
         return new UltraLight()
             ->withBuildDir(dirname(__DIR__, 3).'/var/unit_of_work_bundle_tests')
             ->withContainerFactory($containerFactory)
-            ->withBundle(new UnitOfWorkBundle())
+            ->withBundle(new UnitOfWorkExtension())
             ->withClass(
                 RecordingEventStore::class,
                 AutoconfiguredUnitOfWork::class,
