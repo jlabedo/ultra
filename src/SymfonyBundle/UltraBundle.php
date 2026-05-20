@@ -7,13 +7,6 @@ namespace Ultra\SymfonyBundle;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\Container\ContainerExtension;
-use Ultra\EventSourcedState\EventSourcedStateExtension;
-use Ultra\Events\EventsExtension;
-use Ultra\Mapper_Bundle\MapperExtension;
-use Ultra\MessageHandling\MessageHandlingExtension;
-use Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension;
-use Ultra\StateStore_Bundle\StateStoreExtension;
-use Ultra\UnitOfWork\UnitOfWorkExtension;
 
 final class UltraBundle extends Bundle
 {
@@ -39,14 +32,35 @@ final class UltraBundle extends Bundle
      */
     public static function defaultExtensions(): array
     {
-        return [
-            new EventsExtension(),
-            new MessageHandlingExtension(),
-            new UnitOfWorkExtension(),
-            new MapperExtension(),
-            new EventSourcedStateExtension(),
-            new StateStoreExtension(),
-            new StatefulMessageHandlingExtension(),
+        $extensionClasses = [
+            'Ultra\\Events\\EventsExtension',
+            'Ultra\\MessageHandling\\MessageHandlingExtension',
+            'Ultra\\UnitOfWork\\UnitOfWorkExtension',
+            'Ultra\\Mapper_Bundle\\MapperExtension',
+            'Ultra\\EventSourcedState\\EventSourcedStateExtension',
+            'Ultra\\StateStore_Bundle\\StateStoreExtension',
+            'Ultra\\StatefulMessageHandling\\StatefulMessageHandlingExtension',
+            'Ultra\\Projection\\Bundle\\ProjectionExtension',
         ];
+
+        $extensions = [];
+        foreach ($extensionClasses as $extensionClass) {
+            if (!class_exists($extensionClass)) {
+                continue;
+            }
+
+            $extension = new $extensionClass();
+            if (!$extension instanceof ContainerExtension) {
+                throw new \LogicException(sprintf(
+                    'Ultra extension "%s" must implement "%s".',
+                    $extensionClass,
+                    ContainerExtension::class,
+                ));
+            }
+
+            $extensions[] = $extension;
+        }
+
+        return $extensions;
     }
 }

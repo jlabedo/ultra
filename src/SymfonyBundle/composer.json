@@ -12,14 +12,17 @@
     "require": {
         "php": ">=8.5",
         "symfony/http-kernel": "7.*|8.*",
-        "ultra/container": "*",
-        "ultra/event-sourced-state": "*",
-        "ultra/events": "*",
-        "ultra/mapper-bundle": "*",
-        "ultra/message-handling": "*",
-        "ultra/state-store-bundle": "*",
-        "ultra/stateful-message-handling": "*",
-        "ultra/unit-of-work": "*"
+        "ultra/container": "self.version"
+    },
+    "suggest": {
+        "ultra/event-sourced-state": "Registers the event-sourced state container extension when installed.",
+        "ultra/events": "Registers event metadata and registry support when installed.",
+        "ultra/mapper-bundle": "Registers mapper services and compiler support when installed.",
+        "ultra/message-handling": "Registers message-handling routers and handler autoconfiguration when installed.",
+        "ultra/projection": "Registers projection runtime services and commands when installed.",
+        "ultra/state-store-bundle": "Registers state-store services and compiler support when installed.",
+        "ultra/stateful-message-handling": "Registers stateful decision aspects when installed.",
+        "ultra/unit-of-work": "Registers unit-of-work services and transactional advice when installed."
     },
     "autoload": {
         "psr-4": {
