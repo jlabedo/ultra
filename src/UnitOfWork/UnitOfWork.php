@@ -10,6 +10,11 @@ namespace Ultra\UnitOfWork;
 interface UnitOfWork
 {
     /**
+     * Whether flushing would perform any transactional work.
+     */
+    public function hasPendingChanges(): bool;
+
+    /**
      * Persist every buffered operation.
      *
      * Implementations assume the surrounding transaction, if any, has already been opened by the caller.

@@ -17,7 +17,13 @@ final class RecordingUnitOfWork implements UnitOfWork
     public function __construct(
         private string $name,
         private array &$calls,
+        private bool $hasPendingChanges = true,
     ) {}
+
+    public function hasPendingChanges(): bool
+    {
+        return $this->hasPendingChanges;
+    }
 
     public function flush(): void
     {
@@ -86,5 +92,29 @@ final class CompositeUnitOfWorkTest extends TestCase
             'event_store:flush',
             'mapped_rows:flush',
         ], $calls);
+    }
+
+    public function test_composite_has_pending_changes_when_any_child_has_pending_changes(): void
+    {
+        $calls = [];
+
+        $composite = new CompositeUnitOfWork([
+            new RecordingUnitOfWork('empty', $calls, hasPendingChanges: false),
+            new RecordingUnitOfWork('dirty', $calls),
+        ]);
+
+        self::assertTrue($composite->hasPendingChanges());
+    }
+
+    public function test_composite_has_no_pending_changes_when_all_children_are_empty(): void
+    {
+        $calls = [];
+
+        $composite = new CompositeUnitOfWork([
+            new RecordingUnitOfWork('empty_one', $calls, hasPendingChanges: false),
+            new RecordingUnitOfWork('empty_two', $calls, hasPendingChanges: false),
+        ]);
+
+        self::assertFalse($composite->hasPendingChanges());
     }
 }

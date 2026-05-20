@@ -89,6 +89,54 @@ final class TransactionalUnitOfWorkRunnerTest extends TestCase
         }
     }
 
+    public function test_it_skips_transaction_when_unit_of_work_has_no_pending_changes(): void
+    {
+        $log = new TransactionalRunnerLog();
+        $runner = new TransactionalUnitOfWorkRunner(
+            new TransactionalRunnerUnitOfWork($log, hasPendingChanges: false),
+            new TransactionalRunnerTransactionManager($log),
+        );
+
+        $runner->run(function () use ($log): void {
+            $log->entries[] = 'work';
+        });
+
+        self::assertSame([
+            'work',
+            'unit_of_work:clear',
+        ], $log->entries);
+    }
+
+    public function test_nested_failure_marks_outer_run_rollback_only_even_when_swallowed(): void
+    {
+        $log = new TransactionalRunnerLog();
+        $runner = new TransactionalUnitOfWorkRunner(
+            new TransactionalRunnerUnitOfWork($log),
+            new TransactionalRunnerTransactionManager($log),
+        );
+
+        $runner->run(function () use ($runner, $log): void {
+            $log->entries[] = 'outer';
+
+            try {
+                $runner->run(function () use ($log): never {
+                    $log->entries[] = 'inner';
+
+                    throw new \RuntimeException('swallowed');
+                });
+            } catch (\RuntimeException) {
+                $log->entries[] = 'caught';
+            }
+        });
+
+        self::assertSame([
+            'outer',
+            'inner',
+            'caught',
+            'unit_of_work:clear',
+        ], $log->entries);
+    }
+
     public function test_it_implements_unit_of_work_runner(): void
     {
         $runner = new TransactionalUnitOfWorkRunner(
@@ -108,7 +156,15 @@ final class TransactionalRunnerLog
 
 final readonly class TransactionalRunnerUnitOfWork implements UnitOfWork
 {
-    public function __construct(private TransactionalRunnerLog $log) {}
+    public function __construct(
+        private TransactionalRunnerLog $log,
+        private bool $hasPendingChanges = true,
+    ) {}
+
+    public function hasPendingChanges(): bool
+    {
+        return $this->hasPendingChanges;
+    }
 
     public function flush(): void
     {
@@ -124,6 +180,11 @@ final readonly class TransactionalRunnerUnitOfWork implements UnitOfWork
 final readonly class TransactionalRunnerFailingUnitOfWork implements UnitOfWork
 {
     public function __construct(private TransactionalRunnerLog $log) {}
+
+    public function hasPendingChanges(): bool
+    {
+        return true;
+    }
 
     public function flush(): void
     {

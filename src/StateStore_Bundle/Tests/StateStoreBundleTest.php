@@ -26,7 +26,7 @@ use Ultra\StateStore\StateStore;
 use Ultra\StateStore_Bundle\StateStoreBundle;
 use Ultra\StateStore_Bundle\TagNames;
 use Ultra\UnitOfWork\UnitOfWork;
-use Ultra\UnitOfWork_Bundle\UnitOfWorkBundle;
+use Ultra\UnitOfWork\UnitOfWorkBundle;
 
 final class NullEventStore implements EventStore
 {

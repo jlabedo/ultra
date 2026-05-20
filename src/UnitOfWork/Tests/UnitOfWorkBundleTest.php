@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\UnitOfWork_Bundle\Tests;
+namespace Ultra\UnitOfWork\Tests;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
@@ -20,7 +20,7 @@ use Ultra\UnitOfWork\TransactionManager;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
 use Ultra\UnitOfWork\UnitOfWork;
 use Ultra\UnitOfWork\UnitOfWorkRunner;
-use Ultra\UnitOfWork_Bundle\UnitOfWorkBundle;
+use Ultra\UnitOfWork\UnitOfWorkBundle;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
@@ -58,6 +58,11 @@ final class UnitOfWorkCallRecorder
 
 final class AutoconfiguredUnitOfWork implements UnitOfWork
 {
+    public function hasPendingChanges(): bool
+    {
+        return true;
+    }
+
     public function flush(): void
     {
         UnitOfWorkCallRecorder::$calls[] = 'autoconfigured:flush';
@@ -71,6 +76,11 @@ final class AutoconfiguredUnitOfWork implements UnitOfWork
 
 final class TaggedUnitOfWork implements UnitOfWork
 {
+    public function hasPendingChanges(): bool
+    {
+        return true;
+    }
+
     public function flush(): void
     {
         UnitOfWorkCallRecorder::$calls[] = 'tagged:flush';
@@ -85,6 +95,11 @@ final class TaggedUnitOfWork implements UnitOfWork
 #[AsTaggedItem(priority: 50)]
 final class HighPriorityUnitOfWork implements UnitOfWork
 {
+    public function hasPendingChanges(): bool
+    {
+        return true;
+    }
+
     public function flush(): void
     {
         UnitOfWorkCallRecorder::$calls[] = 'high:flush';

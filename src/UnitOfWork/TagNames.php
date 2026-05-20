@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\UnitOfWork_Bundle;
+namespace Ultra\UnitOfWork;
 
 final class TagNames
 {

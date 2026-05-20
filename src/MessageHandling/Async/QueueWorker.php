@@ -16,6 +16,7 @@ final readonly class QueueWorker
     public function __construct(
         private AsyncMessageReceiver $receiver,
         private ContainerInterface $container,
+        private ?object $unitOfWorkRunner = null,
     ) {}
 
     /**
@@ -42,8 +43,16 @@ final readonly class QueueWorker
         $handler = $this->container->get($route);
 
         try {
-            $handler->__invoke($envelope->message, $envelope->messageContext);
-            $this->receiver->acknowledge($delivery);
+            $work = function () use ($handler, $envelope, $delivery): void {
+                $handler->__invoke($envelope->message, $envelope->messageContext);
+                $this->receiver->acknowledge($delivery);
+            };
+
+            if (null !== $this->unitOfWorkRunner && method_exists($this->unitOfWorkRunner, 'run')) {
+                $this->unitOfWorkRunner->run($work);
+            } else {
+                $work();
+            }
         } catch (\Throwable $e) {
             $this->receiver->release($delivery, reason: $e);
 

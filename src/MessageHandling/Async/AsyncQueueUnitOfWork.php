@@ -39,6 +39,13 @@ final class AsyncQueueUnitOfWork implements AsyncMessageSender, UnitOfWork
         foreach ($this->pendingEnqueues as $pending) {
             $this->inner->enqueue($pending['envelope'], $pending['options']);
         }
+
+        $this->pendingEnqueues = [];
+    }
+
+    public function hasPendingChanges(): bool
+    {
+        return [] !== $this->pendingEnqueues;
     }
 
     public function clear(): void

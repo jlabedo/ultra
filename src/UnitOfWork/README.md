@@ -7,6 +7,8 @@ Minimal unit-of-work contract for buffering operations and flushing them later i
 ```php
 interface UnitOfWork
 {
+    public function hasPendingChanges(): bool;
+
     public function flush(): void;
 
     public function clear(): void;
@@ -15,6 +17,7 @@ interface UnitOfWork
 
 `UnitOfWork` implementations do not open transactions themselves.
 
+- `hasPendingChanges()` returns true only when flushing would perform transactional work.
 - `flush()` assumes the caller has already opened the surrounding transaction, if one is needed.
 - `clear()` drops in-memory buffered work after commit or rollback.
 
@@ -42,7 +45,9 @@ $runner->run(function () use ($mediator, $context): void {
 });
 ```
 
-`TransactionalUnitOfWorkRunner` runs the callback first, flushes the unit of work through `TransactionManager`, and clears the unit of work after success or failure.
+`TransactionalUnitOfWorkRunner` runs the callback first. If the unit of work has pending changes, it then flushes through `TransactionManager` and clears the unit of work after success or failure. If no changes are pending, it skips the transaction and only clears buffered state.
+
+Nested calls join the active runner. A nested exception marks the active run rollback-only before rethrowing; if outer code catches that exception, the outer runner clears the unit of work instead of flushing.
 
 ## CompositeUnitOfWork
 

@@ -12,6 +12,12 @@
     "require": {
         "php": ">=8.5"
     },
+    "suggest": {
+        "symfony/dependency-injection": "Register UnitOfWork services and mediator transaction advice through the Symfony bundle.",
+        "symfony/http-kernel": "Use Ultra\\UnitOfWork\\UnitOfWorkBundle as a Symfony bundle.",
+        "ultra/event-store": "Decorate EventStore with EventStoreUnitOfWork when the bundle is used.",
+        "ultra/message-handling": "Wrap compiled mediator handlers in the transactional unit-of-work runner."
+    },
     "autoload": {
         "psr-4": {
             "Ultra\\UnitOfWork\\": ""

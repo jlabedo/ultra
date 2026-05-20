@@ -58,6 +58,35 @@ final class MappedRowSetTest extends TestCase
         );
     }
 
+    public function test_it_has_pending_changes_for_writes(): void
+    {
+        $table = new MappedRowSet(new RecordingMappedRowSetAdapter());
+
+        self::assertFalse($table->hasPendingChanges());
+
+        $table->withId('row-1')->setColumn('status', 'active');
+
+        self::assertTrue($table->hasPendingChanges());
+    }
+
+    public function test_row_expectations_without_writes_are_not_pending_changes(): void
+    {
+        $table = new MappedRowSet(new RecordingMappedRowSetAdapter());
+
+        $table->withId('row-1')->expectColumnValue('version', 1);
+
+        self::assertFalse($table->hasPendingChanges());
+    }
+
+    public function test_row_set_expectations_are_pending_changes(): void
+    {
+        $table = new MappedRowSet(new RecordingMappedRowSetAdapter());
+
+        $table->expectSameRowIds(['row-1']);
+
+        self::assertTrue($table->hasPendingChanges());
+    }
+
     public function test_flush_updates_row_when_expected_columns_match(): void
     {
         [$database, $table] = $this->newTable();

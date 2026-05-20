@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\UnitOfWork_Bundle;
+namespace Ultra\UnitOfWork;
 
 use Symfony\Component\DependencyInjection\Argument\TaggedIteratorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
@@ -10,12 +10,6 @@ use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\HttpKernel\Bundle\Bundle;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
-use Ultra\UnitOfWork\CompositeUnitOfWork;
-use Ultra\UnitOfWork\NoTransactionManager;
-use Ultra\UnitOfWork\TransactionManager;
-use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
-use Ultra\UnitOfWork\UnitOfWork;
-use Ultra\UnitOfWork\UnitOfWorkRunner;
 
 final class UnitOfWorkBundle extends Bundle
 {
@@ -27,13 +21,15 @@ final class UnitOfWorkBundle extends Bundle
             ->addTag(TagNames::UNIT_OF_WORK)
         ;
 
-        $container->register(EventStoreUnitOfWork::class, EventStoreUnitOfWork::class)
-            ->setDecoratedService(EventStore::class)
-            ->setArguments([
-                new Reference(EventStoreUnitOfWork::class.'.inner'),
-            ])
-            ->addTag(TagNames::UNIT_OF_WORK)
-        ;
+        if (interface_exists(EventStore::class) && class_exists(EventStoreUnitOfWork::class)) {
+            $container->register(EventStoreUnitOfWork::class, EventStoreUnitOfWork::class)
+                ->setDecoratedService(EventStore::class)
+                ->setArguments([
+                    new Reference(EventStoreUnitOfWork::class.'.inner'),
+                ])
+                ->addTag(TagNames::UNIT_OF_WORK)
+            ;
+        }
 
         $container->register(CompositeUnitOfWork::class, CompositeUnitOfWork::class)
             ->setArguments([
@@ -56,5 +52,14 @@ final class UnitOfWorkBundle extends Bundle
         ;
 
         $container->setAlias(UnitOfWorkRunner::class, TransactionalUnitOfWorkRunner::class);
+
+        if (class_exists('Ultra\\MessageHandling\\TagNames')) {
+            $container->register(TransactionalUnitOfWorkAspect::class, TransactionalUnitOfWorkAspect::class)
+                ->setArguments([
+                    new Reference(TransactionalUnitOfWorkRunner::class),
+                ])
+                ->addTag((string) constant('Ultra\\MessageHandling\\TagNames::ASPECT'))
+            ;
+        }
     }
 }

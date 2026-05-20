@@ -10,10 +10,12 @@ use Ultra\MessageHandling\Async\AsyncEnvelope;
 use Ultra\MessageHandling\Async\AsyncHeaderNames;
 use Ultra\MessageHandling\Async\AsyncHeaders;
 use Ultra\MessageHandling\Async\AsyncQueueUnitOfWork;
+use Ultra\MessageHandling\Async\AsyncReceiverUnitOfWork;
 use Ultra\MessageHandling\Async\InMemoryQueue;
 use Ultra\MessageHandling\MessageContext;
 
 #[CoversClass(AsyncQueueUnitOfWork::class)]
+#[CoversClass(AsyncReceiverUnitOfWork::class)]
 final class AsyncQueueUnitOfWorkTest extends TestCase
 {
     public function test_enqueue_is_buffered_until_flush(): void
@@ -45,6 +47,27 @@ final class AsyncQueueUnitOfWorkTest extends TestCase
 
         self::assertSame(0, $queue->pendingCount());
         self::assertSame(0, $inner->count());
+    }
+
+    public function test_acknowledge_is_buffered_until_flush(): void
+    {
+        $inner = new InMemoryQueue();
+        $messageId = $inner->enqueue($this->envelope('first'));
+        $receiver = new AsyncReceiverUnitOfWork($inner);
+
+        $delivery = $receiver->reserve();
+        self::assertNotNull($delivery);
+
+        $receiver->acknowledge($delivery);
+
+        self::assertTrue($receiver->hasPendingChanges());
+        self::assertSame(1, $inner->count());
+
+        $receiver->flush();
+
+        self::assertFalse($receiver->hasPendingChanges());
+        self::assertSame(0, $inner->count());
+        self::assertSame($messageId->value, $delivery->messageId->value);
     }
 
     private function envelope(string $value): AsyncEnvelope

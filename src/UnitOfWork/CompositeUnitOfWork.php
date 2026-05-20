@@ -29,6 +29,17 @@ final readonly class CompositeUnitOfWork implements UnitOfWork
         }
     }
 
+    public function hasPendingChanges(): bool
+    {
+        foreach ($this->unitOfWorks as $unitOfWork) {
+            if ($unitOfWork->hasPendingChanges()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function clear(): void
     {
         foreach ($this->unitOfWorks as $unitOfWork) {

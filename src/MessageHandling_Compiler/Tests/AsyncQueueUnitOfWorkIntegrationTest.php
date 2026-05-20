@@ -20,7 +20,7 @@ use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
 use Ultra\UnitOfWork\UnitOfWork;
-use Ultra\UnitOfWork_Bundle\UnitOfWorkBundle;
+use Ultra\UnitOfWork\UnitOfWorkBundle;
 
 /**
  * @internal

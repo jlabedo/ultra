@@ -12,6 +12,7 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MessageHandling\Async\AsyncHandlerProxy;
 use Ultra\MessageHandling\Async\AsyncMessageReceiver;
 use Ultra\MessageHandling\Async\AsyncMessageSender;
+use Ultra\MessageHandling\Async\AsyncReceiverUnitOfWork;
 use Ultra\MessageHandling\Async\AsyncQueueUnitOfWork;
 use Ultra\MessageHandling\Async\InMemoryQueue;
 use Ultra\MessageHandling\Async\QueueWorker;
@@ -36,6 +37,7 @@ use Ultra\MessageHandling_Compiler\Routing\ContextualRouterDependencyResolver;
 use Ultra\MessageHandling_Compiler\Routing\MessageRouterGenerator;
 use Ultra\MessageHandling_Compiler\Routing\RouterDescriptor;
 use Ultra\UnitOfWork\UnitOfWork;
+use Ultra\UnitOfWork\UnitOfWorkRunner;
 
 /**
  * Unified Symfony DI compiler pass that generates compiled router classes for
@@ -729,10 +731,15 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         }
 
         if (!$container->has(QueueWorker::class)) {
-            $workerDef = new Definition(QueueWorker::class, [
+            $args = [
                 new Reference(AsyncMessageReceiver::class),
                 new Reference('service_container'),
-            ]);
+            ];
+            if ($container->has(UnitOfWorkRunner::class)) {
+                $args[] = new Reference(UnitOfWorkRunner::class);
+            }
+
+            $workerDef = new Definition(QueueWorker::class, $args);
             $container->setDefinition(QueueWorker::class, $workerDef);
         }
     }
@@ -753,6 +760,18 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         ;
 
         $container->setDefinition(AsyncQueueUnitOfWork::class, $definition);
+
+        if (!$container->hasDefinition(AsyncReceiverUnitOfWork::class)) {
+            $receiverDefinition = new Definition(AsyncReceiverUnitOfWork::class, [
+                new Reference(AsyncReceiverUnitOfWork::class.'.inner'),
+            ]);
+            $receiverDefinition
+                ->setDecoratedService(AsyncMessageReceiver::class)
+                ->addTag('ultra_unit_of_work.unit_of_work', ['priority' => -90])
+            ;
+
+            $container->setDefinition(AsyncReceiverUnitOfWork::class, $receiverDefinition);
+        }
     }
 
     /**

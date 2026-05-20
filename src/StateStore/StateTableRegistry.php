@@ -64,6 +64,17 @@ final class StateTableRegistry implements UnitOfWork
         }
     }
 
+    public function hasPendingChanges(): bool
+    {
+        foreach ([...$this->tables, ...$this->collectionTables] as $table) {
+            if ($table->hasPendingChanges()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     public function clear(): void
     {
         foreach ([...$this->tables, ...$this->collectionTables] as $table) {

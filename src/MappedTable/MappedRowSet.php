@@ -97,6 +97,11 @@ final class MappedRowSet implements UnitOfWork
         ));
     }
 
+    public function hasPendingChanges(): bool
+    {
+        return null !== $this->expectedRowIds || [] !== $this->sortedPlans();
+    }
+
     public function clear(): void
     {
         $this->updates = [];

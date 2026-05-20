@@ -42,8 +42,7 @@
         "ultra/state-store": "self.version",
         "ultra/state-store-bundle": "self.version",
         "ultra/time": "self.version",
-        "ultra/unit-of-work": "self.version",
-        "ultra/unit-of-work-bundle": "self.version"
+        "ultra/unit-of-work": "self.version"
     },
     "minimum-stability": "dev",
     "prefer-stable": true,
