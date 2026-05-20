@@ -398,6 +398,10 @@ final readonly class MessageRouterCompilerPass implements CompilerPassInterface
         $returnType = $methodRef->getReturnType();
 
         if (AdviceType::Around === $type) {
+            if ($returnType instanceof \ReflectionNamedType && 'mixed' === $returnType->getName()) {
+                return false;
+            }
+
             if (
                 !$returnType instanceof \ReflectionNamedType
                 || $returnType->isBuiltin()

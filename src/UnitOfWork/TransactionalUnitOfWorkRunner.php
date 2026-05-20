@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ultra\UnitOfWork;
 
+use Ultra\MessageHandling\Attribute\Around;
+use Ultra\MessageHandling\Attribute\HandlerMatchContext;
+use Ultra\MessageHandling\Attribute\MatchResult;
+
 final class TransactionalUnitOfWorkRunner implements UnitOfWorkRunner
 {
     private bool $active = false;
@@ -15,6 +19,9 @@ final class TransactionalUnitOfWorkRunner implements UnitOfWorkRunner
         private TransactionManager $transactionManager,
     ) {}
 
+    #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
+        return MatchResult::apply();
+    }, priority: -1000)]
     public function run(callable $work): mixed
     {
         if ($this->active) {

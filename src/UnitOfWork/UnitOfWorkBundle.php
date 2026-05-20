@@ -54,12 +54,8 @@ final class UnitOfWorkBundle extends Bundle
         $container->setAlias(UnitOfWorkRunner::class, TransactionalUnitOfWorkRunner::class);
 
         if (class_exists('Ultra\\MessageHandling\\TagNames')) {
-            $container->register(TransactionalUnitOfWorkAspect::class, TransactionalUnitOfWorkAspect::class)
-                ->setArguments([
-                    new Reference(TransactionalUnitOfWorkRunner::class),
-                ])
-                ->addTag((string) constant('Ultra\\MessageHandling\\TagNames::ASPECT'))
-            ;
+            $container->getDefinition(TransactionalUnitOfWorkRunner::class)
+                ->addTag((string) constant('Ultra\\MessageHandling\\TagNames::ASPECT'));
         }
     }
 }

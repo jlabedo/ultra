@@ -21,6 +21,7 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\MediatorInterface;
+use Ultra\UnitOfWork\UnitOfWork;
 
 /**
  * @internal
@@ -228,6 +229,7 @@ final class FacultyFlowTest extends FacultyKernelTestCase
                 ],
             ),
         ]);
+        self::getContainer()->get(UnitOfWork::class)->flush();
         $this->drainQueue();
 
         $student = $mediator->send(new GetStudentProfileByIdQuery('student-1'));
@@ -241,7 +243,7 @@ final class FacultyFlowTest extends FacultyKernelTestCase
     private function drainQueue(): void
     {
         /** @var QueueWorker $worker */
-        $worker = self::getContainer()->get(QueueWorker::class);
+        $worker = self::getContainer()->get('test.queue_worker');
         $worker->drain();
     }
 }

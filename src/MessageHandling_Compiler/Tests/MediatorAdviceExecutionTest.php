@@ -102,6 +102,32 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         self::assertSame(1, $calls);
     }
 
+    public function test_it_allows_around_advice_to_declare_mixed_return_type(): void
+    {
+        $mediator = $this->ultraLight()
+            ->withService(new class {
+                #[Handles]
+                public function handle(GreetingMessage $message): string
+                {
+                    return 'wrapped: '.$message->name;
+                }
+            })
+            ->withService(new class {
+                #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
+                    return MatchResult::apply();
+                })]
+                public function execute(callable $proceed, object $message, MessageContext $context): mixed
+                {
+                    return $proceed();
+                }
+            })
+            ->boot()->mediator()
+        ;
+
+        self::assertSame('wrapped: value', $mediator->send(new GreetingMessage('value')));
+    }
+
+
     public function test_it_lets_before_advice_merge_a_patch_into_the_context_seen_by_the_handler(): void
     {
         $seen = [];
@@ -349,7 +375,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
         self::assertSame('done', $finalContext['after']);
     }
 
-    public function test_it_requires_around_advices_to_return_proceed_result(): void
+    public function test_it_requires_around_advices_to_return_proceed_result_or_mixed(): void
     {
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessageMatches('/Around advice "class@anonymous.*::execute" must declare return type "'.preg_quote(ProceedResult::class, '/').'"\./');
@@ -366,7 +392,7 @@ final class MediatorAdviceExecutionTest extends MessageHandlingCompilerTestCase
                 #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     return MatchResult::apply();
                 })]
-                public function execute(callable $proceed, object $message, MessageContext $context): mixed
+                public function execute(callable $proceed, object $message, MessageContext $context): string
                 {
                     return $proceed()->value;
                 }

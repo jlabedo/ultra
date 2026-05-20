@@ -34,6 +34,13 @@ services:
         arguments:
             $tablePrefix: '%app.faculty_event_store_table_prefix%'
 
+    Ultra\UnitOfWork\TransactionManager:
+        alias: App\Faculty\Infrastructure\DoctrineTransactionManager
+
+    test.queue_worker:
+        alias: Ultra\MessageHandling\Async\QueueWorker
+        public: true
+
     App\Faculty\Infrastructure\EventStore\FacultyEventStoreSchemaCreateCommand:
         arguments:
             $tablePrefix: '%app.faculty_event_store_table_prefix%'
