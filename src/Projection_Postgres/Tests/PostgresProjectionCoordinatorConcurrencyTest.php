@@ -290,6 +290,9 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
 
         $this->withPostgresProjectionCoordination(function (
             Connection $connection,
+            PostgresProjectionSegmentRepository $segments,
+            ProjectionBucketActivityRepositoryInterface $activity,
+            PostgresProjectionCoordinatorLeaseRepository $leases,
             string $projectionPrefix,
         ) use ($dsn): void {
             $cluster = new Cluster(timeout: 10.0);
