@@ -6,6 +6,7 @@ namespace Ultra\MessageHandling\Async;
 
 use Psr\Container\ContainerInterface;
 use Ultra\MessageHandling\Handler\MessageHandlerInterface;
+use Ultra\UnitOfWork\UnitOfWorkRunner;
 
 /**
  * Standalone service that drains the async queue by dispatching envelopes
@@ -16,7 +17,7 @@ final readonly class QueueWorker
     public function __construct(
         private AsyncMessageReceiver $receiver,
         private ContainerInterface $container,
-        private ?object $unitOfWorkRunner = null,
+        private ?UnitOfWorkRunner $unitOfWorkRunner = null,
     ) {}
 
     /**
@@ -48,7 +49,7 @@ final readonly class QueueWorker
                 $this->receiver->acknowledge($delivery);
             };
 
-            if (null !== $this->unitOfWorkRunner && method_exists($this->unitOfWorkRunner, 'run')) {
+            if (null !== $this->unitOfWorkRunner) {
                 $this->unitOfWorkRunner->run($work);
             } else {
                 $work();
