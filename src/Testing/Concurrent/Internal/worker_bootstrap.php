@@ -14,13 +14,15 @@ if (false === $autoloadPath || '' === $autoloadPath) {
     exit(3);
 }
 
-if (!file_exists($autoloadPath)) {
-    fwrite(STDERR, sprintf("Autoloader not found at path: %s\n", $autoloadPath));
+foreach (explode(PATH_SEPARATOR, $autoloadPath) as $path) {
+    if (!file_exists($path)) {
+        fwrite(STDERR, sprintf("Autoloader not found at path: %s\n", $path));
 
-    exit(3);
+        exit(3);
+    }
+
+    require_once $path;
 }
-
-require $autoloadPath;
 
 require_once __DIR__.'/functions.php';
 

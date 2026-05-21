@@ -88,20 +88,21 @@ final class Cluster
 
     private static function detectAutoloadPath(): string
     {
-        // Find the Composer ClassLoader instance already registered in this process.
-        foreach (spl_autoload_functions() as $loader) {
-            if (is_array($loader) && $loader[0] instanceof ClassLoader) {
-                $ref = new \ReflectionClass($loader[0]);
-                // ClassLoader lives at vendor/composer/ClassLoader.php; autoload.php is two levels up.
-                $candidate = dirname($ref->getFileName(), 2).'/autoload.php';
-                if (file_exists($candidate)) {
-                    return $candidate;
-                }
+        $autoloadPaths = [];
+
+        foreach (ClassLoader::getRegisteredLoaders() as $vendorDir => $registeredLoader) {
+            $candidate = $vendorDir.'/autoload.php';
+            if (file_exists($candidate)) {
+                $autoloadPaths[] = $candidate;
             }
         }
 
+        if ([] !== $autoloadPaths) {
+            return implode(PATH_SEPARATOR, array_values(array_unique($autoloadPaths)));
+        }
+
         throw new \RuntimeException(
-            'Cannot auto-detect vendor/autoload.php. Pass it explicitly: new Cluster(autoloadPath: "/path/to/vendor/autoload.php").',
+            'Cannot auto-detect Composer autoloaders. Pass one explicitly: new Cluster(autoloadPath: "/path/to/vendor/autoload.php").',
         );
     }
 }
