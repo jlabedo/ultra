@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Handler;
 
+use Ultra\CodeGeneration\PhpCode;
+use Ultra\CodeGeneration\PhpSnippet;
 use Ultra\MessageHandling_Compiler\HandlerDependencyExpressionResolverInterface;
 
 final class DispatchPlanRenderer
 {
-    private const INDENT = '    ';
-
     /**
      * @param list<HandlerDependencyExpressionResolverInterface> $dependencyResolvers
      */
@@ -544,7 +544,7 @@ final class DispatchPlanRenderer
 
     private function indent(int $level): string
     {
-        return str_repeat(self::INDENT, $level);
+        return PhpCode::indentLevel($level);
     }
 
     /**
@@ -552,27 +552,11 @@ final class DispatchPlanRenderer
      */
     private function appendExpression(array &$lines, int $indentLevel, string $prefix, string $expr, string $suffix = ''): void
     {
-        $lines = [...$lines, ...explode("\n", $this->inlineExpression($this->indent($indentLevel).$prefix, $expr, $suffix))];
-    }
-
-    private function inlineExpression(string $prefix, string $expr, string $suffix = ''): string
-    {
-        $exprLines = explode("\n", $expr);
-        if (1 === count($exprLines)) {
-            return $prefix.$expr.$suffix;
-        }
-
-        preg_match('/^\s*/', $prefix, $matches);
-        $continuationIndent = ($matches[0] ?? '').self::INDENT;
-
-        $lines = [$prefix.$exprLines[0]];
-        foreach (array_slice($exprLines, 1) as $line) {
-            $lines[] = $continuationIndent.$line;
-        }
-
-        $lines[count($lines) - 1] .= $suffix;
-
-        return implode("\n", $lines);
+        $rendered = $this->indent($indentLevel)
+            .$prefix
+            .PhpSnippet::raw($expr)->indentContinuationLines($indentLevel + 1)
+            .$suffix;
+        $lines = [...$lines, ...explode("\n", $rendered)];
     }
 
     private function exportString(string $value): string

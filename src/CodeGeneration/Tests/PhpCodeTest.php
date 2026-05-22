@@ -9,10 +9,12 @@ use PHPUnit\Framework\TestCase;
 use Ultra\CodeGeneration\GeneratedPhpClassWriter;
 use Ultra\CodeGeneration\PhpCode;
 use Ultra\CodeGeneration\PhpFileWriter;
+use Ultra\CodeGeneration\PhpSnippet;
 
 #[CoversClass(PhpCode::class)]
 #[CoversClass(PhpFileWriter::class)]
 #[CoversClass(GeneratedPhpClassWriter::class)]
+#[CoversClass(PhpSnippet::class)]
 final class PhpCodeTest extends TestCase
 {
     public function test_formats_class_literals(): void
@@ -24,6 +26,17 @@ final class PhpCodeTest extends TestCase
     public function test_indents_non_empty_lines(): void
     {
         self::assertSame("        first\n\n        second", PhpCode::indent("first\n\nsecond", 2));
+        self::assertSame('        ', PhpCode::indentLevel(2));
+    }
+
+    public function test_indents_snippet_continuation_lines(): void
+    {
+        self::assertSame(
+            "call(\n        'value'\n        )",
+            PhpSnippet::raw("call(\n'value'\n)")->indentContinuationLines(2),
+        );
+
+        self::assertSame('call()', PhpSnippet::raw('call()')->indentContinuationLines(2));
     }
 
     public function test_exports_string_lists(): void

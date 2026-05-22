@@ -28,6 +28,11 @@ final class PhpCode
         ));
     }
 
+    public static function indentLevel(int $level): string
+    {
+        return str_repeat(self::INDENT, $level);
+    }
+
     /**
      * @param list<string> $values
      */
