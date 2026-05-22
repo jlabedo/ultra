@@ -23,7 +23,7 @@ final class PhpCodeTest extends TestCase
 
     public function test_indents_non_empty_lines(): void
     {
-        self::assertSame("        first\n\n        second", PhpCode::indent("first\n\nsecond", 2));
+        self::assertSame("        first\n\n        second", (string) PhpCode::from("first\n\nsecond")->indent(2));
         self::assertSame('        ', PhpCode::indentLevel(2));
     }
 
@@ -31,22 +31,36 @@ final class PhpCodeTest extends TestCase
     {
         self::assertSame(
             "        if (\$ok) {\n            return true;\n        }",
-            PhpCode::indent("if (\$ok) {\n    return true;\n}", 2),
+            (string) PhpCode::from("if (\$ok) {\n    return true;\n}")->indent(2),
         );
 
         self::assertSame(
             "call(\n        'value'\n        )",
-            PhpCode::indentContinuationLines("call(\n'value'\n)", 2),
+            (string) PhpCode::from("call(\n'value'\n)")->indentContinuationLines(2),
         );
 
-        self::assertSame('call()', PhpCode::indentContinuationLines('call()', 2));
+        self::assertSame('call()', (string) PhpCode::from('call()')->indentContinuationLines(2));
     }
 
     public function test_joins_non_empty_code_blocks(): void
     {
         self::assertSame(
             "\$a = 1;\nreturn \$a;",
-            PhpCode::join('', '$a = 1;', '', 'return $a;'),
+            (string) PhpCode::join('', '$a = 1;', '', 'return $a;'),
+        );
+    }
+
+    public function test_interpolates_rendered_code(): void
+    {
+        $body = PhpCode::join('$a = 1;', 'return $a;');
+
+        self::assertSame(
+            "function () {\n    \$a = 1;\n    return \$a;\n}",
+            <<<PHP
+                function () {
+                {$body->indent(1)}
+                }
+                PHP,
         );
     }
 

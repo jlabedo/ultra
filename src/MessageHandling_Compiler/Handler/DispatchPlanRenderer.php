@@ -59,7 +59,7 @@ final class DispatchPlanRenderer
             $body = PhpCode::join($body, 'return $__result->value;');
         }
 
-        return PhpCode::indent($body, 2);
+        return (string) PhpCode::from($body)->indent(2);
     }
 
     /**
@@ -142,7 +142,7 @@ final class DispatchPlanRenderer
 
         if (!$needsAfterReturning && !$needsCatch && !$needsFinally) {
             if (!$hasArounds) {
-                return PhpCode::join(
+                return (string) PhpCode::join(
                     $code,
                     $this->renderExecutionCode(
                         $layers,
@@ -176,7 +176,7 @@ final class DispatchPlanRenderer
                 $code = PhpCode::join($code, '$c = '.$resultVar.'->context;');
             }
 
-            return $code;
+            return (string) $code;
         }
 
         $resultTmp = '$__result'.$layerIndex;
@@ -232,7 +232,7 @@ final class DispatchPlanRenderer
 
             $code = PhpCode::join($code, null === $resultVar ? 'return '.$resultTmp.';' : $resultVar.' = '.$resultTmp.';');
 
-            return $code;
+            return (string) $code;
         }
 
         $tryBody = '';
@@ -282,7 +282,7 @@ final class DispatchPlanRenderer
             $tryBody = PhpCode::join($tryBody, $resultTmp.' = '.$resultTmp.'->withContext($c);');
         }
 
-        $code = PhpCode::join($code, 'try {', PhpCode::indent($tryBody, 1));
+        $code = PhpCode::join($code, 'try {', PhpCode::from($tryBody)->indent(1));
 
         if ($needsCatch) {
             $catchBody = '';
@@ -294,7 +294,7 @@ final class DispatchPlanRenderer
                 ));
             }
             $catchBody = PhpCode::join($catchBody, 'throw '.$errorTmp.';');
-            $code = PhpCode::join($code, '} catch (\Throwable '.$errorTmp.') {', PhpCode::indent($catchBody, 1));
+            $code = PhpCode::join($code, '} catch (\Throwable '.$errorTmp.') {', PhpCode::from($catchBody)->indent(1));
         }
 
         if ($needsFinally) {
@@ -313,13 +313,13 @@ final class DispatchPlanRenderer
                     }
                     PHP);
             }
-            $code = PhpCode::join($code, '} finally {', PhpCode::indent($finallyBody, 1));
+            $code = PhpCode::join($code, '} finally {', PhpCode::from($finallyBody)->indent(1));
         }
 
         $code = PhpCode::join($code, '}');
         $code = PhpCode::join($code, null === $resultVar ? 'return '.$resultTmp.';' : $resultVar.' = '.$resultTmp.';');
 
-        return $code;
+        return (string) $code;
     }
 
     /**
@@ -379,7 +379,7 @@ final class DispatchPlanRenderer
         }
 
         $body = PhpCode::join($body, $innerCode);
-        $bodyCode = PhpCode::indent($body, 1);
+        $bodyCode = PhpCode::from($body)->indent(1);
 
         return <<<PHP
             function (?\\Ultra\\MessageHandling\\MessageContext \$context = null, array \$provided = []) use ({$capturesCode}) : \\Ultra\\MessageHandling\\ProceedResult {
@@ -516,7 +516,7 @@ final class DispatchPlanRenderer
     private function renderExpression(string $prefix, string $expr, string $suffix = ''): string
     {
         return $prefix
-            .PhpCode::indentContinuationLines($expr, 1)
+            .PhpCode::from($expr)->indentContinuationLines(1)
             .$suffix;
     }
 

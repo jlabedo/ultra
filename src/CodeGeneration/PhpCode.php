@@ -4,9 +4,18 @@ declare(strict_types=1);
 
 namespace Ultra\CodeGeneration;
 
-final class PhpCode
+final readonly class PhpCode
 {
     public const INDENT = '    ';
+
+    public function __construct(
+        private string $code,
+    ) {}
+
+    public static function from(string|self $code): self
+    {
+        return $code instanceof self ? $code : new self($code);
+    }
 
     public static function classLiteral(string $className): string
     {
@@ -18,14 +27,14 @@ final class PhpCode
         return '\\'.ltrim($className, '\\');
     }
 
-    public static function indent(string $code, int $levels = 1): string
+    public function indent(int $levels = 1): self
     {
         $prefix = str_repeat(self::INDENT, $levels);
 
-        return implode("\n", array_map(
+        return new self(implode("\n", array_map(
             static fn (string $line): string => '' === $line ? '' : $prefix.$line,
-            explode("\n", $code),
-        ));
+            explode("\n", $this->code),
+        )));
     }
 
     public static function indentLevel(int $level): string
@@ -33,30 +42,37 @@ final class PhpCode
         return str_repeat(self::INDENT, $level);
     }
 
-    public static function indentContinuationLines(string $code, int $levels): string
+    public function indentContinuationLines(int $levels): self
     {
-        $lines = explode("\n", $code);
+        $lines = explode("\n", $this->code);
         if (1 === count($lines)) {
-            return $code;
+            return $this;
         }
 
         $prefix = self::indentLevel($levels);
 
-        return implode("\n", [
+        return new self(implode("\n", [
             $lines[0],
             ...array_map(
                 static fn (string $line): string => '' === $line ? '' : $prefix.$line,
                 array_slice($lines, 1),
             ),
-        ]);
+        ]));
     }
 
-    public static function join(string ...$blocks): string
+    public static function join(string|self ...$blocks): self
     {
-        return implode("\n", array_values(array_filter(
-            $blocks,
+        $strings = array_map(static fn (string|self $block): string => (string) $block, $blocks);
+
+        return new self(implode("\n", array_values(array_filter(
+            $strings,
             static fn (string $block): bool => '' !== $block,
-        )));
+        ))));
+    }
+
+    public function __toString(): string
+    {
+        return $this->code;
     }
 
     /**

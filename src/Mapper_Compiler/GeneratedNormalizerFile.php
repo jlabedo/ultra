@@ -47,10 +47,10 @@ PHP,
             $shortName,
             NormalizerInterface::class,
             UltraNormalizer::class,
-            PhpCode::indent($this->toScalarBody, 2),
+            (PhpCode::from($this->toScalarBody)->indent(2)),
             UltraNormalizer::class,
             DenormalizationContext::class,
-            PhpCode::indent($this->fromScalarBody, 2),
+            (PhpCode::from($this->fromScalarBody)->indent(2)),
         );
     }
 
