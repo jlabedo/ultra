@@ -77,7 +77,7 @@ final class DispatchPlanRenderer
         array $depServiceIds,
         array $claimedVarNames,
         string $messageVar,
-    ): string {
+    ): PhpCode {
         $isSelf = HandlerDescriptor::SELF_SERVICE_ID === $serviceId;
 
         $args = [];
@@ -91,20 +91,20 @@ final class DispatchPlanRenderer
         }
 
         return $isSelf
-            ? sprintf('%s->%s(%s)', $messageVar, $handlerMethod, implode(', ', $args))
+            ? PhpCode::from(sprintf('%s->%s(%s)', $messageVar, $handlerMethod, implode(', ', $args)))
             : $this->renderServiceMethodCall($serviceId, $handlerMethod, $args);
     }
 
-    private function renderHandlerDependencyExpression(string $depId): string
+    private function renderHandlerDependencyExpression(string $depId): PhpCode
     {
         foreach ($this->dependencyResolvers as $resolver) {
             $expression = $resolver->resolve($depId, '$c');
             if (null !== $expression) {
-                return $expression;
+                return PhpCode::from($expression);
             }
         }
 
-        return '$this->locator->get('.$this->exportString($depId).')';
+        return PhpCode::from('$this->locator->get('.$this->exportString($depId).')');
     }
 
     /**
@@ -115,7 +115,7 @@ final class DispatchPlanRenderer
     private function renderExecutionCode(
         array $layers,
         int $layerIndex,
-        string $handlerExpr,
+        string|PhpCode $handlerExpr,
         array $claimedVarNames,
         bool $returnsVoid,
         ?string $resultVar = null,
@@ -240,7 +240,7 @@ final class DispatchPlanRenderer
             return $code;
         }
 
-        $tryBody = PhpCode::from('');
+        $tryBody = PhpCode::empty();
 
         if ($hasArounds) {
             $aroundExpr = $this->renderAroundStackExpression(
@@ -256,13 +256,12 @@ final class DispatchPlanRenderer
                 ),
                 $claimedVarNames,
             );
-            $tryBody = PhpCode::join($tryBody, $this->renderExpression($resultTmp.' = ', $aroundExpr, ';'));
+            $tryBody = $tryBody->add($this->renderExpression($resultTmp.' = ', $aroundExpr, ';'));
             if ($wrapResults) {
-                $tryBody = PhpCode::join($tryBody, '$c = '.$resultTmp.'->context;');
+                $tryBody = $tryBody->add('$c = '.$resultTmp.'->context;');
             }
         } else {
-            $tryBody = PhpCode::join(
-                $tryBody,
+            $tryBody = $tryBody->add(
                 $this->renderExecutionCode(
                     $layers,
                     $layerIndex + 1,
@@ -277,22 +276,22 @@ final class DispatchPlanRenderer
 
         foreach ($layer->afterReturnings as $afterReturningIndex => $advice) {
             $resultValueExpr = $wrapResults ? $resultTmp.'->value' : $resultTmp;
-            $tryBody = PhpCode::join($tryBody, $this->renderAdviceCall(
+            $tryBody = $tryBody->add($this->renderAdviceCall(
                 $advice,
                 $this->renderAfterReturningCallExpression($advice, '$m', '$c', $resultValueExpr),
                 '$__context'.$layerIndex.'_afterReturning'.$afterReturningIndex,
             ));
         }
         if ($syncResultContextAfterReturning) {
-            $tryBody = PhpCode::join($tryBody, $resultTmp.' = '.$resultTmp.'->withContext($c);');
+            $tryBody = $tryBody->add($resultTmp.' = '.$resultTmp.'->withContext($c);');
         }
 
-        $code = PhpCode::join($code, 'try {', PhpCode::from($tryBody)->indent(1));
+        $code = $code->add('try {', PhpCode::from($tryBody)->indent(1));
 
         if ($needsCatch) {
-            $catchBody = PhpCode::from('');
+            $catchBody = PhpCode::empty();
             foreach ($layer->afterThrowings as $afterThrowingIndex => $advice) {
-                $catchBody = PhpCode::join($catchBody, $this->renderAdviceCall(
+                $catchBody = $catchBody->add($this->renderAdviceCall(
                     $advice,
                     $this->renderAfterThrowingCallExpression($advice, '$m', '$c', $errorTmp),
                     '$__context'.$layerIndex.'_afterThrowing'.$afterThrowingIndex,
@@ -303,7 +302,7 @@ final class DispatchPlanRenderer
         }
 
         if ($needsFinally) {
-            $finallyBody = PhpCode::from('');
+            $finallyBody = PhpCode::empty();
             foreach ($layer->afters as $afterIndex => $advice) {
                 $finallyBody = PhpCode::join($finallyBody, $this->renderAdviceCall(
                     $advice,
@@ -331,9 +330,9 @@ final class DispatchPlanRenderer
      * @param list<AdviceDescriptor> $arounds
      * @param array<int, string> $claimedVarNames
      */
-    private function renderAroundStackExpression(array $arounds, string|PhpCode $innerCode, array $claimedVarNames): string
+    private function renderAroundStackExpression(array $arounds, string|PhpCode $innerCode, array $claimedVarNames): PhpCode
     {
-        $wrappedExpr = '';
+        $wrappedExpr = PhpCode::empty();
         $wrappedCode = $innerCode;
 
         // Reverse so stable ordering keeps the first advice as the outermost one.
@@ -357,7 +356,7 @@ final class DispatchPlanRenderer
     /**
      * @param array<int, string> $claimedVarNames
      */
-    private function renderProceedCallable(AdviceDescriptor $advice, string|PhpCode $innerCode, array $claimedVarNames): string
+    private function renderProceedCallable(AdviceDescriptor $advice, PhpCode $innerCode, array $claimedVarNames): PhpCode
     {
         $owner = $advice->className.'::'.$advice->method;
 
@@ -372,31 +371,27 @@ final class DispatchPlanRenderer
         $expectedProvidedCount = count($advice->claimedDepIndices);
         $proceedErrorMessage = $this->exportString($owner.' must call $proceed() with exactly '.$expectedProvidedCount.' provided value(s); received %d.');
 
-        $body = <<<PHP
-            if (count(\$provided) !== {$expectedProvidedCount}) {
-                throw new \LogicException(sprintf({$proceedErrorMessage}, count(\$provided)));
-            }
-            \$c = \$context ?? \$c;
-            PHP;
-
+        $claimedVarCode = PhpCode::empty();
         foreach ($advice->claimedDepIndices as $offset => $depIdx) {
-            $body = PhpCode::join($body, '$_p'.$depIdx.' = $provided['.$offset.'];');
+            $claimedVarCode = $claimedVarCode->add('$_p'.$depIdx.' = $provided['.$offset.'];');
         }
 
-        $body = PhpCode::join($body, $innerCode);
-        $bodyCode = PhpCode::from($body)->indent(1);
-
-        return <<<PHP
+        return PhpCode::from(<<<PHP
             function (?\\Ultra\\MessageHandling\\MessageContext \$context = null, array \$provided = []) use ({$capturesCode}) : \\Ultra\\MessageHandling\\ProceedResult {
-            {$bodyCode}
+                if (count(\$provided) !== {$expectedProvidedCount}) {
+                    throw new \LogicException(sprintf({$proceedErrorMessage}, count(\$provided)));
+                }
+                \$c = \$context ?? \$c;
+                {$claimedVarCode->indentContinuationLines(1)}
+                {$innerCode->indentContinuationLines(1)}
             }
-            PHP;
+            PHP);
     }
 
     /**
      */
     private function renderTerminalExecutionCode(
-        string $handlerExpr,
+        PhpCode $handlerExpr,
         bool $returnsVoid,
         ?string $resultVar = null,
         bool $wrapResults = true,
@@ -436,14 +431,14 @@ final class DispatchPlanRenderer
     /**
      * @param list<string> $args
      */
-    private function renderServiceMethodCall(string $serviceId, string $method, array $args): string
+    private function renderServiceMethodCall(string $serviceId, string $method, array $args): PhpCode
     {
-        return sprintf(
+        return PhpCode::from(sprintf(
             '$this->locator->get(%s)->%s(%s)',
             $this->exportString($serviceId),
             $method,
             implode(', ', $args),
-        );
+        ));
     }
 
     private function renderAfterReturningCallExpression(
@@ -451,7 +446,7 @@ final class DispatchPlanRenderer
         string $messageVar,
         string $contextVar,
         string $resultValueExpr,
-    ): string {
+    ): PhpCode {
         $args = [$messageVar, $contextVar, $resultValueExpr];
         if ([] !== $advice->runtimeConfig) {
             $args[] = $this->exportValue($advice->runtimeConfig);
@@ -465,7 +460,7 @@ final class DispatchPlanRenderer
         string $messageVar,
         string $contextVar,
         string $errorVar,
-    ): string {
+    ): PhpCode {
         $args = [$messageVar, $contextVar, $errorVar];
         if ([] !== $advice->runtimeConfig) {
             $args[] = $this->exportValue($advice->runtimeConfig);
@@ -478,7 +473,7 @@ final class DispatchPlanRenderer
         AdviceDescriptor $advice,
         string $messageVar,
         string $contextVar,
-    ): string {
+    ): PhpCode {
         $args = [$messageVar, $contextVar];
         if ([] !== $advice->runtimeConfig) {
             $args[] = $this->exportValue($advice->runtimeConfig);
@@ -489,14 +484,14 @@ final class DispatchPlanRenderer
 
     private function renderAdviceCall(
         AdviceDescriptor $advice,
-        string $expression,
+        string|PhpCode $expression,
         string $contextTmpVar,
     ): PhpCode {
         if (!$advice->returnsContextPatch) {
-            return PhpCode::from($expression.';');
+            return $this->renderExpression('', $expression.';');
         }
 
-        return PhpCode::from(<<<PHP
+        return $this->renderExpression('', <<<PHP
             {$contextTmpVar} = {$expression};
             if (null !== {$contextTmpVar}) {
                 \$c = \$c->merge({$contextTmpVar});
@@ -518,7 +513,7 @@ final class DispatchPlanRenderer
         return false;
     }
 
-    private function renderExpression(string $prefix, string $expr, string $suffix = ''): PhpCode
+    private function renderExpression(string $prefix, string|PhpCode $expr, string $suffix = ''): PhpCode
     {
         return PhpCode::from($prefix
             .PhpCode::from($expr)->indentContinuationLines(1)
