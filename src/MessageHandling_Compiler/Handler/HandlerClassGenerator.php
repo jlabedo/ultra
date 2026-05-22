@@ -80,7 +80,7 @@ final class HandlerClassGenerator
 
                 public function __invoke(object \$message, \\Ultra\\MessageHandling\\MessageContext \$context): mixed
                 {
-            {$body}
+                    {$body->indentContinuationLines(2)}
                 }
             }
             PHP;
