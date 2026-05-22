@@ -30,7 +30,7 @@ final class DispatchPlanRendererTest extends TestCase
             returnsVoid: false,
         );
 
-        $body = $renderer->renderBody($plan);
+        $body = (string) $renderer->renderBody($plan);
 
         self::assertStringNotContainsString('ProceedResult', $body);
         self::assertStringNotContainsString('$__result', $body);
@@ -65,7 +65,7 @@ final class DispatchPlanRendererTest extends TestCase
             returnsVoid: false,
         );
 
-        $body = $renderer->renderBody($plan);
+        $body = (string) $renderer->renderBody($plan);
 
         self::assertStringNotContainsString('ProceedResult', $body);
         self::assertStringContainsString("\$__result0 = \$this->locator->get('handler.service')->handle(\$m);", $body);
@@ -109,7 +109,7 @@ final class DispatchPlanRendererTest extends TestCase
             returnsVoid: false,
         );
 
-        $body = $renderer->renderBody($plan);
+        $body = (string) $renderer->renderBody($plan);
 
         self::assertStringContainsString('use ($m, &$c)', $body);
         self::assertStringContainsString("\$__context0_after0 = \$this->locator->get('after.service')->enrich(\$m, \$c);", $body);

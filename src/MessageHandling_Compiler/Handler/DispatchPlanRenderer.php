@@ -16,23 +16,25 @@ final class DispatchPlanRenderer
         private readonly array $dependencyResolvers = [],
     ) {}
 
-    public function renderDispatchMethod(string $dispatchName, DispatchPlan $plan): string
+    public function renderDispatchMethod(string $dispatchName, DispatchPlan $plan): PhpCode
     {
         $body = $this->renderBody($plan);
 
-        return <<<PHP
+        return PhpCode::from(<<<PHP
                 private function {$dispatchName}(object \$message, \\Ultra\\MessageHandling\\MessageContext \$context): mixed
                 {
             {$body}
                 }
-            PHP;
+            PHP);
     }
 
-    public function renderBody(DispatchPlan $plan): string
+    public function renderBody(DispatchPlan $plan): PhpCode
     {
         $wrapResults = $this->planHasArounds($plan);
-        $body = '$m = $message;'."\n"
-            .'$c = $context;';
+        $body = PhpCode::join(
+            '$m = $message;',
+            '$c = $context;',
+        );
 
         foreach ($plan->claimedVarNames as $varName) {
             $body = PhpCode::join($body, $varName.' = null;');
@@ -59,7 +61,7 @@ final class DispatchPlanRenderer
             $body = PhpCode::join($body, 'return $__result->value;');
         }
 
-        return (string) PhpCode::from($body)->indent(2);
+        return $body->indent(2);
     }
 
     /**
@@ -115,13 +117,13 @@ final class DispatchPlanRenderer
         bool $returnsVoid,
         ?string $resultVar = null,
         bool $wrapResults = true,
-    ): string {
+    ): PhpCode {
         if ($layerIndex >= count($layers)) {
             return $this->renderTerminalExecutionCode($handlerExpr, $returnsVoid, $resultVar, $wrapResults);
         }
 
         $layer = $layers[$layerIndex];
-        $code = '';
+        $code = PhpCode::from('');
 
         foreach ($layer->befores as $beforeIndex => $advice) {
             $args = ['$m', '$c'];
@@ -142,7 +144,7 @@ final class DispatchPlanRenderer
 
         if (!$needsAfterReturning && !$needsCatch && !$needsFinally) {
             if (!$hasArounds) {
-                return (string) PhpCode::join(
+                return PhpCode::join(
                     $code,
                     $this->renderExecutionCode(
                         $layers,
@@ -176,7 +178,7 @@ final class DispatchPlanRenderer
                 $code = PhpCode::join($code, '$c = '.$resultVar.'->context;');
             }
 
-            return (string) $code;
+            return $code;
         }
 
         $resultTmp = '$__result'.$layerIndex;
@@ -232,10 +234,10 @@ final class DispatchPlanRenderer
 
             $code = PhpCode::join($code, null === $resultVar ? 'return '.$resultTmp.';' : $resultVar.' = '.$resultTmp.';');
 
-            return (string) $code;
+            return $code;
         }
 
-        $tryBody = '';
+        $tryBody = PhpCode::from('');
 
         if ($hasArounds) {
             $aroundExpr = $this->renderAroundStackExpression(
@@ -285,7 +287,7 @@ final class DispatchPlanRenderer
         $code = PhpCode::join($code, 'try {', PhpCode::from($tryBody)->indent(1));
 
         if ($needsCatch) {
-            $catchBody = '';
+            $catchBody = PhpCode::from('');
             foreach ($layer->afterThrowings as $afterThrowingIndex => $advice) {
                 $catchBody = PhpCode::join($catchBody, $this->renderAdviceCall(
                     $advice,
@@ -298,7 +300,7 @@ final class DispatchPlanRenderer
         }
 
         if ($needsFinally) {
-            $finallyBody = '';
+            $finallyBody = PhpCode::from('');
             foreach ($layer->afters as $afterIndex => $advice) {
                 $finallyBody = PhpCode::join($finallyBody, $this->renderAdviceCall(
                     $advice,
@@ -319,14 +321,14 @@ final class DispatchPlanRenderer
         $code = PhpCode::join($code, '}');
         $code = PhpCode::join($code, null === $resultVar ? 'return '.$resultTmp.';' : $resultVar.' = '.$resultTmp.';');
 
-        return (string) $code;
+        return $code;
     }
 
     /**
      * @param list<AdviceDescriptor> $arounds
      * @param array<int, string> $claimedVarNames
      */
-    private function renderAroundStackExpression(array $arounds, string $innerCode, array $claimedVarNames): string
+    private function renderAroundStackExpression(array $arounds, string|PhpCode $innerCode, array $claimedVarNames): string
     {
         $wrappedExpr = '';
         $wrappedCode = $innerCode;
@@ -352,7 +354,7 @@ final class DispatchPlanRenderer
     /**
      * @param array<int, string> $claimedVarNames
      */
-    private function renderProceedCallable(AdviceDescriptor $advice, string $innerCode, array $claimedVarNames): string
+    private function renderProceedCallable(AdviceDescriptor $advice, string|PhpCode $innerCode, array $claimedVarNames): string
     {
         $owner = $advice->className.'::'.$advice->method;
 
@@ -395,15 +397,15 @@ final class DispatchPlanRenderer
         bool $returnsVoid,
         ?string $resultVar = null,
         bool $wrapResults = true,
-    ): string {
+    ): PhpCode {
         if (!$wrapResults) {
             if (!$returnsVoid) {
                 $prefix = null === $resultVar ? 'return ' : $resultVar.' = ';
                 return $this->renderExpression($prefix, $handlerExpr, ';');
             }
 
-            return $handlerExpr.';'."\n"
-                .(null === $resultVar ? 'return null;' : $resultVar.' = null;');
+            return PhpCode::from($handlerExpr.';'."\n"
+                .(null === $resultVar ? 'return null;' : $resultVar.' = null;'));
         }
 
         if (!$returnsVoid) {
@@ -411,10 +413,10 @@ final class DispatchPlanRenderer
             return $this->renderExpression($prefix, $handlerExpr.', $c)', ';');
         }
 
-        return $handlerExpr.';'."\n"
+        return PhpCode::from($handlerExpr.';'."\n"
             .(null === $resultVar
             ? 'return new \Ultra\MessageHandling\ProceedResult(null, $c);'
-            : $resultVar.' = new \Ultra\MessageHandling\ProceedResult(null, $c);');
+            : $resultVar.' = new \Ultra\MessageHandling\ProceedResult(null, $c);'));
     }
 
     private function planHasArounds(DispatchPlan $plan): bool
@@ -486,17 +488,17 @@ final class DispatchPlanRenderer
         AdviceDescriptor $advice,
         string $expression,
         string $contextTmpVar,
-    ): string {
+    ): PhpCode {
         if (!$advice->returnsContextPatch) {
-            return $expression.';';
+            return PhpCode::from($expression.';');
         }
 
-        return <<<PHP
+        return PhpCode::from(<<<PHP
             {$contextTmpVar} = {$expression};
             if (null !== {$contextTmpVar}) {
                 \$c = \$c->merge({$contextTmpVar});
             }
-            PHP;
+            PHP);
     }
 
     /**
@@ -513,11 +515,11 @@ final class DispatchPlanRenderer
         return false;
     }
 
-    private function renderExpression(string $prefix, string $expr, string $suffix = ''): string
+    private function renderExpression(string $prefix, string $expr, string $suffix = ''): PhpCode
     {
-        return $prefix
+        return PhpCode::from($prefix
             .PhpCode::from($expr)->indentContinuationLines(1)
-            .$suffix;
+            .$suffix);
     }
 
     private function exportString(string $value): string

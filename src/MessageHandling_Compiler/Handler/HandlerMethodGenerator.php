@@ -21,6 +21,6 @@ final class HandlerMethodGenerator
             $handler->returnsVoid,
         );
 
-        return $this->renderer->renderDispatchMethod($methodName, $plan);
+        return (string) $this->renderer->renderDispatchMethod($methodName, $plan);
     }
 }
