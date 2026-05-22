@@ -115,7 +115,7 @@ final class DispatchPlanRenderer
     private function renderExecutionCode(
         array $layers,
         int $layerIndex,
-        string|PhpCode $handlerExpr,
+        PhpCode $handlerExpr,
         array $claimedVarNames,
         bool $returnsVoid,
         ?string $resultVar = null,
@@ -133,7 +133,7 @@ final class DispatchPlanRenderer
             if ([] !== $advice->runtimeConfig) {
                 $args[] = $this->exportValue($advice->runtimeConfig);
             }
-            $code = PhpCode::join($code, $this->renderAdviceCall(
+            $code = $code->add($this->renderAdviceCall(
                 $advice,
                 $this->renderServiceMethodCall($advice->serviceId, $advice->method, $args),
                 '$__context'.$layerIndex.'_before'.$beforeIndex,
@@ -176,9 +176,9 @@ final class DispatchPlanRenderer
             );
 
             $prefix = null === $resultVar ? 'return ' : $resultVar.' = ';
-            $code = PhpCode::join($code, $this->renderExpression($prefix, $aroundExpr, ';'));
+            $code = $code->add($this->renderExpression($prefix, $aroundExpr, ';'));
             if (null !== $resultVar) {
-                $code = PhpCode::join($code, '$c = '.$resultVar.'->context;');
+                $code = $code->add('$c = '.$resultVar.'->context;');
             }
 
             return $code;
