@@ -42,6 +42,14 @@ final class PhpCodeTest extends TestCase
         self::assertSame('call()', PhpCode::indentContinuationLines('call()', 2));
     }
 
+    public function test_joins_non_empty_code_blocks(): void
+    {
+        self::assertSame(
+            "\$a = 1;\nreturn \$a;",
+            PhpCode::join('', '$a = 1;', '', 'return $a;'),
+        );
+    }
+
     public function test_exports_string_lists(): void
     {
         self::assertSame("['course', 'student']", PhpCode::exportStringList(['course', 'student']));

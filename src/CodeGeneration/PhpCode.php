@@ -51,6 +51,14 @@ final class PhpCode
         ]);
     }
 
+    public static function join(string ...$blocks): string
+    {
+        return implode("\n", array_values(array_filter(
+            $blocks,
+            static fn (string $block): bool => '' !== $block,
+        )));
+    }
+
     /**
      * @param list<string> $values
      */
