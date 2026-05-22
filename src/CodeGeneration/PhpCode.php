@@ -17,6 +17,11 @@ final readonly class PhpCode
         return $code instanceof self ? $code : new self($code);
     }
 
+    public static function empty(): self
+    {
+        return new self('');
+    }
+
     public static function classLiteral(string $className): string
     {
         return '\\'.ltrim($className, '\\').'::class';
@@ -29,6 +34,9 @@ final readonly class PhpCode
 
     public function indent(int $levels = 1): self
     {
+        if ($levels === 0) {
+            return $this;
+        }
         $prefix = str_repeat(self::INDENT, $levels);
 
         return new self(implode("\n", array_map(
@@ -58,6 +66,11 @@ final readonly class PhpCode
                 array_slice($lines, 1),
             ),
         ]));
+    }
+
+    public function add(string|self ...$blocks): self
+    {
+        return self::join($this, ...$blocks);
     }
 
     public static function join(string|self ...$blocks): self

@@ -23,21 +23,18 @@ final class DispatchPlanRenderer
         return PhpCode::from(<<<PHP
                 private function {$dispatchName}(object \$message, \\Ultra\\MessageHandling\\MessageContext \$context): mixed
                 {
-            {$body}
+                {$body->indent(1)}
                 }
-            PHP);
+                PHP);
     }
 
     public function renderBody(DispatchPlan $plan): PhpCode
     {
         $wrapResults = $this->planHasArounds($plan);
-        $body = PhpCode::join(
-            '$m = $message;',
-            '$c = $context;',
-        );
 
+        $claimesdVarsBlock = PhpCode::empty();
         foreach ($plan->claimedVarNames as $varName) {
-            $body = PhpCode::join($body, $varName.' = null;');
+            $claimesdVarsBlock = $claimesdVarsBlock->add($varName.' = null;');
         }
 
         $handlerExpr = $this->renderHandlerCall(
@@ -47,7 +44,7 @@ final class DispatchPlanRenderer
             $plan->claimedVarNames,
             '$m',
         );
-        $body = PhpCode::join($body, $this->renderExecutionCode(
+        $executionCode = $this->renderExecutionCode(
             $plan->layers,
             0,
             $handlerExpr,
@@ -55,13 +52,19 @@ final class DispatchPlanRenderer
             $plan->returnsVoid,
             $wrapResults ? '$__result' : null,
             $wrapResults,
-        ));
+        );
 
         if ($wrapResults) {
-            $body = PhpCode::join($body, 'return $__result->value;');
+            $executionCode = $executionCode->add('return $__result->value;');
         }
 
-        return $body->indent(2);
+        return PhpCode::from(<<<PHP
+            \$m = \$message;
+            \$c = \$context;
+            {$claimesdVarsBlock}
+            {$executionCode}
+            PHP
+        );
     }
 
     /**
@@ -123,7 +126,7 @@ final class DispatchPlanRenderer
         }
 
         $layer = $layers[$layerIndex];
-        $code = PhpCode::from('');
+        $code = PhpCode::empty();
 
         foreach ($layer->befores as $beforeIndex => $advice) {
             $args = ['$m', '$c'];
