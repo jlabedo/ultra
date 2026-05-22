@@ -33,6 +33,24 @@ final class PhpCode
         return str_repeat(self::INDENT, $level);
     }
 
+    public static function indentContinuationLines(string $code, int $levels): string
+    {
+        $lines = explode("\n", $code);
+        if (1 === count($lines)) {
+            return $code;
+        }
+
+        $prefix = self::indentLevel($levels);
+
+        return implode("\n", [
+            $lines[0],
+            ...array_map(
+                static fn (string $line): string => '' === $line ? '' : $prefix.$line,
+                array_slice($lines, 1),
+            ),
+        ]);
+    }
+
     /**
      * @param list<string> $values
      */

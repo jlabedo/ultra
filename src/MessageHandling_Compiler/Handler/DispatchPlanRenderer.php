@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ultra\MessageHandling_Compiler\Handler;
 
 use Ultra\CodeGeneration\PhpCode;
-use Ultra\CodeGeneration\PhpSnippet;
 use Ultra\MessageHandling_Compiler\HandlerDependencyExpressionResolverInterface;
 
 final class DispatchPlanRenderer
@@ -381,23 +380,30 @@ final class DispatchPlanRenderer
         $captures = array_values(array_unique($captures));
 
         $captures[1] = '&$c';
+        $capturesCode = implode(', ', $captures);
+        $expectedProvidedCount = count($advice->claimedDepIndices);
+        $proceedErrorMessage = $this->exportString($owner.' must call $proceed() with exactly '.$expectedProvidedCount.' provided value(s); received %d.');
 
-        $lines = ['function (?\Ultra\MessageHandling\MessageContext $context = null, array $provided = []) use ('.implode(', ', $captures).') : \Ultra\MessageHandling\ProceedResult {'];
-        $lines[] = $this->indent(1).'if (count($provided) !== '.count($advice->claimedDepIndices).') {';
-        $lines[] = $this->indent(2).'throw new \LogicException(sprintf('
-            .$this->exportString($owner.' must call $proceed() with exactly '.count($advice->claimedDepIndices).' provided value(s); received %d.')
-            .', count($provided)));';
-        $lines[] = $this->indent(1).'}';
-        $lines[] = $this->indent(1).'$c = $context ?? $c;';
+        $bodyLines = [];
+        $this->appendSnippet($bodyLines, 1, <<<PHP
+            if (count(\$provided) !== {$expectedProvidedCount}) {
+                throw new \LogicException(sprintf({$proceedErrorMessage}, count(\$provided)));
+            }
+            \$c = \$context ?? \$c;
+            PHP);
 
         foreach ($advice->claimedDepIndices as $offset => $depIdx) {
-            $lines[] = $this->indent(1).'$_p'.$depIdx.' = $provided['.$offset.'];';
+            $bodyLines[] = $this->indent(1).'$_p'.$depIdx.' = $provided['.$offset.'];';
         }
 
-        $lines = [...$lines, ...$innerLines];
-        $lines[] = '}';
+        $bodyLines = [...$bodyLines, ...$innerLines];
+        $body = implode("\n", $bodyLines);
 
-        return implode("\n", $lines);
+        return <<<PHP
+            function (?\\Ultra\\MessageHandling\\MessageContext \$context = null, array \$provided = []) use ({$capturesCode}) : \\Ultra\\MessageHandling\\ProceedResult {
+            {$body}
+            }
+            PHP;
     }
 
     /**
@@ -554,9 +560,17 @@ final class DispatchPlanRenderer
     {
         $rendered = $this->indent($indentLevel)
             .$prefix
-            .PhpSnippet::raw($expr)->indentContinuationLines($indentLevel + 1)
+            .PhpCode::indentContinuationLines($expr, $indentLevel + 1)
             .$suffix;
         $lines = [...$lines, ...explode("\n", $rendered)];
+    }
+
+    /**
+     * @param list<string> $lines
+     */
+    private function appendSnippet(array &$lines, int $indentLevel, string $snippet): void
+    {
+        $lines = [...$lines, ...explode("\n", PhpCode::indent($snippet, $indentLevel))];
     }
 
     private function exportString(string $value): string

@@ -9,12 +9,10 @@ use PHPUnit\Framework\TestCase;
 use Ultra\CodeGeneration\GeneratedPhpClassWriter;
 use Ultra\CodeGeneration\PhpCode;
 use Ultra\CodeGeneration\PhpFileWriter;
-use Ultra\CodeGeneration\PhpSnippet;
 
 #[CoversClass(PhpCode::class)]
 #[CoversClass(PhpFileWriter::class)]
 #[CoversClass(GeneratedPhpClassWriter::class)]
-#[CoversClass(PhpSnippet::class)]
 final class PhpCodeTest extends TestCase
 {
     public function test_formats_class_literals(): void
@@ -32,11 +30,16 @@ final class PhpCodeTest extends TestCase
     public function test_indents_snippet_continuation_lines(): void
     {
         self::assertSame(
-            "call(\n        'value'\n        )",
-            PhpSnippet::raw("call(\n'value'\n)")->indentContinuationLines(2),
+            "        if (\$ok) {\n            return true;\n        }",
+            PhpCode::indent("if (\$ok) {\n    return true;\n}", 2),
         );
 
-        self::assertSame('call()', PhpSnippet::raw('call()')->indentContinuationLines(2));
+        self::assertSame(
+            "call(\n        'value'\n        )",
+            PhpCode::indentContinuationLines("call(\n'value'\n)", 2),
+        );
+
+        self::assertSame('call()', PhpCode::indentContinuationLines('call()', 2));
     }
 
     public function test_exports_string_lists(): void
