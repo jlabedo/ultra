@@ -12,7 +12,8 @@
     "require": {
         "php": ">=8.4",
         "phpstan/phpdoc-parser": "^2.0",
-        "symfony/type-info": "7.*|8.*"
+        "symfony/type-info": "7.*|8.*",
+        "ultra/code-generation": "*"
     },
     "autoload": {
         "psr-4": {

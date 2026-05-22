@@ -4,6 +4,10 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Routing;
 
+use Ultra\CodeGeneration\GeneratedPhpClassWriter;
+use Ultra\CodeGeneration\PhpCode;
+use Ultra\CodeGeneration\PhpFileWriter;
+
 /**
  * Generates a compiled router PHP class that delegates to per-handler services.
  *
@@ -23,6 +27,11 @@ namespace Ultra\MessageHandling_Compiler\Routing;
  */
 final class MessageRouterGenerator
 {
+    public function __construct(
+        private readonly GeneratedPhpClassWriter $classWriter = new GeneratedPhpClassWriter(),
+        private readonly PhpFileWriter $fileWriter = new PhpFileWriter(),
+    ) {}
+
     /**
      * Generate the PHP source and write it to disk.
      *
@@ -42,22 +51,12 @@ final class MessageRouterGenerator
         array $routes,
         string $outputDir,
     ): array {
-        $placeholder = '__ULTRA_COMPILED_CLASS__';
-        $code = $this->buildCode($placeholder, $descriptor, $routes);
-
-        $hash = substr(sha1($code), 0, 8);
-        $className = $baseName.'_'.$hash;
-        $code = str_replace($placeholder, $className, $code);
-
-        $filePath = rtrim($outputDir, '/').'/'.$className.'.php';
-        $dir = dirname($filePath);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0o777, true);
-        }
-
-        file_put_contents($filePath, $code);
-
-        return ['className' => $className, 'filePath' => $filePath];
+        return $this->classWriter->writeContentAddressed(
+            $baseName,
+            $outputDir,
+            fn (string $className): string => $this->buildCode($className, $descriptor, $routes),
+            '__ULTRA_COMPILED_CLASS__',
+        );
     }
 
     /**
@@ -77,7 +76,7 @@ final class MessageRouterGenerator
                 $routeEntries[] = sprintf(
                     '        "%s" => %s,',
                     $messageClass,
-                    var_export($handlerServiceIds, true),
+                    PhpCode::exportValue($handlerServiceIds),
                 );
             } else {
                 $routeEntries[] = $this->buildMultiRouteEntry($messageClass, $handlerServiceIds);
@@ -148,12 +147,7 @@ final class MessageRouterGenerator
      */
     public function generateWrappersFile(array $wrapperClassToDescriptor, string $filePath): void
     {
-        $dir = dirname($filePath);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0o777, true);
-        }
-
-        file_put_contents($filePath, $this->buildWrappersFileCode($wrapperClassToDescriptor));
+        $this->fileWriter->write($filePath, $this->buildWrappersFileCode($wrapperClassToDescriptor));
     }
 
     /**
@@ -253,7 +247,7 @@ final class MessageRouterGenerator
 
         $lines = [sprintf('        \%s::class => [', ltrim($messageClass, '\\'))];
         foreach ($handlerServiceIds as $serviceId) {
-            $lines[] = sprintf('            %s,', var_export($serviceId, true));
+            $lines[] = sprintf('            %s,', PhpCode::exportString($serviceId));
         }
         $lines[] = '        ],';
 

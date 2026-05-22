@@ -4,23 +4,25 @@ declare(strict_types=1);
 
 namespace Ultra\EventSourcedState_Compiler;
 
+use Ultra\CodeGeneration\PhpCode;
+use Ultra\CodeGeneration\PhpFileWriter;
+
 final class EventSourcedEntityLoaderGenerator
 {
+    public function __construct(
+        private readonly PhpFileWriter $fileWriter = new PhpFileWriter(),
+    ) {}
+
     public function generate(string $className, EventSourcedEntityDefinition $definition, string $filePath): void
     {
-        $dir = dirname($filePath);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0o777, true);
-        }
-
-        file_put_contents($filePath, $this->buildCode($className, $definition));
+        $this->fileWriter->write($filePath, $this->buildCode($className, $definition));
     }
 
     public function buildCode(string $className, EventSourcedEntityDefinition $definition): string
     {
-        $entityClassName = '\\'.ltrim($definition->entityClass, '\\');
-        $entityClassLiteral = $entityClassName.'::class';
-        $expectedTagsCode = $this->exportStringList($definition->tags);
+        $entityClassName = PhpCode::fqcn($definition->entityClass);
+        $entityClassLiteral = PhpCode::classLiteral($definition->entityClass);
+        $expectedTagsCode = PhpCode::exportStringList($definition->tags);
         $tagExtractionCode = $this->buildTagExtractionCode($definition);
         $queryCode = $this->buildQueryCode($definition);
         $dispatchCode = $this->buildDispatchCode($definition);
@@ -73,8 +75,8 @@ final class EventSourcedEntityLoaderGenerator
         $lines = [];
 
         foreach ($definition->tags as $tag) {
-            $variableName = $this->identifierVariableName($tag);
-            $tagLiteral = var_export($tag, true);
+            $variableName = PhpCode::identifier($tag, 'tag');
+            $tagLiteral = PhpCode::exportString($tag);
             $lines[] = sprintf('        $%s = $tagValues[%s];', $variableName, $tagLiteral);
         }
 
@@ -90,13 +92,13 @@ final class EventSourcedEntityLoaderGenerator
         $branches = [];
         foreach ($definition->criteriaGroups as $group) {
             $identifierVariables = array_map(
-                fn (string $tag): string => '$'.$this->identifierVariableName($tag),
+                static fn (string $tag): string => '$'.PhpCode::identifier($tag, 'tag'),
                 $group->tags,
             );
             $branch = sprintf(
                 '\Ultra\EventStore\StreamQuery::forStream(%s)->ofTypes(%s)',
                 implode(', ', $identifierVariables),
-                implode(', ', array_map(static fn (string $eventName): string => var_export($eventName, true), $group->eventNames)),
+                implode(', ', array_map(PhpCode::exportString(...), $group->eventNames)),
             );
             $branches[] = $branch;
         }
@@ -118,7 +120,7 @@ final class EventSourcedEntityLoaderGenerator
         foreach ($definition->dispatchEntries as $entry) {
             $cases[] = sprintf(
                 '                %s => $state->%s($this->normalizer->fromScalar($event->payload, \%s::class)),',
-                var_export($entry->eventName, true),
+                PhpCode::exportString($entry->eventName),
                 $entry->method,
                 ltrim($entry->eventClass, '\\'),
             );
@@ -133,27 +135,5 @@ final class EventSourcedEntityLoaderGenerator
             .implode("\n", $cases)
             ."\n{$defaultCase}\n"
             .'            };';
-    }
-
-    /**
-     * @param list<string> $values
-     */
-    private function exportStringList(array $values): string
-    {
-        return '['.implode(', ', array_map(static fn (string $value): string => var_export($value, true), $values)).']';
-    }
-
-    private function identifierVariableName(string $tag): string
-    {
-        $normalized = preg_replace('/[^a-zA-Z0-9_]+/', '_', $tag) ?? $tag;
-        $normalized = trim($normalized, '_');
-        if ('' === $normalized) {
-            $normalized = 'tag';
-        }
-        if (preg_match('/^[0-9]/', $normalized)) {
-            $normalized = 'tag_'.$normalized;
-        }
-
-        return $normalized;
     }
 }

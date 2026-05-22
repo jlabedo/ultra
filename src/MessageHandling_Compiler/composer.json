@@ -11,8 +11,9 @@
     ],
     "require": {
         "php": ">=8.5",
-        "ultra/message-handling": "*",
-        "symfony/dependency-injection": "7.*|8.*"
+        "symfony/dependency-injection": "7.*|8.*",
+        "ultra/code-generation": "*",
+        "ultra/message-handling": "*"
     },
     "autoload": {
         "psr-4": {

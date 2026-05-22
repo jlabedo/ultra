@@ -12,6 +12,7 @@
     "require": {
         "php": ">=8.5",
         "symfony/dependency-injection": "7.*|8.*",
+        "ultra/code-generation": "*",
         "ultra/event-sourced-state": "*",
         "ultra/event-store": "*",
         "ultra/mapper": "*"

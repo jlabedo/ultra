@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Handler;
 
+use Ultra\CodeGeneration\GeneratedPhpClassWriter;
+use Ultra\CodeGeneration\PhpCode;
+
 /**
  * Generates standalone handler classes that implement MessageHandlerInterface.
  *
@@ -19,6 +22,7 @@ final class HandlerClassGenerator
     public function __construct(
         private readonly DispatchPlanBuilder $planBuilder = new DispatchPlanBuilder(),
         private readonly DispatchPlanRenderer $renderer = new DispatchPlanRenderer(),
+        private readonly GeneratedPhpClassWriter $classWriter = new GeneratedPhpClassWriter(),
     ) {}
 
     /**
@@ -36,22 +40,12 @@ final class HandlerClassGenerator
         string $outputDir,
         ?string $wrappersFilePath = null,
     ): array {
-        $placeholder = '__ULTRA_HANDLER_CLASS__';
-        $code = $this->buildCode($placeholder, $handler, $wrappersFilePath);
-
-        $hash = substr(sha1($code), 0, 8);
-        $className = $baseName.'_'.$hash;
-        $code = str_replace($placeholder, $className, $code);
-
-        $filePath = rtrim($outputDir, '/').'/'.$className.'.php';
-        $dir = dirname($filePath);
-        if (!is_dir($dir)) {
-            mkdir($dir, 0o777, true);
-        }
-
-        file_put_contents($filePath, $code);
-
-        return ['className' => $className, 'filePath' => $filePath];
+        return $this->classWriter->writeContentAddressed(
+            $baseName,
+            $outputDir,
+            fn (string $className): string => $this->buildCode($className, $handler, $wrappersFilePath),
+            '__ULTRA_HANDLER_CLASS__',
+        );
     }
 
     /**
@@ -70,7 +64,7 @@ final class HandlerClassGenerator
         $body = $this->renderer->renderBody($plan);
 
         $requireLine = null !== $wrappersFilePath
-            ? "\nrequire_once ".var_export($wrappersFilePath, true).";\n"
+            ? "\nrequire_once ".PhpCode::exportString($wrappersFilePath).";\n"
             : '';
 
         return <<<PHP

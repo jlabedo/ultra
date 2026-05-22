@@ -26,6 +26,7 @@
         "symfony/process": "7.*|8.*"
     },
     "replace": {
+        "ultra/code-generation": "self.version",
         "ultra/container": "self.version",
         "ultra/event-sourced-state": "self.version",
         "ultra/event-sourced-state-compiler": "self.version",
