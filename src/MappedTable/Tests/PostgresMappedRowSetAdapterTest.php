@@ -36,6 +36,30 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
         });
     }
 
+    public function test_row_without_projection_returns_full_row(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, [
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => 'A1',
+                'version_b' => 'B1',
+            ]);
+
+            self::assertSame([
+                'id' => 'row-1',
+                'status' => 'pending',
+                'note' => 'draft',
+                'version_a' => 'A1',
+                'version_b' => 'B1',
+                'tags' => null,
+                'payload' => null,
+                'expires_on' => null,
+            ], $table->row('row-1'));
+        });
+    }
+
     public function test_rows_returns_projected_rows(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
@@ -61,6 +85,41 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 ],
             ], $table->rows(['status', 'note']));
         });
+    }
+
+    public function test_jsonb_column_type_round_trips_arrays(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $payload = [
+                'anyOf' => [
+                    ['documentType' => 'passport'],
+                    ['allOf' => [['documentType' => 'driver_license']]],
+                ],
+            ];
+
+            $table->withId('row-1')->upsert()->setColumn('payload', $payload);
+            $this->flush($connection, $table);
+
+            self::assertSame(['payload' => $payload], $table->row('row-1', ['payload']));
+        }, [
+            'payload' => PostgresMappedColumnType::jsonb(),
+        ]);
+    }
+
+    public function test_date_column_type_round_trips_iso_dates(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $table->withId('row-1')->upsert()->setColumn('expires_on', '2026-05-25');
+            $this->flush($connection, $table);
+
+            self::assertSame(['expires_on' => '2026-05-25'], $table->row('row-1', ['expires_on']));
+            self::assertSame('date', $connection->fetchOne(
+                'SELECT pg_typeof(expires_on)::text FROM '.$connection->quoteSingleIdentifier($tableName).' WHERE id = ?',
+                ['row-1'],
+            ));
+        }, [
+            'expires_on' => PostgresMappedColumnType::date(),
+        ]);
     }
 
     public function test_expect_same_row_ids_succeeds_when_ids_match(): void

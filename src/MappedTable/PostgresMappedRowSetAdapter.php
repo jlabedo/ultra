@@ -23,11 +23,12 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
     public function row(int|string $id, array $columns = []): array|false
     {
-        $selectColumns = [] === $columns ? [$this->idColumn] : $columns;
-        $quotedColumns = array_map(
-            $this->connection->quoteSingleIdentifier(...),
-            array_values(array_unique($selectColumns)),
-        );
+        $quotedColumns = [] === $columns
+            ? ['*']
+            : array_map(
+                $this->connection->quoteSingleIdentifier(...),
+                array_values(array_unique($columns)),
+            );
 
         $row = $this->connection->fetchAssociative(
             sprintf(
