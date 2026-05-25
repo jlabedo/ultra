@@ -21,6 +21,9 @@ final class InMemoryQueue implements AsyncMessageSender, AsyncMessageReceiver
      */
     private array $messages = [];
 
+    /** @var array<string, AsyncMessageId> */
+    private array $idsByKey = [];
+
     public function __construct(private ClockInterface $clock = new SystemClock()) {}
 
     public function enqueue(AsyncEnvelope $envelope, ?AsyncEnqueueOptions $options = null): AsyncMessageId
@@ -28,14 +31,26 @@ final class InMemoryQueue implements AsyncMessageSender, AsyncMessageReceiver
         $options ??= new AsyncEnqueueOptions();
         $messageId = $options->messageId ?? AsyncMessageId::generate();
         $now = $this->clock->now();
+        $availableAt = $options->availableAt ?? ($options->delay instanceof Duration ? $now->add($options->delay) : $now);
+
+        if ($options->replace && null !== $options->key) {
+            $existingId = $this->idsByKey[$options->key] ?? null;
+            if (null !== $existingId) {
+                unset($this->messages[$existingId->value], $this->idsByKey[$options->key]);
+            }
+        }
 
         $this->messages[$messageId->value] = [
             'envelope' => $envelope,
-            'availableAt' => $options->delay instanceof Duration ? $now->add($options->delay) : $now,
+            'availableAt' => $availableAt,
             'leaseId' => null,
             'leasedUntil' => null,
             'attempts' => 0,
         ];
+
+        if (null !== $options->key) {
+            $this->idsByKey[$options->key] = $messageId;
+        }
 
         return $messageId;
     }
@@ -83,6 +98,7 @@ final class InMemoryQueue implements AsyncMessageSender, AsyncMessageReceiver
         }
 
         unset($this->messages[$delivery->messageId->value]);
+        $this->removeKeyFor($delivery->messageId);
     }
 
     public function release(AsyncDelivery $delivery, ?Duration $delay = null, ?\Throwable $reason = null): void
@@ -122,5 +138,16 @@ final class InMemoryQueue implements AsyncMessageSender, AsyncMessageReceiver
     public function count(): int
     {
         return count($this->messages);
+    }
+
+    private function removeKeyFor(AsyncMessageId $messageId): void
+    {
+        foreach ($this->idsByKey as $key => $id) {
+            if ($id->value === $messageId->value) {
+                unset($this->idsByKey[$key]);
+
+                return;
+            }
+        }
     }
 }
