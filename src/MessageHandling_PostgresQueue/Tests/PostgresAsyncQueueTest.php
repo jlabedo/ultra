@@ -32,7 +32,8 @@ final class PostgresAsyncQueueTest extends TestCase
         $this->withQueue(function (Connection $connection, PostgresAsyncQueue $queue, string $tablePrefix) use ($clock): void {
             $queue->enqueue(new AsyncEnvelope(
                 new PostgresQueueTestMessage('hello'),
-                MessageContext::fromArray(['traceId' => 'trace-1']),
+                MessageContext::fromArray(['traceId' => 'trace-1'])
+                    ->withLocal('runtime', new \stdClass()),
                 AsyncHeaders::empty()->with(AsyncHeaderNames::ROUTE, 'test.subscription'),
             ));
 
@@ -52,6 +53,7 @@ final class PostgresAsyncQueueTest extends TestCase
             self::assertInstanceOf(PostgresQueueTestMessage::class, $delivery->envelope->message);
             self::assertSame('hello', $delivery->envelope->message->value);
             self::assertSame('trace-1', $delivery->envelope->messageContext->get('traceId'));
+            self::assertFalse($delivery->envelope->messageContext->has('.runtime'));
             self::assertSame('test.subscription', $delivery->envelope->headers->getString(AsyncHeaderNames::ROUTE));
 
             $queue->acknowledge($delivery);

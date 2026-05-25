@@ -23,7 +23,7 @@ final readonly class MapperAsyncEnvelopeCodec implements AsyncEnvelopeCodecInter
         return new EncodedAsyncEnvelope(
             $this->encodeJson($this->normalizer->toScalar($envelope->message), 'async message body'),
             $headers,
-            $envelope->messageContext->all(),
+            $envelope->messageContext->propagated()->all(),
         );
     }
 
