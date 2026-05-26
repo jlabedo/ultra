@@ -488,6 +488,78 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertSame([12, 13], $merged->checkpoint->gapSeqNoValues());
     }
 
+    public function test_replay_from_beginning_rebuilds_projection_state_from_event_zero(): void
+    {
+        $projection = new TrackingProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $runner = new ProjectionRunner($eventStore, $segments);
+
+        $eventStore->append([
+            self::courseCreatedEvent('course-1', 'Math'),
+            self::courseCreatedEvent('course-2', 'Science'),
+            self::courseCreatedEvent('course-3', 'History'),
+        ]);
+
+        // Prime the projection incrementally so there's existing state +
+        // checkpoint to wipe.
+        $runner->ensureInitialized($runtime);
+        $runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 100);
+        self::assertSame(
+            ['course-1' => 'Math', 'course-2' => 'Science', 'course-3' => 'History'],
+            $projection->names,
+        );
+        $resetsBefore = $projection->resets;
+
+        // Replay from event 0.
+        $processed = $runner->replayFromBeginning($runtime, limit: 2);
+
+        self::assertSame(3, $processed);
+        self::assertSame($resetsBefore + 1, $projection->resets, 'replay must reset projection state');
+        self::assertSame(
+            ['course-1' => 'Math', 'course-2' => 'Science', 'course-3' => 'History'],
+            $projection->names,
+        );
+        // Every segment should be caught up (no claims left over).
+        foreach ($segments->listSegments('tracking_projection') as $segment) {
+            self::assertNull($segment->workerId);
+        }
+    }
+
+    public function test_replay_from_beginning_is_idempotent(): void
+    {
+        $projection = new TrackingProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $eventStore = new InMemoryEventStore();
+        $segments = new InMemoryProjectionSegmentRepository();
+        $runner = new ProjectionRunner($eventStore, $segments);
+
+        $eventStore->append([
+            self::courseCreatedEvent('course-1', 'Math'),
+            self::courseCreatedEvent('course-2', 'Science'),
+        ]);
+
+        $first = $runner->replayFromBeginning($runtime);
+        $expectedNames = $projection->names;
+        $second = $runner->replayFromBeginning($runtime);
+
+        self::assertSame(2, $first);
+        self::assertSame(2, $second);
+        self::assertSame($expectedNames, $projection->names);
+    }
+
+    public function test_replay_from_beginning_on_empty_event_store_returns_zero(): void
+    {
+        $projection = new TrackingProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $runner = new ProjectionRunner(new InMemoryEventStore(), new InMemoryProjectionSegmentRepository());
+
+        self::assertSame(0, $runner->replayFromBeginning($runtime));
+        self::assertSame([], $projection->names);
+        self::assertSame(1, $projection->initialized);
+    }
+
     private static function courseCreatedEvent(string $courseId, string $name): Event
     {
         return new Event(

@@ -166,6 +166,65 @@ final readonly class ProjectionRunner
         }
     }
 
+    /**
+     * Replay a projection from event 0: drop its state and checkpoints, then
+     * stream every event from the event store back through its handlers until
+     * all segments are caught up.
+     *
+     * Intended for tests and one-shot offline rebuilds. Uses the same
+     * transactional, segment-claimed backfill path as `backfillClaimedOnce`
+     * — no bucket-activity coordination, no event-arrival semantics. The
+     * caller owns the event store; this method does not wait for new events.
+     *
+     * Returns the total number of events processed.
+     */
+    public function replayFromBeginning(
+        ProjectionRuntime $runtime,
+        string $workerId = 'replay',
+        int $limit = 100,
+    ): int {
+        $projectionId = $runtime->projectionId();
+
+        $this->deleteProjection($runtime);
+        $this->ensureInitialized($runtime);
+
+        $totalEvents = 0;
+        while (true) {
+            $progressed = false;
+            foreach ($this->listSegments($projectionId) as $segment) {
+                // Loop this segment until caught up. `backfillClaimedOnce`
+                // claims with `$workerId`; the same worker can re-claim its
+                // own in-progress lease, so successive calls advance the
+                // checkpoint batch by batch until `caughtUp` is true.
+                while (true) {
+                    $result = $this->backfillClaimedOnce(
+                        $runtime,
+                        $projectionId,
+                        $segment->bucketFrom,
+                        $workerId,
+                        $limit,
+                    );
+                    if (!$result->claimedSegment) {
+                        // Held by a different worker; skip this round.
+                        break;
+                    }
+                    $totalEvents += $result->processedEvents;
+                    if ($result->processedEvents > 0) {
+                        $progressed = true;
+                    }
+                    if ($result->caughtUp) {
+                        break;
+                    }
+                }
+            }
+            if (!$progressed) {
+                break;
+            }
+        }
+
+        return $totalEvents;
+    }
+
     public function backfillClaimedOnce(
         ProjectionRuntime $runtime,
         string $projectionId,
