@@ -133,7 +133,7 @@ final class MessageRouterGenerator
 
                 public function {$method}(object {$msgVar}, array|\\Ultra\\MessageHandling\\MessageContext \$context = []): {$returnType}
                 {
-                    \$merged = \$this->parentContext->merge(\\Ultra\\MessageHandling\\MessageContext::coerce(\$context));
+                    \$merged = \$this->parentContext->propagated()->merge(\\Ultra\\MessageHandling\\MessageContext::coerce(\$context));
                     {$returnKeyword}\$this->inner->{$method}({$msgVar}, \$merged);
                 }
             }

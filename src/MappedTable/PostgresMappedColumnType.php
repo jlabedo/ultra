@@ -8,6 +8,8 @@ final readonly class PostgresMappedColumnType
 {
     private const ARRAY_TEXT = 'array_text';
     private const ARRAY_INT = 'array_int';
+    private const JSON = 'json';
+    private const DATE = 'date';
 
     private function __construct(
         public string $sqlType,
@@ -29,10 +31,28 @@ final readonly class PostgresMappedColumnType
         return new self('INTEGER[]', self::ARRAY_INT);
     }
 
+    public static function jsonb(): self
+    {
+        return new self('JSONB', self::JSON);
+    }
+
+    public static function date(): self
+    {
+        return new self('DATE', self::DATE);
+    }
+
     public function encode(mixed $value): mixed
     {
         if (null === $value) {
             return null;
+        }
+
+        if (self::DATE === $this->kind) {
+            return self::encodeDate($value);
+        }
+
+        if (self::JSON === $this->kind) {
+            return self::encodeJson($value);
         }
 
         if (!is_array($value)) {
@@ -52,8 +72,16 @@ final readonly class PostgresMappedColumnType
             return $value;
         }
 
+        if (self::DATE === $this->kind) {
+            return self::decodeDate($value);
+        }
+
         if (!is_string($value)) {
             throw new \InvalidArgumentException(sprintf('Postgres column type "%s" expects a database string or null.', $this->sqlType));
+        }
+
+        if (self::JSON === $this->kind) {
+            return self::decodeJson($value);
         }
 
         $values = self::decodeArray($value);
@@ -66,6 +94,50 @@ final readonly class PostgresMappedColumnType
             ),
             default => throw new \LogicException(sprintf('Unsupported Postgres mapped column kind "%s".', $this->kind)),
         };
+    }
+
+    private static function encodeDate(mixed $value): string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
+            throw new \InvalidArgumentException('Postgres DATE column value must be a YYYY-MM-DD string, DateTimeInterface, or null.');
+        }
+
+        return $value;
+    }
+
+    private static function decodeDate(mixed $value): string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d');
+        }
+
+        if (!is_string($value)) {
+            throw new \InvalidArgumentException('Postgres DATE column value must decode from a database string, DateTimeInterface, or null.');
+        }
+
+        return substr($value, 0, 10);
+    }
+
+    private static function encodeJson(mixed $value): string
+    {
+        try {
+            return json_encode($value, JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new \InvalidArgumentException('Postgres JSONB column value must be JSON encodable.', previous: $e);
+        }
+    }
+
+    private static function decodeJson(string $value): mixed
+    {
+        try {
+            return json_decode($value, true, flags: JSON_THROW_ON_ERROR);
+        } catch (\JsonException $e) {
+            throw new \InvalidArgumentException('Postgres JSONB column value must contain valid JSON.', previous: $e);
+        }
     }
 
     /**

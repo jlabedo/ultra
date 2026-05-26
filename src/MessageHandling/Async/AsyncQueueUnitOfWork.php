@@ -28,6 +28,9 @@ final class AsyncQueueUnitOfWork implements AsyncMessageSender, UnitOfWork
             'options' => new AsyncEnqueueOptions(
                 messageId: $messageId,
                 delay: $options->delay,
+                availableAt: $options->availableAt,
+                key: $options->key,
+                replace: $options->replace,
             ),
         ];
 

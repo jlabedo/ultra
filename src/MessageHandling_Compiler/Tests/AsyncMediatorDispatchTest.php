@@ -6,9 +6,11 @@ namespace Ultra\MessageHandling_Compiler\Tests;
 
 use Ultra\MessageHandling\Attribute\Asynchronous;
 use Ultra\MessageHandling\Attribute\Handles;
+use Ultra\MessageHandling\Async\AsyncDispatch;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\EmptyMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\FarewellMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
+use Ultra\Time\DatePoint;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
 /**
@@ -112,5 +114,38 @@ final class AsyncMediatorDispatchTest extends MessageHandlingCompilerTestCase
         $asyncResult = $container->mediator()->send(new FarewellMessage('Bob'));
         self::assertNull($asyncResult);
         self::assertSame(1, $container->asyncQueue()->count());
+    }
+
+    public function test_async_dispatch_context_can_schedule_async_handler(): void
+    {
+        $executed = false;
+
+        $container = $this->ultraLight()
+            ->withService(new class($executed) {
+                public bool $executed;
+
+                public function __construct(bool &$executed)
+                {
+                    $this->executed = &$executed;
+                }
+
+                #[Handles]
+                #[Asynchronous]
+                public function handle(EmptyMessage $message): void
+                {
+                    $this->executed = true;
+                }
+            })
+            ->boot()
+        ;
+
+        $container->mediator()->send(
+            new EmptyMessage(),
+            AsyncDispatch::scheduledAt(DatePoint::create(3000, 1, 1))->asContext(),
+        );
+
+        self::assertSame(1, $container->asyncQueue()->count());
+        self::assertSame(0, $container->queueWorker()->drain());
+        self::assertFalse($executed);
     }
 }

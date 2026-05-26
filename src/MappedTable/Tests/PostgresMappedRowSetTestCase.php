@@ -34,7 +34,9 @@ abstract class PostgresMappedRowSetTestCase extends TestCase
                     note TEXT NULL,
                     version_a TEXT NULL,
                     version_b TEXT NULL,
-                    tags TEXT[] NULL
+                    tags TEXT[] NULL,
+                    payload JSONB NULL,
+                    expires_on DATE NULL
                 )',
                 $connection->quoteSingleIdentifier($tableName),
             ));

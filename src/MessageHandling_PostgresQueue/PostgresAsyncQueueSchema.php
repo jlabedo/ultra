@@ -21,6 +21,7 @@ final readonly class PostgresAsyncQueueSchema
                     body           BYTEA       NOT NULL,
                     headers        JSONB       NOT NULL DEFAULT '{}'::jsonb,
                     attributes     JSONB       NOT NULL DEFAULT '{}'::jsonb,
+                    schedule_key   TEXT        NULL,
                     available_at   TIMESTAMPTZ NOT NULL,
                     lease_id       TEXT        NULL,
                     leased_until   TIMESTAMPTZ NULL,
@@ -29,6 +30,13 @@ final readonly class PostgresAsyncQueueSchema
                     created_at     TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
                     updated_at     TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp()
                 )",
+                $this->messagesTable(),
+            ),
+            sprintf(
+                'CREATE INDEX IF NOT EXISTS %s_schedule_key_idx
+                 ON %s (queue_name, schedule_key)
+                 WHERE schedule_key IS NOT NULL',
+                $this->tablePrefix.'messages',
                 $this->messagesTable(),
             ),
             sprintf(

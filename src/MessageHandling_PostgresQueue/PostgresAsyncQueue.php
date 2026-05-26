@@ -39,14 +39,22 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         $messageId = $options->messageId ?? AsyncMessageId::generate();
         $encoded = $this->codec->encode($envelope);
         $now = $this->clock->now();
-        $availableAt = $options->delay instanceof Duration ? $now->add($options->delay) : $now;
+        $availableAt = $options->availableAt ?? ($options->delay instanceof Duration ? $now->add($options->delay) : $now);
+
+        if ($options->replace && null !== $options->key) {
+            $this->connection->executeStatement(
+                sprintf('DELETE FROM %s WHERE queue_name = ? AND schedule_key = ?', $this->messagesTable()),
+                [$this->queueName, $options->key],
+                [ParameterType::STRING, ParameterType::STRING],
+            );
+        }
 
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (
-                    id, queue_name, body, headers, attributes, available_at, created_at, updated_at
+                    id, queue_name, body, headers, attributes, schedule_key, available_at, created_at, updated_at
                 ) VALUES (
-                    ?, ?, ?, CAST(? AS JSONB), CAST(? AS JSONB), CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ)
+                    ?, ?, ?, CAST(? AS JSONB), CAST(? AS JSONB), ?, CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ)
                 )',
                 $this->messagesTable(),
             ),
@@ -56,6 +64,7 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
                 $encoded->body,
                 $this->encodeJsonObject($encoded->headers->all(), 'async headers'),
                 $this->encodeJsonObject($encoded->attributes, 'async attributes'),
+                $options->key,
                 $availableAt,
                 $now,
                 $now,
@@ -64,6 +73,7 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
                 ParameterType::STRING,
                 ParameterType::STRING,
                 ParameterType::BINARY,
+                ParameterType::STRING,
                 ParameterType::STRING,
                 ParameterType::STRING,
                 ParameterType::STRING,

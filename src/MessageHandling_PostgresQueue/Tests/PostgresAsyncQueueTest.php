@@ -18,6 +18,7 @@ use Ultra\MessageHandling_PostgresQueue\MapperAsyncEnvelopeCodec;
 use Ultra\MessageHandling_PostgresQueue\PostgresAsyncQueue;
 use Ultra\MessageHandling_PostgresQueue\PostgresAsyncQueueSchema;
 use Ultra\Testing\PostgresTestSupport;
+use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
 
@@ -32,7 +33,8 @@ final class PostgresAsyncQueueTest extends TestCase
         $this->withQueue(function (Connection $connection, PostgresAsyncQueue $queue, string $tablePrefix) use ($clock): void {
             $queue->enqueue(new AsyncEnvelope(
                 new PostgresQueueTestMessage('hello'),
-                MessageContext::fromArray(['traceId' => 'trace-1']),
+                MessageContext::fromArray(['traceId' => 'trace-1'])
+                    ->withLocal('runtime', new \stdClass()),
                 AsyncHeaders::empty()->with(AsyncHeaderNames::ROUTE, 'test.subscription'),
             ));
 
@@ -52,6 +54,7 @@ final class PostgresAsyncQueueTest extends TestCase
             self::assertInstanceOf(PostgresQueueTestMessage::class, $delivery->envelope->message);
             self::assertSame('hello', $delivery->envelope->message->value);
             self::assertSame('trace-1', $delivery->envelope->messageContext->get('traceId'));
+            self::assertFalse($delivery->envelope->messageContext->has('.runtime'));
             self::assertSame('test.subscription', $delivery->envelope->headers->getString(AsyncHeaderNames::ROUTE));
 
             $queue->acknowledge($delivery);
@@ -117,6 +120,53 @@ final class PostgresAsyncQueueTest extends TestCase
             $clock->sleep(Duration::seconds(20));
 
             self::assertInstanceOf(AsyncDelivery::class, $queue->reserve());
+        }, $clock);
+    }
+
+    public function test_available_at_controls_availability(): void
+    {
+        $clock = new StatickClock(new \DateTimeImmutable('2026-01-01 00:00:00'));
+
+        $this->withQueue(function (Connection $connection, PostgresAsyncQueue $queue, string $tablePrefix) use ($clock): void {
+            $queue->enqueue(
+                new AsyncEnvelope(
+                    new PostgresQueueTestMessage('scheduled'),
+                    MessageContext::fromArray([]),
+                    AsyncHeaders::empty()->with(AsyncHeaderNames::ROUTE, 'test.subscription'),
+                ),
+                new AsyncEnqueueOptions(availableAt: DatePoint::create(2026, 1, 2)),
+            );
+
+            self::assertNull($queue->reserve());
+
+            $clock->sleep(Duration::days(1));
+
+            self::assertInstanceOf(AsyncDelivery::class, $queue->reserve());
+        }, $clock);
+    }
+
+    public function test_replace_key_keeps_only_latest_pending_message(): void
+    {
+        $clock = new StatickClock(new \DateTimeImmutable('2026-01-01 00:00:00'));
+
+        $this->withQueue(function (Connection $connection, PostgresAsyncQueue $queue, string $tablePrefix): void {
+            $headers = AsyncHeaders::empty()->with(AsyncHeaderNames::ROUTE, 'test.subscription');
+
+            $queue->enqueue(
+                new AsyncEnvelope(new PostgresQueueTestMessage('old'), MessageContext::fromArray([]), $headers),
+                new AsyncEnqueueOptions(key: 'refresh', replace: true),
+            );
+            $queue->enqueue(
+                new AsyncEnvelope(new PostgresQueueTestMessage('new'), MessageContext::fromArray([]), $headers),
+                new AsyncEnqueueOptions(key: 'refresh', replace: true),
+            );
+
+            self::assertSame(1, (int) $connection->fetchOne(sprintf('SELECT COUNT(*) FROM %s', $tablePrefix.'messages')));
+
+            $delivery = $queue->reserve();
+
+            self::assertInstanceOf(AsyncDelivery::class, $delivery);
+            self::assertSame('new', $delivery->envelope->message->value);
         }, $clock);
     }
 

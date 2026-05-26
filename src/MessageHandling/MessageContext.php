@@ -16,6 +16,8 @@ namespace Ultra\MessageHandling;
  */
 final readonly class MessageContext implements \ArrayAccess, \Countable, \IteratorAggregate
 {
+    public const LOCAL_PREFIX = '.';
+
     /**
      * @param array<array-key, mixed> $values
      */
@@ -28,6 +30,8 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
      */
     public static function fromArray(array $values): self
     {
+        self::assertValuesAreValid($values);
+
         return new self($values);
     }
 
@@ -38,7 +42,12 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
     {
         return $values instanceof self
             ? $values
-            : new self($values);
+            : self::fromArray($values);
+    }
+
+    public static function empty(): self
+    {
+        return new self([]);
     }
 
     /**
@@ -63,10 +72,25 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
 
     public function with(int|string $key, mixed $value): self
     {
+        self::assertValueIsValid($key, $value);
+
         $values = $this->values;
         $values[$key] = $value;
 
         return new self($values);
+    }
+
+    public function withLocal(string $key, mixed $value): self
+    {
+        $values = $this->values;
+        $values[self::localKey($key)] = $value;
+
+        return new self($values);
+    }
+
+    public function local(string $key, mixed $default = null): mixed
+    {
+        return $this->get(self::localKey($key), $default);
     }
 
     public function without(int|string $key): self
@@ -94,7 +118,24 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
             return $this;
         }
 
+        self::assertValuesAreValid($values);
+
         return new self([...$this->values, ...$values]);
+    }
+
+    public function propagated(): self
+    {
+        $values = [];
+
+        foreach ($this->values as $key => $value) {
+            if (self::isLocalKey($key)) {
+                continue;
+            }
+
+            $values[$key] = $value;
+        }
+
+        return new self($values);
     }
 
     public function count(): int
@@ -131,5 +172,65 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
     public function offsetUnset(mixed $offset): void
     {
         throw new \BadMethodCallException('MessageContext is immutable; use without() to derive a new context.');
+    }
+
+    public static function isLocalKey(mixed $key): bool
+    {
+        return is_string($key) && str_starts_with($key, self::LOCAL_PREFIX);
+    }
+
+    private static function localKey(string $key): string
+    {
+        if ('' === $key) {
+            throw new \InvalidArgumentException('Local message context keys must be non-empty strings.');
+        }
+
+        return str_starts_with($key, self::LOCAL_PREFIX)
+            ? $key
+            : self::LOCAL_PREFIX.$key;
+    }
+
+    /**
+     * @param array<array-key, mixed> $values
+     */
+    private static function assertValuesAreValid(array $values): void
+    {
+        foreach ($values as $key => $value) {
+            self::assertValueIsValid($key, $value);
+        }
+    }
+
+    private static function assertValueIsValid(int|string $key, mixed $value): void
+    {
+        if (self::isLocalKey($key)) {
+            return;
+        }
+
+        if (!self::isPropagatedValue($value)) {
+            throw new \InvalidArgumentException(sprintf(
+                'Message context value for key "%s" must be scalar, null, or a list of scalar/null values. Use a local key prefixed with "%s" for in-process values.',
+                (string) $key,
+                self::LOCAL_PREFIX,
+            ));
+        }
+    }
+
+    private static function isPropagatedValue(mixed $value): bool
+    {
+        if (null === $value || is_scalar($value)) {
+            return true;
+        }
+
+        if (!is_array($value) || !array_is_list($value)) {
+            return false;
+        }
+
+        foreach ($value as $item) {
+            if (null !== $item && !is_scalar($item)) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

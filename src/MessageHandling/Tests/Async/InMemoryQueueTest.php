@@ -14,6 +14,7 @@ use Ultra\MessageHandling\Async\AsyncHeaders;
 use Ultra\MessageHandling\Async\AsyncMessageId;
 use Ultra\MessageHandling\Async\InMemoryQueue;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
 
@@ -73,6 +74,38 @@ final class InMemoryQueueTest extends TestCase
         $clock->sleep(Duration::seconds(10));
 
         self::assertInstanceOf(AsyncDelivery::class, $queue->reserve());
+    }
+
+    public function test_available_at_controls_availability(): void
+    {
+        $clock = new StatickClock(new \DateTimeImmutable('2026-01-01 00:00:00'));
+        $queue = new InMemoryQueue($clock);
+
+        $queue->enqueue(
+            $this->envelope('first'),
+            new AsyncEnqueueOptions(availableAt: DatePoint::create(2026, 1, 2)),
+        );
+
+        self::assertNull($queue->reserve());
+
+        $clock->sleep(Duration::days(1));
+
+        self::assertInstanceOf(AsyncDelivery::class, $queue->reserve());
+    }
+
+    public function test_replace_key_keeps_only_the_latest_message(): void
+    {
+        $queue = new InMemoryQueue();
+
+        $queue->enqueue($this->envelope('old'), new AsyncEnqueueOptions(key: 'refresh', replace: true));
+        $queue->enqueue($this->envelope('new'), new AsyncEnqueueOptions(key: 'refresh', replace: true));
+
+        self::assertSame(1, $queue->count());
+
+        $delivery = $queue->reserve();
+
+        self::assertInstanceOf(AsyncDelivery::class, $delivery);
+        self::assertSame('new', $delivery->envelope->message->value);
     }
 
     private function envelope(string $value): AsyncEnvelope
