@@ -9,7 +9,10 @@ final class InMemoryRowDatabase
     /** @var array<string, array<string, array<string, mixed>>> */
     private array $tables = [];
 
-    /** @var list<array<string, array<string, array<string, mixed>>>> */
+    /** @var array<string, array<string, list<array<string, mixed>>>> */
+    private array $ownedTables = [];
+
+    /** @var list<array{tables: array<string, array<string, array<string, mixed>>>, ownedTables: array<string, array<string, list<array<string, mixed>>>>}> */
     private array $transactionSnapshots = [];
 
     /**
@@ -30,7 +33,10 @@ final class InMemoryRowDatabase
 
     public function beginTransaction(): void
     {
-        $this->transactionSnapshots[] = $this->tables;
+        $this->transactionSnapshots[] = [
+            'tables' => $this->tables,
+            'ownedTables' => $this->ownedTables,
+        ];
     }
 
     public function commit(): void
@@ -49,7 +55,54 @@ final class InMemoryRowDatabase
             throw new \LogicException('Cannot roll back because no transaction is active.');
         }
 
-        $this->tables = $snapshot;
+        $this->tables = $snapshot['tables'];
+        $this->ownedTables = $snapshot['ownedTables'];
+    }
+
+    /**
+     * @param array<string, int|string> $parentKey
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function rowsForParent(string $tableName, array $parentKey): array
+    {
+        return $this->ownedTables[$tableName][self::parentBucketKey($parentKey)] ?? [];
+    }
+
+    /**
+     * @param array<string, int|string>  $parentKey
+     * @param list<array<string, mixed>> $rows
+     */
+    public function replaceOwnedSet(string $tableName, array $parentKey, array $rows): void
+    {
+        $bucket = self::parentBucketKey($parentKey);
+
+        if ([] === $rows) {
+            unset($this->ownedTables[$tableName][$bucket]);
+
+            if (isset($this->ownedTables[$tableName]) && [] === $this->ownedTables[$tableName]) {
+                unset($this->ownedTables[$tableName]);
+            }
+
+            return;
+        }
+
+        $storedRows = [];
+        foreach ($rows as $row) {
+            $storedRows[] = [...$parentKey, ...$row];
+        }
+
+        $this->ownedTables[$tableName][$bucket] = $storedRows;
+    }
+
+    /**
+     * @param array<string, int|string> $parentKey
+     */
+    private static function parentBucketKey(array $parentKey): string
+    {
+        ksort($parentKey, SORT_STRING);
+
+        return json_encode($parentKey, JSON_THROW_ON_ERROR);
     }
 
     public function isTransactionActive(): bool

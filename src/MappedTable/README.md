@@ -79,3 +79,40 @@ $table = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, 'users'))
 
 The Postgres adapter checks expected column values with `IS NOT DISTINCT FROM`, so `null` expectations are handled correctly.
 Row-set id expectations use a transaction-scoped advisory lock and therefore require an active transaction.
+
+## Owned Child Sets
+
+`MappedRowSet`'s invariant is "row identity = primary key." When a parent key
+owns a variable-length set of detail rows whose row-level identity is just an
+implementation detail (e.g. intervals per `(subject_id, capability_id)`,
+invoice line items per invoice, tags per entity), the only meaningful write
+is "replace the whole owned set."
+
+`Ultra\MappedTable\MappedOwnedRowSet` is the sibling primitive for that
+pattern. One operation:
+
+```php
+use Ultra\MappedTable\MappedOwnedRowSet;
+use Ultra\MappedTable\PostgresMappedOwnedRowSetAdapter;
+
+$set = new MappedOwnedRowSet(new PostgresMappedOwnedRowSetAdapter(
+    $connection,
+    tableName: 'eligibility_intervals',
+    parentColumns: ['subject_id', 'capability_id'],
+    rowColumns: ['eligible_from', 'eligible_to'],
+));
+
+$set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+    ->replace([
+        ['eligible_from' => '2026-01-01', 'eligible_to' => '2026-06-01'],
+        ['eligible_from' => '2026-07-01', 'eligible_to' => null],
+    ]);
+
+$set->flush();
+```
+
+`replace(...)` buffers a `DELETE WHERE parent = ?` + bulk `INSERT` that flushes
+with the unit of work alongside any sibling `MappedRowSet` instances. Calling
+`replace(...)` again for the same parent overwrites the previously buffered
+set; replacing with `[]` clears the owned set. `rowsForParent(...)` reads the
+adapter and overlays a buffered replacement, mirroring `MappedRowSet::row()`.
