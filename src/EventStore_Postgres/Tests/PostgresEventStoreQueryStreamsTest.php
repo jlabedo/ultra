@@ -75,6 +75,37 @@ final class PostgresEventStoreQueryStreamsTest extends PostgresEventStoreTestCas
         }, 'query-streams');
     }
 
+    public function test_query_streams_implementation_round_trips_event_metadata(): void
+    {
+        $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {
+            $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+                ->ofTypes('course.created')
+            ;
+
+            $store->append([
+                self::event(
+                    'course.created',
+                    ['name' => 'Math 101'],
+                    ['courseId' => 'course-123'],
+                    [
+                        'message_id' => 'event-1',
+                        'correlation_id' => 'trace-1',
+                        'tags' => ['a', 'b'],
+                    ],
+                ),
+            ]);
+
+            $result = $store->load($query);
+
+            self::assertCount(1, $result->events);
+            self::assertEquals([
+                'message_id' => 'event-1',
+                'correlation_id' => 'trace-1',
+                'tags' => ['a', 'b'],
+            ], $result->events[0]->metadata);
+        }, 'query-streams');
+    }
+
     public function test_query_streams_implementation_validates_multiple_append_conditions(): void
     {
         $this->withPostgresStore(function (EventStore $store, Connection $_connection, string $_prefix): void {

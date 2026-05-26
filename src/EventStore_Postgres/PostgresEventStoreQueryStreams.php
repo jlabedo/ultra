@@ -115,6 +115,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
                 payload: json_decode($row['payload'], true, 512, JSON_THROW_ON_ERROR),
                 domainIds: json_decode($row['domain_ids'], true, 512, JSON_THROW_ON_ERROR),
                 recordedAt: new \DateTimeImmutable($row['recorded_at']),
+                metadata: json_decode($row['metadata'], true, 512, JSON_THROW_ON_ERROR),
             );
         }
 
@@ -139,6 +140,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
                         CASE WHEN e.xid >= pg_snapshot_xmin(snap.s) THEN 1 ELSE 0 END AS in_gap,
                         e.event_type,
                         e.payload,
+                        e.metadata,
                         e.domain_ids,
                         e.recorded_at
                  FROM %s e, snap
@@ -173,7 +175,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
         $rows = $this->connection->executeQuery(
             sprintf(
-                'SELECT e.sequence, e.event_type, e.payload, e.domain_ids, e.recorded_at
+                'SELECT e.sequence, e.event_type, e.payload, e.metadata, e.domain_ids, e.recorded_at
                  FROM %s e
                  WHERE %s
                  ORDER BY e.sequence ASC
@@ -209,7 +211,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
             return [];
         }
 
-        $placeholders = implode(', ', array_fill(0, count($events), '(?, ?::jsonb, ?::jsonb)'));
+        $placeholders = implode(', ', array_fill(0, count($events), '(?, ?::jsonb, ?::jsonb, ?::jsonb)'));
         $params = [];
         $types = [];
         foreach ($events as $event) {
@@ -217,13 +219,15 @@ final class PostgresEventStoreQueryStreams implements EventStore
             $types[] = ParameterType::STRING;
             $params[] = json_encode($event->payload, JSON_THROW_ON_ERROR);
             $types[] = ParameterType::STRING;
+            $params[] = json_encode($event->metadata, JSON_THROW_ON_ERROR);
+            $types[] = ParameterType::STRING;
             $params[] = json_encode($event->domainIds, JSON_THROW_ON_ERROR);
             $types[] = ParameterType::STRING;
         }
 
         $sequences = $this->connection->executeQuery(
             sprintf(
-                'INSERT INTO %1$s (event_type, payload, domain_ids) VALUES %2$s RETURNING sequence',
+                'INSERT INTO %1$s (event_type, payload, metadata, domain_ids) VALUES %2$s RETURNING sequence',
                 $this->eventsTable(),
                 $placeholders,
             ),

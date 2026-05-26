@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_Compiler\Routing;
 
+use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling_Compiler\HandlerDependencyExpressionResolverInterface;
 
 /**
@@ -31,10 +32,17 @@ final readonly class ContextualRouterDependencyResolver implements HandlerDepend
         }
 
         return sprintf(
-            'new \%s($this->locator->get(%s), %s)',
+            'new \%s($this->locator->get(%s), %s, $this->locator->get(\Ultra\MessageHandling\MessageContextPropagatorInterface::class))',
             $wrapperClass,
             var_export($serviceId, true),
             $contextVar,
         );
+    }
+
+    public function extraServiceIds(string $serviceId): array
+    {
+        return isset($this->wrapperClassByServiceId[$serviceId])
+            ? [MessageContextPropagatorInterface::class]
+            : [];
     }
 }

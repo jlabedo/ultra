@@ -38,6 +38,12 @@ final class LocatorReferenceCollector
             if (!isset($claimedIndices[$index]) && !$this->isRuntimeOnlyResolvedDependency($depId)) {
                 $this->addService($depId);
             }
+
+            if (!isset($claimedIndices[$index])) {
+                foreach ($this->extraServiceIds($depId) as $extraServiceId) {
+                    $this->addService($extraServiceId);
+                }
+            }
         }
     }
 
@@ -73,5 +79,18 @@ final class LocatorReferenceCollector
         }
 
         return false;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function extraServiceIds(string $serviceId): array
+    {
+        $extraServiceIds = [];
+        foreach ($this->expressionResolvers as $resolver) {
+            array_push($extraServiceIds, ...$resolver->extraServiceIds($serviceId));
+        }
+
+        return $extraServiceIds;
     }
 }

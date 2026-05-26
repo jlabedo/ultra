@@ -31,6 +31,7 @@ final readonly class PostgresEventStoreQueryStreamsSchema implements PostgresEve
                         xid XID8 NOT NULL DEFAULT pg_current_xact_id(),
                         event_type TEXT NOT NULL,
                         payload JSONB NOT NULL,
+                        metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
                         domain_ids JSONB NOT NULL,
                         recorded_at TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp()
                     )

@@ -24,6 +24,7 @@ use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\MessageContextKeys;
 use Ultra\MessageHandling\ProceedResult;
 use Ultra\Testing\UltraLight;
 
@@ -316,6 +317,47 @@ final class StatefulMessageHandlingAspectTest extends StatefulMessageHandlingFun
         self::assertCount(1, $eventBus->calls);
         self::assertEquals($events[0], $eventBus->calls[0]['event']);
         self::assertSame('trace-123', $eventBus->calls[0]['context']['traceId']);
+    }
+
+    public function test_it_stores_and_publishes_emitted_events_with_the_same_message_context_ids(): void
+    {
+        $eventBus = new class implements EventBusInterface {
+            /** @var list<array{event: object, context: array<string, mixed>}> */
+            public array $calls = [];
+
+            public function publish(object $event, array|MessageContext $context = []): void
+            {
+                $this->calls[] = [
+                    'event' => $event,
+                    'context' => MessageContext::coerce($context)->all(),
+                ];
+            }
+        };
+
+        $container = $this->ultraLight()
+            ->withService($eventBus, EventBusInterface::class)
+            ->boot()
+        ;
+
+        $container->mediator()->send(new CreateCourseCommand('metadata-101', 'Metadata', 10), ['traceId' => 'trace-meta']);
+
+        $storedEvents = $container->eventStore()->load(self::courseStreamQuery('metadata-101'))->events;
+
+        self::assertCount(1, $storedEvents);
+        self::assertCount(1, $eventBus->calls);
+        self::assertSame(
+            $storedEvents[0]->metadata[MessageContextKeys::MESSAGE_ID],
+            $eventBus->calls[0]['context'][MessageContextKeys::MESSAGE_ID],
+        );
+        self::assertSame(
+            $storedEvents[0]->metadata[MessageContextKeys::CORRELATION_ID],
+            $eventBus->calls[0]['context'][MessageContextKeys::CORRELATION_ID],
+        );
+        self::assertSame(
+            $storedEvents[0]->metadata[MessageContextKeys::CAUSATION_ID],
+            $eventBus->calls[0]['context'][MessageContextKeys::CAUSATION_ID],
+        );
+        self::assertSame('trace-meta', $storedEvents[0]->metadata['traceId']);
     }
 
     public function test_it_publishes_emitted_events_with_the_final_context_from_inner_around_advices(): void

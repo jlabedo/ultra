@@ -89,6 +89,33 @@ final class InMemoryEventStoreTest extends EventStoreTestCase
         self::assertSame('Math 101', $result->events[0]->payload['name']);
     }
 
+    public function test_load_returns_event_metadata(): void
+    {
+        $store = $this->store();
+        $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'));
+
+        $store->append([
+            self::event(
+                eventType: 'course.created',
+                domainIds: ['courseId' => 'course-123'],
+                metadata: [
+                    'message_id' => 'event-1',
+                    'correlation_id' => 'trace-1',
+                    'tags' => ['a', 'b'],
+                ],
+            ),
+        ]);
+
+        $result = $store->load($query);
+
+        self::assertCount(1, $result->events);
+        self::assertSame([
+            'message_id' => 'event-1',
+            'correlation_id' => 'trace-1',
+            'tags' => ['a', 'b'],
+        ], $result->events[0]->metadata);
+    }
+
     public function test_replay_to_checkpoint_returns_the_snapshot_captured_by_the_checkpoint(): void
     {
         $store = $this->store();

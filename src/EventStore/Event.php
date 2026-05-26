@@ -9,12 +9,14 @@ readonly class Event
     /**
      * @param array<string, mixed>  $payload
      * @param array<string, string> $domainIds dimension => value
+     * @param array<string, mixed>  $metadata
      */
     public function __construct(
         public string $eventType,
         public array $payload,
         public array $domainIds,
         public ?\DateTimeImmutable $recordedAt = null,
+        public array $metadata = [],
     ) {
         if ([] === $domainIds) {
             throw new \InvalidArgumentException('Event must have at least one domain identifier.');

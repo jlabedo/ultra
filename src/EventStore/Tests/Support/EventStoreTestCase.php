@@ -18,16 +18,19 @@ abstract class EventStoreTestCase extends TestCase
     /**
      * @param array<string, string> $domainIds
      * @param array<string, mixed>  $payload
+     * @param array<string, mixed>  $metadata
      */
     protected static function event(
         string $eventType = 'test.event',
         array $domainIds = [],
         array $payload = [],
+        array $metadata = [],
     ): Event {
         return new Event(
             eventType: $eventType,
             payload: $payload,
             domainIds: $domainIds,
+            metadata: $metadata,
         );
     }
 }

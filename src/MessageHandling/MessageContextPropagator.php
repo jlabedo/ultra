@@ -6,37 +6,17 @@ namespace Ultra\MessageHandling;
 
 final class MessageContextPropagator implements MessageContextPropagatorInterface
 {
-    public function createDispatchContext(MessageContext $context): MessageContext
+    public function normalizeContext(MessageContext $context): MessageContext
     {
-        if ($context->has(MessageContextKeys::CAUSATION_ID)) {
-            $messageId = $this->stringOrNull($context->get(MessageContextKeys::MESSAGE_ID))
-                ?? $this->generateMessageId();
-            $correlationId = $this->stringOrNull($context->get(MessageContextKeys::CORRELATION_ID))
-                ?? $messageId;
-
+        $messageId = $this->stringOrNull($context->get(MessageContextKeys::MESSAGE_ID));
+        if (null !== $messageId) {
             return $context
                 ->with(MessageContextKeys::MESSAGE_ID, $messageId)
-                ->with(MessageContextKeys::CORRELATION_ID, $correlationId)
+                ->with(
+                    MessageContextKeys::CORRELATION_ID,
+                    $this->stringOrNull($context->get(MessageContextKeys::CORRELATION_ID)) ?? $messageId,
+                )
             ;
-        }
-
-        if ($context->has(MessageContextKeys::MESSAGE_ID)) {
-            $parentMessageId = $this->stringOrNull($context->get(MessageContextKeys::MESSAGE_ID));
-            $messageId = $this->generateMessageId();
-            $correlationId = $this->stringOrNull($context->get(MessageContextKeys::CORRELATION_ID))
-                ?? $parentMessageId
-                ?? $messageId;
-
-            $normalized = $context
-                ->with(MessageContextKeys::MESSAGE_ID, $messageId)
-                ->with(MessageContextKeys::CORRELATION_ID, $correlationId)
-            ;
-
-            if (null !== $parentMessageId) {
-                $normalized = $normalized->with(MessageContextKeys::CAUSATION_ID, $parentMessageId);
-            }
-
-            return $normalized;
         }
 
         $messageId = $this->generateMessageId();
@@ -46,6 +26,21 @@ final class MessageContextPropagator implements MessageContextPropagatorInterfac
         return $context
             ->with(MessageContextKeys::MESSAGE_ID, $messageId)
             ->with(MessageContextKeys::CORRELATION_ID, $correlationId)
+        ;
+    }
+
+    public function createChildContext(MessageContext $parentContext): MessageContext
+    {
+        $parentContext = $this->normalizeContext($parentContext);
+
+        $messageId = $this->generateMessageId();
+        $correlationId = $this->stringOrNull($parentContext->get(MessageContextKeys::CORRELATION_ID))
+            ?? $messageId;
+
+        return $parentContext
+            ->with(MessageContextKeys::MESSAGE_ID, $messageId)
+            ->with(MessageContextKeys::CORRELATION_ID, $correlationId)
+            ->with(MessageContextKeys::CAUSATION_ID, $parentContext->get(MessageContextKeys::MESSAGE_ID))
         ;
     }
 

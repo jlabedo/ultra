@@ -48,6 +48,7 @@ final class InMemoryEventStore implements EventStore
             payload: $event->payload,
             domainIds: $event->domainIds,
             recordedAt: new \DateTimeImmutable(),
+            metadata: $event->metadata,
         );
     }
 

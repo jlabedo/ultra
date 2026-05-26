@@ -14,6 +14,7 @@ use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventStore\EventStore;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\EventBusInterface;
+use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling\TagNames as MessageHandlingTagNames;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateStore;
@@ -34,6 +35,7 @@ final class StatefulMessageHandlingExtension implements ContainerExtension
                             new Reference(EventStore::class),
                             new Reference(EventRegistryInterface::class),
                             new Reference(UltraNormalizer::class),
+                            new Reference(MessageContextPropagatorInterface::class),
                             new Reference(EventBusInterface::class, ContainerBuilder::NULL_ON_INVALID_REFERENCE),
                         ]))->addTag(MessageHandlingTagNames::ASPECT),
                     );

@@ -54,13 +54,15 @@ abstract class PostgresEventStoreTestCase extends TestCase
     /**
      * @param array<string, mixed>  $payload
      * @param array<string, string> $domainIds
+     * @param array<string, mixed>  $metadata
      */
-    protected static function event(string $eventType, array $payload = [], array $domainIds = []): Event
+    protected static function event(string $eventType, array $payload = [], array $domainIds = [], array $metadata = []): Event
     {
         return new Event(
             eventType: $eventType,
             payload: $payload,
             domainIds: $domainIds,
+            metadata: $metadata,
         );
     }
 }

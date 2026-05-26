@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\MessageHandling_Compiler\Tests;
 
 use Ultra\MessageHandling\Attribute\Before;
+use Ultra\MessageHandling\Attribute\EventHandler;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
@@ -20,19 +21,24 @@ use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase
 
 final class FixedMessageContextPropagator implements MessageContextPropagatorInterface
 {
-    public function createDispatchContext(MessageContext $context): MessageContext
+    public function normalizeContext(MessageContext $context): MessageContext
     {
-        if ($context->has(MessageContextKeys::MESSAGE_ID) && !$context->has(MessageContextKeys::CAUSATION_ID)) {
-            return $context
-                ->with(MessageContextKeys::MESSAGE_ID, 'fixed-child')
-                ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation')
-                ->with(MessageContextKeys::CAUSATION_ID, 'fixed-root')
-            ;
+        if ($context->has(MessageContextKeys::MESSAGE_ID)) {
+            return $context;
         }
 
         return $context
             ->with(MessageContextKeys::MESSAGE_ID, 'fixed-root')
             ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation')
+        ;
+    }
+
+    public function createChildContext(MessageContext $parentContext): MessageContext
+    {
+        return $parentContext
+            ->with(MessageContextKeys::MESSAGE_ID, 'fixed-child')
+            ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation')
+            ->with(MessageContextKeys::CAUSATION_ID, 'fixed-root')
         ;
     }
 }
@@ -249,5 +255,75 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
         self::assertSame('trace-eb', $eventBus->calls[0]['context']['traceId']);
         self::assertArrayHasKey(MessageContextKeys::MESSAGE_ID, $eventBus->calls[0]['context']);
         self::assertArrayHasKey(MessageContextKeys::CORRELATION_ID, $eventBus->calls[0]['context']);
+    }
+
+    public function test_it_creates_a_new_message_id_for_deeply_nested_event_bus_publish_calls(): void
+    {
+        $contexts = new RecordedMessageContexts();
+
+        $eventBus = $this->ultraLight()
+            ->withEventClass(RecordedEvent::class)
+            ->withService($contexts)
+            ->withService(new class {
+                #[EventHandler]
+                public function handle(RecordedEvent $event, EventBusInterface $eventBus): void
+                {
+                    if ('root' === $event->payload || 'child' === $event->payload) {
+                        $eventBus->publish(new RecordedEvent('root' === $event->payload ? 'child' : 'grandchild'));
+                    }
+                }
+            })
+            ->withService(new class($contexts) {
+                public function __construct(private readonly RecordedMessageContexts $contexts) {}
+
+                #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
+                    return MatchResult::apply();
+                })]
+                public function record(object $message, MessageContext $context): void
+                {
+                    $this->contexts->entries[] = [
+                        'message' => $message::class,
+                        'context' => $context->all(),
+                    ];
+                }
+            })
+            ->boot()->eventBus()
+        ;
+
+        $eventBus->publish(new RecordedEvent('root'), ['traceId' => 'trace-nested-event']);
+
+        self::assertCount(3, $contexts->entries);
+
+        $rootContext = $contexts->entries[0]['context'];
+        $childContext = $contexts->entries[1]['context'];
+        $grandchildContext = $contexts->entries[2]['context'];
+
+        self::assertSame('trace-nested-event', $rootContext['traceId']);
+        self::assertSame('trace-nested-event', $childContext['traceId']);
+        self::assertSame('trace-nested-event', $grandchildContext['traceId']);
+        self::assertNotSame(
+            $rootContext[MessageContextKeys::MESSAGE_ID],
+            $childContext[MessageContextKeys::MESSAGE_ID],
+        );
+        self::assertSame(
+            $rootContext[MessageContextKeys::CORRELATION_ID],
+            $childContext[MessageContextKeys::CORRELATION_ID],
+        );
+        self::assertSame(
+            $rootContext[MessageContextKeys::MESSAGE_ID],
+            $childContext[MessageContextKeys::CAUSATION_ID],
+        );
+        self::assertNotSame(
+            $childContext[MessageContextKeys::MESSAGE_ID],
+            $grandchildContext[MessageContextKeys::MESSAGE_ID],
+        );
+        self::assertSame(
+            $rootContext[MessageContextKeys::CORRELATION_ID],
+            $grandchildContext[MessageContextKeys::CORRELATION_ID],
+        );
+        self::assertSame(
+            $childContext[MessageContextKeys::MESSAGE_ID],
+            $grandchildContext[MessageContextKeys::CAUSATION_ID],
+        );
     }
 }

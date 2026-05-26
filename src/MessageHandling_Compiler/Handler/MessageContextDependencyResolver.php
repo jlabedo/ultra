@@ -20,4 +20,9 @@ final readonly class MessageContextDependencyResolver implements HandlerDependen
     {
         return MessageContext::class === $serviceId ? $contextVar : null;
     }
+
+    public function extraServiceIds(string $serviceId): array
+    {
+        return [];
+    }
 }

@@ -21,6 +21,7 @@ use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling\ProceedResult;
 
 final class EventSourcedDecisionAspect
@@ -33,6 +34,7 @@ final class EventSourcedDecisionAspect
         private readonly EventStore $eventStore,
         private readonly EventRegistryInterface $eventClassRegistry,
         private readonly UltraNormalizer $normalizer,
+        private readonly MessageContextPropagatorInterface $messageContextPropagator,
         private readonly ?EventBusInterface $eventBus = null,
     ) {}
 
@@ -155,13 +157,12 @@ final class EventSourcedDecisionAspect
             return $proceedResult;
         }
 
-        $this->eventStore->append(
-            $this->toEvents($emittedEvents),
-            $loadResult->appendCondition(),
-        );
+        $eventRecords = $this->prepareEventRecords($emittedEvents, $proceedResult->context);
+
+        $this->eventStore->append(array_column($eventRecords, 'storedEvent'), $loadResult->appendCondition());
         if (null !== $this->eventBus) {
-            foreach ($emittedEvents as $emittedEvent) {
-                $this->eventBus->publish($emittedEvent, $proceedResult->context);
+            foreach ($eventRecords as $eventRecord) {
+                $this->eventBus->publish($eventRecord['event'], $eventRecord['context']);
             }
         }
 
@@ -213,17 +214,27 @@ final class EventSourcedDecisionAspect
     /**
      * @param list<object> $events
      *
-     * @return list<Event>
+     * @return list<array{event: object, context: MessageContext, storedEvent: Event}>
      */
-    private function toEvents(array $events): array
+    private function prepareEventRecords(array $events, MessageContext $parentContext): array
     {
-        return array_map(
-            $this->toEvent(...),
-            $events,
-        );
+        $records = [];
+        foreach ($events as $event) {
+            $eventContext = $this->messageContextPropagator->createChildContext($parentContext);
+            $records[] = [
+                'event' => $event,
+                'context' => $eventContext,
+                'storedEvent' => $this->toEvent($event, $eventContext->propagated()->all()),
+            ];
+        }
+
+        return $records;
     }
 
-    private function toEvent(object $event): Event
+    /**
+     * @param array<string, mixed> $metadata
+     */
+    private function toEvent(object $event, array $metadata = []): Event
     {
         $eventType = $this->eventClassRegistry->getName($event::class);
         if (null === $eventType) {
@@ -244,6 +255,7 @@ final class EventSourcedDecisionAspect
             eventType: $eventType,
             payload: $payload,
             domainIds: $domainIds,
+            metadata: $metadata,
         );
     }
 

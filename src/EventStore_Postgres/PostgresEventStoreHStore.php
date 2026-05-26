@@ -111,6 +111,7 @@ final class PostgresEventStoreHStore implements EventStore
                 payload: json_decode($row['payload'], true, 512, JSON_THROW_ON_ERROR),
                 domainIds: json_decode($row['domain_ids'], true, 512, JSON_THROW_ON_ERROR),
                 recordedAt: new \DateTimeImmutable($row['recorded_at']),
+                metadata: json_decode($row['metadata'], true, 512, JSON_THROW_ON_ERROR),
             );
         }
 
@@ -135,6 +136,7 @@ final class PostgresEventStoreHStore implements EventStore
                         CASE WHEN e.xid >= pg_snapshot_xmin(snap.s) THEN 1 ELSE 0 END AS in_gap,
                         e.event_type,
                         e.payload,
+                        e.metadata,
                         hstore_to_json(e.domain_ids) AS domain_ids,
                         e.recorded_at
                  FROM %s e, snap
@@ -169,7 +171,7 @@ final class PostgresEventStoreHStore implements EventStore
 
         $rows = $this->connection->executeQuery(
             sprintf(
-                'SELECT e.sequence, e.event_type, e.payload, hstore_to_json(e.domain_ids) AS domain_ids, e.recorded_at
+                'SELECT e.sequence, e.event_type, e.payload, e.metadata, hstore_to_json(e.domain_ids) AS domain_ids, e.recorded_at
                  FROM %s e
                  WHERE %s
                  ORDER BY e.sequence ASC
@@ -207,15 +209,16 @@ final class PostgresEventStoreHStore implements EventStore
         $params = [];
         foreach ($events as $event) {
             [$domainIdsSql, $domainIdsParams] = $this->hstoreValueExpression($event->domainIds);
-            $placeholders[] = sprintf('(?, ?::jsonb, %s)', $domainIdsSql);
+            $placeholders[] = sprintf('(?, ?::jsonb, ?::jsonb, %s)', $domainIdsSql);
             $params[] = $event->eventType;
             $params[] = json_encode($event->payload, JSON_THROW_ON_ERROR);
+            $params[] = json_encode($event->metadata, JSON_THROW_ON_ERROR);
             array_push($params, ...$domainIdsParams);
         }
 
         $this->connection->executeStatement(
             sprintf(
-                'INSERT INTO %1$s (event_type, payload, domain_ids) VALUES %2$s',
+                'INSERT INTO %1$s (event_type, payload, metadata, domain_ids) VALUES %2$s',
                 $this->eventsTable(),
                 implode(', ', $placeholders),
             ),

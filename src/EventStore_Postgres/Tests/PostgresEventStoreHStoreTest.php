@@ -110,6 +110,37 @@ final class PostgresEventStoreHStoreTest extends PostgresEventStoreTestCase
         });
     }
 
+    public function test_load_round_trips_event_metadata(): void
+    {
+        $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {
+            $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))
+                ->ofTypes('course.created')
+            ;
+
+            $store->append([
+                self::event(
+                    'course.created',
+                    ['name' => 'Math 101'],
+                    ['courseId' => 'course-123'],
+                    [
+                        'message_id' => 'event-1',
+                        'correlation_id' => 'trace-1',
+                        'tags' => ['a', 'b'],
+                    ],
+                ),
+            ]);
+
+            $result = $store->load($query);
+
+            self::assertCount(1, $result->events);
+            self::assertEquals([
+                'message_id' => 'event-1',
+                'correlation_id' => 'trace-1',
+                'tags' => ['a', 'b'],
+            ], $result->events[0]->metadata);
+        });
+    }
+
     public function test_load_does_not_duplicate_events_for_overlapping_or_branches(): void
     {
         $this->withPostgresStore(function (PostgresEventStoreHStore $store): void {

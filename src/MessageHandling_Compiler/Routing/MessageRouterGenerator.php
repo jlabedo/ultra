@@ -129,12 +129,13 @@ final class MessageRouterGenerator
                 public function __construct(
                     private \\{$interface} \$inner,
                     private \\Ultra\\MessageHandling\\MessageContext \$parentContext,
+                    private \\Ultra\\MessageHandling\\MessageContextPropagatorInterface \$messageContextPropagator,
                 ) {}
 
                 public function {$method}(object {$msgVar}, array|\\Ultra\\MessageHandling\\MessageContext \$context = []): {$returnType}
                 {
                     \$merged = \$this->parentContext->propagated()->merge(\\Ultra\\MessageHandling\\MessageContext::coerce(\$context));
-                    {$returnKeyword}\$this->inner->{$method}({$msgVar}, \$merged);
+                    {$returnKeyword}\$this->inner->{$method}({$msgVar}, \$this->messageContextPropagator->createChildContext(\$merged));
                 }
             }
             PHP;
@@ -193,7 +194,7 @@ final class MessageRouterGenerator
         $exceptionClass = ltrim($descriptor->noHandlerExceptionClass, '\\');
 
         $body = <<<PHP
-                    \$messageContext = \$this->messageContextPropagator->createDispatchContext(\\Ultra\\MessageHandling\\MessageContext::coerce(\$context));
+                    \$messageContext = \$this->messageContextPropagator->normalizeContext(\\Ultra\\MessageHandling\\MessageContext::coerce(\$context));
                     \$handlerServiceId = self::ROUTES[{$msgVar}::class] ?? null;
                     if (null === \$handlerServiceId) {
                         throw new \\{$exceptionClass}({$msgVar}::class);
@@ -218,7 +219,7 @@ final class MessageRouterGenerator
         $method = $descriptor->methodName;
 
         $body = <<<PHP
-                    \$messageContext = \$this->messageContextPropagator->createDispatchContext(\\Ultra\\MessageHandling\\MessageContext::coerce(\$context));
+                    \$messageContext = \$this->messageContextPropagator->normalizeContext(\\Ultra\\MessageHandling\\MessageContext::coerce(\$context));
                     \$handlerServiceIds = self::ROUTES[{$msgVar}::class] ?? null;
                     if (null === \$handlerServiceIds) {
                         throw new \\{$exceptionClass}({$msgVar}::class);
