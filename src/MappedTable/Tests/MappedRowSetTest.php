@@ -269,7 +269,7 @@ final class MappedRowSetTest extends TestCase
         $table->expectSameRowIds(['row-1', 'row-2']);
         $this->flushInTransaction($database, $table);
 
-        self::assertSame(['row-1', 'row-2'], array_keys($database->rows(self::TABLE_NAME)));
+        self::assertSame(['row-1', 'row-2'], array_keys($database->rows(self::TABLE_NAME, 'id')));
     }
 
     public function test_expect_same_row_ids_throws_when_row_was_inserted(): void

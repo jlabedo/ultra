@@ -4,18 +4,28 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+/**
+ * In-memory backing store shared by `InMemoryMappedRowSetAdapter` and
+ * `InMemoryMappedOwnedRowSetAdapter`.
+ *
+ * Storage is a single list of rows per table — the same shape Postgres has.
+ * The two adapter views over it (PK-keyed rows for `MappedRowSet`, parent-
+ * keyed sets for `MappedOwnedRowSet`) just filter that list by different
+ * column predicates. Transaction snapshots are correspondingly one-shot:
+ * snapshot the table map, restore on rollback.
+ */
 final class InMemoryRowDatabase
 {
-    /** @var array<string, array<string, array<string, mixed>>> */
+    /** @var array<string, list<array<string, mixed>>> */
     private array $tables = [];
 
-    /** @var array<string, array<string, list<array<string, mixed>>>> */
-    private array $ownedTables = [];
-
-    /** @var list<array{tables: array<string, array<string, array<string, mixed>>>, ownedTables: array<string, array<string, list<array<string, mixed>>>>}> */
+    /** @var list<array<string, list<array<string, mixed>>>> */
     private array $transactionSnapshots = [];
 
     /**
+     * Idempotent insert by id (used to seed tests). If a row with the same
+     * `$idColumn` value already exists in the table it is replaced.
+     *
      * @param array<string, mixed> $row
      */
     public function seedRow(string $tableName, string $idColumn, array $row): void
@@ -28,15 +38,13 @@ final class InMemoryRowDatabase
             ));
         }
 
-        $this->tables[$tableName][$this->rowKey($row[$idColumn])] = $row;
+        $this->removeWhere($tableName, static fn (array $r): bool => ($r[$idColumn] ?? null) === $row[$idColumn]);
+        $this->tables[$tableName][] = $row;
     }
 
     public function beginTransaction(): void
     {
-        $this->transactionSnapshots[] = [
-            'tables' => $this->tables,
-            'ownedTables' => $this->ownedTables,
-        ];
+        $this->transactionSnapshots[] = $this->tables;
     }
 
     public function commit(): void
@@ -55,89 +63,7 @@ final class InMemoryRowDatabase
             throw new \LogicException('Cannot roll back because no transaction is active.');
         }
 
-        $this->tables = $snapshot['tables'];
-        $this->ownedTables = $snapshot['ownedTables'];
-    }
-
-    /**
-     * @param array<string, int|string> $parentKey
-     *
-     * @return list<array<string, mixed>>
-     */
-    public function rowsForParent(string $tableName, array $parentKey): array
-    {
-        return $this->ownedTables[$tableName][self::parentBucketKey($parentKey)] ?? [];
-    }
-
-    /**
-     * @param array<string, int|string>  $parentKey
-     * @param list<array<string, mixed>> $rows
-     */
-    public function replaceOwnedSet(string $tableName, array $parentKey, array $rows): void
-    {
-        $bucket = self::parentBucketKey($parentKey);
-
-        if ([] === $rows) {
-            unset($this->ownedTables[$tableName][$bucket]);
-
-            if (isset($this->ownedTables[$tableName]) && [] === $this->ownedTables[$tableName]) {
-                unset($this->ownedTables[$tableName]);
-            }
-
-            return;
-        }
-
-        $storedRows = [];
-        foreach ($rows as $row) {
-            $storedRows[] = [...$parentKey, ...$row];
-        }
-
-        $this->ownedTables[$tableName][$bucket] = $storedRows;
-    }
-
-    /**
-     * Delete every owned set whose parent key contains the supplied
-     * partial-key column/value pairs.
-     *
-     * @param array<string, int|string> $partialParentKey
-     */
-    public function deleteOwnedSetsMatching(string $tableName, array $partialParentKey): void
-    {
-        if (!isset($this->ownedTables[$tableName])) {
-            return;
-        }
-
-        foreach ($this->ownedTables[$tableName] as $bucket => $rows) {
-            if ([] === $rows) {
-                unset($this->ownedTables[$tableName][$bucket]);
-                continue;
-            }
-            $sample = $rows[0];
-            $match = true;
-            foreach ($partialParentKey as $column => $value) {
-                if (!array_key_exists($column, $sample) || $sample[$column] !== $value) {
-                    $match = false;
-                    break;
-                }
-            }
-            if ($match) {
-                unset($this->ownedTables[$tableName][$bucket]);
-            }
-        }
-
-        if (isset($this->ownedTables[$tableName]) && [] === $this->ownedTables[$tableName]) {
-            unset($this->ownedTables[$tableName]);
-        }
-    }
-
-    /**
-     * @param array<string, int|string> $parentKey
-     */
-    private static function parentBucketKey(array $parentKey): string
-    {
-        ksort($parentKey, SORT_STRING);
-
-        return json_encode($parentKey, JSON_THROW_ON_ERROR);
+        $this->tables = $snapshot;
     }
 
     public function isTransactionActive(): bool
@@ -145,79 +71,52 @@ final class InMemoryRowDatabase
         return [] !== $this->transactionSnapshots;
     }
 
+    // --- row-set view (one row per id) -----------------------------------------
+
     /**
-     * @param list<string> $columns
+     * @param list<string>              $columns
+     * @param array<string, int|string> $scopeColumns
      *
      * @return array<string, mixed>|false
      */
-    /**
-     * @param list<string> $columns
-     * @param array<string, int|string> $scopeColumns
-     */
     public function row(string $tableName, string $idColumn, int|string $id, array $columns = [], array $scopeColumns = []): array|false
     {
-        $row = $this->findRow($tableName, $idColumn, $id, $scopeColumns);
-        if (null === $row) {
-            return false;
-        }
-
-        if (!$this->matchesScope($row, $scopeColumns)) {
-            return false;
-        }
-
-        if ([] === $columns) {
-            return $row;
-        }
-
-        $projectedRow = [];
-
-        foreach ($columns as $column) {
-            $projectedRow[$column] = $row[$column] ?? null;
-        }
-
-        return $projectedRow;
-    }
-
-    /**
-     * @param list<string> $columns
-     *
-     * @return array<string, array<string, mixed>>
-     */
-    /**
-     * @param list<string> $columns
-     * @param array<string, int|string> $scopeColumns
-     *
-     * @return array<string, array<string, mixed>>
-     */
-    public function rows(string $tableName, array $columns = [], array $scopeColumns = []): array
-    {
-        $rows = array_filter(
-            $this->tables[$tableName] ?? [],
-            static fn (array $row): bool => self::matchesScope($row, $scopeColumns),
-        );
-        ksort($rows, SORT_STRING);
-
-        if ([] === $columns) {
-            return $rows;
-        }
-
-        $projectedRows = [];
-
-        foreach ($rows as $rowKey => $row) {
-            $projectedRows[$rowKey] = [];
-
-            foreach ($columns as $column) {
-                $projectedRows[$rowKey][$column] = $row[$column] ?? null;
+        $predicate = [...$scopeColumns, $idColumn => $id];
+        foreach ($this->tables[$tableName] ?? [] as $row) {
+            if (self::rowMatches($row, $predicate)) {
+                return self::project($row, $columns);
             }
         }
 
-        return $projectedRows;
+        return false;
     }
 
     /**
-     * @param array<string, mixed> $row
+     * @param list<string>              $columns
+     * @param array<string, int|string> $scopeColumns
+     *
+     * @return array<string, array<string, mixed>>
      */
+    public function rows(string $tableName, string $idColumn, array $columns = [], array $scopeColumns = []): array
+    {
+        $keyed = [];
+        foreach ($this->tables[$tableName] ?? [] as $row) {
+            if (!self::rowMatches($row, $scopeColumns)) {
+                continue;
+            }
+            $key = (string) ($row[$idColumn] ?? '');
+            $keyed[$key] = self::project($row, $columns);
+        }
+
+        ksort($keyed, SORT_STRING);
+
+        return $keyed;
+    }
+
     /**
+     * Upsert a row keyed by `$idColumn` within the optional `$scopeColumns`.
+     *
+     * @param array<string, mixed>      $row
      * @param array<string, int|string> $scopeColumns
      */
     public function writeRow(string $tableName, string $idColumn, array $row, array $scopeColumns = []): void
@@ -230,8 +129,9 @@ final class InMemoryRowDatabase
             ));
         }
 
-        $this->deleteRow($tableName, $idColumn, $row[$idColumn], $scopeColumns);
-        $this->tables[$tableName][$this->storageKey($row[$idColumn], $scopeColumns)] = $row;
+        $predicate = [...$scopeColumns, $idColumn => $row[$idColumn]];
+        $this->removeWhere($tableName, static fn (array $r): bool => self::rowMatches($r, $predicate));
+        $this->tables[$tableName][] = $row;
     }
 
     /**
@@ -239,64 +139,112 @@ final class InMemoryRowDatabase
      */
     public function deleteRow(string $tableName, string $idColumn, int|string $id, array $scopeColumns = []): void
     {
-        foreach ($this->tables[$tableName] ?? [] as $rowKey => $row) {
-            if (($row[$idColumn] ?? null) === $id && self::matchesScope($row, $scopeColumns)) {
-                unset($this->tables[$tableName][$rowKey]);
-            }
-        }
+        $predicate = [...$scopeColumns, $idColumn => $id];
+        $this->removeWhere($tableName, static fn (array $r): bool => self::rowMatches($r, $predicate));
+        $this->compactIfEmpty($tableName);
     }
 
-    private function rowKey(int|string $id): string
-    {
-        return (string) $id;
-    }
+    // --- owned-set view (parent key owns a list of rows) -----------------------
 
     /**
-     * @param array<string, int|string> $scopeColumns
-     */
-    private function storageKey(int|string $id, array $scopeColumns): string
-    {
-        if ([] === $scopeColumns) {
-            return $this->rowKey($id);
-        }
-
-        ksort($scopeColumns);
-
-        return json_encode($scopeColumns, JSON_THROW_ON_ERROR).'#'.$this->rowKey($id);
-    }
-
-    /**
-     * @param array<string, int|string> $scopeColumns
+     * @param array<string, int|string> $parentKey
      *
-     * @return array<string, mixed>|null
+     * @return list<array<string, mixed>>
      */
-    private function findRow(string $tableName, string $idColumn, int|string $id, array $scopeColumns): ?array
+    public function rowsForParent(string $tableName, array $parentKey): array
     {
-        if ([] === $scopeColumns) {
-            return $this->tables[$tableName][$this->rowKey($id)] ?? null;
-        }
-
+        $rows = [];
         foreach ($this->tables[$tableName] ?? [] as $row) {
-            if (($row[$idColumn] ?? null) === $id && self::matchesScope($row, $scopeColumns)) {
-                return $row;
+            if (self::rowMatches($row, $parentKey)) {
+                $rows[] = $row;
             }
         }
 
-        return null;
+        return $rows;
     }
 
     /**
-     * @param array<string, mixed> $row
-     * @param array<string, int|string> $scopeColumns
+     * @param array<string, int|string>  $parentKey
+     * @param list<array<string, mixed>> $rows
      */
-    private static function matchesScope(array $row, array $scopeColumns): bool
+    public function replaceOwnedSet(string $tableName, array $parentKey, array $rows): void
     {
-        foreach ($scopeColumns as $column => $value) {
-            if (($row[$column] ?? null) !== $value) {
+        $this->removeWhere($tableName, static fn (array $r): bool => self::rowMatches($r, $parentKey));
+
+        foreach ($rows as $row) {
+            $this->tables[$tableName][] = [...$parentKey, ...$row];
+        }
+
+        $this->compactIfEmpty($tableName);
+    }
+
+    /**
+     * Delete every owned set whose parent key contains the supplied
+     * partial-key column/value pairs.
+     *
+     * @param array<string, int|string> $partialParentKey
+     */
+    public function deleteOwnedSetsMatching(string $tableName, array $partialParentKey): void
+    {
+        $this->removeWhere($tableName, static fn (array $r): bool => self::rowMatches($r, $partialParentKey));
+        $this->compactIfEmpty($tableName);
+    }
+
+    // --- shared internals ------------------------------------------------------
+
+    /**
+     * @param array<string, mixed>      $row
+     * @param array<string, int|string> $predicate
+     */
+    private static function rowMatches(array $row, array $predicate): bool
+    {
+        foreach ($predicate as $column => $value) {
+            if (!array_key_exists($column, $row) || $row[$column] !== $value) {
                 return false;
             }
         }
 
         return true;
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @param list<string>         $columns
+     *
+     * @return array<string, mixed>
+     */
+    private static function project(array $row, array $columns): array
+    {
+        if ([] === $columns) {
+            return $row;
+        }
+
+        $projected = [];
+        foreach ($columns as $column) {
+            $projected[$column] = $row[$column] ?? null;
+        }
+
+        return $projected;
+    }
+
+    private function removeWhere(string $tableName, callable $predicate): void
+    {
+        if (!isset($this->tables[$tableName])) {
+            $this->tables[$tableName] = [];
+
+            return;
+        }
+
+        $this->tables[$tableName] = array_values(array_filter(
+            $this->tables[$tableName],
+            static fn (array $row): bool => !$predicate($row),
+        ));
+    }
+
+    private function compactIfEmpty(string $tableName): void
+    {
+        if (isset($this->tables[$tableName]) && [] === $this->tables[$tableName]) {
+            unset($this->tables[$tableName]);
+        }
     }
 }

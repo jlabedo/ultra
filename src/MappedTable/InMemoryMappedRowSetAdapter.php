@@ -25,7 +25,7 @@ final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
 
     public function rows(array $columns = []): array
     {
-        return $this->database->rows($this->tableName, $columns, $this->scopeColumns);
+        return $this->database->rows($this->tableName, $this->idColumn, $columns, $this->scopeColumns);
     }
 
     public function apply(RowSetUpdatePlan $plan): void
@@ -78,7 +78,7 @@ final class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
             return;
         }
 
-        $actualRowIds = array_keys($this->database->rows($this->tableName, scopeColumns: $this->scopeColumns));
+        $actualRowIds = array_keys($this->database->rows($this->tableName, $this->idColumn, scopeColumns: $this->scopeColumns));
         sort($actualRowIds, SORT_STRING);
         $expectedRowKeys = array_map(static fn (int|string $id): string => (string) $id, $expectedRowIds);
         sort($expectedRowKeys, SORT_STRING);
