@@ -13,6 +13,7 @@ use Ultra\MappedTable\MappedOwnedRowSet;
 use Ultra\MappedTable\MappedOwnedRowSetAdapter;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\OwnedRowSetUpdatePlan;
+use Ultra\MappedTable\OwnedSetParentMatchDelete;
 use Ultra\MappedTable\OwnedSetReplace;
 use Ultra\MappedTable\PendingOwnedSetReplace;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
@@ -198,6 +199,79 @@ final class MappedOwnedRowSetTest extends TestCase
         $database->rollBack();
 
         self::assertSame('2026-01-01', $database->rowsForParent(self::TABLE, $parent)[0]['eligible_from']);
+    }
+
+    public function test_delete_parents_matching_removes_rows_by_partial_key(): void
+    {
+        [$database, $set] = $this->newSet();
+
+        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+            ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
+        $set->withParent(['subject_id' => 's-2', 'capability_id' => 'c-1'])
+            ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
+        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-2'])
+            ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
+        $set->flush();
+
+        $set->deleteParentsMatching(['capability_id' => 'c-1']);
+        $set->flush();
+
+        self::assertSame([], $database->rowsForParent(self::TABLE, ['subject_id' => 's-1', 'capability_id' => 'c-1']));
+        self::assertSame([], $database->rowsForParent(self::TABLE, ['subject_id' => 's-2', 'capability_id' => 'c-1']));
+        self::assertCount(1, $database->rowsForParent(self::TABLE, ['subject_id' => 's-1', 'capability_id' => 'c-2']));
+    }
+
+    public function test_delete_parents_matching_drops_pending_replaces_then_subsequent_replace_wins(): void
+    {
+        [$database, $set] = $this->newSet();
+
+        // pending replace for c-1; then queue a delete that wipes c-1; then a
+        // *new* replace for the same parent — the new one must survive.
+        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+            ->replace([['eligible_from' => '2025-01-01', 'eligible_to' => '2025-02-01']]);
+        $set->deleteParentsMatching(['capability_id' => 'c-1']);
+        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+            ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
+        $set->flush();
+
+        $rows = $database->rowsForParent(self::TABLE, ['subject_id' => 's-1', 'capability_id' => 'c-1']);
+        self::assertCount(1, $rows);
+        self::assertSame('2026-01-01', $rows[0]['eligible_from']);
+    }
+
+    public function test_delete_parents_matching_emits_plan_with_deletes_before_replacements(): void
+    {
+        $adapter = new RecordingOwnedAdapter();
+        $set = new MappedOwnedRowSet($adapter);
+
+        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-2'])->replace([]);
+        $set->deleteParentsMatching(['capability_id' => 'c-1']);
+        $set->flush();
+
+        self::assertCount(1, $adapter->plans);
+        $plan = $adapter->plans[0];
+        self::assertCount(1, $plan->parentMatchDeletes);
+        self::assertSame(['capability_id' => 'c-1'], $plan->parentMatchDeletes[0]->partialParentKey);
+        self::assertCount(1, $plan->replacements);
+    }
+
+    public function test_delete_parents_matching_rejects_empty_partial_key(): void
+    {
+        [, $set] = $this->newSet();
+        $this->expectException(\InvalidArgumentException::class);
+        $set->deleteParentsMatching([]);
+    }
+
+    public function test_has_pending_changes_reflects_queued_deletes(): void
+    {
+        [, $set] = $this->newSet();
+        self::assertFalse($set->hasPendingChanges());
+
+        $set->deleteParentsMatching(['capability_id' => 'c-1']);
+        self::assertTrue($set->hasPendingChanges());
+
+        $set->clear();
+        self::assertFalse($set->hasPendingChanges());
     }
 
     /**

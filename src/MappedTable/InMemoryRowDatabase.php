@@ -96,6 +96,41 @@ final class InMemoryRowDatabase
     }
 
     /**
+     * Delete every owned set whose parent key contains the supplied
+     * partial-key column/value pairs.
+     *
+     * @param array<string, int|string> $partialParentKey
+     */
+    public function deleteOwnedSetsMatching(string $tableName, array $partialParentKey): void
+    {
+        if (!isset($this->ownedTables[$tableName])) {
+            return;
+        }
+
+        foreach ($this->ownedTables[$tableName] as $bucket => $rows) {
+            if ([] === $rows) {
+                unset($this->ownedTables[$tableName][$bucket]);
+                continue;
+            }
+            $sample = $rows[0];
+            $match = true;
+            foreach ($partialParentKey as $column => $value) {
+                if (!array_key_exists($column, $sample) || $sample[$column] !== $value) {
+                    $match = false;
+                    break;
+                }
+            }
+            if ($match) {
+                unset($this->ownedTables[$tableName][$bucket]);
+            }
+        }
+
+        if (isset($this->ownedTables[$tableName]) && [] === $this->ownedTables[$tableName]) {
+            unset($this->ownedTables[$tableName]);
+        }
+    }
+
+    /**
      * @param array<string, int|string> $parentKey
      */
     private static function parentBucketKey(array $parentKey): string

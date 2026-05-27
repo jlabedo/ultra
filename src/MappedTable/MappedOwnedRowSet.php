@@ -22,6 +22,9 @@ final class MappedOwnedRowSet implements UnitOfWork
     /** @var array<string, OwnedSetReplace> */
     private array $replacements = [];
 
+    /** @var array<string, OwnedSetParentMatchDelete> */
+    private array $parentMatchDeletes = [];
+
     public function __construct(
         private readonly MappedOwnedRowSetAdapter $adapter,
     ) {}
@@ -37,6 +40,32 @@ final class MappedOwnedRowSet implements UnitOfWork
         return new PendingOwnedSetReplace(function (array $rows) use ($normalized, $bufferKey): void {
             $this->replacements[$bufferKey] = new OwnedSetReplace($normalized, array_values($rows));
         });
+    }
+
+    /**
+     * Delete every owned set whose parent key matches the supplied partial key.
+     *
+     * The partial key must be a non-empty subset of the adapter's parent columns.
+     * Any pending replacements whose parent matches the predicate are dropped
+     * from the buffer — so a delete queued after a replace wins, and a replace
+     * queued after a delete (whether for the same or a different parent) wins.
+     * At flush time the adapter applies all queued partial-key deletes first,
+     * then all replacements.
+     *
+     * @param array<string, int|string> $partialParentKey
+     */
+    public function deleteParentsMatching(array $partialParentKey): void
+    {
+        $normalized = $this->normalizePartialParentKey($partialParentKey);
+
+        // Drop matching buffered replaces; the delete supersedes them.
+        foreach ($this->replacements as $bufferKey => $replace) {
+            if (self::parentMatchesPartial($replace->parentKey, $normalized)) {
+                unset($this->replacements[$bufferKey]);
+            }
+        }
+
+        $this->parentMatchDeletes[self::bufferKey($normalized)] = new OwnedSetParentMatchDelete($normalized);
     }
 
     /**
@@ -67,17 +96,24 @@ final class MappedOwnedRowSet implements UnitOfWork
             static fn (OwnedSetReplace $left, OwnedSetReplace $right): int => self::bufferKey($left->parentKey) <=> self::bufferKey($right->parentKey),
         );
 
-        $this->adapter->apply(new OwnedRowSetUpdatePlan($replacements));
+        $deletes = array_values($this->parentMatchDeletes);
+        usort(
+            $deletes,
+            static fn (OwnedSetParentMatchDelete $left, OwnedSetParentMatchDelete $right): int => self::bufferKey($left->partialParentKey) <=> self::bufferKey($right->partialParentKey),
+        );
+
+        $this->adapter->apply(new OwnedRowSetUpdatePlan($replacements, $deletes));
     }
 
     public function hasPendingChanges(): bool
     {
-        return [] !== $this->replacements;
+        return [] !== $this->replacements || [] !== $this->parentMatchDeletes;
     }
 
     public function clear(): void
     {
         $this->replacements = [];
+        $this->parentMatchDeletes = [];
     }
 
     /**
@@ -115,5 +151,51 @@ final class MappedOwnedRowSet implements UnitOfWork
     private static function bufferKey(array $parentKey): string
     {
         return json_encode($parentKey, JSON_THROW_ON_ERROR);
+    }
+
+    /**
+     * Shape check for partial parent keys (column subset validated by the adapter).
+     *
+     * @param array<string, int|string> $partial
+     *
+     * @return array<string, int|string>
+     */
+    private function normalizePartialParentKey(array $partial): array
+    {
+        if ([] === $partial) {
+            throw new \InvalidArgumentException('Partial parent key must contain at least one column.');
+        }
+
+        foreach ($partial as $column => $value) {
+            if (!is_string($column) || '' === $column) {
+                throw new \InvalidArgumentException('Partial parent key columns must be non-empty strings.');
+            }
+
+            if (!is_int($value) && !is_string($value)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Partial parent key column "%s" must be an int or string.',
+                    $column,
+                ));
+            }
+        }
+
+        ksort($partial, SORT_STRING);
+
+        return $partial;
+    }
+
+    /**
+     * @param array<string, int|string> $parentKey
+     * @param array<string, int|string> $partial
+     */
+    private static function parentMatchesPartial(array $parentKey, array $partial): bool
+    {
+        foreach ($partial as $column => $value) {
+            if (!array_key_exists($column, $parentKey) || $parentKey[$column] !== $value) {
+                return false;
+            }
+        }
+
+        return true;
     }
 }

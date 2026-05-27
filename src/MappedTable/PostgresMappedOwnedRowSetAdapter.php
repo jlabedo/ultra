@@ -64,6 +64,10 @@ final class PostgresMappedOwnedRowSetAdapter implements MappedOwnedRowSetAdapter
 
     public function apply(OwnedRowSetUpdatePlan $plan): void
     {
+        foreach ($plan->parentMatchDeletes as $delete) {
+            $this->applyParentMatchDelete($delete);
+        }
+
         foreach ($plan->replacements as $replacement) {
             $this->assertParentKeyMatches($replacement->parentKey);
 
@@ -82,6 +86,35 @@ final class PostgresMappedOwnedRowSetAdapter implements MappedOwnedRowSetAdapter
 
             $this->bulkInsert($replacement);
         }
+    }
+
+    private function applyParentMatchDelete(OwnedSetParentMatchDelete $delete): void
+    {
+        $this->assertPartialParentKey($delete->partialParentKey);
+
+        $columns = array_keys($delete->partialParentKey);
+        $whereSql = implode(' AND ', array_map(
+            fn (string $column): string => sprintf(
+                '%s = %s',
+                $this->connection->quoteSingleIdentifier($column),
+                $this->placeholder($column),
+            ),
+            $columns,
+        ));
+
+        $params = [];
+        foreach ($columns as $column) {
+            $params[] = $this->encodeColumnValue($column, $delete->partialParentKey[$column]);
+        }
+
+        $this->connection->executeStatement(
+            sprintf(
+                'DELETE FROM %s WHERE %s',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                $whereSql,
+            ),
+            $params,
+        );
     }
 
     private function bulkInsert(OwnedSetReplace $replacement): void
@@ -133,6 +166,30 @@ final class PostgresMappedOwnedRowSetAdapter implements MappedOwnedRowSetAdapter
                     'Parent key for table "%s" is missing column "%s".',
                     $this->tableName,
                     $column,
+                ));
+            }
+        }
+    }
+
+    /**
+     * @param array<string, int|string> $partial
+     */
+    private function assertPartialParentKey(array $partial): void
+    {
+        if ([] === $partial) {
+            throw new \InvalidArgumentException(sprintf(
+                'Partial parent key for table "%s" must contain at least one column.',
+                $this->tableName,
+            ));
+        }
+
+        foreach ($partial as $column => $_) {
+            if (!in_array($column, $this->parentColumns, true)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Column "%s" is not part of the parent key for table "%s" (expected one of: %s).',
+                    $column,
+                    $this->tableName,
+                    implode(', ', $this->parentColumns),
                 ));
             }
         }

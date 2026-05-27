@@ -136,6 +136,40 @@ final class PostgresMappedOwnedRowSetAdapterTest extends TestCase
         });
     }
 
+    public function test_delete_parents_matching_removes_by_partial_key(): void
+    {
+        $this->withTable(function (Connection $connection, MappedOwnedRowSet $set, string $tableName): void {
+            $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+                ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
+            $set->withParent(['subject_id' => 's-2', 'capability_id' => 'c-1'])
+                ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
+            $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-2'])
+                ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
+            $set->flush();
+
+            $set->deleteParentsMatching(['capability_id' => 'c-1']);
+            $set->flush();
+
+            self::assertSame(0, (int) $connection->fetchOne(
+                sprintf('SELECT COUNT(*) FROM %s WHERE capability_id = ?', $connection->quoteSingleIdentifier($tableName)),
+                ['c-1'],
+            ));
+            self::assertSame(1, (int) $connection->fetchOne(
+                sprintf('SELECT COUNT(*) FROM %s WHERE capability_id = ?', $connection->quoteSingleIdentifier($tableName)),
+                ['c-2'],
+            ));
+        });
+    }
+
+    public function test_delete_parents_matching_rejects_non_parent_columns(): void
+    {
+        $this->withTable(function (Connection $connection, MappedOwnedRowSet $set, string $tableName): void {
+            $this->expectException(\InvalidArgumentException::class);
+            $set->deleteParentsMatching(['eligible_from' => '2026-01-01']);
+            $set->flush();
+        });
+    }
+
     public function test_rows_for_parent_returns_decoded_dates(): void
     {
         $this->withTable(function (Connection $connection, MappedOwnedRowSet $set, string $tableName): void {

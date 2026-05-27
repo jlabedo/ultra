@@ -18,6 +18,10 @@ final class InMemoryMappedOwnedRowSetAdapter implements MappedOwnedRowSetAdapter
 
     public function apply(OwnedRowSetUpdatePlan $plan): void
     {
+        foreach ($plan->parentMatchDeletes as $delete) {
+            $this->database->deleteOwnedSetsMatching($this->tableName, $delete->partialParentKey);
+        }
+
         foreach ($plan->replacements as $replacement) {
             $this->database->replaceOwnedSet($this->tableName, $replacement->parentKey, $replacement->rows);
         }
