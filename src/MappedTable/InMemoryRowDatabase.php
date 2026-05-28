@@ -129,8 +129,7 @@ final class InMemoryRowDatabase
             ));
         }
 
-        $predicate = [...$scopeColumns, $idColumn => $row[$idColumn]];
-        $this->removeWhere($tableName, static fn (array $r): bool => self::rowMatches($r, $predicate));
+        $this->deleteRow($tableName, $idColumn, $row[$idColumn], $scopeColumns);
         $this->tables[$tableName][] = $row;
     }
 
