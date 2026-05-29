@@ -6,6 +6,7 @@ namespace Ultra\MappedTable;
 
 final readonly class PostgresMappedColumnType
 {
+    private const TEXT = 'text';
     private const ARRAY_TEXT = 'array_text';
     private const ARRAY_INT = 'array_int';
     private const JSON = 'json';
@@ -15,6 +16,16 @@ final readonly class PostgresMappedColumnType
         public string $sqlType,
         private string $kind,
     ) {}
+
+    /**
+     * A scalar text column. Encodes/decodes as a plain string passthrough; its
+     * value is what makes the default (untyped) column behaviour explicit when
+     * building unnest()-based bulk inserts.
+     */
+    public static function text(): self
+    {
+        return new self('TEXT', self::TEXT);
+    }
 
     public static function textArray(): self
     {
@@ -47,6 +58,10 @@ final readonly class PostgresMappedColumnType
             return null;
         }
 
+        if (self::TEXT === $this->kind) {
+            return self::encodeText($value);
+        }
+
         if (self::DATE === $this->kind) {
             return self::encodeDate($value);
         }
@@ -72,6 +87,10 @@ final readonly class PostgresMappedColumnType
             return $value;
         }
 
+        if (self::TEXT === $this->kind) {
+            return $value;
+        }
+
         if (self::DATE === $this->kind) {
             return self::decodeDate($value);
         }
@@ -94,6 +113,58 @@ final readonly class PostgresMappedColumnType
             ),
             default => throw new \LogicException(sprintf('Unsupported Postgres mapped column kind "%s".', $this->kind)),
         };
+    }
+
+    /**
+     * SQL cast for a one-dimensional Postgres array whose elements have this
+     * column's type, e.g. DATE -> "DATE[]". Used by unnest()-based bulk inserts
+     * so the bound-parameter count stays constant (one array per column).
+     */
+    public function arraySqlType(): string
+    {
+        if (self::ARRAY_TEXT === $this->kind || self::ARRAY_INT === $this->kind) {
+            throw new \LogicException(sprintf(
+                'Postgres column type "%s" is itself an array and cannot be bulk-inserted through unnest().',
+                $this->sqlType,
+            ));
+        }
+
+        return $this->sqlType.'[]';
+    }
+
+    /**
+     * Encode a list of scalar values of this column's type into a Postgres
+     * array literal suitable for `unnest(:param::<type>[])`. Nulls serialize as
+     * NULL elements (not empty strings), preserving nullable-column semantics.
+     *
+     * @param list<mixed> $values
+     */
+    public function encodeArrayLiteral(array $values): string
+    {
+        return match ($this->kind) {
+            self::TEXT => self::encodeTextArray($values),
+            self::DATE => self::encodeTextArray(array_map(
+                static fn (mixed $value): ?string => null === $value ? null : self::encodeDate($value),
+                $values,
+            )),
+            self::JSON => self::encodeTextArray(array_map(
+                static fn (mixed $value): ?string => null === $value ? null : self::encodeJson($value),
+                $values,
+            )),
+            default => throw new \LogicException(sprintf(
+                'Postgres column type "%s" cannot be encoded as a scalar unnest() array.',
+                $this->sqlType,
+            )),
+        };
+    }
+
+    private static function encodeText(mixed $value): string
+    {
+        if (!is_string($value) && !is_int($value)) {
+            throw new \InvalidArgumentException('Postgres TEXT column value must be a string, int, or null.');
+        }
+
+        return (string) $value;
     }
 
     private static function encodeDate(mixed $value): string

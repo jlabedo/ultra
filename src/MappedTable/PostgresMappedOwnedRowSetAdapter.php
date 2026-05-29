@@ -117,31 +117,47 @@ final class PostgresMappedOwnedRowSetAdapter implements MappedOwnedRowSetAdapter
         );
     }
 
+    /**
+     * Insert every row of the replacement in a single statement using
+     * `unnest()`. One array parameter is bound per column, so the bound-
+     * parameter count is constant (= column count) regardless of row count —
+     * sidestepping Postgres's 65535 bound-parameter ceiling that the prior
+     * `VALUES (?,?),(?,?),...` shape hit on large owned-set replaces.
+     */
     private function bulkInsert(OwnedSetReplace $replacement): void
     {
         $columns = [...$this->parentColumns, ...$this->rowColumns];
         $quotedColumns = array_map($this->connection->quoteSingleIdentifier(...), $columns);
-        $rowPlaceholder = '('.implode(', ', array_map($this->placeholder(...), $columns)).')';
+
+        $rowCount = count($replacement->rows);
+        $parentValues = array_combine($this->parentColumns, $this->orderedParentValues($replacement->parentKey));
+        $parentColumnSet = array_fill_keys($this->parentColumns, true);
 
         $params = [];
-        $parentValues = $this->orderedParentValues($replacement->parentKey);
+        $castPlaceholders = [];
 
-        foreach ($replacement->rows as $row) {
-            foreach ($parentValues as $value) {
-                $params[] = $value;
+        foreach ($columns as $column) {
+            $type = $this->columnTypes[$column] ?? PostgresMappedColumnType::text();
+
+            if (isset($parentColumnSet[$column])) {
+                $columnValues = array_fill(0, $rowCount, $parentValues[$column]);
+            } else {
+                $columnValues = array_map(
+                    static fn (array $row): mixed => $row[$column] ?? null,
+                    $replacement->rows,
+                );
             }
 
-            foreach ($this->rowColumns as $column) {
-                $params[] = $this->encodeColumnValue($column, $row[$column] ?? null);
-            }
+            $params[] = $type->encodeArrayLiteral(array_values($columnValues));
+            $castPlaceholders[] = sprintf('?::%s', $type->arraySqlType());
         }
 
         $this->connection->executeStatement(
             sprintf(
-                'INSERT INTO %s (%s) VALUES %s',
+                'INSERT INTO %s (%s) SELECT * FROM unnest(%s)',
                 $this->connection->quoteSingleIdentifier($this->tableName),
                 implode(', ', $quotedColumns),
-                implode(', ', array_fill(0, count($replacement->rows), $rowPlaceholder)),
+                implode(', ', $castPlaceholders),
             ),
             $params,
         );
