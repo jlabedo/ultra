@@ -13,6 +13,7 @@
         "php": ">=8.4",
         "doctrine/dbal": "^4.0",
         "psr/clock": "^1.0",
+        "ultra/coordination-postgres": "self.version",
         "ultra/projection": "self.version",
         "ultra/time": "self.version"
     },

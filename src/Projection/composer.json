@@ -15,6 +15,7 @@
         "symfony/console": "7.*|8.*",
         "symfony/dependency-injection": "7.*|8.*",
         "ultra/container": "*",
+        "ultra/coordination": "self.version",
         "ultra/event-store": "self.version",
         "ultra/mapper": "self.version",
         "ultra/time": "self.version"
