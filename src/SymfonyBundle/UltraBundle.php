@@ -5,10 +5,10 @@ declare(strict_types=1);
 namespace Ultra\SymfonyBundle;
 
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\HttpKernel\Bundle\Bundle;
+use Symfony\Component\DependencyInjection\Kernel\AbstractBundle;
 use Ultra\Container\ContainerExtension;
 
-final class UltraBundle extends Bundle
+final class UltraBundle extends AbstractBundle
 {
     /**
      * @param list<ContainerExtension> $extensions

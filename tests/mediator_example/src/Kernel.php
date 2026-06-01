@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Example\OrderProcessing;
 
-use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
-use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
+use Symfony\Component\DependencyInjection\Kernel\AbstractKernel;
+use Symfony\Component\DependencyInjection\Kernel\KernelTrait;
+use Symfony\Component\DependencyInjection\Kernel\ServicesBundle;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
-use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 use Ultra\Events\EventsExtension;
 use Ultra\Mediator_Example\OrderProcessing\Message\SelfHandledPing;
 use Ultra\MessageHandling\MediatorInterface;
@@ -15,13 +15,13 @@ use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\MessageHandling\TagNames;
 use Ultra\SymfonyBundle\UltraBundle;
 
-final class Kernel extends BaseKernel
+final class Kernel extends AbstractKernel
 {
-    use MicroKernelTrait;
+    use KernelTrait;
 
     public function registerBundles(): iterable
     {
-        yield new FrameworkBundle();
+        yield new ServicesBundle();
 
         yield new UltraBundle([
             new EventsExtension(),
@@ -31,11 +31,6 @@ final class Kernel extends BaseKernel
 
     protected function configureContainer(ContainerConfigurator $container): void
     {
-        $container->extension('framework', [
-            'test' => true,
-            'secret' => 'mediator-example',
-        ]);
-
         $services = $container->services();
         $services->defaults()
             ->autowire()

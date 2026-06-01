@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Mediator_Example\OrderProcessing\Tests;
 
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use PHPUnit\Framework\TestCase;
 use Ultra\Mediator_Example\OrderProcessing\Domain\OrderPlaced;
 use Ultra\Mediator_Example\OrderProcessing\Domain\PlaceOrder;
 use Ultra\Mediator_Example\OrderProcessing\Infrastructure\AuditLog;
@@ -24,8 +24,10 @@ use Ultra\MessageHandling\MediatorInterface;
  *
  * @coversNothing
  */
-final class OrderProcessingTest extends KernelTestCase
+final class OrderProcessingTest extends TestCase
 {
+    private static ?Kernel $kernel = null;
+
     protected function tearDown(): void
     {
         parent::tearDown();
@@ -146,9 +148,14 @@ final class OrderProcessingTest extends KernelTestCase
         $this->assertSame(['ping'], $tracker->payloads);
     }
 
-    protected static function getKernelClass(): string
+    protected static function bootKernel(array $options = []): void
     {
-        return Kernel::class;
+        if (null !== self::$kernel) {
+            self::$kernel->shutdown();
+            self::$kernel = null;
+        }
+        self::$kernel = self::createKernel($options);
+        self::$kernel->boot();
     }
 
     protected static function createKernel(array $options = []): Kernel

@@ -4,22 +4,22 @@ declare(strict_types=1);
 
 namespace Ultra\Mapper_Example;
 
-use Symfony\Bundle\FrameworkBundle\FrameworkBundle;
-use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
+use Symfony\Component\DependencyInjection\Kernel\AbstractKernel;
+use Symfony\Component\DependencyInjection\Kernel\KernelTrait;
+use Symfony\Component\DependencyInjection\Kernel\ServicesBundle;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
-use Symfony\Component\HttpKernel\Kernel as BaseKernel;
 use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\SymfonyBundle\UltraBundle;
 use Ultra\Mapper_Bundle\TagNames;
 use Ultra\Mapper_Example\Domain\UserRegistered;
 
-final class Kernel extends BaseKernel
+final class Kernel extends AbstractKernel
 {
-    use MicroKernelTrait;
+    use KernelTrait;
 
     public function registerBundles(): iterable
     {
-        yield new FrameworkBundle();
+        yield new ServicesBundle();
 
         yield new UltraBundle([
             new MapperExtension(),
@@ -29,11 +29,6 @@ final class Kernel extends BaseKernel
     protected function configureContainer(ContainerConfigurator $container): void
     {
         $services = $container->services();
-
-        $container->extension('framework', [
-            'test' => true,
-            'secret' => 'mapper-example',
-        ]);
 
         $services->defaults()
             ->autowire()

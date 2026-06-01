@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Mapper_Example\Tests;
 
-use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
+use PHPUnit\Framework\TestCase;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Example\Domain\RuntimeEmail;
 use Ultra\Mapper_Example\Domain\RuntimeEmailNormalizer;
@@ -16,8 +16,10 @@ use Ultra\Mapper_Example\Kernel;
  *
  * @coversNothing
  */
-final class MapperExtensionTest extends KernelTestCase
+final class MapperExtensionTest extends TestCase
 {
+    private static ?Kernel $kernel = null;
+
     protected function tearDown(): void
     {
         parent::tearDown();
@@ -48,9 +50,14 @@ final class MapperExtensionTest extends KernelTestCase
         $this->assertSame('User', $rehydrated->name);
     }
 
-    protected static function getKernelClass(): string
+    protected static function bootKernel(array $options = []): void
     {
-        return Kernel::class;
+        if (self::$kernel !== null) {
+            self::$kernel->shutdown();
+            self::$kernel = null;
+        }
+        self::$kernel = self::createKernel($options);
+        self::$kernel->boot();
     }
 
     protected static function createKernel(array $options = []): Kernel
