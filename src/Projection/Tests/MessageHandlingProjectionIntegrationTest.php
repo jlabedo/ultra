@@ -108,7 +108,7 @@ final class MessageHandlingProjectionIntegrationTest extends ProjectionFunctiona
         $handler->handleRunProjectionSegment(new RunProjectionSegment($runtime->projectionId(), 0, 'worker-1'));
 
         self::assertSame(['course-1' => 'Intro to Projections'], $projection->names);
-        self::assertSame([], $activity->pendingBucketsForSegment($runtime->projectionId(), 0, 255));
+        self::assertSame([], $activity->pendingInSegment($runtime->projectionId(), 0, 255));
     }
 
     private static function courseCreatedEvent(string $courseId, string $name): Event

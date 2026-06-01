@@ -6,7 +6,7 @@ namespace Ultra\Projection;
 
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\EventStore;
-use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
+use Ultra\Projection\Coordination\ProjectionActivity;
 
 final readonly class ProjectionRunner
 {
@@ -14,7 +14,7 @@ final readonly class ProjectionRunner
         private EventStore $eventStore,
         private ProjectionSegmentRepositoryInterface $segmentRepository,
         private ProjectionTransactionManagerInterface $transactionManager = new NoOpProjectionTransactionManager(),
-        private ?ProjectionBucketActivityRepositoryInterface $activityRepository = null,
+        private ?ProjectionActivity $activityRepository = null,
     ) {}
 
     public function recoverExpiredClaims(string $projectionId): int
@@ -127,12 +127,12 @@ final readonly class ProjectionRunner
 
         try {
             if (null === $this->activityRepository) {
-                throw new \LogicException('ProjectionRunner requires a bucket activity repository to run claimed projection work.');
+                throw new \LogicException('ProjectionRunner requires projection activity to run claimed projection work.');
             }
 
             $seenCounters = [];
-            foreach ($this->activityRepository->pendingBucketsForSegment($segment->projectionId, $segment->bucketFrom, $segment->bucketTo) as $activity) {
-                $seenCounters[$activity->bucket] = $activity->counter;
+            foreach ($this->activityRepository->pendingInSegment($segment->projectionId, $segment->bucketFrom, $segment->bucketTo) as $pendingKey) {
+                $seenCounters[(int) $pendingKey->key] = $pendingKey->counter;
             }
 
             $query = $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
@@ -148,7 +148,7 @@ final readonly class ProjectionRunner
                 $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
 
                 if ($caughtUp && [] !== $seenCounters) {
-                    $this->activityRepository?->decrementSeenBuckets($segment->projectionId, $seenCounters);
+                    $this->activityRepository?->drainSeen($segment->projectionId, $seenCounters);
                 }
             });
 

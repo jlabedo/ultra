@@ -6,6 +6,10 @@ namespace Ultra\Projection\Tests;
 
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Ultra\Coordination\InMemory\InMemoryCoordinatorLease;
+use Ultra\Coordination\InMemory\InMemoryDirtyKeyTracker;
+use Ultra\Coordination\Lease\CoordinatorLease;
+use Ultra\Coordination\Tracking\DirtyKeyTracker;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
@@ -13,13 +17,10 @@ use Ultra\EventStore\InMemoryEventStore;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
-use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
+use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
-use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
-use Ultra\Projection\InMemory\InMemoryProjectionBucketActivityRepository;
-use Ultra\Projection\InMemory\InMemoryProjectionCoordinatorLeaseRepository;
 use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
@@ -48,98 +49,73 @@ final class CoordinatorProjection
     }
 }
 
-final class CountingLeaseRepository implements ProjectionCoordinatorLeaseRepositoryInterface
+final class CountingLeaseRepository implements CoordinatorLease
 {
     public int $acquireCalls = 0;
     public int $renewCalls = 0;
     public int $releaseCalls = 0;
 
-    public function acquire(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
+    public function acquire(string $coordinatorKey, string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
     {
         ++$this->acquireCalls;
 
         return true;
     }
 
-    public function renew(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): void
+    public function renew(string $coordinatorKey, string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): void
     {
         ++$this->renewCalls;
     }
 
-    public function release(string $workerId): void
+    public function release(string $coordinatorKey, string $workerId): void
     {
         ++$this->releaseCalls;
     }
 
-    public function hasLiveCoordinator(): bool
+    public function hasLiveCoordinator(string $coordinatorKey): bool
     {
         return false;
     }
 
-    public function markWakeEnqueued(Duration $ttl = new Duration(seconds: 30)): bool
+    public function markWakeEnqueued(string $coordinatorKey, Duration $ttl = new Duration(seconds: 30)): bool
     {
         return true;
     }
 }
 
-final class EmptyAfterFirstPollActivityRepository implements ProjectionBucketActivityRepositoryInterface
+/**
+ * Spies on the generic tracker calls a ProjectionActivity makes: `pending()`
+ * backs `affected()`, `pendingForChannel()` backs `pendingInSegment()`.
+ */
+final class CountingDirtyKeyTracker implements DirtyKeyTracker
 {
-    public int $affectedBucketsCalls = 0;
-    public int $pendingBucketsCalls = 0;
+    public int $pendingCalls = 0;
+    public int $pendingForChannelCalls = 0;
 
-    public function bump(string $projectionId, int $bucket): void {}
+    public function __construct(private readonly DirtyKeyTracker $inner = new InMemoryDirtyKeyTracker()) {}
 
-    public function affectedBuckets(int $limit = 256): array
+    public function bump(string $channel, string $key): void
     {
-        ++$this->affectedBucketsCalls;
-
-        return [];
+        $this->inner->bump($channel, $key);
     }
 
-    public function pendingBucketsForSegment(string $projectionId, int $bucketFrom, int $bucketTo): array
+    public function pending(int $limit = 256): array
     {
-        ++$this->pendingBucketsCalls;
+        ++$this->pendingCalls;
 
-        return [];
+        return $this->inner->pending($limit);
     }
 
-    public function decrementSeenBuckets(string $projectionId, array $seenCounters): int
+    public function pendingForChannel(string $channel, int $limit = 256): array
     {
-        return 0;
-    }
-}
+        ++$this->pendingForChannelCalls;
 
-final class CountingActivityRepository implements ProjectionBucketActivityRepositoryInterface
-{
-    public int $affectedBucketsCalls = 0;
-    public int $pendingBucketsCalls = 0;
-
-    public function __construct(
-        private readonly ProjectionBucketActivityRepositoryInterface $inner,
-    ) {}
-
-    public function bump(string $projectionId, int $bucket): void
-    {
-        $this->inner->bump($projectionId, $bucket);
+        return $this->inner->pendingForChannel($channel, $limit);
     }
 
-    public function affectedBuckets(int $limit = 256): array
+    public function drainSeen(string $channel, array $seen): int
     {
-        ++$this->affectedBucketsCalls;
-
-        return $this->inner->affectedBuckets($limit);
-    }
-
-    public function pendingBucketsForSegment(string $projectionId, int $bucketFrom, int $bucketTo): array
-    {
-        ++$this->pendingBucketsCalls;
-
-        return $this->inner->pendingBucketsForSegment($projectionId, $bucketFrom, $bucketTo);
-    }
-
-    public function decrementSeenBuckets(string $projectionId, array $seenCounters): int
-    {
-        return $this->inner->decrementSeenBuckets($projectionId, $seenCounters);
+        return $this->inner->drainSeen($channel, $seen);
     }
 }
 
@@ -149,6 +125,8 @@ final class CountingActivityRepository implements ProjectionBucketActivityReposi
 #[CoversClass(ProjectionCoordinator::class)]
 final class ProjectionCoordinatorBehaviorTest extends TestCase
 {
+    private const string KEY = ProjectionCoordinator::COORDINATOR_KEY;
+
     public function test_leader_requests_additional_workers_from_the_scaling_policy_and_acknowledges_processed_buckets(): void
     {
         $projection = new CoordinatorProjection();
@@ -156,8 +134,8 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $catalog = new ProjectionCatalog($runtime);
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new InMemoryProjectionBucketActivityRepository();
-        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
+        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
+        $leases = new InMemoryCoordinatorLease();
         $activator = new InMemoryProjectionActivator();
         $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
         $coordinator = new ProjectionCoordinator(
@@ -205,7 +183,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertSame(['alpha' => 'Math'], $projection->names);
         self::assertCount(3, $segments->listSegments('coordinator_projection'));
         self::assertCount(2, $activator->workerClaims());
-        self::assertFalse($leases->hasLiveCoordinator());
+        self::assertFalse($leases->hasLiveCoordinator(self::KEY));
     }
 
     public function test_non_leader_does_not_poll_or_process_projection_work(): void
@@ -215,13 +193,13 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $catalog = new ProjectionCatalog($runtime);
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new InMemoryProjectionBucketActivityRepository();
+        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
         $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
-        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
+        $leases = new InMemoryCoordinatorLease();
         $activator = new InMemoryProjectionActivator();
         $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
 
-        self::assertTrue($leases->acquire('other-worker'));
+        self::assertTrue($leases->acquire(self::KEY, 'other-worker'));
 
         $eventStore->append([
             new Event(
@@ -249,8 +227,8 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $catalog = new ProjectionCatalog($runtime);
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new InMemoryProjectionBucketActivityRepository();
-        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
+        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
+        $leases = new InMemoryCoordinatorLease();
         $activator = new InMemoryProjectionActivator();
         $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
         $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
@@ -289,10 +267,10 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertSame(1, $result->acknowledgedBuckets);
         self::assertSame(['beta' => 'Physics'], $projection->names);
 
-        $remaining = $activity->pendingBucketsForSegment('coordinator_projection', 0, 255);
+        $remaining = $activity->pendingInSegment('coordinator_projection', 0, 255);
 
         self::assertCount(1, $remaining);
-        self::assertSame($leftBucket, $remaining[0]->bucket);
+        self::assertSame($leftBucket, (int) $remaining[0]->key);
     }
 
     public function test_coordinator_processes_its_local_claim_until_the_segment_catches_up(): void
@@ -302,8 +280,8 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $catalog = new ProjectionCatalog($runtime);
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new InMemoryProjectionBucketActivityRepository();
-        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
+        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
+        $leases = new InMemoryCoordinatorLease();
         $activator = new InMemoryProjectionActivator();
         $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
         $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
@@ -327,7 +305,7 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
 
         self::assertSame(2, $firstResult->processedEvents);
         self::assertSame(1, $firstResult->acknowledgedBuckets);
-        self::assertSame([], $activity->pendingBucketsForSegment('coordinator_projection', 0, 255));
+        self::assertSame([], $activity->pendingInSegment('coordinator_projection', 0, 255));
         self::assertSame(['alpha' => 'Advanced Math'], $projection->names);
     }
 
@@ -336,7 +314,8 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $runtime = new ProjectionRuntime(new CoordinatorProjection(), new UltraNormalizer());
         $catalog = new ProjectionCatalog($runtime);
         $leases = new CountingLeaseRepository();
-        $activity = new EmptyAfterFirstPollActivityRepository();
+        $tracker = new CountingDirtyKeyTracker();
+        $activity = new ProjectionActivity($tracker);
         $activator = new InMemoryProjectionActivator();
         $runner = new ProjectionRunner(new InMemoryEventStore(), new InMemoryProjectionSegmentRepository(), activityRepository: $activity);
         $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
@@ -350,8 +329,8 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertSame(1, $leases->acquireCalls);
         self::assertSame(1, $leases->renewCalls);
         self::assertSame(1, $leases->releaseCalls);
-        self::assertSame(1, $activity->affectedBucketsCalls);
-        self::assertSame(0, $activity->pendingBucketsCalls);
+        self::assertSame(1, $tracker->pendingCalls);
+        self::assertSame(0, $tracker->pendingForChannelCalls);
         self::assertSame([], $activator->workerClaims());
     }
 
@@ -365,9 +344,9 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         $bucket = BucketHasher::bucketFor('alpha');
         self::assertNotNull($segments->claimSegment('coordinator_projection', 0, 'other-worker'));
 
-        $innerActivity = new InMemoryProjectionBucketActivityRepository();
-        $innerActivity->bump('coordinator_projection', $bucket);
-        $activity = new CountingActivityRepository($innerActivity);
+        $tracker = new CountingDirtyKeyTracker();
+        $tracker->bump('coordinator_projection', (string) $bucket);
+        $activity = new ProjectionActivity($tracker);
         $leases = new CountingLeaseRepository();
         $activator = new InMemoryProjectionActivator();
         $runner = new ProjectionRunner(new InMemoryEventStore(), $segments, activityRepository: $activity);
@@ -379,9 +358,9 @@ final class ProjectionCoordinatorBehaviorTest extends TestCase
         self::assertSame(0, $result->processedEvents);
         self::assertSame(0, $result->acknowledgedBuckets);
         self::assertSame(0, $result->requestedWorkerActivations);
-        self::assertSame(1, $activity->affectedBucketsCalls);
+        self::assertSame(1, $tracker->pendingCalls);
         self::assertSame(1, $leases->renewCalls);
         self::assertSame(1, $leases->releaseCalls);
-        self::assertSame(0, $activity->pendingBucketsCalls);
+        self::assertSame(0, $tracker->pendingForChannelCalls);
     }
 }

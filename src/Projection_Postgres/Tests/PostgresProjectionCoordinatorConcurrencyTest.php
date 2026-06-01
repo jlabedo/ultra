@@ -19,7 +19,10 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
-use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
+use Ultra\Coordination\Lease\CoordinatorLease;
+use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease;
+use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTracker;
+use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionCoordinatorResult;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
@@ -28,8 +31,6 @@ use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRuntime;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
 use Ultra\Testing\Concurrent\Cluster;
@@ -97,8 +98,8 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
             EventStore $store,
             PostgresProjectionSegmentRepository $segments,
             ProjectionRunner $runner,
-            ProjectionBucketActivityRepositoryInterface $activity,
-            PostgresProjectionCoordinatorLeaseRepository $leases,
+            ProjectionActivity $activity,
+            CoordinatorLease $leases,
             string $eventStorePrefix,
             string $projectionPrefix,
         ) use ($dsn): void {
@@ -170,7 +171,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                         }
                     };
 
-                    $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
+                    $activityRepository = new ProjectionActivity(new PostgresDirtyKeyTracker($connection, $projectionPrefix.'dirty_keys'));
                     $runner = new ProjectionRunner(
                         $barrierStore,
                         new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
@@ -186,7 +187,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                         ),
                         $runner,
                         $activityRepository,
-                        new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix),
+                        new PostgresCoordinatorLease($connection, $projectionPrefix.'coordinator_lease'),
                         new InMemoryProjectionActivator(),
                         new class implements ProjectionScalingPolicyInterface {
                             public function additionalWorkersRequested(array $affectedBuckets): int
@@ -215,7 +216,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                     require_once $testFile;
 
                     $connection = PostgresTestSupport::connection($dsn);
-                    $activityRepository = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
+                    $activityRepository = new ProjectionActivity(new PostgresDirtyKeyTracker($connection, $projectionPrefix.'dirty_keys'));
                     $runner = new ProjectionRunner(
                         PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams'),
                         new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
@@ -270,7 +271,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                 ['course_id' => $leftCourseId, 'name' => 'Math 101'],
                 ['course_id' => $rightCourseId, 'name' => 'Physics 201'],
             ], $rows);
-            self::assertSame([], $activity->pendingBucketsForSegment('course_names', 0, 255));
+            self::assertSame([], $activity->pendingInSegment('course_names', 0, 255));
             self::assertFalse($leases->hasLiveCoordinator());
         });
     }
@@ -291,8 +292,8 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
         $this->withPostgresProjectionCoordination(function (
             Connection $connection,
             PostgresProjectionSegmentRepository $segments,
-            ProjectionBucketActivityRepositoryInterface $activity,
-            PostgresProjectionCoordinatorLeaseRepository $leases,
+            ProjectionActivity $activity,
+            CoordinatorLease $leases,
             string $projectionPrefix,
         ) use ($dsn): void {
             $cluster = new Cluster(timeout: 10.0);
@@ -304,14 +305,12 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                 static function () use ($dsn, $projectionPrefix): bool {
                     $connection = PostgresTestSupport::connection($dsn);
                     $clock = new StatickClock(new \DateTimeImmutable('2000-01-01 00:00:00'));
-                    $leases = new PostgresProjectionCoordinatorLeaseRepository(
-                        $connection,
-                        $projectionPrefix,
+                    $leases = new PostgresCoordinatorLease($connection, $projectionPrefix.'coordinator_lease',
                         $clock,
                     );
 
                     try {
-                        $acquired = $leases->acquire('stalled-leader', new Duration(seconds: 60));
+                        $acquired = $leases->acquire(ProjectionCoordinator::COORDINATOR_KEY, 'stalled-leader', new Duration(seconds: 60));
                         checkpoint('lease_acquired');
 
                         return $acquired;
@@ -329,14 +328,12 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                 static function () use ($dsn, $projectionPrefix): bool {
                     $connection = PostgresTestSupport::connection($dsn);
                     $clock = new StatickClock(new \DateTimeImmutable('2000-01-01 00:00:00'));
-                    $leases = new PostgresProjectionCoordinatorLeaseRepository(
-                        $connection,
-                        $projectionPrefix,
+                    $leases = new PostgresCoordinatorLease($connection, $projectionPrefix.'coordinator_lease',
                         $clock,
                     );
 
                     try {
-                        return $leases->acquire('early-contender', new Duration(seconds: 60));
+                        return $leases->acquire(ProjectionCoordinator::COORDINATOR_KEY, 'early-contender', new Duration(seconds: 60));
                     } finally {
                         $connection->close();
                     }
@@ -354,14 +351,12 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                     $injectedTime = checkpoint('need_time');
 
                     $clock = new StatickClock(new \DateTimeImmutable($injectedTime));
-                    $leases = new PostgresProjectionCoordinatorLeaseRepository(
-                        $connection,
-                        $projectionPrefix,
+                    $leases = new PostgresCoordinatorLease($connection, $projectionPrefix.'coordinator_lease',
                         $clock,
                     );
 
                     try {
-                        return $leases->acquire('late-contender', new Duration(seconds: 60));
+                        return $leases->acquire(ProjectionCoordinator::COORDINATOR_KEY, 'late-contender', new Duration(seconds: 60));
                     } finally {
                         $connection->close();
                     }

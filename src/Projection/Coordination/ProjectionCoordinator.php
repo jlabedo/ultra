@@ -4,17 +4,24 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Coordination;
 
+use Ultra\Coordination\Lease\CoordinatorLease;
+use Ultra\Coordination\Tracking\PendingKey;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionSegment;
 
 final readonly class ProjectionCoordinator
 {
+    /**
+     * Coordinator-lease key for the single global projection coordinator.
+     */
+    public const string COORDINATOR_KEY = 'projection-coordinator';
+
     public function __construct(
         private ProjectionCatalog $catalog,
         private ProjectionRunner $runner,
-        private ProjectionBucketActivityRepositoryInterface $activityRepository,
-        private ProjectionCoordinatorLeaseRepositoryInterface $leaseRepository,
+        private ProjectionActivity $activity,
+        private CoordinatorLease $leaseRepository,
         private ProjectionActivatorInterface $activator,
         private ProjectionScalingPolicyInterface $scalingPolicy = new DefaultProjectionScalingPolicy(),
     ) {}
@@ -24,7 +31,7 @@ final readonly class ProjectionCoordinator
         int $batchSize = 100,
         int $maxCycles = 32,
     ): ProjectionCoordinatorResult {
-        $acquiredLease = $this->leaseRepository->acquire($workerId);
+        $acquiredLease = $this->leaseRepository->acquire(self::COORDINATOR_KEY, $workerId);
         if (!$acquiredLease) {
             return new ProjectionCoordinatorResult(false, 0, 0, 0);
         }
@@ -35,9 +42,9 @@ final readonly class ProjectionCoordinator
 
         try {
             for ($cycle = 0; $cycle < $maxCycles; ++$cycle) {
-                $this->leaseRepository->renew($workerId);
+                $this->leaseRepository->renew(self::COORDINATOR_KEY, $workerId);
 
-                $affectedBuckets = $this->activityRepository->affectedBuckets();
+                $affectedBuckets = $this->activity->affected();
                 if ([] === $affectedBuckets) {
                     break;
                 }
@@ -55,7 +62,7 @@ final readonly class ProjectionCoordinator
                     $this->splitUntilSegmentCount($projectionId, $additionalWorkers + 1);
 
                     foreach ($this->runner->availableSegments($projectionId) as $segment) {
-                        $pending = $this->activityRepository->pendingBucketsForSegment(
+                        $pending = $this->activity->pendingInSegment(
                             $projectionId,
                             $segment->bucketFrom,
                             $segment->bucketTo,
@@ -108,7 +115,7 @@ final readonly class ProjectionCoordinator
                 }
             }
         } finally {
-            $this->leaseRepository->release($workerId);
+            $this->leaseRepository->release(self::COORDINATOR_KEY, $workerId);
         }
 
         return new ProjectionCoordinatorResult(
@@ -120,16 +127,16 @@ final readonly class ProjectionCoordinator
     }
 
     /**
-     * @param list<ProjectionBucketActivity> $activities
+     * @param list<PendingKey> $activities
      *
-     * @return array<string, list<ProjectionBucketActivity>>
+     * @return array<string, list<PendingKey>>
      */
     private function groupByProjection(array $activities): array
     {
         $grouped = [];
 
         foreach ($activities as $activity) {
-            $grouped[$activity->projectionId][] = $activity;
+            $grouped[$activity->channel][] = $activity;
         }
 
         return $grouped;

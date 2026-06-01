@@ -8,6 +8,8 @@ use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\Container\ContainerExtension;
+use Ultra\Coordination\Lease\CoordinatorLease;
+use Ultra\Coordination\Tracking\DirtyKeyTracker;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Bundle\Command\ListSegmentsCommand;
@@ -15,12 +17,11 @@ use Ultra\Projection\Bundle\Command\ProjectionWorkerCommand;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\MessageHandlingProjectionActivatorPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
 use Ultra\Projection\Coordination\DefaultProjectionScalingPolicy;
+use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionActivityEventStore;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
-use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
-use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\MessageHandling\ProjectionMessageHandler;
@@ -31,6 +32,12 @@ use Ultra\Projection\ProjectionTransactionManagerInterface;
 
 final class ProjectionExtension implements ContainerExtension
 {
+    /** Projection-private service id for the coordinator's dirty-key tracker. */
+    public const string DIRTY_KEY_TRACKER_ID = 'ultra.projection.coordination.dirty_key_tracker';
+
+    /** Projection-private service id for the coordinator's lease. */
+    public const string COORDINATOR_LEASE_ID = 'ultra.projection.coordination.coordinator_lease';
+
     public function build(ContainerBuilder $container): void
     {
 
@@ -47,12 +54,20 @@ final class ProjectionExtension implements ContainerExtension
             ->setFactory([$factory, 'createSegmentRepository'])
         ;
 
-        $container->register(ProjectionBucketActivityRepositoryInterface::class)
-            ->setFactory([$factory, 'createBucketActivityRepository'])
+        // Registered under projection-private ids (not the generic interface
+        // ids) so an application can bind its own DirtyKeyTracker /
+        // CoordinatorLease for unrelated derived read models without colliding
+        // with the projection coordinator's instances.
+        $container->register(self::DIRTY_KEY_TRACKER_ID, DirtyKeyTracker::class)
+            ->setFactory([$factory, 'createDirtyKeyTracker'])
         ;
 
-        $container->register(ProjectionCoordinatorLeaseRepositoryInterface::class)
-            ->setFactory([$factory, 'createCoordinatorLeaseRepository'])
+        $container->register(self::COORDINATOR_LEASE_ID, CoordinatorLease::class)
+            ->setFactory([$factory, 'createCoordinatorLease'])
+        ;
+
+        $container->register(ProjectionActivity::class, ProjectionActivity::class)
+            ->setArguments([new Reference(self::DIRTY_KEY_TRACKER_ID)])
         ;
 
         $container->register(ProjectionTransactionManagerInterface::class)
@@ -65,8 +80,8 @@ final class ProjectionExtension implements ContainerExtension
         $container->register(ProjectionActivityRecorder::class, ProjectionActivityRecorder::class)
             ->setArguments([
                 new Reference(ProjectionCatalog::class),
-                new Reference(ProjectionBucketActivityRepositoryInterface::class),
-                new Reference(ProjectionCoordinatorLeaseRepositoryInterface::class),
+                new Reference(ProjectionActivity::class),
+                new Reference(self::COORDINATOR_LEASE_ID),
                 new Reference(ProjectionActivatorInterface::class),
             ])
         ;
@@ -84,7 +99,7 @@ final class ProjectionExtension implements ContainerExtension
                 new Reference(EventStore::class),
                 new Reference(ProjectionSegmentRepositoryInterface::class),
                 new Reference(ProjectionTransactionManagerInterface::class),
-                new Reference(ProjectionBucketActivityRepositoryInterface::class),
+                new Reference(ProjectionActivity::class),
             ])
         ;
 
@@ -92,8 +107,8 @@ final class ProjectionExtension implements ContainerExtension
             ->setArguments([
                 new Reference(ProjectionCatalog::class),
                 new Reference(ProjectionRunner::class),
-                new Reference(ProjectionBucketActivityRepositoryInterface::class),
-                new Reference(ProjectionCoordinatorLeaseRepositoryInterface::class),
+                new Reference(ProjectionActivity::class),
+                new Reference(self::COORDINATOR_LEASE_ID),
                 new Reference(ProjectionActivatorInterface::class),
                 new Reference(ProjectionScalingPolicyInterface::class),
             ])

@@ -13,12 +13,12 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Bundle\MapperExtension;
+use Ultra\Coordination\Lease\CoordinatorLease;
 use Ultra\Projection\Bundle\ProjectionExtension;
 use Ultra\Projection\Bundle\ProjectionImplementationInterface;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
-use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
+use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
-use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionImplementation;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
@@ -67,8 +67,8 @@ abstract class ProjectionFunctionalTestCase extends TestCase
             ->withAlias('test.projection_runner', ProjectionRunner::class)
             ->withAlias('test.projection_coordinator', ProjectionCoordinator::class)
             ->withAlias('test.projection_segments', ProjectionSegmentRepositoryInterface::class)
-            ->withAlias('test.projection_activity', ProjectionBucketActivityRepositoryInterface::class)
-            ->withAlias('test.projection_leases', ProjectionCoordinatorLeaseRepositoryInterface::class)
+            ->withAlias('test.projection_activity', ProjectionActivity::class)
+            ->withAlias('test.projection_leases', ProjectionExtension::COORDINATOR_LEASE_ID)
             ->withAlias('test.projection_activator', ProjectionActivatorInterface::class)
         ;
     }

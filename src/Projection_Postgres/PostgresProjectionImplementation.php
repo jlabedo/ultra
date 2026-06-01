@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
+use Ultra\Coordination\Lease\CoordinatorLease;
+use Ultra\Coordination\Tracking\DirtyKeyTracker;
+use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease;
+use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTracker;
 use Ultra\Projection\Bundle\ProjectionImplementationInterface;
-use Ultra\Projection\Coordination\ProjectionBucketActivityRepositoryInterface;
-use Ultra\Projection\Coordination\ProjectionCoordinatorLeaseRepositoryInterface;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
 use Ultra\Time\ClockInterface;
 use Ultra\Time\SystemClock;
 
@@ -28,14 +28,14 @@ final class PostgresProjectionImplementation implements ProjectionImplementation
         return new PostgresProjectionSegmentRepository($this->connection, $this->tablePrefix, $this->clock);
     }
 
-    public function createBucketActivityRepository(): ProjectionBucketActivityRepositoryInterface
+    public function createDirtyKeyTracker(): DirtyKeyTracker
     {
-        return new PostgresProjectionBucketActivityRepository($this->connection, $this->tablePrefix);
+        return new PostgresDirtyKeyTracker($this->connection, $this->tablePrefix.'dirty_keys');
     }
 
-    public function createCoordinatorLeaseRepository(): ProjectionCoordinatorLeaseRepositoryInterface
+    public function createCoordinatorLease(): CoordinatorLease
     {
-        return new PostgresProjectionCoordinatorLeaseRepository($this->connection, $this->tablePrefix, $this->clock);
+        return new PostgresCoordinatorLease($this->connection, $this->tablePrefix.'coordinator_lease', $this->clock);
     }
 
     public function createTransactionManager(): ProjectionTransactionManagerInterface

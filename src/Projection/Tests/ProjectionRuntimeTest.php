@@ -11,13 +11,14 @@ use Ultra\EventStore\InMemoryEventStore;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
+use Ultra\Coordination\InMemory\InMemoryCoordinatorLease;
+use Ultra\Coordination\InMemory\InMemoryDirtyKeyTracker;
+use Ultra\Coordination\Tracking\PendingKey;
 use Ultra\Projection\Coordination\DefaultProjectionScalingPolicy;
+use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
-use Ultra\Projection\Coordination\ProjectionBucketActivity;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
-use Ultra\Projection\InMemory\InMemoryProjectionBucketActivityRepository;
-use Ultra\Projection\InMemory\InMemoryProjectionCoordinatorLeaseRepository;
 use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionDefinition;
@@ -69,8 +70,8 @@ final class ProjectionRuntimeTest extends ProjectionFunctionalTestCase
         $projection = new RuntimeProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $catalog = new ProjectionCatalog($runtime);
-        $activity = new InMemoryProjectionBucketActivityRepository();
-        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
+        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
+        $leases = new InMemoryCoordinatorLease();
         $activator = new InMemoryProjectionActivator();
         $recorder = new ProjectionActivityRecorder($catalog, $activity, $leases, $activator);
 
@@ -79,7 +80,7 @@ final class ProjectionRuntimeTest extends ProjectionFunctionalTestCase
             new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math again'], ['courseId' => 'course-1']),
         ]);
 
-        $pending = $activity->pendingBucketsForSegment('runtime_projection', 0, 255);
+        $pending = $activity->pendingInSegment('runtime_projection', 0, 255);
 
         self::assertCount(1, $pending);
         self::assertSame(1, $pending[0]->counter);
@@ -90,8 +91,8 @@ final class ProjectionRuntimeTest extends ProjectionFunctionalTestCase
     public function test_activity_recorder_ignores_events_missing_the_partition_dimension(): void
     {
         $runtime = new ProjectionRuntime(new RuntimeProjection(), new UltraNormalizer());
-        $activity = new InMemoryProjectionBucketActivityRepository();
-        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
+        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
+        $leases = new InMemoryCoordinatorLease();
         $activator = new InMemoryProjectionActivator();
         $recorder = new ProjectionActivityRecorder(new ProjectionCatalog($runtime), $activity, $leases, $activator);
 
@@ -100,7 +101,7 @@ final class ProjectionRuntimeTest extends ProjectionFunctionalTestCase
             new Event('unrelated.event', [], ['courseId' => 'course-1']),
         ]);
 
-        self::assertSame([], $activity->pendingBucketsForSegment('runtime_projection', 0, 255));
+        self::assertSame([], $activity->pendingInSegment('runtime_projection', 0, 255));
         self::assertSame(0, $activator->workSignals());
     }
 
@@ -108,8 +109,8 @@ final class ProjectionRuntimeTest extends ProjectionFunctionalTestCase
     {
         $runtime = new ProjectionRuntime(new RuntimeProjection(), new UltraNormalizer());
         $secondaryRuntime = new ProjectionRuntime(new SecondaryRuntimeProjection(), new UltraNormalizer());
-        $activity = new InMemoryProjectionBucketActivityRepository();
-        $leases = new InMemoryProjectionCoordinatorLeaseRepository();
+        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
+        $leases = new InMemoryCoordinatorLease();
         $activator = new InMemoryProjectionActivator();
         $recorder = new ProjectionActivityRecorder(
             new ProjectionCatalog($runtime, $secondaryRuntime),
@@ -124,8 +125,8 @@ final class ProjectionRuntimeTest extends ProjectionFunctionalTestCase
             new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['courseId' => 'course-1']),
         ]);
 
-        $primaryPending = $activity->pendingBucketsForSegment('runtime_projection', 0, 255);
-        $secondaryPending = $activity->pendingBucketsForSegment('secondary_runtime_projection', 0, 255);
+        $primaryPending = $activity->pendingInSegment('runtime_projection', 0, 255);
+        $secondaryPending = $activity->pendingInSegment('secondary_runtime_projection', 0, 255);
 
         self::assertCount(1, $primaryPending);
         self::assertSame(1, $primaryPending[0]->counter);
@@ -160,7 +161,7 @@ final class ProjectionRuntimeTest extends ProjectionFunctionalTestCase
             'course-1' => 'Math',
             'course-2' => 'Physics',
         ], $projection->names);
-        self::assertSame([], $activity->pendingBucketsForSegment('runtime_projection', 0, 255));
+        self::assertSame([], $activity->pendingInSegment('runtime_projection', 0, 255));
     }
 
     public function test_global_coordinator_can_catch_up_multiple_projections_in_one_run(): void
@@ -188,8 +189,8 @@ final class ProjectionRuntimeTest extends ProjectionFunctionalTestCase
         self::assertSame(2, $result->processedEvents);
         self::assertSame(2, $result->acknowledgedBuckets);
         self::assertSame(['course-1' => 'Math'], $primaryProjection->names);
-        self::assertSame([], $activity->pendingBucketsForSegment('runtime_projection', 0, 255));
-        self::assertSame([], $activity->pendingBucketsForSegment('secondary_runtime_projection', 0, 255));
+        self::assertSame([], $activity->pendingInSegment('runtime_projection', 0, 255));
+        self::assertSame([], $activity->pendingInSegment('secondary_runtime_projection', 0, 255));
     }
 
     public function test_projection_catalog_tracks_constructor_and_added_runtimes(): void
@@ -245,7 +246,7 @@ final class ProjectionRuntimeTest extends ProjectionFunctionalTestCase
         $policy = new DefaultProjectionScalingPolicy();
 
         self::assertSame(0, $policy->additionalWorkersRequested(
-            [new ProjectionBucketActivity('runtime_projection', 12, 3, 1)],
+            [new PendingKey('runtime_projection', '12', 3)],
         ));
     }
 }

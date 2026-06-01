@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres\Tests;
 
 use Doctrine\DBAL\Connection;
+use Ultra\Coordination\Lease\CoordinatorLease;
+use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLeaseSchema;
+use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTrackerSchema;
 use Ultra\EventStore\EventStore;
+use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\Tests\Support\ProjectionFunctionalTestCase;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivitySchema;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorSchema;
 use Ultra\Projection_Postgres\PostgresProjectionImplementation;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
@@ -43,7 +43,7 @@ abstract class PostgresProjectionTestCase extends ProjectionFunctionalTestCase
         $eventSchema = PostgresTestSupport::schemaForImplementation($eventStorePrefix, 'query-streams');
         $projectionSchemas = [
             new PostgresProjectionSegmentSchema($projectionPrefix),
-            new PostgresProjectionBucketActivitySchema($projectionPrefix),
+            new PostgresDirtyKeyTrackerSchema($projectionPrefix.'dirty_keys'),
         ];
 
         try {
@@ -87,8 +87,8 @@ abstract class PostgresProjectionTestCase extends ProjectionFunctionalTestCase
      * @param callable(
      *     Connection,
      *     PostgresProjectionSegmentRepository,
-     *     PostgresProjectionBucketActivityRepository,
-     *     PostgresProjectionCoordinatorLeaseRepository,
+     *     ProjectionActivity,
+     *     CoordinatorLease,
      *     string
      * ): void $callback
      */
@@ -100,8 +100,8 @@ abstract class PostgresProjectionTestCase extends ProjectionFunctionalTestCase
         $projectionPrefix = 'ultra_projection_'.bin2hex(random_bytes(4)).'_';
         $schemas = [
             new PostgresProjectionSegmentSchema($projectionPrefix),
-            new PostgresProjectionCoordinatorSchema($projectionPrefix),
-            new PostgresProjectionBucketActivitySchema($projectionPrefix),
+            new PostgresCoordinatorLeaseSchema($projectionPrefix.'coordinator_lease'),
+            new PostgresDirtyKeyTrackerSchema($projectionPrefix.'dirty_keys'),
         ];
 
         try {
@@ -119,8 +119,8 @@ abstract class PostgresProjectionTestCase extends ProjectionFunctionalTestCase
             $leases = $container->projectionLeases();
 
             self::assertInstanceOf(PostgresProjectionSegmentRepository::class, $segments);
-            self::assertInstanceOf(PostgresProjectionBucketActivityRepository::class, $activity);
-            self::assertInstanceOf(PostgresProjectionCoordinatorLeaseRepository::class, $leases);
+            self::assertInstanceOf(ProjectionActivity::class, $activity);
+            self::assertInstanceOf(CoordinatorLease::class, $leases);
 
             $callback($connection, $segments, $activity, $leases, $projectionPrefix);
         } finally {
@@ -140,8 +140,8 @@ abstract class PostgresProjectionTestCase extends ProjectionFunctionalTestCase
      *     EventStore,
      *     PostgresProjectionSegmentRepository,
      *     ProjectionRunner,
-     *     PostgresProjectionBucketActivityRepository,
-     *     PostgresProjectionCoordinatorLeaseRepository,
+     *     ProjectionActivity,
+     *     CoordinatorLease,
      *     string,
      *     string
      * ): void $callback
@@ -154,8 +154,8 @@ abstract class PostgresProjectionTestCase extends ProjectionFunctionalTestCase
         $eventSchema = PostgresTestSupport::schemaForImplementation($eventStorePrefix, 'query-streams');
         $schemas = [
             new PostgresProjectionSegmentSchema($projectionPrefix),
-            new PostgresProjectionCoordinatorSchema($projectionPrefix),
-            new PostgresProjectionBucketActivitySchema($projectionPrefix),
+            new PostgresCoordinatorLeaseSchema($projectionPrefix.'coordinator_lease'),
+            new PostgresDirtyKeyTrackerSchema($projectionPrefix.'dirty_keys'),
         ];
 
         try {
@@ -180,8 +180,8 @@ abstract class PostgresProjectionTestCase extends ProjectionFunctionalTestCase
             $leaseRepository = $container->projectionLeases();
 
             self::assertInstanceOf(PostgresProjectionSegmentRepository::class, $segmentRepository);
-            self::assertInstanceOf(PostgresProjectionBucketActivityRepository::class, $activityRepository);
-            self::assertInstanceOf(PostgresProjectionCoordinatorLeaseRepository::class, $leaseRepository);
+            self::assertInstanceOf(ProjectionActivity::class, $activityRepository);
+            self::assertInstanceOf(CoordinatorLease::class, $leaseRepository);
 
             $callback(
                 $connection,

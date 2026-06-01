@@ -123,7 +123,7 @@ final class ProjectionExtensionTest extends ProjectionFunctionalTestCase
             ),
         ]);
 
-        $pending = $activity->pendingBucketsForSegment('stub_projection', 0, 255);
+        $pending = $activity->pendingInSegment('stub_projection', 0, 255);
 
         self::assertCount(1, $pending);
         self::assertSame(1, $pending[0]->counter);

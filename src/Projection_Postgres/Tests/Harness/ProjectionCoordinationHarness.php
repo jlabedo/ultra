@@ -32,10 +32,11 @@ use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivitySchema;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorSchema;
+use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease;
+use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLeaseSchema;
+use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTracker;
+use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTrackerSchema;
+use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
@@ -112,8 +113,8 @@ final class ProjectionCoordinationHarness
         $connection = self::connection($dsn);
         $eventStore = new PostgresEventStoreQueryStreams($connection, $eventStorePrefix);
         $segments = new PostgresProjectionSegmentRepository($connection, $projectionPrefix);
-        $activity = new PostgresProjectionBucketActivityRepository($connection, $projectionPrefix);
-        $leases = new PostgresProjectionCoordinatorLeaseRepository($connection, $projectionPrefix);
+        $activity = new ProjectionActivity(new PostgresDirtyKeyTracker($connection, $projectionPrefix.'dirty_keys'));
+        $leases = new PostgresCoordinatorLease($connection, $projectionPrefix.'coordinator_lease');
         $runtime = self::runtime($connection, $projectionPrefix);
         $catalog = new ProjectionCatalog($runtime);
         $runner = new ProjectionRunner($eventStore, $segments, new PostgresProjectionTransactionManager($connection), $activity);
@@ -157,8 +158,8 @@ final class ProjectionCoordinationHarness
         return [
             new PostgresEventStoreQueryStreamsSchema($eventStorePrefix),
             new PostgresProjectionSegmentSchema($projectionPrefix),
-            new PostgresProjectionCoordinatorSchema($projectionPrefix),
-            new PostgresProjectionBucketActivitySchema($projectionPrefix),
+            new PostgresCoordinatorLeaseSchema($projectionPrefix.'coordinator_lease'),
+            new PostgresDirtyKeyTrackerSchema($projectionPrefix.'dirty_keys'),
         ];
     }
 
@@ -229,7 +230,7 @@ final class SeedProjectionEventsCommand extends Command
 
     public function __construct(
         private readonly PostgresEventStoreQueryStreams $eventStore,
-        private readonly PostgresProjectionBucketActivityRepository $activity,
+        private readonly ProjectionActivity $activity,
     ) {
         parent::__construct('harness:projection-seed');
     }
@@ -475,7 +476,7 @@ final class RunProjectionHarnessCommand extends Command
         ));
         $pendingBuckets = (int) $this->connection->fetchOne(sprintf(
             'SELECT count(*) FROM %s WHERE counter > 0',
-            $this->projectionPrefix.'bucket_activity',
+            $this->projectionPrefix.'dirty_keys',
         ));
 
         $output->writeln(sprintf('Projected rows: %d', $projectedRows));

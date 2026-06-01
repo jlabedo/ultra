@@ -12,8 +12,8 @@ use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\ProjectionRunner;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionBucketActivityRepository;
-use Ultra\Projection_Postgres\Coordination\PostgresProjectionCoordinatorLeaseRepository;
+use Ultra\Coordination\Lease\CoordinatorLease;
+use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\Tests\Harness\ProjectionCoordinationHarness;
 use Ultra\Testing\PostgresTestSupport;
@@ -64,7 +64,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
                 $eventStorePrefix,
             )));
             self::assertSame(12, (int) $connection->fetchOne(sprintf(
-                'SELECT count(*) FROM %sbucket_activity WHERE counter > 0',
+                'SELECT count(*) FROM %sdirty_keys WHERE counter > 0',
                 $projectionPrefix,
             )));
 
@@ -95,7 +95,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
             )));
             self::assertSame(12, (int) $connection->fetchOne(sprintf(
                 'SELECT count(*) FROM %s WHERE counter > 0',
-                $projectionPrefix.'bucket_activity',
+                $projectionPrefix.'dirty_keys',
             )));
         } finally {
             PostgresTestSupport::resetSharedConnection($connection);
@@ -120,8 +120,8 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
             EventStore $store,
             PostgresProjectionSegmentRepository $segmentRepository,
             ProjectionRunner $runner,
-            PostgresProjectionBucketActivityRepository $activityRepository,
-            PostgresProjectionCoordinatorLeaseRepository $leaseRepository,
+            ProjectionActivity $activityRepository,
+            CoordinatorLease $leaseRepository,
             string $eventStorePrefix,
             string $projectionPrefix,
         ): void {
@@ -139,7 +139,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
 
             self::assertSame(0, $seedCode, $seedOutput);
             self::assertStringContainsString('Seeded 32 projection events in batches of 1000.', $seedOutput);
-            self::assertNotSame([], $activityRepository->affectedBuckets());
+            self::assertNotSame([], $activityRepository->affected());
 
             [$backfillCode, $backfillOutput] = $this->runHarnessCommand($application, [
                 'command' => 'harness:projection-backfill',
@@ -150,7 +150,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
 
             self::assertSame(0, $backfillCode, $backfillOutput);
             self::assertGreaterThanOrEqual(1, substr_count($backfillOutput, 'worker=process-backfill-worker-'));
-            self::assertNotSame([], $activityRepository->affectedBuckets());
+            self::assertNotSame([], $activityRepository->affected());
 
             $rows = $connection->fetchAllAssociative(sprintf(
                 'SELECT course_id, name FROM %s ORDER BY course_id ASC',
