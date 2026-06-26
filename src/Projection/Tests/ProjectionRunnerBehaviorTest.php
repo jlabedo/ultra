@@ -326,7 +326,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentStore();
         $runner = new ProjectionRunner($eventStore, $segments);
-        $topology = new ProjectionTopology($eventStore, $segments);
+        $topology = new ProjectionTopology($eventStore, $segments, $segments);
         $leftCourseId = self::courseIdInBucketRange(0, 127);
         $rightCourseId = self::courseIdInBucketRange(128, 255);
 
@@ -360,7 +360,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $runtime = new ProjectionRuntime(new TrackingProjection(), new UltraNormalizer());
         $segments = new InMemoryProjectionSegmentStore();
         $runner = new ProjectionRunner(new InMemoryEventStore(), $segments);
-        $topology = new ProjectionTopology(new InMemoryEventStore(), $segments);
+        $topology = new ProjectionTopology(new InMemoryEventStore(), $segments, $segments);
 
         $runner->ensureInitialized($runtime);
         $topology->split('tracking_projection', 0);

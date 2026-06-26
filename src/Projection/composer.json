@@ -21,8 +21,7 @@
         "ultra/time": "self.version"
     },
     "suggest": {
-        "ultra/message-handling": "Enables mediator-based projection worker activation.",
-        "ultra/message-handling-compiler": "Compiles the optional projection message handlers for Symfony applications."
+        "symfony/process": "Enables projection:backfill to spawn process workers for harness backfills."
     },
     "autoload": {
         "psr-4": {

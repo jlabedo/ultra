@@ -119,6 +119,18 @@ Important details:
 Explicit rebuilds should not depend on signals. Use `ProjectionRunner::backfillClaimedOnce()` for claimed
 segments that must be replayed from their checkpoints regardless of whether activity hints exist.
 
+### Backfill Harness
+
+`projection:backfill <projection-id> --workers=N` reshapes the projection to `N` canonical balanced segments and
+spawns one PHP process per segment. `N` must be one of `1, 2, 4, 8, 16, 32, 64, 128, 256`.
+
+The parent command fails before reshaping if any segment is currently claimed. It does not touch Signal rows.
+
+Each child process runs `projection:backfill:segment <projection-id> <bucket-from>` and drains that one segment with
+`ProjectionRunner::backfillClaimedOnce()` until caught up.
+
+The process harness requires `symfony/process`, which is suggested but not required by the package.
+
 ### Signal Handling
 
 [ProjectionSignalHandler.php](Signal/ProjectionSignalHandler.php) is registered once per discovered projection when

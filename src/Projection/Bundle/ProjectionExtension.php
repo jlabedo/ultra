@@ -10,6 +10,10 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\Container\ContainerExtension;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\Attribute\Projection;
+use Ultra\Projection\Backfill\ProcessProjectionBackfillExecutor;
+use Ultra\Projection\Backfill\ProjectionBackfillExecutorInterface;
+use Ultra\Projection\Bundle\Command\BackfillProjectionCommand;
+use Ultra\Projection\Bundle\Command\BackfillProjectionSegmentCommand;
 use Ultra\Projection\Bundle\Command\ListSegmentsCommand;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionSignalHandlerCompilerPass;
@@ -71,9 +75,31 @@ final class ProjectionExtension implements ContainerExtension
         $container->register(ProjectionTopology::class, ProjectionTopology::class)
             ->setArguments([
                 new Reference(EventStore::class),
+                new Reference(ProjectionSegmentStoreInterface::class),
                 new Reference(ProjectionTopologyStoreInterface::class),
                 new Reference(ProjectionTransactionManagerInterface::class),
             ])
+        ;
+
+        $container->register(ProcessProjectionBackfillExecutor::class, ProcessProjectionBackfillExecutor::class);
+        $container->setAlias(ProjectionBackfillExecutorInterface::class, ProcessProjectionBackfillExecutor::class);
+
+        $container->register(BackfillProjectionCommand::class, BackfillProjectionCommand::class)
+            ->setArguments([
+                new Reference(ProjectionCatalog::class),
+                new Reference(ProjectionRunner::class),
+                new Reference(ProjectionTopology::class),
+                new Reference(ProjectionBackfillExecutorInterface::class),
+            ])
+            ->addTag('console.command')
+        ;
+
+        $container->register(BackfillProjectionSegmentCommand::class, BackfillProjectionSegmentCommand::class)
+            ->setArguments([
+                new Reference(ProjectionCatalog::class),
+                new Reference(ProjectionRunner::class),
+            ])
+            ->addTag('console.command')
         ;
 
         $container->register(ListSegmentsCommand::class, ListSegmentsCommand::class)
