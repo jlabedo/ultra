@@ -13,6 +13,7 @@ use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Signal\SignalHandler;
 use Ultra\Testing\UltraLightContainer;
 
 final readonly class ProjectionTestContainer extends UltraLightContainer
@@ -60,5 +61,13 @@ final readonly class ProjectionTestContainer extends UltraLightContainer
     public function projectionActivator(): ProjectionActivatorInterface
     {
         return $this->get('test.projection_activator');
+    }
+
+    /**
+     * @return list<SignalHandler>
+     */
+    public function projectionSignalHandlers(): array
+    {
+        return $this->get('test.projection_signal_handlers')->all();
     }
 }

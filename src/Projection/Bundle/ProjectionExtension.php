@@ -16,6 +16,7 @@ use Ultra\Projection\Bundle\Command\ListSegmentsCommand;
 use Ultra\Projection\Bundle\Command\ProjectionWorkerCommand;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\MessageHandlingProjectionActivatorPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
+use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionSignalHandlerCompilerPass;
 use Ultra\Projection\Coordination\DefaultProjectionScalingPolicy;
 use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionActivityEventStore;
@@ -29,6 +30,8 @@ use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
+use Ultra\Projection\Signal\ProjectionSignalEventStore;
+use Ultra\Signal\SignalStore;
 
 final class ProjectionExtension implements ContainerExtension
 {
@@ -40,6 +43,10 @@ final class ProjectionExtension implements ContainerExtension
 
     public function build(ContainerBuilder $container): void
     {
+
+        if (!$container->hasParameter('ultra.projection.signal_worker_id')) {
+            $container->setParameter('ultra.projection.signal_worker_id', 'projection-signal');
+        }
 
         $container->registerAttributeForAutoconfiguration(
             Projection::class,
@@ -77,22 +84,33 @@ final class ProjectionExtension implements ContainerExtension
         $container->register(ProjectionActivatorInterface::class, InMemoryProjectionActivator::class);
         $container->register(ProjectionScalingPolicyInterface::class, DefaultProjectionScalingPolicy::class);
 
-        $container->register(ProjectionActivityRecorder::class, ProjectionActivityRecorder::class)
-            ->setArguments([
-                new Reference(ProjectionCatalog::class),
-                new Reference(ProjectionActivity::class),
-                new Reference(self::COORDINATOR_LEASE_ID),
-                new Reference(ProjectionActivatorInterface::class),
-            ])
-        ;
+        if (interface_exists(SignalStore::class) && $container->has(SignalStore::class)) {
+            $container->register(ProjectionSignalEventStore::class, ProjectionSignalEventStore::class)
+                ->setDecoratedService(EventStore::class, null, 100)
+                ->setArguments([
+                    new Reference(ProjectionSignalEventStore::class.'.inner'),
+                    new Reference(ProjectionCatalog::class),
+                    new Reference(SignalStore::class),
+                ])
+            ;
+        } else {
+            $container->register(ProjectionActivityRecorder::class, ProjectionActivityRecorder::class)
+                ->setArguments([
+                    new Reference(ProjectionCatalog::class),
+                    new Reference(ProjectionActivity::class),
+                    new Reference(self::COORDINATOR_LEASE_ID),
+                    new Reference(ProjectionActivatorInterface::class),
+                ])
+            ;
 
-        $container->register(ProjectionActivityEventStore::class, ProjectionActivityEventStore::class)
-            ->setDecoratedService(EventStore::class, null, 100)
-            ->setArguments([
-                new Reference(ProjectionActivityEventStore::class.'.inner'),
-                new Reference(ProjectionActivityRecorder::class),
-            ])
-        ;
+            $container->register(ProjectionActivityEventStore::class, ProjectionActivityEventStore::class)
+                ->setDecoratedService(EventStore::class, null, 100)
+                ->setArguments([
+                    new Reference(ProjectionActivityEventStore::class.'.inner'),
+                    new Reference(ProjectionActivityRecorder::class),
+                ])
+            ;
+        }
 
         $container->register(ProjectionRunner::class, ProjectionRunner::class)
             ->setArguments([
@@ -127,6 +145,7 @@ final class ProjectionExtension implements ContainerExtension
         $this->registerMessageHandlingIntegration($container);
 
         $container->addCompilerPass(new ProjectionCompilerPass());
+        $container->addCompilerPass(new ProjectionSignalHandlerCompilerPass());
         $container->addCompilerPass(new MessageHandlingProjectionActivatorPass());
     }
 
