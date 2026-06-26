@@ -6,12 +6,13 @@ namespace Ultra\Projection\InMemory;
 
 use Ultra\EventStore\Checkpoint;
 use Ultra\Projection\ProjectionSegment;
-use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Projection\ProjectionSegmentStoreInterface;
+use Ultra\Projection\ProjectionTopologyStoreInterface;
 use Ultra\Time\ClockInterface;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
 
-final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepositoryInterface
+final class InMemoryProjectionSegmentStore implements ProjectionSegmentStoreInterface, ProjectionTopologyStoreInterface
 {
     /** @var array<string, array<int, array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|int}>> */
     private array $segments = [];

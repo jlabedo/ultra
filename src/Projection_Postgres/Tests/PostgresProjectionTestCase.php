@@ -7,9 +7,10 @@ namespace Ultra\Projection_Postgres\Tests;
 use Doctrine\DBAL\Connection;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionTopology;
 use Ultra\Projection\Tests\Support\ProjectionFunctionalTestCase;
 use Ultra\Projection_Postgres\PostgresProjectionImplementation;
-use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
+use Ultra\Projection_Postgres\PostgresProjectionSegmentStore;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use Ultra\Testing\PostgresTestSupport;
 use Ultra\Time\ClockInterface;
@@ -29,7 +30,7 @@ abstract class PostgresProjectionTestCase extends ProjectionFunctionalTestCase
     }
 
     /**
-     * @param callable(Connection, EventStore, PostgresProjectionSegmentRepository, ProjectionRunner, string, string): void $callback
+     * @param callable(Connection, EventStore, PostgresProjectionSegmentStore, ProjectionRunner, ProjectionTopology, string, string): void $callback
      */
     protected function withPostgresProjectionRuntime(callable $callback, ClockInterface $clock = new SystemClock()): void
     {
@@ -59,10 +60,11 @@ abstract class PostgresProjectionTestCase extends ProjectionFunctionalTestCase
             )->boot();
             $segmentRepository = $container->projectionSegments();
             $runner = $container->projectionRunner();
+            $topology = $container->projectionTopology();
 
-            self::assertInstanceOf(PostgresProjectionSegmentRepository::class, $segmentRepository);
+            self::assertInstanceOf(PostgresProjectionSegmentStore::class, $segmentRepository);
 
-            $callback($connection, $store, $segmentRepository, $runner, $eventStorePrefix, $projectionPrefix);
+            $callback($connection, $store, $segmentRepository, $runner, $topology, $eventStorePrefix, $projectionPrefix);
         } finally {
             PostgresTestSupport::resetSharedConnection($connection);
 

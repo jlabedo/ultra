@@ -60,7 +60,7 @@ from a claimed signal hint.
 
 [ProjectionRunner.php](ProjectionRunner.php) is the low-level executor.
 
-It works with an `EventStore` and a [ProjectionSegmentRepositoryInterface.php](ProjectionSegmentRepositoryInterface.php).
+It works with an `EventStore` and a [ProjectionSegmentStoreInterface.php](ProjectionSegmentStoreInterface.php).
 
 Its job is:
 
@@ -74,14 +74,12 @@ Its job is:
 8. release the segment with the new checkpoint
 9. commit the projection transaction
 10. abandon the segment if the transaction fails
-11. finalize split/merge operations when needed
 
-The segment repository owns runtime state such as:
+The segment store owns runtime state such as:
 
 - current bucket range
 - checkpoint
 - lease state
-- pending split/merge operations
 
 Segments are represented by [ProjectionSegment.php](ProjectionSegment.php).
 
@@ -89,7 +87,7 @@ Segments are represented by [ProjectionSegment.php](ProjectionSegment.php).
 The default [NoOpProjectionTransactionManager.php](NoOpProjectionTransactionManager.php) keeps in-memory and custom
 storage usage lightweight. Postgres-backed read models should wire the DBAL-based transaction manager from
 `src/Projection_Postgres` with the same connection used by projection read-model repositories and the segment
-repository. This makes event application, `#[ProjectionFlush]`, and checkpoint advancement commit or roll back as
+store. This makes event application, `#[ProjectionFlush]`, and checkpoint advancement commit or roll back as
 one unit. First-time segment creation and `#[ProjectionInitializer]` execution are also wrapped together in the
 same transaction manager. Projection deletion likewise wraps `#[ProjectionResetter]` execution and segment-state
 deletion together.
@@ -114,7 +112,7 @@ It:
 Important details:
 
 - signals are hints for liveness and scheduling, not the source of truth for correctness
-- progress still comes from segment checkpoints in the segment repository
+- progress still comes from segment checkpoints in the segment store
 - signal recording is deduplicated per append batch, so one append touching the same bucket many times emits one hint
 - writers do not coalesce against existing Signal rows
 
@@ -138,7 +136,7 @@ bucket in an old split segment maps to the currently active segment.
 
 `ProjectionRunner::runSignaledOnce()`:
 
-1. claims the projection segment through `ProjectionSegmentRepositoryInterface`
+1. claims the projection segment through `ProjectionSegmentStoreInterface`
 2. captures a Signal visibility snapshot after acquiring the segment claim
 3. best-effort suppresses dispatch for the covered bucket range
 4. loads and applies matching events from the segment checkpoint
@@ -147,18 +145,27 @@ bucket in an old split segment maps to the currently active segment.
 7. completes or releases the segment claim
 
 Scaling is an infrastructure concern: run more Signal pollers. Duplicate signal delivery and duplicate segment-claim
-attempts are expected; the segment repository prevents duplicate expensive processing for the same segment.
+attempts are expected; the segment store prevents duplicate expensive processing for the same segment.
 
 ### Topology Changes
 
-Split and merge operations update segment topology only. They do not create or delete Signal rows. Existing Signal
-rows are interpreted against the current topology when a handler receives them.
+[ProjectionTopology.php](ProjectionTopology.php) owns split and merge operations.
+
+Split is a pure topology mutation. It immediately replaces a segment with two child segments and invalidates any
+active claim on the parent.
+
+Merge takes ownership of the covered segments, drains slower segments to the highest covered checkpoint, then
+replaces the covered range with one segment. The core API is strict: missing segments, minimum-size splits, and
+non-contiguous merge ranges throw.
+
+Topology changes do not create or delete Signal rows. Existing Signal rows are interpreted against the current
+topology when a handler receives them.
 
 ## In-Memory Implementations
 
 This package includes in-memory adapters for tests and local composition:
 
-- [InMemoryProjectionSegmentRepository.php](InMemoryProjectionSegmentRepository.php)
+- [InMemoryProjectionSegmentStore.php](InMemoryProjectionSegmentStore.php)
 
 These are useful for:
 

@@ -15,7 +15,9 @@ use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionSignalHandlerCompilerPass;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
-use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Projection\ProjectionSegmentStoreInterface;
+use Ultra\Projection\ProjectionTopology;
+use Ultra\Projection\ProjectionTopologyStoreInterface;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
 use Ultra\Projection\Signal\ProjectionSignalEventStore;
 use Ultra\Signal\SignalStore;
@@ -38,9 +40,10 @@ final class ProjectionExtension implements ContainerExtension
 
         $factory = new Reference(ProjectionImplementationInterface::class);
 
-        $container->register(ProjectionSegmentRepositoryInterface::class)
-            ->setFactory([$factory, 'createSegmentRepository'])
+        $container->register(ProjectionSegmentStoreInterface::class)
+            ->setFactory([$factory, 'createSegmentStore'])
         ;
+        $container->setAlias(ProjectionTopologyStoreInterface::class, ProjectionSegmentStoreInterface::class);
 
         $container->register(ProjectionTransactionManagerInterface::class)
             ->setFactory([$factory, 'createTransactionManager'])
@@ -60,13 +63,21 @@ final class ProjectionExtension implements ContainerExtension
         $container->register(ProjectionRunner::class, ProjectionRunner::class)
             ->setArguments([
                 new Reference(EventStore::class),
-                new Reference(ProjectionSegmentRepositoryInterface::class),
+                new Reference(ProjectionSegmentStoreInterface::class),
+                new Reference(ProjectionTransactionManagerInterface::class),
+            ])
+        ;
+
+        $container->register(ProjectionTopology::class, ProjectionTopology::class)
+            ->setArguments([
+                new Reference(EventStore::class),
+                new Reference(ProjectionTopologyStoreInterface::class),
                 new Reference(ProjectionTransactionManagerInterface::class),
             ])
         ;
 
         $container->register(ListSegmentsCommand::class, ListSegmentsCommand::class)
-            ->setArguments([new Reference(ProjectionSegmentRepositoryInterface::class)])
+            ->setArguments([new Reference(ProjectionSegmentStoreInterface::class)])
             ->addTag('console.command')
         ;
 

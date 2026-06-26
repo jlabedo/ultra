@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Sequence;
-use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
+use Ultra\Projection\InMemory\InMemoryProjectionSegmentStore;
 use Ultra\Projection\ProjectionSegment;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
@@ -16,13 +16,13 @@ use Ultra\Time\StatickClock;
 /**
  * @internal
  */
-#[CoversClass(InMemoryProjectionSegmentRepository::class)]
+#[CoversClass(InMemoryProjectionSegmentStore::class)]
 #[CoversClass(ProjectionSegment::class)]
-final class InMemoryProjectionSegmentRepositoryTest extends TestCase
+final class InMemoryProjectionSegmentStoreTest extends TestCase
 {
     public function test_split_of_an_available_segment_creates_two_children_immediately(): void
     {
-        $repository = new InMemoryProjectionSegmentRepository();
+        $repository = new InMemoryProjectionSegmentStore();
         $repository->ensureInitialized('courses');
 
         $repository->splitSegment('courses', 0);
@@ -39,7 +39,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
     public function test_ensure_initialized_returns_false_when_the_projection_already_exists(): void
     {
-        $repository = new InMemoryProjectionSegmentRepository();
+        $repository = new InMemoryProjectionSegmentStore();
 
         self::assertTrue($repository->ensureInitialized('courses'));
         self::assertFalse($repository->ensureInitialized('courses'));
@@ -52,7 +52,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
     public function test_split_of_an_active_claim_is_taken_from_the_worker_immediately(): void
     {
-        $repository = new InMemoryProjectionSegmentRepository();
+        $repository = new InMemoryProjectionSegmentStore();
         $repository->ensureInitialized('courses');
         $segment = $repository->claimSegment('courses', 0, 'worker-1');
         self::assertNotNull($segment);
@@ -78,7 +78,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
     public function test_take_segments_for_range_steals_active_claims_before_merge_replacement(): void
     {
-        $repository = new InMemoryProjectionSegmentRepository();
+        $repository = new InMemoryProjectionSegmentStore();
         $repository->ensureInitialized('courses');
         $repository->splitSegment('courses', 0);
         $left = $repository->claimSegment('courses', 0, 'worker-left');
@@ -107,7 +107,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
     public function test_replace_segments_with_merged_segment_rejects_ranges_that_are_not_fully_covered(): void
     {
-        $repository = new InMemoryProjectionSegmentRepository();
+        $repository = new InMemoryProjectionSegmentStore();
         $repository->ensureInitialized('courses');
         $repository->splitSegment('courses', 0);
 
@@ -118,7 +118,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
 
     public function test_claim_segment_returns_null_when_the_segment_is_not_available(): void
     {
-        $repository = new InMemoryProjectionSegmentRepository();
+        $repository = new InMemoryProjectionSegmentStore();
         $repository->ensureInitialized('courses');
 
         self::assertNotNull($repository->claimSegment('courses', 0, 'worker-1'));
@@ -139,7 +139,7 @@ final class InMemoryProjectionSegmentRepositoryTest extends TestCase
     public function test_expired_claims_are_recovered_against_the_injected_clock(): void
     {
         $clock = new StatickClock(new \DateTimeImmutable('2024-01-01T00:00:00+00:00'));
-        $repository = new InMemoryProjectionSegmentRepository($clock);
+        $repository = new InMemoryProjectionSegmentStore($clock);
         $repository->ensureInitialized('courses');
 
         self::assertNotNull($repository->claimSegment('courses', 0, 'worker-1', Duration::seconds(30)));

@@ -7,7 +7,7 @@ namespace Ultra\Projection;
 use Ultra\EventStore\Checkpoint;
 use Ultra\Time\Duration;
 
-interface ProjectionSegmentRepositoryInterface
+interface ProjectionSegmentStoreInterface
 {
     public function ensureInitialized(string $projectionId): bool;
 
@@ -31,21 +31,6 @@ interface ProjectionSegmentRepositoryInterface
     public function releaseClaimedSegment(ProjectionSegment $segment, string $workerId): void;
 
     public function recoverExpiredClaims(string $projectionId): int;
-
-    public function splitSegment(string $projectionId, int $bucketFrom): void;
-
-    /**
-     * @return list<ProjectionSegment>
-     */
-    public function takeSegmentsForRange(
-        string $projectionId,
-        int $bucketFrom,
-        int $bucketTo,
-        string $ownerId,
-        Duration $leaseDuration = new Duration(seconds: 60),
-    ): array;
-
-    public function replaceSegmentsWithMergedSegment(string $projectionId, int $bucketFrom, int $bucketTo, Checkpoint $checkpoint): void;
 
     /** @return list<ProjectionSegment> */
     public function listSegments(string $projectionId): array;

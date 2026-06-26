@@ -18,10 +18,11 @@ use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Attribute\ProjectionResetter;
-use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
+use Ultra\Projection\InMemory\InMemoryProjectionSegmentStore;
 use Ultra\Projection\NoOpProjectionTransactionManager;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\ProjectionTopology;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
 
 #[EventAttribute('runner.course.created')]
@@ -115,7 +116,7 @@ final class RecordingProjectionTransactionManager implements ProjectionTransacti
     public array $events = [];
 
     public function __construct(
-        private readonly ?InMemoryProjectionSegmentRepository $segments = null,
+        private readonly ?InMemoryProjectionSegmentStore $segments = null,
     ) {}
 
     public function transactional(callable $operation): mixed
@@ -170,7 +171,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $projection = new TrackingProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $transactions = new RecordingProjectionTransactionManager();
         $runner = new ProjectionRunner($eventStore, $segments, $transactions);
 
@@ -190,7 +191,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
     {
         $runtime = new ProjectionRuntime(new FailingInitializerProjection(), new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $transactions = new RecordingProjectionTransactionManager($segments);
         $runner = new ProjectionRunner($eventStore, $segments, $transactions);
 
@@ -210,7 +211,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $projection = new TrackingProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $transactions = new RecordingProjectionTransactionManager();
         $runner = new ProjectionRunner($eventStore, $segments, $transactions);
 
@@ -230,7 +231,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
     {
         $runtime = new ProjectionRuntime(new FailingResetterProjection(), new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $transactions = new RecordingProjectionTransactionManager($segments);
         $runner = new ProjectionRunner($eventStore, $segments, $transactions);
 
@@ -250,11 +251,11 @@ final class ProjectionRunnerBehaviorTest extends TestCase
     public function test_backfill_claimed_once_claims_only_its_own_worker_segment(): void
     {
         $runtime = new ProjectionRuntime(new TrackingProjection(), new UltraNormalizer());
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $runner = new ProjectionRunner(new InMemoryEventStore(), $segments);
 
         $runner->ensureInitialized($runtime);
-        self::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
+        self::assertNotNull($segments->claimSegment('tracking_projection', 0, 'worker-1'));
 
         $result = $runner->backfillClaimedOnce(
             $runtime,
@@ -272,7 +273,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $projection = new TrackingProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $runner = new ProjectionRunner($eventStore, $segments);
 
         $eventStore->append([
@@ -299,14 +300,14 @@ final class ProjectionRunnerBehaviorTest extends TestCase
     {
         $runtime = new ProjectionRuntime(new FailingTrackingProjection(), new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $runner = new ProjectionRunner($eventStore, $segments);
 
         $eventStore->append([
             self::courseCreatedEvent('course-1', 'Math'),
         ]);
         $runner->ensureInitialized($runtime);
-        self::assertNotNull($runner->claimSegment('failing_tracking_projection', 0, 'worker-1'));
+        self::assertNotNull($segments->claimSegment('failing_tracking_projection', 0, 'worker-1'));
 
         try {
             $runner->backfillClaimedOnce($runtime, 'failing_tracking_projection', 0, 'worker-1', limit: 10);
@@ -323,8 +324,9 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $projection = new TrackingProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $runner = new ProjectionRunner($eventStore, $segments);
+        $topology = new ProjectionTopology($eventStore, $segments);
         $leftCourseId = self::courseIdInBucketRange(0, 127);
         $rightCourseId = self::courseIdInBucketRange(128, 255);
 
@@ -334,21 +336,21 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         ]);
 
         $runner->ensureInitialized($runtime);
-        $runner->splitSegment('tracking_projection', 0);
-        self::assertNotNull($runner->claimSegment('tracking_projection', 128, 'worker-right'));
+        $topology->split('tracking_projection', 0);
+        self::assertNotNull($segments->claimSegment('tracking_projection', 128, 'worker-right'));
 
         $runner->backfillClaimedOnce($runtime, 'tracking_projection', 128, 'worker-right', limit: 10);
 
         self::assertSame([$rightCourseId => 'Science'], $projection->names);
 
-        $runner->mergeSegments($runtime, 0, 255, 'coordinator-1', limit: 1);
+        $topology->merge($runtime, 0, 255, 'coordinator-1', limit: 1);
 
         self::assertSame([
             $rightCourseId => 'Science',
             $leftCourseId => 'Math',
         ], $projection->names);
 
-        $merged = $runner->claimSegment('tracking_projection', 0, 'worker-merged');
+        $merged = $segments->claimSegment('tracking_projection', 0, 'worker-merged');
         self::assertNotNull($merged);
         self::assertSame(2, $merged->checkpoint->gapFloor->value);
     }
@@ -356,22 +358,23 @@ final class ProjectionRunnerBehaviorTest extends TestCase
     public function test_merge_segments_combines_gap_sequence_numbers_when_checkpoint_floors_are_equal(): void
     {
         $runtime = new ProjectionRuntime(new TrackingProjection(), new UltraNormalizer());
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $runner = new ProjectionRunner(new InMemoryEventStore(), $segments);
+        $topology = new ProjectionTopology(new InMemoryEventStore(), $segments);
 
         $runner->ensureInitialized($runtime);
-        $runner->splitSegment('tracking_projection', 0);
-        $left = $runner->claimSegment('tracking_projection', 0, 'worker-left');
-        $right = $runner->claimSegment('tracking_projection', 128, 'worker-right');
+        $topology->split('tracking_projection', 0);
+        $left = $segments->claimSegment('tracking_projection', 0, 'worker-left');
+        $right = $segments->claimSegment('tracking_projection', 128, 'worker-right');
         self::assertNotNull($left);
         self::assertNotNull($right);
 
         $segments->completeClaimedSegment($left, new Checkpoint(new Sequence(10), [new Sequence(12)]), 'worker-left', true);
         $segments->completeClaimedSegment($right, new Checkpoint(new Sequence(10), [new Sequence(13)]), 'worker-right', true);
 
-        $runner->mergeSegments($runtime, 0, 255, 'coordinator-1');
+        $topology->merge($runtime, 0, 255, 'coordinator-1');
 
-        $merged = $runner->claimSegment('tracking_projection', 0, 'worker-merged');
+        $merged = $segments->claimSegment('tracking_projection', 0, 'worker-merged');
         self::assertNotNull($merged);
         self::assertSame(10, $merged->checkpoint->gapFloor->value);
         self::assertSame([12, 13], $merged->checkpoint->gapSeqNoValues());
@@ -382,7 +385,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $projection = new TrackingProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $runner = new ProjectionRunner($eventStore, $segments);
 
         $eventStore->append([
@@ -421,7 +424,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $projection = new TrackingProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $runner = new ProjectionRunner($eventStore, $segments);
 
         $eventStore->append([
@@ -442,7 +445,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
     {
         $projection = new TrackingProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
-        $runner = new ProjectionRunner(new InMemoryEventStore(), new InMemoryProjectionSegmentRepository());
+        $runner = new ProjectionRunner(new InMemoryEventStore(), new InMemoryProjectionSegmentStore());
 
         self::assertSame(0, $runner->replayFromBeginning($runtime));
         self::assertSame([], $projection->names);

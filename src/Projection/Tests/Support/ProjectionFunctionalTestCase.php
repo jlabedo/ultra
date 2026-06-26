@@ -19,7 +19,8 @@ use Ultra\Projection\Bundle\ProjectionImplementationInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionImplementation;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
-use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Projection\ProjectionSegmentStoreInterface;
+use Ultra\Projection\ProjectionTopology;
 use Ultra\Signal\SignalExtension;
 use Ultra\Signal\SignalPoller;
 use Ultra\Signal\TagNames;
@@ -79,7 +80,8 @@ abstract class ProjectionFunctionalTestCase extends TestCase
             ->withAlias('test.normalizer', UltraNormalizer::class)
             ->withAlias('test.projection_catalog', ProjectionCatalog::class)
             ->withAlias('test.projection_runner', ProjectionRunner::class)
-            ->withAlias('test.projection_segments', ProjectionSegmentRepositoryInterface::class)
+            ->withAlias('test.projection_segments', ProjectionSegmentStoreInterface::class)
+            ->withAlias('test.projection_topology', ProjectionTopology::class)
             ->withExtension(new class implements ContainerExtension {
                 public function build(ContainerBuilder $container): void
                 {

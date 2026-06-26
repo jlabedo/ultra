@@ -15,9 +15,10 @@ use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\ProjectionTopology;
 use Ultra\Projection_Postgres\PostgresProjectionImplementation;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
-use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
+use Ultra\Projection_Postgres\PostgresProjectionSegmentStore;
 use Ultra\Signal_Postgres\PostgresSignalSchema;
 use Ultra\Testing\PostgresTestSupport;
 use Ultra\Time\Duration;
@@ -167,8 +168,9 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
         $this->withPostgresProjectionRuntime(function (
             Connection $connection,
             EventStore $store,
-            PostgresProjectionSegmentRepository $segmentRepository,
+            PostgresProjectionSegmentStore $segmentRepository,
             ProjectionRunner $runner,
+            ProjectionTopology $topology,
             string $eventStorePrefix,
             string $projectionPrefix,
         ): void {
@@ -193,7 +195,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             );
 
             $runner->ensureInitialized($runtime);
-            self::assertNotNull($runner->claimSegment('course_names', 0, 'worker-1'));
+            self::assertNotNull($segmentRepository->claimSegment('course_names', 0, 'worker-1'));
 
             $result = $runner->backfillClaimedOnce($runtime, 'course_names', 0, 'worker-1');
 
@@ -218,8 +220,9 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
         $this->withPostgresProjectionRuntime(function (
             Connection $connection,
             EventStore $store,
-            PostgresProjectionSegmentRepository $segmentRepository,
+            PostgresProjectionSegmentStore $segmentRepository,
             ProjectionRunner $runner,
+            ProjectionTopology $topology,
             string $eventStorePrefix,
             string $projectionPrefix,
         ): void {
@@ -239,7 +242,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             );
 
             $runner->ensureInitialized($runtime);
-            self::assertNotNull($runner->claimSegment('course_names', 0, 'worker-1'));
+            self::assertNotNull($segmentRepository->claimSegment('course_names', 0, 'worker-1'));
             self::assertSame(1, $runner->backfillClaimedOnce($runtime, 'course_names', 0, 'worker-1')->processedEvents);
 
             $store->append([
@@ -250,7 +253,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
                 ),
             ]);
 
-            self::assertNotNull($runner->claimSegment('course_names', 0, 'worker-1'));
+            self::assertNotNull($segmentRepository->claimSegment('course_names', 0, 'worker-1'));
             self::assertSame(1, $runner->backfillClaimedOnce($runtime, 'course_names', 0, 'worker-1')->processedEvents);
 
             $row = $connection->fetchAssociative(
@@ -270,8 +273,9 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
         $this->withPostgresProjectionRuntime(function (
             Connection $connection,
             EventStore $store,
-            PostgresProjectionSegmentRepository $segmentRepository,
+            PostgresProjectionSegmentStore $segmentRepository,
             ProjectionRunner $runner,
+            ProjectionTopology $topology,
             string $eventStorePrefix,
             string $projectionPrefix,
         ) use ($clock): void {
@@ -295,8 +299,9 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
         $this->withPostgresProjectionRuntime(function (
             Connection $connection,
             EventStore $store,
-            PostgresProjectionSegmentRepository $segmentRepository,
+            PostgresProjectionSegmentStore $segmentRepository,
             ProjectionRunner $runner,
+            ProjectionTopology $topology,
             string $eventStorePrefix,
             string $projectionPrefix,
         ): void {
@@ -316,7 +321,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             );
 
             $runner->ensureInitialized($runtime);
-            $segmentRepository->splitSegment('course_names', 0);
+            $topology->split('course_names', 0);
 
             $segments = $segmentRepository->listSegments('course_names');
 
@@ -335,8 +340,9 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
         $this->withPostgresProjectionRuntime(function (
             Connection $connection,
             EventStore $store,
-            PostgresProjectionSegmentRepository $segmentRepository,
+            PostgresProjectionSegmentStore $segmentRepository,
             ProjectionRunner $runner,
+            ProjectionTopology $topology,
             string $eventStorePrefix,
             string $projectionPrefix,
         ): void {
@@ -356,8 +362,8 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             );
 
             $runner->ensureInitialized($runtime);
-            $segmentRepository->splitSegment('course_names', 0);
-            $runner->mergeSegments($runtime, 0, 255, 'coordinator-1');
+            $topology->split('course_names', 0);
+            $topology->merge($runtime, 0, 255, 'coordinator-1');
 
             $segments = $segmentRepository->listSegments('course_names');
 
@@ -373,8 +379,9 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
         $this->withPostgresProjectionRuntime(function (
             Connection $connection,
             EventStore $store,
-            PostgresProjectionSegmentRepository $segmentRepository,
+            PostgresProjectionSegmentStore $segmentRepository,
             ProjectionRunner $runner,
+            ProjectionTopology $topology,
             string $eventStorePrefix,
             string $projectionPrefix,
         ): void {
@@ -394,9 +401,9 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             );
 
             $runner->ensureInitialized($runtime);
-            $segment = $runner->claimSegment('course_names', 0, 'worker-1');
+            $segment = $segmentRepository->claimSegment('course_names', 0, 'worker-1');
             self::assertNotNull($segment);
-            $segmentRepository->splitSegment('course_names', 0);
+            $topology->split('course_names', 0);
 
             $segments = $segmentRepository->listSegments('course_names');
 

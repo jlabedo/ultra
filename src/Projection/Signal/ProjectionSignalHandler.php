@@ -7,6 +7,7 @@ namespace Ultra\Projection\Signal;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionSegment;
+use Ultra\Projection\ProjectionSegmentStoreInterface;
 use Ultra\Signal\SignalHandler;
 use Ultra\Signal\SignalHint;
 use Ultra\Signal\SignalStore;
@@ -17,6 +18,7 @@ final readonly class ProjectionSignalHandler implements SignalHandler
     public function __construct(
         private ProjectionRuntime $runtime,
         private ProjectionRunner $runner,
+        private ProjectionSegmentStoreInterface $segmentStore,
         private SignalStore $signalStore,
         private string $workerId,
         private int $batchSize = 100,
@@ -66,7 +68,7 @@ final readonly class ProjectionSignalHandler implements SignalHandler
      */
     private function currentSegmentsCovering(array $hints): array
     {
-        $segments = $this->runner->listSegments($this->runtime->projectionId());
+        $segments = $this->segmentStore->listSegments($this->runtime->projectionId());
         $selected = [];
 
         foreach ($hints as $hint) {

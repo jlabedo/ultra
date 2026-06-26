@@ -6,14 +6,14 @@ namespace Ultra\Projection\InMemory;
 
 use Ultra\Projection\Bundle\ProjectionImplementationInterface;
 use Ultra\Projection\NoOpProjectionTransactionManager;
-use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Projection\ProjectionSegmentStoreInterface;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
 
 final class InMemoryProjectionImplementation implements ProjectionImplementationInterface
 {
-    public function createSegmentRepository(): ProjectionSegmentRepositoryInterface
+    public function createSegmentStore(): ProjectionSegmentStoreInterface
     {
-        return new InMemoryProjectionSegmentRepository();
+        return new InMemoryProjectionSegmentStore();
     }
 
     public function createTransactionManager(): ProjectionTransactionManagerInterface

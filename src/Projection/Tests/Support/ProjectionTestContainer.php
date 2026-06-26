@@ -8,7 +8,8 @@ use Ultra\EventStore\EventStore;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
-use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Projection\ProjectionSegmentStoreInterface;
+use Ultra\Projection\ProjectionTopology;
 use Ultra\Signal\SignalHandler;
 use Ultra\Signal\SignalPoller;
 use Ultra\Testing\UltraLightContainer;
@@ -35,9 +36,14 @@ final readonly class ProjectionTestContainer extends UltraLightContainer
         return $this->get('test.projection_runner');
     }
 
-    public function projectionSegments(): ProjectionSegmentRepositoryInterface
+    public function projectionSegments(): ProjectionSegmentStoreInterface
     {
         return $this->get('test.projection_segments');
+    }
+
+    public function projectionTopology(): ProjectionTopology
+    {
+        return $this->get('test.projection_topology');
     }
 
     /**

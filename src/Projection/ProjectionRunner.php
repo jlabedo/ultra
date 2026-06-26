@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\Projection;
 
-use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\EventStore;
 use Ultra\Signal\BucketRange;
 use Ultra\Signal\SignalStore;
@@ -16,89 +15,20 @@ final readonly class ProjectionRunner
 {
     public function __construct(
         private EventStore $eventStore,
-        private ProjectionSegmentRepositoryInterface $segmentRepository,
+        private ProjectionSegmentStoreInterface $segmentStore,
         private ProjectionTransactionManagerInterface $transactionManager = new NoOpProjectionTransactionManager(),
     ) {}
 
     public function recoverExpiredClaims(string $projectionId): int
     {
-        return $this->segmentRepository->recoverExpiredClaims($projectionId);
-    }
-
-    public function splitSegment(string $projectionId, int $bucketFrom): void
-    {
-        $this->segmentRepository->splitSegment($projectionId, $bucketFrom);
-    }
-
-    public function mergeSegments(ProjectionRuntime $runtime, int $bucketFrom, int $bucketTo, string $ownerId, int $limit = 100): void
-    {
-        $projectionId = $runtime->projectionId();
-        $segments = $this->segmentRepository->takeSegmentsForRange($projectionId, $bucketFrom, $bucketTo, $ownerId);
-        if ([] === $segments) {
-            throw new \LogicException(sprintf(
-                'Cannot merge [%d-%d] for projection "%s": no matching segments found.',
-                $bucketFrom,
-                $bucketTo,
-                $projectionId,
-            ));
-        }
-
-        $targetCheckpoint = $this->mergeCheckpoint(...array_map(static fn (ProjectionSegment $segment): Checkpoint => $segment->checkpoint, $segments));
-
-        foreach ($segments as $segment) {
-            $checkpoint = $segment->checkpoint;
-            $query = $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
-
-            while ($checkpoint->serialize() !== $targetCheckpoint->serialize()) {
-                $result = $this->eventStore->load($query, $checkpoint, $targetCheckpoint, $limit);
-                $this->transactionManager->transactional(function () use ($runtime, $result): void {
-                    foreach ($result->events as $event) {
-                        $runtime->apply($event);
-                    }
-
-                    $runtime->flush();
-                });
-
-                if ($result->checkpoint->serialize() === $checkpoint->serialize()) {
-                    throw new \LogicException(sprintf(
-                        'Projection merge for "%s" [%d-%d] could not advance segment [%d-%d] to the target checkpoint.',
-                        $projectionId,
-                        $bucketFrom,
-                        $bucketTo,
-                        $segment->bucketFrom,
-                        $segment->bucketTo,
-                    ));
-                }
-
-                $checkpoint = $result->checkpoint;
-            }
-        }
-
-        $this->segmentRepository->replaceSegmentsWithMergedSegment($projectionId, $bucketFrom, $bucketTo, $targetCheckpoint);
-    }
-
-    /** @return list<ProjectionSegment> */
-    public function listSegments(string $projectionId): array
-    {
-        return $this->segmentRepository->listSegments($projectionId);
-    }
-
-    /** @return list<ProjectionSegment> */
-    public function availableSegments(string $projectionId): array
-    {
-        return $this->segmentRepository->availableSegments($projectionId);
-    }
-
-    public function claimSegment(string $projectionId, int $bucketFrom, string $workerId): ?ProjectionSegment
-    {
-        return $this->segmentRepository->claimSegment($projectionId, $bucketFrom, $workerId);
+        return $this->segmentStore->recoverExpiredClaims($projectionId);
     }
 
     public function ensureInitialized(ProjectionRuntime $runtime): void
     {
         $definition = $runtime->definition();
         $this->transactionManager->transactional(function () use ($definition, $runtime): void {
-            $created = $this->segmentRepository->ensureInitialized($definition->projectionId);
+            $created = $this->segmentStore->ensureInitialized($definition->projectionId);
             if ($created) {
                 $runtime->initialize();
             }
@@ -110,7 +40,7 @@ final readonly class ProjectionRunner
         $definition = $runtime->definition();
         $this->transactionManager->transactional(function () use ($definition, $runtime): void {
             $runtime->reset();
-            $this->segmentRepository->deleteProjection($definition->projectionId);
+            $this->segmentStore->deleteProjection($definition->projectionId);
         });
     }
 
@@ -125,7 +55,7 @@ final readonly class ProjectionRunner
     ): ProjectionRunResult {
         $this->ensureInitialized($runtime);
 
-        $segment = $this->segmentRepository->claimSegment($projectionId, $bucketFrom, $workerId);
+        $segment = $this->segmentStore->claimSegment($projectionId, $bucketFrom, $workerId);
         if (null === $segment) {
             return new ProjectionRunResult(0, false, null);
         }
@@ -159,7 +89,7 @@ final readonly class ProjectionRunner
                     $ackedSignals = $signalStore->ackVisibleInSnapshot($projectionId, $bucketRange, $snapshot);
                 }
 
-                $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
+                $this->segmentStore->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
             });
 
             return new ProjectionRunResult(
@@ -170,7 +100,7 @@ final readonly class ProjectionRunner
                 acknowledgedBuckets: $ackedSignals,
             );
         } catch (\Throwable $e) {
-            $this->segmentRepository->releaseClaimedSegment($segment, $workerId);
+            $this->segmentStore->releaseClaimedSegment($segment, $workerId);
 
             throw $e;
         } finally {
@@ -209,7 +139,7 @@ final readonly class ProjectionRunner
         $totalEvents = 0;
         while (true) {
             $progressed = false;
-            foreach ($this->listSegments($projectionId) as $segment) {
+            foreach ($this->segmentStore->listSegments($projectionId) as $segment) {
                 // Loop this segment until caught up. `backfillClaimedOnce`
                 // claims with `$workerId`; the same worker can re-claim its
                 // own in-progress lease, so successive calls advance the
@@ -252,7 +182,7 @@ final readonly class ProjectionRunner
     ): ProjectionRunResult {
         $this->ensureInitialized($runtime);
 
-        $segment = $this->segmentRepository->claimSegment($projectionId, $bucketFrom, $workerId);
+        $segment = $this->segmentStore->claimSegment($projectionId, $bucketFrom, $workerId);
         if (null === $segment) {
             return new ProjectionRunResult(0, false, null);
         }
@@ -268,7 +198,7 @@ final readonly class ProjectionRunner
                 }
 
                 $runtime->flush();
-                $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
+                $this->segmentStore->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
             });
 
             return new ProjectionRunResult(
@@ -278,7 +208,7 @@ final readonly class ProjectionRunner
                 caughtUp: $caughtUp,
             );
         } catch (\Throwable $e) {
-            $this->segmentRepository->releaseClaimedSegment($segment, $workerId);
+            $this->segmentStore->releaseClaimedSegment($segment, $workerId);
 
             throw $e;
         }
@@ -304,23 +234,4 @@ final readonly class ProjectionRunner
         }
     }
 
-    private function mergeCheckpoint(Checkpoint ...$checkpoints): Checkpoint
-    {
-        $highest = $checkpoints[0] ?? Checkpoint::beginning();
-
-        foreach ($checkpoints as $checkpoint) {
-            $comparison = $highest->gapFloor->compareTo($checkpoint->gapFloor);
-            if ($comparison < 0) {
-                $highest = $checkpoint;
-
-                continue;
-            }
-
-            if (0 === $comparison) {
-                $highest = new Checkpoint($highest->gapFloor, [...$highest->gapSeqNos, ...$checkpoint->gapSeqNos]);
-            }
-        }
-
-        return $highest;
-    }
 }

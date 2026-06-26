@@ -10,7 +10,7 @@ use Symfony\Component\Console\Helper\Table;
 use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
-use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Projection\ProjectionSegmentStoreInterface;
 
 #[AsCommand(
     name: 'projection:segment:list',
@@ -18,7 +18,7 @@ use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 )]
 final class ListSegmentsCommand extends Command
 {
-    public function __construct(private readonly ProjectionSegmentRepositoryInterface $repository)
+    public function __construct(private readonly ProjectionSegmentStoreInterface $store)
     {
         parent::__construct();
     }
@@ -31,7 +31,7 @@ final class ListSegmentsCommand extends Command
     protected function execute(InputInterface $input, OutputInterface $output): int
     {
         $projectionId = (string) $input->getArgument('projection-id');
-        $segments = $this->repository->listSegments($projectionId);
+        $segments = $this->store->listSegments($projectionId);
 
         if ([] === $segments) {
             $output->writeln(sprintf('<comment>No segments found for "%s".</comment>', $projectionId));

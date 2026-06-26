@@ -8,12 +8,13 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Ultra\EventStore\Checkpoint;
 use Ultra\Projection\ProjectionSegment;
-use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Projection\ProjectionSegmentStoreInterface;
+use Ultra\Projection\ProjectionTopologyStoreInterface;
 use Ultra\Time\ClockInterface;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
 
-final readonly class PostgresProjectionSegmentRepository implements ProjectionSegmentRepositoryInterface
+final readonly class PostgresProjectionSegmentStore implements ProjectionSegmentStoreInterface, ProjectionTopologyStoreInterface
 {
     public function __construct(
         private Connection $connection,

@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Console\Tester\CommandTester;
 use Ultra\Projection\Bundle\Command\ListSegmentsCommand;
-use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
+use Ultra\Projection\InMemory\InMemoryProjectionSegmentStore;
 
 /**
  * @internal
@@ -16,9 +16,9 @@ use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 #[CoversClass(ListSegmentsCommand::class)]
 final class ListSegmentsCommandTest extends TestCase
 {
-    public function test_lists_segments_from_the_projection_segment_repository(): void
+    public function test_lists_segments_from_the_projection_segment_store(): void
     {
-        $repository = new InMemoryProjectionSegmentRepository();
+        $repository = new InMemoryProjectionSegmentStore();
         $repository->ensureInitialized('course_names');
         $repository->splitSegment('course_names', 0);
         self::assertNotNull($repository->claimSegment('course_names', 128, 'worker-1'));
@@ -39,7 +39,7 @@ final class ListSegmentsCommandTest extends TestCase
 
     public function test_reports_when_a_projection_has_no_segments(): void
     {
-        $tester = new CommandTester(new ListSegmentsCommand(new InMemoryProjectionSegmentRepository()));
+        $tester = new CommandTester(new ListSegmentsCommand(new InMemoryProjectionSegmentStore()));
 
         self::assertSame(0, $tester->execute(['projection-id' => 'course_names']));
 

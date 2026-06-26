@@ -6,7 +6,7 @@ namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
 use Ultra\Projection\Bundle\ProjectionImplementationInterface;
-use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Projection\ProjectionSegmentStoreInterface;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
 use Ultra\Time\ClockInterface;
 use Ultra\Time\SystemClock;
@@ -19,9 +19,9 @@ final class PostgresProjectionImplementation implements ProjectionImplementation
         private readonly ClockInterface $clock = new SystemClock(),
     ) {}
 
-    public function createSegmentRepository(): ProjectionSegmentRepositoryInterface
+    public function createSegmentStore(): ProjectionSegmentStoreInterface
     {
-        return new PostgresProjectionSegmentRepository($this->connection, $this->tablePrefix, $this->clock);
+        return new PostgresProjectionSegmentStore($this->connection, $this->tablePrefix, $this->clock);
     }
 
     public function createTransactionManager(): ProjectionTransactionManagerInterface

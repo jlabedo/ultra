@@ -15,7 +15,7 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
-use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
+use Ultra\Projection\InMemory\InMemoryProjectionSegmentStore;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
@@ -96,9 +96,9 @@ final class ProjectionSignalIntegrationTest extends TestCase
         $projection = new SignalProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $runner = new ProjectionRunner($eventStore, $segments);
-        $handler = new ProjectionSignalHandler($runtime, $runner, $signalStore, 'worker-1');
+        $handler = new ProjectionSignalHandler($runtime, $runner, $segments, $signalStore, 'worker-1');
         $courseId = self::courseIdInBucketRange(0, 255);
         $bucket = BucketHasher::bucketFor($courseId);
 
@@ -122,9 +122,9 @@ final class ProjectionSignalIntegrationTest extends TestCase
         $projection = new SignalProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
+        $segments = new InMemoryProjectionSegmentStore();
         $runner = new ProjectionRunner($eventStore, $segments);
-        $handler = new ProjectionSignalHandler($runtime, $runner, $signalStore, 'worker-1');
+        $handler = new ProjectionSignalHandler($runtime, $runner, $segments, $signalStore, 'worker-1');
         $courseId = self::courseIdInBucketRange(128, 255);
         $bucket = BucketHasher::bucketFor($courseId);
 
