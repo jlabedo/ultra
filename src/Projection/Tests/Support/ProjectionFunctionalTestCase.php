@@ -27,6 +27,7 @@ use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 use Ultra\Signal\SignalExtension;
 use Ultra\Signal\SignalPoller;
 use Ultra\Signal\TagNames;
+use Ultra\Signal_Postgres\PostgresSignalExtension;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
 
@@ -38,6 +39,7 @@ abstract class ProjectionFunctionalTestCase extends TestCase
     protected function projectionUltraLight(
         ?EventStore $eventStore = null,
         ?ProjectionImplementationInterface $implementation = null,
+        ?string $signalTablePrefix = null,
     ): UltraLight {
         /** @var UltraLightContainerFactoryInterface<ProjectionTestContainer> $containerFactory */
         $containerFactory = new class implements UltraLightContainerFactoryInterface {
@@ -63,6 +65,17 @@ abstract class ProjectionFunctionalTestCase extends TestCase
                 }
             })
             ->withBundle(new MapperExtension())
+            ->withBundle(new class ($signalTablePrefix) implements ContainerExtension {
+                public function __construct(private ?string $signalTablePrefix) {}
+
+                public function build(ContainerBuilder $container): void
+                {
+                    if (null !== $this->signalTablePrefix) {
+                        $container->setParameter('ultra.signal_postgres.table_prefix', $this->signalTablePrefix);
+                    }
+                }
+            })
+            ->withBundle(new PostgresSignalExtension())
             ->withBundle(new SignalExtension())
             ->withBundle(new ProjectionExtension())
             ->withService($implementation ?? new InMemoryProjectionImplementation(), ProjectionImplementationInterface::class)

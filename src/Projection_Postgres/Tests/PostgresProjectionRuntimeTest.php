@@ -15,7 +15,11 @@ use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection_Postgres\PostgresProjectionImplementation;
+use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
+use Ultra\Signal_Postgres\PostgresSignalSchema;
+use Ultra\Testing\PostgresTestSupport;
 use Ultra\Time\Duration;
 
 #[EventAttribute('course.created')]
@@ -86,6 +90,78 @@ final class CourseNamesProjection
  */
 final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 {
+    public function test_signal_poller_processes_projection_work_with_real_postgres_signal_store(): void
+    {
+        $connection = PostgresTestSupport::sharedConnection($this->postgresDsn());
+        $eventStorePrefix = PostgresTestSupport::uniquePrefix();
+        $projectionPrefix = 'ultra_projection_'.bin2hex(random_bytes(4)).'_';
+        $signalPrefix = 'ultra_signal_'.bin2hex(random_bytes(4)).'_';
+        $eventSchema = PostgresTestSupport::schemaForImplementation($eventStorePrefix, 'query-streams');
+        $projectionSchema = new PostgresProjectionSegmentSchema($projectionPrefix);
+        $signalSchema = new PostgresSignalSchema($signalPrefix);
+        $tableName = $projectionPrefix.'course_names_view';
+
+        try {
+            foreach ($eventSchema->createStatements() as $statement) {
+                $connection->executeStatement($statement);
+            }
+
+            foreach ($projectionSchema->createStatements() as $statement) {
+                $connection->executeStatement($statement);
+            }
+
+            foreach ($signalSchema->createStatements() as $statement) {
+                $connection->executeStatement($statement);
+            }
+
+            $store = PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams');
+            $container = $this->projectionUltraLight(
+                $store,
+                new PostgresProjectionImplementation($connection, $projectionPrefix),
+                signalTablePrefix: $signalPrefix,
+            )
+                ->withService($connection, Connection::class)
+                ->withService(new CourseNamesProjection($connection, $tableName))
+                ->boot()
+            ;
+
+            $container->eventStore()->append([
+                new Event(
+                    eventType: 'course.created',
+                    payload: ['courseId' => 'course-1', 'name' => 'Math 101'],
+                    domainIds: ['courseId' => 'course-1'],
+                ),
+            ]);
+
+            self::assertSame(1, (int) $connection->fetchOne(sprintf('SELECT COUNT(*) FROM %s', $signalPrefix.'signals')));
+
+            self::assertSame(1, $container->signalPoller()->pollOnce());
+
+            $rows = $connection->fetchAllAssociative(sprintf('SELECT course_id, name FROM %s', $tableName));
+
+            self::assertSame([
+                ['course_id' => 'course-1', 'name' => 'Math 101'],
+            ], $rows);
+            self::assertSame(0, (int) $connection->fetchOne(sprintf('SELECT COUNT(*) FROM %s', $signalPrefix.'signals')));
+        } finally {
+            PostgresTestSupport::resetSharedConnection($connection);
+
+            $connection->executeStatement(sprintf('DROP TABLE IF EXISTS %s', $tableName));
+
+            foreach ($signalSchema->dropStatements() as $statement) {
+                $connection->executeStatement($statement);
+            }
+
+            foreach ($projectionSchema->dropStatements() as $statement) {
+                $connection->executeStatement($statement);
+            }
+
+            foreach ($eventSchema->dropStatements() as $statement) {
+                $connection->executeStatement($statement);
+            }
+        }
+    }
+
     public function test_runner_processes_events_and_advances_the_checkpoint(): void
     {
         $this->withPostgresProjectionRuntime(function (
