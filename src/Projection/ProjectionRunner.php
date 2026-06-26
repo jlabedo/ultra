@@ -6,7 +6,6 @@ namespace Ultra\Projection;
 
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\EventStore;
-use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Signal\BucketRange;
 use Ultra\Signal\SignalStore;
 use Ultra\Signal\SuppressionHandle;
@@ -19,7 +18,6 @@ final readonly class ProjectionRunner
         private EventStore $eventStore,
         private ProjectionSegmentRepositoryInterface $segmentRepository,
         private ProjectionTransactionManagerInterface $transactionManager = new NoOpProjectionTransactionManager(),
-        private ?ProjectionActivity $activityRepository = null,
     ) {}
 
     public function recoverExpiredClaims(string $projectionId): int
@@ -116,62 +114,7 @@ final readonly class ProjectionRunner
         });
     }
 
-    public function runClaimedOnce(
-        ProjectionRuntime $runtime,
-        string $projectionId,
-        int $bucketFrom,
-        string $workerId,
-        int $limit = 100,
-    ): ProjectionRunResult {
-        $this->ensureInitialized($runtime);
-
-        $segment = $this->segmentRepository->claimSegment($projectionId, $bucketFrom, $workerId);
-        if (null === $segment) {
-            return new ProjectionRunResult(0, false, null);
-        }
-
-        try {
-            if (null === $this->activityRepository) {
-                throw new \LogicException('ProjectionRunner requires projection activity to run claimed projection work.');
-            }
-
-            $seenCounters = [];
-            foreach ($this->activityRepository->pendingInSegment($segment->projectionId, $segment->bucketFrom, $segment->bucketTo) as $pendingKey) {
-                $seenCounters[(int) $pendingKey->key] = $pendingKey->counter;
-            }
-
-            $query = $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
-            $result = $this->eventStore->load($query, $segment->checkpoint, null, $limit);
-            $caughtUp = count($result->events) < $limit;
-
-            $this->transactionManager->transactional(function () use ($runtime, $segment, $result, $workerId, $caughtUp, $seenCounters): void {
-                foreach ($result->events as $event) {
-                    $runtime->apply($event);
-                }
-
-                $runtime->flush();
-                $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
-
-                if ($caughtUp && [] !== $seenCounters) {
-                    $this->activityRepository?->drainSeen($segment->projectionId, $seenCounters);
-                }
-            });
-
-            return new ProjectionRunResult(
-                processedEvents: count($result->events),
-                claimedSegment: true,
-                segment: $segment,
-                caughtUp: $caughtUp,
-                acknowledgedBuckets: $caughtUp ? count($seenCounters) : 0,
-            );
-        } catch (\Throwable $e) {
-            $this->segmentRepository->releaseClaimedSegment($segment, $workerId);
-
-            throw $e;
-        }
-    }
-
-    public function runSignalClaimedOnce(
+    public function runSignaledOnce(
         ProjectionRuntime $runtime,
         SignalStore $signalStore,
         string $projectionId,

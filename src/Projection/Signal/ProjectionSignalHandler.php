@@ -46,7 +46,7 @@ final readonly class ProjectionSignalHandler implements SignalHandler
 
         foreach ($this->currentSegmentsCovering($hints) as $segment) {
             do {
-                $result = $this->runner->runSignalClaimedOnce(
+                $result = $this->runner->runSignaledOnce(
                     $this->runtime,
                     $this->signalStore,
                     $segment->projectionId,

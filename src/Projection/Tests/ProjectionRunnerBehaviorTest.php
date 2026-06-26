@@ -7,55 +7,22 @@ namespace Ultra\Projection\Tests;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
 use Ultra\Events\Attribute\Event as EventAttribute;
-use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
-use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
-use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\Sequence;
-use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
-use Ultra\Coordination\InMemory\InMemoryDirtyKeyTracker;
 use Ultra\Projection\Attribute\ProjectionResetter;
-use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\NoOpProjectionTransactionManager;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
-
-final class CallbackEventStore implements EventStore
-{
-    public function __construct(
-        private readonly EventStore $inner,
-        private ?\Closure $beforeLoad = null,
-    ) {}
-
-    public function load(
-        StreamQuery $query,
-        ?Checkpoint $from = null,
-        ?Checkpoint $to = null,
-        int $batchSize = 1000,
-    ): LoadResult {
-        if (null !== $this->beforeLoad) {
-            ($this->beforeLoad)();
-            $this->beforeLoad = null;
-        }
-
-        return $this->inner->load($query, $from, $to, $batchSize);
-    }
-
-    public function append(array $events, AppendCondition ...$appendConditions): void
-    {
-        $this->inner->append($events, ...$appendConditions);
-    }
-}
 
 #[EventAttribute('runner.course.created')]
 final readonly class RunnerCourseCreated
@@ -280,17 +247,16 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         self::assertCount(1, $segments->listSegments('failing_resetter_projection'));
     }
 
-    public function test_run_claimed_once_claims_only_its_own_worker_segment(): void
+    public function test_backfill_claimed_once_claims_only_its_own_worker_segment(): void
     {
         $runtime = new ProjectionRuntime(new TrackingProjection(), new UltraNormalizer());
         $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
-        $runner = new ProjectionRunner(new InMemoryEventStore(), $segments, activityRepository: $activity);
+        $runner = new ProjectionRunner(new InMemoryEventStore(), $segments);
 
         $runner->ensureInitialized($runtime);
         self::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
 
-        $result = $runner->runClaimedOnce(
+        $result = $runner->backfillClaimedOnce(
             $runtime,
             'tracking_projection',
             0,
@@ -307,8 +273,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
-        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
+        $runner = new ProjectionRunner($eventStore, $segments);
 
         $eventStore->append([
             self::courseCreatedEvent('course-1', 'Math'),
@@ -327,105 +292,29 @@ final class ProjectionRunnerBehaviorTest extends TestCase
             'course-1' => 'Math',
             'course-2' => 'Science',
         ], $projection->names);
-        self::assertSame([], $activity->affected());
         self::assertNull($segments->listSegments('tracking_projection')[0]->workerId);
     }
 
-    public function test_run_claimed_once_keeps_bucket_activity_pending_until_the_claim_catches_up(): void
-    {
-        $projection = new TrackingProjection();
-        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
-        $eventStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
-        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
-        $bucket = BucketHasher::bucketFor('course-1');
-
-        $eventStore->append([
-            self::courseCreatedEvent('course-1', 'Math'),
-            self::courseCreatedEvent('course-1', 'Advanced Math'),
-        ]);
-        $activity->bump('tracking_projection', $bucket);
-
-        $runner->ensureInitialized($runtime);
-        self::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
-
-        $firstResult = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
-
-        self::assertSame(1, $firstResult->processedEvents);
-        self::assertFalse($firstResult->caughtUp);
-        self::assertSame(0, $firstResult->acknowledgedBuckets);
-        self::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
-        self::assertCount(1, $activity->pendingInSegment('tracking_projection', 0, 255));
-
-        $secondResult = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 10);
-
-        self::assertSame(1, $secondResult->processedEvents);
-        self::assertTrue($secondResult->caughtUp);
-        self::assertSame(1, $secondResult->acknowledgedBuckets);
-        self::assertSame(null, $segments->listSegments('tracking_projection')[0]->workerId);
-        self::assertSame([], $activity->pendingInSegment('tracking_projection', 0, 255));
-        self::assertSame(['course-1' => 'Advanced Math'], $projection->names);
-    }
-
-    public function test_run_claimed_once_decrements_only_the_seen_bucket_counters_after_a_concurrent_bump(): void
-    {
-        $projection = new TrackingProjection();
-        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
-        $innerStore = new InMemoryEventStore();
-        $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
-        $bucket = BucketHasher::bucketFor('course-1');
-
-        $innerStore->append([
-            self::courseCreatedEvent('course-1', 'Math'),
-        ]);
-        $activity->bump('tracking_projection', $bucket);
-
-        $runner = new ProjectionRunner(
-            new CallbackEventStore($innerStore, static function () use ($activity, $bucket): void {
-                $activity->bump('tracking_projection', $bucket);
-            }),
-            $segments,
-            activityRepository: $activity,
-        );
-        $runner->ensureInitialized($runtime);
-        self::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
-
-        $result = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 10);
-        $pending = $activity->pendingInSegment('tracking_projection', 0, 255);
-
-        self::assertTrue($result->caughtUp);
-        self::assertCount(1, $pending);
-        self::assertSame($bucket, (int) $pending[0]->key);
-        self::assertSame(1, $pending[0]->counter);
-    }
-
-    public function test_run_claimed_once_does_not_decrement_bucket_activity_when_processing_fails(): void
+    public function test_backfill_claimed_once_releases_segment_when_processing_fails(): void
     {
         $runtime = new ProjectionRuntime(new FailingTrackingProjection(), new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
-        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
-        $bucket = BucketHasher::bucketFor('course-1');
+        $runner = new ProjectionRunner($eventStore, $segments);
 
         $eventStore->append([
             self::courseCreatedEvent('course-1', 'Math'),
         ]);
-        $activity->bump('failing_tracking_projection', $bucket);
-
         $runner->ensureInitialized($runtime);
         self::assertNotNull($runner->claimSegment('failing_tracking_projection', 0, 'worker-1'));
 
         try {
-            $runner->runClaimedOnce($runtime, 'failing_tracking_projection', 0, 'worker-1', limit: 10);
+            $runner->backfillClaimedOnce($runtime, 'failing_tracking_projection', 0, 'worker-1', limit: 10);
             self::fail('Expected the projection handler to throw.');
         } catch (\RuntimeException $e) {
             self::assertSame('Projection handler failed.', $e->getMessage());
         }
 
-        self::assertCount(1, $activity->pendingInSegment('failing_tracking_projection', 0, 255));
         self::assertSame(null, $segments->listSegments('failing_tracking_projection')[0]->workerId);
     }
 
@@ -435,8 +324,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $eventStore = new InMemoryEventStore();
         $segments = new InMemoryProjectionSegmentRepository();
-        $activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
-        $runner = new ProjectionRunner($eventStore, $segments, activityRepository: $activity);
+        $runner = new ProjectionRunner($eventStore, $segments);
         $leftCourseId = self::courseIdInBucketRange(0, 127);
         $rightCourseId = self::courseIdInBucketRange(128, 255);
 
@@ -449,7 +337,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
         $runner->splitSegment('tracking_projection', 0);
         self::assertNotNull($runner->claimSegment('tracking_projection', 128, 'worker-right'));
 
-        $runner->runClaimedOnce($runtime, 'tracking_projection', 128, 'worker-right', limit: 10);
+        $runner->backfillClaimedOnce($runtime, 'tracking_projection', 128, 'worker-right', limit: 10);
 
         self::assertSame([$rightCourseId => 'Science'], $projection->names);
 
@@ -469,7 +357,7 @@ final class ProjectionRunnerBehaviorTest extends TestCase
     {
         $runtime = new ProjectionRuntime(new TrackingProjection(), new UltraNormalizer());
         $segments = new InMemoryProjectionSegmentRepository();
-        $runner = new ProjectionRunner(new InMemoryEventStore(), $segments, activityRepository: new ProjectionActivity(new InMemoryDirtyKeyTracker()));
+        $runner = new ProjectionRunner(new InMemoryEventStore(), $segments);
 
         $runner->ensureInitialized($runtime);
         $runner->splitSegment('tracking_projection', 0);

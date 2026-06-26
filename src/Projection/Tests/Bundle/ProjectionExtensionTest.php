@@ -7,13 +7,9 @@ namespace Ultra\Projection\Tests\Bundle;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Ultra\Events\Attribute\Event;
 use Ultra\EventStore\Event as StoredEvent;
-use Ultra\EventStore\EventStore;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Bundle\ProjectionExtension;
-use Ultra\Projection\Coordination\ProjectionActivityEventStore;
-use Ultra\Projection\Coordination\ProjectionActivityRecorder;
-use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Signal\ProjectionSignalEventStore;
@@ -55,8 +51,6 @@ final class ThirdStubProjection
  * @internal
  */
 #[CoversClass(ProjectionExtension::class)]
-#[CoversClass(ProjectionActivityEventStore::class)]
-#[CoversClass(ProjectionActivityRecorder::class)]
 #[CoversClass(ProjectionSignalEventStore::class)]
 final class ProjectionExtensionTest extends ProjectionFunctionalTestCase
 {
@@ -106,40 +100,6 @@ final class ProjectionExtensionTest extends ProjectionFunctionalTestCase
         ));
     }
 
-    public function test_decorated_event_store_records_projection_activity_after_appending_events(): void
-    {
-        $container = $this->projectionUltraLight()
-            ->withClass(StubProjection::class)
-            ->boot()
-        ;
-
-        $eventStore = $container->eventStore();
-        $activity = $container->projectionActivity();
-        $activator = $container->projectionActivator();
-
-        self::assertInstanceOf(EventStore::class, $eventStore);
-        self::assertInstanceOf(InMemoryProjectionActivator::class, $activator);
-
-        $eventStore->append([
-            new StoredEvent(
-                eventType: 'projection.stubbed',
-                payload: [],
-                domainIds: ['id' => 'stub-1'],
-            ),
-            new StoredEvent(
-                eventType: 'projection.stubbed',
-                payload: [],
-                domainIds: ['id' => 'stub-1'],
-            ),
-        ]);
-
-        $pending = $activity->pendingInSegment('stub_projection', 0, 255);
-
-        self::assertCount(1, $pending);
-        self::assertSame(1, $pending[0]->counter);
-        self::assertSame(1, $activator->workSignals());
-    }
-
     public function test_uses_signal_store_for_projection_wakeups_when_available(): void
     {
         $signalStore = new BundleRecordingSignalStore();
@@ -150,7 +110,6 @@ final class ProjectionExtensionTest extends ProjectionFunctionalTestCase
         ;
 
         $eventStore = $container->eventStore();
-        $activity = $container->projectionActivity();
         $handlers = $container->projectionSignalHandlers();
         $poller = $container->signalPoller();
 
@@ -168,7 +127,6 @@ final class ProjectionExtensionTest extends ProjectionFunctionalTestCase
 
         self::assertCount(1, $signalStore->signals);
         self::assertSame('stub_projection', $signalStore->signals[0]['queueName']);
-        self::assertSame([], $activity->pendingInSegment('stub_projection', 0, 255));
 
         self::assertSame(1, $poller->pollOnce());
         self::assertSame([], $signalStore->signals);

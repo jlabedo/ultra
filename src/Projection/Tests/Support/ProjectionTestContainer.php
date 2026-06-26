@@ -4,12 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests\Support;
 
-use Ultra\Coordination\Lease\CoordinatorLease;
 use Ultra\EventStore\EventStore;
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\Projection\Coordination\ProjectionActivatorInterface;
-use Ultra\Projection\Coordination\ProjectionActivity;
-use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
@@ -39,29 +35,9 @@ final readonly class ProjectionTestContainer extends UltraLightContainer
         return $this->get('test.projection_runner');
     }
 
-    public function projectionCoordinator(): ProjectionCoordinator
-    {
-        return $this->get('test.projection_coordinator');
-    }
-
     public function projectionSegments(): ProjectionSegmentRepositoryInterface
     {
         return $this->get('test.projection_segments');
-    }
-
-    public function projectionActivity(): ProjectionActivity
-    {
-        return $this->get('test.projection_activity');
-    }
-
-    public function projectionLeases(): CoordinatorLease
-    {
-        return $this->get('test.projection_leases');
-    }
-
-    public function projectionActivator(): ProjectionActivatorInterface
-    {
-        return $this->get('test.projection_activator');
     }
 
     /**

@@ -195,7 +195,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             $runner->ensureInitialized($runtime);
             self::assertNotNull($runner->claimSegment('course_names', 0, 'worker-1'));
 
-            $result = $runner->runClaimedOnce($runtime, 'course_names', 0, 'worker-1');
+            $result = $runner->backfillClaimedOnce($runtime, 'course_names', 0, 'worker-1');
 
             self::assertSame(2, $result->processedEvents);
             self::assertTrue($result->caughtUp);
@@ -240,7 +240,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
 
             $runner->ensureInitialized($runtime);
             self::assertNotNull($runner->claimSegment('course_names', 0, 'worker-1'));
-            self::assertSame(1, $runner->runClaimedOnce($runtime, 'course_names', 0, 'worker-1')->processedEvents);
+            self::assertSame(1, $runner->backfillClaimedOnce($runtime, 'course_names', 0, 'worker-1')->processedEvents);
 
             $store->append([
                 new Event(
@@ -251,7 +251,7 @@ final class PostgresProjectionRuntimeTest extends PostgresProjectionTestCase
             ]);
 
             self::assertNotNull($runner->claimSegment('course_names', 0, 'worker-1'));
-            self::assertSame(1, $runner->runClaimedOnce($runtime, 'course_names', 0, 'worker-1')->processedEvents);
+            self::assertSame(1, $runner->backfillClaimedOnce($runtime, 'course_names', 0, 'worker-1')->processedEvents);
 
             $row = $connection->fetchAssociative(
                 sprintf('SELECT name FROM %s WHERE course_id = ?', $tableName),
