@@ -12,6 +12,7 @@ use Ultra\Projection\Bundle\TagNames;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\Signal\ProjectionSignalHandler;
 use Ultra\Signal\SignalStore;
+use Ultra\Signal\TagNames as SignalTagNames;
 
 final readonly class ProjectionSignalHandlerCompilerPass implements CompilerPassInterface
 {
@@ -35,7 +36,7 @@ final readonly class ProjectionSignalHandlerCompilerPass implements CompilerPass
                     new Reference(SignalStore::class),
                     '%ultra.projection.signal_worker_id%',
                 ])
-                ->addTag(TagNames::SIGNAL_HANDLER)
+                ->addTag(SignalTagNames::SIGNAL_HANDLER)
             );
         }
     }

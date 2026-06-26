@@ -20,6 +20,7 @@ use Ultra\Projection\Signal\ProjectionSignalEventStore;
 use Ultra\Projection\Signal\ProjectionSignalHandler;
 use Ultra\Projection\Tests\Support\ProjectionFunctionalTestCase;
 use Ultra\Signal\BucketRange;
+use Ultra\Signal\SignalHint;
 use Ultra\Signal\SignalStore;
 use Ultra\Signal\SuppressionHandle;
 use Ultra\Signal\VisibilitySnapshot;
@@ -151,6 +152,7 @@ final class ProjectionExtensionTest extends ProjectionFunctionalTestCase
         $eventStore = $container->eventStore();
         $activity = $container->projectionActivity();
         $handlers = $container->projectionSignalHandlers();
+        $poller = $container->signalPoller();
 
         self::assertInstanceOf(ProjectionSignalEventStore::class, $eventStore);
         self::assertContainsOnlyInstancesOf(ProjectionSignalHandler::class, $handlers);
@@ -167,22 +169,40 @@ final class ProjectionExtensionTest extends ProjectionFunctionalTestCase
         self::assertCount(1, $signalStore->signals);
         self::assertSame('stub_projection', $signalStore->signals[0]['queueName']);
         self::assertSame([], $activity->pendingInSegment('stub_projection', 0, 255));
+
+        self::assertSame(1, $poller->pollOnce());
+        self::assertSame([], $signalStore->signals);
     }
 }
 
 final class BundleRecordingSignalStore implements SignalStore
 {
-    /** @var list<array{queueName: string, bucket: int, signalKey: null|string}> */
+    /** @var list<array{id: int, queueName: string, bucket: int, signalKey: null|string}> */
     public array $signals = [];
+
+    private int $nextId = 1;
 
     public function signal(string $queueName, int $bucket = 0, ?string $signalKey = null, ?DatePoint $visibleAt = null): void
     {
-        $this->signals[] = ['queueName' => $queueName, 'bucket' => $bucket, 'signalKey' => $signalKey];
+        $this->signals[] = ['id' => $this->nextId++, 'queueName' => $queueName, 'bucket' => $bucket, 'signalKey' => $signalKey];
     }
 
     public function claimHints(array $queueNames, string $owner, int $limit, Duration $deliveryTimeout): array
     {
-        return [];
+        $hints = [];
+
+        foreach ($this->signals as $signal) {
+            if (!in_array($signal['queueName'], $queueNames, true)) {
+                continue;
+            }
+
+            $hints[] = new SignalHint($signal['id'], $signal['queueName'], $signal['bucket'], $signal['signalKey']);
+            if (count($hints) >= $limit) {
+                break;
+            }
+        }
+
+        return $hints;
     }
 
     public function captureVisibilitySnapshot(): VisibilitySnapshot
@@ -192,7 +212,15 @@ final class BundleRecordingSignalStore implements SignalStore
 
     public function ackVisibleInSnapshot(string $queueName, BucketRange $bucketRange, VisibilitySnapshot $snapshot, ?int $limit = null): int
     {
-        return 0;
+        $before = count($this->signals);
+        $this->signals = array_values(array_filter(
+            $this->signals,
+            static fn (array $signal): bool => $signal['queueName'] !== $queueName
+                || $signal['bucket'] < $bucketRange->lowerInclusive
+                || $signal['bucket'] >= $bucketRange->upperExclusive,
+        ));
+
+        return $before - count($this->signals);
     }
 
     public function suppressDispatch(string $queueName, BucketRange $bucketRange, string $owner, DatePoint $suppressUntil, ?string $domainLeaseRef = null): SuppressionHandle

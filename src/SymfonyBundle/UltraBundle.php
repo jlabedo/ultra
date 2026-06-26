@@ -40,6 +40,7 @@ final class UltraBundle extends AbstractBundle
             'Ultra\\EventSourcedState\\EventSourcedStateExtension',
             'Ultra\\StateStore_Bundle\\StateStoreExtension',
             'Ultra\\StatefulMessageHandling\\StatefulMessageHandlingExtension',
+            'Ultra\\Signal\\SignalExtension',
             'Ultra\\Projection\\Bundle\\ProjectionExtension',
         ];
 

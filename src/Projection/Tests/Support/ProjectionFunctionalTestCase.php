@@ -24,7 +24,9 @@ use Ultra\Projection\InMemory\InMemoryProjectionImplementation;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
-use Ultra\Projection\Bundle\TagNames;
+use Ultra\Signal\SignalExtension;
+use Ultra\Signal\SignalPoller;
+use Ultra\Signal\TagNames;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
 
@@ -61,6 +63,7 @@ abstract class ProjectionFunctionalTestCase extends TestCase
                 }
             })
             ->withBundle(new MapperExtension())
+            ->withBundle(new SignalExtension())
             ->withBundle(new ProjectionExtension())
             ->withService($implementation ?? new InMemoryProjectionImplementation(), ProjectionImplementationInterface::class)
             ->withAlias('test.event_store', EventStore::class)
@@ -79,6 +82,12 @@ abstract class ProjectionFunctionalTestCase extends TestCase
                         ->setArguments([new TaggedIteratorArgument(TagNames::SIGNAL_HANDLER)])
                         ->setPublic(true)
                     ;
+
+                    if ($container->hasDefinition(SignalPoller::class)) {
+                        $container->setAlias('test.signal_poller', SignalPoller::class)
+                            ->setPublic(true)
+                        ;
+                    }
                 }
             })
         ;

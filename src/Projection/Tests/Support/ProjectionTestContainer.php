@@ -14,6 +14,7 @@ use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 use Ultra\Signal\SignalHandler;
+use Ultra\Signal\SignalPoller;
 use Ultra\Testing\UltraLightContainer;
 
 final readonly class ProjectionTestContainer extends UltraLightContainer
@@ -69,5 +70,10 @@ final readonly class ProjectionTestContainer extends UltraLightContainer
     public function projectionSignalHandlers(): array
     {
         return $this->get('test.projection_signal_handlers')->all();
+    }
+
+    public function signalPoller(): SignalPoller
+    {
+        return $this->get('test.signal_poller');
     }
 }
