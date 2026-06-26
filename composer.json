@@ -42,6 +42,8 @@
         "ultra/projection": "self.version",
         "ultra/projection-postgres": "self.version",
         "ultra/schema": "self.version",
+        "ultra/signal": "self.version",
+        "ultra/signal-postgres": "self.version",
         "ultra/state-store": "self.version",
         "ultra/state-store-bundle": "self.version",
         "ultra/stateful-message-handling": "self.version",
