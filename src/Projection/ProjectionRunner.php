@@ -7,6 +7,11 @@ namespace Ultra\Projection;
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\EventStore;
 use Ultra\Projection\Coordination\ProjectionActivity;
+use Ultra\Signal\BucketRange;
+use Ultra\Signal\SignalStore;
+use Ultra\Signal\SuppressionHandle;
+use Ultra\Time\DatePoint;
+use Ultra\Time\Duration;
 
 final readonly class ProjectionRunner
 {
@@ -166,6 +171,76 @@ final readonly class ProjectionRunner
         }
     }
 
+    public function runSignalClaimedOnce(
+        ProjectionRuntime $runtime,
+        SignalStore $signalStore,
+        string $projectionId,
+        int $bucketFrom,
+        string $workerId,
+        int $limit = 100,
+        ?Duration $suppressionTtl = null,
+    ): ProjectionRunResult {
+        $this->ensureInitialized($runtime);
+
+        $segment = $this->segmentRepository->claimSegment($projectionId, $bucketFrom, $workerId);
+        if (null === $segment) {
+            return new ProjectionRunResult(0, false, null);
+        }
+
+        $snapshot = $signalStore->captureVisibilitySnapshot();
+        $bucketRange = new BucketRange($segment->bucketFrom, $segment->bucketTo + 1);
+        $suppression = null;
+
+        try {
+            $suppression = $this->trySuppressSignalDispatch(
+                $signalStore,
+                $projectionId,
+                $bucketRange,
+                $workerId,
+                $snapshot->visibleAt->add($suppressionTtl ?? new Duration(seconds: 60)),
+            );
+
+            $query = $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
+            $result = $this->eventStore->load($query, $segment->checkpoint, null, $limit);
+            $caughtUp = count($result->events) < $limit;
+            $ackedSignals = 0;
+
+            $this->transactionManager->transactional(function () use ($runtime, $segment, $result, $workerId, $caughtUp, $signalStore, $projectionId, $bucketRange, $snapshot, &$ackedSignals): void {
+                foreach ($result->events as $event) {
+                    $runtime->apply($event);
+                }
+
+                $runtime->flush();
+
+                if ($caughtUp) {
+                    $ackedSignals = $signalStore->ackVisibleInSnapshot($projectionId, $bucketRange, $snapshot);
+                }
+
+                $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
+            });
+
+            return new ProjectionRunResult(
+                processedEvents: count($result->events),
+                claimedSegment: true,
+                segment: $segment,
+                caughtUp: $caughtUp,
+                acknowledgedBuckets: $ackedSignals,
+            );
+        } catch (\Throwable $e) {
+            $this->segmentRepository->releaseClaimedSegment($segment, $workerId);
+
+            throw $e;
+        } finally {
+            if ($suppression instanceof SuppressionHandle) {
+                try {
+                    $signalStore->releaseSuppression($suppression);
+                } catch (\Throwable) {
+                    // Suppression is advisory; a release failure must not change projection correctness.
+                }
+            }
+        }
+    }
+
     /**
      * Replay a projection from event 0: drop its state and checkpoints, then
      * stream every event from the event store back through its handlers until
@@ -263,6 +338,26 @@ final readonly class ProjectionRunner
             $this->segmentRepository->releaseClaimedSegment($segment, $workerId);
 
             throw $e;
+        }
+    }
+
+    private function trySuppressSignalDispatch(
+        SignalStore $signalStore,
+        string $queueName,
+        BucketRange $bucketRange,
+        string $workerId,
+        DatePoint $suppressUntil,
+    ): ?SuppressionHandle {
+        try {
+            return $signalStore->suppressDispatch(
+                $queueName,
+                $bucketRange,
+                $workerId,
+                $suppressUntil,
+                sprintf('%s:%d-%d', $queueName, $bucketRange->lowerInclusive, $bucketRange->upperExclusive),
+            );
+        } catch (\Throwable) {
+            return null;
         }
     }
 
