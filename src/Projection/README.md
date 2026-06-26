@@ -1,11 +1,11 @@
 # Projection
 
-The `Projection` package defines how read models are described, replayed, and coordinated.
+The `Projection` package defines how read models are described, replayed, and woken up from durable signals.
 
 It is intentionally split into two layers:
 
 - definition/runtime: what a projection is and how it applies events
-- coordination: how workers are woken up and steered toward stale work
+- signal integration: how appended events produce projection wake-up hints
 
 Postgres-specific persistence lives in `src/Projection_Postgres`. This package keeps the runtime algorithm storage-agnostic and ships in-memory implementations for tests and local wiring.
 
@@ -51,10 +51,8 @@ Rule of thumb:
 
 [ProjectionCatalog.php](ProjectionCatalog.php) is a registry of runtimes and definitions keyed by projection id.
 
-It is used by:
-
-- the activity recorder, which needs all definitions
-- the coordinator, which needs to resolve a runtime from a touched projection id
+It is used by Signal integration to map appended events to projection queues and by workers to resolve a runtime
+from a claimed signal hint.
 
 ## Segment Execution
 
@@ -62,7 +60,7 @@ It is used by:
 
 [ProjectionRunner.php](ProjectionRunner.php) is the low-level executor.
 
-It works with an `EventStore` and a [ProjectionSegmentRepositoryInterface.php](ProjectionSegmentRepositoryInterface.php).
+It works with an `EventStore` and a [ProjectionSegmentStoreInterface.php](ProjectionSegmentStoreInterface.php).
 
 Its job is:
 
@@ -76,14 +74,12 @@ Its job is:
 8. release the segment with the new checkpoint
 9. commit the projection transaction
 10. abandon the segment if the transaction fails
-11. finalize split/merge operations when needed
 
-The segment repository owns runtime state such as:
+The segment store owns runtime state such as:
 
 - current bucket range
 - checkpoint
 - lease state
-- pending split/merge operations
 
 Segments are represented by [ProjectionSegment.php](ProjectionSegment.php).
 
@@ -91,125 +87,118 @@ Segments are represented by [ProjectionSegment.php](ProjectionSegment.php).
 The default [NoOpProjectionTransactionManager.php](NoOpProjectionTransactionManager.php) keeps in-memory and custom
 storage usage lightweight. Postgres-backed read models should wire the DBAL-based transaction manager from
 `src/Projection_Postgres` with the same connection used by projection read-model repositories and the segment
-repository. This makes event application, `#[ProjectionFlush]`, and checkpoint advancement commit or roll back as
+store. This makes event application, `#[ProjectionFlush]`, and checkpoint advancement commit or roll back as
 one unit. First-time segment creation and `#[ProjectionInitializer]` execution are also wrapped together in the
 same transaction manager. Projection deletion likewise wraps `#[ProjectionResetter]` execution and segment-state
 deletion together.
 
-## Coordination
+## Signal Wakeups
 
-The coordination model is intentionally separate from segment execution.
+Projection wakeups are Signal-backed. The Signal row is a durable hint that a projection bucket may be stale; it is
+not the unit of work and it is not a correctness lock.
 
-### Activity Recording
+### Signal Recording
 
-[ProjectionActivityRecorder.php](Coordination/ProjectionActivityRecorder.php) runs after events have been appended successfully.
+[ProjectionSignalEventStore.php](Signal/ProjectionSignalEventStore.php) decorates the event store when a
+`SignalStore` is available.
 
 It:
 
 1. scans all projection definitions
 2. finds which projections handle each committed event
 3. computes the touched bucket for each `(projection, event)` pair
-4. bumps the activity counter for each distinct `(projectionId, bucket)` pair
-5. enqueues one global `WakeProjectionCoordinator` message if no recent wake-up is already pending
+4. appends one Signal hint per distinct `(projectionId, bucket)` pair
 
 Important details:
 
-- activity is a hint for liveness and scheduling, not the source of truth for correctness
-- progress still comes from segment checkpoints in the segment repository
-- bucket activity is deduplicated per append batch, so one append touching the same bucket many times only bumps it once
+- signals are hints for liveness and scheduling, not the source of truth for correctness
+- progress still comes from segment checkpoints in the segment store
+- signal recording is deduplicated per append batch, so one append touching the same bucket many times emits one hint
+- writers do not coalesce against existing Signal rows
 
-### Bucket Activity
-
-[ProjectionBucketActivityRepositoryInterface.php](Coordination/ProjectionBucketActivityRepositoryInterface.php) stores touched buckets as [ProjectionBucketActivity.php](Coordination/ProjectionBucketActivity.php).
-
-Each row is effectively a generation signal:
-
-- `counter` is bumped when the bucket is touched again
-- workers decrement the exact pending counter value they observed after their claimed segment catches up
-
-The coordinator asks for global `affectedBuckets()` to find stale projections, maps those hints to available
-segments, and durably claims only segments that still have pending bucket activity. Bucket activity is a liveness
-signal; segments are the scheduling and checkpointing unit.
-
-Explicit rebuilds should not depend on bucket activity. Use `ProjectionRunner::backfillClaimedOnce()` for claimed
+Explicit rebuilds should not depend on signals. Use `ProjectionRunner::backfillClaimedOnce()` for claimed
 segments that must be replayed from their checkpoints regardless of whether activity hints exist.
 
-### Global Coordinator
+### Backfill Harness
 
-[ProjectionCoordinator.php](Coordination/ProjectionCoordinator.php) is a single leader worker for the whole app.
+`projection:backfill <projection-id> --workers=N` reshapes the projection to `N` canonical balanced segments and
+spawns one PHP process per segment. `N` must be one of `1, 2, 4, 8, 16, 32, 64, 128, 256`.
 
-It does not wake per projection. Instead it:
+The parent command fails before reshaping if any segment is currently claimed. It does not touch Signal rows.
 
-1. acquires the global coordinator lease
-2. reads all affected buckets across all projections
-3. decides the target worker/segment count through a scaling policy
-4. recovers expired segment leases for the touched projections
-5. ensures each touched projection is initialized
-6. splits available segments until the projection has enough segments for the requested workers plus itself
-7. maps pending bucket activity to affected segments
-8. durably claims affected segments for itself or activated workers
-9. processes one local claim itself through `ProjectionRunner`
-10. workers decrement the bucket counters they observed only after their claimed segment catches up
-11. exits when there is no work or no productive progress
+Each child process runs `projection:backfill:segment <projection-id> <bucket-from>` and drains that one segment with
+`ProjectionRunner::backfillClaimedOnce()` until caught up.
 
-This is important: the coordinator is not only a scheduler. It is also a worker and always participates in processing.
+The process harness requires `symfony/process`, which is suggested but not required by the package.
 
-Coordinator liveness is abstracted behind [ProjectionCoordinatorLeaseRepositoryInterface.php](Coordination/ProjectionCoordinatorLeaseRepositoryInterface.php).
+### Signal Handling
 
-### Wake Queue
+[ProjectionSignalHandler.php](Signal/ProjectionSignalHandler.php) is registered once per discovered projection when
+Signal is available.
 
-[ProjectionWakeQueueInterface.php](Coordination/ProjectionWakeQueueInterface.php) is deliberately tiny:
+It:
 
-- `enqueue(object $message)`
-- `dequeue(): ?object`
+1. receives one or more `SignalHint` objects for its projection id
+2. reads the current segment topology
+3. maps hinted buckets to current segments
+4. asks `ProjectionRunner::runSignaledOnce()` to claim and process each current segment
 
-Today the package defines two wake-up messages:
+The handler does not rely on a range proposed by the poller. Topology is resolved at handling time, so a signal for a
+bucket in an old split segment maps to the currently active segment.
 
-- [WakeProjectionCoordinator.php](Coordination/WakeProjectionCoordinator.php)
-- [WakeProjectionWorker.php](Coordination/WakeProjectionWorker.php)
+`ProjectionRunner::runSignaledOnce()`:
 
-The queue is only a wake-up mechanism. Scheduling truth remains in the repositories.
+1. claims the projection segment through `ProjectionSegmentStoreInterface`
+2. captures a Signal visibility snapshot after acquiring the segment claim
+3. best-effort suppresses dispatch for the covered bucket range
+4. loads and applies matching events from the segment checkpoint
+5. flushes the projection runtime
+6. acks visible Signal rows in the covered bucket range only after the segment catches up
+7. completes or releases the segment claim
 
-### Scaling Policy
+Scaling is an infrastructure concern: run more Signal pollers. Duplicate signal delivery and duplicate segment-claim
+attempts are expected; the segment store prevents duplicate expensive processing for the same segment.
 
-[ProjectionScalingPolicyInterface.php](Coordination/ProjectionScalingPolicyInterface.php) receives the current global affected-bucket view and decides how many extra worker wake-ups should be emitted.
+### Topology Changes
 
-The default implementation, [DefaultProjectionScalingPolicy.php](Coordination/DefaultProjectionScalingPolicy.php), returns `0`.
+[ProjectionTopology.php](ProjectionTopology.php) owns split and merge operations.
 
-That means:
+Split is a pure topology mutation. It immediately replaces a segment with two child segments and invalidates any
+active claim on the parent.
 
-- the leader worker still processes work itself
-- no follower workers are spawned unless a custom policy says so
+Merge takes ownership of the covered segments, drains slower segments to the highest covered checkpoint, then
+replaces the covered range with one segment. The core API is strict: missing segments, minimum-size splits, and
+non-contiguous merge ranges throw.
+
+Topology changes do not create or delete Signal rows. Existing Signal rows are interpreted against the current
+topology when a handler receives them.
 
 ## In-Memory Implementations
 
 This package includes in-memory adapters for tests and local composition:
 
-- [InMemoryProjectionSegmentRepository.php](InMemoryProjectionSegmentRepository.php)
-- [InMemoryProjectionBucketActivityRepository.php](Coordination/InMemoryProjectionBucketActivityRepository.php)
-- [InMemoryProjectionCoordinatorLeaseRepository.php](Coordination/InMemoryProjectionCoordinatorLeaseRepository.php)
-- [InMemoryProjectionWakeQueue.php](Coordination/InMemoryProjectionWakeQueue.php)
+- [InMemoryProjectionSegmentStore.php](InMemoryProjectionSegmentStore.php)
 
 These are useful for:
 
 - unit tests
 - single-process experiments
-- validating coordination logic without Postgres
+- validating segment and replay logic without Postgres
 
-For durable cross-process coordination, use the adapters in `src/Projection_Postgres`.
+For durable cross-process segment claims, use the adapters in `src/Projection_Postgres`. For durable wakeups, use
+the Signal package and `src/Signal_Postgres`.
 
 ## End-to-End Flow
 
 At a high level, the runtime works like this:
 
 1. Events are appended successfully to the event store.
-2. `ProjectionActivityRecorder` records touched `(projectionId, bucket)` pairs.
-3. A single global coordinator wake-up is enqueued.
-4. A worker becomes leader by acquiring the coordinator lease.
-5. The leader reads affected buckets, claims affected segments, optionally wakes followers, and processes one claim itself.
-6. `ProjectionRunner` renews the claimed segment lease and replays events from checkpoints.
-7. Caught-up workers decrement the bucket counters they observed, and the loop continues until there is no productive work left.
+2. `ProjectionSignalEventStore` records touched `(projectionId, bucket)` Signal hints.
+3. A Signal poller claims hints and routes them to projection Signal handlers.
+4. The handler maps each hinted bucket to the current segment topology.
+5. `ProjectionRunner::runSignaledOnce()` claims the segment and replays events from checkpoints.
+6. Caught-up workers ack visible Signal rows in the covered range.
 
 The key design choice is:
 
-> checkpoints and segment state are the source of truth; bucket activity and queue messages are liveness hints.
+> checkpoints and segment state are the source of truth; Signal rows are liveness hints.

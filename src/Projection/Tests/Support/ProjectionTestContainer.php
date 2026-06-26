@@ -4,15 +4,14 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests\Support;
 
-use Ultra\Coordination\Lease\CoordinatorLease;
 use Ultra\EventStore\EventStore;
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\Projection\Coordination\ProjectionActivatorInterface;
-use Ultra\Projection\Coordination\ProjectionActivity;
-use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
-use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Projection\ProjectionSegmentStoreInterface;
+use Ultra\Projection\ProjectionTopology;
+use Ultra\Signal\SignalHandler;
+use Ultra\Signal\SignalPoller;
 use Ultra\Testing\UltraLightContainer;
 
 final readonly class ProjectionTestContainer extends UltraLightContainer
@@ -37,28 +36,26 @@ final readonly class ProjectionTestContainer extends UltraLightContainer
         return $this->get('test.projection_runner');
     }
 
-    public function projectionCoordinator(): ProjectionCoordinator
-    {
-        return $this->get('test.projection_coordinator');
-    }
-
-    public function projectionSegments(): ProjectionSegmentRepositoryInterface
+    public function projectionSegments(): ProjectionSegmentStoreInterface
     {
         return $this->get('test.projection_segments');
     }
 
-    public function projectionActivity(): ProjectionActivity
+    public function projectionTopology(): ProjectionTopology
     {
-        return $this->get('test.projection_activity');
+        return $this->get('test.projection_topology');
     }
 
-    public function projectionLeases(): CoordinatorLease
+    /**
+     * @return list<SignalHandler>
+     */
+    public function projectionSignalHandlers(): array
     {
-        return $this->get('test.projection_leases');
+        return $this->get('test.projection_signal_handlers')->all();
     }
 
-    public function projectionActivator(): ProjectionActivatorInterface
+    public function signalPoller(): SignalPoller
     {
-        return $this->get('test.projection_activator');
+        return $this->get('test.signal_poller');
     }
 }
