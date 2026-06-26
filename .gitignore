@@ -13,3 +13,4 @@ composer.lock
 .codex/
 .claude/worktrees/
 .claude/settings.local.json
+specs/
