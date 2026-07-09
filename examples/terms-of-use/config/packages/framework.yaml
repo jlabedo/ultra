@@ -1,0 +1,6 @@
+framework:
+    secret: 'terms-of-use-example'
+
+when@test:
+    framework:
+        test: true
