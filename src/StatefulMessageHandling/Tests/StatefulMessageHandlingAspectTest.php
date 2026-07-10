@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling\Tests;
 
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Exception\CommandHasNoCheckException;
 use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\StatefulMessageHandling\Tests\Example\Command\CreateCourseCommand;
@@ -28,6 +29,35 @@ use Ultra\MessageHandling\MessageContextKeys;
 use Ultra\MessageHandling\ProceedResult;
 use Ultra\Testing\UltraLight;
 
+final readonly class NestedCourseReference
+{
+    public function __construct(
+        public string $courseId,
+    ) {}
+}
+
+final readonly class CreateNestedCourseCommand
+{
+    public function __construct(
+        public NestedCourseReference $reference,
+        public string $name,
+        public int $maxCapacity,
+    ) {}
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(
+        #[BindTo('reference.courseId')]
+        CourseCapacityState $course,
+    ): array {
+        if ($course->exists()) {
+            throw new \InvalidArgumentException('Course already exists');
+        }
+
+        return [new CourseCreated($this->reference->courseId, $this->name, $this->maxCapacity)];
+    }
+}
+
 /**
  * @internal
  *
@@ -35,6 +65,20 @@ use Ultra\Testing\UltraLight;
  */
 final class StatefulMessageHandlingAspectTest extends StatefulMessageHandlingFunctionalTestCase
 {
+    public function test_bind_to_resolves_nested_property_paths_for_event_sourced_state(): void
+    {
+        $container = $this->ultraLight()->boot();
+
+        $events = $container->mediator()->send(new CreateNestedCourseCommand(
+            new NestedCourseReference('nested-course'),
+            'Nested course',
+            12,
+        ));
+
+        self::assertEquals([new CourseCreated('nested-course', 'Nested course', 12)], $events);
+        self::assertCount(1, $container->eventStore()->load(self::courseStreamQuery('nested-course'))->events);
+    }
+
     public function test_it_creates_a_course_and_subscribes_a_student_through_the_mediator(): void
     {
         $container = $this->ultraLight()->boot();
@@ -414,6 +458,8 @@ final class StatefulMessageHandlingAspectTest extends StatefulMessageHandlingFun
             UnsubscribeStudentFromCourseCommand::class,
             CourseCapacityState::class,
             StudentSubscriptionState::class,
+            NestedCourseReference::class,
+            CreateNestedCourseCommand::class,
         );
     }
 

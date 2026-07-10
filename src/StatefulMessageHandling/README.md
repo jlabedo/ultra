@@ -20,7 +20,7 @@ Event-sourcing decision pipeline built on the mediator. Commands declare their c
 | `#[EventSourcingHandler]` | Method | Marks a public event replay handler on a state / entity. |
 | `#[Event('type.name')]` | Class | Event type name for storage and routing. |
 | `#[DomainIdentifier('name')]` | Property | Marks an event DTO identifier used for routing and query matching. |
-| `#[BindTo('propertyName')]` | Parameter | Override convention: use this command property for the state’s stream id. |
+| `#[BindTo('property.path')]` | Parameter | Override convention: use this message property path for the state’s id. |
 
 ## Core types
 

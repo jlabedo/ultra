@@ -55,10 +55,10 @@ final readonly class StateStoreDecisionAspect
             }
 
             $commandProperty = $bindTo?->property ?? StateStoreDecisionAspect::getStateIdProperty($stateClass);
-            if (!$commandRef->hasProperty($commandProperty)) {
+            if (!MessagePropertyPath::exists($commandRef, $commandProperty)) {
                 throw new \LogicException(sprintf(
-                    'Command %s has no property "%s" required for decision handler parameter "%s". '
-                        .'Either add the property or use #[BindTo("propertyName")] to bind to a different command property.',
+                    'Command %s has no property path "%s" required for decision handler parameter "%s". '
+                        .'Either add the property path or use #[BindTo("property.path")] to bind to a different command property path.',
                     $commandClass,
                     $commandProperty,
                     $parameter->getName(),
@@ -160,12 +160,9 @@ final readonly class StateStoreDecisionAspect
 
     private function getCommandPropertyValue(object $command, string $property): int|string|object
     {
-        $getter = function (string $prop): mixed {
-            return $this->{$prop};
-        };
-        $value = $getter->call($command, $property);
+        $value = MessagePropertyPath::value($command, $property);
         if (!is_string($value) && !is_int($value) && !is_object($value)) {
-            throw new \LogicException(sprintf('Command property "%s" must be string, int, or object, got %s.', $property, get_debug_type($value)));
+            throw new \LogicException(sprintf('Command property path "%s" must be string, int, or object, got %s.', $property, get_debug_type($value)));
         }
 
         return $value;

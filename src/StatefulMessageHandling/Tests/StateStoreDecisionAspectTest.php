@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\TestCase;
+use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Attribute\StateReader;
 use Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension;
@@ -158,6 +159,57 @@ final readonly class CreateDecisionAcceptanceCommand
     }
 }
 
+#[State(table: 'decision_terms')]
+final readonly class DecisionTermsState
+{
+    public function __construct(
+        #[StateId(column: 'terms_id')]
+        public string $termsId,
+        #[StateColumn('status')]
+        public string $status,
+    ) {}
+}
+
+final readonly class AcceptDecisionTermsCommand
+{
+    public function __construct(
+        public DecisionAcceptanceId $acceptanceId,
+    ) {}
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function accept(
+        #[BindTo('acceptanceId.termsId')]
+        DecisionTermsState $terms,
+        ?DecisionAcceptanceState $acceptance,
+    ): DecisionAcceptanceState {
+        if ('published' !== $terms->status) {
+            throw new \LogicException('Terms are not published.');
+        }
+        if (null !== $acceptance) {
+            throw new \LogicException('Acceptance already exists.');
+        }
+
+        return new DecisionAcceptanceState($this->acceptanceId, 'accepted');
+    }
+}
+
+final readonly class GetDecisionTermsStatusQuery
+{
+    public function __construct(
+        public DecisionAcceptanceId $acceptanceId,
+    ) {}
+
+    #[SelfHandler]
+    #[StateReader]
+    public function read(
+        #[BindTo('acceptanceId.termsId')]
+        DecisionTermsState $terms,
+    ): string {
+        return $terms->status;
+    }
+}
+
 /**
  * @internal
  *
@@ -165,6 +217,39 @@ final readonly class CreateDecisionAcceptanceCommand
  */
 final class StateStoreDecisionAspectTest extends TestCase
 {
+    public function test_bind_to_resolves_nested_property_paths_for_decisions(): void
+    {
+        $container = $this->ultraLight()->boot();
+        $database = $container->get(InMemoryRowDatabase::class);
+        $database->seedRow('decision_terms', 'terms_id', [
+            'terms_id' => 'terms-2026',
+            'status' => 'published',
+        ]);
+        $id = new DecisionAcceptanceId('identity-1', 'terms-2026');
+
+        $container->get('test.mediator')->send(new AcceptDecisionTermsCommand($id));
+
+        $acceptance = $container->get('test.state_store')->load(DecisionAcceptanceState::class, $id);
+        self::assertInstanceOf(DecisionAcceptanceState::class, $acceptance);
+        self::assertSame('accepted', $acceptance->status);
+    }
+
+    public function test_bind_to_resolves_nested_property_paths_for_state_readers(): void
+    {
+        $container = $this->ultraLight()->boot();
+        $database = $container->get(InMemoryRowDatabase::class);
+        $database->seedRow('decision_terms', 'terms_id', [
+            'terms_id' => 'terms-2026',
+            'status' => 'published',
+        ]);
+
+        $status = $container->get('test.mediator')->send(new GetDecisionTermsStatusQuery(
+            new DecisionAcceptanceId('identity-1', 'terms-2026'),
+        ));
+
+        self::assertSame('published', $status);
+    }
+
     public function test_decision_handler_binds_one_logical_composite_identifier(): void
     {
         $container = $this->ultraLight()->boot();
@@ -286,6 +371,9 @@ final class StateStoreDecisionAspectTest extends TestCase
                 DecisionAcceptanceId::class,
                 DecisionAcceptanceState::class,
                 CreateDecisionAcceptanceCommand::class,
+                DecisionTermsState::class,
+                AcceptDecisionTermsCommand::class,
+                GetDecisionTermsStatusQuery::class,
             )
         ;
     }

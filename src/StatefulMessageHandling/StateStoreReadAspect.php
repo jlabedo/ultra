@@ -49,10 +49,10 @@ final readonly class StateStoreReadAspect
                 ? self::getStateIdProperty($stateClass)
                 : $bindTo->newInstance()->property;
 
-            if (!$messageRef->hasProperty($commandProperty)) {
+            if (!MessagePropertyPath::exists($messageRef, $commandProperty)) {
                 throw new \LogicException(sprintf(
-                    'Message %s has no property "%s" required for state parameter "%s". '
-                        .'Either add the property or use #[BindTo("propertyName")] to bind to a different command property.',
+                    'Message %s has no property path "%s" required for state parameter "%s". '
+                        .'Either add the property path or use #[BindTo("property.path")] to bind to a different message property path.',
                     $messageClass,
                     $commandProperty,
                     $parameter->getName(),
@@ -91,12 +91,9 @@ final readonly class StateStoreReadAspect
 
     private function messagePropertyValue(object $message, string $property): int|string|object
     {
-        $getter = function (string $prop): mixed {
-            return $this->{$prop};
-        };
-        $value = $getter->call($message, $property);
+        $value = MessagePropertyPath::value($message, $property);
         if (!is_string($value) && !is_int($value) && !is_object($value)) {
-            throw new \LogicException(sprintf('Message property "%s" must be string, int, or object, got %s.', $property, get_debug_type($value)));
+            throw new \LogicException(sprintf('Message property path "%s" must be string, int, or object, got %s.', $property, get_debug_type($value)));
         }
 
         return $value;
