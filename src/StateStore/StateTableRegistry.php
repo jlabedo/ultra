@@ -39,7 +39,7 @@ final class StateTableRegistry implements UnitOfWork
         return $table;
     }
 
-    public function collectionFor(StateCollectionMetadata $collection, int|string $ownerId): MappedRowSet
+    public function collectionFor(StateCollectionMetadata $collection, mixed $normalizedOwnerId): MappedRowSet
     {
         if (null === $this->adapterFactory) {
             throw new \LogicException(sprintf(
@@ -48,12 +48,13 @@ final class StateTableRegistry implements UnitOfWork
             ));
         }
 
-        $key = implode('#', [$collection->tableName, $collection->idColumn, $collection->ownerColumn, (string) $ownerId]);
+        $scope = $collection->ownerKey($normalizedOwnerId);
+        $key = $collection->tableKey.'#'.$scope->fingerprint();
 
         return $this->collectionTables[$key] ??= new MappedRowSet($this->adapterFactory->createScoped(
             $collection->tableName,
-            $collection->idColumn,
-            [$collection->ownerColumn => $ownerId],
+            $collection->keyColumns(),
+            $scope,
         ));
     }
 

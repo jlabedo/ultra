@@ -11,6 +11,7 @@ use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapter;
+use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\PendingRowUpdate;
 use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\MappedTable\RowUpdatePlan;
@@ -31,16 +32,48 @@ final class MappedRowSetTest extends TestCase
     private const ID_COLUMN = 'id';
     private const COLUMNS = ['status', 'note', 'version_a', 'version_b'];
 
+    public function test_composite_key_addresses_and_returns_one_structured_row(): void
+    {
+        $database = new InMemoryRowDatabase();
+        $table = new MappedRowSet(new InMemoryMappedRowSetAdapter(
+            $database,
+            'acceptances',
+            ['identity_id', 'terms_id'],
+        ));
+        $key = new MappedKey(['identity_id' => 'identity-1', 'terms_id' => 'terms-2026']);
+
+        $table->withKey($key)->insert()->setColumn('accepted_at', 'now');
+        $this->flushInTransaction($database, $table);
+
+        self::assertSame(['accepted_at' => 'now'], $table->row($key, ['accepted_at']));
+        $rows = $table->rows(['accepted_at']);
+        self::assertCount(1, $rows);
+        self::assertSame($key->values, $rows[0]->key->values);
+        self::assertSame(['accepted_at' => 'now'], $rows[0]->columns);
+    }
+
+    public function test_composite_key_rejects_scalar_shortcut(): void
+    {
+        $table = new MappedRowSet(new InMemoryMappedRowSetAdapter(
+            new InMemoryRowDatabase(),
+            'acceptances',
+            ['identity_id', 'terms_id'],
+        ));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $table->row('identity-1');
+    }
+
     public function test_flush_passes_sorted_plans_to_adapter(): void
     {
         $adapter = new RecordingMappedRowSetAdapter();
         $table = new MappedRowSet($adapter);
 
-        $table->withId('row-2')
+        $table->withKey('row-2')
             ->setColumn('status', 'second')
         ;
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->insert()
             ->setColumn('status', 'first')
         ;
@@ -50,7 +83,7 @@ final class MappedRowSetTest extends TestCase
         self::assertCount(1, $adapter->batches);
         self::assertSame(
             ['row-1', 'row-2'],
-            array_map(static fn (RowUpdatePlan $rowUpdate): int|string => $rowUpdate->id, $adapter->batches[0]['rowUpdates']),
+            array_map(static fn (RowUpdatePlan $rowUpdate): int|string => $rowUpdate->key->value('id'), $adapter->batches[0]['rowUpdates']),
         );
         self::assertSame(
             [RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_UPDATE],
@@ -64,7 +97,7 @@ final class MappedRowSetTest extends TestCase
 
         self::assertFalse($table->hasPendingChanges());
 
-        $table->withId('row-1')->setColumn('status', 'active');
+        $table->withKey('row-1')->setColumn('status', 'active');
 
         self::assertTrue($table->hasPendingChanges());
     }
@@ -73,7 +106,7 @@ final class MappedRowSetTest extends TestCase
     {
         $table = new MappedRowSet(new RecordingMappedRowSetAdapter());
 
-        $table->withId('row-1')->expectColumnValue('version', 1);
+        $table->withKey('row-1')->expectColumnValue('version', 1);
 
         self::assertFalse($table->hasPendingChanges());
     }
@@ -82,7 +115,7 @@ final class MappedRowSetTest extends TestCase
     {
         $table = new MappedRowSet(new RecordingMappedRowSetAdapter());
 
-        $table->expectSameRowIds(['row-1']);
+        $table->expectSameRowKeys(['row-1']);
 
         self::assertTrue($table->hasPendingChanges());
     }
@@ -98,7 +131,7 @@ final class MappedRowSetTest extends TestCase
             'version_b' => 'B1',
         ]);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectColumnValue('version_a', 'A1')
             ->expectColumnValue('version_b', 'B1')
             ->setColumn('status', 'active')
@@ -126,7 +159,7 @@ final class MappedRowSetTest extends TestCase
             'version_b' => 'B1',
         ]);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectColumnValue('note', null)
             ->expectColumnValue('version_a', null)
             ->setColumn('status', 'active')
@@ -148,7 +181,7 @@ final class MappedRowSetTest extends TestCase
             'version_b' => 'B1',
         ]);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->setColumn('status', 'active')
             ->setColumn('note', 'published')
         ;
@@ -164,7 +197,7 @@ final class MappedRowSetTest extends TestCase
     {
         [, $table] = $this->newTable();
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->insert()
             ->setColumn('status', 'pending')
             ->setColumn('note', 'draft')
@@ -176,7 +209,7 @@ final class MappedRowSetTest extends TestCase
             'version_a' => null,
         ], $table->row('row-1', ['status', 'note', 'version_a']));
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->delete()
         ;
 
@@ -197,16 +230,18 @@ final class MappedRowSetTest extends TestCase
             'note' => 'draft',
         ]);
 
+        $rows = $table->rows(['status', 'note']);
+        self::assertSame(['row-1', 'row-2'], array_map(static fn ($row): int|string => $row->key->value('id'), $rows));
         self::assertSame([
-            'row-1' => [
+            [
                 'status' => 'pending',
                 'note' => 'draft',
             ],
-            'row-2' => [
+            [
                 'status' => 'active',
                 'note' => 'published',
             ],
-        ], $table->rows(['status', 'note']));
+        ], array_map(static fn ($row): array => $row->columns, $rows));
     }
 
     public function test_rows_reflects_buffered_changes_before_flush(): void
@@ -223,35 +258,37 @@ final class MappedRowSetTest extends TestCase
             'note' => 'draft',
         ]);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->setColumn('status', 'active')
         ;
-        $table->withId('row-2')
+        $table->withKey('row-2')
             ->delete()
         ;
-        $table->withId('row-3')
+        $table->withKey('row-3')
             ->insert()
             ->setColumn('status', 'new')
             ->setColumn('note', 'fresh')
         ;
 
+        $rows = $table->rows(['status', 'note']);
+        self::assertSame(['row-1', 'row-3'], array_map(static fn ($row): int|string => $row->key->value('id'), $rows));
         self::assertSame([
-            'row-1' => [
+            [
                 'status' => 'active',
                 'note' => 'draft',
             ],
-            'row-3' => [
+            [
                 'status' => 'new',
                 'note' => 'fresh',
             ],
-        ], $table->rows(['status', 'note']));
+        ], array_map(static fn ($row): array => $row->columns, $rows));
     }
 
     public function test_expect_absent_does_not_write_without_subsequent_changes(): void
     {
         [$database, $table] = $this->newTable();
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectAbsent()
         ;
 
@@ -266,7 +303,7 @@ final class MappedRowSetTest extends TestCase
         $this->seedRow($database, ['id' => 'row-2']);
         $this->seedRow($database, ['id' => 'row-1']);
 
-        $table->expectSameRowIds(['row-1', 'row-2']);
+        $table->expectSameRowKeys(['row-1', 'row-2']);
         $this->flushInTransaction($database, $table);
 
         self::assertSame(['row-1', 'row-2'], array_keys($database->rows(self::TABLE_NAME, 'id')));
@@ -277,7 +314,7 @@ final class MappedRowSetTest extends TestCase
         [$database, $table] = $this->newTable();
         $this->seedRow($database, ['id' => 'row-1']);
 
-        $table->expectSameRowIds(['row-1']);
+        $table->expectSameRowKeys(['row-1']);
         $this->seedRow($database, ['id' => 'row-2']);
 
         $this->expectException(ConcurrencyException::class);
@@ -290,7 +327,7 @@ final class MappedRowSetTest extends TestCase
         $this->seedRow($database, ['id' => 'row-1']);
         $this->seedRow($database, ['id' => 'row-2']);
 
-        $table->expectSameRowIds(['row-1', 'row-2']);
+        $table->expectSameRowKeys(['row-1', 'row-2']);
         $database->deleteRow(self::TABLE_NAME, self::ID_COLUMN, 'row-2');
 
         $this->expectException(ConcurrencyException::class);
@@ -302,24 +339,24 @@ final class MappedRowSetTest extends TestCase
         [, $table] = $this->newTable();
 
         $this->expectException(\InvalidArgumentException::class);
-        $table->expectSameRowIds(['row-1', 'row-1']);
+        $table->expectSameRowKeys(['row-1', 'row-1']);
     }
 
     public function test_conflicting_row_set_expectations_throw_immediately(): void
     {
         [, $table] = $this->newTable();
 
-        $table->expectSameRowIds(['row-1', 'row-2']);
+        $table->expectSameRowKeys(['row-1', 'row-2']);
 
         $this->expectException(ConcurrencyException::class);
-        $table->expectSameRowIds(['row-1']);
+        $table->expectSameRowKeys(['row-1']);
     }
 
     public function test_expect_absent_turns_later_column_writes_into_insert(): void
     {
         [$database, $table] = $this->newTable();
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectAbsent()
             ->setColumn('status', 'pending')
             ->setColumn('note', 'draft')
@@ -346,7 +383,7 @@ final class MappedRowSetTest extends TestCase
             'version_b' => 'B1',
         ]);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectColumnValue('version_a', 'A1')
             ->setColumn('note', 'next')
         ;
@@ -364,12 +401,12 @@ final class MappedRowSetTest extends TestCase
     {
         [$database, $table] = $this->newTable();
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->insert()
             ->setColumn('status', 'pending')
         ;
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->delete()
         ;
 
@@ -389,12 +426,12 @@ final class MappedRowSetTest extends TestCase
             'version_b' => 'B1',
         ]);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectColumnValue('version_a', 'A1')
             ->delete()
         ;
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->insert()
             ->setColumn('status', 'recreated')
             ->setColumn('note', 'fresh')
@@ -422,12 +459,12 @@ final class MappedRowSetTest extends TestCase
             'version_b' => 'B1',
         ]);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectColumnValue('version_a', 'A1')
             ->delete()
         ;
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->upsert()
             ->setColumn('status', 'upserted')
             ->setColumn('version_a', 'A2')
@@ -449,7 +486,7 @@ final class MappedRowSetTest extends TestCase
 
         $this->expectException(ConcurrencyException::class);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->delete()
             ->setColumn('status', 'pending')
         ;
@@ -461,7 +498,7 @@ final class MappedRowSetTest extends TestCase
 
         $this->expectException(ConcurrencyException::class);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->insert()
             ->expectColumnValue('version_a', 'A1')
         ;
@@ -471,14 +508,14 @@ final class MappedRowSetTest extends TestCase
     {
         [, $table] = $this->newTable();
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectColumnValue('version_a', 'A1')
             ->setColumn('status', 'active')
         ;
 
         $this->expectException(ConcurrencyException::class);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectColumnValue('version_a', 'A2')
         ;
     }
@@ -494,7 +531,7 @@ final class MappedRowSetTest extends TestCase
             'version_b' => 'B1',
         ]);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectColumnValue('version_a', 'A1')
             ->setColumn('status', 'active')
         ;
@@ -523,12 +560,12 @@ final class MappedRowSetTest extends TestCase
             'version_b' => 'B2',
         ]);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectColumnValue('version_a', 'A1')
             ->setColumn('status', 'active')
         ;
 
-        $table->withId('row-2')
+        $table->withKey('row-2')
             ->expectColumnValue('version_a', 'stale')
             ->setColumn('status', 'active')
         ;
@@ -561,12 +598,12 @@ final class MappedRowSetTest extends TestCase
             'version_b' => 'B2',
         ]);
 
-        $table->withId('row-1')
+        $table->withKey('row-1')
             ->expectColumnValue('version_a', 'A1')
             ->setColumn('status', 'active')
         ;
 
-        $table->withId('row-2')
+        $table->withKey('row-2')
             ->expectColumnValue('version_a', 'stale')
             ->setColumn('status', 'active')
         ;
@@ -587,7 +624,7 @@ final class MappedRowSetTest extends TestCase
     private function newTable(): array
     {
         $database = new InMemoryRowDatabase();
-        $adapter = new InMemoryMappedRowSetAdapter($database, self::TABLE_NAME, self::ID_COLUMN);
+        $adapter = new InMemoryMappedRowSetAdapter($database, self::TABLE_NAME, [self::ID_COLUMN]);
 
         return [$database, new MappedRowSet($adapter)];
     }
@@ -627,10 +664,20 @@ final class MappedRowSetTest extends TestCase
 
 final class RecordingMappedRowSetAdapter implements MappedRowSetAdapter
 {
-    /** @var list<array{expectedRowIds: list<int|string>|null, rowUpdates: list<RowUpdatePlan>}> */
+    /** @var list<array{expectedRowKeys: list<MappedKey>|null, rowUpdates: list<RowUpdatePlan>}> */
     public array $batches = [];
 
-    public function row(int|string $id, array $columns = []): array|false
+    public function keyColumns(): array
+    {
+        return ['id'];
+    }
+
+    public function scope(): ?MappedKey
+    {
+        return null;
+    }
+
+    public function row(MappedKey $key, array $columns = []): array|false
     {
         return false;
     }
@@ -643,7 +690,7 @@ final class RecordingMappedRowSetAdapter implements MappedRowSetAdapter
     public function apply(RowSetUpdatePlan $plan): void
     {
         $this->batches[] = [
-            'expectedRowIds' => $plan->expectedRowIds,
+            'expectedRowKeys' => $plan->expectedRowKeys,
             'rowUpdates' => $plan->rowUpdates,
         ];
     }

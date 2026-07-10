@@ -11,9 +11,9 @@ final class InMemoryMappedOwnedRowSetAdapter implements MappedOwnedRowSetAdapter
         private readonly string $tableName,
     ) {}
 
-    public function rowsForParent(array $parentKey): array
+    public function rowsForParent(MappedKey $parentKey): array
     {
-        return $this->database->rowsForParent($this->tableName, $parentKey);
+        return $this->database->rowsForParent($this->tableName, $parentKey->values);
     }
 
     public function apply(OwnedRowSetUpdatePlan $plan): void
@@ -23,7 +23,7 @@ final class InMemoryMappedOwnedRowSetAdapter implements MappedOwnedRowSetAdapter
         }
 
         foreach ($plan->replacements as $replacement) {
-            $this->database->replaceOwnedSet($this->tableName, $replacement->parentKey, $replacement->rows);
+            $this->database->replaceOwnedSet($this->tableName, $replacement->parentKey->values, $replacement->rows);
         }
     }
 }

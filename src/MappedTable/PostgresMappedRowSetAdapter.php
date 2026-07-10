@@ -7,405 +7,289 @@ namespace Ultra\MappedTable;
 use Doctrine\DBAL\Connection;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
+final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 {
     /**
-     * @param array<string, PostgresMappedColumnType> $columnTypes
+     * @param list<string>                                $configuredKeyColumns
+     * @param array<string, PostgresMappedColumnType>     $columnTypes
      */
     public function __construct(
-        private readonly Connection $connection,
-        private readonly string $tableName,
-        private readonly string $idColumn = 'id',
-        private readonly array $columnTypes = [],
-        /** @var array<string, int|string> */
-        private readonly array $scopeColumns = [],
-    ) {}
+        private Connection $connection,
+        private string $tableName,
+        private array $configuredKeyColumns = ['id'],
+        private array $columnTypes = [],
+        private ?MappedKey $configuredScope = null,
+    ) {
+        if ([] === $configuredKeyColumns || count($configuredKeyColumns) !== count(array_unique($configuredKeyColumns))) {
+            throw new \InvalidArgumentException('Mapped row-set key columns must be non-empty and unique.');
+        }
+        foreach ($configuredKeyColumns as $column) {
+            if ('' === $column) {
+                throw new \InvalidArgumentException('Mapped row-set key column names must be non-empty.');
+            }
+        }
+        if (null !== $configuredScope && [] !== array_diff($configuredScope->columns(), $configuredKeyColumns)) {
+            throw new \InvalidArgumentException('Mapped row-set scope columns must belong to its key.');
+        }
+    }
 
-    public function row(int|string $id, array $columns = []): array|false
+    public function keyColumns(): array
     {
+        $columns = $this->configuredKeyColumns;
+        sort($columns, SORT_STRING);
+
+        return $columns;
+    }
+
+    public function scope(): ?MappedKey
+    {
+        return $this->configuredScope;
+    }
+
+    public function row(MappedKey $key, array $columns = []): array|false
+    {
+        $this->assertKey($key);
         $quotedColumns = [] === $columns
             ? ['*']
-            : array_map(
-                $this->connection->quoteSingleIdentifier(...),
-                array_values(array_unique($columns)),
-            );
+            : array_map($this->connection->quoteSingleIdentifier(...), array_values(array_unique($columns)));
 
-        $row = $this->connection->fetchAssociative(
-            sprintf(
-                'SELECT %s FROM %s WHERE %s',
-                implode(', ', $quotedColumns),
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(' AND ', $this->idWhereClauses()),
-            ),
-            [$id, ...array_values($this->scopeColumns)],
-        );
+        $row = $this->connection->fetchAssociative(sprintf(
+            'SELECT %s FROM %s WHERE %s',
+            implode(', ', $quotedColumns),
+            $this->connection->quoteSingleIdentifier($this->tableName),
+            implode(' AND ', $this->keyWhereClauses()),
+        ), $this->encodedKeyValues($key));
 
         return false === $row ? false : $this->decodeRow($row);
     }
 
     public function rows(array $columns = []): array
     {
-        $selectColumns = [] === $columns ? ['*'] : array_values(array_unique([$this->idColumn, ...$columns]));
-        $quotedColumns = '*' === $selectColumns[0]
+        $selected = [] === $columns ? ['*'] : array_values(array_unique([...$this->keyColumns(), ...$columns]));
+        $quoted = '*' === $selected[0]
             ? ['*']
-            : array_map($this->connection->quoteSingleIdentifier(...), $selectColumns);
+            : array_map($this->connection->quoteSingleIdentifier(...), $selected);
 
         $rows = $this->connection->fetchAllAssociative(sprintf(
             'SELECT %s FROM %s%s ORDER BY %s',
-            implode(', ', $quotedColumns),
+            implode(', ', $quoted),
             $this->connection->quoteSingleIdentifier($this->tableName),
             $this->scopeWhereSql(),
-            $this->connection->quoteSingleIdentifier($this->idColumn),
-        ), array_values($this->scopeColumns));
+            implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $this->keyColumns())),
+        ), $this->scopeParams());
 
-        $mappedRows = [];
+        $mapped = [];
         foreach ($rows as $row) {
-            $id = $row[$this->idColumn];
-            if ([] !== $columns && !in_array($this->idColumn, $columns, true)) {
-                unset($row[$this->idColumn]);
+            $row = $this->decodeRow($row);
+            $keyValues = [];
+            foreach ($this->keyColumns() as $column) {
+                $value = $row[$column] ?? null;
+                if (!is_int($value) && !is_string($value)) {
+                    throw new \LogicException(sprintf('Table "%s" returned no scalar key column "%s".', $this->tableName, $column));
+                }
+                $keyValues[$column] = $value;
+                unset($row[$column]);
             }
-
-            $mappedRows[(string) $id] = $this->decodeRow($row);
+            $mapped[] = new MappedRow(new MappedKey($keyValues), $row);
         }
 
-        return $mappedRows;
+        return $mapped;
     }
 
     public function apply(RowSetUpdatePlan $plan): void
     {
-        $this->assertExpectedRowIds($plan->expectedRowIds);
+        $this->assertExpectedRowKeys($plan->expectedRowKeys);
+
+        foreach ($plan->rowUpdates as $update) {
+            $this->assertKey($update->key);
+        }
 
         foreach ($this->groupConsecutive($plan->rowUpdates) as $batch) {
-            $mode = $batch[0]->mode;
-            $count = count($batch);
-
-            switch ($mode) {
-                case RowUpdatePlan::MODE_DELETE:
-                    $count > 1
-                        ? $this->flushBatchDelete($batch)
-                        : $this->flushDelete($batch[0]);
-
-                    break;
-
-                case RowUpdatePlan::MODE_INSERT:
-                    $count > 1
-                        ? $this->flushBatchInsert($batch)
-                        : $this->flushInsert($batch[0]);
-
-                    break;
-
-                case RowUpdatePlan::MODE_REPLACE:
-                    $count > 1
-                        ? $this->flushBatchReplace($batch)
-                        : $this->flushReplace($batch[0]);
-
-                    break;
-
-                case RowUpdatePlan::MODE_UPSERT:
-                    $count > 1
-                        ? $this->flushBatchUpsert($batch)
-                        : $this->flushUpsert($batch[0]);
-
-                    break;
-
-                case RowUpdatePlan::MODE_UPDATE:
-                    $this->flushUpdate($batch[0]);
-
-                    break;
-
-                default:
-                    throw new \LogicException(sprintf(
-                        'Unsupported row update mode "%s" for table "%s".',
-                        $mode,
-                        $this->tableName,
-                    ));
+            if (1 === count($batch)) {
+                $this->flushOne($batch[0]);
+                continue;
             }
+
+            match ($batch[0]->mode) {
+                RowUpdatePlan::MODE_DELETE => $this->flushBatchDelete($batch),
+                RowUpdatePlan::MODE_INSERT => $this->flushBatchInsert($batch),
+                RowUpdatePlan::MODE_REPLACE => $this->flushBatchReplace($batch),
+                RowUpdatePlan::MODE_UPSERT => $this->flushBatchUpsert($batch),
+                default => array_map($this->flushOne(...), $batch),
+            };
         }
     }
 
-    /**
-     * @param list<int|string>|null $expectedRowIds
-     */
-    private function assertExpectedRowIds(?array $expectedRowIds): void
+    private function flushOne(RowUpdatePlan $update): void
     {
-        if (null === $expectedRowIds) {
-            return;
-        }
-
-        if (!$this->connection->isTransactionActive()) {
-            throw new \LogicException(sprintf(
-                'Row-set expectations for table "%s" require an active transaction.',
-                $this->tableName,
-            ));
-        }
-
-        $this->connection->executeStatement(
-            'SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))',
-            [$this->tableName, $this->idColumn.':'.json_encode($this->scopeColumns, JSON_THROW_ON_ERROR)],
-        );
-
-        $actualRowIds = array_map(
-            static fn (mixed $id): string => (string) $id,
-            $this->connection->fetchFirstColumn(sprintf(
-                'SELECT %s FROM %s%s ORDER BY %s',
-                $this->connection->quoteSingleIdentifier($this->idColumn),
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                $this->scopeWhereSql(),
-                $this->connection->quoteSingleIdentifier($this->idColumn),
-            ), array_values($this->scopeColumns)),
-        );
-        $expectedRowKeys = array_map(static fn (int|string $id): string => (string) $id, $expectedRowIds);
-        sort($actualRowIds, SORT_STRING);
-        sort($expectedRowKeys, SORT_STRING);
-
-        if ($actualRowIds !== $expectedRowKeys) {
-            throw new ConcurrencyException(sprintf(
-                'Row-set expectation failed for table "%s": row ids changed.',
-                $this->tableName,
-            ));
-        }
+        match ($update->mode) {
+            RowUpdatePlan::MODE_DELETE => $this->flushDelete($update),
+            RowUpdatePlan::MODE_INSERT => $this->flushInsert($update),
+            RowUpdatePlan::MODE_REPLACE => $this->flushReplace($update),
+            RowUpdatePlan::MODE_UPSERT => $this->flushUpsert($update),
+            RowUpdatePlan::MODE_UPDATE => $this->flushUpdate($update),
+            default => throw new \LogicException(sprintf('Unsupported row update mode "%s".', $update->mode)),
+        };
     }
 
-    /** @return list<list<RowUpdatePlan>> */
-    private function groupConsecutive(array $rowUpdates): array
+    /** @param list<RowUpdatePlan> $updates @return list<list<RowUpdatePlan>> */
+    private function groupConsecutive(array $updates): array
     {
         $groups = [];
         $currentKey = null;
-        $currentGroup = [];
-
-        foreach ($rowUpdates as $update) {
-            $key = $this->batchKey($update);
+        $current = [];
+        foreach ($updates as $update) {
+            $key = match ($update->mode) {
+                RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_UPSERT => $update->mode.':'.implode(',', array_keys($update->setColumns)),
+                RowUpdatePlan::MODE_DELETE => [] === $update->expectedColumns ? 'delete' : 'delete:'.$update->key->fingerprint(),
+                RowUpdatePlan::MODE_REPLACE => [] === $update->expectedColumns ? 'replace:'.implode(',', array_keys($update->setColumns)) : 'replace:'.$update->key->fingerprint(),
+                default => $update->mode.':'.$update->key->fingerprint(),
+            };
             if ($key !== $currentKey) {
-                if ([] !== $currentGroup) {
-                    $groups[] = $currentGroup;
+                if ([] !== $current) {
+                    $groups[] = $current;
                 }
                 $currentKey = $key;
-                $currentGroup = [];
+                $current = [];
             }
-            $currentGroup[] = $update;
+            $current[] = $update;
         }
-
-        if ([] !== $currentGroup) {
-            $groups[] = $currentGroup;
+        if ([] !== $current) {
+            $groups[] = $current;
         }
 
         return $groups;
     }
 
-    private function batchKey(RowUpdatePlan $update): string
-    {
-        return match ($update->mode) {
-            RowUpdatePlan::MODE_INSERT => 'insert:'.implode(',', array_keys($update->setColumns)),
-            RowUpdatePlan::MODE_UPSERT => 'upsert:'.implode(',', array_keys($update->setColumns)),
-            RowUpdatePlan::MODE_DELETE => [] === $update->expectedColumns
-                ? 'delete'
-                : 'delete:'.(string) $update->id,
-            RowUpdatePlan::MODE_REPLACE => [] === $update->expectedColumns
-                ? 'replace:'.implode(',', array_keys($update->setColumns))
-                : 'replace:'.(string) $update->id,
-            default => $update->mode.':'.(string) $update->id,
-        };
-    }
-
-    /**
-     * @param list<RowUpdatePlan> $updates
-     */
+    /** @param list<RowUpdatePlan> $updates */
     private function flushBatchDelete(array $updates): void
     {
-        $ids = array_map(static fn ($u) => $u->id, $updates);
-
-        $affectedRows = $this->connection->executeStatement(
-            sprintf(
-                'DELETE FROM %s WHERE %s IN (%s)%s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                $this->connection->quoteSingleIdentifier($this->idColumn),
-                implode(', ', array_fill(0, count($ids), '?')),
-                $this->scopeAndSql(),
-            ),
-            [...$ids, ...array_values($this->scopeColumns)],
-        );
-
-        if ($affectedRows !== count($updates)) {
-            throw new ConcurrencyException(sprintf(
-                'Batch delete failed for table "%s": expected %d deletions, got %d.',
-                $this->tableName,
-                count($updates),
-                $affectedRows,
-            ));
-        }
-    }
-
-    /**
-     * @param list<RowUpdatePlan> $updates
-     */
-    private function flushBatchInsert(array $updates): void
-    {
-        $columns = [$this->idColumn, ...array_keys($this->scopeColumns), ...array_keys($updates[0]->setColumns)];
-        $quotedColumns = array_map($this->connection->quoteSingleIdentifier(...), $columns);
-        $rowPlaceholder = '('.implode(', ', array_map($this->placeholder(...), $columns)).')';
-
+        $branches = [];
         $params = [];
         foreach ($updates as $update) {
-            $params[] = $update->id;
-            foreach ($this->scopeColumns as $value) {
-                $params[] = $value;
-            }
-            foreach ($update->setColumns as $column => $value) {
-                $params[] = $this->encodeColumnValue($column, $value);
-            }
+            $branches[] = '('.implode(' AND ', $this->keyWhereClauses()).')';
+            array_push($params, ...$this->encodedKeyValues($update->key));
         }
-
-        $affectedRows = $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO NOTHING',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(', ', $quotedColumns),
-                implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
-                $this->conflictTargetSql(),
-            ),
-            $params,
-        );
-
-        if ($affectedRows !== count($updates)) {
-            throw new ConcurrencyException(sprintf(
-                'Batch insert failed for table "%s": %d of %d rows already existed.',
-                $this->tableName,
-                count($updates) - $affectedRows,
-                count($updates),
-            ));
+        $affected = $this->connection->executeStatement(sprintf(
+            'DELETE FROM %s WHERE %s',
+            $this->connection->quoteSingleIdentifier($this->tableName),
+            implode(' OR ', $branches),
+        ), $params);
+        if ($affected !== count($updates)) {
+            throw new ConcurrencyException(sprintf('Batch delete failed for table "%s": expected %d deletions, got %d.', $this->tableName, count($updates), $affected));
         }
     }
 
-    /**
-     * @param list<RowUpdatePlan> $updates
-     */
+    /** @param list<RowUpdatePlan> $updates */
+    private function flushBatchInsert(array $updates): void
+    {
+        [$columns] = $this->insertValues($updates[0]);
+        $rowPlaceholder = '('.implode(', ', array_map($this->placeholder(...), $columns)).')';
+        $params = [];
+        foreach ($updates as $update) {
+            [, $rowParams] = $this->insertValues($update);
+            array_push($params, ...$rowParams);
+        }
+        $affected = $this->connection->executeStatement(sprintf(
+            'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO NOTHING',
+            $this->connection->quoteSingleIdentifier($this->tableName),
+            implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
+            implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
+            $this->conflictTargetSql(),
+        ), $params);
+        if ($affected !== count($updates)) {
+            throw new ConcurrencyException(sprintf('Batch insert failed for table "%s": %d rows already existed.', $this->tableName, count($updates) - $affected));
+        }
+    }
+
+    /** @param list<RowUpdatePlan> $updates */
     private function flushBatchReplace(array $updates): void
     {
         $this->flushBatchDelete($updates);
         $this->flushBatchInsert($updates);
     }
 
-    /**
-     * @param list<RowUpdatePlan> $updates
-     */
+    /** @param list<RowUpdatePlan> $updates */
     private function flushBatchUpsert(array $updates): void
     {
-        $columns = [$this->idColumn, ...array_keys($this->scopeColumns), ...array_keys($updates[0]->setColumns)];
-        $quotedColumns = array_map($this->connection->quoteSingleIdentifier(...), $columns);
+        [$columns] = $this->insertValues($updates[0]);
         $rowPlaceholder = '('.implode(', ', array_map($this->placeholder(...), $columns)).')';
-        $allPlaceholders = implode(', ', array_fill(0, count($updates), $rowPlaceholder));
-
         $params = [];
         foreach ($updates as $update) {
-            $params[] = $update->id;
-            foreach ($this->scopeColumns as $value) {
-                $params[] = $value;
-            }
-            foreach ($update->setColumns as $column => $value) {
-                $params[] = $this->encodeColumnValue($column, $value);
-            }
+            [, $rowParams] = $this->insertValues($update);
+            array_push($params, ...$rowParams);
         }
-
         if ([] === $updates[0]->setColumns) {
-            $this->connection->executeStatement(
-                sprintf(
-                    'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO NOTHING',
-                    $this->connection->quoteSingleIdentifier($this->tableName),
-                    implode(', ', $quotedColumns),
-                    $allPlaceholders,
-                    $this->conflictTargetSql(),
-                ),
-                $params,
-            );
+            $action = 'DO NOTHING';
+        } else {
+            $action = 'DO UPDATE SET '.implode(', ', array_map(function (string $column): string {
+                $quoted = $this->connection->quoteSingleIdentifier($column);
 
+                return sprintf('%1$s = EXCLUDED.%1$s', $quoted);
+            }, array_keys($updates[0]->setColumns)));
+        }
+        $this->connection->executeStatement(sprintf(
+            'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) %s',
+            $this->connection->quoteSingleIdentifier($this->tableName),
+            implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
+            implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
+            $this->conflictTargetSql(),
+            $action,
+        ), $params);
+    }
+
+    /** @param list<MappedKey>|null $expected */
+    private function assertExpectedRowKeys(?array $expected): void
+    {
+        if (null === $expected) {
             return;
         }
-
-        $assignments = [];
-        foreach (array_slice($columns, 1 + count($this->scopeColumns)) as $column) {
-            $quotedColumn = $this->connection->quoteSingleIdentifier($column);
-            $assignments[] = sprintf('%1$s = EXCLUDED.%1$s', $quotedColumn);
+        if (!$this->connection->isTransactionActive()) {
+            throw new \LogicException(sprintf('Row-set expectations for table "%s" require an active transaction.', $this->tableName));
         }
 
         $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO UPDATE SET %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(', ', $quotedColumns),
-                $allPlaceholders,
-                $this->conflictTargetSql(),
-                implode(', ', $assignments),
-            ),
-            $params,
+            'SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))',
+            [$this->tableName, json_encode([$this->keyColumns(), $this->configuredScope?->values], JSON_THROW_ON_ERROR)],
         );
+
+        $actual = array_map(static fn (MappedRow $row): string => $row->key->fingerprint(), $this->rows());
+        $expected = array_map(static fn (MappedKey $key): string => $key->fingerprint(), $expected);
+        sort($actual, SORT_STRING);
+        sort($expected, SORT_STRING);
+
+        if ($actual !== $expected) {
+            throw new ConcurrencyException(sprintf('Row-set expectation failed for table "%s": row keys changed.', $this->tableName));
+        }
     }
 
     private function flushDelete(RowUpdatePlan $update): void
     {
-        $whereClauses = [
-            ...$this->idWhereClauses(),
-        ];
-        $params = [$update->id, ...array_values($this->scopeColumns)];
+        [$where, $params] = $this->conditionalWhere($update);
+        $affected = $this->connection->executeStatement(sprintf(
+            'DELETE FROM %s WHERE %s',
+            $this->connection->quoteSingleIdentifier($this->tableName),
+            implode(' AND ', $where),
+        ), $params);
 
-        foreach ($update->expectedColumns as $column => $value) {
-            $whereClauses[] = sprintf(
-                '%s IS NOT DISTINCT FROM %s',
-                $this->connection->quoteSingleIdentifier($column),
-                $this->placeholder($column),
-            );
-            $params[] = $this->encodeColumnValue($column, $value);
-        }
-
-        $affectedRows = $this->connection->executeStatement(
-            sprintf(
-                'DELETE FROM %s WHERE %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(' AND ', $whereClauses),
-            ),
-            $params,
-        );
-
-        if (1 !== $affectedRows) {
-            throw new ConcurrencyException(sprintf(
-                'Conditional delete failed for table "%s" and row "%s".',
-                $this->tableName,
-                (string) $update->id,
-            ));
+        if (1 !== $affected) {
+            throw $this->concurrency('Conditional delete failed', $update);
         }
     }
 
     private function flushInsert(RowUpdatePlan $update): void
     {
-        $columns = [$this->idColumn, ...array_keys($this->scopeColumns)];
-        $params = [$update->id, ...array_values($this->scopeColumns)];
+        [$columns, $params] = $this->insertValues($update);
+        $affected = $this->connection->executeStatement(sprintf(
+            'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
+            $this->connection->quoteSingleIdentifier($this->tableName),
+            implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
+            implode(', ', array_map($this->placeholder(...), $columns)),
+            $this->conflictTargetSql(),
+        ), $params);
 
-        foreach ($update->setColumns as $column => $value) {
-            $columns[] = $column;
-            $params[] = $this->encodeColumnValue($column, $value);
-        }
-
-        $quotedColumns = array_map(
-            $this->connection->quoteSingleIdentifier(...),
-            $columns,
-        );
-
-        $affectedRows = $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(', ', $quotedColumns),
-                implode(', ', array_map($this->placeholder(...), $columns)),
-                $this->conflictTargetSql(),
-            ),
-            $params,
-        );
-
-        if (1 !== $affectedRows) {
-            throw new ConcurrencyException(sprintf(
-                'Insert failed for table "%s" and row "%s" because the row already exists.',
-                $this->tableName,
-                (string) $update->id,
-            ));
+        if (1 !== $affected) {
+            throw $this->concurrency('Insert failed because the row already exists', $update);
         }
     }
 
@@ -417,147 +301,123 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
     private function flushUpsert(RowUpdatePlan $update): void
     {
-        $columns = [$this->idColumn, ...array_keys($this->scopeColumns)];
-        $params = [$update->id, ...array_values($this->scopeColumns)];
+        [$columns, $params] = $this->insertValues($update);
+        $quotedColumns = implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns));
+        $placeholders = implode(', ', array_map($this->placeholder(...), $columns));
 
+        if ([] === $update->setColumns) {
+            $action = 'DO NOTHING';
+        } else {
+            $assignments = array_map(function (string $column): string {
+                $quoted = $this->connection->quoteSingleIdentifier($column);
+
+                return sprintf('%1$s = EXCLUDED.%1$s', $quoted);
+            }, array_keys($update->setColumns));
+            $action = 'DO UPDATE SET '.implode(', ', $assignments);
+        }
+
+        $this->connection->executeStatement(sprintf(
+            'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) %s',
+            $this->connection->quoteSingleIdentifier($this->tableName),
+            $quotedColumns,
+            $placeholders,
+            $this->conflictTargetSql(),
+            $action,
+        ), $params);
+    }
+
+    private function flushUpdate(RowUpdatePlan $update): void
+    {
+        $set = [];
+        $params = [];
+        foreach ($update->setColumns as $column => $value) {
+            $set[] = sprintf('%s = %s', $this->connection->quoteSingleIdentifier($column), $this->placeholder($column));
+            $params[] = $this->encodeColumnValue($column, $value);
+        }
+        [$where, $whereParams] = $this->conditionalWhere($update);
+        array_push($params, ...$whereParams);
+
+        $affected = $this->connection->executeStatement(sprintf(
+            'UPDATE %s SET %s WHERE %s',
+            $this->connection->quoteSingleIdentifier($this->tableName),
+            implode(', ', $set),
+            implode(' AND ', $where),
+        ), $params);
+
+        if (1 !== $affected) {
+            throw $this->concurrency('Conditional update failed', $update);
+        }
+    }
+
+    /** @return array{list<string>, list<mixed>} */
+    private function conditionalWhere(RowUpdatePlan $update): array
+    {
+        $where = $this->keyWhereClauses();
+        $params = $this->encodedKeyValues($update->key);
+        foreach ($update->expectedColumns as $column => $value) {
+            $where[] = sprintf('%s IS NOT DISTINCT FROM %s', $this->connection->quoteSingleIdentifier($column), $this->placeholder($column));
+            $params[] = $this->encodeColumnValue($column, $value);
+        }
+
+        return [$where, $params];
+    }
+
+    /** @return array{list<string>, list<mixed>} */
+    private function insertValues(RowUpdatePlan $update): array
+    {
+        $columns = $this->keyColumns();
+        $params = $this->encodedKeyValues($update->key);
         foreach ($update->setColumns as $column => $value) {
             $columns[] = $column;
             $params[] = $this->encodeColumnValue($column, $value);
         }
 
-        $quotedColumns = array_map(
-            $this->connection->quoteSingleIdentifier(...),
-            $columns,
-        );
+        return [$columns, $params];
+    }
 
-        if ([] === $update->setColumns) {
-            $this->connection->executeStatement(
-                sprintf(
-                    'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
-                    $this->connection->quoteSingleIdentifier($this->tableName),
-                    implode(', ', $quotedColumns),
-                    implode(', ', array_map($this->placeholder(...), $columns)),
-                    $this->conflictTargetSql(),
-                ),
-                $params,
-            );
-
-            return;
-        }
-
-        $assignments = [];
-        foreach (array_slice($columns, 1 + count($this->scopeColumns)) as $column) {
-            $quotedColumn = $this->connection->quoteSingleIdentifier($column);
-            $assignments[] = sprintf('%1$s = EXCLUDED.%1$s', $quotedColumn);
-        }
-
-        $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO UPDATE SET %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(', ', $quotedColumns),
-                implode(', ', array_map($this->placeholder(...), $columns)),
-                $this->conflictTargetSql(),
-                implode(', ', $assignments),
-            ),
-            $params,
+    /** @return list<string> */
+    private function keyWhereClauses(): array
+    {
+        return array_map(
+            fn (string $column): string => sprintf('%s = %s', $this->connection->quoteSingleIdentifier($column), $this->placeholder($column)),
+            $this->keyColumns(),
         );
     }
 
-    private function flushUpdate(RowUpdatePlan $update): void
+    /** @return list<mixed> */
+    private function encodedKeyValues(MappedKey $key): array
     {
-        $setClauses = [];
-        $params = [];
-
-        foreach ($update->setColumns as $column => $value) {
-            $setClauses[] = sprintf(
-                '%s = %s',
-                $this->connection->quoteSingleIdentifier($column),
-                $this->placeholder($column),
-            );
-            $params[] = $this->encodeColumnValue($column, $value);
-        }
-
-        $whereClauses = [
-            ...$this->idWhereClauses(),
-        ];
-        $params[] = $update->id;
-        array_push($params, ...array_values($this->scopeColumns));
-
-        foreach ($update->expectedColumns as $column => $value) {
-            $whereClauses[] = sprintf(
-                '%s IS NOT DISTINCT FROM %s',
-                $this->connection->quoteSingleIdentifier($column),
-                $this->placeholder($column),
-            );
-            $params[] = $this->encodeColumnValue($column, $value);
-        }
-
-        $affectedRows = $this->connection->executeStatement(
-            sprintf(
-                'UPDATE %s SET %s WHERE %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(', ', $setClauses),
-                implode(' AND ', $whereClauses),
-            ),
-            $params,
-        );
-
-        if (1 !== $affectedRows) {
-            throw new ConcurrencyException(sprintf(
-                'Conditional update failed for table "%s" and row "%s".',
-                $this->tableName,
-                (string) $update->id,
-            ));
-        }
-    }
-
-    /**
-     * @return list<string>
-     */
-    private function idWhereClauses(): array
-    {
-        $clauses = [
-            sprintf('%s = ?', $this->connection->quoteSingleIdentifier($this->idColumn)),
-        ];
-
-        foreach ($this->scopeColumns as $column => $_) {
-            $clauses[] = sprintf('%s = ?', $this->connection->quoteSingleIdentifier($column));
-        }
-
-        return $clauses;
+        return array_map(fn (string $column): mixed => $this->encodeColumnValue($column, $key->value($column)), $this->keyColumns());
     }
 
     private function scopeWhereSql(): string
     {
-        if ([] === $this->scopeColumns) {
+        if (null === $this->configuredScope) {
             return '';
         }
 
         return ' WHERE '.implode(' AND ', array_map(
-            fn (string $column): string => sprintf('%s = ?', $this->connection->quoteSingleIdentifier($column)),
-            array_keys($this->scopeColumns),
+            fn (string $column): string => sprintf('%s = %s', $this->connection->quoteSingleIdentifier($column), $this->placeholder($column)),
+            $this->configuredScope->columns(),
         ));
     }
 
-    private function scopeAndSql(): string
+    /** @return list<mixed> */
+    private function scopeParams(): array
     {
-        if ([] === $this->scopeColumns) {
-            return '';
+        if (null === $this->configuredScope) {
+            return [];
         }
 
-        return ' AND '.implode(' AND ', array_map(
-            fn (string $column): string => sprintf('%s = ?', $this->connection->quoteSingleIdentifier($column)),
-            array_keys($this->scopeColumns),
-        ));
+        return array_map(
+            fn (string $column): mixed => $this->encodeColumnValue($column, $this->configuredScope->value($column)),
+            $this->configuredScope->columns(),
+        );
     }
 
     private function conflictTargetSql(): string
     {
-        return implode(', ', array_map(
-            $this->connection->quoteSingleIdentifier(...),
-            [$this->idColumn, ...array_keys($this->scopeColumns)],
-        ));
+        return implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $this->keyColumns()));
     }
 
     private function placeholder(string $column): string
@@ -572,11 +432,7 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         return ($this->columnTypes[$column] ?? null)?->encode($value) ?? $value;
     }
 
-    /**
-     * @param array<string, mixed> $row
-     *
-     * @return array<string, mixed>
-     */
+    /** @param array<string, mixed> $row @return array<string, mixed> */
     private function decodeRow(array $row): array
     {
         foreach ($this->columnTypes as $column => $type) {
@@ -586,5 +442,18 @@ final class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         }
 
         return $row;
+    }
+
+    private function assertKey(MappedKey $key): void
+    {
+        $key->assertColumns($this->keyColumns());
+        if (null !== $this->configuredScope && !$key->matches($this->configuredScope)) {
+            throw new \InvalidArgumentException('Mapped key does not belong to adapter scope.');
+        }
+    }
+
+    private function concurrency(string $message, RowUpdatePlan $update): ConcurrencyException
+    {
+        return new ConcurrencyException(sprintf('%s for table "%s" and key %s.', $message, $this->tableName, $update->key));
     }
 }

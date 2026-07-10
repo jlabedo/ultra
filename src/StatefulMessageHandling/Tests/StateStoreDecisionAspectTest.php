@@ -32,11 +32,11 @@ use Ultra\StateStore_Bundle\StateStoreExtension;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
 
-#[State(table: 'decision_orders', idColumn: 'order_id')]
+#[State(table: 'decision_orders')]
 final readonly class DecisionOrderState
 {
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'order_id')]
         public string $orderId,
         #[StateColumn('status')]
         public string $status,
@@ -122,6 +122,42 @@ final class RecordDecisionCourseCreated
     public function onCourseCreated(CourseCreated $event): void {}
 }
 
+final readonly class DecisionAcceptanceId
+{
+    public function __construct(
+        public string $identityId,
+        public string $termsId,
+    ) {}
+}
+
+#[State(table: 'decision_acceptances')]
+final readonly class DecisionAcceptanceState
+{
+    public function __construct(
+        #[StateId(columns: ['identityId' => 'identity_id', 'termsId' => 'terms_id'])]
+        public DecisionAcceptanceId $acceptanceId,
+        public string $status,
+    ) {}
+}
+
+final readonly class CreateDecisionAcceptanceCommand
+{
+    public function __construct(
+        public DecisionAcceptanceId $acceptanceId,
+    ) {}
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(?DecisionAcceptanceState $acceptance): DecisionAcceptanceState
+    {
+        if (null !== $acceptance) {
+            throw new \LogicException('Acceptance already exists.');
+        }
+
+        return new DecisionAcceptanceState($this->acceptanceId, 'accepted');
+    }
+}
+
 /**
  * @internal
  *
@@ -129,6 +165,18 @@ final class RecordDecisionCourseCreated
  */
 final class StateStoreDecisionAspectTest extends TestCase
 {
+    public function test_decision_handler_binds_one_logical_composite_identifier(): void
+    {
+        $container = $this->ultraLight()->boot();
+        $id = new DecisionAcceptanceId('identity-1', 'terms-2026');
+
+        $container->get('test.mediator')->send(new CreateDecisionAcceptanceCommand($id));
+
+        $state = $container->get('test.state_store')->load(DecisionAcceptanceState::class, new DecisionAcceptanceId('identity-1', 'terms-2026'));
+        self::assertInstanceOf(DecisionAcceptanceState::class, $state);
+        self::assertSame('accepted', $state->status);
+    }
+
     public function test_it_injects_loaded_state_and_saves_returned_state(): void
     {
         $container = $this->ultraLight()->boot();
@@ -235,6 +283,9 @@ final class StateStoreDecisionAspectTest extends TestCase
                 GetDecisionOrderStatusQuery::class,
                 CreateCourseAndConfirmDecisionOrderCommand::class,
                 RecordDecisionCourseCreated::class,
+                DecisionAcceptanceId::class,
+                DecisionAcceptanceState::class,
+                CreateDecisionAcceptanceCommand::class,
             )
         ;
     }

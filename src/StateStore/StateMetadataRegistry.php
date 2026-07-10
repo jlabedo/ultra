@@ -17,7 +17,9 @@ final readonly class StateMetadataRegistry
      *     tableName: string,
      *     tableKey: string,
      *     idProperty: string,
-     *     idColumn: string,
+     *     idType: string,
+     *     idScalar: bool,
+     *     idPropertyColumns: array<string, string>,
      *     propertyColumns: array<string, string>,
      *     optimisticPropertyColumns: array<string, string>
      * }|StateMetadata> $metadata

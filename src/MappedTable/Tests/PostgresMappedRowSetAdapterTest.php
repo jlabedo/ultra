@@ -6,6 +6,7 @@ namespace Ultra\MappedTable\Tests;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Attributes\CoversClass;
+use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
@@ -74,16 +75,18 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'note' => 'draft',
             ]);
 
+            $rows = $table->rows(['status', 'note']);
+            self::assertSame(['row-1', 'row-2'], array_map(static fn ($row): int|string => $row->key->value('id'), $rows));
             self::assertSame([
-                'row-1' => [
+                [
                     'status' => 'pending',
                     'note' => 'draft',
                 ],
-                'row-2' => [
+                [
                     'status' => 'active',
                     'note' => 'published',
                 ],
-            ], $table->rows(['status', 'note']));
+            ], array_map(static fn ($row): array => $row->columns, $rows));
         });
     }
 
@@ -97,7 +100,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 ],
             ];
 
-            $table->withId('row-1')->upsert()->setColumn('payload', $payload);
+            $table->withKey('row-1')->upsert()->setColumn('payload', $payload);
             $this->flush($connection, $table);
 
             self::assertSame(['payload' => $payload], $table->row('row-1', ['payload']));
@@ -109,7 +112,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
     public function test_date_column_type_round_trips_iso_dates(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $table->withId('row-1')->upsert()->setColumn('expires_on', '2026-05-25');
+            $table->withKey('row-1')->upsert()->setColumn('expires_on', '2026-05-25');
             $this->flush($connection, $table);
 
             self::assertSame(['expires_on' => '2026-05-25'], $table->row('row-1', ['expires_on']));
@@ -128,7 +131,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
             $this->insertRow($connection, $tableName, ['id' => 'row-2']);
             $this->insertRow($connection, $tableName, ['id' => 'row-1']);
 
-            $table->expectSameRowIds(['row-1', 'row-2']);
+            $table->expectSameRowKeys(['row-1', 'row-2']);
             $this->flush($connection, $table);
 
             self::assertSame(['row-1', 'row-2'], $connection->fetchFirstColumn(sprintf(
@@ -143,7 +146,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, ['id' => 'row-1']);
 
-            $table->expectSameRowIds(['row-1']);
+            $table->expectSameRowKeys(['row-1']);
             $this->insertRow($connection, $tableName, ['id' => 'row-2']);
 
             $this->expectException(ConcurrencyException::class);
@@ -157,7 +160,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
             $this->insertRow($connection, $tableName, ['id' => 'row-1']);
             $this->insertRow($connection, $tableName, ['id' => 'row-2']);
 
-            $table->expectSameRowIds(['row-1', 'row-2']);
+            $table->expectSameRowKeys(['row-1', 'row-2']);
             $connection->delete($tableName, ['id' => 'row-2']);
 
             $this->expectException(ConcurrencyException::class);
@@ -174,8 +177,8 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_a' => 'A1',
             ]);
 
-            $table->expectSameRowIds(['row-1']);
-            $table->withId('row-1')
+            $table->expectSameRowKeys(['row-1']);
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->setColumn('status', 'active')
             ;
@@ -189,7 +192,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
     public function test_expect_absent_turns_later_column_writes_into_insert(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectAbsent()
                 ->setColumn('status', 'pending')
                 ->setColumn('note', 'draft')
@@ -229,7 +232,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->delete()
             ;
 
@@ -261,7 +264,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A2')
                 ->delete()
             ;
@@ -292,12 +295,12 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->setColumn('status', 'active')
             ;
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->delete()
             ;
@@ -322,12 +325,12 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
     public function test_delete_cancels_pending_insert_for_the_same_row(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->insert()
                 ->setColumn('status', 'pending')
             ;
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->delete()
             ;
 
@@ -359,12 +362,12 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->delete()
             ;
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->insert()
                 ->setColumn('status', 'recreated')
                 ->setColumn('note', 'fresh')
@@ -405,12 +408,12 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->delete()
             ;
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->insert()
                 ->setColumn('status', 'recreated')
             ;
@@ -441,7 +444,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->expectException(ConcurrencyException::class);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->delete()
                 ->setColumn('status', 'pending')
             ;
@@ -451,7 +454,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
     public function test_flush_upserts_row_by_inserting_when_absent(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->upsert()
                 ->setColumn('status', 'pending')
                 ->setColumn('note', 'draft')
@@ -492,7 +495,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->upsert()
                 ->setColumn('status', 'updated')
                 ->setColumn('note', 'fresh')
@@ -524,7 +527,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
     public function test_upsert_works_when_called_after_set_column(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->setColumn('status', 'pending')
                 ->setColumn('note', 'draft')
                 ->upsert()
@@ -564,12 +567,12 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->delete()
             ;
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->upsert()
                 ->setColumn('status', 'upserted')
                 ->setColumn('version_a', 'A2')
@@ -601,7 +604,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
     public function test_flush_inserts_row(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->insert()
                 ->setColumn('status', 'pending')
                 ->setColumn('note', 'draft')
@@ -634,11 +637,11 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
     public function test_flush_merges_insert_with_other_buffered_changes_for_the_same_row(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->setColumn('status', 'pending')
             ;
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->insert()
                 ->setColumn('note', 'draft')
                 ->setColumn('version_a', 'A1')
@@ -678,7 +681,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->insert()
                 ->setColumn('status', 'new')
             ;
@@ -703,7 +706,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->expectException(ConcurrencyException::class);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->insert()
                 ->expectColumnValue('version_a', 'A1')
             ;
@@ -721,7 +724,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->expectColumnValue('version_b', 'B1')
                 ->setColumn('status', 'active')
@@ -762,7 +765,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('note', null)
                 ->expectColumnValue('version_a', null)
                 ->setColumn('status', 'active')
@@ -796,7 +799,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->setColumn('note', 'next')
             ;
@@ -830,12 +833,12 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->setColumn('version_a', 'A2')
             ;
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->setColumn('note', 'published')
             ;
@@ -874,14 +877,14 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->setColumn('status', 'active')
             ;
 
             $this->expectException(ConcurrencyException::class);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A2')
             ;
         });
@@ -898,7 +901,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_b' => 'B1',
             ]);
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('version_a', 'A1')
                 ->setColumn('status', 'active')
             ;
@@ -925,7 +928,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
     public function test_insert_round_trips_text_array_columns(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->insert()
                 ->setColumn('status', 'pending')
                 ->setColumn('tags', ['alpha', 'beta'])
@@ -954,7 +957,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
     public function test_update_supports_empty_array_columns_and_optimistic_expectations(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->insert()
                 ->setColumn('status', 'pending')
                 ->setColumn('tags', ['alpha'])
@@ -962,7 +965,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
             $this->flush($connection, $table);
             $table->clear();
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('tags', ['alpha'])
                 ->setColumn('tags', [])
             ;
@@ -978,7 +981,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
     public function test_update_rejects_stale_array_expectations(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->insert()
                 ->setColumn('status', 'pending')
                 ->setColumn('tags', ['alpha'])
@@ -986,7 +989,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
             $this->flush($connection, $table);
             $table->clear();
 
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->expectColumnValue('tags', ['beta'])
                 ->setColumn('status', 'active')
             ;
@@ -1006,13 +1009,13 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
     public function test_batch_upsert_supports_array_columns(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $table->withId('row-1')
+            $table->withKey('row-1')
                 ->upsert()
                 ->setColumn('status', 'pending')
                 ->setColumn('tags', ['alpha'])
             ;
 
-            $table->withId('row-2')
+            $table->withKey('row-2')
                 ->upsert()
                 ->setColumn('status', 'active')
                 ->setColumn('tags', ['beta', 'gamma'])
@@ -1025,6 +1028,35 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
         }, [
             'tags' => PostgresMappedColumnType::textArray(),
         ]);
+    }
+
+    public function test_composite_key_round_trips_through_postgres(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $_, string $tableName): void {
+            $compositeTable = $tableName.'_composite';
+            $connection->executeStatement(sprintf(
+                'CREATE TABLE %s (identity_id TEXT NOT NULL, terms_id TEXT NOT NULL, accepted_at TEXT NOT NULL, PRIMARY KEY (identity_id, terms_id))',
+                $connection->quoteSingleIdentifier($compositeTable),
+            ));
+
+            try {
+                $table = new MappedRowSet(new PostgresMappedRowSetAdapter(
+                    $connection,
+                    $compositeTable,
+                    ['identity_id', 'terms_id'],
+                ));
+                $key = new MappedKey(['identity_id' => 'identity-1', 'terms_id' => 'terms-2026']);
+                $table->withKey($key)->insert()->setColumn('accepted_at', 'now');
+                $this->flush($connection, $table);
+
+                self::assertSame(['accepted_at' => 'now'], $table->row($key, ['accepted_at']));
+                $rows = $table->rows(['accepted_at']);
+                self::assertCount(1, $rows);
+                self::assertSame($key->values, $rows[0]->key->values);
+            } finally {
+                $connection->executeStatement(sprintf('DROP TABLE IF EXISTS %s', $connection->quoteSingleIdentifier($compositeTable)));
+            }
+        });
     }
 
     private function flush(Connection $connection, MappedRowSet $table): void

@@ -29,16 +29,12 @@ final class MappedOwnedRowSet implements UnitOfWork
         private readonly MappedOwnedRowSetAdapter $adapter,
     ) {}
 
-    /**
-     * @param array<string, int|string> $parentKey
-     */
-    public function withParent(array $parentKey): PendingOwnedSetReplace
+    public function withParent(MappedKey $parentKey): PendingOwnedSetReplace
     {
-        $normalized = $this->normalizeParentKey($parentKey);
-        $bufferKey = self::bufferKey($normalized);
+        $bufferKey = $parentKey->fingerprint();
 
-        return new PendingOwnedSetReplace(function (array $rows) use ($normalized, $bufferKey): void {
-            $this->replacements[$bufferKey] = new OwnedSetReplace($normalized, array_values($rows));
+        return new PendingOwnedSetReplace(function (array $rows) use ($parentKey, $bufferKey): void {
+            $this->replacements[$bufferKey] = new OwnedSetReplace($parentKey, array_values($rows));
         });
     }
 
@@ -71,21 +67,18 @@ final class MappedOwnedRowSet implements UnitOfWork
     /**
      * Return the rows currently buffered for the given parent key, falling back to the adapter when no replacement is pending.
      *
-     * @param array<string, int|string> $parentKey
-     *
      * @return list<array<string, mixed>>
      */
-    public function rowsForParent(array $parentKey): array
+    public function rowsForParent(MappedKey $parentKey): array
     {
-        $normalized = $this->normalizeParentKey($parentKey);
-        $bufferKey = self::bufferKey($normalized);
+        $bufferKey = $parentKey->fingerprint();
         $buffered = $this->replacements[$bufferKey] ?? null;
 
         if (null !== $buffered) {
             return $buffered->rows;
         }
 
-        return $this->adapter->rowsForParent($normalized);
+        return $this->adapter->rowsForParent($parentKey);
     }
 
     public function flush(): void
@@ -93,7 +86,7 @@ final class MappedOwnedRowSet implements UnitOfWork
         $replacements = array_values($this->replacements);
         usort(
             $replacements,
-            static fn (OwnedSetReplace $left, OwnedSetReplace $right): int => self::bufferKey($left->parentKey) <=> self::bufferKey($right->parentKey),
+            static fn (OwnedSetReplace $left, OwnedSetReplace $right): int => $left->parentKey->fingerprint() <=> $right->parentKey->fingerprint(),
         );
 
         $deletes = array_values($this->parentMatchDeletes);
@@ -116,38 +109,7 @@ final class MappedOwnedRowSet implements UnitOfWork
         $this->parentMatchDeletes = [];
     }
 
-    /**
-     * @param array<string, int|string> $parentKey
-     *
-     * @return array<string, int|string>
-     */
-    private function normalizeParentKey(array $parentKey): array
-    {
-        if ([] === $parentKey) {
-            throw new \InvalidArgumentException('Parent key must contain at least one column.');
-        }
-
-        foreach ($parentKey as $column => $value) {
-            if (!is_string($column) || '' === $column) {
-                throw new \InvalidArgumentException('Parent key columns must be non-empty strings.');
-            }
-
-            if (!is_int($value) && !is_string($value)) {
-                throw new \InvalidArgumentException(sprintf(
-                    'Parent key column "%s" must be an int or string.',
-                    $column,
-                ));
-            }
-        }
-
-        ksort($parentKey, SORT_STRING);
-
-        return $parentKey;
-    }
-
-    /**
-     * @param array<string, int|string> $parentKey
-     */
+    /** @param array<string, int|string> $parentKey */
     private static function bufferKey(array $parentKey): string
     {
         return json_encode($parentKey, JSON_THROW_ON_ERROR);
@@ -185,13 +147,12 @@ final class MappedOwnedRowSet implements UnitOfWork
     }
 
     /**
-     * @param array<string, int|string> $parentKey
      * @param array<string, int|string> $partial
      */
-    private static function parentMatchesPartial(array $parentKey, array $partial): bool
+    private static function parentMatchesPartial(MappedKey $parentKey, array $partial): bool
     {
         foreach ($partial as $column => $value) {
-            if (!array_key_exists($column, $parentKey) || $parentKey[$column] !== $value) {
+            if (!$parentKey->contains($column) || $parentKey->value($column) !== $value) {
                 return false;
             }
         }

@@ -6,10 +6,9 @@ namespace Ultra\MappedTable;
 
 interface MappedRowSetAdapterFactory
 {
-    public function create(string $tableName, string $idColumn = 'id'): MappedRowSetAdapter;
+    /** @param list<string> $keyColumns */
+    public function create(string $tableName, array $keyColumns = ['id']): MappedRowSetAdapter;
 
-    /**
-     * @param array<string, int|string> $scopeColumns
-     */
-    public function createScoped(string $tableName, string $idColumn, array $scopeColumns): MappedRowSetAdapter;
+    /** @param list<string> $keyColumns */
+    public function createScoped(string $tableName, array $keyColumns, MappedKey $scope): MappedRowSetAdapter;
 }

@@ -34,7 +34,7 @@ final class PostgresMappedOwnedRowSetAdapter implements MappedOwnedRowSetAdapter
         $this->parentColumns = array_values($parentColumns);
     }
 
-    public function rowsForParent(array $parentKey): array
+    public function rowsForParent(MappedKey $parentKey): array
     {
         $this->assertParentKeyMatches($parentKey);
 
@@ -164,11 +164,10 @@ final class PostgresMappedOwnedRowSetAdapter implements MappedOwnedRowSetAdapter
     }
 
     /**
-     * @param array<string, int|string> $parentKey
      */
-    private function assertParentKeyMatches(array $parentKey): void
+    private function assertParentKeyMatches(MappedKey $parentKey): void
     {
-        if (count($parentKey) !== count($this->parentColumns)) {
+        if (count($parentKey->values) !== count($this->parentColumns)) {
             throw new \InvalidArgumentException(sprintf(
                 'Parent key for table "%s" expects columns [%s].',
                 $this->tableName,
@@ -177,7 +176,7 @@ final class PostgresMappedOwnedRowSetAdapter implements MappedOwnedRowSetAdapter
         }
 
         foreach ($this->parentColumns as $column) {
-            if (!array_key_exists($column, $parentKey)) {
+            if (!$parentKey->contains($column)) {
                 throw new \InvalidArgumentException(sprintf(
                     'Parent key for table "%s" is missing column "%s".',
                     $this->tableName,
@@ -212,15 +211,13 @@ final class PostgresMappedOwnedRowSetAdapter implements MappedOwnedRowSetAdapter
     }
 
     /**
-     * @param array<string, int|string> $parentKey
-     *
      * @return list<int|string>
      */
-    private function orderedParentValues(array $parentKey): array
+    private function orderedParentValues(MappedKey $parentKey): array
     {
         $values = [];
         foreach ($this->parentColumns as $column) {
-            $values[] = $parentKey[$column];
+            $values[] = $parentKey->value($column);
         }
 
         return $values;

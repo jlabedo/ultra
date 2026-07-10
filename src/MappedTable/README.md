@@ -12,7 +12,7 @@ The core package owns:
 - read-through access that reflects buffered row changes before flush
 - row-set reads that reflect buffered row changes before flush
 - optimistic expectation merging
-- row-set id expectations for detecting inserts and deletes
+- row-set key expectations for detecting inserts and deletes
 - deterministic flush ordering
 - fluent row update configuration
 
@@ -32,24 +32,35 @@ $database = new InMemoryRowDatabase();
 $adapter = new InMemoryMappedRowSetAdapter($database, 'users');
 $table = new MappedRowSet($adapter);
 
-$table->withId('user-1')
+$table->withKey('user-1')
     ->expectColumnValue('status', 'pending')
     ->setColumn('status', 'active');
 ```
 
-`withId(...)` returns a fluent `PendingRowUpdate` handle for one row in the table.
+`withKey(...)` returns a fluent `PendingRowUpdate` handle for one row in the table. A scalar is accepted when exactly one key column remains unbound. Composite rows use `MappedKey`:
+
+```php
+use Ultra\MappedTable\MappedKey;
+
+$key = new MappedKey([
+    'identity_id' => 'identity-1',
+    'terms_id' => 'terms-2026',
+]);
+
+$table->withKey($key)->insert();
+```
 
 `row(...)` reads the current row through the adapter and overlays any buffered in-memory mutations for the same id, so callers can observe pending state before `flush()`.
 
-`rows(...)` reads all rows in the logical row set and overlays buffered mutations. `expectSameRowIds(...)` buffers an optimistic expectation that the row id set has not changed before `flush()`.
+`rows(...)` returns a list of `MappedRow` objects containing a structured `MappedKey` and the projected columns. It overlays buffered mutations. `expectSameRowKeys(...)` buffers an optimistic expectation that the row-key set has not changed before `flush()`.
 
 ## Adapter Contract
 
 Adapters implement `Ultra\MappedTable\MappedRowSetAdapter`:
 
-- `row(string|int $id, array $columns = [])` reads one row, optionally projecting columns
-- `rows(array $columns = [])` reads all rows in the logical row set keyed by row id
-- `apply(RowSetUpdatePlan $plan)` receives optional row-set id expectations and the sorted batch of immutable row plans
+- `row(MappedKey $key, array $columns = [])` reads one row, optionally projecting columns
+- `rows(array $columns = [])` reads all rows as `MappedRow` values
+- `apply(RowSetUpdatePlan $plan)` receives optional row-set key expectations and the sorted batch of immutable row plans
 
 `MappedRowSet` itself does not open transactions. If you need atomicity across a flush, open the surrounding transaction on the underlying storage before calling `flush()`.
 
@@ -78,7 +89,7 @@ $table = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, 'users'))
 ```
 
 The Postgres adapter checks expected column values with `IS NOT DISTINCT FROM`, so `null` expectations are handled correctly.
-Row-set id expectations use a transaction-scoped advisory lock and therefore require an active transaction.
+Row-set key expectations use a transaction-scoped advisory lock and therefore require an active transaction.
 
 ## Owned Child Sets
 
@@ -93,6 +104,7 @@ pattern. One operation:
 
 ```php
 use Ultra\MappedTable\MappedOwnedRowSet;
+use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\PostgresMappedOwnedRowSetAdapter;
 
 $set = new MappedOwnedRowSet(new PostgresMappedOwnedRowSetAdapter(
@@ -102,7 +114,7 @@ $set = new MappedOwnedRowSet(new PostgresMappedOwnedRowSetAdapter(
     rowColumns: ['eligible_from', 'eligible_to'],
 ));
 
-$set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+$set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-1']))
     ->replace([
         ['eligible_from' => '2026-01-01', 'eligible_to' => '2026-06-01'],
         ['eligible_from' => '2026-07-01', 'eligible_to' => null],

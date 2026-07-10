@@ -11,7 +11,8 @@ final readonly class StateCollection
      * @param class-string $itemClass
      */
     public function __construct(
-        public string $ownerColumn,
         public string $itemClass,
+        /** @var array<string, string> */
+        public array $ownerColumns = [],
     ) {}
 }

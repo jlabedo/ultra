@@ -158,14 +158,14 @@ final readonly class StateStoreDecisionAspect
         return $objects;
     }
 
-    private function getCommandPropertyValue(object $command, string $property): int|string
+    private function getCommandPropertyValue(object $command, string $property): int|string|object
     {
         $getter = function (string $prop): mixed {
             return $this->{$prop};
         };
         $value = $getter->call($command, $property);
-        if (!is_string($value) && !is_int($value)) {
-            throw new \LogicException(sprintf('Command property "%s" must be string or int, got %s.', $property, get_debug_type($value)));
+        if (!is_string($value) && !is_int($value) && !is_object($value)) {
+            throw new \LogicException(sprintf('Command property "%s" must be string, int, or object, got %s.', $property, get_debug_type($value)));
         }
 
         return $value;

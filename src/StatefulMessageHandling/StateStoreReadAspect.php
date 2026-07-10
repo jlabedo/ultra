@@ -89,14 +89,14 @@ final readonly class StateStoreReadAspect
         return $proceed(provided: $states);
     }
 
-    private function messagePropertyValue(object $message, string $property): int|string
+    private function messagePropertyValue(object $message, string $property): int|string|object
     {
         $getter = function (string $prop): mixed {
             return $this->{$prop};
         };
         $value = $getter->call($message, $property);
-        if (!is_string($value) && !is_int($value)) {
-            throw new \LogicException(sprintf('Message property "%s" must be string or int, got %s.', $property, get_debug_type($value)));
+        if (!is_string($value) && !is_int($value) && !is_object($value)) {
+            throw new \LogicException(sprintf('Message property "%s" must be string, int, or object, got %s.', $property, get_debug_type($value)));
         }
 
         return $value;

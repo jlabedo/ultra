@@ -28,7 +28,7 @@ final readonly class PendingRowUpdate
             throw new ConcurrencyException(sprintf(
                 'Cannot mark table "%s", row "%s" for insert because the row is already expected to exist.',
                 $this->tableName,
-                (string) $this->update->id,
+                (string) $this->update->key,
             ));
         }
 
@@ -44,7 +44,7 @@ final readonly class PendingRowUpdate
             throw new ConcurrencyException(sprintf(
                 'Cannot mark table "%s", row "%s" as expected absent because it is already expected to exist.',
                 $this->tableName,
-                (string) $this->update->id,
+                (string) $this->update->key,
             ));
         }
 
@@ -52,7 +52,7 @@ final readonly class PendingRowUpdate
             throw new ConcurrencyException(sprintf(
                 'Cannot mark table "%s", row "%s" as expected absent because it is already marked for delete.',
                 $this->tableName,
-                (string) $this->update->id,
+                (string) $this->update->key,
             ));
         }
 
@@ -123,7 +123,7 @@ final readonly class PendingRowUpdate
             throw new ConcurrencyException(sprintf(
                 'Cannot register expected column values for table "%s", row "%s" because it is already expected to be absent.',
                 $this->tableName,
-                (string) $this->update->id,
+                (string) $this->update->key,
             ));
         }
 
@@ -139,7 +139,7 @@ final readonly class PendingRowUpdate
             throw new ConcurrencyException(sprintf(
                 'Conflicting expected values were registered for table "%s", row "%s", column "%s".',
                 $this->tableName,
-                (string) $this->update->id,
+                (string) $this->update->key,
                 $column,
             ));
         }
@@ -167,7 +167,7 @@ final readonly class PendingRowUpdate
             throw new ConcurrencyException(sprintf(
                 'Cannot register column updates for table "%s", row "%s" because it is already marked for delete.',
                 $this->tableName,
-                (string) $this->update->id,
+                (string) $this->update->key,
             ));
         }
 

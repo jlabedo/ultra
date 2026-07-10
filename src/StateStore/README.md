@@ -31,11 +31,11 @@ use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
 use Ultra\StateStore\Attribute\StateId;
 
-#[State(table: 'orders', idColumn: 'order_id')]
+#[State(table: 'orders')]
 final readonly class OrderState
 {
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'order_id')]
         public string $orderId,
         #[StateColumn('status')]
         public string $orderStatus,
@@ -45,16 +45,16 @@ final readonly class OrderState
 ```
 
 Collection properties can be persisted in a separate mapped row set with `#[Ultra\StateStore\Attribute\StateCollection(...)]`.
-The parent state id is written to the configured owner column, and each collection item is normalized into one row keyed by its item id property.
+The parent state key is combined with each item's own key. Owner columns inherit the parent's physical key mapping by default and can be overridden with `ownerColumns`. Collection item identities are relative to their owner; item classes are therefore not registered as independently loadable root states.
 
 ```php
 use Ultra\StateStore\Attribute\StateCollection;
 
-#[State(table: 'order_lines', idColumn: 'line_id')]
+#[State(table: 'order_lines')]
 final readonly class OrderLineState
 {
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'line_id')]
         public string $lineId,
         #[StateColumn]
         public string $sku,
@@ -63,25 +63,51 @@ final readonly class OrderLineState
     ) {}
 }
 
-#[State(table: 'orders', idColumn: 'order_id')]
+#[State(table: 'orders')]
 final readonly class OrderWithLinesState
 {
     /**
      * @param list<OrderLineState> $lines
      */
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'order_id')]
         public string $orderId,
         #[StateColumn('status')]
         public string $status,
         #[StateCollection(
-            ownerColumn: 'order_id',
             itemClass: OrderLineState::class,
         )]
         public array $lines,
     ) {}
 }
 ```
+
+An identifier remains one logical value even when it spans several columns:
+
+```php
+final readonly class AcceptanceId
+{
+    public function __construct(
+        public string $identityId,
+        public string $termsId,
+    ) {}
+}
+
+#[State(table: 'terms_acceptances')]
+final readonly class AcceptanceState
+{
+    public function __construct(
+        #[StateId(columns: [
+            'identityId' => 'identity_id',
+            'termsId' => 'terms_id',
+        ])]
+        public AcceptanceId $id,
+        public string $acceptedAt,
+    ) {}
+}
+```
+
+Mapper Compiler resolves whether the identifier normalizes to one scalar or a flat object shape. `column` and `columns` only override conventional column names. Composite components must normalize to `int|string`.
 
 ## Embedded value objects
 
@@ -100,11 +126,11 @@ final readonly class Address
     ) {}
 }
 
-#[State(table: 'orders', idColumn: 'order_id')]
+#[State(table: 'orders')]
 final readonly class OrderState
 {
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'order_id')]
         public string $orderId,
         #[StateEmbedded(prefix: 'shipping_')]
         public Address $shippingAddress,

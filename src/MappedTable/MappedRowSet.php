@@ -15,17 +15,18 @@ final class MappedRowSet implements UnitOfWork
     /** @var array<string, BufferedRowUpdate> */
     private array $updates = [];
 
-    /** @var list<int|string>|null */
-    private ?array $expectedRowIds = null;
+    /** @var list<MappedKey>|null */
+    private ?array $expectedRowKeys = null;
 
     public function __construct(
         private readonly MappedRowSetAdapter $adapter,
     ) {}
 
-    public function withId(int|string $id): PendingRowUpdate
+    public function withKey(int|string|MappedKey $key): PendingRowUpdate
     {
-        $updateKey = self::updateKey($id);
-        $update = $this->updates[$updateKey] ??= new BufferedRowUpdate($id);
+        $key = $this->normalizeKey($key);
+        $updateKey = $key->fingerprint();
+        $update = $this->updates[$updateKey] ??= new BufferedRowUpdate($key);
 
         return new PendingRowUpdate($update);
     }
@@ -35,11 +36,11 @@ final class MappedRowSet implements UnitOfWork
      *
      * @return array<string, mixed>|false
      */
-    public function row(int|string $id, array $columns = []): array|false
+    public function row(int|string|MappedKey $key, array $columns = []): array|false
     {
-        $row = $this->adapter->row($id, $columns);
-        $update = $this->updates[self::updateKey($id)] ?? null;
-        $plan = $update?->toPlan();
+        $key = $this->normalizeKey($key);
+        $row = $this->adapter->row($key, $columns);
+        $plan = ($this->updates[$key->fingerprint()] ?? null)?->toPlan();
 
         if (null === $plan) {
             return $row;
@@ -51,126 +52,123 @@ final class MappedRowSet implements UnitOfWork
     /**
      * @param list<string> $columns
      *
-     * @return array<string, array<string, mixed>>
+     * @return list<MappedRow>
      */
     public function rows(array $columns = []): array
     {
-        $rows = $this->adapter->rows($columns);
-
-        foreach ($this->sortedPlans() as $plan) {
-            $rowKey = self::updateKey($plan->id);
-            $row = $this->projectRow($this->applyPlanToRow($rows[$rowKey] ?? false, $plan), $columns);
-
-            if (false === $row) {
-                unset($rows[$rowKey]);
-
-                continue;
-            }
-
-            $rows[$rowKey] = $row;
+        $rows = [];
+        foreach ($this->adapter->rows($columns) as $row) {
+            $rows[$row->key->fingerprint()] = $row;
         }
 
-        ksort($rows, SORT_STRING);
+        foreach ($this->sortedPlans() as $plan) {
+            $fingerprint = $plan->key->fingerprint();
+            $projected = $this->projectRow(
+                $this->applyPlanToRow($rows[$fingerprint]->columns ?? false, $plan),
+                $columns,
+            );
+
+            if (false === $projected) {
+                unset($rows[$fingerprint]);
+            } else {
+                $rows[$fingerprint] = new MappedRow($plan->key, $projected);
+            }
+        }
+
+        $rows = array_values($rows);
+        usort($rows, static fn (MappedRow $left, MappedRow $right): int => $left->key->fingerprint() <=> $right->key->fingerprint());
 
         return $rows;
     }
 
-    /**
-     * @param list<int|string> $ids
-     */
-    public function expectSameRowIds(array $ids): void
+    /** @param list<int|string|MappedKey> $keys */
+    public function expectSameRowKeys(array $keys): void
     {
-        $expectedRowIds = $this->normalizeRowIds($ids);
+        $expected = array_map($this->normalizeKey(...), $keys);
+        usort($expected, static fn (MappedKey $left, MappedKey $right): int => $left->fingerprint() <=> $right->fingerprint());
 
-        if (null !== $this->expectedRowIds && $this->expectedRowIds !== $expectedRowIds) {
-            throw new ConcurrencyException('Conflicting row-set id expectations were registered.');
+        $fingerprints = array_map(static fn (MappedKey $key): string => $key->fingerprint(), $expected);
+        if (count($fingerprints) !== count(array_unique($fingerprints))) {
+            throw new \InvalidArgumentException('Duplicate expected row key.');
         }
 
-        $this->expectedRowIds = $expectedRowIds;
+        if (null !== $this->expectedRowKeys && $this->keyFingerprints($this->expectedRowKeys) !== $fingerprints) {
+            throw new ConcurrencyException('Conflicting row-set key expectations were registered.');
+        }
+
+        $this->expectedRowKeys = $expected;
     }
 
     public function flush(): void
     {
         $this->adapter->apply(new RowSetUpdatePlan(
-            expectedRowIds: $this->expectedRowIds,
+            expectedRowKeys: $this->expectedRowKeys,
             rowUpdates: $this->sortedPlans(),
         ));
     }
 
     public function hasPendingChanges(): bool
     {
-        return null !== $this->expectedRowIds || [] !== $this->sortedPlans();
+        return null !== $this->expectedRowKeys || [] !== $this->sortedPlans();
     }
 
     public function clear(): void
     {
         $this->updates = [];
-        $this->expectedRowIds = null;
+        $this->expectedRowKeys = null;
     }
 
-    private static function compareIds(int|string $left, int|string $right): int
+    private function normalizeKey(int|string|MappedKey $key): MappedKey
     {
-        if (is_int($left) && is_int($right)) {
-            return $left <=> $right;
+        $keyColumns = $this->adapter->keyColumns();
+        $scope = $this->adapter->scope();
+
+        if (!$key instanceof MappedKey) {
+            $unboundColumns = array_values(array_filter(
+                $keyColumns,
+                static fn (string $column): bool => null === $scope || !$scope->contains($column),
+            ));
+            if (1 !== count($unboundColumns)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'A scalar key cannot address row-set key columns [%s].',
+                    implode(', ', $keyColumns),
+                ));
+            }
+
+            $key = new MappedKey([$unboundColumns[0] => $key]);
+            if (null !== $scope) {
+                $key = $scope->mergedWith($key);
+            }
         }
 
-        return (string) $left <=> (string) $right;
+        $key->assertColumns($keyColumns);
+        if (null !== $scope && !$key->matches($scope)) {
+            throw new \InvalidArgumentException('Mapped key does not belong to the row-set scope.');
+        }
+
+        return $key;
     }
 
-    private static function updateKey(int|string $id): string
-    {
-        return (string) $id;
-    }
-
-    /**
-     * @return list<RowUpdatePlan>
-     */
+    /** @return list<RowUpdatePlan> */
     private function sortedPlans(): array
     {
-        $updates = array_values($this->updates);
-        usort($updates, static fn (BufferedRowUpdate $left, BufferedRowUpdate $right): int => self::compareIds($left->id, $right->id));
-
         $plans = [];
-        foreach ($updates as $update) {
+        foreach ($this->updates as $update) {
             $plan = $update->toPlan();
             if (null !== $plan) {
                 $plans[] = $plan;
             }
         }
 
+        usort($plans, static fn (RowUpdatePlan $left, RowUpdatePlan $right): int => $left->key->fingerprint() <=> $right->key->fingerprint());
+
         return $plans;
     }
 
-    /**
-     * @param list<int|string> $ids
-     *
-     * @return list<int|string>
-     */
-    private function normalizeRowIds(array $ids): array
+    /** @param list<MappedKey> $keys @return list<string> */
+    private function keyFingerprints(array $keys): array
     {
-        $rowIds = [];
-        $seen = [];
-
-        foreach ($ids as $id) {
-            if (!is_int($id) && !is_string($id)) {
-                throw new \InvalidArgumentException('Expected row ids must be strings or integers.');
-            }
-
-            $rowKey = self::updateKey($id);
-            if (array_key_exists($rowKey, $seen)) {
-                throw new \InvalidArgumentException(sprintf(
-                    'Duplicate expected row id "%s".',
-                    $rowKey,
-                ));
-            }
-
-            $seen[$rowKey] = true;
-            $rowIds[] = $rowKey;
-        }
-
-        usort($rowIds, self::compareIds(...));
-
-        return $rowIds;
+        return array_map(static fn (MappedKey $key): string => $key->fingerprint(), $keys);
     }
 
     /**
@@ -180,31 +178,12 @@ final class MappedRowSet implements UnitOfWork
      */
     private function applyPlanToRow(array|false $row, RowUpdatePlan $plan): array|false
     {
-        return match ($plan->mode) {
-            RowUpdatePlan::MODE_DELETE => false,
-            RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE => $this->newRow($plan),
-            RowUpdatePlan::MODE_UPSERT => false === $row
-                ? $this->newRow($plan)
-                : $this->mergeColumns($row, $plan->setColumns),
-            RowUpdatePlan::MODE_UPDATE => false === $row
-                ? false
-                : $this->mergeColumns($row, $plan->setColumns),
-            default => throw new \LogicException(sprintf(
-                'Unsupported row update mode "%s".',
-                $plan->mode,
-            )),
-        };
-    }
+        if (RowUpdatePlan::MODE_DELETE === $plan->mode) {
+            return false;
+        }
 
-    /**
-     * @param array<string, mixed> $row
-     * @param array<string, mixed> $columns
-     *
-     * @return array<string, mixed>
-     */
-    private function mergeColumns(array $row, array $columns): array
-    {
-        foreach ($columns as $column => $value) {
+        $row = false === $row ? [] : $row;
+        foreach ($plan->setColumns as $column => $value) {
             $row[$column] = $value;
         }
 
@@ -212,16 +191,8 @@ final class MappedRowSet implements UnitOfWork
     }
 
     /**
-     * @return array<string, mixed>
-     */
-    private function newRow(RowUpdatePlan $plan): array
-    {
-        return $plan->setColumns;
-    }
-
-    /**
-     * @param list<string>               $columns
      * @param array<string, mixed>|false $row
+     * @param list<string>              $columns
      *
      * @return array<string, mixed>|false
      */
@@ -231,12 +202,11 @@ final class MappedRowSet implements UnitOfWork
             return $row;
         }
 
-        $projectedRow = [];
-
+        $projected = [];
         foreach ($columns as $column) {
-            $projectedRow[$column] = $row[$column] ?? null;
+            $projected[$column] = $row[$column] ?? null;
         }
 
-        return $projectedRow;
+        return $projected;
     }
 }

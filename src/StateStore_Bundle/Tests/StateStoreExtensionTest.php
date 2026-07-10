@@ -42,11 +42,11 @@ final class NullEventStore implements EventStore
     public function append(array $events, AppendCondition ...$appendConditions): void {}
 }
 
-#[State(table: 'orders', idColumn: 'order_id')]
+#[State(table: 'orders')]
 final readonly class BundleOrderState
 {
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'order_id')]
         public string $orderId,
         #[StateColumn('status')]
         public string $status,
@@ -60,11 +60,11 @@ final readonly class BundleOrderState
     }
 }
 
-#[State(table: 'orders', idColumn: 'order_id')]
+#[State(table: 'orders')]
 final readonly class BundleOrderStatusView
 {
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'order_id')]
         public string $orderId,
         #[StateColumn('status')]
         public string $status,
@@ -122,7 +122,7 @@ final class StateStoreExtensionTest extends TestCase
         $configurator = $container->getAttributeAutoconfigurators()[State::class][0];
         $configurator(
             $definition,
-            new State('orders', 'order_id'),
+            new State('orders'),
             new \ReflectionClass(BundleOrderState::class),
         );
 

@@ -6,12 +6,12 @@ namespace Ultra\StateStore\Exception;
 
 final class StateNotFoundException extends \RuntimeException
 {
-    public function __construct(string $stateClass, int|string $id)
+    public function __construct(string $stateClass, int|string|object $id)
     {
         parent::__construct(sprintf(
             'State "%s" with id "%s" was not found.',
             $stateClass,
-            (string) $id,
+            $id instanceof \Stringable ? (string) $id : (is_object($id) ? $id::class : (string) $id),
         ));
     }
 }

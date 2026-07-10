@@ -16,24 +16,24 @@ final readonly class PostgresMappedRowSetAdapterFactory implements MappedRowSetA
         private array $columnTypesByTable = [],
     ) {}
 
-    public function create(string $tableName, string $idColumn = 'id'): MappedRowSetAdapter
+    public function create(string $tableName, array $keyColumns = ['id']): MappedRowSetAdapter
     {
         return new PostgresMappedRowSetAdapter(
             $this->connection,
             $tableName,
-            $idColumn,
+            $keyColumns,
             $this->columnTypesByTable[$tableName] ?? [],
         );
     }
 
-    public function createScoped(string $tableName, string $idColumn, array $scopeColumns): MappedRowSetAdapter
+    public function createScoped(string $tableName, array $keyColumns, MappedKey $scope): MappedRowSetAdapter
     {
         return new PostgresMappedRowSetAdapter(
             $this->connection,
             $tableName,
-            $idColumn,
+            $keyColumns,
             $this->columnTypesByTable[$tableName] ?? [],
-            $scopeColumns,
+            $scope,
         );
     }
 }

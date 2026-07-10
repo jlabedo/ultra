@@ -21,18 +21,21 @@ final readonly class StateStore
      *
      * @return T|null
      */
-    public function load(string $stateClass, int|string $id): ?object
+    public function load(string $stateClass, int|string|object $id): ?object
     {
         $metadata = $this->metadataRegistry->metadataFor($stateClass);
-        $row = $this->tableRegistry->tableFor($metadata)->row($id, $metadata->selectedColumns());
+        $this->assertIdentifierType($metadata, $id);
+        $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
+        $key = $metadata->keyFromNormalizedId($normalizedId);
+        $row = $this->tableRegistry->tableFor($metadata)->row($key, $metadata->selectedColumns());
 
         if (false === $row) {
             return null;
         }
 
-        $payload = $metadata->payloadFromRow($id, $row);
+        $payload = $metadata->payloadFromRow($normalizedId, $row);
         foreach ($metadata->collections as $collection) {
-            $payload[$collection->property] = $this->loadCollection($collection, $id);
+            $payload[$collection->property] = $this->loadCollection($collection, $normalizedId);
         }
 
         return $this->normalizer->fromScalar($payload, $stateClass);
@@ -41,39 +44,42 @@ final readonly class StateStore
     public function save(object $state): void
     {
         [$metadata, $normalizedState] = $this->normalizeState($state);
-        $id = $metadata->identifierFromNormalized($normalizedState);
+        $key = $metadata->keyFromNormalizedState($normalizedState);
+        $normalizedId = $normalizedState[$metadata->idProperty];
 
         $this->tableRegistry->tableFor($metadata)
-            ->withId($id)
+            ->withKey($key)
             ->upsert()
             ->setColumns($metadata->columnsFromNormalized($normalizedState))
         ;
 
         foreach ($metadata->collections as $collection) {
-            $this->saveCollection($collection, $id, $this->normalizedCollectionItems($metadata, $normalizedState, $collection));
+            $this->saveCollection($collection, $normalizedId, $this->normalizedCollectionItems($metadata, $normalizedState, $collection));
         }
     }
 
     public function expect(object $state): void
     {
         [$metadata, $normalizedState] = $this->normalizeState($state);
-        $id = $metadata->identifierFromNormalized($normalizedState);
+        $key = $metadata->keyFromNormalizedState($normalizedState);
+        $normalizedId = $normalizedState[$metadata->idProperty];
         $expectedColumns = $metadata->optimisticColumnsFromNormalized($normalizedState);
 
         if ([] !== $expectedColumns) {
             $this->tableRegistry->tableFor($metadata)
-                ->withId($id)
+                ->withKey($key)
                 ->expectColumnValues($expectedColumns)
             ;
         }
 
         foreach ($metadata->collections as $collection) {
             $items = $this->normalizedCollectionItems($metadata, $normalizedState, $collection);
-            $this->tableRegistry->collectionFor($collection, $id)
-                ->expectSameRowIds(array_map(
-                    fn (array $item): int|string => $collection->identifierFromNormalized($item),
-                    $items,
-                ))
+            $rowSet = $this->tableRegistry->collectionFor($collection, $normalizedId);
+            $ownerKey = $collection->ownerKey($normalizedId);
+            $rowSet->expectSameRowKeys(array_map(
+                fn (array $item) => $collection->itemKey($item, $ownerKey),
+                $items,
+            ))
             ;
         }
     }
@@ -87,12 +93,14 @@ final readonly class StateStore
      *
      * @param class-string<T> $stateClass
      */
-    public function expectMissing(string $stateClass, int|string $id): void
+    public function expectMissing(string $stateClass, int|string|object $id): void
     {
         $metadata = $this->metadataRegistry->metadataFor($stateClass);
 
+        $this->assertIdentifierType($metadata, $id);
+        $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
         $this->tableRegistry->tableFor($metadata)
-            ->withId($id)
+            ->withKey($metadata->keyFromNormalizedId($normalizedId))
             ->expectAbsent()
         ;
     }
@@ -114,11 +122,11 @@ final readonly class StateStore
         return [$metadata, $normalizedState];
     }
 
-    private function loadCollection(StateCollectionMetadata $collection, int|string $ownerId): array
+    private function loadCollection(StateCollectionMetadata $collection, mixed $normalizedOwnerId): array
     {
         $items = [];
-        foreach ($this->tableRegistry->collectionFor($collection, $ownerId)->rows($collection->selectedColumns()) as $rowId => $row) {
-            $items[] = $collection->payloadFromRow($rowId, $row);
+        foreach ($this->tableRegistry->collectionFor($collection, $normalizedOwnerId)->rows($collection->selectedColumns()) as $row) {
+            $items[] = $collection->payloadFromRow($row);
         }
 
         return $items;
@@ -127,23 +135,24 @@ final readonly class StateStore
     /**
      * @param list<array<string, mixed>> $items
      */
-    private function saveCollection(StateCollectionMetadata $collection, int|string $ownerId, array $items): void
+    private function saveCollection(StateCollectionMetadata $collection, mixed $normalizedOwnerId, array $items): void
     {
-        $rowSet = $this->tableRegistry->collectionFor($collection, $ownerId);
+        $rowSet = $this->tableRegistry->collectionFor($collection, $normalizedOwnerId);
+        $ownerKey = $collection->ownerKey($normalizedOwnerId);
         $desiredIds = [];
 
         foreach ($items as $item) {
-            $id = $collection->identifierFromNormalized($item);
-            $desiredIds[(string) $id] = true;
-            $rowSet->withId($id)
+            $key = $collection->itemKey($item, $ownerKey);
+            $desiredIds[$key->fingerprint()] = true;
+            $rowSet->withKey($key)
                 ->upsert()
                 ->setColumns($collection->columnsFromNormalized($item))
             ;
         }
 
-        foreach (array_keys($rowSet->rows()) as $existingId) {
-            if (!array_key_exists($existingId, $desiredIds)) {
-                $rowSet->withId($existingId)->delete();
+        foreach ($rowSet->rows() as $existingRow) {
+            if (!array_key_exists($existingRow->key->fingerprint(), $desiredIds)) {
+                $rowSet->withKey($existingRow->key)->delete();
             }
         }
     }
@@ -181,5 +190,22 @@ final readonly class StateStore
         }
 
         return $items;
+    }
+
+    private function assertIdentifierType(StateMetadata $metadata, int|string|object $id): void
+    {
+        $matches = match ($metadata->idType) {
+            'int' => is_int($id),
+            'string' => is_string($id),
+            default => is_object($id) && is_a($id, $metadata->idType),
+        };
+        if (!$matches) {
+            throw new \InvalidArgumentException(sprintf(
+                'State "%s" expects identifier type %s, got %s.',
+                $metadata->stateClass,
+                $metadata->idType,
+                get_debug_type($id),
+            ));
+        }
     }
 }

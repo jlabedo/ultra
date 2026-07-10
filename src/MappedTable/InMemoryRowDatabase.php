@@ -74,6 +74,69 @@ final class InMemoryRowDatabase
     // --- row-set view (one row per id) -----------------------------------------
 
     /**
+     * @param list<string> $columns
+     *
+     * @return array<string, mixed>|false
+     */
+    public function rowByKey(string $tableName, MappedKey $key, array $columns = []): array|false
+    {
+        foreach ($this->tables[$tableName] ?? [] as $row) {
+            if (self::rowMatches($row, $key->values)) {
+                return self::project($row, $columns);
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * @param list<string> $keyColumns
+     * @param list<string> $columns
+     *
+     * @return list<MappedRow>
+     */
+    public function rowsByKey(string $tableName, array $keyColumns, array $columns = [], ?MappedKey $scope = null): array
+    {
+        $rows = [];
+        foreach ($this->tables[$tableName] ?? [] as $row) {
+            if (null !== $scope && !self::rowMatches($row, $scope->values)) {
+                continue;
+            }
+
+            $keyValues = [];
+            foreach ($keyColumns as $column) {
+                $value = $row[$column] ?? null;
+                if (!is_int($value) && !is_string($value)) {
+                    throw new \LogicException(sprintf('Table "%s" row has no scalar key column "%s".', $tableName, $column));
+                }
+                $keyValues[$column] = $value;
+            }
+
+            $projectedColumns = [] === $columns
+                ? array_diff_key($row, array_flip($keyColumns))
+                : self::project($row, $columns);
+            $rows[] = new MappedRow(new MappedKey($keyValues), $projectedColumns);
+        }
+
+        usort($rows, static fn (MappedRow $left, MappedRow $right): int => $left->key->fingerprint() <=> $right->key->fingerprint());
+
+        return $rows;
+    }
+
+    /** @param array<string, mixed> $columns */
+    public function writeRowByKey(string $tableName, MappedKey $key, array $columns): void
+    {
+        $this->deleteRowByKey($tableName, $key);
+        $this->tables[$tableName][] = [...$key->values, ...$columns];
+    }
+
+    public function deleteRowByKey(string $tableName, MappedKey $key): void
+    {
+        $this->removeWhere($tableName, static fn (array $row): bool => self::rowMatches($row, $key->values));
+        $this->compactIfEmpty($tableName);
+    }
+
+    /**
      * @param list<string>              $columns
      * @param array<string, int|string> $scopeColumns
      *

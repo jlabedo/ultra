@@ -9,6 +9,7 @@ use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\Mapper\UltraNormalizer;
+use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
 use Ultra\StateStore\Attribute\StateCollection;
@@ -20,11 +21,11 @@ use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-#[State(table: 'orders', idColumn: 'order_id')]
+#[State(table: 'orders')]
 final readonly class OrderState
 {
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'order_id')]
         public string $orderId,
         #[StateColumn('status')]
         public string $orderStatus,
@@ -38,11 +39,11 @@ final readonly class OrderState
     }
 }
 
-#[State(table: 'orders', idColumn: 'order_id')]
+#[State(table: 'orders')]
 final readonly class OrderStatusView
 {
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'order_id')]
         public string $orderId,
         #[StateColumn('status')]
         public string $status,
@@ -54,11 +55,11 @@ final readonly class OrderStatusView
     }
 }
 
-#[State(table: 'order_lines', idColumn: 'line_id')]
+#[State(table: 'order_lines')]
 final readonly class OrderLineState
 {
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'line_id')]
         public string $lineId,
         #[StateColumn]
         public string $sku,
@@ -67,20 +68,20 @@ final readonly class OrderLineState
     ) {}
 }
 
-#[State(table: 'orders', idColumn: 'order_id')]
+#[State(table: 'orders')]
 final readonly class OrderWithLinesState
 {
     /**
      * @param list<OrderLineState> $lines
      */
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'order_id')]
         public string $orderId,
         #[StateColumn('status')]
         public string $status,
         #[StateCollection(
-            ownerColumn: 'order_id',
             itemClass: OrderLineState::class,
+            ownerColumns: ['orderId' => 'order_id'],
         )]
         public array $lines,
     ) {}
@@ -95,11 +96,76 @@ final readonly class ShippingAddress
     ) {}
 }
 
-#[State(table: 'orders', idColumn: 'order_id')]
+final readonly class AcceptanceId
+{
+    public function __construct(
+        public string $identityId,
+        public string $termsId,
+    ) {}
+}
+
+#[State(table: 'terms_acceptances')]
+final readonly class TermsAcceptanceState
+{
+    public function __construct(
+        #[StateId(columns: ['identityId' => 'identity_id', 'termsId' => 'terms_id'])]
+        public AcceptanceId $acceptanceId,
+        public string $acceptedAt,
+    ) {}
+}
+
+#[State(table: 'default_terms_acceptances')]
+final readonly class ConventionTermsAcceptanceState
+{
+    public function __construct(
+        #[StateId(columns: ['termsId' => 'terms_id'])]
+        public AcceptanceId $acceptanceId,
+    ) {}
+}
+
+final readonly class CompositeOrderId
+{
+    public function __construct(
+        public string $tenantId,
+        public string $orderNumber,
+    ) {}
+}
+
+final readonly class CompositeLineId
+{
+    public function __construct(
+        public string $sku,
+        public string $variant,
+    ) {}
+}
+
+#[State(table: 'composite_order_lines')]
+final readonly class CompositeLineState
+{
+    public function __construct(
+        #[StateId(columns: ['sku' => 'line_sku', 'variant' => 'line_variant'])]
+        public CompositeLineId $lineId,
+        public int $quantity,
+    ) {}
+}
+
+#[State(table: 'composite_orders')]
+final readonly class CompositeOrderState
+{
+    /** @param list<CompositeLineState> $lines */
+    public function __construct(
+        #[StateId(columns: ['tenantId' => 'tenant_id', 'orderNumber' => 'order_number'])]
+        public CompositeOrderId $orderId,
+        #[StateCollection(itemClass: CompositeLineState::class)]
+        public array $lines,
+    ) {}
+}
+
+#[State(table: 'orders')]
 final readonly class OrderWithShippingAddressState
 {
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'order_id')]
         public string $orderId,
         #[StateEmbedded(prefix: 'shipping_')]
         public ShippingAddress $shippingAddress,
@@ -113,6 +179,107 @@ final readonly class OrderWithShippingAddressState
  */
 final class StateStoreTest extends TestCase
 {
+    public function test_composite_identifier_uses_default_column_names_with_partial_overrides(): void
+    {
+        $analyzer = new NormalizationShapeAnalyzer();
+        $factory = new StateMetadataFactory([
+            ConventionTermsAcceptanceState::class => $analyzer->forProperty(
+                (new \ReflectionClass(ConventionTermsAcceptanceState::class))->getProperty('acceptanceId'),
+            ),
+        ]);
+
+        self::assertSame([
+            'identityId' => 'identityId',
+            'termsId' => 'terms_id',
+        ], $factory->create(ConventionTermsAcceptanceState::class)->idPropertyColumns);
+    }
+
+    public function test_composite_identifier_round_trips_and_addresses_one_physical_row(): void
+    {
+        $database = new InMemoryRowDatabase();
+        $analyzer = new NormalizationShapeAnalyzer();
+        $idProperty = (new \ReflectionClass(TermsAcceptanceState::class))->getProperty('acceptanceId');
+        $factory = new StateMetadataFactory([
+            TermsAcceptanceState::class => $analyzer->forProperty($idProperty),
+        ]);
+        $metadata = $factory->create(TermsAcceptanceState::class);
+        $table = new MappedRowSet(new InMemoryMappedRowSetAdapter(
+            $database,
+            'terms_acceptances',
+            ['identity_id', 'terms_id'],
+        ));
+        $registry = new StateTableRegistry([$metadata->tableKey => $table]);
+        $store = new StateStore(
+            new StateMetadataRegistry([TermsAcceptanceState::class => $metadata->toArray()]),
+            $registry,
+            new UltraNormalizer(),
+        );
+
+        $id = new AcceptanceId('identity-1', 'terms-2026');
+        $store->expectMissing(TermsAcceptanceState::class, $id);
+        $store->save(new TermsAcceptanceState($id, '2026-07-10T10:00:00Z'));
+        $this->flushRegistryInTransaction($database, $registry);
+
+        self::assertSame([
+            'identity_id' => 'identity-1',
+            'terms_id' => 'terms-2026',
+            'acceptedAt' => '2026-07-10T10:00:00Z',
+        ], $database->rowByKey('terms_acceptances', new \Ultra\MappedTable\MappedKey([
+            'identity_id' => 'identity-1',
+            'terms_id' => 'terms-2026',
+        ])));
+
+        $loaded = $store->load(TermsAcceptanceState::class, new AcceptanceId('identity-1', 'terms-2026'));
+        self::assertInstanceOf(TermsAcceptanceState::class, $loaded);
+        self::assertSame('identity-1', $loaded->acceptanceId->identityId);
+        self::assertSame('terms-2026', $loaded->acceptanceId->termsId);
+    }
+
+    public function test_collection_combines_composite_owner_and_item_keys(): void
+    {
+        $database = new InMemoryRowDatabase();
+        $analyzer = new NormalizationShapeAnalyzer();
+        $shapes = [];
+        foreach ([CompositeOrderState::class => 'orderId', CompositeLineState::class => 'lineId'] as $class => $property) {
+            $shapes[$class] = $analyzer->forProperty((new \ReflectionClass($class))->getProperty($property));
+        }
+        $factory = new StateMetadataFactory($shapes);
+        $metadata = $factory->create(CompositeOrderState::class);
+        $table = new MappedRowSet(new InMemoryMappedRowSetAdapter(
+            $database,
+            'composite_orders',
+            ['tenant_id', 'order_number'],
+        ));
+        $registry = new StateTableRegistry(
+            [$metadata->tableKey => $table],
+            new \Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory($database),
+        );
+        $store = new StateStore(
+            new StateMetadataRegistry([CompositeOrderState::class => $metadata->toArray()]),
+            $registry,
+            new UltraNormalizer(),
+        );
+
+        $id = new CompositeOrderId('tenant-1', 'order-42');
+        $store->save(new CompositeOrderState($id, [
+            new CompositeLineState(new CompositeLineId('sku-1', 'blue'), 2),
+        ]));
+        $this->flushRegistryInTransaction($database, $registry);
+
+        $lineKey = new \Ultra\MappedTable\MappedKey([
+            'tenant_id' => 'tenant-1',
+            'order_number' => 'order-42',
+            'line_sku' => 'sku-1',
+            'line_variant' => 'blue',
+        ]);
+        self::assertSame(['quantity' => 2], $database->rowByKey('composite_order_lines', $lineKey, ['quantity']));
+
+        $loaded = $store->load(CompositeOrderState::class, new CompositeOrderId('tenant-1', 'order-42'));
+        self::assertInstanceOf(CompositeOrderState::class, $loaded);
+        self::assertCount(1, $loaded->lines);
+        self::assertSame('blue', $loaded->lines[0]->lineId->variant);
+    }
+
     public function test_load_hydrates_readonly_state_from_mapped_row(): void
     {
         [$database, $table, $store] = $this->newStore([OrderState::class]);
@@ -441,9 +608,19 @@ final class StateStoreTest extends TestCase
     private function newStore(array $stateClasses): array
     {
         $database = new InMemoryRowDatabase();
-        $table = new MappedRowSet(new InMemoryMappedRowSetAdapter($database, 'orders', 'order_id'));
+        $table = new MappedRowSet(new InMemoryMappedRowSetAdapter($database, 'orders', ['order_id']));
         $adapterFactory = new \Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory($database);
-        $factory = new StateMetadataFactory();
+        $analyzer = new NormalizationShapeAnalyzer();
+        $identityShapes = [];
+        foreach (array_unique([...$stateClasses, OrderLineState::class]) as $stateClass) {
+            foreach ((new \ReflectionClass($stateClass))->getProperties() as $property) {
+                if ([] !== $property->getAttributes(StateId::class)) {
+                    $identityShapes[$stateClass] = $analyzer->forProperty($property);
+                    break;
+                }
+            }
+        }
+        $factory = new StateMetadataFactory($identityShapes);
 
         $metadata = [];
         foreach ($stateClasses as $stateClass) {

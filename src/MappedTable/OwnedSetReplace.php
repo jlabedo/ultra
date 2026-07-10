@@ -10,11 +10,10 @@ namespace Ultra\MappedTable;
 final readonly class OwnedSetReplace
 {
     /**
-     * @param array<string, int|string>      $parentKey
-     * @param list<array<string, mixed>>     $rows
+     * @param list<array<string, mixed>> $rows
      */
     public function __construct(
-        public array $parentKey,
+        public MappedKey $parentKey,
         public array $rows,
     ) {}
 }

@@ -9,11 +9,11 @@ use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateEmbedded;
 use Ultra\StateStore\Attribute\StateId;
 
-#[State(table: 'user_terms_of_use_acceptance', idColumn: 'user_id')]
+#[State(table: 'user_terms_of_use_acceptance')]
 final readonly class UserTermsOfUseAcceptanceState
 {
     public function __construct(
-        #[StateId]
+        #[StateId(column: 'user_id')]
         public string $userId,
         #[StateEmbedded(prefix: 'accepted_terms_')]
         public TermsOfUse $acceptedTermsOfUse,

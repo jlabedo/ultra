@@ -9,6 +9,5 @@ final readonly class State
 {
     public function __construct(
         public string $table,
-        public string $idColumn = 'id',
     ) {}
 }

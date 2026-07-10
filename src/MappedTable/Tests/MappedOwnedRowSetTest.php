@@ -11,6 +11,7 @@ use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedOwnedRowSet;
 use Ultra\MappedTable\MappedOwnedRowSetAdapter;
+use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\OwnedRowSetUpdatePlan;
 use Ultra\MappedTable\OwnedSetParentMatchDelete;
@@ -34,7 +35,7 @@ final class MappedOwnedRowSetTest extends TestCase
     {
         [$database, $set] = $this->newSet();
 
-        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+        $set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-1']))
             ->replace([
                 ['eligible_from' => '2026-01-01', 'eligible_to' => '2026-06-01'],
                 ['eligible_from' => '2026-07-01', 'eligible_to' => null],
@@ -54,13 +55,13 @@ final class MappedOwnedRowSetTest extends TestCase
 
         $parent = ['subject_id' => 's-1', 'capability_id' => 'c-1'];
 
-        $set->withParent($parent)->replace([
+        $set->withParent(new MappedKey($parent))->replace([
             ['eligible_from' => '2026-01-01', 'eligible_to' => '2026-02-01'],
             ['eligible_from' => '2026-03-01', 'eligible_to' => '2026-04-01'],
         ]);
         $set->flush();
 
-        $set->withParent($parent)->replace([
+        $set->withParent(new MappedKey($parent))->replace([
             ['eligible_from' => '2026-05-01', 'eligible_to' => null],
         ]);
         $set->flush();
@@ -76,12 +77,12 @@ final class MappedOwnedRowSetTest extends TestCase
         [$database, $set] = $this->newSet();
         $parent = ['subject_id' => 's-1', 'capability_id' => 'c-1'];
 
-        $set->withParent($parent)->replace([
+        $set->withParent(new MappedKey($parent))->replace([
             ['eligible_from' => '2026-01-01', 'eligible_to' => null],
         ]);
         $set->flush();
 
-        $set->withParent($parent)->replace([]);
+        $set->withParent(new MappedKey($parent))->replace([]);
         $set->flush();
 
         self::assertSame([], $database->rowsForParent(self::TABLE, $parent));
@@ -95,12 +96,12 @@ final class MappedOwnedRowSetTest extends TestCase
         $parentB = ['subject_id' => 's-2', 'capability_id' => 'c-1'];
         $parentC = ['subject_id' => 's-1', 'capability_id' => 'c-2'];
 
-        $set->withParent($parentA)->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
-        $set->withParent($parentB)->replace([['eligible_from' => '2026-02-01', 'eligible_to' => null]]);
-        $set->withParent($parentC)->replace([['eligible_from' => '2026-03-01', 'eligible_to' => null]]);
+        $set->withParent(new MappedKey($parentA))->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
+        $set->withParent(new MappedKey($parentB))->replace([['eligible_from' => '2026-02-01', 'eligible_to' => null]]);
+        $set->withParent(new MappedKey($parentC))->replace([['eligible_from' => '2026-03-01', 'eligible_to' => null]]);
         $set->flush();
 
-        $set->withParent($parentA)->replace([['eligible_from' => '2026-12-12', 'eligible_to' => null]]);
+        $set->withParent(new MappedKey($parentA))->replace([['eligible_from' => '2026-12-12', 'eligible_to' => null]]);
         $set->flush();
 
         self::assertSame('2026-12-12', $database->rowsForParent(self::TABLE, $parentA)[0]['eligible_from']);
@@ -113,11 +114,11 @@ final class MappedOwnedRowSetTest extends TestCase
         [, $set] = $this->newSet();
         $parent = ['subject_id' => 's-1', 'capability_id' => 'c-1'];
 
-        $set->withParent($parent)->replace([
+        $set->withParent(new MappedKey($parent))->replace([
             ['eligible_from' => '2026-01-01', 'eligible_to' => null],
         ]);
 
-        self::assertCount(1, $set->rowsForParent($parent));
+        self::assertCount(1, $set->rowsForParent(new MappedKey($parent)));
     }
 
     public function test_has_pending_changes(): void
@@ -125,7 +126,7 @@ final class MappedOwnedRowSetTest extends TestCase
         [, $set] = $this->newSet();
         self::assertFalse($set->hasPendingChanges());
 
-        $set->withParent(['subject_id' => 's', 'capability_id' => 'c'])->replace([]);
+        $set->withParent(new MappedKey(['subject_id' => 's', 'capability_id' => 'c']))->replace([]);
         self::assertTrue($set->hasPendingChanges());
 
         $set->clear();
@@ -137,15 +138,15 @@ final class MappedOwnedRowSetTest extends TestCase
         $adapter = new RecordingOwnedAdapter();
         $set = new MappedOwnedRowSet($adapter);
 
-        $set->withParent(['subject_id' => 's-2', 'capability_id' => 'c-1'])->replace([]);
-        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])->replace([]);
+        $set->withParent(new MappedKey(['subject_id' => 's-2', 'capability_id' => 'c-1']))->replace([]);
+        $set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-1']))->replace([]);
         $set->flush();
 
         self::assertCount(1, $adapter->plans);
         $replacements = $adapter->plans[0]->replacements;
         self::assertCount(2, $replacements);
-        self::assertSame('s-1', $replacements[0]->parentKey['subject_id']);
-        self::assertSame('s-2', $replacements[1]->parentKey['subject_id']);
+        self::assertSame('s-1', $replacements[0]->parentKey->value('subject_id'));
+        self::assertSame('s-2', $replacements[1]->parentKey->value('subject_id'));
     }
 
     public function test_parent_key_columns_are_required(): void
@@ -153,19 +154,19 @@ final class MappedOwnedRowSetTest extends TestCase
         [, $set] = $this->newSet();
 
         $this->expectException(\InvalidArgumentException::class);
-        $set->withParent([]);
+        $set->withParent(new MappedKey([]));
     }
 
     public function test_participates_in_composite_unit_of_work_alongside_mapped_row_set(): void
     {
         $database = new InMemoryRowDatabase();
         $set = new MappedOwnedRowSet(new InMemoryMappedOwnedRowSetAdapter($database, self::TABLE));
-        $rowSet = new MappedRowSet(new InMemoryMappedRowSetAdapter($database, 'subjects', 'id'));
+        $rowSet = new MappedRowSet(new InMemoryMappedRowSetAdapter($database, 'subjects', ['id']));
 
         $composite = new CompositeUnitOfWork([$rowSet, $set]);
 
-        $rowSet->withId('s-1')->insert()->setColumn('status', 'active');
-        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+        $rowSet->withKey('s-1')->insert()->setColumn('status', 'active');
+        $set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-1']))
             ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
 
         self::assertTrue($composite->hasPendingChanges());
@@ -189,12 +190,12 @@ final class MappedOwnedRowSetTest extends TestCase
         $set = new MappedOwnedRowSet(new InMemoryMappedOwnedRowSetAdapter($database, self::TABLE));
         $parent = ['subject_id' => 's-1', 'capability_id' => 'c-1'];
 
-        $set->withParent($parent)->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
+        $set->withParent(new MappedKey($parent))->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
         $set->flush();
         $set->clear();
 
         $database->beginTransaction();
-        $set->withParent($parent)->replace([['eligible_from' => '2027-01-01', 'eligible_to' => null]]);
+        $set->withParent(new MappedKey($parent))->replace([['eligible_from' => '2027-01-01', 'eligible_to' => null]]);
         $set->flush();
         $database->rollBack();
 
@@ -205,11 +206,11 @@ final class MappedOwnedRowSetTest extends TestCase
     {
         [$database, $set] = $this->newSet();
 
-        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+        $set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-1']))
             ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
-        $set->withParent(['subject_id' => 's-2', 'capability_id' => 'c-1'])
+        $set->withParent(new MappedKey(['subject_id' => 's-2', 'capability_id' => 'c-1']))
             ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
-        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-2'])
+        $set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-2']))
             ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
         $set->flush();
 
@@ -227,10 +228,10 @@ final class MappedOwnedRowSetTest extends TestCase
 
         // pending replace for c-1; then queue a delete that wipes c-1; then a
         // *new* replace for the same parent — the new one must survive.
-        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+        $set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-1']))
             ->replace([['eligible_from' => '2025-01-01', 'eligible_to' => '2025-02-01']]);
         $set->deleteParentsMatching(['capability_id' => 'c-1']);
-        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+        $set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-1']))
             ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
         $set->flush();
 
@@ -244,7 +245,7 @@ final class MappedOwnedRowSetTest extends TestCase
         $adapter = new RecordingOwnedAdapter();
         $set = new MappedOwnedRowSet($adapter);
 
-        $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-2'])->replace([]);
+        $set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-2']))->replace([]);
         $set->deleteParentsMatching(['capability_id' => 'c-1']);
         $set->flush();
 
@@ -291,7 +292,7 @@ final class RecordingOwnedAdapter implements MappedOwnedRowSetAdapter
     /** @var list<OwnedRowSetUpdatePlan> */
     public array $plans = [];
 
-    public function rowsForParent(array $parentKey): array
+    public function rowsForParent(MappedKey $parentKey): array
     {
         return [];
     }

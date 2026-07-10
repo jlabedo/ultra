@@ -7,6 +7,7 @@ namespace Ultra\MappedTable\Tests;
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\TestCase;
+use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedOwnedRowSet;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedOwnedRowSetAdapter;
@@ -70,7 +71,7 @@ final class PostgresMappedOwnedRowSetAdapterTest extends TestCase
     public function test_replace_from_empty_inserts_rows(): void
     {
         $this->withTable(function (Connection $connection, MappedOwnedRowSet $set, string $tableName): void {
-            $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+            $set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-1']))
                 ->replace([
                     ['eligible_from' => '2026-01-01', 'eligible_to' => '2026-06-01'],
                     ['eligible_from' => '2026-07-01', 'eligible_to' => null],
@@ -92,16 +93,16 @@ final class PostgresMappedOwnedRowSetAdapterTest extends TestCase
             $a = ['subject_id' => 's-1', 'capability_id' => 'c-1'];
             $b = ['subject_id' => 's-2', 'capability_id' => 'c-1'];
 
-            $set->withParent($a)->replace([
+            $set->withParent(new MappedKey($a))->replace([
                 ['eligible_from' => '2026-01-01', 'eligible_to' => null],
                 ['eligible_from' => '2026-02-01', 'eligible_to' => null],
             ]);
-            $set->withParent($b)->replace([
+            $set->withParent(new MappedKey($b))->replace([
                 ['eligible_from' => '2026-03-01', 'eligible_to' => null],
             ]);
             $set->flush();
 
-            $set->withParent($a)->replace([
+            $set->withParent(new MappedKey($a))->replace([
                 ['eligible_from' => '2026-12-12', 'eligible_to' => null],
             ]);
             $set->flush();
@@ -122,12 +123,12 @@ final class PostgresMappedOwnedRowSetAdapterTest extends TestCase
         $this->withTable(function (Connection $connection, MappedOwnedRowSet $set, string $tableName): void {
             $parent = ['subject_id' => 's-1', 'capability_id' => 'c-1'];
 
-            $set->withParent($parent)->replace([
+            $set->withParent(new MappedKey($parent))->replace([
                 ['eligible_from' => '2026-01-01', 'eligible_to' => null],
             ]);
             $set->flush();
 
-            $set->withParent($parent)->replace([]);
+            $set->withParent(new MappedKey($parent))->replace([]);
             $set->flush();
 
             self::assertSame(0, (int) $connection->fetchOne(
@@ -139,11 +140,11 @@ final class PostgresMappedOwnedRowSetAdapterTest extends TestCase
     public function test_delete_parents_matching_removes_by_partial_key(): void
     {
         $this->withTable(function (Connection $connection, MappedOwnedRowSet $set, string $tableName): void {
-            $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-1'])
+            $set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-1']))
                 ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
-            $set->withParent(['subject_id' => 's-2', 'capability_id' => 'c-1'])
+            $set->withParent(new MappedKey(['subject_id' => 's-2', 'capability_id' => 'c-1']))
                 ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
-            $set->withParent(['subject_id' => 's-1', 'capability_id' => 'c-2'])
+            $set->withParent(new MappedKey(['subject_id' => 's-1', 'capability_id' => 'c-2']))
                 ->replace([['eligible_from' => '2026-01-01', 'eligible_to' => null]]);
             $set->flush();
 
@@ -189,7 +190,7 @@ final class PostgresMappedOwnedRowSetAdapterTest extends TestCase
                 ];
             }
 
-            $set->withParent($parent)->replace($rows);
+            $set->withParent(new MappedKey($parent))->replace($rows);
             $set->flush();
 
             self::assertSame($rowCount, (int) $connection->fetchOne(
@@ -208,7 +209,7 @@ final class PostgresMappedOwnedRowSetAdapterTest extends TestCase
         $this->withTable(function (Connection $connection, MappedOwnedRowSet $set, string $tableName): void {
             $parent = ['subject_id' => 's-1', 'capability_id' => 'c-1'];
 
-            $set->withParent($parent)->replace([
+            $set->withParent(new MappedKey($parent))->replace([
                 ['eligible_from' => '2026-01-01', 'eligible_to' => null],
                 ['eligible_from' => '2026-02-01', 'eligible_to' => '2026-03-01'],
                 ['eligible_from' => '2026-04-01', 'eligible_to' => null],
@@ -260,7 +261,7 @@ final class PostgresMappedOwnedRowSetAdapterTest extends TestCase
             );
             $set = new MappedOwnedRowSet($adapter);
 
-            $set->withParent(['tenant_id' => 't-1'])->replace([
+            $set->withParent(new MappedKey(['tenant_id' => 't-1']))->replace([
                 ['label' => 'alpha', 'starts_on' => '2026-01-01', 'metadata' => ['k' => 1]],
                 ['label' => 'beta', 'starts_on' => null, 'metadata' => null],
             ]);
@@ -289,12 +290,12 @@ final class PostgresMappedOwnedRowSetAdapterTest extends TestCase
     {
         $this->withTable(function (Connection $connection, MappedOwnedRowSet $set, string $tableName): void {
             $parent = ['subject_id' => 's-1', 'capability_id' => 'c-1'];
-            $set->withParent($parent)->replace([
+            $set->withParent(new MappedKey($parent))->replace([
                 ['eligible_from' => new \DateTimeImmutable('2026-01-01'), 'eligible_to' => new \DateTimeImmutable('2026-06-01')],
             ]);
             $set->flush();
 
-            $rows = $set->rowsForParent($parent);
+            $rows = $set->rowsForParent(new MappedKey($parent));
             self::assertCount(1, $rows);
             self::assertSame('2026-01-01', self::asDateString($rows[0]['eligible_from']));
             self::assertSame('2026-06-01', self::asDateString($rows[0]['eligible_to']));

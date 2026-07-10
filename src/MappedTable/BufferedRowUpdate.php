@@ -22,7 +22,7 @@ final class BufferedRowUpdate
     public array $setColumns = [];
 
     public function __construct(
-        public readonly int|string $id,
+        public readonly MappedKey $key,
     ) {}
 
     public function toPlan(): ?RowUpdatePlan
@@ -36,7 +36,7 @@ final class BufferedRowUpdate
         }
 
         return new RowUpdatePlan(
-            id: $this->id,
+            key: $this->key,
             expectedPresence: $this->expectedPresence,
             mode: $this->mode,
             expectedColumns: $this->expectedColumns,

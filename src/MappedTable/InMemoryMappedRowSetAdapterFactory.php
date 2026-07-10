@@ -10,13 +10,13 @@ final readonly class InMemoryMappedRowSetAdapterFactory implements MappedRowSetA
         private InMemoryRowDatabase $database,
     ) {}
 
-    public function create(string $tableName, string $idColumn = 'id'): MappedRowSetAdapter
+    public function create(string $tableName, array $keyColumns = ['id']): MappedRowSetAdapter
     {
-        return new InMemoryMappedRowSetAdapter($this->database, $tableName, $idColumn);
+        return new InMemoryMappedRowSetAdapter($this->database, $tableName, $keyColumns);
     }
 
-    public function createScoped(string $tableName, string $idColumn, array $scopeColumns): MappedRowSetAdapter
+    public function createScoped(string $tableName, array $keyColumns, MappedKey $scope): MappedRowSetAdapter
     {
-        return new InMemoryMappedRowSetAdapter($this->database, $tableName, $idColumn, $scopeColumns);
+        return new InMemoryMappedRowSetAdapter($this->database, $tableName, $keyColumns, $scope);
     }
 }

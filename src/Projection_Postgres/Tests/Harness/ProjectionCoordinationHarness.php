@@ -86,7 +86,7 @@ final readonly class HarnessCourseNamesProjection
     #[ProjectionHandler]
     public function onCourseCreated(HarnessCourseCreated $event): void
     {
-        $this->table->withId($event->courseId)
+        $this->table->withKey($event->courseId)
             ->upsert()
             ->setColumn('name', $event->name)
         ;

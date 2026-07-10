@@ -10,11 +10,11 @@ namespace Ultra\MappedTable;
 final readonly class RowSetUpdatePlan
 {
     /**
-     * @param list<int|string>|null $expectedRowIds
-     * @param list<RowUpdatePlan>   $rowUpdates
+     * @param list<MappedKey>|null $expectedRowKeys
+     * @param list<RowUpdatePlan>  $rowUpdates
      */
     public function __construct(
-        public ?array $expectedRowIds,
+        public ?array $expectedRowKeys,
         public array $rowUpdates,
     ) {}
 }
