@@ -49,6 +49,13 @@ final class StatefulMessageHandlingExtension implements ContainerExtension
                             new Reference(StateMetadataRegistry::class),
                         ]))->addTag(MessageHandlingTagNames::ASPECT),
                     );
+
+                    $container->setDefinition(
+                        StateStoreReadAspect::class,
+                        (new Definition(StateStoreReadAspect::class, [
+                            new Reference(StateStore::class),
+                        ]))->addTag(MessageHandlingTagNames::ASPECT),
+                    );
                 }
             }
         }, priority: 40);

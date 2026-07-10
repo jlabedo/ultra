@@ -83,6 +83,39 @@ final readonly class OrderWithLinesState
 }
 ```
 
+## Embedded value objects
+
+`#[StateEmbedded]` keeps a value object in the state model while flattening its
+properties into columns. The embedded object must be non-null and must not have
+an identity, collection, or nested embedded mapping.
+
+```php
+use Ultra\StateStore\Attribute\StateEmbedded;
+
+final readonly class Address
+{
+    public function __construct(
+        public string $street,
+        public string $postalCode,
+    ) {}
+}
+
+#[State(table: 'orders', idColumn: 'order_id')]
+final readonly class OrderState
+{
+    public function __construct(
+        #[StateId]
+        public string $orderId,
+        #[StateEmbedded(prefix: 'shipping_')]
+        public Address $shippingAddress,
+    ) {}
+}
+```
+
+This maps `shippingAddress` to `shipping_street` and
+`shipping_postalCode`. Embedded columns participate in the usual optimistic
+expectations.
+
 ## Save Semantics
 
 - `save($state)` buffers an upsert for the mapped row

@@ -1,0 +1,14 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/Kernel.php'
+
+    Ultra\MappedTable\InMemoryRowDatabase: ~
+
+    Ultra\MappedTable\MappedRowSetAdapterFactory:
+        class: Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory

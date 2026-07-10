@@ -12,6 +12,7 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
 use Ultra\StateStore\Attribute\StateCollection;
+use Ultra\StateStore\Attribute\StateEmbedded;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
@@ -82,6 +83,26 @@ final readonly class OrderWithLinesState
             itemClass: OrderLineState::class,
         )]
         public array $lines,
+    ) {}
+}
+
+final readonly class ShippingAddress
+{
+    public function __construct(
+        public string $street,
+        #[StateColumn('zip')]
+        public string $postalCode,
+    ) {}
+}
+
+#[State(table: 'orders', idColumn: 'order_id')]
+final readonly class OrderWithShippingAddressState
+{
+    public function __construct(
+        #[StateId]
+        public string $orderId,
+        #[StateEmbedded(prefix: 'shipping_')]
+        public ShippingAddress $shippingAddress,
     ) {}
 }
 
@@ -210,6 +231,57 @@ final class StateStoreTest extends TestCase
         [, , $store] = $this->newStore([OrderState::class]);
 
         self::assertNull($store->load(OrderState::class, 'missing-order'));
+    }
+
+    public function test_embedded_value_object_is_hydrated_from_flat_columns(): void
+    {
+        [$database, , $store] = $this->newStore([OrderWithShippingAddressState::class]);
+        $database->seedRow('orders', 'order_id', [
+            'order_id' => 'order-123',
+            'shipping_street' => '1 Main Street',
+            'shipping_zip' => '75001',
+        ]);
+
+        $state = $store->load(OrderWithShippingAddressState::class, 'order-123');
+
+        self::assertEquals(new OrderWithShippingAddressState(
+            'order-123',
+            new ShippingAddress('1 Main Street', '75001'),
+        ), $state);
+    }
+
+    public function test_embedded_value_object_is_saved_as_flat_columns_and_participates_in_optimistic_expectations(): void
+    {
+        [$database, $table, $store] = $this->newStore([OrderWithShippingAddressState::class]);
+        $database->seedRow('orders', 'order_id', [
+            'order_id' => 'order-123',
+            'shipping_street' => '1 Main Street',
+            'shipping_zip' => '75001',
+        ]);
+
+        $loaded = $store->load(OrderWithShippingAddressState::class, 'order-123');
+        self::assertInstanceOf(OrderWithShippingAddressState::class, $loaded);
+
+        $store->expect($loaded);
+        $store->save(new OrderWithShippingAddressState(
+            'order-123',
+            new ShippingAddress('2 Main Street', '75001'),
+        ));
+
+        self::assertSame([
+            'shipping_street' => '2 Main Street',
+            'shipping_zip' => '75001',
+        ], $table->row('order-123', ['shipping_street', 'shipping_zip']));
+
+        $database->writeRow('orders', 'order_id', [
+            'order_id' => 'order-123',
+            'shipping_street' => '1 Main Street',
+            'shipping_zip' => '75002',
+        ]);
+
+        $this->expectException(ConcurrencyException::class);
+
+        $this->flushInTransaction($database, $table);
     }
 
     public function test_expect_missing_turns_later_save_into_insert(): void

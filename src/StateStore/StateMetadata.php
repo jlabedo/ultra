@@ -13,6 +13,7 @@ namespace Ultra\StateStore;
  *     idColumn: string,
  *     propertyColumns: array<string, string>,
  *     optimisticPropertyColumns: array<string, string>,
+ *     embedded: array<string, StateEmbeddedMetadataDefinition>,
  *     collections: array<string, StateCollectionMetadataDefinition>
  * }
  */
@@ -21,6 +22,7 @@ final readonly class StateMetadata
     /**
      * @param array<string, string> $propertyColumns
      * @param array<string, string> $optimisticPropertyColumns
+     * @param array<string, StateEmbeddedMetadata>   $embedded
      * @param array<string, StateCollectionMetadata> $collections
      */
     public function __construct(
@@ -31,6 +33,7 @@ final readonly class StateMetadata
         public string $idColumn,
         public array $propertyColumns,
         public array $optimisticPropertyColumns,
+        public array $embedded = [],
         public array $collections = [],
     ) {}
 
@@ -47,6 +50,10 @@ final readonly class StateMetadata
             idColumn: $definition['idColumn'],
             propertyColumns: $definition['propertyColumns'],
             optimisticPropertyColumns: $definition['optimisticPropertyColumns'],
+            embedded: array_map(
+                StateEmbeddedMetadata::fromArray(...),
+                $definition['embedded'] ?? [],
+            ),
             collections: array_map(
                 StateCollectionMetadata::fromArray(...),
                 $definition['collections'] ?? [],
@@ -67,6 +74,10 @@ final readonly class StateMetadata
             'idColumn' => $this->idColumn,
             'propertyColumns' => $this->propertyColumns,
             'optimisticPropertyColumns' => $this->optimisticPropertyColumns,
+            'embedded' => array_map(
+                static fn (StateEmbeddedMetadata $embedded): array => $embedded->toArray(),
+                $this->embedded,
+            ),
             'collections' => array_map(
                 static fn (StateCollectionMetadata $collection): array => $collection->toArray(),
                 $this->collections,
@@ -79,7 +90,12 @@ final readonly class StateMetadata
      */
     public function selectedColumns(): array
     {
-        return array_values(array_unique(array_values($this->propertyColumns)));
+        $columns = array_values($this->propertyColumns);
+        foreach ($this->embedded as $embedded) {
+            $columns = [...$columns, ...$embedded->selectedColumns()];
+        }
+
+        return array_values(array_unique($columns));
     }
 
     /**
@@ -95,6 +111,10 @@ final readonly class StateMetadata
 
         foreach ($this->propertyColumns as $property => $column) {
             $payload[$property] = array_key_exists($column, $row) ? $row[$column] : null;
+        }
+
+        foreach ($this->embedded as $embedded) {
+            $payload[$embedded->property] = $embedded->payloadFromRow($row);
         }
 
         return $payload;
@@ -131,6 +151,10 @@ final readonly class StateMetadata
             $columns[$column] = $this->requireNormalizedValue($normalizedState, $property);
         }
 
+        foreach ($this->embedded as $embedded) {
+            $columns = [...$columns, ...$embedded->columnsFromNormalized($normalizedState)];
+        }
+
         return $columns;
     }
 
@@ -145,6 +169,10 @@ final readonly class StateMetadata
 
         foreach ($this->optimisticPropertyColumns as $property => $column) {
             $columns[$column] = $this->requireNormalizedValue($normalizedState, $property);
+        }
+
+        foreach ($this->embedded as $embedded) {
+            $columns = [...$columns, ...$embedded->optimisticColumnsFromNormalized($normalizedState)];
         }
 
         return $columns;

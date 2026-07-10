@@ -6,6 +6,7 @@ namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\TestCase;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
+use Ultra\StatefulMessageHandling\Attribute\StateReader;
 use Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension;
 use Ultra\EventSourcedState\EventSourcedStateExtension;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
@@ -79,6 +80,20 @@ final readonly class CreateDecisionOrderCommand
     }
 }
 
+final readonly class GetDecisionOrderStatusQuery
+{
+    public function __construct(
+        public string $orderId,
+    ) {}
+
+    #[SelfHandler]
+    #[StateReader]
+    public function handle(?DecisionOrderState $order): ?string
+    {
+        return $order?->status;
+    }
+}
+
 final readonly class CreateCourseAndConfirmDecisionOrderCommand
 {
     public function __construct(
@@ -143,6 +158,23 @@ final class StateStoreDecisionAspectTest extends TestCase
         self::assertSame('pending', $state->status);
     }
 
+    public function test_it_injects_state_into_a_query_without_preparing_a_write(): void
+    {
+        $container = $this->ultraLight()->boot();
+        $database = $container->get(InMemoryRowDatabase::class);
+        $database->seedRow('decision_orders', 'order_id', [
+            'order_id' => 'order-4',
+            'status' => 'paid',
+        ]);
+
+        $result = $container->get('test.mediator')->send(new GetDecisionOrderStatusQuery('order-4'));
+
+        self::assertSame('paid', $result);
+        self::assertSame([
+            'status' => 'paid',
+        ], $database->row('decision_orders', 'order_id', 'order-4', ['status']));
+    }
+
     public function test_event_sourced_and_state_store_aspects_can_share_one_handler(): void
     {
         $container = $this->ultraLight()->boot();
@@ -200,6 +232,7 @@ final class StateStoreDecisionAspectTest extends TestCase
                 CourseCreated::class,
                 ShipDecisionOrderCommand::class,
                 CreateDecisionOrderCommand::class,
+                GetDecisionOrderStatusQuery::class,
                 CreateCourseAndConfirmDecisionOrderCommand::class,
                 RecordDecisionCourseCreated::class,
             )
