@@ -22,6 +22,7 @@ use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\MessageHandling\Attribute\EventHandler;
+use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageHandlingExtension;
@@ -60,6 +61,25 @@ final readonly class ShipDecisionOrderCommand
     public function decide(DecisionOrderState $order): DecisionOrderState
     {
         return $order->withStatus('shipped');
+    }
+}
+
+final readonly class ConfirmDecisionOrderCommand
+{
+    public function __construct(
+        public string $orderId,
+    ) {}
+}
+
+final readonly class ConfirmDecisionOrderHandler
+{
+    #[Handles]
+    #[DecisionHandler]
+    public function handle(
+        ConfirmDecisionOrderCommand $command,
+        DecisionOrderState $order,
+    ): DecisionOrderState {
+        return $order->withStatus('confirmed');
     }
 }
 
@@ -279,6 +299,23 @@ final class StateStoreDecisionAspectTest extends TestCase
         self::assertSame('shipped', $state->status);
     }
 
+    public function test_it_supports_a_decision_handler_on_a_separate_handler(): void
+    {
+        $container = $this->ultraLight()->boot();
+        $database = $container->get(InMemoryRowDatabase::class);
+        $database->seedRow('decision_orders', 'order_id', [
+            'order_id' => 'order-5',
+            'status' => 'paid',
+        ]);
+
+        $result = $container->get('test.mediator')->send(new ConfirmDecisionOrderCommand('order-5'));
+
+        self::assertEquals(new DecisionOrderState('order-5', 'confirmed'), $result);
+        $state = $container->get('test.state_store')->load(DecisionOrderState::class, 'order-5');
+        self::assertInstanceOf(DecisionOrderState::class, $state);
+        self::assertSame('confirmed', $state->status);
+    }
+
     public function test_nullable_state_parameter_allows_missing_state_and_saves_returned_state(): void
     {
         $container = $this->ultraLight()->boot();
@@ -364,6 +401,8 @@ final class StateStoreDecisionAspectTest extends TestCase
                 CourseCapacityState::class,
                 CourseCreated::class,
                 ShipDecisionOrderCommand::class,
+                ConfirmDecisionOrderCommand::class,
+                ConfirmDecisionOrderHandler::class,
                 CreateDecisionOrderCommand::class,
                 GetDecisionOrderStatusQuery::class,
                 CreateCourseAndConfirmDecisionOrderCommand::class,

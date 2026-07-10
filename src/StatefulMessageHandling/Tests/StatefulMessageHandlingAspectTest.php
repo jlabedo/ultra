@@ -22,6 +22,7 @@ use Ultra\StatefulMessageHandling\Violation;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MessageHandling\Attribute\Around;
+use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
@@ -58,6 +59,32 @@ final readonly class CreateNestedCourseCommand
     }
 }
 
+final readonly class CreateCourseWithSeparateHandlerCommand
+{
+    public function __construct(
+        public string $courseId,
+        public string $name,
+        public int $maxCapacity,
+    ) {}
+
+    public function check(CourseCapacityState $course): array
+    {
+        return [];
+    }
+}
+
+final readonly class CreateCourseWithSeparateHandler
+{
+    #[Handles]
+    #[DecisionHandler]
+    public function handle(
+        CreateCourseWithSeparateHandlerCommand $command,
+        CourseCapacityState $course,
+    ): array {
+        return [new CourseCreated($command->courseId, $command->name, $command->maxCapacity)];
+    }
+}
+
 /**
  * @internal
  *
@@ -77,6 +104,19 @@ final class StatefulMessageHandlingAspectTest extends StatefulMessageHandlingFun
 
         self::assertEquals([new CourseCreated('nested-course', 'Nested course', 12)], $events);
         self::assertCount(1, $container->eventStore()->load(self::courseStreamQuery('nested-course'))->events);
+    }
+
+    public function test_it_supports_an_event_sourced_decision_handler_on_a_separate_handler(): void
+    {
+        $container = $this->ultraLight()->boot();
+        $command = new CreateCourseWithSeparateHandlerCommand('separate-course', 'Separate course', 12);
+
+        self::assertSame([], $container->mediator()->send($command, ['decision_mode' => 'check']));
+
+        $events = $container->mediator()->send($command);
+
+        self::assertEquals([new CourseCreated('separate-course', 'Separate course', 12)], $events);
+        self::assertCount(1, $container->eventStore()->load(self::courseStreamQuery('separate-course'))->events);
     }
 
     public function test_it_creates_a_course_and_subscribes_a_student_through_the_mediator(): void
@@ -460,6 +500,8 @@ final class StatefulMessageHandlingAspectTest extends StatefulMessageHandlingFun
             StudentSubscriptionState::class,
             NestedCourseReference::class,
             CreateNestedCourseCommand::class,
+            CreateCourseWithSeparateHandlerCommand::class,
+            CreateCourseWithSeparateHandler::class,
         );
     }
 

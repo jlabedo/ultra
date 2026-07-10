@@ -44,13 +44,17 @@ final class EventSourcedDecisionAspect
             return null;
         }
 
-        $commandRef = $method->getDeclaringClass();
-        $commandClass = $commandRef->getName();
+        $commandClass = $ctx->messageClass();
+        $commandRef = new \ReflectionClass($commandClass);
 
         $stateParams = [];
         $provides = [];
 
-        foreach ($method->getParameters() as $index => $parameter) {
+        $parameters = $ctx->isSelfHandler()
+            ? $method->getParameters()
+            : array_slice($method->getParameters(), 1);
+
+        foreach ($parameters as $index => $parameter) {
             $type = $parameter->getType();
             if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
                 continue;
