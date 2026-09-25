@@ -1,0 +1,11 @@
+doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+    orm:
+        mappings:
+            Classic:
+                type: attribute
+                is_bundle: false
+                dir: '%kernel.project_dir%/src/Booking/Classic/Entity'
+                prefix: 'App\Booking\Classic\Entity'
+                alias: Classic

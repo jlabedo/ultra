@@ -1,0 +1,49 @@
+parameters:
+    app.event_store_table_prefix: 'cw_es_'
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/Kernel.php'
+            - '../src/Booking/Domain/'
+            - '../src/Booking/Classic/Entity/'
+
+    Ultra\EventStore\EventStore:
+        class: Ultra\EventStore_Postgres\PostgresEventStoreHStore
+        arguments:
+            $connection: '@doctrine.dbal.default_connection'
+            $tablePrefix: '%app.event_store_table_prefix%'
+
+    Ultra\MappedTable\MappedRowSetAdapterFactory:
+        class: Ultra\MappedTable\PostgresMappedRowSetAdapterFactory
+        arguments:
+            $connection: '@doctrine.dbal.default_connection'
+
+    Ultra\UnitOfWork\TransactionManager:
+        alias: App\Infrastructure\DoctrineTransactionManager
+
+    Ultra\Time\ClockInterface:
+        class: Ultra\Time\SystemClock
+
+    # Entry points used directly by tests; nothing else depends on them.
+    App\Infrastructure\CoworkingSchema:
+        public: true
+    App\Booking\Classic\BookingService:
+        public: true
+    App\Booking\Classic\Repository\BookingRepository:
+        public: true
+
+when@test:
+    services:
+        Ultra\Time\ClockInterface:
+            class: Ultra\Time\StatickClock
+            public: true
+            arguments:
+                - !service
+                    class: DateTimeImmutable
+                    arguments: ['2026-09-01 09:00:00 UTC']

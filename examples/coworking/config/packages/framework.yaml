@@ -1,0 +1,6 @@
+framework:
+    secret: '%env(APP_SECRET)%'
+
+when@test:
+    framework:
+        test: true
