@@ -6,7 +6,6 @@ namespace Ultra\StatefulMessageHandling\Tests;
 
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Attribute\BindTo;
-use Ultra\StatefulMessageHandling\Exception\CommandHasNoCheckException;
 use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\StatefulMessageHandling\Tests\Example\Command\CreateCourseCommand;
 use Ultra\StatefulMessageHandling\Tests\Example\Command\SubscribeStudentToCourseCommand;
@@ -66,11 +65,6 @@ final readonly class CreateCourseWithSeparateHandlerCommand
         public string $name,
         public int $maxCapacity,
     ) {}
-
-    public function check(CourseCapacityState $course): array
-    {
-        return [];
-    }
 }
 
 final readonly class CreateCourseWithSeparateHandler
@@ -269,14 +263,12 @@ final class StatefulMessageHandlingAspectTest extends StatefulMessageHandlingFun
         self::assertViolationCodes($violations, 'student.already_subscribed');
     }
 
-    public function test_it_throws_if_the_command_has_no_check_method(): void
+    public function test_check_mode_runs_the_decision_and_appends_nothing(): void
     {
         $container = $this->ultraLight()->boot();
-        $mediator = $container->mediator();
 
-        $this->expectException(CommandHasNoCheckException::class);
-
-        $mediator->send(new CreateCourseCommand('x', 'X', 1), ['decision_mode' => 'check']);
+        self::assertSame([], $container->mediator()->send(new CreateCourseCommand('x', 'X', 1), ['decision_mode' => 'check']));
+        self::assertCount(0, $container->eventStore()->load(self::courseStreamQuery('x'))->events);
     }
 
     public function test_it_resolves_non_state_dependencies_from_the_container(): void
@@ -311,6 +303,8 @@ final class StatefulMessageHandlingAspectTest extends StatefulMessageHandlingFun
         ;
         $mediator = $container->mediator();
         $store = $container->eventStore();
+
+        self::assertSame([], $mediator->send($command, ['decision_mode' => 'check']));
 
         $events = $mediator->send($command);
 

@@ -8,9 +8,9 @@ use App\Booking\Domain\Slot;
 use App\Booking\EventSourced\Write\BookRoom;
 use App\Tests\Driver\BookingDriver;
 use App\Tests\Driver\EventSourcedDriver;
-use PHPUnit\Framework\Attributes\Group;
 use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\MessageHandling\MediatorInterface;
+use Ultra\StatefulMessageHandling\DecisionMode;
 use Ultra\StatefulMessageHandling\Violation;
 
 /**
@@ -26,11 +26,6 @@ final class EventSourcedBookingTest extends BookingScenarioTestCase
         );
     }
 
-    /**
-     * Known gap: check mode passes null for every non-state parameter of check(), so a service like the clock
-     * cannot be used there.
-     */
-    #[Group('finding')]
     public function test_check_mode_reports_violations_without_writing(): void
     {
         $this->givenAcmeWithAdaAndGrace();
@@ -38,7 +33,7 @@ final class EventSourcedBookingTest extends BookingScenarioTestCase
 
         $violations = self::getContainer()->get(MediatorInterface::class)->send(
             new BookRoom('b2', 'blue', 'grace', 'acme', Slot::of('2026-09-10 10:30', '2026-09-10 11:30')),
-            ['decision_mode' => 'check'],
+            [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK],
         );
 
         self::assertSame(['slot.unavailable'], array_map(static fn (Violation $violation): string => $violation->code, $violations));

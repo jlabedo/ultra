@@ -82,17 +82,18 @@ Boundaries such as `roomDay` and `companyMonth` are computed from command data.
 **Direction**: `#[BindTo]` (and possibly `#[DomainIdentifier]`) could accept a method, so identities can be computed
 without hooks and classes can stay `readonly`.
 
-## 5. Check mode cannot use services (Bug)
+## 5. Check mode could not use services (Bug, fixed)
 
-`EventSourcedDecisionAspect` calls `check()` with states matched by parameter name and `null` for everything
-else. `BookRoom::check()` needs the clock for "not in the past", and it gets a `TypeError`
-(`EventSourcedBookingTest::test_check_mode_reports_violations_without_writing`). `StateStoreDecisionAspect` has no
-check mode at all. Separately, `check()` must repeat the `decide()` signature, and nothing verifies that the two stay
-aligned.
+`EventSourcedDecisionAspect` used to call a separate `check()` method, passing states matched by parameter name
+and `null` for everything else. `BookRoom::check()` needed the clock, so it got a `TypeError`.
+`StateStoreDecisionAspect` had no check mode at all, and `check()` had to repeat the `decide()` signature.
 
-**Direction**: resolve `check()` parameters with the same states-plus-services logic as `decide()`, and support it in
-the state-store aspect. Another option: run `decide()` itself in check mode and turn `InvariantViolation` into the
-violation list, discarding the effects. That would remove the duplicated method.
+**Fixed:** check mode (`DecisionMode::CONTEXT_KEY => DecisionMode::CHECK`) now runs `decide()` itself, with the same
+states and services. It returns the violations of a thrown `InvariantViolation` (or `[]`) and discards the effects,
+in both aspects. `check()` methods and `CommandHasNoCheckException` are gone.
+
+Trade-off: check mode reports what `decide()` throws. A decision that validates in several `throwIfAny` groups only
+surfaces the first failing group.
 
 ## 6. State store: several decisions cannot expect the same collection row in one unit of work (Bug)
 
@@ -177,5 +178,5 @@ set-based rules in the state-store flavor (7). Finding 1 looks solvable inside t
 Finding 7 questions what the state-store flavor is for: as soon as a rule spans rows, it pushes the developer into
 maintaining materialized views by hand. Finding 3 is the only limit rooted in the event model itself.
 
-Suggested order of work: bugs 5 and 6 (small, contained), then dependent binding (1), then deciding the
+Suggested order of work: bug 6 (small, contained), then dependent binding (1), then deciding the
 state-store flavor's scope (7, 8), then multi-valued tags (3).

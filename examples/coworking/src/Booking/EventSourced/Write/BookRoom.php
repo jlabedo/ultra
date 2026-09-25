@@ -42,38 +42,6 @@ final class BookRoom
         public readonly Slot $slot,
     ) {}
 
-    /**
-     * @return list<Violation>
-     */
-    public function check(
-        BookingState $booking,
-        RoomState $room,
-        MemberState $member,
-        CompanyState $company,
-        RoomDayScheduleState $schedule,
-        CompanyMonthUsageState $usage,
-        ClockInterface $clock,
-    ): array {
-        if ($booking->exists()) {
-            return [new Violation('booking.already_exists', 'Booking already exists.')];
-        }
-        if (!$room->exists) {
-            return [new Violation('room.not_found', 'Room does not exist.')];
-        }
-        if (!$member->exists) {
-            return [new Violation('member.not_found', 'Member does not exist.')];
-        }
-        if ($member->companyId !== $this->companyId) {
-            return [new Violation('member.company_mismatch', 'Member does not belong to this company.')];
-        }
-
-        return array_values(array_filter([
-            ...BookingPolicy::slotViolations($this->slot, $clock->now()),
-            !$schedule->isFree($this->slot) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
-            BookingPolicy::quotaExceeded($company->monthlyMinutes, $usage->usedMinutes(), $this->slot->minutes()),
-        ]));
-    }
-
     #[SelfHandler]
     #[DecisionHandler]
     public function decide(
@@ -85,7 +53,19 @@ final class BookRoom
         CompanyMonthUsageState $usage,
         ClockInterface $clock,
     ): RoomBooked {
-        Violations::throwIfAny($this->check($booking, $room, $member, $company, $schedule, $usage, $clock));
+        Violations::throwIfAny([
+            $booking->exists() ? new Violation('booking.already_exists', 'Booking already exists.') : null,
+            !$room->exists ? new Violation('room.not_found', 'Room does not exist.') : null,
+            !$member->exists ? new Violation('member.not_found', 'Member does not exist.') : null,
+        ]);
+        Violations::throwIfAny([
+            $member->companyId !== $this->companyId ? new Violation('member.company_mismatch', 'Member does not belong to this company.') : null,
+        ]);
+        Violations::throwIfAny([
+            ...BookingPolicy::slotViolations($this->slot, $clock->now()),
+            !$schedule->isFree($this->slot) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
+            BookingPolicy::quotaExceeded($company->monthlyMinutes, $usage->usedMinutes(), $this->slot->minutes()),
+        ]);
 
         return new RoomBooked($this->bookingId, $this->roomId, $this->memberId, $this->companyId, $this->slot->start, $this->slot->end);
     }

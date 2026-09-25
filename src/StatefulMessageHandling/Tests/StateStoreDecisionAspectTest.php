@@ -8,6 +8,9 @@ use PHPUnit\Framework\TestCase;
 use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Attribute\StateReader;
+use Ultra\StatefulMessageHandling\DecisionMode;
+use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
+use Ultra\StatefulMessageHandling\Violation;
 use Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension;
 use Ultra\EventSourcedState\EventSourcedStateExtension;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
@@ -80,6 +83,24 @@ final readonly class ConfirmDecisionOrderHandler
         DecisionOrderState $order,
     ): DecisionOrderState {
         return $order->withStatus('confirmed');
+    }
+}
+
+final readonly class CancelDecisionOrderCommand
+{
+    public function __construct(
+        public string $orderId,
+    ) {}
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(DecisionOrderState $order): DecisionOrderState
+    {
+        if ('shipped' === $order->status) {
+            throw new InvariantViolation([new Violation('order.already_shipped', 'Shipped orders cannot be cancelled.')]);
+        }
+
+        return $order->withStatus('cancelled');
     }
 }
 
@@ -316,6 +337,40 @@ final class StateStoreDecisionAspectTest extends TestCase
         self::assertSame('confirmed', $state->status);
     }
 
+    public function test_check_mode_returns_violations_without_saving(): void
+    {
+        $container = $this->ultraLight()->boot();
+        $container->get(InMemoryRowDatabase::class)->seedRow('decision_orders', 'order_id', [
+            'order_id' => 'order-6',
+            'status' => 'shipped',
+        ]);
+
+        $violations = $container->get('test.mediator')->send(
+            new CancelDecisionOrderCommand('order-6'),
+            [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK],
+        );
+
+        self::assertEquals([new Violation('order.already_shipped', 'Shipped orders cannot be cancelled.')], $violations);
+        self::assertSame('shipped', $container->get('test.state_store')->load(DecisionOrderState::class, 'order-6')?->status);
+    }
+
+    public function test_check_mode_returns_no_violations_and_discards_returned_states(): void
+    {
+        $container = $this->ultraLight()->boot();
+        $container->get(InMemoryRowDatabase::class)->seedRow('decision_orders', 'order_id', [
+            'order_id' => 'order-7',
+            'status' => 'paid',
+        ]);
+
+        $violations = $container->get('test.mediator')->send(
+            new CancelDecisionOrderCommand('order-7'),
+            [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK],
+        );
+
+        self::assertSame([], $violations);
+        self::assertSame('paid', $container->get('test.state_store')->load(DecisionOrderState::class, 'order-7')?->status);
+    }
+
     public function test_nullable_state_parameter_allows_missing_state_and_saves_returned_state(): void
     {
         $container = $this->ultraLight()->boot();
@@ -402,6 +457,7 @@ final class StateStoreDecisionAspectTest extends TestCase
                 CourseCreated::class,
                 ShipDecisionOrderCommand::class,
                 ConfirmDecisionOrderCommand::class,
+                CancelDecisionOrderCommand::class,
                 ConfirmDecisionOrderHandler::class,
                 CreateDecisionOrderCommand::class,
                 GetDecisionOrderStatusQuery::class,

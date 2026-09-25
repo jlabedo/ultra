@@ -111,6 +111,10 @@ final readonly class StateStoreDecisionAspect
             $states[] = $state;
         }
 
+        if (DecisionMode::isCheck($context)) {
+            return DecisionMode::check(static fn (): ProceedResult => $proceed(provided: $states), $context);
+        }
+
         $proceedResult = $proceed(provided: $states);
 
         foreach ($this->stateEffectsFrom($proceedResult->value) as $state) {

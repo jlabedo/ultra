@@ -6,7 +6,6 @@ namespace Ultra\StatefulMessageHandling;
 
 use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
-use Ultra\StatefulMessageHandling\Exception\CommandHasNoCheckException;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\EventSourcedEntityLoader;
@@ -26,9 +25,6 @@ use Ultra\MessageHandling\ProceedResult;
 
 final class EventSourcedDecisionAspect
 {
-    private const CONTEXT_DECISION_MODE = 'decision_mode';
-    private const MODE_CHECK = 'check';
-
     public function __construct(
         private readonly EventSourcedStateStore $stateStore,
         private readonly EventStore $eventStore,
@@ -94,15 +90,6 @@ final class EventSourcedDecisionAspect
             $provides[] = $index;
         }
 
-        $checkParamNames = null;
-        if ($commandRef->hasMethod('check')) {
-            $checkMethod = $commandRef->getMethod('check');
-            $checkParamNames = [];
-            foreach ($checkMethod->getParameters() as $param) {
-                $checkParamNames[] = $param->getName();
-            }
-        }
-
         if ([] === $provides) {
             return null;
         }
@@ -110,7 +97,6 @@ final class EventSourcedDecisionAspect
         return MatchResult::apply(
             config: [
                 'stateParams' => $stateParams,
-                'checkParamNames' => $checkParamNames,
             ],
             provides: $provides,
         );
@@ -123,8 +109,6 @@ final class EventSourcedDecisionAspect
         $loadResult = $this->eventStore->load($query);
 
         $states = [];
-        $stateByName = [];
-
         foreach ($preparedStates as $preparedState) {
             $state = $preparedState['loader']->hydrate(
                 $loadResult->events,
@@ -135,24 +119,10 @@ final class EventSourcedDecisionAspect
             );
 
             $states[] = $state;
-            $stateByName[$preparedState['parameterName']] = $state;
         }
 
-        if (self::MODE_CHECK === $context->get(self::CONTEXT_DECISION_MODE)) {
-            $checkParamNames = $config['checkParamNames'] ?? null;
-            if (null === $checkParamNames) {
-                throw new CommandHasNoCheckException($message::class);
-            }
-            $checkArgs = [];
-            foreach ($checkParamNames as $paramName) {
-                $checkArgs[] = $stateByName[$paramName] ?? null;
-            }
-            $violations = $message->check(...$checkArgs);
-
-            return new ProceedResult(
-                is_array($violations) ? $violations : [],
-                $context,
-            );
+        if (DecisionMode::isCheck($context)) {
+            return DecisionMode::check(static fn (): ProceedResult => $proceed(provided: $states), $context);
         }
 
         $proceedResult = $proceed(provided: $states);

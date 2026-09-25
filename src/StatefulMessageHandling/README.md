@@ -25,7 +25,8 @@ Event-sourcing decision pipeline built on the mediator. Commands declare their c
 ## Core types
 
 - **Violation** – `code` + `message` for invariant failures.
-- **InvariantViolation** – Exception carrying `list<Violation>` (thrown by commands when `check()` fails).
+- **InvariantViolation** – Exception carrying `list<Violation>`, thrown by decision handlers when a rule is broken.
+- **DecisionMode** – Context key and value that switch a send to read-only check mode.
 - **EventSourcedEntityLoader** – Pre-compiled loader that builds the typed query for an entity and rehydrates it from a shared batch of loaded `Ultra\EventStore\Event` values.
 
 ## Usage
@@ -67,10 +68,14 @@ final class CreateCourseCommand
 ### Read-only validation
 
 ```php
-$violations = $mediator->send($command, ['decision_mode' => 'check']);
+use Ultra\StatefulMessageHandling\DecisionMode;
+
+$violations = $mediator->send($command, [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK]);
 ```
 
-Uses the same loading and state hydration, then calls `$command->check(...)` (required) and returns the violation list. No append.
+Runs the decision handler with the same states and services, then discards its effects: nothing is appended (or saved, for state-store decisions) and no event is published. The send returns the violations of a thrown `InvariantViolation`, or an empty list when the decision would succeed. Other exceptions propagate.
+
+Check mode reports what `decide()` reports: group all rules you want surfaced together into one `InvariantViolation`.
 
 ### Stream Existence
 
@@ -87,7 +92,7 @@ The aspect always hydrates an object. Commands should ask the state whether it h
 
 ## Example
 
-A full course/student subscription example (events, states, commands, and tests) lives under **`Tests/Example/`**: create course, subscribe/unsubscribe students, with `check()` and explicit course existence on the state.
+A full course/student subscription example (events, states, commands, and tests) lives under **`Tests/Example/`**: create course, subscribe/unsubscribe students, with check mode and explicit course existence on the state.
 
 ## Dependencies
 
