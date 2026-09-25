@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Booking\EventSourced\Event;
 
 use App\Booking\Domain\BookingIds;
-use App\Booking\Domain\Slot;
 use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\Attribute\Event;
 
@@ -13,40 +12,28 @@ use Ultra\Events\Attribute\Event;
  * Takes the new slot of a rescheduled booking. See BookingRescheduledFrom.
  */
 #[Event('coworking.booking_rescheduled_to')]
-final readonly class BookingRescheduledTo
+final class BookingRescheduledTo
 {
-    /**
-     * Derived tags are stored in the payload: the mapper would try to write into virtual (hooked) properties.
-     * Use {@see self::for()} so they always match the booking data.
-     */
+    #[DomainIdentifier('roomDay')]
+    public string $roomDayId {
+        get => BookingIds::roomDay($this->roomId, $this->start->format('Y-m-d'));
+    }
+
+    #[DomainIdentifier('companyMonth')]
+    public string $companyMonthId {
+        get => BookingIds::companyMonth($this->companyId, $this->start->format('Y-m'));
+    }
+
     public function __construct(
         #[DomainIdentifier('booking')]
-        public string $bookingId,
+        public readonly string $bookingId,
         #[DomainIdentifier('room')]
-        public string $roomId,
+        public readonly string $roomId,
         #[DomainIdentifier('member')]
-        public string $memberId,
+        public readonly string $memberId,
         #[DomainIdentifier('company')]
-        public string $companyId,
-        public \DateTimeImmutable $start,
-        public \DateTimeImmutable $end,
-        #[DomainIdentifier('roomDay')]
-        public string $roomDayId,
-        #[DomainIdentifier('companyMonth')]
-        public string $companyMonthId,
+        public readonly string $companyId,
+        public readonly \DateTimeImmutable $start,
+        public readonly \DateTimeImmutable $end,
     ) {}
-
-    public static function for(string $bookingId, string $roomId, string $memberId, string $companyId, Slot $slot): self
-    {
-        return new self(
-            $bookingId,
-            $roomId,
-            $memberId,
-            $companyId,
-            $slot->start,
-            $slot->end,
-            BookingIds::roomDay($roomId, $slot->day()),
-            BookingIds::companyMonth($companyId, $slot->month()),
-        );
-    }
 }

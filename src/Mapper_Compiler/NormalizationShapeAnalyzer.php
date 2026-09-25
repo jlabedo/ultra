@@ -165,7 +165,7 @@ final readonly class NormalizationShapeAnalyzer
     {
         $properties = array_values(array_filter(
             $reflection->getProperties(),
-            static fn (\ReflectionProperty $property): bool => !$property->isStatic(),
+            static fn (\ReflectionProperty $property): bool => !$property->isStatic() && !$property->isVirtual(),
         ));
         usort($properties, static fn (\ReflectionProperty $left, \ReflectionProperty $right): int => $left->getName() <=> $right->getName());
 

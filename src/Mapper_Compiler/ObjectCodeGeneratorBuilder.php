@@ -27,10 +27,14 @@ class ObjectCodeGeneratorBuilder implements CodeGeneratorBuilder
         }
         $className = $type->getClassName();
         $ref = new \ReflectionClass($className);
-        // For each public property, create an ObjectPropertyCodeGenerator
+        // For each public stored property, create an ObjectPropertyCodeGenerator. Virtual (hooked) properties are
+        // derived from stored ones, so they are neither written nor read.
         $properties = $ref->getProperties(\ReflectionProperty::IS_PUBLIC);
         $propertyGenerators = [];
         foreach ($properties as $property) {
+            if ($property->isVirtual()) {
+                continue;
+            }
             $propertyGenerators[$property->getName()] = new ObjectPropertyCodeGenerator($property->getName(), $registry->getCodeGenerator($property, $context), $context->typeCheck);
         }
 

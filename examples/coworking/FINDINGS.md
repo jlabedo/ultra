@@ -67,19 +67,20 @@ The classic model updates one row.
 `BookingRescheduled` event can be tagged `roomDay: [old, new]`. This touches the event store schema (`hstore`),
 the query matching and the append-condition locks, so it is a design change rather than an attribute.
 
-## 4. Derived identities have no first-class place (Feature + Bug)
+## 4. Derived identities have no first-class place (Feature; Mapper bug fixed)
 
 Boundaries such as `roomDay` and `companyMonth` are computed from command data.
 
 - `#[BindTo]` only accepts a property path, so commands expose derived IDs as PHP property hooks. Hooks cannot be
-  `readonly`, so these commands cannot be `readonly class` like the others.
-- Hooks do not work on events at all (**Bug**). The generated denormalizer treats a get-only virtual property as
-  data and assigns it after construction ("Property RoomBooked::$roomDayId is read-only"). The events therefore
-  store `roomDayId` and `companyMonthId` as redundant payload fields, built through a `for()` factory so they stay
-  consistent.
+  `readonly`, so these commands cannot be `readonly class` like the others. The same goes for events that derive
+  their tags with hooks (`RoomBooked` and the other booking events).
+- **Fixed:** the generated Mapper used to treat a get-only virtual property as data and assign it after
+  construction ("Property RoomBooked::$roomDayId is read-only"). The Mapper compiler now ignores virtual
+  properties entirely: they are neither normalized nor denormalized, and they don't count toward an `#[AsValue]`
+  object's single property.
 
-**Direction**: the Mapper should skip virtual properties when denormalizing. `#[BindTo]` (and possibly
-`#[DomainIdentifier]`) could accept a method, so identities can be computed without hooks.
+**Direction**: `#[BindTo]` (and possibly `#[DomainIdentifier]`) could accept a method, so identities can be computed
+without hooks and classes can stay `readonly`.
 
 ## 5. Check mode cannot use services (Bug)
 
@@ -176,5 +177,5 @@ set-based rules in the state-store flavor (7). Finding 1 looks solvable inside t
 Finding 7 questions what the state-store flavor is for: as soon as a rule spans rows, it pushes the developer into
 maintaining materialized views by hand. Finding 3 is the only limit rooted in the event model itself.
 
-Suggested order of work: bugs 4, 5 and 6 (small, contained), then dependent binding (1), then deciding the
+Suggested order of work: bugs 5 and 6 (small, contained), then dependent binding (1), then deciding the
 state-store flavor's scope (7, 8), then multi-valued tags (3).

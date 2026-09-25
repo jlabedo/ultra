@@ -75,8 +75,8 @@ final class RescheduleBooking
         ]);
 
         return [
-            BookingRescheduledFrom::for($this->bookingId, $booking->roomId, $booking->memberId, $booking->companyId, $booking->slot),
-            BookingRescheduledTo::for($this->bookingId, $this->roomId, $booking->memberId, $booking->companyId, $this->slot),
+            new BookingRescheduledFrom($this->bookingId, $booking->roomId, $booking->memberId, $booking->companyId, $booking->slot->start, $booking->slot->end),
+            new BookingRescheduledTo($this->bookingId, $this->roomId, $booking->memberId, $booking->companyId, $this->slot->start, $this->slot->end),
         ];
     }
 }

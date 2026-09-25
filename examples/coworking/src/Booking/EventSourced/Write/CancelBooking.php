@@ -32,12 +32,13 @@ final readonly class CancelBooking
             BookingState::CANCELLED === $booking->status ? new Violation('booking.already_cancelled', 'Booking is already cancelled.') : null,
         ]);
 
-        return BookingCancelled::for(
+        return new BookingCancelled(
             $this->bookingId,
             $booking->roomId,
             $booking->memberId,
             $booking->companyId,
-            $booking->slot,
+            $booking->slot->start,
+            $booking->slot->end,
             BookingPolicy::isRefundable($booking->slot, $clock->now()),
             BookingCancelled::BY_MEMBER,
         );

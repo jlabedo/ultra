@@ -34,12 +34,13 @@ final class CloseRoomForDay
     {
         $events = [];
         foreach ($schedule->bookings as $bookingId => $booking) {
-            $events[] = BookingCancelled::for(
+            $events[] = new BookingCancelled(
                 $bookingId,
                 $this->roomId,
                 $booking['memberId'],
                 $booking['companyId'],
-                $booking['slot'],
+                $booking['slot']->start,
+                $booking['slot']->end,
                 refunded: true,
                 reason: BookingCancelled::ROOM_CLOSED,
             );

@@ -15,7 +15,7 @@ class ValueObjectPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
         }
         $ref = new \ReflectionClass($type->getClassName());
 
-        return $ref->getAttributes(AsValue::class) && 1 === \count($ref->getProperties());
+        return $ref->getAttributes(AsValue::class) && 1 === \count(self::storedProperties($ref));
     }
 
     public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
@@ -25,7 +25,7 @@ class ValueObjectPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
         }
         $className = $type->getClassName();
         $ref = new \ReflectionClass($className);
-        $props = $ref->getProperties();
+        $props = self::storedProperties($ref);
         if (1 !== \count($props)) {
             throw new \RuntimeException('AsValue classes should have exactly one property');
         }
@@ -33,5 +33,16 @@ class ValueObjectPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
         $next = $registry->getCodeGenerator($property, $context);
 
         return new ValueObjectPropertyCodeGenerator($className, $property->getName(), $next);
+    }
+
+    /**
+     * @return list<\ReflectionProperty>
+     */
+    private static function storedProperties(\ReflectionClass $ref): array
+    {
+        return array_values(array_filter(
+            $ref->getProperties(),
+            static fn (\ReflectionProperty $property): bool => !$property->isVirtual(),
+        ));
     }
 }

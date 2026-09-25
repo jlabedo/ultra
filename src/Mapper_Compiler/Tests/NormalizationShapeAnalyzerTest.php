@@ -19,6 +19,18 @@ final readonly class CompoundId
     ) {}
 }
 
+final class HookedId
+{
+    public string $label {
+        get => $this->left.'-'.$this->right;
+    }
+
+    public function __construct(
+        public readonly string $left,
+        public readonly int $right,
+    ) {}
+}
+
 final class ExternalId {}
 
 final class ExternalIdNormalizer implements RuntimeNormalizerInterface
@@ -94,6 +106,17 @@ final class NormalizationShapeAnalyzerTest extends TestCase
                 'right' => ['kind' => 'scalar', 'types' => ['int']],
             ],
         ], new NormalizationShapeAnalyzer()->forClass(CompoundId::class));
+    }
+
+    public function test_virtual_properties_are_not_part_of_the_shape(): void
+    {
+        self::assertSame([
+            'kind' => 'object',
+            'fields' => [
+                'left' => ['kind' => 'scalar', 'types' => ['string']],
+                'right' => ['kind' => 'scalar', 'types' => ['int']],
+            ],
+        ], new NormalizationShapeAnalyzer()->forClass(HookedId::class));
     }
 
     public function test_runtime_normalizer_return_type_exposes_scalar_shape(): void

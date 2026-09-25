@@ -87,6 +87,6 @@ final class BookRoom
     ): RoomBooked {
         Violations::throwIfAny($this->check($booking, $room, $member, $company, $schedule, $usage, $clock));
 
-        return RoomBooked::for($this->bookingId, $this->roomId, $this->memberId, $this->companyId, $this->slot);
+        return new RoomBooked($this->bookingId, $this->roomId, $this->memberId, $this->companyId, $this->slot->start, $this->slot->end);
     }
 }
