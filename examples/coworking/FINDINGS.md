@@ -35,8 +35,10 @@ load in rounds. In the event-sourced flavor, every round's append condition guar
 company between load and append is a conflict. In the state store, a dependent state is `null` when a source is
 missing. `companyId` and the mismatch checks are gone from the commands.
 
-**Still open (step 2):** composed decision states (for example `MemberMonthlyQuota`), so that `BookRoom` and
-`RescheduleBooking` share the wiring instead of each declaring it.
+**Parked (step 2):** composed decision states (for example `MemberMonthlyQuota`, a class whose constructor
+parameters are states resolved with the same bindings). With binding by convention, `BookRoom` and
+`RescheduleBooking` only repeat two short id methods and the quota check, which a helper covers. Revisit if
+decisions start repeating larger groups of related states.
 
 **New limit found:** a signature cannot express a conditional load. State-store `CancelBooking` only needs the
 company-month usage when the cancellation is refundable, which depends on the clock. Declaring it as a parameter
@@ -204,5 +206,5 @@ set-based rules in the state-store flavor (7). Finding 1 looks solvable inside t
 Finding 7 questions what the state-store flavor is for: as soon as a rule spans rows, it pushes the developer into
 maintaining materialized views by hand. Finding 3 is the only limit rooted in the event model itself.
 
-Suggested order of work: composed decision states (1, step 2), then deciding the
+Suggested order of work: deciding the
 state-store flavor's scope (7, 8), then multi-valued tags (3).
