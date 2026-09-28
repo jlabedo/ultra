@@ -7,7 +7,7 @@ Event-sourcing decision pipeline built on the mediator. Commands declare their c
 - **Decider pattern**: Each command owns the decision logic in a method marked with `#[DecisionHandler]`. The decision aspect discovers what to load and inject by reflecting on that method.
 - **States are event-sourced entities**: State classes come from `ultra/event-sourced-state` and use `#[EventSourcedEntity]` plus public `#[EventSourcingHandler]` methods (one typed event parameter) to fold events from a single stream. No aggregate root is required.
 - **Consistency by signature**: Parameters of the decision handler are either **state** (hydrated from the event store by stream) or **services** (resolved from the container). The aspect infers which is which and loads only the streams needed for that command.
-- **Identity by convention**: A state’s stream dimension comes from its single `#[EventSourcedEntity(tags: ['name'])]` tag; the engine reads the value from the command’s `{name}Id` property (or a custom property via `#[BindTo]`).
+- **Identity by convention**: A state’s stream dimension comes from its single `#[EventSourcedEntity(tags: ['name'])]` tag; the engine reads the value from the command’s `{name}Id` property or, if there is none, its public `{name}Id()` method. A name matching both is a compile-time error; `#[BindTo]` chooses explicitly.
 - **Events are DTOs**: Events are plain classes with `#[Event('type.name')]` and `#[DomainIdentifier]` on properties. Stream routing is derived from those attributes when appending.
 
 ## Attributes
@@ -21,6 +21,7 @@ Event-sourcing decision pipeline built on the mediator. Commands declare their c
 | `#[Event('type.name')]` | Class | Event type name for storage and routing. |
 | `#[DomainIdentifier('name')]` | Property | Marks an event DTO identifier used for routing and query matching. |
 | `#[BindTo('property.path')]` | Parameter | Override convention: use this message property path for the state’s id. |
+| `#[BindTo(method: 'name')]` | Parameter | Override convention: call this public message method for the state’s id. Its parameters are other states of the same handler, matched by name (see [Dependent states](#dependent-states)). |
 
 ## Core types
 
@@ -64,6 +65,47 @@ final class CreateCourseCommand
 4. Resolve service parameters from the container.
 5. Call the decision handler and route returned events to `Event`.
 6. Append with an append condition (optimistic concurrency).
+
+### Dependent states
+
+A state’s id can depend on another loaded state: compute it with a public method of the message whose parameters are
+other state parameters of the same handler, **matched by name** and typed with the same state class. The method is
+found by convention (a method with the conventional id name, such as `companyMonthId()` for the `companyMonth` tag) or
+named with `#[BindTo(method: 'name')]`.
+
+```php
+final readonly class BookRoom
+{
+    public function __construct(public string $memberId, public Slot $slot) {}
+
+    public function companyMonthId(MemberState $member): string
+    {
+        return $member->companyId.'@'.$this->slot->month();
+    }
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(
+        MemberState $member,
+        CompanyMonthUsageState $usage, // companyMonth tag: bound to companyMonthId() by convention
+    ): RoomBooked { /* ... */ }
+}
+```
+
+- A method without parameters is a derived id (e.g. a normalized email), computed from the message alone.
+- Dependencies are resolved when the container is compiled into loading rounds: first the states bound to
+  properties or parameterless methods, then the states whose sources are all loaded. An unknown parameter name, a
+  parameter that is not a state of the same flavor, a type mismatch, or a cycle fails the compilation. For a
+  separate `#[Handles]` handler, the method belongs to the message class, not to the handler.
+- Event-sourced states: each round is one `load()`, and every round’s append condition guards the final append, so
+  a concurrent change to a source stream (the member moved company) makes the append fail.
+- State-store states: when a source state is missing (`null`), the dependent state is `null` too, without being
+  loaded or expected. A state depending on a nullable state must therefore be nullable itself.
+- `#[StateReader]` handlers follow the same rules.
+- A method bound by convention adds a loading round without any attribute on the parameter: read the message's id
+  methods to see a handler's dependencies.
+- Limitation: a method can only depend on states of the same flavor. An event-sourced state cannot feed a state-store
+  id, or the reverse, because each aspect loads its own states independently.
 
 ### Read-only validation
 

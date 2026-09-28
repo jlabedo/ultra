@@ -15,32 +15,37 @@ use App\Booking\StateStore\State\MemberState;
 use App\Booking\StateStore\State\RoomDayScheduleState;
 use App\Booking\StateStore\State\RoomState;
 use Ultra\MessageHandling\Attribute\SelfHandler;
-use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Violation;
 use Ultra\Time\ClockInterface;
 
-final class BookRoom
+/**
+ * As in the event-sourced flavor, the company and company-month rows are identified by the member's company and
+ * loaded once the member is. They are null when the member is missing.
+ */
+final readonly class BookRoom
 {
-    public string $roomDayId {
-        get => BookingIds::roomDay($this->roomId, $this->slot->day());
-    }
-
-    public string $companyMonthId {
-        get => BookingIds::companyMonth($this->companyId, $this->slot->month());
-    }
-
-    /**
-     * As in the event-sourced flavor, companyId must be sent by the caller: the company-month row is loaded
-     * before the member is.
-     */
     public function __construct(
-        public readonly string $bookingId,
-        public readonly string $roomId,
-        public readonly string $memberId,
-        public readonly string $companyId,
-        public readonly Slot $slot,
+        public string $bookingId,
+        public string $roomId,
+        public string $memberId,
+        public Slot $slot,
     ) {}
+
+    public function roomDayId(): string
+    {
+        return BookingIds::roomDay($this->roomId, $this->slot->day());
+    }
+
+    public function companyId(MemberState $member): string
+    {
+        return $member->companyId;
+    }
+
+    public function companyMonthId(MemberState $member): string
+    {
+        return BookingIds::companyMonth($member->companyId, $this->slot->month());
+    }
 
     /**
      * The booking parameter is only declared so the aspect registers "this booking row must still be absent".
@@ -54,9 +59,7 @@ final class BookRoom
         ?RoomState $room,
         ?MemberState $member,
         ?CompanyState $company,
-        #[BindTo('roomDayId')]
         ?RoomDayScheduleState $schedule,
-        #[BindTo('companyMonthId')]
         ?CompanyMonthUsageState $usage,
         ClockInterface $clock,
     ): array {
@@ -66,11 +69,11 @@ final class BookRoom
             null === $member ? new Violation('member.not_found', 'Member does not exist.') : null,
         ]);
         Violations::throwIfAny([
-            $member->companyId !== $this->companyId || null === $company ? new Violation('member.company_mismatch', 'Member does not belong to this company.') : null,
+            null === $company ? new Violation('company.not_found', 'Company does not exist.') : null,
         ]);
 
-        $schedule ??= new RoomDayScheduleState($this->roomDayId);
-        $usage ??= new CompanyMonthUsageState($this->companyMonthId);
+        $schedule ??= new RoomDayScheduleState($this->roomDayId());
+        $usage ??= new CompanyMonthUsageState($this->companyMonthId($member));
         Violations::throwIfAny([
             ...BookingPolicy::slotViolations($this->slot, $clock->now()),
             !$schedule->isFree($this->slot) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
@@ -81,7 +84,7 @@ final class BookRoom
             $this->bookingId,
             $this->roomId,
             $this->memberId,
-            $this->companyId,
+            $member->companyId,
             $this->slot->start,
             $this->slot->end,
             BookingState::CONFIRMED,

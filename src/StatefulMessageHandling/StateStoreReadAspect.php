@@ -13,7 +13,6 @@ use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\Exception\StateNotFoundException;
 use Ultra\StateStore\StateStore;
-use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Attribute\StateReader;
 
 final readonly class StateStoreReadAspect
@@ -23,80 +22,43 @@ final readonly class StateStoreReadAspect
     ) {}
 
     #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
-        $method = $ctx->method();
-        if ([] === $method->getAttributes(StateReader::class)) {
+        if ([] === $ctx->method()->getAttributes(StateReader::class)) {
             return null;
         }
 
-        $messageRef = $method->getDeclaringClass();
-        $messageClass = $messageRef->getName();
-        $stateParams = [];
-        $provides = [];
+        $plan = StateBindings::analyze(
+            $ctx,
+            self::isStateClass(...),
+            self::getStateIdProperty(...),
+            nullableStates: true,
+        );
 
-        foreach ($method->getParameters() as $index => $parameter) {
-            $type = $parameter->getType();
-            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
-                continue;
-            }
-
-            $stateClass = $type->getName();
-            if (!self::isStateClass($stateClass)) {
-                continue;
-            }
-
-            $bindTo = $parameter->getAttributes(BindTo::class)[0] ?? null;
-            $commandProperty = null === $bindTo
-                ? self::getStateIdProperty($stateClass)
-                : $bindTo->newInstance()->property;
-
-            if (!MessagePropertyPath::exists($messageRef, $commandProperty)) {
-                throw new \LogicException(sprintf(
-                    'Message %s has no property path "%s" required for state parameter "%s". '
-                        .'Either add the property path or use #[BindTo("property.path")] to bind to a different message property path.',
-                    $messageClass,
-                    $commandProperty,
-                    $parameter->getName(),
-                ));
-            }
-
-            $stateParams[] = [
-                'stateClass' => $stateClass,
-                'commandProperty' => $commandProperty,
-                'allowsMissing' => $type->allowsNull(),
-            ];
-            $provides[] = $index;
-        }
-
-        return [] === $provides
+        return null === $plan
             ? null
-            : MatchResult::apply(['stateParams' => $stateParams], $provides);
+            : MatchResult::apply($plan, array_column($plan['bindings'], 'index'));
     })]
     public function around(callable $proceed, object $message, MessageContext $context, array $config): ProceedResult
     {
-        $states = [];
+        $states = StateBindings::load($config, $message, function (array $ids) use ($config): array {
+            $states = [];
+            foreach ($ids as $position => $id) {
+                $binding = $config['bindings'][$position];
+                if (!is_string($id) && !is_int($id) && !is_object($id)) {
+                    throw new \LogicException(sprintf('Id of state parameter "%s" must be string, int, or object, got %s.', $binding['parameterName'], get_debug_type($id)));
+                }
 
-        foreach ($config['stateParams'] ?? [] as $stateParam) {
-            $id = $this->messagePropertyValue($message, $stateParam['commandProperty']);
-            $state = $this->stateStore->load($stateParam['stateClass'], $id);
+                $state = $this->stateStore->load($binding['stateClass'], $id);
+                if (null === $state && true !== $binding['allowsNull']) {
+                    throw new StateNotFoundException($binding['stateClass'], $id);
+                }
 
-            if (null === $state && true !== $stateParam['allowsMissing']) {
-                throw new StateNotFoundException($stateParam['stateClass'], $id);
+                $states[$position] = $state;
             }
 
-            $states[] = $state;
-        }
+            return $states;
+        });
 
         return $proceed(provided: $states);
-    }
-
-    private function messagePropertyValue(object $message, string $property): int|string|object
-    {
-        $value = MessagePropertyPath::value($message, $property);
-        if (!is_string($value) && !is_int($value) && !is_object($value)) {
-            throw new \LogicException(sprintf('Message property path "%s" must be string, int, or object, got %s.', $property, get_debug_type($value)));
-        }
-
-        return $value;
     }
 
     private static function isStateClass(string $class): bool

@@ -8,7 +8,6 @@ use App\Booking\Domain\BookingIds;
 use App\Booking\Domain\Slot;
 use App\Booking\StateStore\State\BookingState;
 use App\Booking\StateStore\State\CompanyMonthUsageState;
-use App\Booking\StateStore\State\MemberState;
 use App\Booking\StateStore\State\RoomDayScheduleState;
 use App\Booking\StateStore\Write;
 use Ultra\MessageHandling\MediatorInterface;
@@ -43,12 +42,12 @@ final readonly class StateStoreDriver implements BookingDriver
 
     public function book(string $bookingId, string $roomId, string $memberId, Slot $slot): void
     {
-        $this->mediator->send(new Write\BookRoom($bookingId, $roomId, $memberId, $this->companyOf($memberId), $slot));
+        $this->mediator->send(new Write\BookRoom($bookingId, $roomId, $memberId, $slot));
     }
 
     public function bookWeekly(string $seriesId, string $roomId, string $memberId, Slot $firstSlot, int $weeks): void
     {
-        $this->mediator->send(new Write\BookWeekly($seriesId, $roomId, $memberId, $this->companyOf($memberId), $firstSlot, $weeks));
+        $this->mediator->send(new Write\BookWeekly($seriesId, $roomId, $memberId, $firstSlot, $weeks));
     }
 
     public function cancel(string $bookingId, string $memberId): void
@@ -58,7 +57,7 @@ final readonly class StateStoreDriver implements BookingDriver
 
     public function reschedule(string $bookingId, string $memberId, string $roomId, Slot $slot): void
     {
-        $this->mediator->send(new Write\RescheduleBooking($bookingId, $memberId, $this->companyOf($memberId), $roomId, $slot));
+        $this->mediator->send(new Write\RescheduleBooking($bookingId, $memberId, $roomId, $slot));
     }
 
     public function closeRoomForDay(string $roomId, string $day): void
@@ -83,10 +82,5 @@ final readonly class StateStoreDriver implements BookingDriver
     public function bookingStatus(string $bookingId): ?string
     {
         return $this->states->load(BookingState::class, $bookingId)?->status;
-    }
-
-    private function companyOf(string $memberId): string
-    {
-        return $this->states->load(MemberState::class, $memberId)?->companyId ?? '';
     }
 }

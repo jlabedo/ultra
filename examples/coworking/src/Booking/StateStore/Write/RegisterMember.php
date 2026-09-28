@@ -14,17 +14,18 @@ use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Violation;
 
-final class RegisterMember
+final readonly class RegisterMember
 {
-    public string $normalizedEmail {
-        get => BookingPolicy::normalizeEmail($this->email);
-    }
-
     public function __construct(
-        public readonly string $memberId,
-        public readonly string $companyId,
-        public readonly string $email,
+        public string $memberId,
+        public string $companyId,
+        public string $email,
     ) {}
+
+    public function normalizedEmail(): string
+    {
+        return BookingPolicy::normalizeEmail($this->email);
+    }
 
     /**
      * @return list<object>
@@ -34,7 +35,7 @@ final class RegisterMember
     public function decide(
         ?MemberState $member,
         ?CompanyState $company,
-        #[BindTo('normalizedEmail')]
+        #[BindTo(method: 'normalizedEmail')]
         ?EmailClaimState $emailClaim,
     ): array {
         Violations::throwIfAny([
@@ -44,8 +45,8 @@ final class RegisterMember
         ]);
 
         return [
-            new MemberState($this->memberId, $this->companyId, $this->normalizedEmail),
-            new EmailClaimState($this->normalizedEmail, $this->memberId),
+            new MemberState($this->memberId, $this->companyId, $this->normalizedEmail()),
+            new EmailClaimState($this->normalizedEmail(), $this->memberId),
         ];
     }
 }

@@ -24,25 +24,31 @@ use Ultra\Time\ClockInterface;
  * Moves a booking to another slot, possibly in another room, day or month.
  *
  * Only the target boundaries are loaded: releasing the previous slot has no invariant to protect.
- * The target company-month still depends on the booking's company, so the caller must send companyId.
+ * The company and the target company-month depend on the company the booking was charged to.
  */
-final class RescheduleBooking
+final readonly class RescheduleBooking
 {
-    public string $roomDayId {
-        get => BookingIds::roomDay($this->roomId, $this->slot->day());
-    }
-
-    public string $companyMonthId {
-        get => BookingIds::companyMonth($this->companyId, $this->slot->month());
-    }
-
     public function __construct(
-        public readonly string $bookingId,
-        public readonly string $memberId,
-        public readonly string $companyId,
-        public readonly string $roomId,
-        public readonly Slot $slot,
+        public string $bookingId,
+        public string $memberId,
+        public string $roomId,
+        public Slot $slot,
     ) {}
+
+    public function roomDayId(): string
+    {
+        return BookingIds::roomDay($this->roomId, $this->slot->day());
+    }
+
+    public function companyId(BookingState $booking): string
+    {
+        return $booking->companyId;
+    }
+
+    public function companyMonthId(BookingState $booking): string
+    {
+        return BookingIds::companyMonth($booking->companyId, $this->slot->month());
+    }
 
     /**
      * @return list<object>
@@ -64,7 +70,6 @@ final class RescheduleBooking
         ]);
         Violations::throwIfAny([
             $booking->memberId !== $this->memberId ? new Violation('booking.not_owner', 'Only the member who booked can reschedule.') : null,
-            $booking->companyId !== $this->companyId ? new Violation('member.company_mismatch', 'Booking was not charged to this company.') : null,
             BookingState::CANCELLED === $booking->status ? new Violation('booking.already_cancelled', 'Booking is cancelled.') : null,
         ]);
         Violations::throwIfAny([

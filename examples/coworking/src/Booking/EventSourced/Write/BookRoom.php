@@ -20,27 +20,33 @@ use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Violation;
 use Ultra\Time\ClockInterface;
 
-final class BookRoom
+/**
+ * The company and its month quota are identified by the member's company: they are loaded in a second round,
+ * once the member is.
+ */
+final readonly class BookRoom
 {
-    public string $roomDayId {
-        get => BookingIds::roomDay($this->roomId, $this->slot->day());
-    }
-
-    public string $companyMonthId {
-        get => BookingIds::companyMonth($this->companyId, $this->slot->month());
-    }
-
-    /**
-     * The member's company is part of the member state, but the company-month boundary must be known before
-     * anything is loaded. The caller therefore has to send companyId, and decide() verifies it.
-     */
     public function __construct(
-        public readonly string $bookingId,
-        public readonly string $roomId,
-        public readonly string $memberId,
-        public readonly string $companyId,
-        public readonly Slot $slot,
+        public string $bookingId,
+        public string $roomId,
+        public string $memberId,
+        public Slot $slot,
     ) {}
+
+    public function roomDayId(): string
+    {
+        return BookingIds::roomDay($this->roomId, $this->slot->day());
+    }
+
+    public function companyId(MemberState $member): string
+    {
+        return $member->companyId;
+    }
+
+    public function companyMonthId(MemberState $member): string
+    {
+        return BookingIds::companyMonth($member->companyId, $this->slot->month());
+    }
 
     #[SelfHandler]
     #[DecisionHandler]
@@ -59,14 +65,11 @@ final class BookRoom
             !$member->exists ? new Violation('member.not_found', 'Member does not exist.') : null,
         ]);
         Violations::throwIfAny([
-            $member->companyId !== $this->companyId ? new Violation('member.company_mismatch', 'Member does not belong to this company.') : null,
-        ]);
-        Violations::throwIfAny([
             ...BookingPolicy::slotViolations($this->slot, $clock->now()),
             !$schedule->isFree($this->slot) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
             BookingPolicy::quotaExceeded($company->monthlyMinutes, $usage->usedMinutes(), $this->slot->minutes()),
         ]);
 
-        return new RoomBooked($this->bookingId, $this->roomId, $this->memberId, $this->companyId, $this->slot->start, $this->slot->end);
+        return new RoomBooked($this->bookingId, $this->roomId, $this->memberId, $member->companyId, $this->slot->start, $this->slot->end);
     }
 }

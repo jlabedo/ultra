@@ -16,24 +16,32 @@ Each finding is classified:
 - **Bug**: an implementation defect.
 - **Design**: the limitation comes from the model itself; fixing it means changing a core assumption.
 
-## 1. A consistency boundary can depend on another state (Feature)
+## 1. A consistency boundary can depend on another state (Feature; step 1 done)
 
 The quota boundary is `company@month`. The company is known only from the member, and the member is loaded by the
-same decision. A decision parameter can only bind to a property of the command, so:
+same decision. A decision parameter used to bind only to a property of the command, so:
 
-- `BookRoom` and `RescheduleBooking` require `companyId` in the command. The caller must read the member first,
-  outside any consistency boundary, only to learn which boundary to load (`EventSourcedDriver::companyOf()`), and
-  `decide()` must re-verify it (`member.company_mismatch`). The rule "the member's company pays" is enforced by a
-  check instead of being structural.
-- In the state-store flavor, `CancelBooking`, `RescheduleBooking` and `CloseRoomForDay` update rows identified by the
-  loaded booking. They inject `StateStore` into `decide()` and load those rows by hand.
+- `BookRoom` and `RescheduleBooking` required `companyId` in the command. The caller had to read the member first,
+  outside any consistency boundary, only to learn which boundary to load, and `decide()` re-verified it
+  (`member.company_mismatch`).
+- In the state-store flavor, `CancelBooking` and `RescheduleBooking` loaded rows identified by the loaded booking
+  by hand, with manual `expect()` calls.
 
 The classic flavor writes `$member->company`.
 
-**Direction**: let a state parameter bind to a path into another state parameter, for example
-`#[BindTo('member.companyId')]` combined with a command value. The aspect resolves parameters in dependency order:
-one load round per level, one append condition (or row expectation) per loaded boundary. The concurrency model
-stays the same, since each loaded boundary is still guarded.
+**Done (step 1, dependent binding):** `#[BindTo(method: 'companyMonthId')]` names a message method whose parameters
+are other states of the same decision, matched by name. The aspects resolve the dependency graph at compile time and
+load in rounds. In the event-sourced flavor, every round's append condition guards the append, so a member switching
+company between load and append is a conflict. In the state store, a dependent state is `null` when a source is
+missing. `companyId` and the mismatch checks are gone from the commands.
+
+**Still open (step 2):** composed decision states (for example `MemberMonthlyQuota`), so that `BookRoom` and
+`RescheduleBooking` share the wiring instead of each declaring it.
+
+**New limit found:** a signature cannot express a conditional load. State-store `CancelBooking` only needs the
+company-month usage when the cancellation is refundable, which depends on the clock. Declaring it as a parameter
+would always lock the usage row, and late cancellations would then conflict with concurrent bookings in the same
+month. That load stays manual.
 
 ## 2. A decision cannot load a runtime number of states (Feature, partially covered)
 
@@ -79,8 +87,8 @@ Boundaries such as `roomDay` and `companyMonth` are computed from command data.
   properties entirely: they are neither normalized nor denormalized, and they don't count toward an `#[AsValue]`
   object's single property.
 
-**Direction**: `#[BindTo]` (and possibly `#[DomainIdentifier]`) could accept a method, so identities can be computed
-without hooks and classes can stay `readonly`.
+**Done for commands:** `#[BindTo(method: ...)]` computes an id with a plain method, so commands are `readonly class`
+again. Events still derive their tags with hooks, since `#[DomainIdentifier]` only targets properties.
 
 ## 5. Check mode could not use services (Bug, fixed)
 
@@ -140,8 +148,12 @@ Smaller papercuts in the same flavor:
 - Every column needs an explicit `#[StateColumn('snake_name')]`.
 - DDL for state tables is written by hand (`CoworkingSchema`).
 
-**Direction**: inside a decision, loads should go through an identity map that registers expectations
-automatically. This also covers finding 1's manual loads, until dependent binding exists.
+Dependent binding removed most manual loads (`RescheduleBooking` has none left, and the same-row branch now only
+decides which copy to return). What remains is a conditional load (`CancelBooking`) and variable fan-out
+(`CloseRoomForDay`).
+
+**Direction**: a load API inside a decision that registers expectations automatically, for the loads a signature
+cannot declare.
 
 ## 9. Smaller observations
 
@@ -150,6 +162,14 @@ automatically. This also covers finding 1's manual loads, until dependent bindin
   would fit the design naturally.
 - The Mapper does not support `Ultra\Time\DatePoint`, the type `ClockInterface::now()` returns (exact class match in
   `DateTimeCodeGeneratorBuilder`). States and events use `\DateTimeImmutable` instead.
+
+## Known limitations addressable by redesign
+
+Accepted for now, but not considered acceptable long term. Each one needs code redesign rather than a small fix.
+
+- **Dependent binding across flavors.** A decision can mix event-sourced and state-store states, but a binding method
+  can only depend on states of its own flavor: each aspect loads its states independently, in its own rounds. Crossing
+  flavors needs one resolution engine ordering both aspects' loads and sharing loaded states.
 
 ## Where the design wins
 
@@ -184,5 +204,5 @@ set-based rules in the state-store flavor (7). Finding 1 looks solvable inside t
 Finding 7 questions what the state-store flavor is for: as soon as a rule spans rows, it pushes the developer into
 maintaining materialized views by hand. Finding 3 is the only limit rooted in the event model itself.
 
-Suggested order of work: dependent binding (1), then deciding the
+Suggested order of work: composed decision states (1, step 2), then deciding the
 state-store flavor's scope (7, 8), then multi-valued tags (3).

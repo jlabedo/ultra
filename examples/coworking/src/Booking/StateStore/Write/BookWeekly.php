@@ -19,7 +19,6 @@ final readonly class BookWeekly
         public string $seriesId,
         public string $roomId,
         public string $memberId,
-        public string $companyId,
         public Slot $firstSlot,
         public int $weeks,
     ) {}

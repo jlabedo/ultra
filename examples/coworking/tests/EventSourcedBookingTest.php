@@ -32,7 +32,7 @@ final class EventSourcedBookingTest extends BookingScenarioTestCase
         $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
 
         $violations = self::getContainer()->get(MediatorInterface::class)->send(
-            new BookRoom('b2', 'blue', 'grace', 'acme', Slot::of('2026-09-10 10:30', '2026-09-10 11:30')),
+            new BookRoom('b2', 'blue', 'grace', Slot::of('2026-09-10 10:30', '2026-09-10 11:30')),
             [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK],
         );
 

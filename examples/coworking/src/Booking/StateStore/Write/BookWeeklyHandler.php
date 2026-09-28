@@ -20,7 +20,6 @@ final readonly class BookWeeklyHandler
                 BookingIds::occurrence($command->seriesId, $week),
                 $command->roomId,
                 $command->memberId,
-                $command->companyId,
                 $command->firstSlot->shiftedByWeeks($week),
             ));
         }

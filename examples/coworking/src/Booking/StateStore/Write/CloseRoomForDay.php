@@ -15,16 +15,17 @@ use Ultra\StateStore\StateStore;
 /**
  * Every cancelled booking and every refunded company-month is a separate row, discovered from the schedule.
  */
-final class CloseRoomForDay
+final readonly class CloseRoomForDay
 {
-    public string $roomDayId {
-        get => BookingIds::roomDay($this->roomId, $this->day);
-    }
-
     public function __construct(
-        public readonly string $roomId,
-        public readonly string $day,
+        public string $roomId,
+        public string $day,
     ) {}
+
+    public function roomDayId(): string
+    {
+        return BookingIds::roomDay($this->roomId, $this->day);
+    }
 
     /**
      * @return list<object>
@@ -37,7 +38,7 @@ final class CloseRoomForDay
             return [];
         }
 
-        $changes = [new RoomDayScheduleState($this->roomDayId)];
+        $changes = [new RoomDayScheduleState($this->roomDayId())];
         /** @var array<string, CompanyMonthUsageState> $usages */
         $usages = [];
         foreach ($schedule->slots as $slot) {

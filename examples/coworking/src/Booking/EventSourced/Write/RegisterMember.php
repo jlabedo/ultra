@@ -15,25 +15,26 @@ use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Violation;
 
-final class RegisterMember
+final readonly class RegisterMember
 {
-    /** Derived identity: the uniqueness boundary is the normalized email, not the raw input. */
-    public string $normalizedEmail {
-        get => BookingPolicy::normalizeEmail($this->email);
-    }
-
     public function __construct(
-        public readonly string $memberId,
-        public readonly string $companyId,
-        public readonly string $email,
+        public string $memberId,
+        public string $companyId,
+        public string $email,
     ) {}
+
+    /** Derived identity: the uniqueness boundary is the normalized email, not the raw input. */
+    public function normalizedEmail(): string
+    {
+        return BookingPolicy::normalizeEmail($this->email);
+    }
 
     #[SelfHandler]
     #[DecisionHandler]
     public function decide(
         MemberState $member,
         CompanyState $company,
-        #[BindTo('normalizedEmail')]
+        #[BindTo(method: 'normalizedEmail')]
         EmailRegistrationState $email,
     ): MemberRegistered {
         Violations::throwIfAny([
@@ -42,6 +43,6 @@ final class RegisterMember
             $email->taken ? new Violation('member.email_taken', 'Email is already used by another member.') : null,
         ]);
 
-        return new MemberRegistered($this->memberId, $this->companyId, $this->normalizedEmail);
+        return new MemberRegistered($this->memberId, $this->companyId, $this->normalizedEmail());
     }
 }

@@ -17,31 +17,49 @@ use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Violation;
-use Ultra\StateStore\StateStore;
 use Ultra\Time\ClockInterface;
 
 /**
- * Target rows are decision parameters; source rows depend on the loaded booking and are loaded by hand. When
- * source and target are the same row, the parameter instance must be reused, or the second save would overwrite
- * the first one.
+ * Every row is a decision parameter. The company and the source rows are identified by the loaded booking, so they
+ * are loaded in a second round and are null when the booking is missing.
+ *
+ * Source and target can be the same row (same room-day, or same company-month). Both parameters then hold an equal
+ * copy of that row, with the same expectation registered twice, and only the target copy is returned: returning
+ * both would make the second save overwrite the first one.
  */
-final class RescheduleBooking
+final readonly class RescheduleBooking
 {
-    public string $roomDayId {
-        get => BookingIds::roomDay($this->roomId, $this->slot->day());
-    }
-
-    public string $companyMonthId {
-        get => BookingIds::companyMonth($this->companyId, $this->slot->month());
-    }
-
     public function __construct(
-        public readonly string $bookingId,
-        public readonly string $memberId,
-        public readonly string $companyId,
-        public readonly string $roomId,
-        public readonly Slot $slot,
+        public string $bookingId,
+        public string $memberId,
+        public string $roomId,
+        public Slot $slot,
     ) {}
+
+    public function roomDayId(): string
+    {
+        return BookingIds::roomDay($this->roomId, $this->slot->day());
+    }
+
+    public function companyId(BookingState $booking): string
+    {
+        return $booking->companyId;
+    }
+
+    public function companyMonthId(BookingState $booking): string
+    {
+        return BookingIds::companyMonth($booking->companyId, $this->slot->month());
+    }
+
+    public function sourceRoomDayId(BookingState $booking): string
+    {
+        return $booking->roomDayId();
+    }
+
+    public function sourceCompanyMonthId(BookingState $booking): string
+    {
+        return $booking->companyMonthId();
+    }
 
     /**
      * @return list<object>
@@ -52,11 +70,12 @@ final class RescheduleBooking
         ?BookingState $booking,
         ?RoomState $room,
         ?CompanyState $company,
-        #[BindTo('roomDayId')]
         ?RoomDayScheduleState $targetSchedule,
-        #[BindTo('companyMonthId')]
         ?CompanyMonthUsageState $targetUsage,
-        StateStore $stateStore,
+        #[BindTo(method: 'sourceRoomDayId')]
+        ?RoomDayScheduleState $sourceSchedule,
+        #[BindTo(method: 'sourceCompanyMonthId')]
+        ?CompanyMonthUsageState $sourceUsage,
         ClockInterface $clock,
     ): array {
         $now = $clock->now();
@@ -66,12 +85,12 @@ final class RescheduleBooking
         ]);
         Violations::throwIfAny([
             $booking->memberId !== $this->memberId ? new Violation('booking.not_owner', 'Only the member who booked can reschedule.') : null,
-            $booking->companyId !== $this->companyId || null === $company ? new Violation('member.company_mismatch', 'Booking was not charged to this company.') : null,
+            null === $company ? new Violation('company.not_found', 'Company does not exist.') : null,
             BookingState::CANCELLED === $booking->status ? new Violation('booking.already_cancelled', 'Booking is cancelled.') : null,
         ]);
 
-        $targetSchedule ??= new RoomDayScheduleState($this->roomDayId);
-        $targetUsage ??= new CompanyMonthUsageState($this->companyMonthId);
+        $targetSchedule ??= new RoomDayScheduleState($this->roomDayId());
+        $targetUsage ??= new CompanyMonthUsageState($this->companyMonthId($booking));
         Violations::throwIfAny([
             !BookingPolicy::isRefundable($booking->slot(), $now) ? new Violation('booking.too_late_to_reschedule', 'Bookings can only be moved until 24 hours before they start.') : null,
             ...BookingPolicy::slotViolations($this->slot, $now),
@@ -80,24 +99,13 @@ final class RescheduleBooking
         ]);
 
         $moved = $booking->movedTo($this->roomId, $this->slot);
-        $changes = [$moved];
+        $changes = [$moved, $targetSchedule->with($moved), $targetUsage->charging($this->bookingId, $this->slot->minutes())];
 
-        if ($booking->roomDayId() === $this->roomDayId) {
-            $changes[] = $targetSchedule->with($moved);
-        } else {
-            $sourceSchedule = $stateStore->load(RoomDayScheduleState::class, $booking->roomDayId());
-            $stateStore->expect($sourceSchedule);
+        if (null !== $sourceSchedule && $booking->roomDayId() !== $this->roomDayId()) {
             $changes[] = $sourceSchedule->without($this->bookingId);
-            $changes[] = $targetSchedule->with($moved);
         }
-
-        if ($booking->companyMonthId() === $this->companyMonthId) {
-            $changes[] = $targetUsage->charging($this->bookingId, $this->slot->minutes());
-        } else {
-            $sourceUsage = $stateStore->load(CompanyMonthUsageState::class, $booking->companyMonthId());
-            $stateStore->expect($sourceUsage);
+        if (null !== $sourceUsage && $booking->companyMonthId() !== $this->companyMonthId($booking)) {
             $changes[] = $sourceUsage->refunding($this->bookingId);
-            $changes[] = $targetUsage->charging($this->bookingId, $this->slot->minutes());
         }
 
         return $changes;

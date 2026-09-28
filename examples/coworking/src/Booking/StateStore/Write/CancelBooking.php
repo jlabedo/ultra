@@ -16,8 +16,10 @@ use Ultra\StateStore\StateStore;
 use Ultra\Time\ClockInterface;
 
 /**
- * The schedule and usage rows to update are identified by the booking itself, so they cannot be decision
- * parameters: they are loaded by hand, and each one needs an explicit expect() to stay optimistic.
+ * The schedule row is identified by the booking itself: it is a dependent parameter, loaded once the booking is.
+ *
+ * The usage row is only needed when the cancellation is refunded, which depends on the clock. It is loaded by hand
+ * with an explicit expect(), so a late cancellation does not conflict with concurrent changes to the company's usage.
  */
 final readonly class CancelBooking
 {
@@ -26,13 +28,22 @@ final readonly class CancelBooking
         public string $memberId,
     ) {}
 
+    public function roomDayId(BookingState $booking): string
+    {
+        return $booking->roomDayId();
+    }
+
     /**
      * @return list<object>
      */
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(?BookingState $booking, StateStore $stateStore, ClockInterface $clock): array
-    {
+    public function decide(
+        ?BookingState $booking,
+        ?RoomDayScheduleState $schedule,
+        StateStore $stateStore,
+        ClockInterface $clock,
+    ): array {
         Violations::throwIfAny([
             null === $booking ? new Violation('booking.not_found', 'Booking does not exist.') : null,
         ]);
@@ -41,9 +52,10 @@ final readonly class CancelBooking
             BookingState::CANCELLED === $booking->status ? new Violation('booking.already_cancelled', 'Booking is already cancelled.') : null,
         ]);
 
-        $schedule = $stateStore->load(RoomDayScheduleState::class, $booking->roomDayId());
-        $stateStore->expect($schedule);
-        $changes = [$booking->cancelled(), $schedule->without($this->bookingId)];
+        $changes = [$booking->cancelled()];
+        if (null !== $schedule) {
+            $changes[] = $schedule->without($this->bookingId);
+        }
 
         if (BookingPolicy::isRefundable($booking->slot(), $clock->now())) {
             $usage = $stateStore->load(CompanyMonthUsageState::class, $booking->companyMonthId());

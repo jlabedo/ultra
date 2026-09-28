@@ -4,11 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\StatefulMessageHandling;
 
-use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
-use Ultra\EventSourcedState\EventSourcedEntityLoader;
 use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Event;
@@ -35,91 +33,54 @@ final class EventSourcedDecisionAspect
     ) {}
 
     #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
-        $method = $ctx->method();
-        if ([] === $method->getAttributes(DecisionHandler::class)) {
+        if ([] === $ctx->method()->getAttributes(DecisionHandler::class)) {
             return null;
         }
 
-        $commandClass = $ctx->messageClass();
-        $commandRef = new \ReflectionClass($commandClass);
-
-        $stateParams = [];
-        $provides = [];
-
-        $parameters = $ctx->isSelfHandler()
-            ? $method->getParameters()
-            : array_slice($method->getParameters(), 1);
-
-        foreach ($parameters as $index => $parameter) {
-            $type = $parameter->getType();
-            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
-                continue;
-            }
-            $typeClass = $type->getName();
-            if (!EventSourcedDecisionAspect::isStateClass($typeClass)) {
-                continue;
-            }
-
-            $domainIdentifierName = EventSourcedDecisionAspect::getDomainIdentifierName($typeClass);
-            $bindTo = null;
-            foreach ($parameter->getAttributes(BindTo::class) as $attr) {
-                $bindTo = $attr->newInstance();
-
-                break;
-            }
-            $commandProperty = null !== $bindTo
-                ? $bindTo->property
-                : $domainIdentifierName.'Id';
-            if (!MessagePropertyPath::exists($commandRef, $commandProperty)) {
-                throw new \LogicException(sprintf(
-                    'Command %s has no property path "%s" required for decision handler parameter "%s" (domain identifier "%s"). '
-                        .'Either add the property path or use #[BindTo("property.path")] to bind to a different command property path.',
-                    $commandClass,
-                    $commandProperty,
-                    $parameter->getName(),
-                    $domainIdentifierName,
-                ));
-            }
-
-            $stateParams[] = [
-                'parameterName' => $parameter->getName(),
-                'stateClass' => $typeClass,
-                'domainIdentifierName' => $domainIdentifierName,
-                'commandProperty' => $commandProperty,
-            ];
-            $provides[] = $index;
+        $plan = StateBindings::analyze(
+            $ctx,
+            EventSourcedDecisionAspect::isStateClass(...),
+            static fn (string $stateClass): string => EventSourcedDecisionAspect::getDomainIdentifierName($stateClass).'Id',
+            nullableStates: false,
+        );
+        if (null === $plan) {
+            return null;
         }
 
-        if ([] === $provides) {
-            return null;
+        foreach ($plan['bindings'] as $position => $binding) {
+            $plan['bindings'][$position]['domainIdentifierName'] = EventSourcedDecisionAspect::getDomainIdentifierName($binding['stateClass']);
         }
 
         return MatchResult::apply(
-            config: [
-                'stateParams' => $stateParams,
-            ],
-            provides: $provides,
+            config: $plan,
+            provides: array_column($plan['bindings'], 'index'),
         );
     })]
     public function around(callable $proceed, object $message, MessageContext $context, array $config): ProceedResult
     {
-        $stateParams = $config['stateParams'] ?? [];
-        $preparedStates = $this->prepareStates($message, $stateParams);
-        $query = StreamQuery::anyOf(...array_column($preparedStates, 'query'));
-        $loadResult = $this->eventStore->load($query);
+        // One load per round; every round's append condition guards the final append, so a concurrent change to a
+        // source state (whose content decided a dependent id) makes the append fail.
+        $appendConditions = [];
+        $states = StateBindings::load($config, $message, function (array $ids) use ($config, &$appendConditions): array {
+            $prepared = [];
+            foreach ($ids as $position => $id) {
+                $binding = $config['bindings'][$position];
+                if (!is_string($id)) {
+                    throw new \LogicException(sprintf('Id of state parameter "%s" must be string, got %s.', $binding['parameterName'], get_debug_type($id)));
+                }
+                $identifier = new DomainIdentifier($binding['domainIdentifierName'], $id);
+                $loader = $this->stateStore->loader($binding['stateClass']);
+                $prepared[$position] = [$loader, $identifier, $loader->query($identifier)];
+            }
 
-        $states = [];
-        foreach ($preparedStates as $preparedState) {
-            $state = $preparedState['loader']->hydrate(
-                $loadResult->events,
-                new DomainIdentifier(
-                    $preparedState['domainIdentifierName'],
-                    $preparedState['streamValue'],
-                ),
+            $loadResult = $this->eventStore->load(StreamQuery::anyOf(...array_column($prepared, 2)));
+            $appendConditions[] = $loadResult->appendCondition();
+
+            return array_map(
+                static fn (array $state): object => $state[0]->hydrate($loadResult->events, $state[1]),
+                $prepared,
             );
-
-            $states[] = $state;
-        }
+        });
 
         if (DecisionMode::isCheck($context)) {
             return DecisionMode::check(static fn (): ProceedResult => $proceed(provided: $states), $context);
@@ -133,7 +94,7 @@ final class EventSourcedDecisionAspect
 
         $eventRecords = $this->prepareEventRecords($emittedEvents, $proceedResult->context);
 
-        $this->eventStore->append(array_column($eventRecords, 'storedEvent'), $loadResult->appendCondition());
+        $this->eventStore->append(array_column($eventRecords, 'storedEvent'), ...$appendConditions);
         if (null !== $this->eventBus) {
             foreach ($eventRecords as $eventRecord) {
                 $this->eventBus->publish($eventRecord['event'], $eventRecord['context']);
@@ -231,44 +192,6 @@ final class EventSourcedDecisionAspect
             domainIds: $domainIds,
             metadata: $metadata,
         );
-    }
-
-    /**
-     * @param list<array<string, mixed>> $stateParams
-     *
-     * @return list<array{parameterName: string, domainIdentifierName: string, streamValue: string, loader: EventSourcedEntityLoader, query: StreamQuery}>
-     */
-    private function prepareStates(object $command, array $stateParams): array
-    {
-        $preparedStates = [];
-        foreach ($stateParams as $stateParam) {
-            $streamValue = $this->getCommandPropertyValue($command, $stateParam['commandProperty']);
-            $loader = $this->stateStore->loader($stateParam['stateClass']);
-            $identifier = new DomainIdentifier(
-                $stateParam['domainIdentifierName'],
-                $streamValue,
-            );
-
-            $preparedStates[] = [
-                'parameterName' => $stateParam['parameterName'],
-                'domainIdentifierName' => $stateParam['domainIdentifierName'],
-                'streamValue' => $streamValue,
-                'loader' => $loader,
-                'query' => $loader->query($identifier),
-            ];
-        }
-
-        return $preparedStates;
-    }
-
-    private function getCommandPropertyValue(object $command, string $property): string
-    {
-        $value = MessagePropertyPath::value($command, $property);
-        if (!is_string($value)) {
-            throw new \LogicException(sprintf('Command property path "%s" must be string, got %s.', $property, get_debug_type($value)));
-        }
-
-        return $value;
     }
 
     private static function isStateClass(string $class): bool

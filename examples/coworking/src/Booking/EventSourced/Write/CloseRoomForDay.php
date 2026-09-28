@@ -14,16 +14,17 @@ use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
  * Cancels and refunds every booking of a room on one day. Refunds need no loading: company usage is derived
  * from the cancellation events, which are routed to each company-month by their tags.
  */
-final class CloseRoomForDay
+final readonly class CloseRoomForDay
 {
-    public string $roomDayId {
-        get => BookingIds::roomDay($this->roomId, $this->day);
-    }
-
     public function __construct(
-        public readonly string $roomId,
-        public readonly string $day,
+        public string $roomId,
+        public string $day,
     ) {}
+
+    public function roomDayId(): string
+    {
+        return BookingIds::roomDay($this->roomId, $this->day);
+    }
 
     /**
      * @return list<BookingCancelled>
