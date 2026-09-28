@@ -54,13 +54,24 @@ $table->withKey($key)->insert();
 
 `rows(...)` returns a list of `MappedRow` objects containing a structured `MappedKey` and the projected columns. It overlays buffered mutations. `expectSameRowKeys(...)` buffers an optimistic expectation that the row-key set has not changed before `flush()`.
 
+### Expectations and the unit-of-work view
+
+`row(...)` and `rows(...)` return the unit of work's view: committed data with buffered changes applied. Expectations are written against that same view:
+
+- a value, presence or row key decided by a buffered change is checked immediately, and a mismatch throws `ConcurrencyException` right away;
+- the rest comes from storage and becomes a condition checked by the adapter at flush.
+
+So a caller can read a row, expect what it read and write it, even when an earlier operation in the same unit of work already changed that row. A stale copy read before that change is rejected. Order matters: `expectColumnValue('status', 'pending')->setColumn('status', 'active')` guards the committed value, while expecting `status` after setting it checks the buffered value.
+
+`expectSameRowKeys(...)` keeps its first committed expectation. Keys whose presence was decided by buffered changes when an expectation was registered are ignored by the adapter's comparison (`RowSetUpdatePlan::$ignoredRowKeys`); their own row plans guard them.
+
 ## Adapter Contract
 
 Adapters implement `Ultra\MappedTable\MappedRowSetAdapter`:
 
 - `row(MappedKey $key, array $columns = [])` reads one row, optionally projecting columns
 - `rows(array $columns = [])` reads all rows as `MappedRow` values
-- `apply(RowSetUpdatePlan $plan)` receives optional row-set key expectations and the sorted batch of immutable row plans
+- `apply(RowSetUpdatePlan $plan)` receives optional row-set key expectations (plus the keys to leave out of that comparison) and the sorted batch of immutable row plans
 
 `MappedRowSet` itself does not open transactions. If you need atomicity across a flush, open the surrounding transaction on the underlying storage before calling `flush()`.
 

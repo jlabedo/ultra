@@ -38,8 +38,24 @@ final readonly class PendingRowUpdate
         return $this;
     }
 
+    /**
+     * Expects the row to be absent in this unit of work's view: a row deleted by this unit of work satisfies it
+     * immediately, a row written by it fails immediately, otherwise the committed row must be absent at flush.
+     */
     public function expectAbsent(): self
     {
+        if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+            return $this;
+        }
+
+        if (null !== $this->update->toPlan()) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot mark table "%s", row "%s" as expected absent because it is written in this unit of work.',
+                $this->tableName,
+                (string) $this->update->key,
+            ));
+        }
+
         if (RowUpdatePlan::EXPECTED_PRESENT === $this->update->expectedPresence) {
             throw new ConcurrencyException(sprintf(
                 'Cannot mark table "%s", row "%s" as expected absent because it is already expected to exist.',
@@ -48,22 +64,7 @@ final readonly class PendingRowUpdate
             ));
         }
 
-        if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
-            throw new ConcurrencyException(sprintf(
-                'Cannot mark table "%s", row "%s" as expected absent because it is already marked for delete.',
-                $this->tableName,
-                (string) $this->update->key,
-            ));
-        }
-
         $this->update->expectedPresence = RowUpdatePlan::EXPECTED_ABSENT;
-
-        if (
-            RowUpdatePlan::MODE_UPSERT === $this->update->mode
-            || RowUpdatePlan::MODE_UPDATE === $this->update->mode
-        ) {
-            $this->update->mode = RowUpdatePlan::MODE_INSERT;
-        }
 
         return $this;
     }
@@ -117,8 +118,35 @@ final readonly class PendingRowUpdate
         return $this;
     }
 
+    /**
+     * Expects a column value in this unit of work's view, the one MappedRowSet::row() returns. A value written by
+     * this unit of work is checked immediately; a value coming from storage becomes a condition checked at flush.
+     */
     public function expectColumnValue(string $column, mixed $value): self
     {
+        if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot register expected column values for table "%s", row "%s" because it is deleted in this unit of work.',
+                $this->tableName,
+                (string) $this->update->key,
+            ));
+        }
+
+        $rowIsWritten = RowUpdatePlan::MODE_INSERT === $this->update->mode || RowUpdatePlan::MODE_REPLACE === $this->update->mode;
+        if (array_key_exists($column, $this->update->setColumns) || $rowIsWritten) {
+            // Inserted and replaced rows are entirely written by this unit of work: unset columns are null.
+            if (($this->update->setColumns[$column] ?? null) !== $value) {
+                throw new ConcurrencyException(sprintf(
+                    'Expected value for table "%s", row "%s", column "%s" differs from the value written in this unit of work.',
+                    $this->tableName,
+                    (string) $this->update->key,
+                    $column,
+                ));
+            }
+
+            return $this;
+        }
+
         if (RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register expected column values for table "%s", row "%s" because it is already expected to be absent.',

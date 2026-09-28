@@ -18,6 +18,9 @@ final class MappedRowSet implements UnitOfWork
     /** @var list<MappedKey>|null */
     private ?array $expectedRowKeys = null;
 
+    /** @var list<MappedKey> */
+    private array $ignoredRowKeys = [];
+
     public function __construct(
         private readonly MappedRowSetAdapter $adapter,
     ) {}
@@ -81,22 +84,55 @@ final class MappedRowSet implements UnitOfWork
         return $rows;
     }
 
-    /** @param list<int|string|MappedKey> $keys */
+    /**
+     * Expects the row keys this unit of work sees, the ones rows() returns. Keys whose presence is decided by a
+     * buffered write are checked immediately; the other keys must match the committed rows at flush.
+     *
+     * @param list<int|string|MappedKey> $keys
+     */
     public function expectSameRowKeys(array $keys): void
     {
         $expected = array_map($this->normalizeKey(...), $keys);
-        usort($expected, static fn (MappedKey $left, MappedKey $right): int => $left->fingerprint() <=> $right->fingerprint());
-
-        $fingerprints = array_map(static fn (MappedKey $key): string => $key->fingerprint(), $expected);
+        $fingerprints = $this->keyFingerprints($expected);
         if (count($fingerprints) !== count(array_unique($fingerprints))) {
             throw new \InvalidArgumentException('Duplicate expected row key.');
         }
 
-        if (null !== $this->expectedRowKeys && $this->keyFingerprints($this->expectedRowKeys) !== $fingerprints) {
-            throw new ConcurrencyException('Conflicting row-set key expectations were registered.');
+        $expectedSet = array_fill_keys($fingerprints, true);
+        $written = [];
+        foreach ($this->sortedPlans() as $plan) {
+            $written[$plan->key->fingerprint()] = $plan->key;
+            if ((RowUpdatePlan::MODE_DELETE !== $plan->mode) !== isset($expectedSet[$plan->key->fingerprint()])) {
+                throw new ConcurrencyException('Row-set key expectation differs from the rows written in this unit of work.');
+            }
         }
 
-        $this->expectedRowKeys = $expected;
+        $committed = array_values(array_filter(
+            $expected,
+            static fn (MappedKey $key): bool => !isset($written[$key->fingerprint()]),
+        ));
+        usort($committed, static fn (MappedKey $left, MappedKey $right): int => $left->fingerprint() <=> $right->fingerprint());
+
+        if (null === $this->expectedRowKeys) {
+            $this->expectedRowKeys = $committed;
+            $this->ignoredRowKeys = array_values($written);
+
+            return;
+        }
+
+        // Keep the first expectation; the new one must agree with it on rows neither of them ignores.
+        $previousIgnored = array_fill_keys($this->keyFingerprints($this->ignoredRowKeys), true);
+        $previous = array_values(array_filter(
+            $this->keyFingerprints($this->expectedRowKeys),
+            static fn (string $fingerprint): bool => !isset($written[$fingerprint]),
+        ));
+        $current = array_values(array_filter(
+            $this->keyFingerprints($committed),
+            static fn (string $fingerprint): bool => !isset($previousIgnored[$fingerprint]),
+        ));
+        if ($previous !== $current) {
+            throw new ConcurrencyException('Conflicting row-set key expectations were registered.');
+        }
     }
 
     public function flush(): void
@@ -104,6 +140,7 @@ final class MappedRowSet implements UnitOfWork
         $this->adapter->apply(new RowSetUpdatePlan(
             expectedRowKeys: $this->expectedRowKeys,
             rowUpdates: $this->sortedPlans(),
+            ignoredRowKeys: $this->ignoredRowKeys,
         ));
     }
 
@@ -116,6 +153,7 @@ final class MappedRowSet implements UnitOfWork
     {
         $this->updates = [];
         $this->expectedRowKeys = null;
+        $this->ignoredRowKeys = [];
     }
 
     private function normalizeKey(int|string|MappedKey $key): MappedKey

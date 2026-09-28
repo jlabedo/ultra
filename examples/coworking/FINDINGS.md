@@ -1,13 +1,13 @@
 # Findings: DecisionHandler under a set-based domain
 
 The coworking domain (see [README.md](README.md)) is implemented three times with the same pure rules. The scenario
-suite passes on all three flavors; the tests in the `finding` group reproduce the gaps below
-(`vendor/bin/phpunit --group finding`).
+suite passes on all three flavors. Tests that reproduce an open gap go in the `finding` group
+(`vendor/bin/phpunit --group finding`), which the default run excludes; it is empty once every bug below is fixed.
 
 | | Event sourced | State store | Classic (Doctrine ORM) |
 |---|---|---|---|
 | Non-blank lines (excluding shared rules) | 877 in 25 files | 698 in 19 files | 364 in 6 files |
-| Scenario suite | passes | passes except the weekly series | passes |
+| Scenario suite | passes | passes | passes |
 | Concurrent races tested | yes, deterministically | yes, deterministically | no (locks need two processes) |
 
 Each finding is classified:
@@ -46,7 +46,7 @@ Workaround: `BookWeeklyHandler` sends one `BookRoom` per occurrence inside the s
   persisted checkpoints, and flushes the whole series in one append. All-or-nothing and quota-across-occurrences
   both pass. This composition is a real strength, but it is not documented anywhere; I found it by reading
   `EventStoreUnitOfWork`.
-- **State store: fails (Bug, see 6).**
+- **State store: works** since the fix for finding 6.
 - Both flavors stop at the first failing occurrence, so a caller cannot get "weeks 3 and 5 are taken" in one answer.
 
 **Direction**: document decision composition within one unit of work as the supported pattern for variable
@@ -95,14 +95,20 @@ in both aspects. `check()` methods and `CommandHasNoCheckException` are gone.
 Trade-off: check mode reports what `decide()` throws. A decision that validates in several `throwIfAny` groups only
 surfaces the first failing group.
 
-## 6. State store: several decisions cannot expect the same collection row in one unit of work (Bug)
+## 6. State store: several decisions could not expect the same row in one unit of work (Bug, fixed)
 
 In the weekly series, the second occurrence loads the company-month usage that the first one already changed.
-`StateStore::expect()` registers the buffered item keys as the expected row-key set, and `MappedRowSet` rejects this
-as "Conflicting row-set key expectations" even though nothing concurrent happened.
+`StateStore::expect()` used to register the buffered item keys as the expected row-key set, and `MappedRowSet`
+rejected it as "Conflicting row-set key expectations" although nothing concurrent happened. Plain rows had the same
+problem ("Conflicting expected values", or "already expected to be absent" after an insert).
 
-**Direction**: once a row has an expectation in the unit of work, a later load of the same row reads your own
-writes and should not register a new one. The first expectation already describes the persisted state.
+The root cause was in `MappedRowSet`: `row()`/`rows()` return the unit of work's view (committed data with buffered
+changes applied), but expectations were always interpreted against committed data.
+
+**Fixed:** expectations are now written against the unit-of-work view. The part decided by buffered changes is checked
+immediately, and the rest becomes a condition checked at flush. Row-key expectations ignore keys whose presence this
+unit of work decided. `StateStore` is unchanged. A stale state copy (loaded before a write in the same unit of work)
+is now rejected, including through another state class mapping the same row.
 
 ## 7. State store: set-based rules require hand-maintained denormalized states (Design, for this flavor)
 
@@ -178,5 +184,5 @@ set-based rules in the state-store flavor (7). Finding 1 looks solvable inside t
 Finding 7 questions what the state-store flavor is for: as soon as a rule spans rows, it pushes the developer into
 maintaining materialized views by hand. Finding 3 is the only limit rooted in the event model itself.
 
-Suggested order of work: bug 6 (small, contained), then dependent binding (1), then deciding the
+Suggested order of work: dependent binding (1), then deciding the
 state-store flavor's scope (7, 8), then multi-valued tags (3).

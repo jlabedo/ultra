@@ -168,6 +168,36 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
         });
     }
 
+    public function test_row_set_expectation_ignores_rows_written_in_the_unit_of_work(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, ['id' => 'row-1']);
+
+            $table->withKey('row-2')->upsert()->setColumn('status', 'new');
+            $table->expectSameRowKeys(['row-1', 'row-2']);
+            $this->flush($connection, $table);
+
+            self::assertSame(['row-1', 'row-2'], $connection->fetchFirstColumn(sprintf(
+                'SELECT id FROM %s ORDER BY id',
+                $connection->quoteSingleIdentifier($tableName),
+            )));
+        });
+    }
+
+    public function test_row_set_expectation_registered_after_writes_still_guards_other_rows(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, ['id' => 'row-1']);
+
+            $table->withKey('row-2')->upsert()->setColumn('status', 'new');
+            $table->expectSameRowKeys(['row-1', 'row-2']);
+            $this->insertRow($connection, $tableName, ['id' => 'row-3']);
+
+            $this->expectException(ConcurrencyException::class);
+            $this->flush($connection, $table);
+        });
+    }
+
     public function test_row_level_expectations_still_work_with_row_set_expectations(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
@@ -839,7 +869,7 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
             ;
 
             $table->withKey('row-1')
-                ->expectColumnValue('version_a', 'A1')
+                ->expectColumnValue('version_b', 'B1')
                 ->setColumn('note', 'published')
             ;
 

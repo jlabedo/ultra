@@ -98,7 +98,7 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
     public function apply(RowSetUpdatePlan $plan): void
     {
-        $this->assertExpectedRowKeys($plan->expectedRowKeys);
+        $this->assertExpectedRowKeys($plan->expectedRowKeys, $plan->ignoredRowKeys);
 
         foreach ($plan->rowUpdates as $update) {
             $this->assertKey($update->key);
@@ -238,8 +238,11 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         ), $params);
     }
 
-    /** @param list<MappedKey>|null $expected */
-    private function assertExpectedRowKeys(?array $expected): void
+    /**
+     * @param list<MappedKey>|null $expected
+     * @param list<MappedKey>      $ignored
+     */
+    private function assertExpectedRowKeys(?array $expected, array $ignored): void
     {
         if (null === $expected) {
             return;
@@ -255,6 +258,7 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
         $actual = array_map(static fn (MappedRow $row): string => $row->key->fingerprint(), $this->rows());
         $expected = array_map(static fn (MappedKey $key): string => $key->fingerprint(), $expected);
+        $actual = array_values(array_diff($actual, array_map(static fn (MappedKey $key): string => $key->fingerprint(), $ignored)));
         sort($actual, SORT_STRING);
         sort($expected, SORT_STRING);
 

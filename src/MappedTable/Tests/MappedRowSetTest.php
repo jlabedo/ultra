@@ -520,6 +520,121 @@ final class MappedRowSetTest extends TestCase
         ;
     }
 
+    public function test_expectation_on_a_column_written_in_the_unit_of_work_is_checked_against_the_pending_value(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1', 'status' => 'pending']);
+
+        $table->withKey('row-1')->expectColumnValue('status', 'pending')->setColumn('status', 'paid');
+        $table->withKey('row-1')->expectColumnValue('status', 'paid')->setColumn('status', 'shipped');
+        $this->flushInTransaction($database, $table);
+
+        self::assertSame('shipped', $this->row($database, 'row-1')['status']);
+    }
+
+    public function test_stale_expectation_on_a_column_written_in_the_unit_of_work_fails_immediately(): void
+    {
+        [, $table] = $this->newTable();
+        $table->withKey('row-1')->expectColumnValue('status', 'pending')->setColumn('status', 'paid');
+
+        $this->expectException(ConcurrencyException::class);
+        $table->withKey('row-1')->expectColumnValue('status', 'pending');
+    }
+
+    public function test_expectation_on_a_column_not_written_in_the_unit_of_work_still_guards_committed_data(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1', 'status' => 'pending', 'note' => 'draft']);
+
+        $table->withKey('row-1')->setColumn('status', 'paid');
+        $table->withKey('row-1')->expectColumnValue('status', 'paid')->expectColumnValue('note', 'draft');
+        $database->writeRow(self::TABLE_NAME, self::ID_COLUMN, ['id' => 'row-1', 'status' => 'pending', 'note' => 'changed']);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
+    }
+
+    public function test_expectation_on_a_row_inserted_in_the_unit_of_work_is_checked_against_the_insert(): void
+    {
+        [$database, $table] = $this->newTable();
+
+        $table->withKey('row-1')->expectAbsent()->setColumn('status', 'pending');
+        $table->withKey('row-1')->expectColumnValue('status', 'pending')->expectColumnValue('note', null)->setColumn('note', 'draft');
+        $this->flushInTransaction($database, $table);
+
+        self::assertSame(['status' => 'pending', 'note' => 'draft', 'version_a' => null, 'version_b' => null], $this->row($database, 'row-1'));
+    }
+
+    public function test_expecting_a_row_deleted_in_the_unit_of_work_fails_immediately(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1', 'status' => 'pending']);
+        $table->withKey('row-1')->delete();
+
+        $this->expectException(ConcurrencyException::class);
+        $table->withKey('row-1')->expectColumnValue('status', 'pending');
+    }
+
+    public function test_expect_absent_is_satisfied_by_a_delete_in_the_unit_of_work(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1', 'status' => 'pending']);
+
+        $table->withKey('row-1')->expectColumnValue('status', 'pending')->delete();
+        $table->withKey('row-1')->expectAbsent();
+        $this->flushInTransaction($database, $table);
+
+        self::assertFalse($this->row($database, 'row-1'));
+    }
+
+    public function test_expect_absent_fails_immediately_on_a_row_written_in_the_unit_of_work(): void
+    {
+        [, $table] = $this->newTable();
+        $table->withKey('row-1')->upsert()->setColumn('status', 'pending');
+
+        $this->expectException(ConcurrencyException::class);
+        $table->withKey('row-1')->expectAbsent();
+    }
+
+    public function test_row_set_expectation_can_include_rows_written_in_the_unit_of_work(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1']);
+
+        $table->expectSameRowKeys(['row-1']);
+        $table->withKey('row-2')->upsert()->setColumn('status', 'new');
+        $table->expectSameRowKeys(['row-1', 'row-2']);
+        $this->flushInTransaction($database, $table);
+
+        self::assertSame(['row-1', 'row-2'], array_keys($database->rows(self::TABLE_NAME, 'id')));
+    }
+
+    public function test_row_set_expectation_registered_after_writes_still_guards_other_rows(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1']);
+
+        $table->withKey('row-2')->upsert()->setColumn('status', 'new');
+        $table->expectSameRowKeys(['row-1', 'row-2']);
+        $this->seedRow($database, ['id' => 'row-3']);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
+    }
+
+    public function test_row_set_expectation_disagreeing_with_the_unit_of_work_fails_immediately(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1']);
+        $this->seedRow($database, ['id' => 'row-2']);
+
+        $table->expectSameRowKeys(['row-1', 'row-2']);
+        $table->withKey('row-3')->upsert()->setColumn('status', 'new');
+
+        $this->expectException(ConcurrencyException::class);
+        $table->expectSameRowKeys(['row-2', 'row-3']);
+    }
+
     public function test_clear_drops_buffered_updates(): void
     {
         [$database, $table] = $this->newTable();
