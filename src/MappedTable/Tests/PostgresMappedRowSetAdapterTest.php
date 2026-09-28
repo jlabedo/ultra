@@ -1089,6 +1089,39 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
         });
     }
 
+    public function test_boolean_columns_accept_false_and_true(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $_, string $tableName): void {
+            $booleanTable = $tableName.'_booleans';
+            $connection->executeStatement(sprintf(
+                'CREATE TABLE %s (id TEXT PRIMARY KEY, active BOOLEAN NOT NULL)',
+                $connection->quoteSingleIdentifier($booleanTable),
+            ));
+
+            try {
+                $table = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, $booleanTable, ['id']));
+                $table->withKey('row-1')->insert()->setColumn('active', false);
+                $this->flush($connection, $table);
+                $table->clear();
+
+                $table->withKey('row-1')->expectColumnValue('active', false)->setColumn('active', true);
+                $table->withKey('row-2')->insert()->setColumn('active', false);
+                $table->withKey('row-3')->insert()->setColumn('active', false);
+                $this->flush($connection, $table);
+
+                self::assertSame(
+                    ['row-1' => true, 'row-2' => false, 'row-3' => false],
+                    array_map(
+                        static fn (mixed $value): bool => \in_array($value, [true, 't', 1, '1'], true),
+                        $connection->fetchAllKeyValue(sprintf('SELECT id, active FROM %s ORDER BY id', $connection->quoteSingleIdentifier($booleanTable))),
+                    ),
+                );
+            } finally {
+                $connection->executeStatement(sprintf('DROP TABLE IF EXISTS %s', $connection->quoteSingleIdentifier($booleanTable)));
+            }
+        });
+    }
+
     private function flush(Connection $connection, MappedRowSet $table): void
     {
         $connection->beginTransaction();

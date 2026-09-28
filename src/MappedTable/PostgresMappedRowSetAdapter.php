@@ -433,7 +433,13 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
     private function encodeColumnValue(string $column, mixed $value): mixed
     {
-        return ($this->columnTypes[$column] ?? null)?->encode($value) ?? $value;
+        $type = $this->columnTypes[$column] ?? null;
+        if (null !== $type) {
+            return $type->encode($value);
+        }
+
+        // PDO binds false as an empty string, which Postgres rejects for boolean columns.
+        return is_bool($value) ? ($value ? 'true' : 'false') : $value;
     }
 
     /** @param array<string, mixed> $row @return array<string, mixed> */
