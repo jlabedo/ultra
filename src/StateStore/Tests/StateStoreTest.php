@@ -476,6 +476,31 @@ final class StateStoreTest extends TestCase
         self::assertFalse($database->row('orders', 'order_id', 'order-123', ['status', 'note']));
     }
 
+    public function test_an_expected_state_that_is_not_saved_rejects_a_concurrent_change(): void
+    {
+        [$database, $table, $store] = $this->newStore([OrderState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending', 'note' => 'draft']);
+
+        $loaded = $store->load(OrderState::class, 'order-123');
+        self::assertInstanceOf(OrderState::class, $loaded);
+        $store->expect($loaded);
+        $database->writeRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'paid', 'note' => 'draft']);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
+    }
+
+    public function test_expect_missing_without_save_rejects_a_concurrent_insert(): void
+    {
+        [$database, $table, $store] = $this->newStore([OrderState::class]);
+
+        $store->expectMissing(OrderState::class, 'order-123');
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'paid', 'note' => null]);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
+    }
+
     public function test_expect_missing_rejects_concurrent_insert(): void
     {
         [$database, $table, $store] = $this->newStore([OrderState::class]);

@@ -63,6 +63,8 @@ $table->withKey($key)->insert();
 
 So a caller can read a row, expect what it read and write it, even when an earlier operation in the same unit of work already changed that row. A stale copy read before that change is rejected. Order matters: `expectColumnValue('status', 'pending')->setColumn('status', 'active')` guards the committed value, while expecting `status` after setting it checks the buffered value.
 
+Row expectations are checked at flush even when the row is not written: `MappedRowSet` then flushes a check-only plan (`RowUpdatePlan::MODE_EXPECT`, `writes()` is false) that the adapter checks without writing. Such rows count as pending changes. An update that sets every column to the value it expects is also flushed as a check-only plan, so saving unchanged rows writes nothing.
+
 `expectSameRowKeys(...)` keeps its first committed expectation. Keys whose presence was decided by buffered changes when an expectation was registered are ignored by the adapter's comparison (`RowSetUpdatePlan::$ignoredRowKeys`); their own row plans guard them.
 
 ## Adapter Contract
@@ -71,7 +73,7 @@ Adapters implement `Ultra\MappedTable\MappedRowSetAdapter`:
 
 - `row(MappedKey $key, array $columns = [])` reads one row, optionally projecting columns
 - `rows(array $columns = [])` reads all rows as `MappedRow` values
-- `apply(RowSetUpdatePlan $plan)` receives optional row-set key expectations (plus the keys to leave out of that comparison) and the sorted batch of immutable row plans
+- `apply(RowSetUpdatePlan $plan)` receives optional row-set key expectations (plus the keys to leave out of that comparison) and the sorted batch of immutable row plans; it checks the key expectations and the check-only plans against committed rows before applying the writes
 
 `MappedRowSet` itself does not open transactions. If you need atomicity across a flush, open the surrounding transaction on the underlying storage before calling `flush()`.
 
@@ -101,6 +103,8 @@ $table = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, 'users'))
 
 The Postgres adapter checks expected column values with `IS NOT DISTINCT FROM`, so `null` expectations are handled correctly.
 Row-set key expectations use a transaction-scoped advisory lock and therefore require an active transaction.
+
+Check-only rows are checked in one `SELECT ... FOR SHARE` per table, so they stay locked against concurrent writers until the transaction ends. An absent row cannot be locked, so rows expected absent, and rows an insert or upsert may create, take a transaction-scoped advisory lock on their key (one statement, keys in sorted order): an absent check holds back a concurrent creation of the row until its transaction ends, and the other way around. Absent checks require an active transaction; an insert outside a transaction takes no lock.
 
 ## Owned Child Sets
 

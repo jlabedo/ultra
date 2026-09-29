@@ -96,15 +96,28 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         return $mapped;
     }
 
+    /**
+     * Flushes the plan inside the caller's transaction: locks the keys of rows expected absent or possibly created,
+     * checks the row-key expectations and check-only rows, then applies the writes.
+     */
     public function apply(RowSetUpdatePlan $plan): void
     {
-        $this->assertExpectedRowKeys($plan->expectedRowKeys, $plan->ignoredRowKeys);
-
+        $writes = [];
+        $checks = [];
         foreach ($plan->rowUpdates as $update) {
             $this->assertKey($update->key);
+            if ($update->writes()) {
+                $writes[] = $update;
+            } else {
+                $checks[] = $update;
+            }
         }
 
-        foreach ($this->groupConsecutive($plan->rowUpdates) as $batch) {
+        $this->lockAbsentKeys($checks, $writes);
+        $this->assertExpectedRowKeys($plan->expectedRowKeys, $plan->ignoredRowKeys);
+        $this->checkRows($checks);
+
+        foreach ($this->groupConsecutive($writes) as $batch) {
             if (1 === count($batch)) {
                 $this->flushOne($batch[0]);
                 continue;
@@ -236,6 +249,94 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
             $this->conflictTargetSql(),
             $action,
         ), $params);
+    }
+
+    /**
+     * A row cannot be locked before it exists, so rows expected absent and rows a write may create (insert, upsert)
+     * lock their key with a transaction-scoped advisory lock: an absent check then holds back a concurrent creation of
+     * the row until its transaction ends, and the other way around. Keys are locked in sorted order, in one statement.
+     *
+     * @param list<RowUpdatePlan> $checks
+     * @param list<RowUpdatePlan> $writes
+     */
+    private function lockAbsentKeys(array $checks, array $writes): void
+    {
+        $lockKeys = [];
+        foreach ($checks as $check) {
+            if (RowUpdatePlan::EXPECTED_ABSENT === $check->expectedPresence) {
+                $lockKeys[] = $check->key->fingerprint();
+            }
+        }
+        $absentChecks = count($lockKeys);
+        foreach ($writes as $write) {
+            if (RowUpdatePlan::MODE_INSERT === $write->mode || RowUpdatePlan::MODE_UPSERT === $write->mode) {
+                $lockKeys[] = $write->key->fingerprint();
+            }
+        }
+
+        if ([] === $lockKeys) {
+            return;
+        }
+        if (!$this->connection->isTransactionActive()) {
+            if (0 === $absentChecks) {
+                // An autocommitted write holds no lock worth taking.
+                return;
+            }
+
+            throw new \LogicException(sprintf('Absent row expectations for table "%s" require an active transaction.', $this->tableName));
+        }
+
+        $lockKeys = array_values(array_unique($lockKeys));
+        sort($lockKeys, SORT_STRING);
+        // jsonb_array_elements_text() yields the keys in array order, so the locks are taken in sorted order.
+        $this->connection->executeQuery(
+            'SELECT count(pg_advisory_xact_lock(hashtext(?), hashtext(lock_key))) FROM jsonb_array_elements_text(?::jsonb) AS locks(lock_key)',
+            [$this->tableName.':row', json_encode($lockKeys, JSON_THROW_ON_ERROR)],
+        );
+    }
+
+    /**
+     * Checks the rows that are only expected: present rows with their expected columns, locked FOR SHARE until the
+     * transaction ends, and absent rows, whose keys lockAbsentKeys() holds.
+     *
+     * @param list<RowUpdatePlan> $checks
+     */
+    private function checkRows(array $checks): void
+    {
+        $present = array_values(array_filter($checks, static fn (RowUpdatePlan $check): bool => RowUpdatePlan::EXPECTED_ABSENT !== $check->expectedPresence));
+        if ([] !== $present) {
+            $branches = [];
+            $params = [];
+            foreach ($present as $check) {
+                [$where, $whereParams] = $this->conditionalWhere($check);
+                $branches[] = '('.implode(' AND ', $where).')';
+                array_push($params, ...$whereParams);
+            }
+            $matched = $this->connection->fetchAllAssociative(sprintf(
+                'SELECT 1 FROM %s WHERE %s FOR SHARE',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                implode(' OR ', $branches),
+            ), $params);
+            if (count($matched) !== count($present)) {
+                throw new ConcurrencyException(sprintf('Row expectation failed for table "%s": %d of %d expected rows changed.', $this->tableName, count($present) - count($matched), count($present)));
+            }
+        }
+
+        $absent = array_values(array_filter($checks, static fn (RowUpdatePlan $check): bool => RowUpdatePlan::EXPECTED_ABSENT === $check->expectedPresence));
+        if ([] !== $absent) {
+            $params = [];
+            foreach ($absent as $check) {
+                array_push($params, ...$this->encodedKeyValues($check->key));
+            }
+            $existing = (int) $this->connection->fetchOne(sprintf(
+                'SELECT count(*) FROM %s WHERE %s',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                implode(' OR ', array_fill(0, count($absent), '('.implode(' AND ', $this->keyWhereClauses()).')')),
+            ), $params);
+            if (0 !== $existing) {
+                throw new ConcurrencyException(sprintf('Row expectation failed for table "%s": %d expected absent rows exist.', $this->tableName, $existing));
+            }
+        }
     }
 
     /**

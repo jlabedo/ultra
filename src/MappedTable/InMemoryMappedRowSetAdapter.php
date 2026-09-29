@@ -52,10 +52,23 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
 
     public function apply(RowSetUpdatePlan $plan): void
     {
+        foreach ($plan->rowUpdates as $update) {
+            $this->assertKey($update->key);
+        }
+
         $this->assertExpectedRowKeys($plan->expectedRowKeys, $plan->ignoredRowKeys);
 
         foreach ($plan->rowUpdates as $update) {
-            $this->assertKey($update->key);
+            if (!$update->writes()) {
+                $this->checkRow($update);
+            }
+        }
+
+        foreach ($plan->rowUpdates as $update) {
+            if (!$update->writes()) {
+                continue;
+            }
+
             match ($update->mode) {
                 RowUpdatePlan::MODE_DELETE => $this->applyDelete($update),
                 RowUpdatePlan::MODE_INSERT => $this->applyInsert($update),
@@ -89,6 +102,19 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
         if ($actual !== $expected) {
             throw new ConcurrencyException(sprintf('Row-set expectation failed for table "%s": row keys changed.', $this->tableName));
         }
+    }
+
+    private function checkRow(RowUpdatePlan $update): void
+    {
+        if (RowUpdatePlan::EXPECTED_ABSENT === $update->expectedPresence) {
+            if (false !== $this->database->rowByKey($this->tableName, $update->key)) {
+                throw $this->concurrency('Expected absent row exists', $update);
+            }
+
+            return;
+        }
+
+        $this->requireMatchingRow($update, 'Row expectation failed');
     }
 
     private function applyDelete(RowUpdatePlan $update): void

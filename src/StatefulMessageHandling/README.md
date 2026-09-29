@@ -100,7 +100,9 @@ final readonly class BookRoom
 - Event-sourced states: each round is one `load()`, and every round’s append condition guards the final append, so
   a concurrent change to a source stream (the member moved company) makes the append fail.
 - State-store states: when a source state is missing (`null`), the dependent state is `null` too, without being
-  loaded or expected. A state depending on a nullable state must therefore be nullable itself.
+  loaded or expected. A state depending on a nullable state must therefore be nullable itself. Every loaded state is
+  expected, and the expectation is checked at flush even if the state is not saved, so a concurrent change to a
+  source row (the member moved company) makes the flush fail.
 - `#[StateReader]` handlers follow the same rules.
 - A method bound by convention adds a loading round without any attribute on the parameter: read the message's id
   methods to see a handler's dependencies.

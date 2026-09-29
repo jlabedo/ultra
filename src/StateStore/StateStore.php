@@ -87,7 +87,7 @@ final readonly class StateStore
     /**
      * Buffer an optimistic expectation that the target row does not exist yet.
      *
-     * The expectation stays inert until a later write targets the same mapped row.
+     * The expectation is checked at flush, and a later save of the same mapped row becomes an insert.
      *
      * @template T of object
      *

@@ -65,6 +65,17 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('flavors')]
+    public function test_a_booking_decided_on_a_quota_lowered_concurrently_is_rejected(string $flavor): void
+    {
+        [$first, $second] = $this->drivers($flavor);
+        $this->given($first, monthlyMinutes: 120);
+
+        $this->assertLosesRace(fn () => $first->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00')), fn () => $second->changeCompanyPlan('acme', 30));
+
+        self::assertSame(0, $first->usedMinutes('acme', '2026-09'));
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('flavors')]
     public function test_unrelated_bookings_do_not_conflict(string $flavor): void
     {
         [$first, $second] = $this->drivers($flavor);

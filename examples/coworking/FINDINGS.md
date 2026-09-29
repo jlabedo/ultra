@@ -125,6 +125,12 @@ immediately, and the rest becomes a condition checked at flush. Row-key expectat
 unit of work decided. `StateStore` is unchanged. A stale state copy (loaded before a write in the same unit of work)
 is now rejected, including through another state class mapping the same row.
 
+**Related bug, fixed:** an expectation on a row the decision did not save was never checked. A booking read the
+company's quota without writing the company, so a plan downgrade committed in between went unnoticed (write skew).
+`ConcurrentDecisionsTest` now covers it. A row that is only read is flushed as a check-only plan (`SELECT ... FOR
+SHARE`). An absent row cannot be locked, so absent checks, inserts and upserts lock the row's key with an advisory
+lock. An update that writes only expected values becomes a check too, so saving an unchanged state writes nothing.
+
 ## 7. State store: set-based rules require hand-maintained denormalized states (Design, for this flavor)
 
 `StateStore` loads by id only. "No overlap in this room on this day" and "sum of minutes this month" are

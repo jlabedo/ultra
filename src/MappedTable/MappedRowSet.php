@@ -45,7 +45,7 @@ final class MappedRowSet implements UnitOfWork
         $row = $this->adapter->row($key, $columns);
         $plan = ($this->updates[$key->fingerprint()] ?? null)?->toPlan();
 
-        if (null === $plan) {
+        if (null === $plan || !$plan->writes()) {
             return $row;
         }
 
@@ -64,7 +64,7 @@ final class MappedRowSet implements UnitOfWork
             $rows[$row->key->fingerprint()] = $row;
         }
 
-        foreach ($this->sortedPlans() as $plan) {
+        foreach ($this->sortedWritePlans() as $plan) {
             $fingerprint = $plan->key->fingerprint();
             $projected = $this->projectRow(
                 $this->applyPlanToRow($rows[$fingerprint]->columns ?? false, $plan),
@@ -100,7 +100,7 @@ final class MappedRowSet implements UnitOfWork
 
         $expectedSet = array_fill_keys($fingerprints, true);
         $written = [];
-        foreach ($this->sortedPlans() as $plan) {
+        foreach ($this->sortedWritePlans() as $plan) {
             $written[$plan->key->fingerprint()] = $plan->key;
             if ((RowUpdatePlan::MODE_DELETE !== $plan->mode) !== isset($expectedSet[$plan->key->fingerprint()])) {
                 throw new ConcurrencyException('Row-set key expectation differs from the rows written in this unit of work.');
@@ -201,6 +201,16 @@ final class MappedRowSet implements UnitOfWork
         usort($plans, static fn (RowUpdatePlan $left, RowUpdatePlan $right): int => $left->key->fingerprint() <=> $right->key->fingerprint());
 
         return $plans;
+    }
+
+    /**
+     * The plans that change the unit of work's view: check-only plans leave the rows as they are.
+     *
+     * @return list<RowUpdatePlan>
+     */
+    private function sortedWritePlans(): array
+    {
+        return array_values(array_filter($this->sortedPlans(), static fn (RowUpdatePlan $plan): bool => $plan->writes()));
     }
 
     /** @param list<MappedKey> $keys @return list<string> */

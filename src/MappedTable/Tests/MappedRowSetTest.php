@@ -12,6 +12,7 @@ use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapter;
 use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\PendingRowUpdate;
 use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\MappedTable\RowUpdatePlan;
@@ -102,13 +103,100 @@ final class MappedRowSetTest extends TestCase
         self::assertTrue($table->hasPendingChanges());
     }
 
-    public function test_row_expectations_without_writes_are_not_pending_changes(): void
+    public function test_row_expectations_without_writes_are_pending_checks(): void
     {
-        $table = new MappedRowSet(new RecordingMappedRowSetAdapter());
+        $adapter = new RecordingMappedRowSetAdapter();
+        $table = new MappedRowSet($adapter);
 
         $table->withKey('row-1')->expectColumnValue('version', 1);
+        $table->withKey('row-2')->expectAbsent();
 
-        self::assertFalse($table->hasPendingChanges());
+        self::assertTrue($table->hasPendingChanges());
+        $table->flush();
+        self::assertSame(
+            [
+                ['row-1', RowUpdatePlan::MODE_EXPECT, RowUpdatePlan::EXPECTED_PRESENT, ['version' => 1]],
+                ['row-2', RowUpdatePlan::MODE_EXPECT, RowUpdatePlan::EXPECTED_ABSENT, []],
+            ],
+            array_map(
+                static fn (RowUpdatePlan $plan): array => [$plan->key->value('id'), $plan->mode, $plan->expectedPresence, $plan->expectedColumns],
+                $adapter->batches[0]['rowUpdates'],
+            ),
+        );
+    }
+
+    public function test_a_row_expectation_without_write_is_checked_at_flush(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1', 'status' => 'pending', 'note' => 'draft']);
+
+        $table->withKey('row-1')->expectColumnValues(['status' => 'pending', 'note' => 'draft']);
+        $this->flushInTransaction($database, $table);
+        $table->clear();
+
+        $table->withKey('row-1')->expectColumnValue('status', 'pending');
+        $database->writeRow(self::TABLE_NAME, self::ID_COLUMN, ['id' => 'row-1', 'status' => 'paid', 'note' => 'draft']);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
+    }
+
+    public function test_an_absent_expectation_without_write_is_checked_at_flush(): void
+    {
+        [$database, $table] = $this->newTable();
+
+        $table->withKey('row-1')->expectAbsent();
+        $this->seedRow($database, ['id' => 'row-1', 'status' => 'pending']);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
+    }
+
+    public function test_an_expected_row_is_read_without_its_check_plan(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1', 'status' => 'pending']);
+
+        $table->withKey('row-1')->expectColumnValue('status', 'pending');
+        $table->withKey('row-2')->expectAbsent();
+
+        self::assertSame(['status' => 'pending'], $table->row('row-1', ['status']));
+        self::assertFalse($table->row('row-2'));
+        self::assertSame(['row-1'], array_map(static fn (MappedRow $row): int|string => $row->key->value('id'), $table->rows()));
+        $table->expectSameRowKeys(['row-1']);
+    }
+
+    public function test_an_update_writing_only_expected_values_becomes_a_check(): void
+    {
+        $adapter = new RecordingMappedRowSetAdapter();
+        $table = new MappedRowSet($adapter);
+
+        $table->withKey('row-1')
+            ->expectColumnValues(['status' => 'pending', 'note' => 'draft'])
+            ->setColumns(['status' => 'pending', 'note' => 'draft'])
+        ;
+        $table->withKey('row-2')
+            ->expectColumnValues(['status' => 'pending', 'note' => 'draft'])
+            ->setColumns(['status' => 'paid', 'note' => 'draft'])
+        ;
+        $table->flush();
+
+        $plans = $adapter->batches[0]['rowUpdates'];
+        self::assertSame([RowUpdatePlan::MODE_EXPECT, RowUpdatePlan::MODE_UPDATE], array_map(static fn (RowUpdatePlan $plan): string => $plan->mode, $plans));
+        self::assertSame([], $plans[0]->setColumns);
+        self::assertSame(['status' => 'pending', 'note' => 'draft'], $plans[0]->expectedColumns);
+    }
+
+    public function test_an_unchanged_row_still_detects_a_concurrent_change(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'row-1', 'status' => 'pending']);
+
+        $table->withKey('row-1')->expectColumnValue('status', 'pending')->setColumn('status', 'pending');
+        $database->writeRow(self::TABLE_NAME, self::ID_COLUMN, ['id' => 'row-1', 'status' => 'paid']);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
     }
 
     public function test_row_set_expectations_are_pending_changes(): void

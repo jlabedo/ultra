@@ -145,8 +145,8 @@ expectations.
 ## Save Semantics
 
 - `save($state)` buffers an upsert for the mapped row
-- `expect($loadedState)` buffers optimistic expectations for that mapped row without writing anything by itself
-- `expectMissing(StateClass::class, $id)` buffers an optimistic expectation that the mapped row is still absent
+- `expect($loadedState)` buffers optimistic expectations for that mapped row without writing anything by itself; they are checked at flush even if the state is never saved, so a state that is only read still guards the decision
+- `expectMissing(StateClass::class, $id)` buffers an optimistic expectation that the mapped row is still absent, also checked at flush
 - a later `save(...)` against the same mapped row uses the buffered expectation automatically
 - collection expectations use the loaded item id set to reject concurrent inserts or deletes in the collection
 - buffered writes are committed later by flushing the underlying `MappedRowSet` unit of work

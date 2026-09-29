@@ -17,6 +17,8 @@ final readonly class RowUpdatePlan
     public const MODE_DELETE = 'delete';
     public const MODE_REPLACE = 'replace';
     public const MODE_UPSERT = 'upsert';
+    /** Writes nothing: only checks the row's expected presence and columns at flush. */
+    public const MODE_EXPECT = 'expect';
 
     /**
      * @param array<string, mixed> $expectedColumns
@@ -29,4 +31,9 @@ final readonly class RowUpdatePlan
         public array $expectedColumns,
         public array $setColumns,
     ) {}
+
+    public function writes(): bool
+    {
+        return self::MODE_EXPECT !== $this->mode;
+    }
 }

@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace Ultra\MappedTable\Tests;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\Testing\PostgresTestSupport;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /**
@@ -248,6 +250,94 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 'version_a' => null,
                 'version_b' => null,
             ], $this->fetchRow($connection, $tableName, 'row-1'));
+        });
+    }
+
+    public function test_a_row_expectation_without_write_is_checked_at_flush(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, ['id' => 'row-1', 'status' => 'pending']);
+            $this->insertRow($connection, $tableName, ['id' => 'row-2', 'status' => 'pending']);
+
+            $table->withKey('row-1')->expectColumnValue('status', 'pending');
+            $table->withKey('row-2')->expectColumnValue('status', 'pending');
+            $this->flush($connection, $table);
+            $table->clear();
+
+            $table->withKey('row-1')->expectColumnValue('status', 'pending');
+            $table->withKey('row-2')->expectColumnValue('status', 'pending');
+            $connection->update($tableName, ['status' => 'paid'], ['id' => 'row-2']);
+
+            $this->expectException(ConcurrencyException::class);
+            $this->flush($connection, $table);
+        });
+    }
+
+    public function test_an_absent_expectation_without_write_is_checked_at_flush(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $table->withKey('row-1')->expectAbsent();
+            $this->insertRow($connection, $tableName, ['id' => 'row-1']);
+
+            $this->expectException(ConcurrencyException::class);
+            $this->flush($connection, $table);
+        });
+    }
+
+    public function test_an_update_writing_only_expected_values_writes_nothing(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, ['id' => 'row-1', 'status' => 'pending']);
+            $xmin = $connection->fetchOne(sprintf('SELECT xmin::text FROM %s', $connection->quoteSingleIdentifier($tableName)));
+
+            $table->withKey('row-1')->expectColumnValue('status', 'pending')->setColumn('status', 'pending');
+            $this->flush($connection, $table);
+
+            self::assertSame($xmin, $connection->fetchOne(sprintf('SELECT xmin::text FROM %s', $connection->quoteSingleIdentifier($tableName))));
+        });
+    }
+
+    public function test_a_checked_row_holds_back_a_concurrent_update_until_commit(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, ['id' => 'row-1', 'status' => 'pending']);
+            $table->withKey('row-1')->expectColumnValue('status', 'pending');
+
+            $this->assertFlushHoldsBack($connection, $table, $tableName, static function (MappedRowSet $other): void {
+                $other->withKey('row-1')->setColumn('status', 'paid');
+            });
+        });
+    }
+
+    public function test_an_absent_check_holds_back_a_concurrent_insert_until_commit(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $table->withKey('row-1')->expectAbsent();
+
+            $this->assertFlushHoldsBack($connection, $table, $tableName, static function (MappedRowSet $other): void {
+                $other->withKey('row-1')->insert()->setColumn('status', 'pending');
+            });
+        });
+    }
+
+    public function test_an_absent_check_holds_back_a_concurrent_upsert_until_commit(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $table->withKey('row-1')->expectAbsent();
+
+            $this->assertFlushHoldsBack($connection, $table, $tableName, static function (MappedRowSet $other): void {
+                $other->withKey('row-1')->upsert()->setColumn('status', 'pending');
+            });
+        });
+    }
+
+    public function test_an_absent_check_requires_an_active_transaction(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $table->withKey('row-1')->expectAbsent();
+
+            $this->expectException(\LogicException::class);
+            $table->flush();
         });
     }
 
@@ -1120,6 +1210,37 @@ final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
                 $connection->executeStatement(sprintf('DROP TABLE IF EXISTS %s', $connection->quoteSingleIdentifier($booleanTable)));
             }
         });
+    }
+
+    /**
+     * Flushes $table's checks without committing, then asserts that a write buffered by $write on another connection
+     * waits for that transaction to end.
+     *
+     * @param callable(MappedRowSet): void $write
+     */
+    private function assertFlushHoldsBack(Connection $connection, MappedRowSet $table, string $tableName, callable $write): void
+    {
+        $other = PostgresTestSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
+        $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
+        $write($otherTable);
+
+        $connection->beginTransaction();
+
+        try {
+            $table->flush();
+            $other->beginTransaction();
+            $other->executeStatement("SET LOCAL lock_timeout = '10ms'");
+            $otherTable->flush();
+            self::fail('The concurrent write must wait for the checking transaction.');
+        } catch (DriverException $exception) {
+            self::assertStringContainsString('lock timeout', $exception->getMessage());
+        } finally {
+            if ($other->isTransactionActive()) {
+                $other->rollBack();
+            }
+            $other->close();
+            $connection->rollBack();
+        }
     }
 
     private function flush(Connection $connection, MappedRowSet $table): void

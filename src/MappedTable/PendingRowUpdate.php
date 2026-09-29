@@ -48,7 +48,7 @@ final readonly class PendingRowUpdate
             return $this;
         }
 
-        if (null !== $this->update->toPlan()) {
+        if (true === $this->update->toPlan()?->writes()) {
             throw new ConcurrencyException(sprintf(
                 'Cannot mark table "%s", row "%s" as expected absent because it is written in this unit of work.',
                 $this->tableName,
