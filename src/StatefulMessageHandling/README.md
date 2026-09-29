@@ -16,7 +16,7 @@ Event-sourcing decision pipeline built on the mediator. Commands declare their c
 |-----------|--------|---------|
 | `#[DecisionHandler]` | Method | Marks a method as a decision handler for the aspect. |
 | `#[SelfHandler]` | Method | Mediator self-handler marker for commands that handle themselves. |
-| `#[EventSourcedEntity(tags: ['name'])]` | Class | Marks a decision state / entity and declares the stream tags it can be loaded from. Decision handlers currently require exactly one tag. |
+| `#[EventSourcedEntity(tags: ['name'])]` | Class | Marks a decision state / entity and declares the stream tags it can be loaded from. Decision handlers currently require exactly one tag; `aliases: ['otherRole' => 'name']` also loads events whose `otherRole` identifier equals the state's id (see the event-sourced state README). |
 | `#[EventSourcingHandler]` | Method | Marks a public event replay handler on a state / entity. |
 | `#[Event('type.name')]` | Class | Event type name for storage and routing. |
 | `#[DomainIdentifier('name')]` | Property | Marks an event DTO identifier used for routing and query matching. |

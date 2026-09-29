@@ -63,19 +63,24 @@ Workaround: `BookWeeklyHandler` sends one `BookRoom` per occurrence inside the s
 fan-out. Optionally add collection parameters, such as `list<RoomDayScheduleState>` bound to a command list path,
 so one decision can report every violation.
 
-## 3. Event tags are single-valued per dimension (Design)
+## 3. Event tags are single-valued per dimension (Design; fixed roles addressed by aliases)
 
 `Event::$domainIds` is `array<string, string>`: an event is tagged with at most one value per dimension, and a
 decision state is loaded from exactly one tag. A reschedule leaves one room-day and enters another, so a single
-domain event cannot be seen by both schedules. It is split into `BookingRescheduledFrom` and
-`BookingRescheduledTo`, and every state handles both halves. A transfer between two wallets, or a meeting across
-two rooms, would hit the same limit.
+domain event could not be seen by both schedules: it was split into `BookingRescheduledFrom` and
+`BookingRescheduledTo`. A transfer between two wallets would hit the same limit.
 
-The classic model updates one row.
+**Done (fixed roles):** an event names each role with its own tag (`roomDay`, `previousRoomDay`), and an entity
+declares extra tag names as aliases of its single tag:
+`#[EventSourcedEntity(tags: ['roomDay'], aliases: ['previousRoomDay' => 'roomDay'])]`. Events are then also loaded
+when the alias equals the entity's id, and the append condition covers the alias branch. The example is back to one
+`BookingRescheduled` event; the schedule and usage handlers infer their role from their own state (the booking is
+already here and the day changed → it leaves; otherwise it arrives or moves within the day).
 
-**Direction**: allow a dimension to carry a set of values (DCB-style tags are a set of strings), so one
-`BookingRescheduled` event can be tagged `roomDay: [old, new]`. This touches the event store schema (`hstore`),
-the query matching and the append-condition locks, so it is a design change rather than an attribute.
+Axon Framework 5 takes the other route: tags are a set of key/value pairs, so one event can carry two values for the
+same key (an iterable `@EventTag` produces one tag per element), and entities describe what they are sourced from in
+code (`@EventCriteriaBuilder`). Its entities know their id, which is what makes role-agnostic set tags workable
+there; our event-sourced states do not.
 
 ## 4. Derived identities have no first-class place (Feature; Mapper bug fixed)
 
@@ -172,6 +177,12 @@ Accepted for now, but not considered acceptable long term. Each one needs code r
 - **Dependent binding across flavors.** A decision can mix event-sourced and state-store states, but a binding method
   can only depend on states of its own flavor: each aspect loads its states independently, in its own rounds. Crossing
   flavors needs one resolution engine ordering both aspects' loads and sharing loaded states.
+
+- **Multi-valued tags (sets).** Aliases cover fixed roles (old/new day, source/destination wallet), not an event
+  touching a variable number of entities of one kind (an order over N products, a bulk cancellation). Supporting
+  sets means `Event::$domainIds` holding lists, a `jsonb` (or per-identifier rows) storage instead of `hstore`,
+  append-condition locks multiplied across values, projection partitioning for events in several buckets, and state
+  identity available in handlers so they can tell their role.
 
 ## Where the design wins
 

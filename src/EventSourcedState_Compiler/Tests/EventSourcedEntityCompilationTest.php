@@ -10,6 +10,7 @@ use Ultra\EventSourcedState\Attribute\MatchTag;
 use Ultra\EventSourcedState\Exception\AmbiguousTagError;
 use Ultra\EventSourcedState\Exception\DuplicateEventSourcingHandlerError;
 use Ultra\EventSourcedState\Exception\InvalidMatchTagError;
+use Ultra\EventSourcedState\Exception\InvalidTagAliasError;
 use Ultra\EventSourcedState\Exception\MissingEventSourcingHandlerError;
 use Ultra\EventSourcedState\Exception\MissingTypeHintError;
 use Ultra\EventSourcedState\Exception\NoTagOverlapError;
@@ -18,6 +19,8 @@ use Ultra\EventSourcedState\Tests\Support\EventSourcedStateFunctionalTestCase;
 use Ultra\EventSourcedState\Tests\Support\EventSourcedStateTestContainer;
 use Ultra\Events\Attribute\DomainIdentifier;
 use Ultra\Events\Attribute\Event;
+use Ultra\EventStore\DomainIdentifier as StreamIdentifier;
+use Ultra\EventStore\StreamQuery;
 use Ultra\Testing\UltraLight;
 
 #[Event('compiler.no_overlap')]
@@ -103,6 +106,74 @@ final class CompilerDuplicateHandlerState
     public function onSecond(CompilerSingleTagEvent $event): void {}
 }
 
+#[Event('compiler.room_day_booked')]
+final readonly class CompilerRoomDayBookedEvent
+{
+    public function __construct(
+        #[DomainIdentifier('roomDay')]
+        public string $roomDayId,
+    ) {}
+}
+
+#[Event('compiler.room_day_moved')]
+final readonly class CompilerRoomDayMovedEvent
+{
+    public function __construct(
+        #[DomainIdentifier('roomDay')]
+        public string $roomDayId,
+        #[DomainIdentifier('previousRoomDay')]
+        public string $previousRoomDayId,
+    ) {}
+}
+
+#[EventSourcedEntity(tags: ['roomDay'], aliases: ['previousRoomDay' => 'room'])]
+final class CompilerAliasOfUnknownTagState
+{
+    #[EventSourcingHandler]
+    public function onBooked(CompilerRoomDayBookedEvent $event): void {}
+}
+
+#[EventSourcedEntity(tags: ['roomDay', 'room'], aliases: ['room' => 'roomDay'])]
+final class CompilerAliasShadowingATagState
+{
+    #[EventSourcingHandler]
+    public function onBooked(CompilerRoomDayBookedEvent $event): void {}
+}
+
+#[EventSourcedEntity(tags: ['roomDay'], aliases: ['roomDay'])]
+final class CompilerAliasListState
+{
+    #[EventSourcingHandler]
+    public function onBooked(CompilerRoomDayBookedEvent $event): void {}
+}
+
+#[EventSourcedEntity(tags: ['roomDay'], aliases: ['previousRoomDay' => 'roomDay'])]
+final class CompilerAmbiguousAliasState
+{
+    #[EventSourcingHandler]
+    public function onMoved(CompilerRoomDayMovedEvent $event): void {}
+}
+
+#[EventSourcedEntity(tags: ['roomDay'], aliases: ['previousRoomDay' => 'roomDay'])]
+final class CompilerAliasedRoomDayState
+{
+    #[EventSourcingHandler]
+    public function onBooked(CompilerRoomDayBookedEvent $event): void {}
+
+    #[EventSourcingHandler]
+    #[MatchTag('roomDay')]
+    #[MatchTag('previousRoomDay')]
+    public function onMoved(CompilerRoomDayMovedEvent $event): void {}
+}
+
+#[EventSourcedEntity(tags: ['roomDay'], aliases: ['previousRoomDay' => 'roomDay'])]
+final class CompilerSameDayMoveState
+{
+    #[EventSourcingHandler]
+    #[MatchTag('previousRoomDay', 'roomDay')]
+    public function onMoved(CompilerRoomDayMovedEvent $event): void {}
+}
+
 /**
  * @internal
  *
@@ -180,6 +251,74 @@ final class EventSourcedEntityCompilationTest extends EventSourcedStateFunctiona
         ;
     }
 
+    public function test_container_compilation_rejects_aliases_of_tags_the_entity_does_not_declare(): void
+    {
+        $this->expectException(InvalidTagAliasError::class);
+        $this->expectExceptionMessage('alias "previousRoomDay" targets "room", which is not one of its tags [roomDay]');
+
+        $this->ultraLight()
+            ->withClass(CompilerAliasOfUnknownTagState::class)
+            ->boot()
+        ;
+    }
+
+    public function test_container_compilation_rejects_aliases_named_like_an_entity_tag(): void
+    {
+        $this->expectException(InvalidTagAliasError::class);
+        $this->expectExceptionMessage('alias "room" is already one of its tags');
+
+        $this->ultraLight()
+            ->withClass(CompilerAliasShadowingATagState::class)
+            ->boot()
+        ;
+    }
+
+    public function test_container_compilation_rejects_aliases_that_are_not_a_name_to_tag_map(): void
+    {
+        $this->expectException(InvalidTagAliasError::class);
+        $this->expectExceptionMessage('aliases must map an alias name to a tag name');
+
+        $this->ultraLight()
+            ->withClass(CompilerAliasListState::class)
+            ->boot()
+        ;
+    }
+
+    public function test_container_compilation_rejects_events_carrying_a_tag_and_its_alias_without_match_tags(): void
+    {
+        $this->expectException(AmbiguousTagError::class);
+        $this->expectExceptionMessage('matches tags [roomDay, previousRoomDay]');
+
+        $this->ultraLight()
+            ->withClass(CompilerAmbiguousAliasState::class)
+            ->boot()
+        ;
+    }
+
+    public function test_generated_queries_give_alias_dimensions_the_value_of_their_aliased_tag(): void
+    {
+        $container = $this->ultraLight()
+            ->withClass(CompilerAliasedRoomDayState::class, CompilerSameDayMoveState::class)
+            ->boot()
+        ;
+        $stateStore = $container->eventSourcedStateStore();
+
+        self::assertEquals(
+            StreamQuery::anyOf(
+                StreamQuery::forStream(new StreamIdentifier('previousRoomDay', 'r1@2026-09-28'))->ofTypes('compiler.room_day_moved'),
+                StreamQuery::forStream(new StreamIdentifier('roomDay', 'r1@2026-09-28'))->ofTypes('compiler.room_day_booked', 'compiler.room_day_moved'),
+            ),
+            $stateStore->loader(CompilerAliasedRoomDayState::class)->query(new StreamIdentifier('roomDay', 'r1@2026-09-28')),
+        );
+        self::assertEquals(
+            StreamQuery::forStream(
+                new StreamIdentifier('roomDay', 'r1@2026-09-28'),
+                new StreamIdentifier('previousRoomDay', 'r1@2026-09-28'),
+            )->ofTypes('compiler.room_day_moved'),
+            $stateStore->loader(CompilerSameDayMoveState::class)->query(new StreamIdentifier('roomDay', 'r1@2026-09-28')),
+        );
+    }
+
     /**
      * @return UltraLight<EventSourcedStateTestContainer>
      */
@@ -197,6 +336,8 @@ final class EventSourcedEntityCompilationTest extends EventSourcedStateFunctiona
             CompilerNoOverlapEvent::class,
             CompilerAmbiguousEvent::class,
             CompilerSingleTagEvent::class,
+            CompilerRoomDayBookedEvent::class,
+            CompilerRoomDayMovedEvent::class,
         ];
     }
 }

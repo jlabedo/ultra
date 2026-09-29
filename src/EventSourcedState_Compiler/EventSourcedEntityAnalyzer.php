@@ -10,6 +10,7 @@ use Ultra\EventSourcedState\Attribute\MatchTag;
 use Ultra\EventSourcedState\Exception\AmbiguousTagError;
 use Ultra\EventSourcedState\Exception\DuplicateEventSourcingHandlerError;
 use Ultra\EventSourcedState\Exception\InvalidMatchTagError;
+use Ultra\EventSourcedState\Exception\InvalidTagAliasError;
 use Ultra\EventSourcedState\Exception\MissingEventSourcingHandlerError;
 use Ultra\EventSourcedState\Exception\MissingTypeHintError;
 use Ultra\EventSourcedState\Exception\NoTagOverlapError;
@@ -33,6 +34,9 @@ final class EventSourcedEntityAnalyzer
         /** @var EventSourcedEntity $entityAttribute */
         $entityAttribute = $attributes[0]->newInstance();
         $entityTags = $this->normalizeTags($entityAttribute->tags);
+        $aliases = $this->normalizeAliases($entityClass, $entityAttribute->aliases, $entityTags);
+        // Aliases match events like tags do; only the tags identify the entity.
+        $matchableTags = [...$entityTags, ...array_keys($aliases)];
 
         /** @var array<string, array{tags: list<string>, eventNames: array<string, true>}> $criteriaGroups */
         $criteriaGroups = [];
@@ -73,7 +77,7 @@ final class EventSourcedEntityAnalyzer
             $eventClass = $parameterType->getName();
             $eventTags = $this->eventTags($eventClass);
             $eventName = $this->eventName($eventClass);
-            $intersection = $this->intersectTags($entityTags, $eventTags);
+            $intersection = $this->intersectTags($matchableTags, $eventTags);
 
             if ([] === $intersection) {
                 throw new NoTagOverlapError($entityClass, $method->getName(), $eventClass);
@@ -85,7 +89,7 @@ final class EventSourcedEntityAnalyzer
                 eventClass: $eventClass,
                 intersection: $intersection,
                 matchTagAttributes: $matchTagAttributes,
-                entityTags: $entityTags,
+                entityTags: $matchableTags,
             );
 
             foreach ($resolvedGroups as $groupTags) {
@@ -147,6 +151,7 @@ final class EventSourcedEntityAnalyzer
         return new EventSourcedEntityDefinition(
             entityClass: $entityClass,
             tags: $entityTags,
+            aliases: $aliases,
             criteriaGroups: $compiledGroups,
             dispatchEntries: $compiledDispatch,
         );
@@ -168,6 +173,36 @@ final class EventSourcedEntityAnalyzer
         }
 
         return array_keys($normalized);
+    }
+
+    /**
+     * @param array<array-key, mixed> $aliases
+     * @param list<string>            $entityTags
+     *
+     * @return array<string, string> alias name => entity tag
+     */
+    private function normalizeAliases(string $entityClass, array $aliases, array $entityTags): array
+    {
+        $normalized = [];
+        foreach ($aliases as $alias => $tag) {
+            if (!is_string($alias) || '' === $alias || !is_string($tag)) {
+                throw new InvalidTagAliasError($entityClass, 'aliases must map an alias name to a tag name, e.g. [\'previousRoomDay\' => \'roomDay\']');
+            }
+            if (in_array($alias, $entityTags, true)) {
+                throw new InvalidTagAliasError($entityClass, sprintf('alias "%s" is already one of its tags', $alias));
+            }
+            if (!in_array($tag, $entityTags, true)) {
+                throw new InvalidTagAliasError($entityClass, sprintf(
+                    'alias "%s" targets "%s", which is not one of its tags [%s]',
+                    $alias,
+                    $tag,
+                    implode(', ', $entityTags),
+                ));
+            }
+            $normalized[$alias] = $tag;
+        }
+
+        return $normalized;
     }
 
     /**

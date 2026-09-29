@@ -6,16 +6,18 @@ namespace App\Booking\EventSourced\State;
 
 use App\Booking\Domain\Slot;
 use App\Booking\EventSourced\Event\BookingCancelled;
-use App\Booking\EventSourced\Event\BookingRescheduledFrom;
-use App\Booking\EventSourced\Event\BookingRescheduledTo;
+use App\Booking\EventSourced\Event\BookingRescheduled;
 use App\Booking\EventSourced\Event\RoomBooked;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
+use Ultra\EventSourcedState\Attribute\MatchTag;
 
 /**
  * Consistency boundary for overlaps: every booking of one room on one day.
+ *
+ * A reschedule is loaded both by the room day it moves to and, through the alias, by the room day it leaves.
  */
-#[EventSourcedEntity(tags: ['roomDay'])]
+#[EventSourcedEntity(tags: ['roomDay'], aliases: ['previousRoomDay' => 'roomDay'])]
 final class RoomDayScheduleState
 {
     /** @var array<string, array{slot: Slot, memberId: string, companyId: string}> */
@@ -38,16 +40,22 @@ final class RoomDayScheduleState
         $this->add($event->bookingId, $event->memberId, $event->companyId, $event->start, $event->end);
     }
 
+    /**
+     * The state does not know which room day it is: a booking it already holds that moves to another room day
+     * leaves, anything else is the room day the booking moves to (or a move within the same day).
+     */
     #[EventSourcingHandler]
-    public function onRescheduledTo(BookingRescheduledTo $event): void
+    #[MatchTag('roomDay')]
+    #[MatchTag('previousRoomDay')]
+    public function onRescheduled(BookingRescheduled $event): void
     {
-        $this->add($event->bookingId, $event->memberId, $event->companyId, $event->start, $event->end);
-    }
+        if (isset($this->bookings[$event->bookingId]) && $event->roomDayId !== $event->previousRoomDayId) {
+            unset($this->bookings[$event->bookingId]);
 
-    #[EventSourcingHandler]
-    public function onRescheduledFrom(BookingRescheduledFrom $event): void
-    {
-        unset($this->bookings[$event->bookingId]);
+            return;
+        }
+
+        $this->add($event->bookingId, $event->memberId, $event->companyId, $event->start, $event->end);
     }
 
     #[EventSourcingHandler]

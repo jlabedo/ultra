@@ -8,8 +8,7 @@ use App\Booking\Domain\BookingIds;
 use App\Booking\Domain\BookingPolicy;
 use App\Booking\Domain\Slot;
 use App\Booking\Domain\Violations;
-use App\Booking\EventSourced\Event\BookingRescheduledFrom;
-use App\Booking\EventSourced\Event\BookingRescheduledTo;
+use App\Booking\EventSourced\Event\BookingRescheduled;
 use App\Booking\EventSourced\State\BookingState;
 use App\Booking\EventSourced\State\CompanyMonthUsageState;
 use App\Booking\EventSourced\State\CompanyState;
@@ -50,9 +49,6 @@ final readonly class RescheduleBooking
         return BookingIds::companyMonth($booking->companyId, $this->slot->month());
     }
 
-    /**
-     * @return list<object>
-     */
     #[SelfHandler]
     #[DecisionHandler]
     public function decide(
@@ -62,7 +58,7 @@ final readonly class RescheduleBooking
         RoomDayScheduleState $schedule,
         CompanyMonthUsageState $usage,
         ClockInterface $clock,
-    ): array {
+    ): BookingRescheduled {
         $now = $clock->now();
         Violations::throwIfAny([
             !$booking->exists() ? new Violation('booking.not_found', 'Booking does not exist.') : null,
@@ -79,9 +75,16 @@ final readonly class RescheduleBooking
             BookingPolicy::quotaExceeded($company->monthlyMinutes, $usage->usedMinutes(ignoringBookingId: $this->bookingId), $this->slot->minutes()),
         ]);
 
-        return [
-            new BookingRescheduledFrom($this->bookingId, $booking->roomId, $booking->memberId, $booking->companyId, $booking->slot->start, $booking->slot->end),
-            new BookingRescheduledTo($this->bookingId, $this->roomId, $booking->memberId, $booking->companyId, $this->slot->start, $this->slot->end),
-        ];
+        return new BookingRescheduled(
+            $this->bookingId,
+            $this->roomId,
+            $booking->memberId,
+            $booking->companyId,
+            $this->slot->start,
+            $this->slot->end,
+            $booking->roomId,
+            $booking->slot->start,
+            $booking->slot->end,
+        );
     }
 }

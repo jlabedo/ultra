@@ -91,13 +91,19 @@ final class EventSourcedEntityLoaderGenerator
 
         $branches = [];
         foreach ($definition->criteriaGroups as $group) {
-            $identifierVariables = array_map(
-                static fn (string $tag): string => '$'.PhpCode::identifier($tag, 'tag'),
+            $identifiers = array_map(
+                static fn (string $tag): string => isset($definition->aliases[$tag])
+                    ? sprintf(
+                        'new \Ultra\EventStore\DomainIdentifier(%s, $%s->value)',
+                        PhpCode::exportString($tag),
+                        PhpCode::identifier($definition->aliases[$tag], 'tag'),
+                    )
+                    : '$'.PhpCode::identifier($tag, 'tag'),
                 $group->tags,
             );
             $branch = sprintf(
                 '\Ultra\EventStore\StreamQuery::forStream(%s)->ofTypes(%s)',
-                implode(', ', $identifierVariables),
+                implode(', ', $identifiers),
                 implode(', ', array_map(PhpCode::exportString(...), $group->eventNames)),
             );
             $branches[] = $branch;

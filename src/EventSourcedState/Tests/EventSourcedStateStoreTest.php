@@ -15,7 +15,9 @@ use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventSourcedState\Tests\Example\Event\StudentEnrolled;
 use Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed;
 use Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentTransferred;
 use Ultra\EventSourcedState\Tests\Example\Event\SubscriptionPairConfirmed;
+use Ultra\EventSourcedState\Tests\Example\State\CourseRosterState;
 use Ultra\EventSourcedState\Tests\Example\State\CourseStudentActivityState;
 use Ultra\EventSourcedState\Tests\Example\State\SubscriptionPairStatusState;
 use Ultra\EventSourcedState\Tests\Support\EventSourcedStateFunctionalTestCase;
@@ -90,6 +92,29 @@ final class EventSourcedStateStoreTest extends EventSourcedStateFunctionalTestCa
         );
 
         self::assertSame(['matched'], $state->statuses);
+    }
+
+    public function test_it_loads_events_matched_through_a_tag_alias_with_the_value_of_the_aliased_tag(): void
+    {
+        $container = $this->ultraLight()
+            ->withClass(CourseRosterState::class)
+            ->boot()
+        ;
+
+        $container->eventStore()->append([
+            new StoredEvent('student.subscribed', ['courseId' => 'course-1', 'studentId' => 'ada'], ['course' => 'course-1', 'student' => 'ada']),
+            new StoredEvent('student.subscribed', ['courseId' => 'course-2', 'studentId' => 'grace'], ['course' => 'course-2', 'student' => 'grace']),
+            new StoredEvent('student.transferred', ['studentId' => 'ada', 'previousCourseId' => 'course-1', 'courseId' => 'course-2'], ['student' => 'ada', 'previousCourse' => 'course-1', 'course' => 'course-2']),
+            new StoredEvent('student.transferred', ['studentId' => 'linus', 'previousCourseId' => 'course-3', 'courseId' => 'course-4'], ['student' => 'linus', 'previousCourse' => 'course-3', 'course' => 'course-4']),
+        ]);
+
+        $stateStore = $container->eventSourcedStateStore();
+
+        self::assertSame([], $stateStore->load(CourseRosterState::class, new StreamIdentifier('course', 'course-1'))->studentIds);
+        self::assertSame(['grace', 'ada'], $stateStore->load(CourseRosterState::class, new StreamIdentifier('course', 'course-2'))->studentIds);
+
+        $this->expectException(UnexpectedTagValueException::class);
+        $stateStore->load(CourseRosterState::class, new StreamIdentifier('previousCourse', 'course-1'));
     }
 
     public function test_it_validates_missing_unexpected_and_duplicate_tag_values_through_generated_loaders(): void
@@ -193,6 +218,7 @@ final class EventSourcedStateStoreTest extends EventSourcedStateFunctionalTestCa
             StudentSubscribed::class,
             StudentUnsubscribed::class,
             SubscriptionPairConfirmed::class,
+            StudentTransferred::class,
         ];
     }
 }

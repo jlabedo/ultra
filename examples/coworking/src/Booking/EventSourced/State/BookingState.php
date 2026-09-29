@@ -6,7 +6,7 @@ namespace App\Booking\EventSourced\State;
 
 use App\Booking\Domain\Slot;
 use App\Booking\EventSourced\Event\BookingCancelled;
-use App\Booking\EventSourced\Event\BookingRescheduledTo;
+use App\Booking\EventSourced\Event\BookingRescheduled;
 use App\Booking\EventSourced\Event\RoomBooked;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
@@ -39,7 +39,7 @@ final class BookingState
     }
 
     #[EventSourcingHandler]
-    public function onRescheduled(BookingRescheduledTo $event): void
+    public function onRescheduled(BookingRescheduled $event): void
     {
         $this->roomId = $event->roomId;
         $this->slot = new Slot($event->start, $event->end);
