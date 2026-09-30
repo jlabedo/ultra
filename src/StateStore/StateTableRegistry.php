@@ -6,6 +6,7 @@ namespace Ultra\StateStore;
 
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
+use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\UnitOfWork;
 
 final class StateTableRegistry implements UnitOfWork
@@ -15,6 +16,9 @@ final class StateTableRegistry implements UnitOfWork
 
     /** @var array<string, MappedRowSet> */
     private array $collectionTables = [];
+
+    /** @var list<array{query: \Closure, expected: mixed, name: ?string}> */
+    private array $queryExpectations = [];
 
     /**
      * @param array<string, MappedRowSet> $tables
@@ -60,13 +64,21 @@ final class StateTableRegistry implements UnitOfWork
 
     public function flush(): void
     {
-        foreach ([...$this->tables, ...$this->collectionTables] as $table) {
-            $table->flush();
-        }
+        MappedRowSet::flushAll(array_values([...$this->tables, ...$this->collectionTables]), function (): void {
+            foreach ($this->queryExpectations as $expectation) {
+                if (($expectation['query'])() !== $expectation['expected']) {
+                    throw new ConcurrencyException(sprintf('Query expectation failed%s.', null === $expectation['name'] ? '' : ' for "'.$expectation['name'].'"'));
+                }
+            }
+        });
     }
 
     public function hasPendingChanges(): bool
     {
+        if ([] !== $this->queryExpectations) {
+            return true;
+        }
+
         foreach ([...$this->tables, ...$this->collectionTables] as $table) {
             if ($table->hasPendingChanges()) {
                 return true;
@@ -83,5 +95,24 @@ final class StateTableRegistry implements UnitOfWork
         }
 
         $this->collectionTables = [];
+        $this->queryExpectations = [];
+    }
+
+    /** @param callable(): mixed $query */
+    public function expectQuery(callable $query, mixed $expected, ?string $name = null): void
+    {
+        self::assertQueryValue($expected);
+        $this->queryExpectations[] = ['query' => $query(...), 'expected' => $expected, 'name' => $name];
+    }
+
+    private static function assertQueryValue(mixed $value): void
+    {
+        if (is_array($value)) {
+            foreach ($value as $item) {
+                self::assertQueryValue($item);
+            }
+        } elseif (null !== $value && !is_scalar($value)) {
+            throw new \InvalidArgumentException('Query expectations require scalars, null or arrays of these values.');
+        }
     }
 }

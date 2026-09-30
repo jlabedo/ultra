@@ -10,12 +10,16 @@ use Doctrine\ORM\Tools\SchemaTool;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStoreSchema;
 
 /**
- * Creates the tables of the three flavors side by side. The state-store tables are written by hand: nothing
+ * Creates the tables of the four flavors side by side. The state-store tables are written by hand: nothing
  * derives DDL from #[State] metadata.
  */
 final readonly class CoworkingSchema
 {
     private const array STATE_STORE_TABLES = [
+        'cw_direct_companies' => 'id TEXT PRIMARY KEY, name TEXT NOT NULL, monthly_minutes INTEGER NOT NULL',
+        'cw_direct_members' => 'id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES cw_direct_companies DEFERRABLE INITIALLY DEFERRED, email TEXT NOT NULL UNIQUE',
+        'cw_direct_rooms' => 'id TEXT PRIMARY KEY, name TEXT NOT NULL',
+        'cw_direct_bookings' => 'id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES cw_direct_rooms DEFERRABLE INITIALLY DEFERRED, member_id TEXT NOT NULL REFERENCES cw_direct_members DEFERRABLE INITIALLY DEFERRED, company_id TEXT NOT NULL REFERENCES cw_direct_companies DEFERRABLE INITIALLY DEFERRED, start_at TIMESTAMPTZ NOT NULL, end_at TIMESTAMPTZ NOT NULL, status TEXT NOT NULL, charged BOOLEAN NOT NULL',
         'cw_ss_companies' => 'company_id TEXT PRIMARY KEY, name TEXT NOT NULL, monthly_minutes INTEGER NOT NULL',
         'cw_ss_members' => 'member_id TEXT PRIMARY KEY, company_id TEXT NOT NULL, email TEXT NOT NULL',
         'cw_ss_member_emails' => 'email TEXT PRIMARY KEY, member_id TEXT NOT NULL',
@@ -41,9 +45,12 @@ final readonly class CoworkingSchema
         }
 
         foreach (self::STATE_STORE_TABLES as $table => $columns) {
-            $this->connection->executeStatement(sprintf('DROP TABLE IF EXISTS %s', $table));
+            $this->connection->executeStatement(sprintf('DROP TABLE IF EXISTS %s CASCADE', $table));
             $this->connection->executeStatement(sprintf('CREATE TABLE %s (%s)', $table, $columns));
         }
+
+        $this->connection->executeStatement('CREATE INDEX ON cw_direct_bookings (room_id, start_at)');
+        $this->connection->executeStatement('CREATE INDEX ON cw_direct_bookings (company_id, start_at)');
 
         // SchemaTool::dropSchema() introspects the whole database and cannot read the event store column types.
         $metadata = $this->entityManager->getMetadataFactory()->getAllMetadata();

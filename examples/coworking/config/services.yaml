@@ -30,12 +30,16 @@ services:
     Ultra\Time\ClockInterface:
         class: Ultra\Time\SystemClock
 
-    # Entry points used directly by tests; nothing else depends on them.
+    # Public entry points used directly by tests.
     App\Infrastructure\CoworkingSchema:
         public: true
     App\Booking\Classic\BookingService:
         public: true
     App\Booking\Classic\Repository\BookingRepository:
+        public: true
+    App\Booking\StateStoreDirect\BookingService:
+        public: true
+    App\Booking\StateStoreDirect\Repository\BookingRepository:
         public: true
 
 when@test:

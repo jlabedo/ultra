@@ -41,6 +41,25 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         return $columns;
     }
 
+    public function tableName(): string
+    {
+        return $this->tableName;
+    }
+
+    public function lock(MappedKey $key): void
+    {
+        $this->assertKey($key);
+        if (!$this->connection->isTransactionActive()) {
+            throw new \LogicException('Manual row locks require an active transaction.');
+        }
+
+        // Keep manual guards separate from the automatic locks used to protect absent rows and row sets.
+        $this->connection->executeQuery(
+            'SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))',
+            [$this->tableName.':manual', $key->fingerprint()],
+        );
+    }
+
     public function scope(): ?MappedKey
     {
         return $this->configuredScope;

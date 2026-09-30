@@ -1,0 +1,75 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ultra\StateStore\Tests;
+
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
+use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\Tests\PostgresMappedRowSetTestCase;
+use Ultra\Mapper\UltraNormalizer;
+use Ultra\StateStore\StateMetadata;
+use Ultra\StateStore\StateMetadataRegistry;
+use Ultra\StateStore\StateStore;
+use Ultra\StateStore\StateTableRegistry;
+use Ultra\Testing\PostgresTestSupport;
+
+final readonly class ManualQueryState
+{
+    public function __construct(public string $id, public string $status) {}
+}
+
+/** @internal */
+final class PostgresStateStoreQueryTest extends PostgresMappedRowSetTestCase
+{
+    public function test_every_manual_guard_is_held_before_queries_are_replayed_and_rows_are_written(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $other = PostgresTestSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
+            $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
+            $metadata = new StateMetadata(ManualQueryState::class, $tableName, $tableName.'#id', 'id', 'string', true, ['id' => 'id'], ['status' => 'status'], ['status' => 'status']);
+            $registry = new StateTableRegistry([$metadata->tableKey => $table]);
+            $store = new StateStore(new StateMetadataRegistry([ManualQueryState::class => $metadata->toArray()]), $registry, new UltraNormalizer());
+            $this->insertRow($connection, $tableName, ['id' => 'row-1', 'status' => 'pending']);
+            $store->lock(new ManualQueryState('z', 'anchor'));
+            $store->lock(new ManualQueryState('a', 'anchor'));
+            $observedTransactions = [];
+            $store->observeQuery(function () use ($connection, $tableName, $other, $otherTable, &$observedTransactions): string {
+                $observedTransactions[] = $connection->isTransactionActive();
+                if ($connection->isTransactionActive()) {
+                    foreach (['a', 'z'] as $id) {
+                        $otherTable->lock($id);
+                        $other->beginTransaction();
+                        $other->executeStatement("SET LOCAL lock_timeout = '50ms'");
+                        try {
+                            $otherTable->flush();
+                            self::fail('All manual guards must already be held at validation time.');
+                        } catch (DriverException $exception) {
+                            self::assertSame('55P03', $exception->getSQLState());
+                        } finally {
+                            $other->rollBack();
+                            $otherTable->clear();
+                        }
+                    }
+                }
+
+                return $connection->fetchOne('SELECT status FROM '.$connection->quoteSingleIdentifier($tableName).' WHERE id = ?', ['row-1']);
+            });
+            $store->save(new ManualQueryState('row-1', 'confirmed'));
+            try {
+                $connection->transactional($registry->flush(...));
+                self::assertSame([false, true], $observedTransactions);
+                self::assertSame('confirmed', $store->load(ManualQueryState::class, 'row-1')->status);
+                // Commit releases both guards. A fresh flush on the other connection can acquire them.
+                $otherTable->lock('a');
+                $otherTable->lock('z');
+                $other->transactional($otherTable->flush(...));
+            } finally {
+                PostgresTestSupport::resetSharedConnection($other);
+                $other->close();
+            }
+        });
+    }
+}

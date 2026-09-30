@@ -28,6 +28,20 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
         return $columns;
     }
 
+    public function tableName(): string
+    {
+        return $this->tableName;
+    }
+
+    public function lock(MappedKey $key): void
+    {
+        $this->assertKey($key);
+        if (!$this->database->isTransactionActive()) {
+            throw new \LogicException('Manual row locks require an active transaction.');
+        }
+        // This adapter has a single synchronous transaction; there is no competing connection to serialize.
+    }
+
     public function scope(): ?MappedKey
     {
         return $this->configuredScope;

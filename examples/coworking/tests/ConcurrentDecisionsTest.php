@@ -9,6 +9,9 @@ use App\Kernel;
 use App\Tests\Driver\BookingDriver;
 use App\Tests\Driver\EventSourcedDriver;
 use App\Tests\Driver\StateStoreDriver;
+use App\Tests\Driver\StateStoreDirectDriver;
+use App\Booking\StateStoreDirect\BookingService as DirectBookingService;
+use App\Booking\StateStoreDirect\Repository\BookingRepository as DirectBookingRepository;
 use Psr\Container\ContainerInterface;
 use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\MessageHandling\MediatorInterface;
@@ -40,6 +43,7 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
     {
         yield 'event sourced' => ['eventSourced'];
         yield 'state store' => ['stateStore'];
+        yield 'state store direct' => ['stateStoreDirect'];
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('flavors')]
@@ -129,6 +133,10 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
 
     private function driver(string $flavor, ContainerInterface $container): BookingDriver
     {
+        if ('stateStoreDirect' === $flavor) {
+            return new StateStoreDirectDriver($container->get(DirectBookingService::class), $container->get(DirectBookingRepository::class), $container->get(StateStore::class));
+        }
+
         return 'eventSourced' === $flavor
             ? new EventSourcedDriver($container->get(MediatorInterface::class), $container->get(EventSourcedStateStore::class))
             : new StateStoreDriver($container->get(MediatorInterface::class), $container->get(StateStore::class));

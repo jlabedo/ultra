@@ -21,6 +21,9 @@ final class MappedRowSet implements UnitOfWork
     /** @var list<MappedKey> */
     private array $ignoredRowKeys = [];
 
+    /** @var array<string, MappedKey> */
+    private array $locks = [];
+
     public function __construct(
         private readonly MappedRowSetAdapter $adapter,
     ) {}
@@ -32,6 +35,13 @@ final class MappedRowSet implements UnitOfWork
         $update = $this->updates[$updateKey] ??= new BufferedRowUpdate($key);
 
         return new PendingRowUpdate($update);
+    }
+
+    /** Record a manual guard; no database lock is acquired until flush. */
+    public function lock(int|string|MappedKey $key): void
+    {
+        $key = $this->normalizeKey($key);
+        $this->locks[$key->fingerprint()] = $key;
     }
 
     /**
@@ -137,6 +147,42 @@ final class MappedRowSet implements UnitOfWork
 
     public function flush(): void
     {
+        self::flushAll([$this]);
+    }
+
+    /**
+     * Acquire all manual guards in table/key order, validate, then apply the row-set plans.
+     * The caller owns the single transaction covering all three phases.
+     *
+     * @param list<self> $tables
+     * @param callable(): void|null $validate
+     */
+    public static function flushAll(array $tables, ?callable $validate = null): void
+    {
+        $locks = [];
+        foreach ($tables as $table) {
+            foreach ($table->locks as $fingerprint => $key) {
+                $locks[$table->adapter->tableName()][$fingerprint] = [$table->adapter, $key];
+            }
+        }
+        ksort($locks, SORT_STRING);
+        foreach ($locks as $keys) {
+            ksort($keys, SORT_STRING);
+            foreach ($keys as [$adapter, $key]) {
+                $adapter->lock($key);
+            }
+        }
+
+        if (null !== $validate) {
+            $validate();
+        }
+        foreach ($tables as $table) {
+            $table->apply();
+        }
+    }
+
+    private function apply(): void
+    {
         $this->adapter->apply(new RowSetUpdatePlan(
             expectedRowKeys: $this->expectedRowKeys,
             rowUpdates: $this->sortedPlans(),
@@ -146,7 +192,7 @@ final class MappedRowSet implements UnitOfWork
 
     public function hasPendingChanges(): bool
     {
-        return null !== $this->expectedRowKeys || [] !== $this->sortedPlans();
+        return [] !== $this->locks || null !== $this->expectedRowKeys || [] !== $this->sortedPlans();
     }
 
     public function clear(): void
@@ -154,6 +200,7 @@ final class MappedRowSet implements UnitOfWork
         $this->updates = [];
         $this->expectedRowKeys = null;
         $this->ignoredRowKeys = [];
+        $this->locks = [];
     }
 
     private function normalizeKey(int|string|MappedKey $key): MappedKey

@@ -92,6 +92,25 @@ final class MappedRowSetTest extends TestCase
         );
     }
 
+    public function test_flush_all_orders_and_deduplicates_manual_locks_before_validation_and_writes(): void
+    {
+        $trace = new \ArrayObject();
+        $first = new MappedRowSet(new RecordingMappedRowSetAdapter('a', $trace));
+        $sameTable = new MappedRowSet(new RecordingMappedRowSetAdapter('a', $trace));
+        $last = new MappedRowSet(new RecordingMappedRowSetAdapter('z', $trace));
+        $last->lock('2');
+        $first->lock('2');
+        $sameTable->lock('1');
+        $sameTable->lock('2');
+        $first->withKey('new')->insert()->setColumn('status', 'pending');
+
+        MappedRowSet::flushAll([$last, $first, $sameTable], static function () use ($trace): void {
+            $trace[] = 'validate';
+        });
+
+        self::assertSame(['lock:a:1', 'lock:a:2', 'lock:z:2', 'validate', 'apply:z', 'apply:a', 'apply:a'], $trace->getArrayCopy());
+    }
+
     public function test_it_has_pending_changes_for_writes(): void
     {
         $table = new MappedRowSet(new RecordingMappedRowSetAdapter());
@@ -867,6 +886,20 @@ final class MappedRowSetTest extends TestCase
 
 final class RecordingMappedRowSetAdapter implements MappedRowSetAdapter
 {
+    public function __construct(private string $name = 'recording', private ?\ArrayObject $trace = null) {}
+
+    public function tableName(): string
+    {
+        return $this->name;
+    }
+
+    public function lock(MappedKey $key): void
+    {
+        if (null !== $this->trace) {
+            $this->trace[] = 'lock:'.$this->name.':'.$key->value('id');
+        }
+    }
+
     /** @var list<array{expectedRowKeys: list<MappedKey>|null, rowUpdates: list<RowUpdatePlan>}> */
     public array $batches = [];
 
@@ -892,6 +925,9 @@ final class RecordingMappedRowSetAdapter implements MappedRowSetAdapter
 
     public function apply(RowSetUpdatePlan $plan): void
     {
+        if (null !== $this->trace) {
+            $this->trace[] = 'apply:'.$this->name;
+        }
         $this->batches[] = [
             'expectedRowKeys' => $plan->expectedRowKeys,
             'rowUpdates' => $plan->rowUpdates,

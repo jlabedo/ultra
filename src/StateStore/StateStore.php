@@ -58,6 +58,16 @@ final readonly class StateStore
         }
     }
 
+    /**
+     * Register a cooperative guard on this state's mapped row for the flush transaction.
+     * Every action affecting the guarded invariant must request the same guard.
+     */
+    public function lock(object $state): void
+    {
+        [$metadata, $normalizedState] = $this->normalizeState($state);
+        $this->tableRegistry->tableFor($metadata)->lock($metadata->keyFromNormalizedState($normalizedState));
+    }
+
     public function expect(object $state): void
     {
         [$metadata, $normalizedState] = $this->normalizeState($state);
@@ -82,6 +92,32 @@ final readonly class StateStore
             ))
             ;
         }
+    }
+
+    /**
+     * Read committed data now, then require the same result before writing at flush.
+     *
+     * @template T
+     * @param callable(): T $query Read-only query using the flush transaction's connection.
+     * @return T
+     */
+    public function observeQuery(callable $query, ?string $name = null): mixed
+    {
+        $result = $query();
+        $this->expectQuery($query, $result, $name);
+
+        return $result;
+    }
+
+    /**
+     * The callback must return a stable scalar, null or array of these values, without reading buffered writes.
+     * Comparison is strict; normalize SQL types and sort unordered results in the callback.
+     *
+     * @param callable(): mixed $query
+     */
+    public function expectQuery(callable $query, mixed $expected, ?string $name = null): void
+    {
+        $this->tableRegistry->expectQuery($query, $expected, $name);
     }
 
     /**

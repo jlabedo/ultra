@@ -6,6 +6,11 @@ namespace Ultra\MappedTable;
 
 interface MappedRowSetAdapter
 {
+    public function tableName(): string;
+
+    /** Acquire a cooperative, transaction-scoped manual lock, including when the row is absent. */
+    public function lock(MappedKey $key): void;
+
     /** @return list<string> */
     public function keyColumns(): array;
 

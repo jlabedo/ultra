@@ -1,14 +1,23 @@
 # Findings: DecisionHandler under a set-based domain
 
-The coworking domain (see [README.md](README.md)) is implemented three times with the same pure rules. The scenario
-suite passes on all three flavors. Tests that reproduce an open gap go in the `finding` group
+The coworking domain (see [README.md](README.md)) is implemented four times with the same pure rules. The scenario
+suite passes on all four flavors. Tests that reproduce an open gap go in the `finding` group
 (`vendor/bin/phpunit --group finding`), which the default run excludes; it is empty once every bug below is fixed.
 
-| | Event sourced | State store | Classic (Doctrine ORM) |
-|---|---|---|---|
-| Non-blank lines (excluding shared rules) | 877 in 25 files | 698 in 19 files | 364 in 6 files |
-| Scenario suite | passes | passes | passes |
-| Concurrent races tested | yes, deterministically | yes, deterministically | no (locks need two processes) |
+| | Event sourced | State store decisions | State store direct | Classic (Doctrine ORM) |
+|---|---|---|---|---|
+| Non-blank lines (excluding shared rules) | 807 in 24 files | 717 in 19 files | 352 in 6 files | 364 in 6 files |
+| Code lines (excluding comments, blank lines and PHP opening tags) | 726 | 634 | 333 | 342 |
+| Scenario suite | passes | passes | passes | passes |
+| Concurrent decision races tested | yes, deterministically | yes, deterministically | yes, deterministically | no (locks need two processes) |
+| Set-based rules | event folds | materialized schedules and usage | SQL queries replayed at flush | SQL queries inside the transaction |
+| Decision transaction | outside | outside | outside | inside |
+
+Counts include every PHP file under each flavor's source directory, including its service, repository, states,
+commands and events. They exclude tests, shared domain rules, configuration, DDL and framework implementation.
+The direct variant has 160 non-blank service lines, 98 repository lines and 94 state lines; Doctrine has 192,
+55 and 117 respectively. These are source-size measurements, not performance measurements. Mapping conventions
+and the direct service's shared load/expect helper also affect the result.
 
 Each finding is classified:
 
@@ -131,7 +140,7 @@ company's quota without writing the company, so a plan downgrade committed in be
 SHARE`). An absent row cannot be locked, so absent checks, inserts and upserts lock the row's key with an advisory
 lock. An update that writes only expected values becomes a check too, so saving an unchanged state writes nothing.
 
-## 7. State store: set-based rules require hand-maintained denormalized states (Design, for this flavor)
+## 7. State store: set-based rules require hand-maintained denormalized states (Design, for the decision-state flavor)
 
 `StateStore` loads by id only. "No overlap in this room on this day" and "sum of minutes this month" are
 queries in the classic flavor. Here they need extra states that duplicate booking data:
@@ -144,6 +153,12 @@ queries in the classic flavor. Here they need extra states that duplicate bookin
 **Direction**: a query-scoped state, such as the slots of `cw_ss_bookings` where `room_id = ?` and the day matches,
 guarded by a row-set expectation over that scope. `MappedRowSet` already has scoped row sets and
 `expectSameRowKeys()`, but the scope is limited to key columns.
+
+**Alternative implemented:** the fourth flavor uses StateStore directly with SQL queries and deferred query
+expectations. It keeps the same four normalized entities as Doctrine, with no room-day or company-month copies.
+This demonstrates that the extra states are a consequence of how this example expresses decision parameters,
+not a mandatory storage model imposed by StateStore itself. The query-scoped-state direction remains separate.
+
 
 ## 8. State store: manual loads are unsafe by default (Feature)
 
@@ -158,7 +173,7 @@ Smaller papercuts in the same flavor:
 - A non-nullable state parameter throws `StateNotFoundException` instead of a domain violation, so every parameter
   ends up nullable with manual null checks.
 - `?BookingState $booking` is declared in `BookRoom` only to get `expectMissing()`.
-- Every column needs an explicit `#[StateColumn('snake_name')]`.
+- Snake-case column overrides need explicit `#[StateColumn('snake_name')]`; properties with conventional names need no attribute.
 - DDL for state tables is written by hand (`CoworkingSchema`).
 
 Dependent binding removed most manual loads (`RescheduleBooking` has none left, and the same-row branch now only
@@ -194,10 +209,9 @@ Accepted for now, but not considered acceptable long term. Each one needs code r
 
 The comparison is not one-sided:
 
-- **Concurrency is correct by construction and testable.** Both Ultra flavors reject a concurrent overlapping
+- **Concurrency is correct by construction and testable.** The two decision flavors reject a concurrent overlapping
   booking and a concurrent quota drain, and accept unrelated concurrent bookings. `ConcurrentDecisionsTest` proves
-  it deterministically, with a second kernel committing between load and flush. The classic flavor is only
-  correct because every use case locks the company row and then the room rows in a fixed order. Forgetting a lock,
+  it deterministically, with a second kernel committing between load and flush. The classic flavor guards quota and overlap queries by locking the company and room rows in a fixed order. Forgetting a lock,
   or taking them in a different order, is a silent double-booking or a deadlock, and no single-process test catches
   either.
 - **The event-sourced flavor derives what the others store.** Quota usage and room schedules are folds over events,
@@ -212,16 +226,71 @@ The comparison is not one-sided:
   - A concurrent duplicate email only fails on the unique index, as a database error.
   - A weekly series must `flush()` between occurrences so the overlap queries see earlier ones.
 
+## 10. Direct StateStore: a closer comparison with Doctrine
+
+`StateStoreDirect/BookingService` exposes the same nine operations as the Doctrine service. It calls
+`UnitOfWorkRunner::run()` explicitly; there are no messages, `SelfHandler`, `DecisionHandler`, bindings or decision
+aspects in this variant. The runner owns one transaction covering the entire flush. The service prepares its work
+outside that transaction, and a weekly series has no intermediate flush.
+
+The added APIs are `StateStore::lock(object)`, `observeQuery(callable, ?string $name)` and
+`expectQuery(callable, mixed $expected, ?string $name)`. Locks identify physical table/key pairs, including missing
+and composite identities, rather than PHP object identity. Flush acquires all requested manual guards in table/key
+order, checks query results against their observed values, then runs the usual row-set plans. Manual guards use a
+separate advisory namespace from automatic absent-row locks. Rows written by the plan are not all locked up front;
+`SERIALIZABLE` is not used. The existing adapter sorts row plans by key and batches consecutive compatible
+operations; it does not impose a global operation-type order.
+
+**Advantages:** six source files, a familiar service/repository path, normalized relational data, and one write
+per changed booking rather than three synchronized state copies. StateStore's readonly snapshots and optimistic
+checks remain available without adopting message dispatch. Runtime fan-out is a plain loop. For an AI, the path
+from an operation to its loads, guards and SQL is visible through ordinary method calls; the framework phases are
+now documented beside the public APIs. Discoverability still requires reading the runner and the repository's
+unit-of-work participation to understand when writes and cleanup happen.
+
+**Costs:** correctness of set-based rules depends on the developer choosing cooperative guards in every relevant
+action. `lock()` is a guard declaration, not a database row lock and not an optimistic snapshot expectation;
+`expect()` is still necessary for state fields influencing the decision. Queries are executed twice, and strict
+comparison can reject a concurrent change even when a fresh decision would still succeed. The caller must retry
+that decision after `ConcurrencyException`; retry is not added by this change. The transaction is shorter in scope
+than Doctrine's, but the extra reads and advisory-lock statements are real work. No throughput or latency claim is
+made without a benchmark. Ordered guards address their own acquisition order, not every possible deadlock involving
+other database writers or constraints.
+
+**Pending writes are an application concern for manual SQL.** Replayed queries see committed data before this
+flush's writes. The repository keeps each pending booking's original and current snapshot, so usage adds the local
+charge delta, overlap queries overlay pending slots, and bulk closure sees locally prepared bookings. Only the raw
+SQL result becomes the expected result. The repository participates in unit-of-work cleanup while StateStore owns
+the write plan. This accounts for the repository growing from Doctrine's 55 to 98 non-blank lines. It is needed
+for several operations composed before flush, not only for weekly series. Tests cover quota exhaustion, cancelling
+then rebooking, successive moves, rollback cleanup, and a weekly series spanning months.
+
+**The decision variants retain capabilities that this service does not reproduce:** automatic expectations for
+declared states, mediator dispatch and advice, and check mode returning domain violations without saving effects.
+Those capabilities should be evaluated on their own value. `SelfHandler` combines the message and its decision in
+one place; it also ties business behavior to dispatch conventions. `DecisionHandler` makes state dependencies
+visible in signatures and binds consistency checks to them; its cost is translating query-shaped invariants into
+state parameters and learning binding/effect semantics. Direct StateStore makes those decisions explicit in service
+code, including manual expectations and query-overlay bookkeeping.
+
+Package tests also verify that guards are deferred until flush, remain held until transaction completion, precede
+query validation and writes, and do not reuse the automatic absent-row lock namespace. The direct flavor joins the
+same deterministic competing-kernel tests as the decision variants: overlap, quota drain, plan downgrade and
+unrelated bookings.
+
 ## Verdict
 
-The DecisionHandler design is sound for invariants whose boundaries are known from the command. The event-sourced
-flavor, including composition through the unit of work, is competitive with the classic model and safer
-under concurrency.
+The fourth variant changes the comparison: StateStore alone has a similar application footprint to Doctrine for
+this domain. The original gap in source size mainly comes from expressing set-based rules as materialized decision
+states, plus commands and binding plumbing. It does not establish that StateStore requires that model.
 
-The design is weakest where the classic model is strongest: boundaries that depend on loaded data (1), and
-set-based rules in the state-store flavor (7). Finding 1 looks solvable inside the design with dependent binding.
-Finding 7 questions what the state-store flavor is for: as soon as a rule spans rows, it pushes the developer into
-maintaining materialized views by hand. Finding 3 is the only limit rooted in the event model itself.
+Direct StateStore trades Doctrine's long pessimistic transaction for decisions prepared outside a transaction,
+followed by guarded query rechecks and optimistic writes in one flush. It keeps explicit developer responsibility
+for the query guards and adds bookkeeping for pending writes. DecisionHandler offers more automatic consistency
+checking for its declared boundaries and dispatch/check-mode integration; that benefit should justify the extra
+model and ceremony for the application. EventSourcedState remains useful when deriving schedules and quota from
+recorded domain facts is itself valuable.
 
-Suggested order of work: deciding the
-state-store flavor's scope (7, 8), then multi-valued tags (3).
+The remaining design work is deciding whether query-backed decision states deserve a first-class interface, and
+whether the explicit direct API is sufficient for set-based domains. Multi-valued event tags remain a separate
+limitation of the event model.

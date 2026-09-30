@@ -753,6 +753,76 @@ final class StateStoreTest extends TestCase
         $this->flushRegistryInTransaction($database, $registry);
     }
 
+    public function test_observed_query_is_replayed_in_the_flush_transaction_before_writes(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-1', 'status' => 'pending', 'note' => null]);
+        $transactions = [];
+        $query = static function () use ($database, &$transactions): string {
+            $transactions[] = $database->isTransactionActive();
+
+            return $database->row('orders', 'order_id', 'order-1')['status'];
+        };
+
+        self::assertSame('pending', $store->observeQuery($query, 'order status'));
+        $store->save(new OrderState('order-1', 'confirmed', null));
+        $this->flushRegistryInTransaction($database, $registry);
+
+        self::assertSame([false, true], $transactions);
+        self::assertSame('confirmed', $store->load(OrderState::class, 'order-1')->orderStatus);
+        $registry->clear();
+        self::assertFalse($registry->hasPendingChanges());
+    }
+
+    public function test_a_changed_manual_query_rejects_the_entire_flush_and_clear_drops_it(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-1', 'status' => 'pending', 'note' => null]);
+        $query = static fn (): array => $database->row('orders', 'order_id', 'order-1', ['status']);
+        $store->expectQuery($query, ['status' => 'pending'], 'manual order check');
+        $store->save(new OrderState('order-2', 'confirmed', null));
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-1', 'status' => 'cancelled', 'note' => null]);
+
+        try {
+            $this->flushRegistryInTransaction($database, $registry);
+            self::fail('A changed query must reject the flush.');
+        } catch (ConcurrencyException $exception) {
+            self::assertStringContainsString('manual order check', $exception->getMessage());
+        }
+        $registry->clear();
+        self::assertNull($store->load(OrderState::class, 'order-2'));
+        self::assertFalse($registry->hasPendingChanges());
+        $this->flushRegistryInTransaction($database, $registry);
+    }
+
+    public function test_a_query_only_unit_of_work_is_flushed_and_compares_types_strictly(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class]);
+        $store->expectQuery(static fn (): string => '1', 1);
+        self::assertTrue($registry->hasPendingChanges());
+        $this->expectException(ConcurrencyException::class);
+        $this->flushRegistryInTransaction($database, $registry);
+    }
+
+    public function test_query_expectations_reject_mutable_values(): void
+    {
+        [, , $store] = $this->newStore([OrderState::class]);
+        $this->expectException(\InvalidArgumentException::class);
+        $store->expectQuery(static fn (): array => [], ['nested' => new \stdClass()]);
+    }
+
+    public function test_state_locks_use_the_same_mapped_row_for_different_state_views(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class, OrderStatusView::class]);
+        $store->lock(new OrderState('order-1', 'pending', null));
+        $store->lock(new OrderStatusView('order-1', 'pending'));
+        self::assertTrue($registry->hasPendingChanges());
+        $this->flushRegistryInTransaction($database, $registry);
+        self::assertNull($store->load(OrderState::class, 'order-1'));
+        $registry->clear();
+        self::assertFalse($registry->hasPendingChanges());
+    }
+
     /**
      * @param list<class-string> $stateClasses
      *
