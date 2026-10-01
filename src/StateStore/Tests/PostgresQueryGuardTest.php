@@ -16,7 +16,7 @@ use Ultra\StateStore\StateTableRegistry;
 use Ultra\Testing\PostgresTestSupport;
 
 /** @internal */
-final class QueryGuardPrototypeTest extends PostgresMappedRowSetTestCase
+final class PostgresQueryGuardTest extends PostgresMappedRowSetTestCase
 {
     public function test_readers_share_a_guard_and_hold_back_a_writer_until_commit(): void
     {

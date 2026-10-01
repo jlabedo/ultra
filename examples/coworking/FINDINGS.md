@@ -238,7 +238,7 @@ outside that transaction, and a weekly series has no intermediate flush.
 
 Both services use typed `company()` and `booking()` helpers to load required objects and report the same domain
 violations. Creation checks stay inline in both implementations; the direct variant has no generic `state()` or
-`expectNew()` abstraction. The compiled query-guard prototype removes `lockBookingGuards()` and all service-level
+`expectNew()` abstraction. Compiled query guards remove `lockBookingGuards()` and all service-level
 manual lock requests. States still carry identifiers rather than Doctrine entity associations.
 
 Company plan changes use only optimistic row expectations: they do not validate a set-based query and need no
@@ -305,10 +305,10 @@ until transaction completion and use their own namespace. The direct flavor join
 same deterministic competing-kernel tests as the decision variants: overlap, quota drain, plan downgrade and
 unrelated bookings.
 
-This remains an experimental API. It supports non-null scalar scope values on registered row tables, requires
+The query guard contract supports non-null scalar scope values on registered row tables, requires
 observed scopes for existing-row mutations and rejects blind upserts. It does not derive composite or calendar
 scopes or enroll independently flushed row sets and collection-item tables. See
-[the prototype notes](../../src/StateStore/QUERY_GUARD_PROTOTYPE.md) for the complete contract and test commands.
+[the query guard documentation](../../src/StateStore/QUERY_GUARDS.md) for the complete contract and test commands.
 
 ## Verdict
 
@@ -317,8 +317,8 @@ this domain. The original gap in source size mainly comes from expressing set-ba
 states, plus commands and binding plumbing. It does not establish that StateStore requires that model.
 
 Direct StateStore trades Doctrine's long pessimistic transaction for decisions prepared outside a transaction,
-followed by guarded query rechecks and optimistic writes in one flush. Its prototype keeps explicit dependency
-declarations, automatically enrolls affected writes, and rejects decision queries after affected local writes. DecisionHandler offers more automatic consistency
+followed by guarded query rechecks and optimistic writes in one flush. Its query guards keep explicit dependency
+declarations, automatically enroll affected writes, and reject decision queries after affected local writes. DecisionHandler offers more automatic consistency
 checking for its declared boundaries and dispatch/check-mode integration; that benefit should justify the extra
 model and ceremony for the application. EventSourcedState remains useful when deriving schedules and quota from
 recorded domain facts is itself valuable.

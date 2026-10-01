@@ -18,6 +18,7 @@ The package owns:
 - row hydration through `Ultra\Mapper\UltraNormalizer`
 - optimistic save expectations backed by `Ultra\MappedTable`
 - support for multiple state classes over the same table
+- declared query dependencies and automatic reader/writer guards
 
 ## Mapping
 
@@ -171,6 +172,58 @@ a null result and chooses any manual guards required for set-based rules.
 
 When several state classes target the same physical table, they share the same `MappedRowSet` unit of work but only read and write the columns each class maps.
 
+## Query guards
+
+Use `QueryGuard` for decisions based on queries over mapped rows. Declare dependencies on a repository's
+constructor parameter; the bundle injects the named guard and registers its writer rules.
+
+```php
+use Ultra\StateStore\Attribute\DefineQueryGuard;
+use Ultra\StateStore\QueryGuard;
+use Ultra\StateStore\QueryGuardDefinition;
+
+public function __construct(
+    #[DefineQueryGuard('company_usage', static function (QueryGuardDefinition $definition): void {
+        $definition
+            ->watch(Booking::class, keyBy: 'company_id')
+            ->whenColumnsChange('charged', 'start_at', 'end_at');
+    })]
+    private QueryGuard $companyUsage,
+) {}
+```
+
+`watch()` uses a registered root state and physical column names. `keyBy` identifies the guard's dynamic scope;
+`whenColumnsChange()` identifies the query's dependencies. Insertions, deletions and scope changes always
+participate. Omitting `whenColumnsChange()` includes all mutations. Keep this declaration consistent with the query.
+
+```php
+$used = $this->companyUsage->observe(
+    $company->id,
+    fn (): int => $this->usedMinutes($company, $month),
+);
+```
+
+`observe($value, $query)` requests a shared guard, reads immediately and records the result for replay at flush.
+`lock($value)` only requests the shared guard. Neither takes a database lock during the decision. Flush
+automatically requests exclusive guards for affected writes, including actions that never call the query.
+Observe the relevant states separately through `StateStore::observe()` to register optimistic row expectations.
+
+An initial `observe()` rejects pending writes affecting the same declared scope with
+`Ultra\StateStore\Exception\PendingQueryChangesException`, before executing the query. Decide before preparing
+affected writes. Other scopes, unwatched columns and check-only expectations remain allowed. Flush replays earlier
+observations before applying writes, without repeating this initial-read check.
+
+Both methods reject unknown names or empty definitions with `Ultra\StateStore\Exception\UnknownQueryGuardException`.
+Declarations must include watched states; constructing `QueryGuard` alone registers no writer rules. Dynamic
+values are non-null integers or strings; collection-item tables and direct SQL writes are not automatically
+enrolled. Callbacks return scalars, null or arrays, compared strictly; a changed result raises
+`Ultra\UnitOfWork\Exception\ConcurrencyException` at flush.
+
+See the [query guard contract](QUERY_GUARDS.md) for the flush protocol, exceptions, manual construction and
+developer responsibilities, and the [bundle configuration](../StateStore_Bundle/README.md) for constructor
+injection. The [direct coworking variant](../../examples/coworking/src/Booking/StateStoreDirect) validates all
+weekly slots and the total requested minutes per month before buffering bookings, with no repository overlay.
+
 ## Manual queries and deferred guards
 
 For rules expressed as SQL queries, record the guards and the observed results during the decision:
@@ -235,20 +288,3 @@ Callbacks must be read-only, repeatable, and use the flush connection. Capture s
 committed database data, not `StateStore::load()`'s buffered view. Query results are compared **before this unit of
 work's writes**. Account for pending changes separately when deciding, without adding them to the SQL expectation.
 The unguarded API has no dependency metadata, so it cannot detect when these results ignore affected local writes.
-
-An experimental constructor-injected `QueryGuard` can compile dependencies from `#[DefineQueryGuard]` and enroll
-affected writes automatically. Its `observe()` rejects pending mutations affecting the same declared guard and
-scope with `Ultra\StateStore\Exception\PendingQueryChangesException`, before executing the query. This is an
-ordering error, distinct from a concurrent change detected at flush. Other scopes, unwatched columns and optimistic
-expectations remain allowed. Unknown old scopes fail the writer-rule validation rather than being assumed unrelated.
-The check applies only to the initial read: flush replays earlier observations before applying prepared writes.
-
-Both `QueryGuard::observe()` and `QueryGuard::lock()` require a registered definition with watched states. Unknown
-names and empty definitions throw `Ultra\StateStore\Exception\UnknownQueryGuardException` before executing the
-callback or queuing a guard. Declare dependencies with `#[DefineQueryGuard]`, or provide the definition when
-constructing `StateTableRegistry` manually. Constructing `QueryGuard` alone does not register those dependencies.
-
-The [direct coworking variant](../../examples/coworking/src/Booking/StateStoreDirect) uses this prototype for quota
-and availability. Weekly bookings validate all slots and the total minutes requested per month before buffering
-any booking; no repository overlay is needed. See the [query guard prototype](QUERY_GUARD_PROTOTYPE.md) for its
-interface, Postgres tests and current limits.

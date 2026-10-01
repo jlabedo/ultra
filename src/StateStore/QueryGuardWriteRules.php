@@ -8,7 +8,7 @@ use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\MappedTable\RowUpdatePlan;
 use Ultra\MappedTable\MappedKey;
 
-/** Prototype: derive old/new guard keys from conditional row plans, without additional database reads. */
+/** Derive old/new guard keys from conditional row plans, without additional database reads. */
 final class QueryGuardWriteRules
 {
     /**

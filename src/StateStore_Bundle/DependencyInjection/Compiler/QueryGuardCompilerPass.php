@@ -16,7 +16,7 @@ use Ultra\StateStore\StateMetadata;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateTableRegistry;
 
-/** Prototype: execute declaration builders at compilation; inject guards and retain only plain metadata. */
+/** Execute declaration builders at compilation; inject guards and retain only plain metadata. */
 final class QueryGuardCompilerPass implements CompilerPassInterface
 {
     public function process(ContainerBuilder $container): void

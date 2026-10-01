@@ -93,7 +93,7 @@ final class StateStoreExtensionTest extends TestCase
     public function test_query_guards_are_compiled_injected_and_work_in_a_dumped_container(): void
     {
         $builder = $this->createContainer(withQueryGuard: true);
-        $class = 'QueryGuardPrototypeContainer_'.bin2hex(random_bytes(4));
+        $class = 'QueryGuardTestContainer_'.bin2hex(random_bytes(4));
         $php = (new PhpDumper($builder))->dump(['class' => $class]);
         eval(substr($php, 5));
         $container = new $class();
