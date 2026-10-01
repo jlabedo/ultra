@@ -12,6 +12,7 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapter;
 use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\StateStore\StateTableRegistry;
+use Ultra\StateStore\Exception\UnknownQueryGuardException;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /** @internal */
@@ -24,7 +25,10 @@ final class StateTableRegistryTest extends TestCase
         $sameTable = new MappedRowSet(new RegistryRecordingAdapter('a', $trace));
         $last = new MappedRowSet(new RegistryRecordingAdapter('z', $trace));
         $first->withKey('new')->insert()->setColumn('status', 'pending');
-        $registry = new StateTableRegistry(['first' => $first, 'last' => $last, 'same' => $sameTable], guardLockAdapter: new RegistryRecordingGuardAdapter($trace));
+        $registry = new StateTableRegistry(['first' => $first, 'last' => $last, 'same' => $sameTable], queryGuardDefinitions: [
+            'usage' => [['tableKey' => 'last', 'keyBy' => 'id', 'columns' => null]],
+            'availability' => [['tableKey' => 'last', 'keyBy' => 'id', 'columns' => null]],
+        ], guardLockAdapter: new RegistryRecordingGuardAdapter($trace));
         $registry->lock('z', new MappedKey(['id' => '2']));
         $registry->lock('a', new MappedKey(['id' => '2']));
         $registry->lock('a', new MappedKey(['id' => '1']));
@@ -73,17 +77,16 @@ final class StateTableRegistryTest extends TestCase
         $registry->clear();
         self::assertFalse($registry->hasPendingChanges());
     }
-    public function test_guards_belong_to_the_registry_without_creating_a_row_set(): void
+    public function test_manual_guards_belong_to_the_registry_without_creating_a_row_set(): void
     {
         $trace = new \ArrayObject();
         $registry = new StateTableRegistry([], guardLockAdapter: new RegistryRecordingGuardAdapter($trace));
-        $registry->guard('usage', 'company', GuardLockMode::SHARED);
         $registry->lock('companies', new MappedKey(['id' => 'company']));
         self::assertTrue($registry->hasPendingChanges());
 
         $registry->flush();
 
-        self::assertSame(['guard:usage:company:SHARED', 'lock:companies:company'], $trace->getArrayCopy());
+        self::assertSame(['lock:companies:company'], $trace->getArrayCopy());
         $registry->clear();
         self::assertFalse($registry->hasPendingChanges());
         $trace->exchangeArray([]);
@@ -94,10 +97,24 @@ final class StateTableRegistryTest extends TestCase
     public function test_guarded_flush_requires_a_dedicated_adapter(): void
     {
         $registry = new StateTableRegistry([]);
-        $registry->guard('usage', 'company', GuardLockMode::SHARED);
+        $registry->lock('companies', new MappedKey(['id' => 'company']));
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('GuardLockAdapter');
         $registry->flush();
+    }
+
+    public function test_unknown_guards_cannot_be_queued_directly_in_the_registry(): void
+    {
+        $registry = new StateTableRegistry([]);
+        foreach ([GuardLockMode::SHARED, GuardLockMode::EXCLUSIVE] as $mode) {
+            try {
+                $registry->guard('unknown', 'company', $mode);
+                self::fail('An unknown guard must not bypass validation through the registry.');
+            } catch (UnknownQueryGuardException $exception) {
+                self::assertSame('unknown', $exception->guardName);
+            }
+            self::assertFalse($registry->hasPendingChanges());
+        }
     }
 
 }

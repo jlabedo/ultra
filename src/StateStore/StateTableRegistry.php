@@ -9,6 +9,7 @@ use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\StateStore\Exception\PendingQueryChangesException;
+use Ultra\StateStore\Exception\UnknownQueryGuardException;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\UnitOfWork;
 
@@ -93,15 +94,23 @@ final class StateTableRegistry implements UnitOfWork
     /** Check only the initial decision read. Flush replays the recorded callback before applying local writes. */
     public function assertQueryCanBeObserved(string $name, int|string $value): void
     {
-        $scopes = $this->queryGuardDefinitions[$name] ?? [];
-        if ([] === $scopes) {
-            return;
-        }
+        $scopes = $this->queryGuardScopes($name);
         foreach (QueryGuardWriteRules::requests($this->updatePlans(), [$name => $scopes]) as $request) {
             if ((string) $request['value'] === (string) $value) {
                 throw new PendingQueryChangesException($name, $value, $request['tableKey'], $request['key']);
             }
         }
+    }
+
+    /** @return list<array{tableKey: string, keyBy: string, columns: list<string>|null}> */
+    private function queryGuardScopes(string $name): array
+    {
+        $scopes = $this->queryGuardDefinitions[$name] ?? [];
+        if ([] === $scopes) {
+            throw new UnknownQueryGuardException($name);
+        }
+
+        return $scopes;
     }
 
     /** @return array<string, RowSetUpdatePlan> */
@@ -139,6 +148,7 @@ final class StateTableRegistry implements UnitOfWork
     /** Buffer a named guard; exclusive dominates shared for the same name/value. */
     public function guard(string $name, int|string $value, GuardLockMode $mode): void
     {
+        $this->queryGuardScopes($name);
         $fingerprint = (string) $value;
         if (GuardLockMode::EXCLUSIVE !== ($this->guards[$name][$fingerprint] ?? null)) {
             $this->guards[$name][$fingerprint] = $mode;

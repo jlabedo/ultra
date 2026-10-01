@@ -10,6 +10,7 @@ use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\StateStore\Exception\PendingQueryChangesException;
+use Ultra\StateStore\Exception\UnknownQueryGuardException;
 use Ultra\StateStore\InMemoryGuardLockAdapter;
 use Ultra\StateStore\QueryGuard;
 use Ultra\StateStore\StateTableRegistry;
@@ -17,6 +18,41 @@ use Ultra\StateStore\StateTableRegistry;
 /** @internal */
 final class QueryGuardTest extends TestCase
 {
+    public static function unknownGuards(): iterable
+    {
+        foreach (['lock', 'observe'] as $operation) {
+            yield $operation.' with missing definition' => [$operation, 'company_usgae', []];
+            yield $operation.' with empty definition' => [$operation, 'empty', ['empty' => []]];
+            yield $operation.' with empty name' => [$operation, '', []];
+        }
+    }
+
+    #[DataProvider('unknownGuards')]
+    public function test_unknown_guards_are_rejected_without_reading_or_queuing_work(string $operation, string $name, array $definitions): void
+    {
+        $registry = new StateTableRegistry([], queryGuardDefinitions: $definitions);
+        $guard = new QueryGuard($registry, $name);
+        $called = false;
+        try {
+            if ('lock' === $operation) {
+                $guard->lock('acme');
+            } else {
+                $guard->observe('acme', static function () use (&$called): int {
+                    $called = true;
+
+                    return 42;
+                });
+            }
+            self::fail('A guard without watched-state metadata must not be usable.');
+        } catch (UnknownQueryGuardException $exception) {
+            self::assertSame($name, $exception->guardName);
+            self::assertStringContainsString('registered for "'.$name.'"', $exception->getMessage());
+            self::assertStringContainsString('#[DefineQueryGuard]', $exception->getMessage());
+        }
+        self::assertFalse($called);
+        self::assertFalse($registry->hasPendingChanges());
+    }
+
     public static function impactingMutations(): iterable
     {
         yield 'insert' => ['insert', 'acme'];

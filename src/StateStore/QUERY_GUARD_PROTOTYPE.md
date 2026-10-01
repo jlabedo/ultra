@@ -28,6 +28,12 @@ is retained in the dumped container.
 Declarations with unknown columns or conflicting definitions for the same name fail compilation. No repository
 lookup or registry is exposed to the application's query method.
 
+At runtime, `observe()` and `lock()` require a registered definition with at least one watched state. An unknown
+name or empty definition throws `UnknownQueryGuardException` before reading data or queuing work. The exception
+identifies the guard and explains how to register it. This also applies to requests queued directly through
+`StateTableRegistry::guard()`. Manually constructing a `QueryGuard` does not register writer dependencies.
+Manual row guards requested through `StateStore::lock()` remain independent of query-guard definitions.
+
 ```php
 $minutes = $this->companyUsage->observe(
     $company->id,

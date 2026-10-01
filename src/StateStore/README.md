@@ -243,6 +243,11 @@ ordering error, distinct from a concurrent change detected at flush. Other scope
 expectations remain allowed. Unknown old scopes fail the writer-rule validation rather than being assumed unrelated.
 The check applies only to the initial read: flush replays earlier observations before applying prepared writes.
 
+Both `QueryGuard::observe()` and `QueryGuard::lock()` require a registered definition with watched states. Unknown
+names and empty definitions throw `Ultra\StateStore\Exception\UnknownQueryGuardException` before executing the
+callback or queuing a guard. Declare dependencies with `#[DefineQueryGuard]`, or provide the definition when
+constructing `StateTableRegistry` manually. Constructing `QueryGuard` alone does not register those dependencies.
+
 The [direct coworking variant](../../examples/coworking/src/Booking/StateStoreDirect) uses this prototype for quota
 and availability. Weekly bookings validate all slots and the total minutes requested per month before buffering
 any booking; no repository overlay is needed. See the [query guard prototype](QUERY_GUARD_PROTOTYPE.md) for its
