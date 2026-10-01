@@ -69,6 +69,35 @@ final readonly class PendingRowUpdate
         return $this;
     }
 
+    /**
+     * Expect presence in the unit-of-work view. Buffered writes establish it locally;
+     * otherwise the committed row must exist at flush.
+     */
+    public function expectPresent(): self
+    {
+        if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot expect table "%s", row "%s" to be present because it is deleted in this unit of work.',
+                $this->tableName,
+                (string) $this->update->key,
+            ));
+        }
+        if (true === $this->update->toPlan()?->writes()) {
+            return $this;
+        }
+        if (RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot expect table "%s", row "%s" to be present because it is already expected absent.',
+                $this->tableName,
+                (string) $this->update->key,
+            ));
+        }
+
+        $this->update->expectedPresence = RowUpdatePlan::EXPECTED_PRESENT;
+
+        return $this;
+    }
+
     public function upsert(): self
     {
         if (RowUpdatePlan::EXPECTED_PRESENT === $this->update->expectedPresence) {

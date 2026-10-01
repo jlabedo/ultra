@@ -117,14 +117,12 @@ final readonly class BookingService
     public function closeRoomForDay(string $roomId, string $day): void
     {
         $this->unitOfWork->run(function () use ($roomId, $day): void {
-            $room = $this->states->load(Room::class, $roomId);
+            $room = $this->states->observe(Room::class, $roomId);
             if (null === $room) {
                 return;
             }
-            $this->states->expect($room);
             $this->states->lock($room);
             foreach ($this->bookings->observeConfirmedOnDay($room, $day) as $booking) {
-                $this->states->expect($booking);
                 $this->lockBookingGuards($booking);
                 $this->bookings->save($booking->cancelled(refunded: true), $booking);
             }
@@ -163,9 +161,8 @@ final readonly class BookingService
      */
     private function state(string $class, string $id, string $violation): object
     {
-        $state = $this->states->load($class, $id);
+        $state = $this->states->observe($class, $id);
         Violations::throwIfAny([null === $state ? new Violation($violation, 'State does not exist.') : null]);
-        $this->states->expect($state);
 
         return $state;
     }
@@ -173,7 +170,6 @@ final readonly class BookingService
     /** @param class-string $class */
     private function expectNew(string $class, string $id, string $violation): void
     {
-        Violations::throwIfAny([null !== $this->states->load($class, $id) ? new Violation($violation, 'State already exists.') : null]);
-        $this->states->expectMissing($class, $id);
+        Violations::throwIfAny([null !== $this->states->observe($class, $id) ? new Violation($violation, 'State already exists.') : null]);
     }
 }

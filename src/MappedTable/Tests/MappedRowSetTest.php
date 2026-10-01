@@ -111,6 +111,28 @@ final class MappedRowSetTest extends TestCase
         self::assertSame(['lock:a:1', 'lock:a:2', 'lock:z:2', 'validate', 'apply:z', 'apply:a', 'apply:a'], $trace->getArrayCopy());
     }
 
+    public function test_presence_expectation_accepts_a_buffered_creation_but_rejects_a_buffered_deletion(): void
+    {
+        $database = new InMemoryRowDatabase();
+        $table = new MappedRowSet(new InMemoryMappedRowSetAdapter($database, 'users'));
+        $table->withKey('user-1')->insert()->setColumn('status', 'pending');
+        $table->withKey('user-1')->expectPresent();
+        $this->flushInTransaction($database, $table);
+        $table->clear();
+        self::assertSame(['status' => 'pending'], $table->row('user-1', ['status']));
+        $table->withKey('user-1')->delete();
+        $this->expectException(ConcurrencyException::class);
+        $table->withKey('user-1')->expectPresent();
+    }
+
+    public function test_presence_expectation_rejects_a_conflicting_absence_expectation(): void
+    {
+        $table = new MappedRowSet(new InMemoryMappedRowSetAdapter(new InMemoryRowDatabase(), 'users'));
+        $table->withKey('user-1')->expectAbsent();
+        $this->expectException(ConcurrencyException::class);
+        $table->withKey('user-1')->expectPresent();
+    }
+
     public function test_it_has_pending_changes_for_writes(): void
     {
         $table = new MappedRowSet(new RecordingMappedRowSetAdapter());

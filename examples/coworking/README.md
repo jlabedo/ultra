@@ -18,6 +18,10 @@ transaction: acquire the requested manual guards, replay the SQL expectations, t
 The developer selects company and room guards for every action affecting quota or availability. No `SERIALIZABLE`
 isolation or pessimistic row locks are used during the decision.
 
+The service reads through `StateStore::observe()`, which registers optimistic state or absence expectations
+automatically. Its helpers only translate missing or existing states into domain violations. Bulk closure also
+observes the bookings hydrated by the repository.
+
 Manual queries observe committed rows before the write plan. `BookingRepository` registers their results with
 `observeQuery()` and separately overlays pending booking changes for subsequent decisions, including weekly series.
 It participates in unit-of-work cleanup; StateStore owns its writes. No intermediate flush is needed. Duplicate

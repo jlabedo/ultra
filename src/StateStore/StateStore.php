@@ -41,6 +41,26 @@ final readonly class StateStore
         return $this->normalizer->fromScalar($payload, $stateClass);
     }
 
+    /**
+     * Read this unit of work's view and register its optimistic expectations for flush.
+     * A missing state registers an absence expectation; no database lock is acquired during the read.
+     *
+     * @template T of object
+     * @param class-string<T> $stateClass
+     * @return T|null
+     */
+    public function observe(string $stateClass, int|string|object $id): ?object
+    {
+        $state = $this->load($stateClass, $id);
+        if (null === $state) {
+            $this->expectMissing($stateClass, $id);
+        } else {
+            $this->expect($state);
+        }
+
+        return $state;
+    }
+
     public function save(object $state): void
     {
         [$metadata, $normalizedState] = $this->normalizeState($state);
@@ -75,12 +95,11 @@ final readonly class StateStore
         $normalizedId = $normalizedState[$metadata->idProperty];
         $expectedColumns = $metadata->optimisticColumnsFromNormalized($normalizedState);
 
-        if ([] !== $expectedColumns) {
-            $this->tableRegistry->tableFor($metadata)
-                ->withKey($key)
-                ->expectColumnValues($expectedColumns)
-            ;
-        }
+        $this->tableRegistry->tableFor($metadata)
+            ->withKey($key)
+            ->expectPresent()
+            ->expectColumnValues($expectedColumns)
+        ;
 
         foreach ($metadata->collections as $collection) {
             $items = $this->normalizedCollectionItems($metadata, $normalizedState, $collection);

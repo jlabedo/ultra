@@ -100,7 +100,7 @@ final class BookingRepository implements UnitOfWork
         }
         sort($ids, SORT_STRING);
 
-        return array_map(fn (string $id): Booking => $this->states->load(Booking::class, $id), $ids);
+        return array_map(fn (string $id): Booking => $this->states->observe(Booking::class, $id), $ids);
     }
 
     public function hasPendingChanges(): bool

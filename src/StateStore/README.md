@@ -7,9 +7,8 @@ Mapper-backed object state loading and saving on top of `Ultra\MappedTable\Mappe
 `Ultra\StateStore\StateStore` lets you treat one mapped row as a typed readonly state object:
 
 ```php
-$state = $stateStore->load(OrderState::class, 'order-123');
+$state = $stateStore->observe(OrderState::class, 'order-123');
 $changedState = $state->withOrderStatus('shipped');
-$stateStore->expect($state);
 $stateStore->save($changedState);
 ```
 
@@ -141,6 +140,25 @@ final readonly class OrderState
 This maps `shippingAddress` to `shipping_street` and
 `shipping_postalCode`. Embedded columns participate in the usual optimistic
 expectations.
+
+## Reads and observations
+
+`load(StateClass::class, $id)` returns the unit of work's current view without registering expectations.
+`observe(StateClass::class, $id)` returns the same typed state or null and automatically registers:
+
+- `expect($state)` when the state exists: its row must remain present, its optimistic columns must match, and
+  collection membership is checked with the usual collection expectations;
+- `expectMissing(StateClass::class, $id)` when it is absent: a later save is an insert, and a competing creation
+  causes a concurrency conflict.
+
+The presence check also applies to states containing only an identifier or having no optimistic columns.
+Columns marked `optimistic: false` remain excluded from value comparisons. Scalar and composite identifiers use
+the same mapping and validation as `load()`.
+
+Observation acquires no database lock during the read and writes nothing by itself. Its expectations count as
+pending work, are checked at flush even without a save, and are discarded by `clear()`. Repeated observations see
+buffered inserts and updates while retaining the original expectations against storage. The caller still handles
+a null result and chooses any manual guards required for set-based rules.
 
 ## Save Semantics
 

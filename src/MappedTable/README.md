@@ -65,6 +65,10 @@ So a caller can read a row, expect what it read and write it, even when an earli
 
 Row expectations are checked at flush even when the row is not written: `MappedRowSet` then flushes a check-only plan (`RowUpdatePlan::MODE_EXPECT`, `writes()` is false) that the adapter checks without writing. Such rows count as pending changes. An update that sets every column to the value it expects is also flushed as a check-only plan, so saving unchanged rows writes nothing.
 
+`withKey($key)->expectPresent()` checks presence without comparing columns. Buffered writes satisfy it locally;
+otherwise the committed row must exist at flush. A buffered deletion or a conflicting absence expectation is
+rejected immediately. This also guards states whose mapping contains only their identifier.
+
 `expectSameRowKeys(...)` keeps its first committed expectation. Keys whose presence was decided by buffered changes when an expectation was registered are ignored by the adapter's comparison (`RowSetUpdatePlan::$ignoredRowKeys`); their own row plans guard them.
 
 ## Adapter Contract

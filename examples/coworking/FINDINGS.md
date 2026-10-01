@@ -6,8 +6,8 @@ suite passes on all four flavors. Tests that reproduce an open gap go in the `fi
 
 | | Event sourced | State store decisions | State store direct | Classic (Doctrine ORM) |
 |---|---|---|---|---|
-| Non-blank lines (excluding shared rules) | 807 in 24 files | 717 in 19 files | 352 in 6 files | 364 in 6 files |
-| Code lines (excluding comments, blank lines and PHP opening tags) | 726 | 634 | 333 | 342 |
+| Non-blank lines (excluding shared rules) | 807 in 24 files | 717 in 19 files | 348 in 6 files | 364 in 6 files |
+| Code lines (excluding comments, blank lines and PHP opening tags) | 726 | 634 | 329 | 342 |
 | Scenario suite | passes | passes | passes | passes |
 | Concurrent decision races tested | yes, deterministically | yes, deterministically | yes, deterministically | no (locks need two processes) |
 | Set-based rules | event folds | materialized schedules and usage | SQL queries replayed at flush | SQL queries inside the transaction |
@@ -15,9 +15,9 @@ suite passes on all four flavors. Tests that reproduce an open gap go in the `fi
 
 Counts include every PHP file under each flavor's source directory, including its service, repository, states,
 commands and events. They exclude tests, shared domain rules, configuration, DDL and framework implementation.
-The direct variant has 160 non-blank service lines, 98 repository lines and 94 state lines; Doctrine has 192,
+The direct variant has 156 non-blank service lines, 98 repository lines and 94 state lines; Doctrine has 192,
 55 and 117 respectively. These are source-size measurements, not performance measurements. Mapping conventions
-and the direct service's shared load/expect helper also affect the result.
+and the direct service's shared observed-state helper also affect the result.
 
 Each finding is classified:
 
@@ -180,8 +180,10 @@ Dependent binding removed most manual loads (`RescheduleBooking` has none left, 
 decides which copy to return). What remains is a conditional load (`CancelBooking`) and variable fan-out
 (`CloseRoomForDay`).
 
-**Direction**: a load API inside a decision that registers expectations automatically, for the loads a signature
-cannot declare.
+**Implemented for direct reads:** `StateStore::observe(Class, id)` registers the usual state expectations when a
+state exists, or an absence expectation when it does not. Presence is checked even for identifier-only states.
+The direct flavor uses it in its domain helpers and bulk closure. `load()` remains available without automatic
+expectations; decision aspects and manual callers can adopt observation where appropriate.
 
 ## 9. Smaller observations
 
@@ -233,7 +235,7 @@ The comparison is not one-sided:
 aspects in this variant. The runner owns one transaction covering the entire flush. The service prepares its work
 outside that transaction, and a weekly series has no intermediate flush.
 
-The added APIs are `StateStore::lock(object)`, `observeQuery(callable, ?string $name)` and
+The added APIs are `StateStore::observe(Class, id)`, `lock(object)`, `observeQuery(callable, ?string $name)` and
 `expectQuery(callable, mixed $expected, ?string $name)`. Locks identify physical table/key pairs, including missing
 and composite identities, rather than PHP object identity. Flush acquires all requested manual guards in table/key
 order, checks query results against their observed values, then runs the usual row-set plans. Manual guards use a
@@ -250,7 +252,7 @@ unit-of-work participation to understand when writes and cleanup happen.
 
 **Costs:** correctness of set-based rules depends on the developer choosing cooperative guards in every relevant
 action. `lock()` is a guard declaration, not a database row lock and not an optimistic snapshot expectation;
-`expect()` is still necessary for state fields influencing the decision. Queries are executed twice, and strict
+State fields influencing the decision need the expectations registered by `observe()` or explicit `expect()`. Queries are executed twice, and strict
 comparison can reject a concurrent change even when a fresh decision would still succeed. The caller must retry
 that decision after `ConcurrencyException`; retry is not added by this change. The transaction is shorter in scope
 than Doctrine's, but the extra reads and advisory-lock statements are real work. No throughput or latency claim is

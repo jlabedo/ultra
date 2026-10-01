@@ -15,10 +15,16 @@ use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
 use Ultra\Testing\PostgresTestSupport;
+use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 final readonly class ManualQueryState
 {
     public function __construct(public string $id, public string $status) {}
+}
+
+final readonly class ManualIdentityState
+{
+    public function __construct(public string $id) {}
 }
 
 /** @internal */
@@ -72,4 +78,29 @@ final class PostgresStateStoreQueryTest extends PostgresMappedRowSetTestCase
             }
         });
     }
+    public function test_observe_identity_only_state_guards_own_insert_then_committed_presence(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $metadata = new StateMetadata(ManualIdentityState::class, $tableName, $tableName.'#id', 'id', 'string', true, ['id' => 'id'], [], []);
+            $registry = new StateTableRegistry([$metadata->tableKey => $table]);
+            $store = new StateStore(new StateMetadataRegistry([ManualIdentityState::class => $metadata->toArray()]), $registry, new UltraNormalizer());
+            self::assertNull($store->observe(ManualIdentityState::class, 'row-1'));
+            $store->save(new ManualIdentityState('row-1'));
+            self::assertInstanceOf(ManualIdentityState::class, $store->observe(ManualIdentityState::class, 'row-1'));
+            $connection->transactional($registry->flush(...));
+            $registry->clear();
+            self::assertInstanceOf(ManualIdentityState::class, $store->observe(ManualIdentityState::class, 'row-1'));
+            self::assertFalse($connection->isTransactionActive());
+
+            $other = PostgresTestSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
+            try {
+                $other->executeStatement('DELETE FROM '.$other->quoteSingleIdentifier($tableName).' WHERE id = ?', ['row-1']);
+            } finally {
+                $other->close();
+            }
+            $this->expectException(ConcurrencyException::class);
+            $connection->transactional($registry->flush(...));
+        });
+    }
+
 }

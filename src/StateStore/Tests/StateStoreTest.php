@@ -40,6 +40,26 @@ final readonly class OrderState
 }
 
 #[State(table: 'orders')]
+final readonly class OrderIdentityState
+{
+    public function __construct(
+        #[StateId(column: 'order_id')]
+        public string $orderId,
+    ) {}
+}
+
+#[State(table: 'orders')]
+final readonly class OrderUnwatchedState
+{
+    public function __construct(
+        #[StateId(column: 'order_id')]
+        public string $orderId,
+        #[StateColumn('status', optimistic: false)]
+        public string $status,
+    ) {}
+}
+
+#[State(table: 'orders')]
 final readonly class OrderStatusView
 {
     public function __construct(
@@ -216,7 +236,7 @@ final class StateStoreTest extends TestCase
         );
 
         $id = new AcceptanceId('identity-1', 'terms-2026');
-        $store->expectMissing(TermsAcceptanceState::class, $id);
+        self::assertNull($store->observe(TermsAcceptanceState::class, $id));
         $store->save(new TermsAcceptanceState($id, '2026-07-10T10:00:00Z'));
         $this->flushRegistryInTransaction($database, $registry);
 
@@ -229,7 +249,7 @@ final class StateStoreTest extends TestCase
             'terms_id' => 'terms-2026',
         ])));
 
-        $loaded = $store->load(TermsAcceptanceState::class, new AcceptanceId('identity-1', 'terms-2026'));
+        $loaded = $store->observe(TermsAcceptanceState::class, new AcceptanceId('identity-1', 'terms-2026'));
         self::assertInstanceOf(TermsAcceptanceState::class, $loaded);
         self::assertSame('identity-1', $loaded->acceptanceId->identityId);
         self::assertSame('terms-2026', $loaded->acceptanceId->termsId);
@@ -749,6 +769,111 @@ final class StateStoreTest extends TestCase
         $store->expect($stale);
         $store->save($stale->withOrderStatus('shipped'));
 
+        $this->expectException(ConcurrencyException::class);
+        $this->flushRegistryInTransaction($database, $registry);
+    }
+
+    public function test_observe_hydrates_state_and_guards_a_read_without_saving(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending', 'note' => null]);
+
+        $observed = $store->observe(OrderState::class, 'order-123');
+        self::assertInstanceOf(OrderState::class, $observed);
+        self::assertSame('pending', $observed->orderStatus);
+        self::assertFalse($database->isTransactionActive());
+        self::assertTrue($registry->hasPendingChanges());
+        $database->writeRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'paid', 'note' => null]);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushRegistryInTransaction($database, $registry);
+    }
+
+    public function test_observe_missing_state_registers_absence_without_writing(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class]);
+        self::assertNull($store->observe(OrderState::class, 'order-123'));
+        self::assertTrue($registry->hasPendingChanges());
+        $this->flushRegistryInTransaction($database, $registry);
+        $registry->clear();
+        self::assertNull($store->load(OrderState::class, 'order-123'));
+        self::assertFalse($registry->hasPendingChanges());
+
+        $store->observe(OrderState::class, 'order-123');
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending', 'note' => null]);
+        $this->expectException(ConcurrencyException::class);
+        $this->flushRegistryInTransaction($database, $registry);
+    }
+
+    public function test_observe_reads_own_inserts_and_updates_without_losing_the_original_expectation(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class, OrderStatusView::class]);
+        self::assertNull($store->observe(OrderState::class, 'order-123'));
+        $store->save(new OrderState('order-123', 'pending', null));
+        $created = $store->observe(OrderState::class, 'order-123');
+        self::assertSame('pending', $created->orderStatus);
+        $store->save($created->withOrderStatus('paid'));
+        $view = $store->observe(OrderStatusView::class, 'order-123');
+        self::assertSame('paid', $view->status);
+        $store->save($view->withStatus('shipped'));
+        $this->flushRegistryInTransaction($database, $registry);
+        $registry->clear();
+        self::assertSame('shipped', $store->load(OrderState::class, 'order-123')->orderStatus);
+
+        $observed = $store->observe(OrderState::class, 'order-123');
+        $store->save($observed->withOrderStatus('delivered'));
+        self::assertSame('delivered', $store->observe(OrderState::class, 'order-123')->orderStatus);
+        $database->writeRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'cancelled', 'note' => null]);
+        $this->expectException(ConcurrencyException::class);
+        $this->flushRegistryInTransaction($database, $registry);
+    }
+
+    public function test_observe_identity_only_state_guards_its_presence(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderIdentityState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123']);
+        self::assertInstanceOf(OrderIdentityState::class, $store->observe(OrderIdentityState::class, 'order-123'));
+        self::assertTrue($registry->hasPendingChanges());
+        $database->deleteRowByKey('orders', new \Ultra\MappedTable\MappedKey(['order_id' => 'order-123']));
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushRegistryInTransaction($database, $registry);
+    }
+
+    public function test_observe_identity_only_state_reads_own_creation_and_clear_discards_its_expectation(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderIdentityState::class]);
+        self::assertNull($store->observe(OrderIdentityState::class, 'order-123'));
+        $store->save(new OrderIdentityState('order-123'));
+        self::assertInstanceOf(OrderIdentityState::class, $store->observe(OrderIdentityState::class, 'order-123'));
+        $this->flushRegistryInTransaction($database, $registry);
+        $registry->clear();
+        self::assertInstanceOf(OrderIdentityState::class, $store->observe(OrderIdentityState::class, 'order-123'));
+        $registry->clear();
+        $database->deleteRowByKey('orders', new \Ultra\MappedTable\MappedKey(['order_id' => 'order-123']));
+        self::assertFalse($registry->hasPendingChanges());
+        $this->flushRegistryInTransaction($database, $registry);
+        self::assertNull($store->load(OrderIdentityState::class, 'order-123'));
+    }
+
+    public function test_observe_does_not_compare_columns_excluded_from_optimistic_checks(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderUnwatchedState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending']);
+        self::assertSame('pending', $store->observe(OrderUnwatchedState::class, 'order-123')->status);
+        $database->writeRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'paid']);
+        $this->flushRegistryInTransaction($database, $registry);
+        $registry->clear();
+        self::assertSame('paid', $store->load(OrderUnwatchedState::class, 'order-123')->status);
+    }
+
+    public function test_observe_registers_collection_membership_expectations(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderWithLinesState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending']);
+        $database->seedRow('order_lines', 'line_id', ['order_id' => 'order-123', 'line_id' => 'line-1', 'sku' => 'SKU-1', 'quantity' => 1]);
+        self::assertCount(1, $store->observe(OrderWithLinesState::class, 'order-123')->lines);
+        $database->seedRow('order_lines', 'line_id', ['order_id' => 'order-123', 'line_id' => 'line-2', 'sku' => 'SKU-2', 'quantity' => 1]);
         $this->expectException(ConcurrencyException::class);
         $this->flushRegistryInTransaction($database, $registry);
     }
