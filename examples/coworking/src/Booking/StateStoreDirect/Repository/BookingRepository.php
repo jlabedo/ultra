@@ -13,14 +13,10 @@ use Ultra\StateStore\StateStore;
 use Ultra\StateStore\Attribute\DefineQueryGuard;
 use Ultra\StateStore\QueryGuard;
 use Ultra\StateStore\QueryGuardDefinition;
-use Ultra\UnitOfWork\UnitOfWork;
 
-/** SQL expectations observe committed rows; this local overlay supplies read-your-own-writes until clear(). */
-final class BookingRepository implements UnitOfWork
+/** Guarded queries read committed rows before affected writes are prepared. */
+final readonly class BookingRepository
 {
-    /** @var array<string, array{original: ?Booking, current: Booking}> */
-    private array $pending = [];
-
     public function __construct(
         private Connection $connection,
         private StateStore $states,
@@ -38,15 +34,6 @@ final class BookingRepository implements UnitOfWork
         private QueryGuard $roomBookings,
     ) {}
 
-    public function save(Booking $booking, ?Booking $original = null): void
-    {
-        $this->pending[$booking->id] = [
-            'original' => array_key_exists($booking->id, $this->pending) ? $this->pending[$booking->id]['original'] : $original,
-            'current' => $booking,
-        ];
-        $this->states->save($booking);
-    }
-
     public function emailTaken(string $email): bool
     {
         return false !== $this->connection->fetchOne('SELECT id FROM cw_direct_members WHERE email = ?', [$email]);
@@ -58,16 +45,7 @@ final class BookingRepository implements UnitOfWork
             'SELECT id FROM cw_direct_bookings WHERE room_id = ? AND status = ? AND start_at < ? AND end_at > ? AND id != ? ORDER BY id',
             [$room->id, Booking::CONFIRMED, $slot->end->format('c'), $slot->start->format('c'), $ignoringBookingId ?? ''],
         ));
-        if ([] !== array_diff($ids, array_keys($this->pending))) {
-            return true;
-        }
-        foreach ($this->pending as ['current' => $booking]) {
-            if ($booking->id !== $ignoringBookingId && $booking->roomId === $room->id && Booking::CONFIRMED === $booking->status && $booking->slot()->overlaps($slot)) {
-                return true;
-            }
-        }
-
-        return false;
+        return [] !== $ids;
     }
 
     public function usedMinutes(Company $company, string $month, ?string $ignoringBookingId = null): int
@@ -83,16 +61,7 @@ final class BookingRepository implements UnitOfWork
 
     public function observeUsedMinutes(Company $company, string $month, ?string $ignoringBookingId = null): int
     {
-        $minutes = $this->companyUsage->observe($company->id, fn (): int => $this->usedMinutes($company, $month, $ignoringBookingId));
-        foreach ($this->pending as ['original' => $original, 'current' => $current]) {
-            foreach ([[$original, -1], [$current, 1]] as [$booking, $sign]) {
-                if (null !== $booking && $booking->id !== $ignoringBookingId && $booking->companyId === $company->id && $booking->charged && $booking->slot()->month() === $month) {
-                    $minutes += $sign * $booking->slot()->minutes();
-                }
-            }
-        }
-
-        return $minutes;
+        return $this->companyUsage->observe($company->id, fn (): int => $this->usedMinutes($company, $month, $ignoringBookingId));
     }
 
     /** @return list<string> */
@@ -110,27 +79,6 @@ final class BookingRepository implements UnitOfWork
     public function observeConfirmedOnDay(Room $room, string $day): array
     {
         $ids = $this->roomBookings->observe($room->id, fn (): array => $this->bookingIdsOnDay($room, $day));
-        $ids = array_diff($ids, array_keys($this->pending));
-        foreach ($this->pending as ['current' => $booking]) {
-            if ($booking->roomId === $room->id && Booking::CONFIRMED === $booking->status && $booking->slot()->day() === $day) {
-                $ids[] = $booking->id;
-            }
-        }
-        sort($ids, SORT_STRING);
-
         return array_map(fn (string $id): Booking => $this->states->observe(Booking::class, $id), $ids);
-    }
-
-    public function hasPendingChanges(): bool
-    {
-        // StateStore owns the write plan. This participant only shares its lifetime for the query overlay.
-        return false;
-    }
-
-    public function flush(): void {}
-
-    public function clear(): void
-    {
-        $this->pending = [];
     }
 }

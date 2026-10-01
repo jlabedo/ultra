@@ -20,11 +20,12 @@ final readonly class QueryGuard
 
     /**
      * @template T
-     * @param callable(): T $query Read committed data, without the pending-write overlay.
+     * @param callable(): T $query Read committed data, before preparing writes affecting this scope.
      * @return T
      */
     public function observe(int|string $value, callable $query): mixed
     {
+        $this->tables->assertQueryCanBeObserved($this->name, $value);
         $this->lock($value);
         $result = $query();
         $this->tables->expectQuery($query, $result, $this->name.'('.$value.')');

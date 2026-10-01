@@ -234,9 +234,16 @@ when other writers or callbacks acquire additional locks in a different order.
 Callbacks must be read-only, repeatable, and use the flush connection. Capture stable parameters; they must read
 committed database data, not `StateStore::load()`'s buffered view. Query results are compared **before this unit of
 work's writes**. Account for pending changes separately when deciding, without adding them to the SQL expectation.
-The [direct coworking variant](../../examples/coworking/src/Booking/StateStoreDirect) demonstrates a repository
-overlay for weekly bookings, cancellations and reschedules composed in one unit of work.
+The unguarded API has no dependency metadata, so it cannot detect when these results ignore affected local writes.
 
 An experimental constructor-injected `QueryGuard` can compile dependencies from `#[DefineQueryGuard]` and enroll
-affected writes automatically. See the [query guard prototype](QUERY_GUARD_PROTOTYPE.md) for its interface,
-Postgres tests and current limits. The direct coworking variant uses this prototype for quota and availability.
+affected writes automatically. Its `observe()` rejects pending mutations affecting the same declared guard and
+scope with `Ultra\StateStore\Exception\PendingQueryChangesException`, before executing the query. This is an
+ordering error, distinct from a concurrent change detected at flush. Other scopes, unwatched columns and optimistic
+expectations remain allowed. Unknown old scopes fail the writer-rule validation rather than being assumed unrelated.
+The check applies only to the initial read: flush replays earlier observations before applying prepared writes.
+
+The [direct coworking variant](../../examples/coworking/src/Booking/StateStoreDirect) uses this prototype for quota
+and availability. Weekly bookings validate all slots and the total minutes requested per month before buffering
+any booking; no repository overlay is needed. See the [query guard prototype](QUERY_GUARD_PROTOTYPE.md) for its
+interface, Postgres tests and current limits.

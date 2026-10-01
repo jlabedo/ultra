@@ -72,15 +72,17 @@ final readonly class BookingService
 
     public function book(string $bookingId, string $roomId, string $memberId, Slot $slot): void
     {
-        $this->unitOfWork->run(fn () => $this->bookOne($bookingId, $roomId, $memberId, $slot));
+        $this->unitOfWork->run(fn () => $this->bookSlots($roomId, $memberId, [['id' => $bookingId, 'slot' => $slot]]));
     }
 
     public function bookWeekly(string $seriesId, string $roomId, string $memberId, Slot $firstSlot, int $weeks): void
     {
         $this->unitOfWork->run(function () use ($seriesId, $roomId, $memberId, $firstSlot, $weeks): void {
+            $occurrences = [];
             for ($week = 0; $week < $weeks; ++$week) {
-                $this->bookOne(BookingIds::occurrence($seriesId, $week), $roomId, $memberId, $firstSlot->shiftedByWeeks($week));
+                $occurrences[] = ['id' => BookingIds::occurrence($seriesId, $week), 'slot' => $firstSlot->shiftedByWeeks($week)];
             }
+            $this->bookSlots($roomId, $memberId, $occurrences);
         });
     }
 
@@ -92,7 +94,7 @@ final readonly class BookingService
                 $booking->memberId !== $memberId ? new Violation('booking.not_owner', 'Only the member who booked can cancel.') : null,
                 Booking::CANCELLED === $booking->status ? new Violation('booking.already_cancelled', 'Booking is already cancelled.') : null,
             ]);
-            $this->bookings->save($booking->cancelled(BookingPolicy::isRefundable($booking->slot(), $this->clock->now())), $booking);
+            $this->states->save($booking->cancelled(BookingPolicy::isRefundable($booking->slot(), $this->clock->now())));
         });
     }
 
@@ -114,7 +116,7 @@ final readonly class BookingService
                 $this->bookings->hasOverlap($room, $slot, $bookingId) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
                 BookingPolicy::quotaExceeded($company->monthlyMinutes, $this->bookings->observeUsedMinutes($company, $slot->month(), $bookingId), $slot->minutes()),
             ]);
-            $this->bookings->save($booking->movedTo($roomId, $slot), $booking);
+            $this->states->save($booking->movedTo($roomId, $slot));
         });
     }
 
@@ -126,16 +128,22 @@ final readonly class BookingService
                 return;
             }
             foreach ($this->bookings->observeConfirmedOnDay($room, $day) as $booking) {
-                $this->bookings->save($booking->cancelled(refunded: true), $booking);
+                $this->states->save($booking->cancelled(refunded: true));
             }
         });
     }
 
-    private function bookOne(string $bookingId, string $roomId, string $memberId, Slot $slot): void
+    /** @param list<array{id: string, slot: Slot}> $occurrences */
+    private function bookSlots(string $roomId, string $memberId, array $occurrences): void
     {
-        Violations::throwIfAny([
-            null !== $this->states->observe(Booking::class, $bookingId) ? new Violation('booking.already_exists', 'Booking already exists.') : null,
-        ]);
+        if ([] === $occurrences) {
+            return;
+        }
+        foreach ($occurrences as ['id' => $bookingId]) {
+            Violations::throwIfAny([
+                null !== $this->states->observe(Booking::class, $bookingId) ? new Violation('booking.already_exists', 'Booking already exists.') : null,
+            ]);
+        }
         $member = $this->states->observe(Member::class, $memberId);
         Violations::throwIfAny([
             null === $member ? new Violation('member.not_found', 'Member does not exist.') : null,
@@ -145,12 +153,23 @@ final readonly class BookingService
             null === $room ? new Violation('room.not_found', 'Room does not exist.') : null,
         ]);
         $company = $this->company($member->companyId);
-        Violations::throwIfAny([
-            ...BookingPolicy::slotViolations($slot, $this->clock->now()),
-            $this->bookings->hasOverlap($room, $slot) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
-            BookingPolicy::quotaExceeded($company->monthlyMinutes, $this->bookings->observeUsedMinutes($company, $slot->month()), $slot->minutes()),
-        ]);
-        $this->bookings->save(new Booking($bookingId, $roomId, $memberId, $company->id, $slot->start, $slot->end));
+        $requestedMinutes = [];
+        foreach ($occurrences as ['slot' => $slot]) {
+            Violations::throwIfAny([
+                ...BookingPolicy::slotViolations($slot, $this->clock->now()),
+                $this->bookings->hasOverlap($room, $slot) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
+            ]);
+            $month = $slot->month();
+            $requestedMinutes[$month] = ($requestedMinutes[$month] ?? 0) + $slot->minutes();
+        }
+        foreach ($requestedMinutes as $month => $minutes) {
+            Violations::throwIfAny([
+                BookingPolicy::quotaExceeded($company->monthlyMinutes, $this->bookings->observeUsedMinutes($company, $month), $minutes),
+            ]);
+        }
+        foreach ($occurrences as ['id' => $bookingId, 'slot' => $slot]) {
+            $this->states->save(new Booking($bookingId, $roomId, $memberId, $company->id, $slot->start, $slot->end));
+        }
     }
 
     private function company(string $companyId): Company

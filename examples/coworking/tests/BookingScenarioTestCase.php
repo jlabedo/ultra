@@ -155,6 +155,28 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
         self::assertSame(0, $this->driver()->usedMinutes('acme', '2026-09'));
     }
 
+    public function test_a_weekly_series_checks_each_months_quota_separately(): void
+    {
+        $this->givenAcmeWithAdaAndGrace(monthlyMinutes: 120);
+        $this->driver()->bookWeekly('s1', 'blue', 'ada', Slot::of('2026-09-22 10:00', '2026-09-22 11:00'), 3);
+
+        self::assertSame(120, $this->driver()->usedMinutes('acme', '2026-09'));
+        self::assertSame(60, $this->driver()->usedMinutes('acme', '2026-10'));
+        self::assertSame(['s1#2'], $this->driver()->bookingsOnDay('blue', '2026-10-06'));
+    }
+
+    public function test_a_later_months_quota_failure_discards_the_entire_weekly_series(): void
+    {
+        $this->givenAcmeWithAdaAndGrace(monthlyMinutes: 120);
+        $this->driver()->book('existing', 'red', 'grace', Slot::of('2026-10-08 10:00', '2026-10-08 11:00'));
+        $this->assertViolation('quota.exceeded', fn () => $this->driver()->bookWeekly('s1', 'blue', 'ada', Slot::of('2026-09-22 10:00', '2026-09-22 11:00'), 4));
+
+        self::assertSame(0, $this->driver()->usedMinutes('acme', '2026-09'));
+        self::assertSame(60, $this->driver()->usedMinutes('acme', '2026-10'));
+        self::assertSame([], $this->driver()->bookingsOnDay('blue', '2026-09-22'));
+        self::assertSame([], $this->driver()->bookingsOnDay('blue', '2026-10-13'));
+    }
+
     public function test_closing_a_room_for_a_day_cancels_and_refunds_every_booking_of_that_day(): void
     {
         $this->givenAcmeWithAdaAndGrace();

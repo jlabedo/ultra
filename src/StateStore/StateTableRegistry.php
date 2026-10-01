@@ -8,6 +8,7 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\RowSetUpdatePlan;
+use Ultra\StateStore\Exception\PendingQueryChangesException;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\UnitOfWork;
 
@@ -75,8 +76,7 @@ final class StateTableRegistry implements UnitOfWork
 
     public function flush(): void
     {
-        $plans = array_map(static fn (MappedRowSet $table): RowSetUpdatePlan => $table->updatePlan(), $this->tables);
-        foreach (QueryGuardWriteRules::requests($plans, $this->queryGuardDefinitions) as $request) {
+        foreach (QueryGuardWriteRules::requests($this->updatePlans(), $this->queryGuardDefinitions) as $request) {
             $this->guard($request['name'], $request['value'], GuardLockMode::EXCLUSIVE);
         }
         $this->acquireGuards();
@@ -88,6 +88,26 @@ final class StateTableRegistry implements UnitOfWork
         foreach ([...$this->tables, ...$this->collectionTables] as $table) {
             $table->flush();
         }
+    }
+
+    /** Check only the initial decision read. Flush replays the recorded callback before applying local writes. */
+    public function assertQueryCanBeObserved(string $name, int|string $value): void
+    {
+        $scopes = $this->queryGuardDefinitions[$name] ?? [];
+        if ([] === $scopes) {
+            return;
+        }
+        foreach (QueryGuardWriteRules::requests($this->updatePlans(), [$name => $scopes]) as $request) {
+            if ((string) $request['value'] === (string) $value) {
+                throw new PendingQueryChangesException($name, $value, $request['tableKey'], $request['key']);
+            }
+        }
+    }
+
+    /** @return array<string, RowSetUpdatePlan> */
+    private function updatePlans(): array
+    {
+        return array_map(static fn (MappedRowSet $table): RowSetUpdatePlan => $table->updatePlan(), $this->tables);
     }
 
     private function acquireGuards(): void

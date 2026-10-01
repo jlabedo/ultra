@@ -35,10 +35,25 @@ $minutes = $this->companyUsage->observe(
 );
 ```
 
-`observe()` declares a shared guard, executes the callback now, records the result for replay at flush, and returns
-it. `lock($value)` only declares a shared guard; the caller must separately record any query expectation.
+`observe()` first checks the current row plans for mutations affecting this guard and scope. It rejects an
+impacting mutation with `PendingQueryChangesException`, before executing the callback or registering any reader
+request. The exception identifies the guard, scope, table mapping and row key. Insertions, deletions and both old
+and new scope values of a move participate; integer and string values share the same advisory-lock identity.
+Changes in another scope, unwatched columns, other tables and check-only expectations remain allowed. Unknown
+previous scopes are rejected using the same validation as writer guards; no database reads are added to infer them.
+The check is conservative over declared dependencies, without parsing the callback's SQL predicates.
+
+An allowed `observe()` declares a shared guard, executes the callback now, records the result for replay at flush,
+and returns it. `lock($value)` only declares a shared guard; the caller must separately record any query expectation.
 Neither acquires a database lock during the decision. Callbacks must read committed storage, without the pending
-write overlay, and return stable scalars or arrays suitable for strict comparison.
+write overlay, and return stable scalars or arrays suitable for strict comparison. The pending-write check applies
+only to the initial decision read. Replaying an earlier observation at flush remains valid after affected writes
+have been prepared, because replay precedes applying those writes.
+
+Coworking validates every weekly occurrence and sums requested minutes by month before saving any booking.
+It reads the existing usage once per month and validates it against the whole request. Its repository keeps no
+local overlay and does not participate in unit-of-work cleanup. Composing a cancellation and a new booking in
+the same affected scope before flush is deliberately rejected; prepare a complete decision before its writes.
 
 ## Flush protocol
 
@@ -70,6 +85,8 @@ Commit or rollback releases database locks; unit-of-work `clear()` removes queue
 - The existing coworking scenarios and competing-kernel races pass after removing all service-level manual guards.
 - Two independent Postgres connections verify shared reader compatibility, reader/writer exclusion, protection of
   insertion/deletion/move scopes before query validation, and exclusive consolidation across mapped views.
+- Initial observations reject pending affected writes before invoking the callback, while unrelated scopes,
+  columns, tables and optimistic expectations remain allowed. Flush replay accepts subsequently prepared writes.
 - A change to an unrelated column can proceed while a query guard is held.
 - A dumped Symfony container injects a working guard and rejects a changed query result at flush.
 - A writer that never invokes the guarded repository still follows the compiled rules.
@@ -95,7 +112,10 @@ Run the application comparison from `examples/coworking` with `vendor/bin/phpuni
   deferred. Ordinary row-level concurrency checks remain necessary for overlapping writes.
 - Completeness of the declared dependencies remains the developer's responsibility. SQL is not parsed. Lock
   ordering covers these guards; it does not establish that all database writers and constraints are deadlock-free.
-- Query results are still checked before local writes. Coworking keeps its separate pending-write overlay.
+- Query results are checked before local writes. Initial reads with pending affected writes are rejected; no
+  generic overlay, original-state reconstruction or read-your-own-writes query engine is provided.
+- `QueryGuard::lock()` only requests a guard; it does not execute a query or enforce the initial-read check.
+  Raw `StateStore::observeQuery()` has no dependency metadata and cannot apply this check.
 - Email registration keeps the existing unguarded SQL expectation and database unique constraint.
 
 The prototype supports the proposed interface and removes the need to remember guards in each booking action.

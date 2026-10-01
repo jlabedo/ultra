@@ -7,6 +7,7 @@ namespace App\Tests;
 use App\Booking\StateStoreDirect\BookingService;
 use App\Booking\StateStoreDirect\Repository\BookingRepository;
 use Ultra\StateStore\StateStore;
+use Ultra\StateStore\Exception\PendingQueryChangesException;
 use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\UnitOfWork\UnitOfWorkRunner;
 use Doctrine\DBAL\Connection;
@@ -19,11 +20,11 @@ use App\Tests\Driver\StateStoreDirectDriver;
  */
 final class StateStoreDirectBookingTest extends BookingScenarioTestCase
 {
-    public function test_two_buffered_bookings_share_the_quota_before_any_transaction_starts(): void
+    public function test_a_second_booking_in_the_same_scope_is_rejected_before_any_transaction_starts(): void
     {
         $this->givenAcmeWithAdaAndGrace(monthlyMinutes: 60);
         $connection = self::getContainer()->get(Connection::class);
-        $this->assertViolation('quota.exceeded', function () use ($connection): void {
+        $this->assertPendingQueryChanges('company_usage', function () use ($connection): void {
             self::getContainer()->get(UnitOfWorkRunner::class)->run(function () use ($connection): void {
                 $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
                 self::assertFalse($connection->isTransactionActive());
@@ -36,30 +37,39 @@ final class StateStoreDirectBookingTest extends BookingScenarioTestCase
         self::assertSame(60, $this->driver()->usedMinutes('acme', '2026-09'));
     }
 
-    public function test_a_buffered_cancellation_frees_its_slot_and_quota_for_the_next_decision(): void
+    public function test_a_booking_after_a_buffered_cancellation_is_rejected_and_the_cancellation_is_discarded(): void
     {
         $this->givenAcmeWithAdaAndGrace(monthlyMinutes: 60);
         $slot = Slot::of('2026-09-10 10:00', '2026-09-10 11:00');
         $this->driver()->book('b1', 'blue', 'ada', $slot);
-        self::getContainer()->get(UnitOfWorkRunner::class)->run(function () use ($slot): void {
-            $this->driver()->cancel('b1', 'ada');
-            $this->driver()->book('b2', 'blue', 'grace', $slot);
+        $this->assertPendingQueryChanges('room_bookings', function () use ($slot): void {
+            self::getContainer()->get(UnitOfWorkRunner::class)->run(function () use ($slot): void {
+                $this->driver()->cancel('b1', 'ada');
+                $this->driver()->book('b2', 'blue', 'grace', $slot);
+            });
         });
-        self::assertSame('cancelled', $this->driver()->bookingStatus('b1'));
-        self::assertSame(['b2'], $this->driver()->bookingsOnDay('blue', '2026-09-10'));
+        self::assertSame('confirmed', $this->driver()->bookingStatus('b1'));
+        self::assertSame(['b1'], $this->driver()->bookingsOnDay('blue', '2026-09-10'));
         self::assertSame(60, $this->driver()->usedMinutes('acme', '2026-09'));
+        // Sequential actions remain valid when each decision has its own flush.
+        $this->driver()->cancel('b1', 'ada');
+        $this->driver()->book('b2', 'blue', 'grace', $slot);
+        self::assertSame(['b2'], $this->driver()->bookingsOnDay('blue', '2026-09-10'));
     }
 
-    public function test_multiple_buffered_moves_keep_the_original_charge_only_once(): void
+    public function test_a_second_buffered_move_is_rejected_and_the_first_move_is_discarded(): void
     {
         $this->givenAcmeWithAdaAndGrace(monthlyMinutes: 120);
         $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
-        self::getContainer()->get(UnitOfWorkRunner::class)->run(function (): void {
-            $this->driver()->reschedule('b1', 'ada', 'red', Slot::of('2026-10-01 10:00', '2026-10-01 11:00'));
-            $this->driver()->reschedule('b1', 'ada', 'blue', Slot::of('2026-09-11 10:00', '2026-09-11 11:00'));
-            $this->driver()->book('b2', 'red', 'grace', Slot::of('2026-09-11 10:00', '2026-09-11 11:00'));
+        $this->assertPendingQueryChanges('room_bookings', function (): void {
+            self::getContainer()->get(UnitOfWorkRunner::class)->run(function (): void {
+                $this->driver()->reschedule('b1', 'ada', 'red', Slot::of('2026-10-01 10:00', '2026-10-01 11:00'));
+                $this->driver()->reschedule('b1', 'ada', 'blue', Slot::of('2026-09-11 10:00', '2026-09-11 11:00'));
+            });
         });
-        self::assertSame(120, $this->driver()->usedMinutes('acme', '2026-09'));
+        self::assertSame(['b1'], $this->driver()->bookingsOnDay('blue', '2026-09-10'));
+        self::assertSame([], $this->driver()->bookingsOnDay('red', '2026-10-01'));
+        self::assertSame(60, $this->driver()->usedMinutes('acme', '2026-09'));
         self::assertSame(0, $this->driver()->usedMinutes('acme', '2026-10'));
     }
 
@@ -137,6 +147,18 @@ final class StateStoreDirectBookingTest extends BookingScenarioTestCase
         }
 
         self::fail('Expected both member registration violations.');
+    }
+
+    private function assertPendingQueryChanges(string $guardName, callable $action): void
+    {
+        try {
+            $action();
+        } catch (PendingQueryChangesException $exception) {
+            self::assertSame($guardName, $exception->guardName);
+
+            return;
+        }
+        self::fail('Expected a pending-write query rejection for '.$guardName.'.');
     }
 
     protected function driver(): BookingDriver

@@ -6,6 +6,7 @@ namespace Ultra\StateStore;
 
 use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\MappedTable\RowUpdatePlan;
+use Ultra\MappedTable\MappedKey;
 
 /** Prototype: derive old/new guard keys from conditional row plans, without additional database reads. */
 final class QueryGuardWriteRules
@@ -13,7 +14,7 @@ final class QueryGuardWriteRules
     /**
      * @param array<string, RowSetUpdatePlan> $plans
      * @param array<string, list<array{tableKey: string, keyBy: string, columns: list<string>|null}>> $definitions
-     * @return iterable<array{name: string, value: int|string}>
+     * @return iterable<array{name: string, value: int|string, tableKey: string, key: MappedKey}>
      */
     public static function requests(array $plans, array $definitions): iterable
     {
@@ -23,7 +24,9 @@ final class QueryGuardWriteRules
                     if (!$plan->writes()) {
                         continue;
                     }
-                    yield from self::requestsForPlan($name, $scope['keyBy'], $scope['columns'], $plan);
+                    foreach (self::requestsForPlan($name, $scope['keyBy'], $scope['columns'], $plan) as $request) {
+                        yield [...$request, 'tableKey' => $scope['tableKey'], 'key' => $plan->key];
+                    }
                 }
             }
         }

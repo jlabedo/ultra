@@ -6,8 +6,8 @@ suite passes on all four flavors. Tests that reproduce an open gap go in the `fi
 
 | | Event sourced | State store decisions | State store direct | Classic (Doctrine ORM) |
 |---|---|---|---|---|
-| Non-blank lines (excluding shared rules) | 807 in 24 files | 717 in 19 files | 367 in 6 files | 364 in 6 files |
-| Code lines (excluding comments, blank lines and PHP opening tags) | 726 | 634 | 354 | 342 |
+| Non-blank lines (excluding shared rules) | 807 in 24 files | 717 in 19 files | 342 in 6 files | 364 in 6 files |
+| Code lines (excluding comments, blank lines and PHP opening tags) | 726 | 634 | 330 | 342 |
 | Scenario suite | passes | passes | passes | passes |
 | Concurrent decision races tested | yes, deterministically | yes, deterministically | yes, deterministically | no (locks need two processes) |
 | Set-based rules | event folds | materialized schedules and usage | SQL queries replayed at flush | SQL queries inside the transaction |
@@ -15,7 +15,7 @@ suite passes on all four flavors. Tests that reproduce an open gap go in the `fi
 
 Counts include every PHP file under each flavor's source directory, including its service, repository, states,
 commands and events. They exclude tests, shared domain rules, configuration, DDL and framework implementation.
-The direct variant has 157 non-blank service lines, 116 repository lines and 94 state lines; Doctrine has 192,
+The direct variant has 176 non-blank service lines, 72 repository lines and 94 state lines; Doctrine has 192,
 55 and 117 respectively. These are source-size measurements, not performance measurements. Mapping conventions
 and the placement of validation code also affect the result.
 
@@ -262,8 +262,8 @@ operations; it does not impose a global operation-type order.
 per changed booking rather than three synchronized state copies. StateStore's readonly snapshots and optimistic
 checks remain available without adopting message dispatch. Runtime fan-out is a plain loop. For an AI, the path
 from an operation to its loads, guards and SQL is visible through ordinary method calls; the framework phases are
-now documented beside the public APIs. Discoverability still requires reading the runner and the repository's
-unit-of-work participation to understand when writes and cleanup happen.
+now documented beside the public APIs. The runner and StateTableRegistry own writes and cleanup; the repository
+has no separate unit-of-work participation.
 
 **Costs:** correctness of set-based rules depends on complete dependency declarations. The framework enrolls
 affected writes even when no query is called, but SQL writers bypassing the StateStore flush do not participate.
@@ -275,13 +275,20 @@ than Doctrine's, but the extra reads and advisory-lock statements are real work.
 made without a benchmark. Ordered guards address their own acquisition order, not every possible deadlock involving
 other database writers or constraints.
 
-**Pending writes are an application concern for manual SQL.** Replayed queries see committed data before this
-flush's writes. The repository keeps each pending booking's original and current snapshot, so usage adds the local
-charge delta, overlap queries overlay pending slots, and bulk closure sees locally prepared bookings. Only the raw
-SQL result becomes the expected result. The repository participates in unit-of-work cleanup while StateStore owns
-the write plan. The repository has 116 non-blank lines versus Doctrine's 55, including its guard declarations. It is needed
-for several operations composed before flush, not only for weekly series. Tests cover quota exhaustion, cancelling
-then rebooking, successive moves, rollback cleanup, and a weekly series spanning months.
+**Guarded reads precede affected writes.** `QueryGuard::observe()` rejects pending mutations impacting the same
+named guard and dynamic value with `PendingQueryChangesException`, before executing SQL. The exception identifies
+the guard, scope and pending row. The check uses the declared dependencies, so it can conservatively reject an
+operation even if a more precise SQL predicate would exclude the row. Unrelated scopes, unwatched columns and
+optimistic expectations remain allowed. Flush replays earlier observations before writes, without repeating this
+initial-read check. Unknown old scopes still require observation; no extra database reads reconstruct originals.
+
+The repository now has 72 non-blank lines versus Doctrine's 55, including guard declarations. It retains no original
+or current booking snapshots and no cleanup queue; the service saves directly through StateStore. `bookWeekly()`
+validates all slots, aggregates the requested minutes per month and reads existing consumption once per month,
+then saves every booking in one flush. Tests cover per-month quotas, rollback when a later month's quota fails,
+and rejection of booking-after-booking, cancellation-then-booking and repeated moves composed before flush.
+Creating company, member and room states can still precede booking in the same unit of work: these tables do not
+affect the declared booking queries.
 
 **The decision variants retain capabilities that this service does not reproduce:** automatic expectations for
 declared states, mediator dispatch and advice, and check mode returning domain violations without saving effects.
@@ -289,7 +296,7 @@ Those capabilities should be evaluated on their own value. `SelfHandler` combine
 one place; it also ties business behavior to dispatch conventions. `DecisionHandler` makes state dependencies
 visible in signatures and binds consistency checks to them; its cost is translating query-shaped invariants into
 state parameters and learning binding/effect semantics. Direct StateStore makes those decisions explicit in service
-code, including manual expectations and query-overlay bookkeeping.
+code, including explicit batch validation before buffering writes.
 
 Package tests also verify shared reader compatibility, exclusion of writers that never call a query, old/new
 scope protection, and exclusive consolidation across mapped views before query validation. Constructor injection
@@ -311,7 +318,7 @@ states, plus commands and binding plumbing. It does not establish that StateStor
 
 Direct StateStore trades Doctrine's long pessimistic transaction for decisions prepared outside a transaction,
 followed by guarded query rechecks and optimistic writes in one flush. Its prototype keeps explicit dependency
-declarations, automatically enrolls affected writes, and adds bookkeeping for pending writes. DecisionHandler offers more automatic consistency
+declarations, automatically enrolls affected writes, and rejects decision queries after affected local writes. DecisionHandler offers more automatic consistency
 checking for its declared boundaries and dispatch/check-mode integration; that benefit should justify the extra
 model and ceremony for the application. EventSourcedState remains useful when deriving schedules and quota from
 recorded domain facts is itself valuable.

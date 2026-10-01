@@ -29,8 +29,10 @@ checks duplicate identifiers directly in each creation operation. Bulk closure a
 by the repository.
 
 Manual queries observe committed rows before the write plan. `BookingRepository` registers their results with
-`QueryGuard::observe()` and separately overlays pending booking changes for subsequent decisions, including weekly series.
-It participates in unit-of-work cleanup; StateStore owns its writes. No intermediate flush is needed. Duplicate
+`QueryGuard::observe()`, which rejects a read if local writes affect the same declared guard and scope. Weekly
+series validate every occurrence, read existing usage once per month and check the total requested minutes before
+saving any booking. The repository keeps no pending-write overlay; StateStore owns all writes and cleanup.
+No intermediate flush is needed. Duplicate
 emails also have a database unique constraint, as in the Doctrine variant. Foreign keys are deferred to commit so
 new related states can be saved in one flush regardless of table order.
 
