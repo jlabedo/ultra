@@ -6,18 +6,24 @@ suite passes on all four flavors. Tests that reproduce an open gap go in the `fi
 
 | | Event sourced | State store decisions | State store direct | Classic (Doctrine ORM) |
 |---|---|---|---|---|
-| Non-blank lines (excluding shared rules) | 807 in 24 files | 717 in 19 files | 342 in 6 files | 364 in 6 files |
-| Code lines (excluding comments, blank lines and PHP opening tags) | 726 | 634 | 330 | 342 |
+| Non-blank lines (excluding shared rules) | 807 in 24 files | 550 in 16 files | 342 in 6 files | 364 in 6 files |
+| Code lines (excluding comments, blank lines and PHP opening tags) | 726 | 511 | 330 | 342 |
 | Scenario suite | passes | passes | passes | passes |
 | Concurrent decision races tested | yes, deterministically | yes, deterministically | yes, deterministically | no (locks need two processes) |
-| Set-based rules | event folds | materialized schedules and usage | SQL queries replayed at flush | SQL queries inside the transaction |
+| Set-based rules | event folds | SQL queries replayed at flush | SQL queries replayed at flush | SQL queries inside the transaction |
 | Decision transaction | outside | outside | outside | inside |
+| Decision reads | preloaded state values | states and guarded repository queries | explicit state and query observations | entities and repository queries |
 
 Counts include every PHP file under each flavor's source directory, including its service, repository, states,
 commands and events. They exclude tests, shared domain rules, configuration, DDL and framework implementation.
 The direct variant has 176 non-blank service lines, 72 repository lines and 94 state lines; Doctrine has 192,
 55 and 117 respectively. These are source-size measurements, not performance measurements. Mapping conventions
 and the placement of validation code also affect the result.
+
+Sections 1–9 record findings from the initial implementation, including the former materialized StateStore
+schedules and usage. That model has since been replaced with guarded queries while keeping DecisionHandler;
+see section 11 for the current implementation. Framework fixes identified by those original scenarios remain
+applicable. The table above measures the current source.
 
 Each finding is classified:
 
@@ -54,6 +60,9 @@ company-month usage when the cancellation is refundable, which depends on the cl
 would always lock the usage row, and late cancellations would then conflict with concurrent bookings in the same
 month. That load stays manual.
 
+**Resolved in the current StateStore example:** cancellation changes only the booking's status and charge flag.
+It reads no usage query; affected writer guards are derived automatically.
+
 ## 2. A decision cannot load a runtime number of states (Feature, partially covered)
 
 A weekly series touches one room-day and one company-month per occurrence, and the number of occurrences comes from
@@ -67,6 +76,10 @@ Workaround: `BookWeeklyHandler` sends one `BookRoom` per occurrence inside the s
   `EventStoreUnitOfWork`.
 - **State store: works** since the fix for finding 6.
 - Both flavors stop at the first failing occurrence, so a caller cannot get "weeks 3 and 5 are taken" in one answer.
+
+**Current StateStore implementation:** `BookWeekly` is one decision. A guarded repository validates the slots and
+the total requested quota per month before the aspect buffers any booking. Only the event-sourced flavor retains
+the per-occurrence dispatch pattern.
 
 **Direction**: document decision composition within one unit of work as the supported pattern for variable
 fan-out. Optionally add collection parameters, such as `list<RoomDayScheduleState>` bound to a command list path,
@@ -159,6 +172,9 @@ expectations. It keeps the same four normalized entities as Doctrine, with no ro
 This demonstrates that the extra states are a consequence of how this example expresses decision parameters,
 not a mandatory storage model imposed by StateStore itself. The query-scoped-state direction remains separate.
 
+**Also implemented with DecisionHandler:** the StateStore decision flavor now uses the same guarded-query
+approach through injected dependencies. Its materialized schedules and usage have been removed; see section 11.
+
 
 ## 8. State store: manual loads are unsafe by default (Feature)
 
@@ -185,6 +201,9 @@ state exists, or an absence expectation when it does not. Presence is checked ev
 The direct flavor uses it with the same typed `company()` and `booking()` helpers as Doctrine, explicit creation
 checks, and bulk closure. `load()` remains available without automatic expectations; decision aspects and manual
 callers can adopt observation where appropriate.
+
+The current StateStore decisions use `observe()` for booking-id checks and bulk hydration. Cancellation has no
+manual load, and rescheduling no longer has source/target schedule or usage copies to merge.
 
 ## 9. Smaller observations
 
@@ -217,12 +236,12 @@ The comparison is not one-sided:
   it deterministically, with a second kernel committing between load and flush. The classic flavor guards quota and overlap queries by locking the company and room rows in a fixed order. Forgetting a lock,
   or taking them in a different order, is a silent double-booking or a deadlock, and no single-process test catches
   either.
-- **The event-sourced flavor derives what the others store.** Quota usage and room schedules are folds over events,
-  with no copies to keep in sync. `CloseRoomForDay` refunds every affected company without loading any usage state:
-  the cancellation events are routed to each company-month by their tags. This is the cleanest use case of the
-  three implementations.
-- **Decisions are pure.** `decide()` receives states and returns effects, so business rules can be unit-tested
-  without a database. The classic service needs repositories and a transaction.
+- **The event-sourced flavor derives schedules and usage from events.** `CloseRoomForDay` refunds every affected
+  company without loading any usage state: cancellation events are routed to each company-month by their tags.
+  The StateStore flavors now calculate the same rules with guarded queries over bookings, without stored copies.
+- **Event-sourced decisions operate on preloaded state values.** `decide()` receives states and returns effects,
+  so its rules can be tested without a database. StateStore decisions now read through a guarded repository and
+  return state effects; persistence still belongs to the aspect. The pure rules in `BookingPolicy` remain shared.
 - **The classic flavor has its own traps.**
   - Invariant exceptions inside `wrapInTransaction()` close the entity manager, which is why the service uses a
     connection-level transaction.
@@ -293,10 +312,10 @@ affect the declared booking queries.
 **The decision variants retain capabilities that this service does not reproduce:** automatic expectations for
 declared states, mediator dispatch and advice, and check mode returning domain violations without saving effects.
 Those capabilities should be evaluated on their own value. `SelfHandler` combines the message and its decision in
-one place; it also ties business behavior to dispatch conventions. `DecisionHandler` makes state dependencies
-visible in signatures and binds consistency checks to them; its cost is translating query-shaped invariants into
-state parameters and learning binding/effect semantics. Direct StateStore makes those decisions explicit in service
-code, including explicit batch validation before buffering writes.
+one place; it also ties business behavior to dispatch conventions. `DecisionHandler` makes mapped state dependencies
+visible in signatures and binds consistency checks to them. Guarded repositories now express query-shaped rules
+in both StateStore flavors; understanding dispatch, dependent bindings and returned effects remains an additional
+cost of the decision-based flavor. Direct StateStore makes those steps explicit in service code.
 
 Package tests also verify shared reader compatibility, exclusion of writers that never call a query, old/new
 scope protection, and exclusive consolidation across mapped views before query validation. Constructor injection
@@ -310,11 +329,45 @@ observed scopes for existing-row mutations and rejects blind upserts. It does no
 scopes or enroll independently flushed row sets and collection-item tables. See
 [the query guard documentation](../../src/StateStore/QUERY_GUARDS.md) for the complete contract and test commands.
 
+## 11. StateStore decisions with guarded queries
+
+The decision-based flavor now uses the same query-guard protocol as direct StateStore, while keeping
+`SelfHandler`, `DecisionHandler`, automatic mapped-state expectations, dependent company bindings and check mode.
+Its repository declares separate `state_store_company_usage` and `state_store_room_bookings` guards, because the
+two flavors watch different tables. Both scopes cover whole companies or rooms; finer calendar scopes are not
+derived by the framework.
+
+The four schedule/usage state classes and their four tables are removed. `BookingState` carries the charge flag;
+early cancellation and bulk closure clear it, while late cancellation preserves it. Rescheduling only returns
+the moved booking. Guards for its original and new scopes are derived from its observed row. Cancellation does
+not read a query, but its affected columns still enroll it as a writer. The five remaining tables represent the
+four domain entities and the email-claim uniqueness anchor.
+
+`BookRoom` and `BookWeekly` share `BookingPlanner`. Room, member and company remain declared state parameters,
+with the company identity derived from the member. The planner observes each booking identifier, validates all
+slots, aggregates the requested minutes per month and checks stored usage before returning bookings. The aspect
+buffers the returned states only after validation. Weekly booking needs neither a separate handler dispatching
+each occurrence nor an intermediate flush. Bulk closure observes the query's booking ids and each hydrated state,
+then returns the cancellations as effects.
+
+This removes the synchronization and same-source/target copy branches, reducing this flavor from **717 to 550
+non-blank lines** and **634 to 511 code lines**, across **16 files instead of 19**. Its extra source compared with
+direct StateStore now principally demonstrates message dispatch, binding and effect semantics, plus the
+email-claim state. It no longer demonstrates a need to materialize query results before using DecisionHandler.
+
+The trade-off is explicit: StateStore decisions now read through injected repositories, rather than operating
+only on preloaded values. Query dependencies must remain complete, callbacks run again at flush, and an observed
+query cannot follow an affected local write. Check mode still validates the request and discards its effects.
+Tests cover successful and failing weekly checks, whole-series quota and conflict rollback, the rejection of a
+second affected decision before a transaction starts, and related-state creation followed by booking in one flush.
+Competing-kernel tests also reject a booking introduced while a bulk closure is being decided.
+
 ## Verdict
 
-The fourth variant changes the comparison: StateStore alone has a similar application footprint to Doctrine for
-this domain. The original gap in source size mainly comes from expressing set-based rules as materialized decision
-states, plus commands and binding plumbing. It does not establish that StateStore requires that model.
+StateStore alone has a similar application footprint to Doctrine for this domain. Guarded queries also improve
+the decision-based flavor: its former materialized schedules and usage are removed. The remaining source-size
+gap reflects commands, dependent bindings, effect handling and the email-claim state, rather than a requirement
+to store separate copies for query-shaped rules.
 
 Direct StateStore trades Doctrine's long pessimistic transaction for decisions prepared outside a transaction,
 followed by guarded query rechecks and optimistic writes in one flush. Its query guards keep explicit dependency

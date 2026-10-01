@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Booking\StateStore\State;
 
-use App\Booking\Domain\BookingIds;
 use App\Booking\Domain\Slot;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
@@ -30,7 +29,8 @@ final readonly class BookingState
         #[StateColumn('end_at')]
         public \DateTimeImmutable $end,
         #[StateColumn('status')]
-        public string $status,
+        public string $status = self::CONFIRMED,
+        public bool $charged = true,
     ) {}
 
     public function slot(): Slot
@@ -38,23 +38,13 @@ final readonly class BookingState
         return new Slot($this->start, $this->end);
     }
 
-    public function roomDayId(): string
+    public function cancelled(bool $refunded): self
     {
-        return BookingIds::roomDay($this->roomId, $this->slot()->day());
-    }
-
-    public function companyMonthId(): string
-    {
-        return BookingIds::companyMonth($this->companyId, $this->slot()->month());
-    }
-
-    public function cancelled(): self
-    {
-        return new self($this->bookingId, $this->roomId, $this->memberId, $this->companyId, $this->start, $this->end, self::CANCELLED);
+        return new self($this->bookingId, $this->roomId, $this->memberId, $this->companyId, $this->start, $this->end, self::CANCELLED, !$refunded);
     }
 
     public function movedTo(string $roomId, Slot $slot): self
     {
-        return new self($this->bookingId, $roomId, $this->memberId, $this->companyId, $slot->start, $slot->end, $this->status);
+        return new self($this->bookingId, $roomId, $this->memberId, $this->companyId, $slot->start, $slot->end, $this->status, $this->charged);
     }
 }

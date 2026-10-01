@@ -5,14 +5,15 @@ declare(strict_types=1);
 namespace App\Booking\StateStore\Write;
 
 use App\Booking\Domain\Slot;
+use App\Booking\Domain\BookingIds;
+use App\Booking\StateStore\BookingPlanner;
+use App\Booking\StateStore\State\BookingState;
+use App\Booking\StateStore\State\CompanyState;
+use App\Booking\StateStore\State\MemberState;
+use App\Booking\StateStore\State\RoomState;
+use Ultra\MessageHandling\Attribute\SelfHandler;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 
-/**
- * All-or-nothing weekly series. Each occurrence has its own room-day and company-month boundary, and the number
- * of occurrences is only known at runtime, so the series cannot be one decision handler.
- *
- * Instead, one BookRoom decision runs per occurrence inside the same unit of work: the mapped-table unit of work
- * makes earlier occurrences visible to later ones, and the whole series is written in one flush.
- */
 final readonly class BookWeekly
 {
     public function __construct(
@@ -22,4 +23,22 @@ final readonly class BookWeekly
         public Slot $firstSlot,
         public int $weeks,
     ) {}
+
+    public function companyId(MemberState $member): string
+    {
+        return $member->companyId;
+    }
+
+    /** @return list<BookingState> */
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(?RoomState $room, ?MemberState $member, ?CompanyState $company, BookingPlanner $planner): array
+    {
+        $occurrences = [];
+        for ($week = 0; $week < $this->weeks; ++$week) {
+            $occurrences[] = ['id' => BookingIds::occurrence($this->seriesId, $week), 'slot' => $this->firstSlot->shiftedByWeeks($week)];
+        }
+
+        return $planner->plan($occurrences, $room, $member, $company);
+    }
 }

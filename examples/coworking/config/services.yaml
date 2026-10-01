@@ -46,6 +46,8 @@ services:
         public: true
     App\Booking\StateStoreDirect\Repository\BookingRepository:
         public: true
+    App\Booking\StateStore\Repository\BookingRepository:
+        public: true
 
 when@test:
     services:

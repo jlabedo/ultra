@@ -90,6 +90,35 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
         self::assertSame(60, $first->usedMinutes('acme', '2026-09'));
     }
 
+    public function test_state_store_weekly_booking_rejects_a_concurrent_conflict_without_saving_any_occurrence(): void
+    {
+        [$first, $second] = $this->drivers('stateStore');
+        $this->given($first);
+        $this->assertLosesRace(
+            fn () => $first->bookWeekly('series', 'blue', 'ada', Slot::of('2026-09-08 10:00', '2026-09-08 11:00'), 3),
+            fn () => $second->book('winner', 'blue', 'grace', Slot::of('2026-09-22 10:00', '2026-09-22 11:00')),
+        );
+        self::assertNull($first->bookingStatus('series#0'));
+        self::assertNull($first->bookingStatus('series#1'));
+        self::assertNull($first->bookingStatus('series#2'));
+        self::assertSame(['winner'], $first->bookingsOnDay('blue', '2026-09-22'));
+        self::assertSame(60, $first->usedMinutes('acme', '2026-09'));
+    }
+
+    public function test_state_store_bulk_closure_rejects_a_concurrent_booking_without_cancelling_existing_bookings(): void
+    {
+        [$first, $second] = $this->drivers('stateStore');
+        $this->given($first);
+        $first->book('existing', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
+        $this->assertLosesRace(
+            fn () => $first->closeRoomForDay('blue', '2026-09-10'),
+            fn () => $second->book('winner', 'blue', 'grace', Slot::of('2026-09-10 14:00', '2026-09-10 15:00')),
+        );
+        self::assertSame('confirmed', $first->bookingStatus('existing'));
+        self::assertSame(['existing', 'winner'], $first->bookingsOnDay('blue', '2026-09-10'));
+        self::assertSame(120, $first->usedMinutes('acme', '2026-09'));
+    }
+
     #[\PHPUnit\Framework\Attributes\DataProvider('flavors')]
     public function test_unrelated_bookings_do_not_conflict(string $flavor): void
     {
@@ -150,6 +179,6 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
 
         return 'eventSourced' === $flavor
             ? new EventSourcedDriver($container->get(MediatorInterface::class), $container->get(EventSourcedStateStore::class))
-            : new StateStoreDriver($container->get(MediatorInterface::class), $container->get(StateStore::class));
+            : new StateStoreDriver($container->get(MediatorInterface::class), $container->get(StateStore::class), $container->get(\App\Booking\StateStore\Repository\BookingRepository::class));
     }
 }

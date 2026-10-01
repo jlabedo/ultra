@@ -5,11 +5,24 @@ The same booking domain is implemented four times against one Postgres database,
 | Flavor | Code | Persistence |
 |---|---|---|
 | Event sourced | `src/Booking/EventSourced` | `#[DecisionHandler]` + `EventSourcedDecisionAspect`, Postgres event store |
-| State store | `src/Booking/StateStore` | `#[DecisionHandler]` + `StateStoreDecisionAspect`, mapped Postgres tables |
+| State store | `src/Booking/StateStore` | `#[DecisionHandler]` + `StateStoreDecisionAspect`, normalized tables and compiled query guards |
 | State store direct | `src/Booking/StateStoreDirect` | Plain service, `StateStore`, compiled query guards and SQL expectations |
 | Classic | `src/Booking/Classic` | Doctrine ORM entities, repository queries, pessimistic locks |
 
 `src/Booking/Domain` holds the pure rules (`BookingPolicy`, `Slot`) shared by all four, so the flavors only differ in how state is loaded, checked and saved.
+
+The decision-based StateStore variant also queries bookings directly for usage and availability. It stores no
+room-day schedules or company-month charges. `BookingState::charged` distinguishes refunded bookings from late
+cancellations. `EmailClaimState` remains the uniqueness anchor for member registration.
+
+`BookRoom` and `BookWeekly` use `BookingPlanner` to validate the complete request before returning any effects.
+The planner observes booking identifiers, verifies all slots, and checks total requested minutes per month through
+the guarded repository. `StateStoreDecisionAspect` still loads and expects declared room, member and company
+states, resolves dependent company identities, and saves the returned bookings. Weekly booking is now one
+`SelfHandler` decision, with no intermediate dispatch or flush. Rescheduling returns one moved booking; cancelling
+and bulk closure return only cancelled bookings. All affected writers automatically acquire their query guards.
+Decisions perform reads through injected dependencies; they no longer operate solely on preloaded state values.
+Check mode runs those reads and validations but discards the returned effects.
 
 The direct variant uses four normalized tables (company, member, room, booking), like Doctrine. It has no schedule
 or usage copies to maintain. `BookingService` calls `UnitOfWorkRunner::run()` explicitly, without the mediator,

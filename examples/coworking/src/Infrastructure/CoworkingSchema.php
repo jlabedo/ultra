@@ -24,11 +24,7 @@ final readonly class CoworkingSchema
         'cw_ss_members' => 'member_id TEXT PRIMARY KEY, company_id TEXT NOT NULL, email TEXT NOT NULL',
         'cw_ss_member_emails' => 'email TEXT PRIMARY KEY, member_id TEXT NOT NULL',
         'cw_ss_rooms' => 'room_id TEXT PRIMARY KEY, name TEXT NOT NULL',
-        'cw_ss_bookings' => 'booking_id TEXT PRIMARY KEY, room_id TEXT NOT NULL, member_id TEXT NOT NULL, company_id TEXT NOT NULL, start_at TEXT NOT NULL, end_at TEXT NOT NULL, status TEXT NOT NULL',
-        'cw_ss_room_days' => 'room_day_id TEXT PRIMARY KEY',
-        'cw_ss_room_day_slots' => 'room_day_id TEXT NOT NULL, booking_id TEXT NOT NULL, member_id TEXT NOT NULL, company_id TEXT NOT NULL, start_at TEXT NOT NULL, end_at TEXT NOT NULL, PRIMARY KEY (room_day_id, booking_id)',
-        'cw_ss_company_months' => 'company_month_id TEXT PRIMARY KEY',
-        'cw_ss_company_month_charges' => 'company_month_id TEXT NOT NULL, booking_id TEXT NOT NULL, minutes INTEGER NOT NULL, PRIMARY KEY (company_month_id, booking_id)',
+        'cw_ss_bookings' => 'booking_id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES cw_ss_rooms DEFERRABLE INITIALLY DEFERRED, member_id TEXT NOT NULL REFERENCES cw_ss_members DEFERRABLE INITIALLY DEFERRED, company_id TEXT NOT NULL REFERENCES cw_ss_companies DEFERRABLE INITIALLY DEFERRED, start_at TIMESTAMPTZ NOT NULL, end_at TIMESTAMPTZ NOT NULL, status TEXT NOT NULL, charged BOOLEAN NOT NULL',
     ];
 
     public function __construct(
@@ -51,6 +47,8 @@ final readonly class CoworkingSchema
 
         $this->connection->executeStatement('CREATE INDEX ON cw_direct_bookings (room_id, start_at)');
         $this->connection->executeStatement('CREATE INDEX ON cw_direct_bookings (company_id, start_at)');
+        $this->connection->executeStatement('CREATE INDEX ON cw_ss_bookings (room_id, start_at)');
+        $this->connection->executeStatement('CREATE INDEX ON cw_ss_bookings (company_id, start_at)');
 
         // SchemaTool::dropSchema() introspects the whole database and cannot read the event store column types.
         $metadata = $this->entityManager->getMetadataFactory()->getAllMetadata();
