@@ -31,7 +31,9 @@ final readonly class BookingService
     public function registerCompany(string $companyId, string $name, int $monthlyMinutes): void
     {
         $this->unitOfWork->run(function () use ($companyId, $name, $monthlyMinutes): void {
-            $this->expectNew(Company::class, $companyId, 'company.already_registered');
+            Violations::throwIfAny([
+                null !== $this->states->observe(Company::class, $companyId) ? new Violation('company.already_registered', 'Company already exists.') : null,
+            ]);
             $this->states->save(new Company($companyId, $name, $monthlyMinutes));
         });
     }
@@ -39,8 +41,7 @@ final readonly class BookingService
     public function changeCompanyPlan(string $companyId, int $monthlyMinutes): void
     {
         $this->unitOfWork->run(function () use ($companyId, $monthlyMinutes): void {
-            $company = $this->state(Company::class, $companyId, 'company.not_found');
-            $this->states->lock($company);
+            $company = $this->company($companyId);
             $this->states->save($company->withMonthlyMinutes($monthlyMinutes));
         });
     }
@@ -49,11 +50,11 @@ final readonly class BookingService
     {
         $email = BookingPolicy::normalizeEmail($email);
         $this->unitOfWork->run(function () use ($memberId, $companyId, $email): void {
-            $this->expectNew(Member::class, $memberId, 'member.already_registered');
             Violations::throwIfAny([
+                null !== $this->states->observe(Member::class, $memberId) ? new Violation('member.already_registered', 'Member already exists.') : null,
                 $this->states->observeQuery(fn (): bool => $this->bookings->emailTaken($email), 'member email '.$email) ? new Violation('member.email_taken', 'Email is already used by another member.') : null,
             ]);
-            $this->state(Company::class, $companyId, 'company.not_found');
+            $this->company($companyId);
             // As with Doctrine, a concurrent duplicate email is also protected by a unique index.
             $this->states->save(new Member($memberId, $companyId, $email));
         });
@@ -62,7 +63,9 @@ final readonly class BookingService
     public function openRoom(string $roomId, string $name): void
     {
         $this->unitOfWork->run(function () use ($roomId, $name): void {
-            $this->expectNew(Room::class, $roomId, 'room.already_opened');
+            Violations::throwIfAny([
+                null !== $this->states->observe(Room::class, $roomId) ? new Violation('room.already_opened', 'Room already exists.') : null,
+            ]);
             $this->states->save(new Room($roomId, $name));
         });
     }
@@ -84,7 +87,7 @@ final readonly class BookingService
     public function cancel(string $bookingId, string $memberId): void
     {
         $this->unitOfWork->run(function () use ($bookingId, $memberId): void {
-            $booking = $this->state(Booking::class, $bookingId, 'booking.not_found');
+            $booking = $this->booking($bookingId);
             $this->lockBookingGuards($booking);
             Violations::throwIfAny([
                 $booking->memberId !== $memberId ? new Violation('booking.not_owner', 'Only the member who booked can cancel.') : null,
@@ -98,9 +101,12 @@ final readonly class BookingService
     {
         $this->unitOfWork->run(function () use ($bookingId, $memberId, $roomId, $slot): void {
             $now = $this->clock->now();
-            $booking = $this->state(Booking::class, $bookingId, 'booking.not_found');
+            $booking = $this->booking($bookingId);
             $company = $this->lockBookingGuards($booking);
-            $room = $this->state(Room::class, $roomId, 'room.not_found');
+            $room = $this->states->observe(Room::class, $roomId);
+            Violations::throwIfAny([
+                null === $room ? new Violation('room.not_found', 'Room does not exist.') : null,
+            ]);
             $this->states->lock($room);
             Violations::throwIfAny([
                 $booking->memberId !== $memberId ? new Violation('booking.not_owner', 'Only the member who booked can reschedule.') : null,
@@ -131,10 +137,18 @@ final readonly class BookingService
 
     private function bookOne(string $bookingId, string $roomId, string $memberId, Slot $slot): void
     {
-        $this->expectNew(Booking::class, $bookingId, 'booking.already_exists');
-        $member = $this->state(Member::class, $memberId, 'member.not_found');
-        $room = $this->state(Room::class, $roomId, 'room.not_found');
-        $company = $this->state(Company::class, $member->companyId, 'company.not_found');
+        Violations::throwIfAny([
+            null !== $this->states->observe(Booking::class, $bookingId) ? new Violation('booking.already_exists', 'Booking already exists.') : null,
+        ]);
+        $member = $this->states->observe(Member::class, $memberId);
+        Violations::throwIfAny([
+            null === $member ? new Violation('member.not_found', 'Member does not exist.') : null,
+        ]);
+        $room = $this->states->observe(Room::class, $roomId);
+        Violations::throwIfAny([
+            null === $room ? new Violation('room.not_found', 'Room does not exist.') : null,
+        ]);
+        $company = $this->company($member->companyId);
         $this->states->lock($company);
         $this->states->lock($room);
         Violations::throwIfAny([
@@ -145,31 +159,36 @@ final readonly class BookingService
         $this->bookings->save(new Booking($bookingId, $roomId, $memberId, $company->id, $slot->start, $slot->end));
     }
 
-    private function lockBookingGuards(Booking $booking): Company
+    private function company(string $companyId): Company
     {
-        $company = $this->state(Company::class, $booking->companyId, 'company.not_found');
-        $this->states->lock($company);
-        $this->states->lock($this->state(Room::class, $booking->roomId, 'room.not_found'));
+        $company = $this->states->observe(Company::class, $companyId);
+        Violations::throwIfAny([
+            null === $company ? new Violation('company.not_found', 'Company does not exist.') : null,
+        ]);
 
         return $company;
     }
 
-    /**
-     * @template T of object
-     * @param class-string<T> $class
-     * @return T
-     */
-    private function state(string $class, string $id, string $violation): object
+    private function booking(string $bookingId): Booking
     {
-        $state = $this->states->observe($class, $id);
-        Violations::throwIfAny([null === $state ? new Violation($violation, 'State does not exist.') : null]);
+        $booking = $this->states->observe(Booking::class, $bookingId);
+        Violations::throwIfAny([
+            null === $booking ? new Violation('booking.not_found', 'Booking does not exist.') : null,
+        ]);
 
-        return $state;
+        return $booking;
     }
 
-    /** @param class-string $class */
-    private function expectNew(string $class, string $id, string $violation): void
+    private function lockBookingGuards(Booking $booking): Company
     {
-        Violations::throwIfAny([null !== $this->states->observe($class, $id) ? new Violation($violation, 'State already exists.') : null]);
+        $company = $this->company($booking->companyId);
+        $this->states->lock($company);
+        $room = $this->states->observe(Room::class, $booking->roomId);
+        Violations::throwIfAny([
+            null === $room ? new Violation('room.not_found', 'Room does not exist.') : null,
+        ]);
+        $this->states->lock($room);
+
+        return $company;
     }
 }

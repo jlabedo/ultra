@@ -7,6 +7,7 @@ namespace App\Tests;
 use App\Booking\StateStoreDirect\BookingService;
 use App\Booking\StateStoreDirect\Repository\BookingRepository;
 use Ultra\StateStore\StateStore;
+use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\UnitOfWork\UnitOfWorkRunner;
 use Doctrine\DBAL\Connection;
 use App\Booking\Domain\Slot;
@@ -72,6 +73,70 @@ final class StateStoreDirectBookingTest extends BookingScenarioTestCase
         });
         self::assertSame(['b1'], $this->driver()->bookingsOnDay('blue', '2026-09-10'));
         self::assertSame(60, $this->driver()->usedMinutes('acme', '2026-09'));
+    }
+
+    public function test_duplicate_identifiers_keep_their_domain_violations(): void
+    {
+        $this->givenAcmeWithAdaAndGrace();
+        $this->assertViolation('company.already_registered', fn () => $this->driver()->registerCompany('acme', 'Another company', 1));
+        $this->assertViolation('member.already_registered', fn () => $this->driver()->registerMember('ada', 'acme', 'other@example.test'));
+        $this->assertViolation('room.already_opened', fn () => $this->driver()->openRoom('blue', 'Another room'));
+        $slot = Slot::of('2026-09-10 10:00', '2026-09-10 11:00');
+        $this->driver()->book('b1', 'blue', 'ada', $slot);
+        $this->assertViolation('booking.already_exists', fn () => $this->driver()->book('b1', 'red', 'grace', $slot));
+        self::assertSame(['b1'], $this->driver()->bookingsOnDay('blue', '2026-09-10'));
+        self::assertSame([], $this->driver()->bookingsOnDay('red', '2026-09-10'));
+        self::assertSame(60, $this->driver()->usedMinutes('acme', '2026-09'));
+    }
+
+    public function test_missing_states_keep_their_domain_violations(): void
+    {
+        $this->givenAcmeWithAdaAndGrace();
+        $slot = Slot::of('2026-09-10 10:00', '2026-09-10 11:00');
+        $this->assertViolation('company.not_found', fn () => $this->driver()->changeCompanyPlan('missing', 120));
+        $this->assertViolation('company.not_found', fn () => $this->driver()->registerMember('new-member', 'missing', 'new@example.test'));
+        $this->assertViolation('booking.not_found', fn () => $this->driver()->cancel('missing', 'ada'));
+        $this->assertViolation('booking.not_found', fn () => $this->driver()->reschedule('missing', 'ada', 'red', $slot));
+        $this->assertViolation('member.not_found', fn () => $this->driver()->book('b1', 'blue', 'missing', $slot));
+        $this->assertViolation('room.not_found', fn () => $this->driver()->book('b1', 'missing', 'ada', $slot));
+        $this->driver()->book('b1', 'blue', 'ada', $slot);
+        $this->assertViolation('room.not_found', fn () => $this->driver()->reschedule('b1', 'ada', 'missing', $slot));
+        self::assertSame(['b1'], $this->driver()->bookingsOnDay('blue', '2026-09-10'));
+        self::assertSame(60, $this->driver()->usedMinutes('acme', '2026-09'));
+    }
+
+    public function test_required_company_and_booking_report_the_same_messages_as_doctrine(): void
+    {
+        foreach ([
+            [fn () => $this->driver()->changeCompanyPlan('missing', 120), 'company.not_found: Company does not exist.'],
+            [fn () => $this->driver()->cancel('missing', 'ada'), 'booking.not_found: Booking does not exist.'],
+        ] as [$action, $message]) {
+            try {
+                $action();
+            } catch (InvariantViolation $violation) {
+                self::assertSame($message, $violation->getMessage());
+
+                continue;
+            }
+
+            self::fail('Expected violation: '.$message);
+        }
+    }
+
+    public function test_member_registration_reports_both_duplicate_identifier_and_email(): void
+    {
+        $this->givenAcmeWithAdaAndGrace();
+        try {
+            $this->driver()->registerMember('ada', 'acme', 'grace@example.test');
+        } catch (InvariantViolation $violation) {
+            self::assertSame(['member.already_registered', 'member.email_taken'], array_map(static fn ($v): string => $v->code, $violation->violations));
+            // A failed decision must leave no expectations that interfere with the next registration.
+            $this->driver()->registerMember('new-member', 'acme', 'new@example.test');
+
+            return;
+        }
+
+        self::fail('Expected both member registration violations.');
     }
 
     protected function driver(): BookingDriver

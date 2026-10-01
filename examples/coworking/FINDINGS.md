@@ -6,8 +6,8 @@ suite passes on all four flavors. Tests that reproduce an open gap go in the `fi
 
 | | Event sourced | State store decisions | State store direct | Classic (Doctrine ORM) |
 |---|---|---|---|---|
-| Non-blank lines (excluding shared rules) | 807 in 24 files | 717 in 19 files | 348 in 6 files | 364 in 6 files |
-| Code lines (excluding comments, blank lines and PHP opening tags) | 726 | 634 | 329 | 342 |
+| Non-blank lines (excluding shared rules) | 807 in 24 files | 717 in 19 files | 366 in 6 files | 364 in 6 files |
+| Code lines (excluding comments, blank lines and PHP opening tags) | 726 | 634 | 353 | 342 |
 | Scenario suite | passes | passes | passes | passes |
 | Concurrent decision races tested | yes, deterministically | yes, deterministically | yes, deterministically | no (locks need two processes) |
 | Set-based rules | event folds | materialized schedules and usage | SQL queries replayed at flush | SQL queries inside the transaction |
@@ -15,9 +15,9 @@ suite passes on all four flavors. Tests that reproduce an open gap go in the `fi
 
 Counts include every PHP file under each flavor's source directory, including its service, repository, states,
 commands and events. They exclude tests, shared domain rules, configuration, DDL and framework implementation.
-The direct variant has 156 non-blank service lines, 98 repository lines and 94 state lines; Doctrine has 192,
+The direct variant has 174 non-blank service lines, 98 repository lines and 94 state lines; Doctrine has 192,
 55 and 117 respectively. These are source-size measurements, not performance measurements. Mapping conventions
-and the direct service's shared observed-state helper also affect the result.
+and the placement of validation code also affect the result.
 
 Each finding is classified:
 
@@ -182,8 +182,9 @@ decides which copy to return). What remains is a conditional load (`CancelBookin
 
 **Implemented for direct reads:** `StateStore::observe(Class, id)` registers the usual state expectations when a
 state exists, or an absence expectation when it does not. Presence is checked even for identifier-only states.
-The direct flavor uses it in its domain helpers and bulk closure. `load()` remains available without automatic
-expectations; decision aspects and manual callers can adopt observation where appropriate.
+The direct flavor uses it with the same typed `company()` and `booking()` helpers as Doctrine, explicit creation
+checks, and bulk closure. `load()` remains available without automatic expectations; decision aspects and manual
+callers can adopt observation where appropriate.
 
 ## 9. Smaller observations
 
@@ -234,6 +235,16 @@ The comparison is not one-sided:
 `UnitOfWorkRunner::run()` explicitly; there are no messages, `SelfHandler`, `DecisionHandler`, bindings or decision
 aspects in this variant. The runner owns one transaction covering the entire flush. The service prepares its work
 outside that transaction, and a weekly series has no intermediate flush.
+
+Both services use typed `company()` and `booking()` helpers to load required objects and report the same domain
+violations. Creation checks stay inline in both implementations; the direct variant has no generic `state()` or
+`expectNew()` abstraction. Its `lockBookingGuards()` helper loads the related company and room explicitly because
+the states carry identifiers rather than Doctrine entity associations.
+
+Company plan changes use only optimistic row expectations: they do not validate a set-based query and need no
+manual guard. A booking's observed company quota is checked and protected until commit by the row plan, so a
+concurrent plan change is detected or waits for that check. Member registration groups duplicate identifier and
+email violations in one validation, as in Doctrine.
 
 The added APIs are `StateStore::observe(Class, id)`, `lock(object)`, `observeQuery(callable, ?string $name)` and
 `expectQuery(callable, mixed $expected, ?string $name)`. Locks identify physical table/key pairs, including missing

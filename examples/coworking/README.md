@@ -15,12 +15,14 @@ The direct variant uses four normalized tables (company, member, room, booking),
 or usage copies to maintain. `BookingService` calls `UnitOfWorkRunner::run()` explicitly, without the mediator,
 `SelfHandler` or `DecisionHandler`. The runner prepares the decision outside a transaction and flushes once in one
 transaction: acquire the requested manual guards, replay the SQL expectations, then check and write the row plans.
-The developer selects company and room guards for every action affecting quota or availability. No `SERIALIZABLE`
-isolation or pessimistic row locks are used during the decision.
+The developer selects company and room guards for actions changing booking usage or availability. Company plan
+changes rely on optimistic row expectations without a manual guard. No `SERIALIZABLE` isolation or pessimistic row
+locks are used during the decision.
 
 The service reads through `StateStore::observe()`, which registers optimistic state or absence expectations
-automatically. Its helpers only translate missing or existing states into domain violations. Bulk closure also
-observes the bookings hydrated by the repository.
+automatically. Like Doctrine, the service uses typed `company()` and `booking()` helpers for required loads and
+checks duplicate identifiers directly in each creation operation. Bulk closure also observes the bookings hydrated
+by the repository.
 
 Manual queries observe committed rows before the write plan. `BookingRepository` registers their results with
 `observeQuery()` and separately overlays pending booking changes for subsequent decisions, including weekly series.

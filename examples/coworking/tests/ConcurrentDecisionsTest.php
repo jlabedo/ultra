@@ -79,6 +79,17 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
         self::assertSame(0, $first->usedMinutes('acme', '2026-09'));
     }
 
+    public function test_direct_plan_changes_reject_concurrent_updates_without_a_manual_guard(): void
+    {
+        [$first, $second] = $this->drivers('stateStoreDirect');
+        $this->given($first, monthlyMinutes: 120);
+
+        $this->assertLosesRace(fn () => $first->changeCompanyPlan('acme', 30), fn () => $second->changeCompanyPlan('acme', 60));
+
+        $first->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
+        self::assertSame(60, $first->usedMinutes('acme', '2026-09'));
+    }
+
     #[\PHPUnit\Framework\Attributes\DataProvider('flavors')]
     public function test_unrelated_bookings_do_not_conflict(string $flavor): void
     {
