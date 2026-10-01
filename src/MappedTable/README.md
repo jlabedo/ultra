@@ -112,20 +112,10 @@ Row-set key expectations use a transaction-scoped advisory lock and therefore re
 
 Check-only rows are checked in one `SELECT ... FOR SHARE` per table, so they stay locked against concurrent writers until the transaction ends. An absent row cannot be locked, so rows expected absent, and rows an insert or upsert may create, take a transaction-scoped advisory lock on their key (one statement, keys in sorted order): an absent check holds back a concurrent creation of the row until its transaction ends, and the other way around. Absent checks require an active transaction; an insert outside a transaction takes no lock.
 
-### Deferred manual guards
-
-`$table->lock($key)` buffers a manual guard without executing SQL. `flush()` acquires the guards before applying
-that row set's plan. For several row sets, use `MappedRowSet::flushAll($tables, $validate)` in a single surrounding
-transaction: it deduplicates and sorts all guards by physical table and key, runs the optional read-only validation
-callback, then applies the plans in the supplied table order. This also handles overlapping root and scoped views
-of the same table. Both standalone `flush()` and `flushAll()` require an active transaction when manual guards exist.
-`clear()` discards guards along with buffered plans.
-
-Postgres manual guards use transaction-scoped advisory locks under the `:manual` namespace, separate from the
-automatic absent-row (`:row`) and row-set expectation namespaces. They only serialize cooperating callers; they
-do not lock a database row against arbitrary SQL writers. The in-memory adapter validates the key and transaction
-but does not simulate competing connections. `StateTableRegistry` uses `flushAll()` to protect deferred query
-expectations without acquiring every write plan's row locks in advance.
+`MappedRowSet` buffers row mutations and optimistic expectations. `updatePlan()` exposes an immutable snapshot
+for inspection; `flush()` applies its own plan through the adapter. Cooperative decision guards and query replay
+belong to `StateStore`'s coordinating unit of work and its dedicated guard adapter. They are acquired before the
+mapped row sets are flushed. The persistence locks described above stay local to each mapped adapter.
 
 ## Owned Child Sets
 

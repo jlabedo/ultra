@@ -17,6 +17,7 @@ use Ultra\StateStore\Attribute\StateEmbedded;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
+use Ultra\StateStore\InMemoryGuardLockAdapter;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
@@ -976,7 +977,7 @@ final class StateStoreTest extends TestCase
             $metadata[$stateClass] = $resolvedMetadata->toArray();
         }
 
-        $registry = new StateTableRegistry(['orders#order_id' => $table], $adapterFactory);
+        $registry = new StateTableRegistry(['orders#order_id' => $table], $adapterFactory, guardLockAdapter: new InMemoryGuardLockAdapter($database));
         $store = new StateStore(
             new StateMetadataRegistry($metadata),
             $registry,

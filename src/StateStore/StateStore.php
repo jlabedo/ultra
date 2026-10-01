@@ -85,7 +85,7 @@ final readonly class StateStore
     public function lock(object $state): void
     {
         [$metadata, $normalizedState] = $this->normalizeState($state);
-        $this->tableRegistry->tableFor($metadata)->lock($metadata->keyFromNormalizedState($normalizedState));
+        $this->tableRegistry->lock($metadata->tableName, $metadata->keyFromNormalizedState($normalizedState));
     }
 
     public function expect(object $state): void

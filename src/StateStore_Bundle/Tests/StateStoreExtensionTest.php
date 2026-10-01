@@ -27,6 +27,8 @@ use Ultra\StateStore\Attribute\DefineQueryGuard;
 use Ultra\StateStore\QueryGuard;
 use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
+use Ultra\StateStore\GuardLockAdapter;
+use Ultra\StateStore\InMemoryGuardLockAdapter;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore_Bundle\StateStoreExtension;
 use Ultra\StateStore_Bundle\TagNames;
@@ -129,6 +131,13 @@ final class StateStoreExtensionTest extends TestCase
         $container->get(UnitOfWork::class)->flush();
     }
 
+    public function test_query_guards_require_a_dedicated_adapter_during_compilation(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('GuardLockAdapter');
+        $this->createContainer(withQueryGuard: true, withGuardAdapter: false);
+    }
+
     public function test_unknown_guard_columns_are_rejected_during_compilation(): void
     {
         $this->expectException(\LogicException::class);
@@ -145,7 +154,7 @@ final class StateStoreExtensionTest extends TestCase
 
     public function test_bundle_registers_state_store_and_shared_mapped_row_set_services(): void
     {
-        $container = $this->createContainer();
+        $container = $this->createContainer(withGuardAdapter: false);
         $database = $container->get(InMemoryRowDatabase::class);
         $store = $container->get('test.state_store');
         $unitOfWork = $container->get(UnitOfWork::class);
@@ -194,7 +203,7 @@ final class StateStoreExtensionTest extends TestCase
         ]], $definition->getTag(MapperTagNames::NORMALIZABLE));
     }
 
-    private function createContainer(bool $withQueryGuard = false, ?string $extraGuardRepository = null): ContainerBuilder
+    private function createContainer(bool $withQueryGuard = false, ?string $extraGuardRepository = null, bool $withGuardAdapter = true): ContainerBuilder
     {
         $container = new ContainerBuilder();
         $container->setParameter('kernel.build_dir', sys_get_temp_dir().'/ultra_state_store_bundle_test');
@@ -215,6 +224,10 @@ final class StateStoreExtensionTest extends TestCase
             ->setPublic(true)
         ;
         $container->setAlias(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)->setPublic(true);
+        if ($withGuardAdapter) {
+            $container->register(GuardLockAdapter::class, InMemoryGuardLockAdapter::class)
+                ->setArguments([new Reference(InMemoryRowDatabase::class)]);
+        }
         $container->setAlias('test.state_store', StateStore::class)->setPublic(true);
 
         $container->setDefinition(

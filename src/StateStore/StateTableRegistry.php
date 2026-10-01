@@ -6,6 +6,8 @@ namespace Ultra\StateStore;
 
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
+use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\UnitOfWork;
 
@@ -20,6 +22,12 @@ final class StateTableRegistry implements UnitOfWork
     /** @var list<array{query: \Closure, expected: mixed, name: ?string}> */
     private array $queryExpectations = [];
 
+    /** @var array<string, array<string, GuardLockMode>> */
+    private array $guards = [];
+
+    /** @var array<string, array<string, MappedKey>> */
+    private array $locks = [];
+
     /**
      * @param array<string, MappedRowSet> $tables
      * @param array<string, list<array{tableKey: string, keyBy: string, columns: list<string>|null}>> $queryGuardDefinitions
@@ -28,6 +36,7 @@ final class StateTableRegistry implements UnitOfWork
         array $tables,
         private ?MappedRowSetAdapterFactory $adapterFactory = null,
         private array $queryGuardDefinitions = [],
+        private ?GuardLockAdapter $guardLockAdapter = null,
     ) {
         $this->tables = $tables;
     }
@@ -66,24 +75,65 @@ final class StateTableRegistry implements UnitOfWork
 
     public function flush(): void
     {
-        QueryGuardWriteRules::register($this->tables, $this->queryGuardDefinitions);
-        MappedRowSet::flushAll(array_values([...$this->tables, ...$this->collectionTables]), function (): void {
-            foreach ($this->queryExpectations as $expectation) {
-                if (($expectation['query'])() !== $expectation['expected']) {
-                    throw new ConcurrencyException(sprintf('Query expectation failed%s.', null === $expectation['name'] ? '' : ' for "'.$expectation['name'].'"'));
-                }
+        $plans = array_map(static fn (MappedRowSet $table): RowSetUpdatePlan => $table->updatePlan(), $this->tables);
+        foreach (QueryGuardWriteRules::requests($plans, $this->queryGuardDefinitions) as $request) {
+            $this->guard($request['name'], $request['value'], GuardLockMode::EXCLUSIVE);
+        }
+        $this->acquireGuards();
+        foreach ($this->queryExpectations as $expectation) {
+            if (($expectation['query'])() !== $expectation['expected']) {
+                throw new ConcurrencyException(sprintf('Query expectation failed%s.', null === $expectation['name'] ? '' : ' for "'.$expectation['name'].'"'));
             }
-        });
+        }
+        foreach ([...$this->tables, ...$this->collectionTables] as $table) {
+            $table->flush();
+        }
     }
 
-    public function guard(string $tableKey, string $name, int|string $value, \Ultra\MappedTable\GuardLockMode $mode): void
+    private function acquireGuards(): void
     {
-        $this->tables[$tableKey]->guard($name, $value, $mode);
+        if ([] === $this->guards && [] === $this->locks) {
+            return;
+        }
+        if (null === $this->guardLockAdapter) {
+            throw new \LogicException('State store guards require a GuardLockAdapter using the flush transaction.');
+        }
+
+        // Consolidate modes before acquiring anything: an exclusive request must never upgrade a held lock.
+        ksort($this->guards, SORT_STRING);
+        foreach ($this->guards as $name => $values) {
+            ksort($values, SORT_STRING);
+            foreach ($values as $value => $mode) {
+                $this->guardLockAdapter->acquire('ultra:query_guard:'.$name, (string) $value, $mode);
+            }
+        }
+        ksort($this->locks, SORT_STRING);
+        foreach ($this->locks as $tableName => $keys) {
+            ksort($keys, SORT_STRING);
+            foreach ($keys as $key) {
+                $this->guardLockAdapter->acquire($tableName.':manual', $key->fingerprint(), GuardLockMode::EXCLUSIVE);
+            }
+        }
+    }
+
+    /** Buffer a named guard; exclusive dominates shared for the same name/value. */
+    public function guard(string $name, int|string $value, GuardLockMode $mode): void
+    {
+        $fingerprint = (string) $value;
+        if (GuardLockMode::EXCLUSIVE !== ($this->guards[$name][$fingerprint] ?? null)) {
+            $this->guards[$name][$fingerprint] = $mode;
+        }
+    }
+
+    /** Register a cooperative guard on a physical row identity, including an absent row. */
+    public function lock(string $tableName, MappedKey $key): void
+    {
+        $this->locks[$tableName][$key->fingerprint()] = $key;
     }
 
     public function hasPendingChanges(): bool
     {
-        if ([] !== $this->queryExpectations) {
+        if ([] !== $this->queryExpectations || [] !== $this->guards || [] !== $this->locks) {
             return true;
         }
 
@@ -104,6 +154,8 @@ final class StateTableRegistry implements UnitOfWork
 
         $this->collectionTables = [];
         $this->queryExpectations = [];
+        $this->guards = [];
+        $this->locks = [];
     }
 
     /** @param callable(): mixed $query */

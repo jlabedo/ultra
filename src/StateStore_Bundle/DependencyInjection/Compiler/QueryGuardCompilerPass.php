@@ -9,6 +9,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\StateStore\Attribute\DefineQueryGuard;
+use Ultra\StateStore\GuardLockAdapter;
 use Ultra\StateStore\QueryGuard;
 use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\StateStore\StateMetadata;
@@ -72,10 +73,13 @@ final class QueryGuardCompilerPass implements CompilerPassInterface
                 $guards[$attribute->name] = $scopes;
                 $id = 'ultra.state_store.query_guard.'.hash('sha256', $attribute->name);
                 $container->setDefinition($id, new Definition(QueryGuard::class, [
-                    new Reference(StateTableRegistry::class), $attribute->name, $scopes[0]['tableKey'],
+                    new Reference(StateTableRegistry::class), $attribute->name,
                 ]));
                 $service->setArgument('$'.$parameter->getName(), new Reference($id));
             }
+        }
+        if ([] !== $guards && !$container->has(GuardLockAdapter::class)) {
+            throw new \LogicException('Compiled query guards require a GuardLockAdapter using the flush transaction.');
         }
         ksort($guards, SORT_STRING);
         $tables = $container->getDefinition(StateTableRegistry::class);

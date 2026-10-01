@@ -4,34 +4,33 @@ declare(strict_types=1);
 
 namespace Ultra\StateStore;
 
-use Ultra\MappedTable\GuardLockMode;
-use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\MappedTable\RowUpdatePlan;
 
 /** Prototype: derive old/new guard keys from conditional row plans, without additional database reads. */
 final class QueryGuardWriteRules
 {
     /**
-     * @param array<string, MappedRowSet> $tables
+     * @param array<string, RowSetUpdatePlan> $plans
      * @param array<string, list<array{tableKey: string, keyBy: string, columns: list<string>|null}>> $definitions
+     * @return iterable<array{name: string, value: int|string}>
      */
-    public static function register(array $tables, array $definitions): void
+    public static function requests(array $plans, array $definitions): iterable
     {
         foreach ($definitions as $name => $scopes) {
             foreach ($scopes as $scope) {
-                $table = $tables[$scope['tableKey']];
-                foreach ($table->updatePlan()->rowUpdates as $plan) {
+                foreach ($plans[$scope['tableKey']]->rowUpdates as $plan) {
                     if (!$plan->writes()) {
                         continue;
                     }
-                    self::registerPlan($table, $name, $scope['keyBy'], $scope['columns'], $plan);
+                    yield from self::requestsForPlan($name, $scope['keyBy'], $scope['columns'], $plan);
                 }
             }
         }
     }
 
-    /** @param list<string>|null $columns */
-    private static function registerPlan(MappedRowSet $table, string $name, string $keyBy, ?array $columns, RowUpdatePlan $plan): void
+    /** @param list<string>|null $columns @return iterable<array{name: string, value: int|string}> */
+    private static function requestsForPlan(string $name, string $keyBy, ?array $columns, RowUpdatePlan $plan): iterable
     {
         $insert = RowUpdatePlan::MODE_INSERT === $plan->mode;
         $delete = RowUpdatePlan::MODE_DELETE === $plan->mode;
@@ -64,7 +63,7 @@ final class QueryGuardWriteRules
             if (!is_int($value) && !is_string($value)) {
                 throw new \LogicException(sprintf('Query guard "%s" needs an int or string value for column "%s".', $name, $keyBy));
             }
-            $table->guard($name, $value, GuardLockMode::EXCLUSIVE);
+            yield ['name' => $name, 'value' => $value];
         }
     }
 }

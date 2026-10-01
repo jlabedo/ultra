@@ -167,7 +167,7 @@ a null result and chooses any manual guards required for set-based rules.
 - `expectMissing(StateClass::class, $id)` buffers an optimistic expectation that the mapped row is still absent, also checked at flush
 - a later `save(...)` against the same mapped row uses the buffered expectation automatically
 - collection expectations use the loaded item id set to reject concurrent inserts or deletes in the collection
-- buffered writes are committed later by flushing the underlying `MappedRowSet` unit of work
+- buffered writes are committed later by flushing `StateTableRegistry`, which coordinates the underlying `MappedRowSet` units of work
 
 When several state classes target the same physical table, they share the same `MappedRowSet` unit of work but only read and write the columns each class maps.
 
@@ -198,8 +198,8 @@ executing the callback. Expected values must be scalars, null or arrays of these
 cast database numeric values, normalize timestamps, and sort unordered query results in the callback. A mismatch
 throws `Ultra\UnitOfWork\Exception\ConcurrencyException`; the optional name identifies the failed expectation.
 
-`lock($state)` records a guard for the state's physical table and mapped key, including composite keys and missing
-rows. Registering a guard takes no database lock. It neither replaces `expect()` nor protects against writers that
+`lock($state)` records a guard in `StateTableRegistry` for the state's physical table and mapped key, including
+composite keys and missing rows. Registering a guard takes no database lock. It neither replaces `expect()` nor protects against writers that
 do not request the same guard. The developer chooses the guards and must use them in every action affecting the
 invariant: booking, cancellation, reschedule and bulk closure, for example.
 
@@ -210,11 +210,24 @@ The `StateTableRegistry` flush has three phases, inside **one transaction**:
 2. Replay all query expectations before applying any row-set plan.
 3. Check the optimistic row expectations and apply the existing write plans.
 
+Configure a dedicated `GuardLockAdapter` service when using manual or compiled query guards. For Postgres:
+
+```yaml
+Ultra\StateStore\GuardLockAdapter:
+    class: Ultra\StateStore\PostgresGuardLockAdapter
+    arguments:
+        $connection: '@doctrine.dbal.default_connection'
+```
+
+Use `InMemoryGuardLockAdapter` with the same `InMemoryRowDatabase` as the mapped adapters for in-memory work.
+`MappedRowSet` contains only row plans and optimistic expectations; cooperative guards are owned by the registry
+and acquired through the dedicated adapter. Guard-only work does not need to create a mapped row set.
+
 With `TransactionalUnitOfWorkRunner`, application work runs before the transaction is opened. Configure its
-`TransactionManager` for the same connection used by the mapped adapters and query callbacks. The runner commits
+`TransactionManager` for the same connection used by the mapped adapters, guard adapter and query callbacks. The runner commits
 or rolls back the entire flush and clears the queues on success or failure. Calling `StateTableRegistry::flush()`
 directly requires the caller to provide that transaction and call `clear()` when the unit of work ends. Query-only
-and lock-only work also counts as pending. This mechanism uses no `SERIALIZABLE` isolation and does not prelock
+and guard-only work also counts as pending. This mechanism uses no `SERIALIZABLE` isolation and does not prelock
 every row that will be written. Ordered manual guards do not remove every possible database deadlock, particularly
 when other writers or callbacks acquire additional locks in a different order.
 

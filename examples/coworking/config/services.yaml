@@ -24,6 +24,11 @@ services:
         arguments:
             $connection: '@doctrine.dbal.default_connection'
 
+    Ultra\StateStore\GuardLockAdapter:
+        class: Ultra\StateStore\PostgresGuardLockAdapter
+        arguments:
+            $connection: '@doctrine.dbal.default_connection'
+
     Ultra\UnitOfWork\TransactionManager:
         alias: App\Infrastructure\DoctrineTransactionManager
 

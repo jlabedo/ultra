@@ -46,7 +46,10 @@ The normal StateStore unit of work derives exclusive guards from its final row p
 repository method was called. It protects both old and new scope values for a move. Unchanged watched columns do
 not require a guard when the plan proves their values unchanged.
 
-The single flush transaction then:
+`StateTableRegistry` owns the pending manual and named guards, independently of mapped row sets. It inspects
+`MappedRowSet::updatePlan()` to derive writer requests through `QueryGuardWriteRules`, which only returns requests
+and does not mutate row sets. `QueryGuard` queues reader requests directly in the registry. The single coordinated
+flush transaction then:
 
 1. Consolidates named guards across tables and views, with exclusive dominating shared for the same name/value.
 2. Acquires named guards in name/value order, followed by any legacy manual row guards in table/key order.
@@ -55,6 +58,11 @@ The single flush transaction then:
 
 No shared-to-exclusive upgrade occurs after acquisition. PostgreSQL uses transaction-scoped advisory shared and
 exclusive locks in the same query-guard namespace, separate from manual row and automatic absent-row guards.
+`GuardLockAdapter` owns acquisition; `PostgresGuardLockAdapter` must use the same connection as the mapped
+adapters and query callbacks. `InMemoryGuardLockAdapter` requires an active transaction without simulating
+contention. The bundle wires the adapter when registered and rejects compiled guards if it is missing.
+Mapped row sets know neither decision guards nor query replay; their adapters retain only intrinsic persistence
+locks (row checks, absent keys and row-set expectations).
 Commit or rollback releases database locks; unit-of-work `clear()` removes queued guards and expectations.
 
 ## Evidence

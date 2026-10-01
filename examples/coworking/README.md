@@ -15,6 +15,8 @@ The direct variant uses four normalized tables (company, member, room, booking),
 or usage copies to maintain. `BookingService` calls `UnitOfWorkRunner::run()` explicitly, without the mediator,
 `SelfHandler` or `DecisionHandler`. The runner prepares the decision outside a transaction and flushes once in one
 transaction: acquire the query guards, replay the SQL expectations, then check and write the row plans.
+`StateTableRegistry` owns guard requests; the dedicated `PostgresGuardLockAdapter` uses the same connection as
+the mapped adapters and repository queries. `MappedRowSet` handles only row changes and optimistic expectations.
 The repository's constructor declares company-usage and room-booking dependencies with `#[DefineQueryGuard]`.
 Queries register shared guards through `QueryGuard::observe()`; affected writes automatically register exclusive
 guards, including cancellations and both rooms of a move. The service requests no manual locks. Company plan

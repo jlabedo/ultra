@@ -10,6 +10,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
 use Ultra\MappedTable\Tests\PostgresMappedRowSetTestCase;
+use Ultra\StateStore\PostgresGuardLockAdapter;
 use Ultra\StateStore\QueryGuard;
 use Ultra\StateStore\StateTableRegistry;
 use Ultra\Testing\PostgresTestSupport;
@@ -21,12 +22,12 @@ final class QueryGuardPrototypeTest extends PostgresMappedRowSetTestCase
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, ['id' => 'one', 'status' => 'acme', 'note' => 'old']);
-            $registry = $this->registry($table);
-            $guard = new QueryGuard($registry, 'usage', 'test');
+            $registry = $this->registry($connection, $table);
+            $guard = new QueryGuard($registry, 'usage');
             $other = PostgresTestSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
             $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
-            $otherRegistry = $this->registry($otherTable);
-            $otherGuard = new QueryGuard($otherRegistry, 'usage', 'test');
+            $otherRegistry = $this->registry($other, $otherTable);
+            $otherGuard = new QueryGuard($otherRegistry, 'usage');
             try {
                 $phases = [];
                 $guard->observe('acme', function () use ($connection, &$phases): int {
@@ -66,7 +67,7 @@ final class QueryGuardPrototypeTest extends PostgresMappedRowSetTestCase
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName) use ($mutation, $scopes): void {
             $this->insertRow($connection, $tableName, ['id' => 'one', 'status' => 'old', 'note' => 'value']);
-            $registry = $this->registry($table);
+            $registry = $this->registry($connection, $table);
             if ('insert' === $mutation) {
                 $table->withKey('two')->insert()->setColumns(['status' => 'new', 'note' => 'value']);
             } elseif ('move' === $mutation) {
@@ -76,8 +77,8 @@ final class QueryGuardPrototypeTest extends PostgresMappedRowSetTestCase
             }
             $other = PostgresTestSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
             $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
-            $otherRegistry = $this->registry($otherTable);
-            $otherGuard = new QueryGuard($otherRegistry, 'usage', 'test');
+            $otherRegistry = $this->registry($other, $otherTable);
+            $otherGuard = new QueryGuard($otherRegistry, 'usage');
             try {
                 $registry->expectQuery(function () use ($connection, $other, $otherRegistry, $otherGuard, $scopes): int {
                     if ($connection->isTransactionActive()) {
@@ -109,16 +110,14 @@ final class QueryGuardPrototypeTest extends PostgresMappedRowSetTestCase
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, ['id' => 'one', 'status' => 'acme', 'note' => 'old']);
             $view = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, $tableName));
-            $registry = $this->registry($table);
-            $guard = new QueryGuard($this->registry($view), 'usage', 'test');
+            $combined = new StateTableRegistry(['view' => $view, 'test' => $table], queryGuardDefinitions: $this->definitions(), guardLockAdapter: new PostgresGuardLockAdapter($connection));
+            $guard = new QueryGuard($combined, 'usage');
             $guard->lock('acme');
             $table->withKey('one')->expectColumnValue('status', 'acme')->setColumn('note', 'new');
             $other = PostgresTestSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
-            $otherRegistry = $this->registry(new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName)));
-            $otherGuard = new QueryGuard($otherRegistry, 'usage', 'test');
+            $otherRegistry = $this->registry($other, new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName)));
+            $otherGuard = new QueryGuard($otherRegistry, 'usage');
             try {
-                // Include the separately mapped view in the same coordinated flush.
-                $combined = new StateTableRegistry(['view' => $view, 'test' => $table], queryGuardDefinitions: $this->definitions());
                 $combined->expectQuery(function () use ($other, $otherRegistry, $otherGuard): int {
                     $otherGuard->lock('acme');
                     $this->assertGuardBlocks($other, $otherRegistry);
@@ -137,15 +136,15 @@ final class QueryGuardPrototypeTest extends PostgresMappedRowSetTestCase
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, ['id' => 'one', 'status' => 'acme', 'note' => 'old']);
-            $registry = $this->registry($table);
-            (new QueryGuard($registry, 'usage', 'test'))->lock('acme');
+            $registry = $this->registry($connection, $table);
+            (new QueryGuard($registry, 'usage'))->lock('acme');
             $other = PostgresTestSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
             $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
             try {
                 $connection->beginTransaction();
                 $registry->flush();
                 $otherTable->withKey('one')->setColumn('version_a', 'unwatched');
-                $this->flushWithTimeout($other, $this->registry($otherTable));
+                $this->flushWithTimeout($other, $this->registry($other, $otherTable));
                 self::assertSame('unwatched', $this->fetchRow($connection, $tableName, 'one')['version_a']);
                 $connection->commit();
                 $registry->clear();
@@ -163,13 +162,13 @@ final class QueryGuardPrototypeTest extends PostgresMappedRowSetTestCase
             $table->withKey('one')->setColumn('note', 'new');
             $this->expectException(\LogicException::class);
             $this->expectExceptionMessage('requires observing column "status"');
-            $connection->transactional($this->registry($table)->flush(...));
+            $connection->transactional($this->registry($connection, $table)->flush(...));
         });
     }
 
-    private function registry(MappedRowSet $table): StateTableRegistry
+    private function registry(Connection $connection, MappedRowSet $table): StateTableRegistry
     {
-        return new StateTableRegistry(['test' => $table], queryGuardDefinitions: $this->definitions());
+        return new StateTableRegistry(['test' => $table], queryGuardDefinitions: $this->definitions(), guardLockAdapter: new PostgresGuardLockAdapter($connection));
     }
 
     private function definitions(): array

@@ -7,7 +7,8 @@ namespace Ultra\StateStore\Tests;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\MappedKey;
+use Ultra\StateStore\PostgresGuardLockAdapter;
 use Ultra\MappedTable\Tests\PostgresMappedRowSetTestCase;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\StateStore\StateMetadata;
@@ -34,29 +35,29 @@ final class PostgresStateStoreQueryTest extends PostgresMappedRowSetTestCase
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $other = PostgresTestSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
-            $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
+            $otherRegistry = new StateTableRegistry([], guardLockAdapter: new PostgresGuardLockAdapter($other));
             $metadata = new StateMetadata(ManualQueryState::class, $tableName, $tableName.'#id', 'id', 'string', true, ['id' => 'id'], ['status' => 'status'], ['status' => 'status']);
-            $registry = new StateTableRegistry([$metadata->tableKey => $table]);
+            $registry = new StateTableRegistry([$metadata->tableKey => $table], guardLockAdapter: new PostgresGuardLockAdapter($connection));
             $store = new StateStore(new StateMetadataRegistry([ManualQueryState::class => $metadata->toArray()]), $registry, new UltraNormalizer());
             $this->insertRow($connection, $tableName, ['id' => 'row-1', 'status' => 'pending']);
             $store->lock(new ManualQueryState('z', 'anchor'));
             $store->lock(new ManualQueryState('a', 'anchor'));
             $observedTransactions = [];
-            $store->observeQuery(function () use ($connection, $tableName, $other, $otherTable, &$observedTransactions): string {
+            $store->observeQuery(function () use ($connection, $tableName, $other, $otherRegistry, &$observedTransactions): string {
                 $observedTransactions[] = $connection->isTransactionActive();
                 if ($connection->isTransactionActive()) {
                     foreach (['a', 'z'] as $id) {
-                        $otherTable->lock($id);
+                        $otherRegistry->lock($tableName, new MappedKey(['id' => $id]));
                         $other->beginTransaction();
                         $other->executeStatement("SET LOCAL lock_timeout = '50ms'");
                         try {
-                            $otherTable->flush();
+                            $otherRegistry->flush();
                             self::fail('All manual guards must already be held at validation time.');
                         } catch (DriverException $exception) {
                             self::assertSame('55P03', $exception->getSQLState());
                         } finally {
                             $other->rollBack();
-                            $otherTable->clear();
+                            $otherRegistry->clear();
                         }
                     }
                 }
@@ -69,9 +70,9 @@ final class PostgresStateStoreQueryTest extends PostgresMappedRowSetTestCase
                 self::assertSame([false, true], $observedTransactions);
                 self::assertSame('confirmed', $store->load(ManualQueryState::class, 'row-1')->status);
                 // Commit releases both guards. A fresh flush on the other connection can acquire them.
-                $otherTable->lock('a');
-                $otherTable->lock('z');
-                $other->transactional($otherTable->flush(...));
+                $otherRegistry->lock($tableName, new MappedKey(['id' => 'a']));
+                $otherRegistry->lock($tableName, new MappedKey(['id' => 'z']));
+                $other->transactional($otherRegistry->flush(...));
             } finally {
                 PostgresTestSupport::resetSharedConnection($other);
                 $other->close();
@@ -82,7 +83,7 @@ final class PostgresStateStoreQueryTest extends PostgresMappedRowSetTestCase
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $metadata = new StateMetadata(ManualIdentityState::class, $tableName, $tableName.'#id', 'id', 'string', true, ['id' => 'id'], [], []);
-            $registry = new StateTableRegistry([$metadata->tableKey => $table]);
+            $registry = new StateTableRegistry([$metadata->tableKey => $table], guardLockAdapter: new PostgresGuardLockAdapter($connection));
             $store = new StateStore(new StateMetadataRegistry([ManualIdentityState::class => $metadata->toArray()]), $registry, new UltraNormalizer());
             self::assertNull($store->observe(ManualIdentityState::class, 'row-1'));
             $store->save(new ManualIdentityState('row-1'));

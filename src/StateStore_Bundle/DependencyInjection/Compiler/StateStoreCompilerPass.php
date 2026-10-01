@@ -15,6 +15,7 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper\RuntimeNormalizerInterface;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
+use Ultra\StateStore\GuardLockAdapter;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateTableRegistry;
@@ -123,8 +124,12 @@ final class StateStoreCompilerPass implements CompilerPassInterface
         ])->setPublic(false));
 
         $stateTableRegistryArguments = [$tableReferences];
-        if ($container->has(MappedRowSetAdapterFactory::class)) {
-            $stateTableRegistryArguments[] = new Reference(MappedRowSetAdapterFactory::class);
+        $stateTableRegistryArguments[] = $container->has(MappedRowSetAdapterFactory::class)
+            ? new Reference(MappedRowSetAdapterFactory::class)
+            : null;
+        if ($container->has(GuardLockAdapter::class)) {
+            $stateTableRegistryArguments[] = [];
+            $stateTableRegistryArguments[] = new Reference(GuardLockAdapter::class);
         }
 
         $container->setDefinition(StateTableRegistry::class, new Definition(StateTableRegistry::class, $stateTableRegistryArguments)
