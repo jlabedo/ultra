@@ -60,6 +60,19 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         );
     }
 
+    public function lockGuard(string $name, int|string $value, GuardLockMode $mode): void
+    {
+        if (!$this->connection->isTransactionActive()) {
+            throw new \LogicException('Query guards require an active transaction.');
+        }
+
+        $function = GuardLockMode::SHARED === $mode ? 'pg_advisory_xact_lock_shared' : 'pg_advisory_xact_lock';
+        $this->connection->executeQuery(
+            'SELECT '.$function.'(hashtext(?), hashtext(?))',
+            ['ultra:query_guard:'.$name, (string) $value],
+        );
+    }
+
     public function scope(): ?MappedKey
     {
         return $this->configuredScope;

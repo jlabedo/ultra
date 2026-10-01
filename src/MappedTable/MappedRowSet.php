@@ -24,6 +24,9 @@ final class MappedRowSet implements UnitOfWork
     /** @var array<string, MappedKey> */
     private array $locks = [];
 
+    /** @var array<string, array<string, array{value: int|string, mode: GuardLockMode}>> */
+    private array $guards = [];
+
     public function __construct(
         private readonly MappedRowSetAdapter $adapter,
     ) {}
@@ -42,6 +45,22 @@ final class MappedRowSet implements UnitOfWork
     {
         $key = $this->normalizeKey($key);
         $this->locks[$key->fingerprint()] = $key;
+    }
+
+    /** Buffer a named guard; an exclusive request dominates all shared requests for the same name/value. */
+    public function guard(string $name, int|string $value, GuardLockMode $mode): void
+    {
+        $fingerprint = (string) $value;
+        if (GuardLockMode::EXCLUSIVE === ($this->guards[$name][$fingerprint]['mode'] ?? null)) {
+            return;
+        }
+        $this->guards[$name][$fingerprint] = ['value' => $value, 'mode' => $mode];
+    }
+
+    /** The immutable plan used both to derive query guards and to apply row changes. */
+    public function updatePlan(): RowSetUpdatePlan
+    {
+        return new RowSetUpdatePlan($this->expectedRowKeys, $this->sortedPlans(), $this->ignoredRowKeys);
     }
 
     /**
@@ -159,10 +178,26 @@ final class MappedRowSet implements UnitOfWork
      */
     public static function flushAll(array $tables, ?callable $validate = null): void
     {
+        $guards = [];
         $locks = [];
         foreach ($tables as $table) {
+            foreach ($table->guards as $name => $values) {
+                foreach ($values as $fingerprint => $guard) {
+                    if (GuardLockMode::EXCLUSIVE !== ($guards[$name][$fingerprint]['mode'] ?? null)) {
+                        $guards[$name][$fingerprint] = [...$guard, 'adapter' => $table->adapter];
+                    }
+                }
+            }
             foreach ($table->locks as $fingerprint => $key) {
                 $locks[$table->adapter->tableName()][$fingerprint] = [$table->adapter, $key];
+            }
+        }
+        // Named query guards precede legacy manual row guards in every flush. Never upgrade a held lock.
+        ksort($guards, SORT_STRING);
+        foreach ($guards as $name => $values) {
+            ksort($values, SORT_STRING);
+            foreach ($values as $guard) {
+                $guard['adapter']->lockGuard($name, $guard['value'], $guard['mode']);
             }
         }
         ksort($locks, SORT_STRING);
@@ -183,16 +218,12 @@ final class MappedRowSet implements UnitOfWork
 
     private function apply(): void
     {
-        $this->adapter->apply(new RowSetUpdatePlan(
-            expectedRowKeys: $this->expectedRowKeys,
-            rowUpdates: $this->sortedPlans(),
-            ignoredRowKeys: $this->ignoredRowKeys,
-        ));
+        $this->adapter->apply($this->updatePlan());
     }
 
     public function hasPendingChanges(): bool
     {
-        return [] !== $this->locks || null !== $this->expectedRowKeys || [] !== $this->sortedPlans();
+        return [] !== $this->guards || [] !== $this->locks || null !== $this->expectedRowKeys || [] !== $this->sortedPlans();
     }
 
     public function clear(): void
@@ -201,6 +232,7 @@ final class MappedRowSet implements UnitOfWork
         $this->expectedRowKeys = null;
         $this->ignoredRowKeys = [];
         $this->locks = [];
+        $this->guards = [];
     }
 
     private function normalizeKey(int|string|MappedKey $key): MappedKey

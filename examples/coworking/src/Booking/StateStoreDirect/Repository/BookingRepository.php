@@ -10,6 +10,9 @@ use App\Booking\StateStoreDirect\State\Company;
 use App\Booking\StateStoreDirect\State\Room;
 use Doctrine\DBAL\Connection;
 use Ultra\StateStore\StateStore;
+use Ultra\StateStore\Attribute\DefineQueryGuard;
+use Ultra\StateStore\QueryGuard;
+use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\UnitOfWork\UnitOfWork;
 
 /** SQL expectations observe committed rows; this local overlay supplies read-your-own-writes until clear(). */
@@ -18,7 +21,22 @@ final class BookingRepository implements UnitOfWork
     /** @var array<string, array{original: ?Booking, current: Booking}> */
     private array $pending = [];
 
-    public function __construct(private Connection $connection, private StateStore $states) {}
+    public function __construct(
+        private Connection $connection,
+        private StateStore $states,
+        #[DefineQueryGuard('company_usage', static function (QueryGuardDefinition $definition): void {
+            $definition
+                ->watch(Booking::class, keyBy: 'company_id')
+                ->whenColumnsChange('charged', 'start_at', 'end_at');
+        })]
+        private QueryGuard $companyUsage,
+        #[DefineQueryGuard('room_bookings', static function (QueryGuardDefinition $definition): void {
+            $definition
+                ->watch(Booking::class, keyBy: 'room_id')
+                ->whenColumnsChange('status', 'start_at', 'end_at');
+        })]
+        private QueryGuard $roomBookings,
+    ) {}
 
     public function save(Booking $booking, ?Booking $original = null): void
     {
@@ -36,10 +54,10 @@ final class BookingRepository implements UnitOfWork
 
     public function hasOverlap(Room $room, Slot $slot, ?string $ignoringBookingId = null): bool
     {
-        $ids = $this->states->observeQuery(fn (): array => $this->connection->fetchFirstColumn(
+        $ids = $this->roomBookings->observe($room->id, fn (): array => $this->connection->fetchFirstColumn(
             'SELECT id FROM cw_direct_bookings WHERE room_id = ? AND status = ? AND start_at < ? AND end_at > ? AND id != ? ORDER BY id',
             [$room->id, Booking::CONFIRMED, $slot->end->format('c'), $slot->start->format('c'), $ignoringBookingId ?? ''],
-        ), 'overlaps for room '.$room->id);
+        ));
         if ([] !== array_diff($ids, array_keys($this->pending))) {
             return true;
         }
@@ -65,7 +83,7 @@ final class BookingRepository implements UnitOfWork
 
     public function observeUsedMinutes(Company $company, string $month, ?string $ignoringBookingId = null): int
     {
-        $minutes = $this->states->observeQuery(fn (): int => $this->usedMinutes($company, $month, $ignoringBookingId), 'quota for company '.$company->id.' in '.$month);
+        $minutes = $this->companyUsage->observe($company->id, fn (): int => $this->usedMinutes($company, $month, $ignoringBookingId));
         foreach ($this->pending as ['original' => $original, 'current' => $current]) {
             foreach ([[$original, -1], [$current, 1]] as [$booking, $sign]) {
                 if (null !== $booking && $booking->id !== $ignoringBookingId && $booking->companyId === $company->id && $booking->charged && $booking->slot()->month() === $month) {
@@ -91,7 +109,7 @@ final class BookingRepository implements UnitOfWork
     /** @return list<Booking> */
     public function observeConfirmedOnDay(Room $room, string $day): array
     {
-        $ids = $this->states->observeQuery(fn (): array => $this->bookingIdsOnDay($room, $day), 'bookings for room '.$room->id.' on '.$day);
+        $ids = $this->roomBookings->observe($room->id, fn (): array => $this->bookingIdsOnDay($room, $day));
         $ids = array_diff($ids, array_keys($this->pending));
         foreach ($this->pending as ['current' => $booking]) {
             if ($booking->roomId === $room->id && Booking::CONFIRMED === $booking->status && $booking->slot()->day() === $day) {

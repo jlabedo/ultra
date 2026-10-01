@@ -205,7 +205,8 @@ invariant: booking, cancellation, reschedule and bulk closure, for example.
 
 The `StateTableRegistry` flush has three phases, inside **one transaction**:
 
-1. Acquire only the requested manual advisory locks, deduplicated and ordered by physical table and key.
+1. Derive any compiled query guards, acquire them in name/value order, then acquire requested manual advisory locks
+   in physical table/key order.
 2. Replay all query expectations before applying any row-set plan.
 3. Check the optimistic row expectations and apply the existing write plans.
 
@@ -222,3 +223,7 @@ committed database data, not `StateStore::load()`'s buffered view. Query results
 work's writes**. Account for pending changes separately when deciding, without adding them to the SQL expectation.
 The [direct coworking variant](../../examples/coworking/src/Booking/StateStoreDirect) demonstrates a repository
 overlay for weekly bookings, cancellations and reschedules composed in one unit of work.
+
+An experimental constructor-injected `QueryGuard` can compile dependencies from `#[DefineQueryGuard]` and enroll
+affected writes automatically. See the [query guard prototype](QUERY_GUARD_PROTOTYPE.md) for its interface,
+Postgres tests and current limits. The direct coworking variant uses this prototype for quota and availability.

@@ -22,10 +22,12 @@ final class StateTableRegistry implements UnitOfWork
 
     /**
      * @param array<string, MappedRowSet> $tables
+     * @param array<string, list<array{tableKey: string, keyBy: string, columns: list<string>|null}>> $queryGuardDefinitions
      */
     public function __construct(
         array $tables,
         private ?MappedRowSetAdapterFactory $adapterFactory = null,
+        private array $queryGuardDefinitions = [],
     ) {
         $this->tables = $tables;
     }
@@ -64,6 +66,7 @@ final class StateTableRegistry implements UnitOfWork
 
     public function flush(): void
     {
+        QueryGuardWriteRules::register($this->tables, $this->queryGuardDefinitions);
         MappedRowSet::flushAll(array_values([...$this->tables, ...$this->collectionTables]), function (): void {
             foreach ($this->queryExpectations as $expectation) {
                 if (($expectation['query'])() !== $expectation['expected']) {
@@ -71,6 +74,11 @@ final class StateTableRegistry implements UnitOfWork
                 }
             }
         });
+    }
+
+    public function guard(string $tableKey, string $name, int|string $value, \Ultra\MappedTable\GuardLockMode $mode): void
+    {
+        $this->tables[$tableKey]->guard($name, $value, $mode);
     }
 
     public function hasPendingChanges(): bool

@@ -88,7 +88,6 @@ final readonly class BookingService
     {
         $this->unitOfWork->run(function () use ($bookingId, $memberId): void {
             $booking = $this->booking($bookingId);
-            $this->lockBookingGuards($booking);
             Violations::throwIfAny([
                 $booking->memberId !== $memberId ? new Violation('booking.not_owner', 'Only the member who booked can cancel.') : null,
                 Booking::CANCELLED === $booking->status ? new Violation('booking.already_cancelled', 'Booking is already cancelled.') : null,
@@ -102,12 +101,11 @@ final readonly class BookingService
         $this->unitOfWork->run(function () use ($bookingId, $memberId, $roomId, $slot): void {
             $now = $this->clock->now();
             $booking = $this->booking($bookingId);
-            $company = $this->lockBookingGuards($booking);
+            $company = $this->company($booking->companyId);
             $room = $this->states->observe(Room::class, $roomId);
             Violations::throwIfAny([
                 null === $room ? new Violation('room.not_found', 'Room does not exist.') : null,
             ]);
-            $this->states->lock($room);
             Violations::throwIfAny([
                 $booking->memberId !== $memberId ? new Violation('booking.not_owner', 'Only the member who booked can reschedule.') : null,
                 Booking::CANCELLED === $booking->status ? new Violation('booking.already_cancelled', 'Booking is cancelled.') : null,
@@ -127,9 +125,7 @@ final readonly class BookingService
             if (null === $room) {
                 return;
             }
-            $this->states->lock($room);
             foreach ($this->bookings->observeConfirmedOnDay($room, $day) as $booking) {
-                $this->lockBookingGuards($booking);
                 $this->bookings->save($booking->cancelled(refunded: true), $booking);
             }
         });
@@ -149,8 +145,6 @@ final readonly class BookingService
             null === $room ? new Violation('room.not_found', 'Room does not exist.') : null,
         ]);
         $company = $this->company($member->companyId);
-        $this->states->lock($company);
-        $this->states->lock($room);
         Violations::throwIfAny([
             ...BookingPolicy::slotViolations($slot, $this->clock->now()),
             $this->bookings->hasOverlap($room, $slot) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
@@ -177,18 +171,5 @@ final readonly class BookingService
         ]);
 
         return $booking;
-    }
-
-    private function lockBookingGuards(Booking $booking): Company
-    {
-        $company = $this->company($booking->companyId);
-        $this->states->lock($company);
-        $room = $this->states->observe(Room::class, $booking->roomId);
-        Violations::throwIfAny([
-            null === $room ? new Violation('room.not_found', 'Room does not exist.') : null,
-        ]);
-        $this->states->lock($room);
-
-        return $company;
     }
 }

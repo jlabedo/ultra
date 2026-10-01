@@ -915,6 +915,8 @@ final class RecordingMappedRowSetAdapter implements MappedRowSetAdapter
         return $this->name;
     }
 
+    public function lockGuard(string $name, int|string $value, \Ultra\MappedTable\GuardLockMode $mode): void {}
+
     public function lock(MappedKey $key): void
     {
         if (null !== $this->trace) {

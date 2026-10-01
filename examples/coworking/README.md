@@ -6,7 +6,7 @@ The same booking domain is implemented four times against one Postgres database,
 |---|---|---|
 | Event sourced | `src/Booking/EventSourced` | `#[DecisionHandler]` + `EventSourcedDecisionAspect`, Postgres event store |
 | State store | `src/Booking/StateStore` | `#[DecisionHandler]` + `StateStoreDecisionAspect`, mapped Postgres tables |
-| State store direct | `src/Booking/StateStoreDirect` | Plain service, `StateStore`, deferred advisory guards and SQL expectations |
+| State store direct | `src/Booking/StateStoreDirect` | Plain service, `StateStore`, compiled query guards prototype and SQL expectations |
 | Classic | `src/Booking/Classic` | Doctrine ORM entities, repository queries, pessimistic locks |
 
 `src/Booking/Domain` holds the pure rules (`BookingPolicy`, `Slot`) shared by all four, so the flavors only differ in how state is loaded, checked and saved.
@@ -14,10 +14,12 @@ The same booking domain is implemented four times against one Postgres database,
 The direct variant uses four normalized tables (company, member, room, booking), like Doctrine. It has no schedule
 or usage copies to maintain. `BookingService` calls `UnitOfWorkRunner::run()` explicitly, without the mediator,
 `SelfHandler` or `DecisionHandler`. The runner prepares the decision outside a transaction and flushes once in one
-transaction: acquire the requested manual guards, replay the SQL expectations, then check and write the row plans.
-The developer selects company and room guards for actions changing booking usage or availability. Company plan
-changes rely on optimistic row expectations without a manual guard. No `SERIALIZABLE` isolation or pessimistic row
-locks are used during the decision.
+transaction: acquire the query guards, replay the SQL expectations, then check and write the row plans.
+The repository's constructor declares company-usage and room-booking dependencies with `#[DefineQueryGuard]`.
+Queries register shared guards through `QueryGuard::observe()`; affected writes automatically register exclusive
+guards, including cancellations and both rooms of a move. The service requests no manual locks. Company plan
+changes rely on optimistic row expectations. No `SERIALIZABLE` isolation or pessimistic row locks are used during
+the decision. See the [prototype notes](../../src/StateStore/QUERY_GUARD_PROTOTYPE.md) for its limits.
 
 The service reads through `StateStore::observe()`, which registers optimistic state or absence expectations
 automatically. Like Doctrine, the service uses typed `company()` and `booking()` helpers for required loads and
@@ -25,7 +27,7 @@ checks duplicate identifiers directly in each creation operation. Bulk closure a
 by the repository.
 
 Manual queries observe committed rows before the write plan. `BookingRepository` registers their results with
-`observeQuery()` and separately overlays pending booking changes for subsequent decisions, including weekly series.
+`QueryGuard::observe()` and separately overlays pending booking changes for subsequent decisions, including weekly series.
 It participates in unit-of-work cleanup; StateStore owns its writes. No intermediate flush is needed. Duplicate
 emails also have a database unique constraint, as in the Doctrine variant. Foreign keys are deferred to commit so
 new related states can be saved in one flush regardless of table order.

@@ -42,6 +42,13 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
         // This adapter has a single synchronous transaction; there is no competing connection to serialize.
     }
 
+    public function lockGuard(string $name, int|string $value, GuardLockMode $mode): void
+    {
+        if (!$this->database->isTransactionActive()) {
+            throw new \LogicException('Query guards require an active transaction.');
+        }
+    }
+
     public function scope(): ?MappedKey
     {
         return $this->configuredScope;

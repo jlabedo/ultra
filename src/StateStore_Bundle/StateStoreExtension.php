@@ -15,6 +15,7 @@ use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
 use Ultra\StateStore_Bundle\DependencyInjection\Compiler\StateStoreCompilerPass;
+use Ultra\StateStore_Bundle\DependencyInjection\Compiler\QueryGuardCompilerPass;
 
 final class StateStoreExtension implements ContainerExtension
 {
@@ -38,5 +39,6 @@ final class StateStoreExtension implements ContainerExtension
         ]);
 
         $container->addCompilerPass(new StateStoreCompilerPass());
+        $container->addCompilerPass(new QueryGuardCompilerPass());
     }
 }
