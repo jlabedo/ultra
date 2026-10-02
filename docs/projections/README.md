@@ -2,6 +2,12 @@
 
 The `Projection` package defines how read models are described, replayed, and coordinated.
 
+Projection authors must keep read-model writes within the configured projection
+transaction, using the same connection as checkpoint persistence. External
+effects require a separate delivery mechanism: they cannot be rolled back with
+the projection checkpoint. This contract keeps read-model changes and checkpoint
+advancement consistent when a batch fails.
+
 It is intentionally split into two layers:
 
 - definition/runtime: what a projection is and how it applies events
@@ -9,11 +15,25 @@ It is intentionally split into two layers:
 
 Postgres-specific persistence lives in `src/Projection_Postgres`. This package keeps the runtime algorithm storage-agnostic and ships in-memory implementations for tests and local wiring.
 
+## Partition ordering
+
+The partition dimension declares which events require ordered processing. Events
+sharing the same value of that dimension are processed in event-store order;
+there is no processing-order guarantee across different partition values.
+Projection authors must choose a dimension that covers their ordering dependencies.
+This enables horizontal scaling and reduces contention. Buckets and segments are
+execution units that group logical partitions; they do not establish an ordering
+contract between independent partitions.
+
+ProjectionRuntime currently dispatches through handler metadata and dynamic
+method calls. This is a deliberate readability trade-off: the expected gain from
+generated dispatch does not justify its additional complexity.
+
 ## Main Concepts
 
 ### `ProjectionDefinition`
 
-[ProjectionDefinition.php](ProjectionDefinition.php) is the static description of a projection class.
+[ProjectionDefinition.php](../../src/Projection/ProjectionDefinition.php) is the static description of a projection class.
 
 It is built from attributes and reflection and contains:
 
@@ -33,7 +53,7 @@ It also knows how to:
 
 ### `ProjectionRuntime`
 
-[ProjectionRuntime.php](ProjectionRuntime.php) binds a concrete projection object to its definition and an `UltraNormalizer`.
+[ProjectionRuntime.php](../../src/Projection/ProjectionRuntime.php) binds a concrete projection object to its definition and an `UltraNormalizer`.
 
 It is the execution-facing object used by workers:
 
@@ -49,7 +69,7 @@ Rule of thumb:
 
 ### `ProjectionCatalog`
 
-[ProjectionCatalog.php](ProjectionCatalog.php) is a registry of runtimes and definitions keyed by projection id.
+[ProjectionCatalog.php](../../src/Projection/ProjectionCatalog.php) is a registry of runtimes and definitions keyed by projection id.
 
 It is used by:
 
@@ -60,15 +80,15 @@ It is used by:
 
 ### `ProjectionRunner`
 
-[ProjectionRunner.php](ProjectionRunner.php) is the low-level executor.
+[ProjectionRunner.php](../../src/Projection/ProjectionRunner.php) is the low-level executor.
 
-It works with an `EventStore` and a [ProjectionSegmentRepositoryInterface.php](ProjectionSegmentRepositoryInterface.php).
+It works with an `EventStore` and a [ProjectionSegmentRepositoryInterface.php](../../src/Projection/ProjectionSegmentRepositoryInterface.php).
 
 Its job is:
 
 1. open a projection transaction boundary for first-time setup
 2. ensure the projection has an initial segment and initialize it when the segment was just created
-3. claim a segment, or the segment containing a specific bucket
+3. claim a segment identified by its first bucket
 4. load matching events for that segment from the current checkpoint
 5. open a projection transaction boundary
 6. apply them through `ProjectionRuntime`
@@ -76,19 +96,18 @@ Its job is:
 8. release the segment with the new checkpoint
 9. commit the projection transaction
 10. abandon the segment if the transaction fails
-11. finalize split/merge operations when needed
+Split and merge are separate explicit operations on segment ranges.
 
 The segment repository owns runtime state such as:
 
 - current bucket range
 - checkpoint
 - lease state
-- pending split/merge operations
 
-Segments are represented by [ProjectionSegment.php](ProjectionSegment.php).
+Segments are represented by [ProjectionSegment.php](../../src/Projection/ProjectionSegment.php).
 
-`ProjectionRunner` accepts a [ProjectionTransactionManagerInterface.php](ProjectionTransactionManagerInterface.php).
-The default [NoOpProjectionTransactionManager.php](NoOpProjectionTransactionManager.php) keeps in-memory and custom
+`ProjectionRunner` accepts a [ProjectionTransactionManagerInterface.php](../../src/Projection/ProjectionTransactionManagerInterface.php).
+The default [NoOpProjectionTransactionManager.php](../../src/Projection/NoOpProjectionTransactionManager.php) keeps in-memory and custom
 storage usage lightweight. Postgres-backed read models should wire the DBAL-based transaction manager from
 `src/Projection_Postgres` with the same connection used by projection read-model repositories and the segment
 repository. This makes event application, `#[ProjectionFlush]`, and checkpoint advancement commit or roll back as
@@ -102,15 +121,17 @@ The coordination model is intentionally separate from segment execution.
 
 ### Activity Recording
 
-[ProjectionActivityRecorder.php](Coordination/ProjectionActivityRecorder.php) runs after events have been appended successfully.
+[ProjectionActivityRecorder.php](../../src/Projection/Coordination/ProjectionActivityRecorder.php) runs after events have been appended successfully.
 
 It:
 
 1. scans all projection definitions
-2. finds which projections handle each committed event
+2. finds which projections handle each appended event
 3. computes the touched bucket for each `(projection, event)` pair
 4. bumps the activity counter for each distinct `(projectionId, bucket)` pair
-5. enqueues one global `WakeProjectionCoordinator` message if no recent wake-up is already pending
+5. signals work availability through the activator when the coordinator lease allows a debounced wake-up
+
+Append, activity recording and durable wake-up writes must participate in the appropriate shared transaction to stay aligned with commit. Recording after append does not by itself mean the transaction has committed.
 
 Important details:
 
@@ -120,23 +141,19 @@ Important details:
 
 ### Bucket Activity
 
-[ProjectionBucketActivityRepositoryInterface.php](Coordination/ProjectionBucketActivityRepositoryInterface.php) stores touched buckets as [ProjectionBucketActivity.php](Coordination/ProjectionBucketActivity.php).
+[ProjectionActivity](../../src/Projection/Coordination/ProjectionActivity.php)
+adapts Coordination's DirtyKeyTracker to projection IDs and bucket numbers.
+Counters absorb repeated signals. Workers subtract only the counters observed
+before processing once their claimed segment catches up, preserving concurrent
+signals for a later cycle.
 
-Each row is effectively a generation signal:
-
-- `counter` is bumped when the bucket is touched again
-- workers decrement the exact pending counter value they observed after their claimed segment catches up
-
-The coordinator asks for global `affectedBuckets()` to find stale projections, maps those hints to available
-segments, and durably claims only segments that still have pending bucket activity. Bucket activity is a liveness
-signal; segments are the scheduling and checkpointing unit.
-
-Explicit rebuilds should not depend on bucket activity. Use `ProjectionRunner::backfillClaimedOnce()` for claimed
-segments that must be replayed from their checkpoints regardless of whether activity hints exist.
+Activity is a scheduling hint; segment checkpoints remain the source of truth
+for progress. Explicit rebuilds use ProjectionRunner::backfillClaimedOnce without
+requiring activity hints.
 
 ### Global Coordinator
 
-[ProjectionCoordinator.php](Coordination/ProjectionCoordinator.php) is a single leader worker for the whole app.
+[ProjectionCoordinator.php](../../src/Projection/Coordination/ProjectionCoordinator.php) is a single leader worker for the whole app.
 
 It does not wake per projection. Instead it:
 
@@ -154,27 +171,21 @@ It does not wake per projection. Instead it:
 
 This is important: the coordinator is not only a scheduler. It is also a worker and always participates in processing.
 
-Coordinator liveness is abstracted behind [ProjectionCoordinatorLeaseRepositoryInterface.php](Coordination/ProjectionCoordinatorLeaseRepositoryInterface.php).
+Coordinator liveness uses [CoordinatorLease](../../src/Coordination/Lease/CoordinatorLease.php).
 
-### Wake Queue
+### Activation
 
-[ProjectionWakeQueueInterface.php](Coordination/ProjectionWakeQueueInterface.php) is deliberately tiny:
-
-- `enqueue(object $message)`
-- `dequeue(): ?object`
-
-Today the package defines two wake-up messages:
-
-- [WakeProjectionCoordinator.php](Coordination/WakeProjectionCoordinator.php)
-- [WakeProjectionWorker.php](Coordination/WakeProjectionWorker.php)
-
-The queue is only a wake-up mechanism. Scheduling truth remains in the repositories.
+[ProjectionActivatorInterface](../../src/Projection/Coordination/ProjectionActivatorInterface.php)
+extends Coordination's work-availability signal with activation of a specific
+claimed projection worker. MessageHandlingProjectionActivator implements this
+through message handling; in-memory activation is available for tests. Activation
+is a wake-up mechanism, while scheduling state remains in the repositories.
 
 ### Scaling Policy
 
-[ProjectionScalingPolicyInterface.php](Coordination/ProjectionScalingPolicyInterface.php) receives the current global affected-bucket view and decides how many extra worker wake-ups should be emitted.
+[ProjectionScalingPolicyInterface.php](../../src/Projection/Coordination/ProjectionScalingPolicyInterface.php) receives the current global affected-bucket view and decides how many extra worker wake-ups should be emitted.
 
-The default implementation, [DefaultProjectionScalingPolicy.php](Coordination/DefaultProjectionScalingPolicy.php), returns `0`.
+The default implementation, [DefaultProjectionScalingPolicy.php](../../src/Projection/Coordination/DefaultProjectionScalingPolicy.php), returns `0`.
 
 That means:
 
@@ -183,20 +194,15 @@ That means:
 
 ## In-Memory Implementations
 
-This package includes in-memory adapters for tests and local composition:
+The current adapters include:
 
-- [InMemoryProjectionSegmentRepository.php](InMemoryProjectionSegmentRepository.php)
-- [InMemoryProjectionBucketActivityRepository.php](Coordination/InMemoryProjectionBucketActivityRepository.php)
-- [InMemoryProjectionCoordinatorLeaseRepository.php](Coordination/InMemoryProjectionCoordinatorLeaseRepository.php)
-- [InMemoryProjectionWakeQueue.php](Coordination/InMemoryProjectionWakeQueue.php)
+- [InMemoryProjectionSegmentRepository](../../src/Projection/InMemory/InMemoryProjectionSegmentRepository.php)
+- [InMemoryDirtyKeyTracker](../../src/Coordination/InMemory/InMemoryDirtyKeyTracker.php)
+- [InMemoryCoordinatorLease](../../src/Coordination/InMemory/InMemoryCoordinatorLease.php)
+- [InMemoryProjectionActivator](../../src/Projection/InMemory/InMemoryProjectionActivator.php)
 
-These are useful for:
-
-- unit tests
-- single-process experiments
-- validating coordination logic without Postgres
-
-For durable cross-process coordination, use the adapters in `src/Projection_Postgres`.
+These support tests and local composition. Durable cross-process coordination
+uses the adapters in Projection_Postgres and Coordination_Postgres.
 
 ## End-to-End Flow
 
@@ -204,10 +210,10 @@ At a high level, the runtime works like this:
 
 1. Events are appended successfully to the event store.
 2. `ProjectionActivityRecorder` records touched `(projectionId, bucket)` pairs.
-3. A single global coordinator wake-up is enqueued.
+3. The activator signals work availability for the global coordinator.
 4. A worker becomes leader by acquiring the coordinator lease.
 5. The leader reads affected buckets, claims affected segments, optionally wakes followers, and processes one claim itself.
-6. `ProjectionRunner` renews the claimed segment lease and replays events from checkpoints.
+6. `ProjectionRunner` claims or reclaims its assigned segment and replays events from its checkpoint.
 7. Caught-up workers decrement the bucket counters they observed, and the loop continues until there is no productive work left.
 
 The key design choice is:

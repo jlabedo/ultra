@@ -34,7 +34,7 @@ The repository's constructor declares company-usage and room-booking dependencie
 Queries register shared guards through `QueryGuard::observe()`; affected writes automatically register exclusive
 guards, including cancellations and both rooms of a move. The service requests no manual locks. Company plan
 changes rely on optimistic row expectations. No `SERIALIZABLE` isolation or pessimistic row locks are used during
-the decision. See the [query guard contract](../../src/StateStore/QUERY_GUARDS.md) for its supported scope and responsibilities.
+the decision. See the [query guard contract](../../docs/stored-state/query-guards.md) for its supported scope and responsibilities.
 
 The service reads through `StateStore::observe()`, which registers optimistic state or absence expectations
 automatically. Like Doctrine, the service uses typed `company()` and `booking()` helpers for required loads and

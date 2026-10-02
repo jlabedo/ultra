@@ -224,8 +224,8 @@ values are non-null integers or strings; collection-item tables and direct SQL w
 enrolled. Callbacks return scalars, null or arrays, compared strictly; a changed result raises
 `Ultra\UnitOfWork\Exception\ConcurrencyException` at flush.
 
-See the [query guard contract](QUERY_GUARDS.md) for the flush protocol, exceptions, manual construction and
-developer responsibilities, and the [bundle configuration](../StateStore_Bundle/README.md) for constructor
+See the [query guard contract](query-guards.md) for the flush protocol, exceptions, manual construction and
+developer responsibilities, and the [bundle configuration](symfony.md) for constructor
 injection. The [direct coworking variant](../../examples/coworking/src/Booking/StateStoreDirect) validates all
 weekly slots and the total requested minutes per month before buffering bookings, with no repository overlay.
 

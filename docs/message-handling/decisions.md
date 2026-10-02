@@ -1,11 +1,13 @@
 # Stateful Message Handling
 
-Event-sourcing decision pipeline built on the mediator. Commands declare their consistency boundary via their `decide()` method signature; a single decision aspect loads the right streams, hydrates **states**, resolves services, and appends emitted **events** with optimistic concurrency.
+Stateful decision handling built on the mediator, with two persistence approaches: event-sourced states and stored states. Decision aspects load state parameters and apply recognized returned effects with optimistic concurrency protection. The signature declares injected state dependencies; callers remain responsible for additional query and service dependencies.
+
+See the [shared concepts and consistency responsibilities](stateful.md). The event-sourced path is described below; the stored-state path uses [StateStore](../stored-state/README.md).
 
 ## Design
 
-- **Decider pattern**: Each command owns the decision logic in a method marked with `#[DecisionHandler]`. The decision aspect discovers what to load and inject by reflecting on that method.
-- **States are event-sourced entities**: State classes come from `ultra/event-sourced-state` and use `#[EventSourcedEntity]` plus public `#[EventSourcingHandler]` methods (one typed event parameter) to fold events from a single stream. No aggregate root is required.
+- **Decision handlers**: Decision logic can live on a self-handling command or a separate handler. A method marked with `#[DecisionHandler]` declares the state dependencies that the compiler analyzes for loading and injection.
+- **States are event-sourced entities**: State classes come from `ultra/event-sourced-state` and use `#[EventSourcedEntity]` plus public `#[EventSourcingHandler]` methods (one typed event parameter) to fold the events selected by their loader. No aggregate root is required.
 - **Consistency by signature**: Parameters of the decision handler are either **state** (hydrated from the event store by stream) or **services** (resolved from the container). The aspect infers which is which and loads only the streams needed for that command.
 - **Identity by convention**: A state’s stream dimension comes from its single `#[EventSourcedEntity(tags: ['name'])]` tag; the engine reads the value from the command’s `{name}Id` property or, if there is none, its public `{name}Id()` method. A name matching both is a compile-time error; `#[BindTo]` chooses explicitly.
 - **Events are DTOs**: Events are plain classes with `#[Event('type.name')]` and `#[DomainIdentifier]` on properties. Stream routing is derived from those attributes when appending.
@@ -27,7 +29,7 @@ Event-sourcing decision pipeline built on the mediator. Commands declare their c
 
 - **Violation** – `code` + `message` for invariant failures.
 - **InvariantViolation** – Exception carrying `list<Violation>`, thrown by decision handlers when a rule is broken.
-- **DecisionMode** – Context key and value that switch a send to read-only check mode.
+- **DecisionMode** – Context key and value that switch a send to experimental CHECK mode (see [its current limitations](stateful.md#experimental-check-mode)).
 - **EventSourcedEntityLoader** – Pre-compiled loader that builds the typed query for an entity and rehydrates it from a shared batch of loaded `Ultra\EventStore\Event` values.
 
 ## Usage
@@ -40,7 +42,7 @@ $mediator = /* mediator instance */;
 $events = $mediator->send($command);  // returns emitted event DTOs
 ```
 
-Decision commands are self-handling messages:
+Decision commands can be self-handling messages, as in this example, or use a separate `#[Handles]` handler:
 
 ```php
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
@@ -109,7 +111,9 @@ final readonly class BookRoom
 - Limitation: a method can only depend on states of the same flavor. An event-sourced state cannot feed a state-store
   id, or the reverse, because each aspect loads its own states independently.
 
-### Read-only validation
+### Experimental CHECK mode
+
+CHECK is an early proof of concept. Its usefulness and long-term contract remain unresolved. It executes the handler and its services and does not prevent effects they perform directly. StateStore expectations are registered before the check runs.
 
 ```php
 use Ultra\StatefulMessageHandling\DecisionMode;
@@ -117,7 +121,7 @@ use Ultra\StatefulMessageHandling\DecisionMode;
 $violations = $mediator->send($command, [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK]);
 ```
 
-Runs the decision handler with the same states and services, then discards its effects: nothing is appended (or saved, for state-store decisions) and no event is published. The send returns the violations of a thrown `InvariantViolation`, or an empty list when the decision would succeed. Other exceptions propagate.
+Runs the decision handler with the same states and services, then bypasses the decision aspects' append, save and publication of returned effects. The send returns the violations of a thrown `InvariantViolation`, or an empty list when the decision would succeed. Other exceptions propagate.
 
 Check mode reports what `decide()` reports: group all rules you want surfaced together into one `InvariantViolation`.
 
@@ -136,7 +140,7 @@ The aspect always hydrates an object. Commands should ask the state whether it h
 
 ## Example
 
-A full course/student subscription example (events, states, commands, and tests) lives under **`Tests/Example/`**: create course, subscribe/unsubscribe students, with check mode and explicit course existence on the state.
+A full course/student subscription example (events, states, commands, and tests) lives under [StatefulMessageHandling/Tests/Example](../../src/StatefulMessageHandling/Tests/Example): create course, subscribe/unsubscribe students, with check mode and explicit course existence on the state.
 
 ## Dependencies
 

@@ -36,7 +36,7 @@ definition. Use physical column names, including for embedded mappings.
 
 `StateStore_Bundle` discovers constructor declarations on autowired services, executes their configuration
 closures during compilation, registers global write rules, and injects each guard into its parameter. Only plain
-metadata is retained in the dumped container. See the [bundle configuration](../StateStore_Bundle/README.md) for
+metadata is retained in the dumped container. See the [bundle configuration](symfony.md) for
 service registration and compilation errors.
 
 ## Decision reads

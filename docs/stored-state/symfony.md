@@ -38,7 +38,7 @@ The transaction manager used by `TransactionalUnitOfWorkRunner`, mapped adapters
 callbacks must all use the same connection. For in-memory use, register `InMemoryMappedRowSetAdapterFactory` and
 `InMemoryGuardLockAdapter` with the same `InMemoryRowDatabase`.
 
-See the [state store README](../StateStore/README.md) for mappings and the [coworking service
+See the [state store README](README.md) for mappings and the [coworking service
 configuration](../../examples/coworking/config/services.yaml) for a complete application example.
 
 ## Query guard declarations
@@ -74,4 +74,4 @@ Repeated names must produce identical compiled scopes; declaration order and wat
 but duplicate `watch()` entries are not removed. Prefer one consistent declaration per query dependency.
 
 The developer supplies complete query dependencies; the compiler does not inspect SQL. Read the [query guard
-contract](../StateStore/QUERY_GUARDS.md) for decision ordering, replay, exceptions and the supported scope.
+contract](query-guards.md) for decision ordering, replay, exceptions and the supported scope.

@@ -327,7 +327,7 @@ unrelated bookings.
 The query guard contract supports non-null scalar scope values on registered row tables, requires
 observed scopes for existing-row mutations and rejects blind upserts. It does not derive composite or calendar
 scopes or enroll independently flushed row sets and collection-item tables. See
-[the query guard documentation](../../src/StateStore/QUERY_GUARDS.md) for the complete contract and test commands.
+[the query guard documentation](../../docs/stored-state/query-guards.md) for the complete contract and test commands.
 
 ## 11. StateStore decisions with guarded queries
 

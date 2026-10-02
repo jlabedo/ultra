@@ -2,6 +2,10 @@
 
 Typed event store API with checkpointed reads and query-scoped optimistic concurrency.
 
+A stream is an ordered, filtered sequence of events. Current filters select
+events by domain identifiers and event names. An event can match multiple streams;
+a stream does not require exclusive ownership by a domain entity.
+
 ## Core Model
 
 - **Event** – Neutral event value used for both `append()` input and `load()` output on the write side. It contains `eventType`, `payload`, `domainIds`, and optional `recordedAt`.
@@ -63,7 +67,7 @@ So the visible event list can include pending writes, while `Checkpoint` continu
 
 `sequence` is intentionally not part of the write-side `Event` model.
 
-If you need persisted ordering/checkpoint identifiers for projections, use `Ultra\Projection\EventFeed` and `Ultra\Projection\StoredEvent`. That is the read-model/projection boundary where persistence identity belongs.
+The projection runtime consumes `Ultra\EventStore\Event` through the same EventStore API. Projection progress is tracked by segment checkpoints rather than a separate event DTO carrying a sequence number.
 
 ## Example
 

@@ -1,5 +1,12 @@
 # Ultra\Coordination
 
+This is an experimental, independently usable building block. Its current scope
+is the three primitives below. The original intent was to reuse part of the
+event-sourced projection execution machinery for other background tasks, such as
+cache refreshes. The current module is smaller than that ambition, and its name
+is provisional. Resuming the compliance example's cache-refresh experiment from
+another branch is tracked in [TODO](../../TODO.md).
+
 Generic primitives for coordinating background work: knowing *what* is pending,
 ensuring only *one* worker drives a job at a time, and *waking* that worker
 without a thundering herd. These were extracted from the projection runtime once

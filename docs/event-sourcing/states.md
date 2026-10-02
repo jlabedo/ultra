@@ -87,7 +87,7 @@ final class RoomDayScheduleState
     public function onRescheduled(BookingRescheduled $event): void
     {
         // Loaded as the new day (roomDay = my id) or as the old day (previousRoomDay = my id).
-        // The state does not know its own id, so it infers its role from what it holds.
+        // This example state does not know its own id, so it infers its role from what it holds.
         if (isset($this->bookings[$event->bookingId]) && $event->roomDayId !== $event->previousRoomDayId) {
             unset($this->bookings[$event->bookingId]); // the old day: the booking leaves
         } else {
