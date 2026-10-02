@@ -34,6 +34,27 @@ final class MappedRowSet implements UnitOfWork
         return new PendingRowUpdate($update);
     }
 
+    /**
+     * Upsert the desired keyed rows and delete rows absent from that set in this unit of work's view.
+     * Reads the adapter now; writes remain buffered. Existing expectations and unspecified columns are preserved.
+     *
+     * @param iterable<MappedRow> $rows
+     */
+    public function reconcileRows(iterable $rows): void
+    {
+        $desiredKeys = [];
+        foreach ($rows as $row) {
+            $desiredKeys[$row->key->fingerprint()] = true;
+            $this->withKey($row->key)->upsert()->setColumns($row->columns);
+        }
+
+        foreach ($this->rows() as $existingRow) {
+            if (!array_key_exists($existingRow->key->fingerprint(), $desiredKeys)) {
+                $this->withKey($existingRow->key)->delete();
+            }
+        }
+    }
+
     /** An immutable snapshot of the buffered row changes and expectations. */
     public function updatePlan(): RowSetUpdatePlan
     {

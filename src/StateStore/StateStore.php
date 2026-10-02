@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\StateStore;
 
 use Ultra\Mapper\UltraNormalizer;
+use Ultra\MappedTable\MappedRow;
 
 final readonly class StateStore
 {
@@ -74,7 +75,9 @@ final readonly class StateStore
         ;
 
         foreach ($metadata->collections as $collection) {
-            $this->saveCollection($collection, $normalizedId, $this->normalizedCollectionItems($metadata, $normalizedState, $collection));
+            $this->tableRegistry->collectionFor($collection, $normalizedId)->reconcileRows(
+                $this->collectionRows($collection, $normalizedId, $this->normalizedCollectionItems($metadata, $normalizedState, $collection)),
+            );
         }
     }
 
@@ -189,26 +192,14 @@ final readonly class StateStore
 
     /**
      * @param list<array<string, mixed>> $items
+     * @return iterable<MappedRow>
      */
-    private function saveCollection(StateCollectionMetadata $collection, mixed $normalizedOwnerId, array $items): void
+    private function collectionRows(StateCollectionMetadata $collection, mixed $normalizedOwnerId, array $items): iterable
     {
-        $rowSet = $this->tableRegistry->collectionFor($collection, $normalizedOwnerId);
         $ownerKey = $collection->ownerKey($normalizedOwnerId);
-        $desiredIds = [];
 
         foreach ($items as $item) {
-            $key = $collection->itemKey($item, $ownerKey);
-            $desiredIds[$key->fingerprint()] = true;
-            $rowSet->withKey($key)
-                ->upsert()
-                ->setColumns($collection->columnsFromNormalized($item))
-            ;
-        }
-
-        foreach ($rowSet->rows() as $existingRow) {
-            if (!array_key_exists($existingRow->key->fingerprint(), $desiredIds)) {
-                $rowSet->withKey($existingRow->key)->delete();
-            }
+            yield new MappedRow($collection->itemKey($item, $ownerKey), $collection->columnsFromNormalized($item));
         }
     }
 

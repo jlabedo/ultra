@@ -33,6 +33,88 @@ final class MappedRowSetTest extends TestCase
     private const ID_COLUMN = 'id';
     private const COLUMNS = ['status', 'note', 'version_a', 'version_b'];
 
+    public function test_reconciliation_upserts_desired_rows_and_deletes_removed_rows_within_scope(): void
+    {
+        $database = new InMemoryRowDatabase();
+        foreach ([['owner' => 'one', 'id' => 'keep', 'status' => 'old', 'note' => 'preserved'], ['owner' => 'one', 'id' => 'remove'], ['owner' => 'two', 'id' => 'other']] as $row) {
+            $database->seedRow('items', 'id', $row);
+        }
+        $table = new MappedRowSet(new InMemoryMappedRowSetAdapter($database, 'items', ['owner', 'id'], new MappedKey(['owner' => 'one'])));
+        $keep = new MappedKey(['owner' => 'one', 'id' => 'keep']);
+        $added = new MappedKey(['owner' => 'one', 'id' => 'added']);
+
+        $table->reconcileRows([new MappedRow($keep, ['status' => 'updated']), new MappedRow($added, ['status' => 'new'])]);
+
+        self::assertSame(['status' => 'updated', 'note' => 'preserved'], $table->row($keep, ['status', 'note']));
+        self::assertFalse($table->row('remove'));
+        self::assertSame(['status' => 'old', 'note' => 'preserved'], $database->rowByKey('items', $keep, ['status', 'note']));
+        $this->flushInTransaction($database, $table);
+        $table->clear();
+        self::assertCount(2, $table->rows());
+        self::assertSame(['status' => 'updated', 'note' => 'preserved'], $table->row($keep, ['status', 'note']));
+        self::assertSame(['status' => 'new'], $table->row($added, ['status']));
+        self::assertNotFalse($database->rowByKey('items', new MappedKey(['owner' => 'two', 'id' => 'other'])));
+    }
+
+    public function test_successive_reconciliations_include_buffered_rows_and_an_empty_set_removes_them(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'existing', 'status' => 'old']);
+        $existing = new MappedKey(['id' => 'existing']);
+        $added = new MappedKey(['id' => 'added']);
+        $table->withKey($added)->expectAbsent();
+
+        $table->reconcileRows([new MappedRow($added, ['status' => 'new'])]);
+        $table->reconcileRows([new MappedRow($existing, ['status' => 'restored'])]);
+        self::assertSame(['status' => 'restored'], $table->row($existing, ['status']));
+        self::assertFalse($table->row($added, ['status']));
+        $table->reconcileRows([]);
+        self::assertSame([], $table->rows());
+        $this->flushInTransaction($database, $table);
+        $table->clear();
+        self::assertSame([], $table->rows());
+    }
+
+    public function test_reconciliation_keeps_membership_expectations(): void
+    {
+        [$database, $table] = $this->newTable();
+        $key = new MappedKey(['id' => 'existing']);
+        $this->seedRow($database, ['id' => 'existing', 'status' => 'old']);
+        $table->expectSameRowKeys([$key]);
+        $this->seedRow($database, ['id' => 'concurrent', 'status' => 'new']);
+        $table->reconcileRows([new MappedRow($key, ['status' => 'updated'])]);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
+    }
+
+    public function test_reconciliation_merges_duplicate_keys_in_input_order(): void
+    {
+        [$database, $table] = $this->newTable();
+        $key = new MappedKey(['id' => 'existing']);
+        $table->reconcileRows([
+            new MappedRow($key, ['status' => 'first', 'note' => 'preserved']),
+            new MappedRow($key, ['status' => 'last']),
+        ]);
+        $this->flushInTransaction($database, $table);
+        $table->clear();
+
+        self::assertSame(['status' => 'last', 'note' => 'preserved'], $table->row($key, ['status', 'note']));
+    }
+
+    public function test_reconciliation_keeps_column_expectations(): void
+    {
+        [$database, $table] = $this->newTable();
+        $key = new MappedKey(['id' => 'existing']);
+        $this->seedRow($database, ['id' => 'existing', 'status' => 'old']);
+        $table->withKey($key)->expectColumnValue('status', 'old');
+        $table->reconcileRows([new MappedRow($key, ['status' => 'updated'])]);
+        $this->seedRow($database, ['id' => 'existing', 'status' => 'concurrent']);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
+    }
+
     public function test_composite_key_addresses_and_returns_one_structured_row(): void
     {
         $database = new InMemoryRowDatabase();

@@ -54,6 +54,13 @@ $table->withKey($key)->insert();
 
 `rows(...)` returns a list of `MappedRow` objects containing a structured `MappedKey` and the projected columns. It overlays buffered mutations. `expectSameRowKeys(...)` buffers an optimistic expectation that the row-key set has not changed before `flush()`.
 
+`reconcileRows(iterable $rows)` accepts desired `MappedRow` values, upserts their supplied columns and deletes
+rows missing from that set within the adapter's scope. It reads storage immediately through `rows()`, including
+buffered changes in the comparison, and buffers all writes for flush. An empty set removes every visible row;
+successive calls reconcile against earlier buffered changes. Unspecified columns and existing optimistic
+expectations are preserved. Repeated keys merge their supplied columns in input order, with the last supplied
+value winning. Reconciliation does not register new optimistic expectations.
+
 ### Expectations and the unit-of-work view
 
 `row(...)` and `rows(...)` return the unit of work's view: committed data with buffered changes applied. Expectations are written against that same view:
