@@ -184,24 +184,4 @@ final class InMemoryRowDatabaseTest extends TestCase
         self::assertSame('v2', $database->row('users', 'id', 'row-1')['name']);
         self::assertCount(1, $database->rows('users', 'id'));
     }
-
-    // --- owned-set + row-set coexistence on the same backing table -----------
-    //
-    // After the storage unification, both views are predicates over one list.
-    // Pin the cross-view invariants: an owned-set write isn't shadowed by a
-    // row-set view that ignores parent columns, and vice versa.
-
-    public function test_owned_set_writes_dont_corrupt_row_set_reads_on_unrelated_table(): void
-    {
-        $database = new InMemoryRowDatabase();
-        $database->writeRow('users', 'id', ['id' => 'u-1', 'name' => 'alice']);
-        $database->replaceOwnedSet('intervals', ['subject_id' => 'u-1', 'capability_id' => 'c-1'], [
-            ['eligible_from' => '2025-01-01', 'eligible_to' => null],
-        ]);
-
-        // Each view sees only its own table.
-        self::assertSame([['id' => 'u-1', 'name' => 'alice']], array_values($database->rows('users', 'id')));
-        self::assertCount(1, $database->rowsForParent('intervals', ['subject_id' => 'u-1', 'capability_id' => 'c-1']));
-        self::assertSame([], $database->rowsForParent('users', ['subject_id' => 'u-1']));
-    }
 }

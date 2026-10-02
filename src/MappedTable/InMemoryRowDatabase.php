@@ -5,14 +5,11 @@ declare(strict_types=1);
 namespace Ultra\MappedTable;
 
 /**
- * In-memory backing store shared by `InMemoryMappedRowSetAdapter` and
- * `InMemoryMappedOwnedRowSetAdapter`.
+ * In-memory backing store for `InMemoryMappedRowSetAdapter`.
  *
  * Storage is a single list of rows per table — the same shape Postgres has.
- * The two adapter views over it (PK-keyed rows for `MappedRowSet`, parent-
- * keyed sets for `MappedOwnedRowSet`) just filter that list by different
- * column predicates. Transaction snapshots are correspondingly one-shot:
- * snapshot the table map, restore on rollback.
+ * Row keys and scopes filter that list by column predicates. Transactions
+ * snapshot the table map and restore it on rollback.
  */
 final class InMemoryRowDatabase
 {
@@ -203,52 +200,6 @@ final class InMemoryRowDatabase
     {
         $predicate = [...$scopeColumns, $idColumn => $id];
         $this->removeWhere($tableName, static fn (array $r): bool => self::rowMatches($r, $predicate));
-        $this->compactIfEmpty($tableName);
-    }
-
-    // --- owned-set view (parent key owns a list of rows) -----------------------
-
-    /**
-     * @param array<string, int|string> $parentKey
-     *
-     * @return list<array<string, mixed>>
-     */
-    public function rowsForParent(string $tableName, array $parentKey): array
-    {
-        $rows = [];
-        foreach ($this->tables[$tableName] ?? [] as $row) {
-            if (self::rowMatches($row, $parentKey)) {
-                $rows[] = $row;
-            }
-        }
-
-        return $rows;
-    }
-
-    /**
-     * @param array<string, int|string>  $parentKey
-     * @param list<array<string, mixed>> $rows
-     */
-    public function replaceOwnedSet(string $tableName, array $parentKey, array $rows): void
-    {
-        $this->removeWhere($tableName, static fn (array $r): bool => self::rowMatches($r, $parentKey));
-
-        foreach ($rows as $row) {
-            $this->tables[$tableName][] = [...$parentKey, ...$row];
-        }
-
-        $this->compactIfEmpty($tableName);
-    }
-
-    /**
-     * Delete every owned set whose parent key contains the supplied
-     * partial-key column/value pairs.
-     *
-     * @param array<string, int|string> $partialParentKey
-     */
-    public function deleteOwnedSetsMatching(string $tableName, array $partialParentKey): void
-    {
-        $this->removeWhere($tableName, static fn (array $r): bool => self::rowMatches($r, $partialParentKey));
         $this->compactIfEmpty($tableName);
     }
 
