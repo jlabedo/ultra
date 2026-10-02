@@ -1,6 +1,6 @@
 # Working in Ultra
 
-Ultra is a private PHP monorepo of composable application building blocks. Message handling is the main application-facing API; runtime performance guides the design. Packages live in `src/`, examples in `examples/`, and integration applications in `tests/`.
+Packages live in `src/`, examples in `examples/`, and integration applications in `tests/`.
 
 ## Before changing code
 
@@ -10,7 +10,7 @@ Ultra is a private PHP monorepo of composable application building blocks. Messa
 
 ## Change rules
 
-- Backward compatibility is not required; these packages are unpublished.
+- Backward compatibility is not required.
 - Keep changes coherent with package responsibilities. Nearby cleanup is welcome when it supports the change.
 - Follow the surrounding style. Use docblocks for generics, shapes and intent that PHP types cannot express.
 - Do not run `php-cs-fixer` or `composer cs-fix`. Leave formatting-only changes to CI.
@@ -24,4 +24,4 @@ Ultra is a private PHP monorepo of composable application building blocks. Messa
 
 ## Maintaining documentation
 
-Keep contributor rules here, task routing in `docs/README.md`, contracts in their context pages, vocabulary in `GLOSSARY.md`, rationale in ADRs, and planned work in `TODO.md`. Update the authoritative page and link to it instead of repeating its contract. Keep example instructions beside their examples. Add a routing entry when a new context or task branch needs its own documentation.
+Use the [reference ownership rules](docs/README.md#reference-ownership) to choose where to write. Update the authoritative page and link to it instead of repeating its contract. Add a routing entry when a new context or task branch needs its own documentation.

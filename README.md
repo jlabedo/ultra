@@ -6,15 +6,11 @@ Ultra is a private PHP monorepo for exploring composable application building bl
 
 - [Documentation by context and task](docs/README.md): contracts, usage and package ownership.
 - [Contributor instructions](AGENTS.md): change rules and verification requirements.
-- [Development](docs/development.md): setup and test commands.
-- [Glossary](GLOSSARY.md): shared terminology.
-- [Architectural decisions](docs/adr/README.md): design trade-offs.
-- [TODO](TODO.md): planned work.
 
 Runtime requirements and tooling are defined in [composer.json](composer.json).
 
 ## Status and license
 
-Ultra is a research and implementation space, not a published framework. Its APIs can be reshaped before publication.
+Ultra is a research and implementation space, not a published framework.
 
 Ultra is private and proprietary. No license for public use, distribution, or modification is currently granted.
