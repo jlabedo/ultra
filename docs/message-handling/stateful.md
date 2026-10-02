@@ -1,6 +1,6 @@
 # Stateful message handling
 
-Ultra provides composable building blocks whose guiding principle is runtime performance. Message handling is the primary application-facing API, and many building blocks can be used independently.
+Read this contract when changing decision aspects, state injection or CHECK. See [bindings and examples](decisions.md) for configuration.
 
 ## Two persistence approaches
 
@@ -28,7 +28,7 @@ The aspects still load states and execute the decision handler and its services.
 
 The event-sourced decision aspect calls append before publishing returned events to the optional EventBus. With EventStoreUnitOfWork, append buffers the events, so publication can happen before the flush and database commit. Synchronous event handlers participate in the current processing and can prepare additional unit-of-work changes.
 
-A handler producing an external effect can declare itself asynchronous with #[Asynchronous]. AsyncQueueUnitOfWork buffers enqueues for the transactional flush. With PostgresAsyncQueue using the same transaction connection as the other writes, queue entries commit atomically with those writes and become available to workers after commit. This provides an outbox pattern; declaring a handler asynchronous alone does not establish that transactional configuration.
+For handlers producing external effects, follow the [asynchronous delivery and outbox contract](async.md#outbox-and-external-effects).
 
 ## Mixed decisions
 
@@ -36,13 +36,9 @@ Handlers can involve both event-sourced states and stored states. This capabilit
 
 ## Flush, conflicts and retries
 
-TransactionalUnitOfWorkRunner executes application work before opening the flush transaction. Buffered work can then be ordered together to reduce deadlock risks. CompositeUnitOfWork follows the caller-provided component order, and StateStore orders its declared query guards and manual guards. These mechanisms do not eliminate deadlocks from other writers or additional locks acquired in a different order. See the [architectural rationale](../adr/0003-defer-transactions-to-ordered-flush.md) and [query guard contract](../stored-state/query-guards.md).
+For flush ordering, transaction boundaries and nested work, use the [transaction contract](../transactions/README.md).
 
 A concurrency conflict is distinct from a business invariant violation. Retry policy currently belongs to the caller; a framework retry module is planned in [TODO](../../TODO.md).
-
-## External effects and duplicate delivery
-
-Asynchronous handlers must account for duplicate delivery. An external action can succeed before the worker fails to acknowledge the message, allowing that action to run again. Atomic outbox writes do not make an external action atomic with queue acknowledgement. Use a stable idempotency key or a reliable reconciliation mechanism when the external service supports one. Without such support, retrying an ambiguous outcome can duplicate the action, while avoiding a retry can lose it.
 
 ## Code references
 

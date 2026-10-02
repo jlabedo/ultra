@@ -1,4 +1,4 @@
-# Stateful Message Handling
+# Decision bindings and examples
 
 Stateful decision handling built on the mediator, with two persistence approaches: event-sourced states and stored states. Decision aspects load state parameters and apply recognized returned effects with optimistic concurrency protection. The signature declares injected state dependencies; callers remain responsible for additional query and service dependencies.
 
@@ -62,7 +62,7 @@ final class CreateCourseCommand
 `send()` will:
 
 1. Resolve stream queries from the command instance.
-2. Load all needed events in a single query and hydrate each state by replaying its `#[EventSourcingHandler]` methods over the shared batch.
+2. Load each dependency round in a single query and hydrate each state by replaying its `#[EventSourcingHandler]` methods over the shared batch.
 3. Always pass a state object, even when the stream has no events yet.
 4. Resolve service parameters from the container.
 5. Call the decision handler and route returned events to `Event`.
@@ -113,15 +113,13 @@ final readonly class BookRoom
 
 ### Experimental CHECK mode
 
-CHECK is an early proof of concept. Its usefulness and long-term contract remain unresolved. It executes the handler and its services and does not prevent effects they perform directly. StateStore expectations are registered before the check runs.
+Read the [CHECK contract and limitations](stateful.md#experimental-check-mode) before using or changing this proof of concept.
 
 ```php
 use Ultra\StatefulMessageHandling\DecisionMode;
 
 $violations = $mediator->send($command, [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK]);
 ```
-
-Runs the decision handler with the same states and services, then bypasses the decision aspects' append, save and publication of returned effects. The send returns the violations of a thrown `InvariantViolation`, or an empty list when the decision would succeed. Other exceptions propagate.
 
 Check mode reports what `decide()` reports: group all rules you want surfaced together into one `InvariantViolation`.
 
@@ -155,5 +153,5 @@ When using Symfony, register `Ultra\EventSourcedState\EventSourcedStateExtension
 
 ## Notes
 
-- Decision-state hydration works on `Ultra\EventStore\Event`, not projection-side persisted events with `eventId`.
+- Decision-state hydration and the projection runtime both consume `Ultra\EventStore\Event`.
 - If you wrap the store with `Ultra\EventStore\EventStoreUnitOfWork`, states can observe pending in-process events through `load()`, while optimistic concurrency still stays tied to the wrapped store’s persisted `AppendCondition`.

@@ -49,6 +49,10 @@ $runner->run(function () use ($mediator, $context): void {
 
 Nested calls join the active runner. A nested exception marks the active run rollback-only before rethrowing; if outer code catches that exception, the outer runner clears the unit of work instead of flushing.
 
+## Ordering and limits
+
+Reads and decisions run before the flush transaction so transactions remain short and buffered work can be ordered together. CompositeUnitOfWork follows caller-provided component order; StateStore orders declared query guards and manual guards. Ordering reduces deadlock risks but does not eliminate conflicts with other writers or locks acquired in a different order. Read [query guards](../stored-state/query-guards.md) when changing those protocols and the [ADR](../adr/0003-defer-transactions-to-ordered-flush.md) for rationale.
+
 ## CompositeUnitOfWork
 
 `CompositeUnitOfWork` lets you compose several unit-of-work instances and flush them in a deterministic caller-defined order.
@@ -92,3 +96,5 @@ try {
 ```
 
 The package stays intentionally small so concrete packages can implement their own buffering, locking, and validation strategies without forcing a bigger shared protocol.
+
+For service registration, read [Symfony wiring](symfony.md).

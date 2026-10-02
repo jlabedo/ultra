@@ -1,18 +1,7 @@
-# Unit Of Work Bundle
+# Unit-of-work Symfony integration
 
-Symfony bundle wiring for Ultra unit-of-work services.
+[UnitOfWorkExtension](../../src/UnitOfWork/UnitOfWorkExtension.php) wires services directly from the UnitOfWork package.
 
-## Unit Of Work Runner
+The extension registers the composite unit of work, the transaction manager and UnitOfWorkRunner. For runner behavior, nested failures and flush ordering, read the [transaction contract](README.md).
 
-The bundle registers `UnitOfWorkRunner` as the user-facing API for application work that should flush the unit of work when it succeeds.
-
-```php
-$runner->run(function () use ($mediator, $context): void {
-    $mediator->send(new A(), $context);
-    $mediator->send(new B(), $context);
-});
-```
-
-The runner executes the callback, flushes the configured `UnitOfWork` through `TransactionManager` only when pending changes exist, and clears the unit of work afterward. Nested runner calls join the active run; nested exceptions mark the active run rollback-only so swallowed failures cannot later commit buffered writes.
-
-When `MessageHandlingExtension` is installed, the bundle also registers a mediator around advice that runs every compiled handler through `TransactionalUnitOfWorkRunner`. Read-only handlers are cheap because no transaction is opened unless a unit of work reports pending changes.
+When MessageHandlingExtension is installed, the runner's around advice wraps compiled handlers. A read-only handler opens no transaction unless the unit of work reports pending work. The extension defaults to NoTransactionManager if no TransactionManager service exists. Configure a real transaction manager for the same connection as participating database resources.

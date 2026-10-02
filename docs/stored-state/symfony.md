@@ -38,7 +38,7 @@ The transaction manager used by `TransactionalUnitOfWorkRunner`, mapped adapters
 callbacks must all use the same connection. For in-memory use, register `InMemoryMappedRowSetAdapterFactory` and
 `InMemoryGuardLockAdapter` with the same `InMemoryRowDatabase`.
 
-See the [state store README](README.md) for mappings and the [coworking service
+See the [state mapping contract](mapping.md) for mappings and the [coworking service
 configuration](../../examples/coworking/config/services.yaml) for a complete application example.
 
 ## Query guard declarations
