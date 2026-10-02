@@ -21,6 +21,9 @@ final class MappedRowSet implements UnitOfWork
     /** @var list<MappedKey> */
     private array $ignoredRowKeys = [];
 
+    /** @var array<string, MappedKey>|null */
+    private ?array $reconciledKeys = null;
+
     public function __construct(
         private readonly MappedRowSetAdapter $adapter,
     ) {}
@@ -29,14 +32,20 @@ final class MappedRowSet implements UnitOfWork
     {
         $key = $this->normalizeKey($key);
         $updateKey = $key->fingerprint();
-        $update = $this->updates[$updateKey] ??= new BufferedRowUpdate($key);
+        if (!isset($this->updates[$updateKey])) {
+            $update = new BufferedRowUpdate($key);
+            $update->removedByReconciliation = null !== $this->reconciledKeys && !isset($this->reconciledKeys[$updateKey]);
+            $this->updates[$updateKey] = $update;
+        }
+        $update = $this->updates[$updateKey];
 
         return new PendingRowUpdate($update);
     }
 
     /**
      * Upsert the desired keyed rows and delete rows absent from that set in this unit of work's view.
-     * Reads the adapter now; writes remain buffered. Existing expectations and unspecified columns are preserved.
+     * No storage is read here. The adapter removes other rows at flush, after checking existing expectations.
+     * Unspecified columns are preserved on retained rows.
      *
      * @param iterable<MappedRow> $rows
      */
@@ -44,21 +53,25 @@ final class MappedRowSet implements UnitOfWork
     {
         $desiredKeys = [];
         foreach ($rows as $row) {
-            $desiredKeys[$row->key->fingerprint()] = true;
+            $desiredKeys[$row->key->fingerprint()] = $this->normalizeKey($row->key);
             $this->withKey($row->key)->upsert()->setColumns($row->columns);
         }
 
-        foreach ($this->rows() as $existingRow) {
-            if (!array_key_exists($existingRow->key->fingerprint(), $desiredKeys)) {
-                $this->withKey($existingRow->key)->delete();
+        foreach ($this->updates as $fingerprint => $update) {
+            if (!array_key_exists($fingerprint, $desiredKeys)) {
+                // Discard superseded writes, but retain expectations on the committed row.
+                $update->mode = null;
+                $update->setColumns = [];
+                $update->removedByReconciliation = true;
             }
         }
+        $this->reconciledKeys = $desiredKeys;
     }
 
     /** An immutable snapshot of the buffered row changes and expectations. */
     public function updatePlan(): RowSetUpdatePlan
     {
-        return new RowSetUpdatePlan($this->expectedRowKeys, $this->sortedPlans(), $this->ignoredRowKeys);
+        return new RowSetUpdatePlan($this->expectedRowKeys, $this->sortedPlans(), $this->ignoredRowKeys, $this->retainedRowKeys());
     }
 
     /**
@@ -69,6 +82,10 @@ final class MappedRowSet implements UnitOfWork
     public function row(int|string|MappedKey $key, array $columns = []): array|false
     {
         $key = $this->normalizeKey($key);
+        $retainedKeys = $this->retainedRowKeys();
+        if (null !== $retainedKeys && !in_array($key->fingerprint(), $this->keyFingerprints($retainedKeys), true)) {
+            return false;
+        }
         $row = $this->adapter->row($key, $columns);
         $plan = ($this->updates[$key->fingerprint()] ?? null)?->toPlan();
 
@@ -87,8 +104,12 @@ final class MappedRowSet implements UnitOfWork
     public function rows(array $columns = []): array
     {
         $rows = [];
+        $retainedKeys = $this->retainedRowKeys();
+        $retained = null === $retainedKeys ? null : array_fill_keys($this->keyFingerprints($retainedKeys), true);
         foreach ($this->adapter->rows($columns) as $row) {
-            $rows[$row->key->fingerprint()] = $row;
+            if (null === $retained || isset($retained[$row->key->fingerprint()])) {
+                $rows[$row->key->fingerprint()] = $row;
+            }
         }
 
         foreach ($this->sortedWritePlans() as $plan) {
@@ -123,6 +144,19 @@ final class MappedRowSet implements UnitOfWork
         $fingerprints = $this->keyFingerprints($expected);
         if (count($fingerprints) !== count(array_unique($fingerprints))) {
             throw new \InvalidArgumentException('Duplicate expected row key.');
+        }
+
+        $retainedKeys = $this->retainedRowKeys();
+        if (null !== $retainedKeys) {
+            $actual = $this->keyFingerprints($retainedKeys);
+            sort($actual, SORT_STRING);
+            sort($fingerprints, SORT_STRING);
+            if ($actual !== $fingerprints) {
+                throw new ConcurrencyException('Row-set key expectation differs from the reconciled rows in this unit of work.');
+            }
+
+            // Reconciliation decides membership locally. Keep any earlier committed expectation unchanged.
+            return;
         }
 
         $expectedSet = array_fill_keys($fingerprints, true);
@@ -169,7 +203,7 @@ final class MappedRowSet implements UnitOfWork
 
     public function hasPendingChanges(): bool
     {
-        return null !== $this->expectedRowKeys || [] !== $this->sortedPlans();
+        return null !== $this->reconciledKeys || null !== $this->expectedRowKeys || [] !== $this->sortedPlans();
     }
 
     public function clear(): void
@@ -177,6 +211,27 @@ final class MappedRowSet implements UnitOfWork
         $this->updates = [];
         $this->expectedRowKeys = null;
         $this->ignoredRowKeys = [];
+        $this->reconciledKeys = null;
+    }
+
+    /** @return list<MappedKey>|null */
+    private function retainedRowKeys(): ?array
+    {
+        if (null === $this->reconciledKeys) {
+            return null;
+        }
+
+        $keys = $this->reconciledKeys;
+        foreach ($this->sortedWritePlans() as $plan) {
+            if (RowUpdatePlan::MODE_DELETE === $plan->mode) {
+                unset($keys[$plan->key->fingerprint()]);
+            } else {
+                $keys[$plan->key->fingerprint()] = $plan->key;
+            }
+        }
+        ksort($keys, SORT_STRING);
+
+        return array_values($keys);
     }
 
     private function normalizeKey(int|string|MappedKey $key): MappedKey

@@ -78,6 +78,19 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
                 default => throw new \LogicException(sprintf('Unsupported row update mode "%s".', $update->mode)),
             };
         }
+
+        if (null !== $plan->retainedRowKeys) {
+            $retained = [];
+            foreach ($plan->retainedRowKeys as $key) {
+                $this->assertKey($key);
+                $retained[$key->fingerprint()] = true;
+            }
+            foreach ($this->rows() as $row) {
+                if (!isset($retained[$row->key->fingerprint()])) {
+                    $this->database->deleteRowByKey($this->tableName, $row->key);
+                }
+            }
+        }
     }
 
     /**

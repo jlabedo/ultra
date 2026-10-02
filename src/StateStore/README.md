@@ -46,7 +46,10 @@ final readonly class OrderState
 
 Collection properties can be persisted in a separate mapped row set with `#[Ultra\StateStore\Attribute\StateCollection(...)]`.
 StateStore maps collection items to keyed rows and delegates their reconciliation to `MappedRowSet`.
-Saving a collection reads its current rows immediately to identify removals; writes remain buffered until flush.
+Saving a collection buffers its desired membership without reading storage. At flush, existing expectations
+are checked before applying writes and removing other rows for that owner. Without expectations, the saved
+collection takes precedence over rows added to storage before the flush deletion. Use `observe()`, or `load()`
+followed by `expect()` before changes, to protect the original membership; `load()` alone registers no expectation.
 The parent state key is combined with each item's own key. Owner columns inherit the parent's physical key mapping by default and can be overridden with `ownerColumns`. Collection item identities are relative to their owner; item classes are therefore not registered as independently loadable root states.
 
 ```php

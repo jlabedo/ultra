@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use PHPUnit\Framework\Attributes\CoversClass;
 use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
@@ -21,6 +22,62 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 #[CoversClass(PostgresMappedColumnType::class)]
 final class PostgresMappedRowSetAdapterTest extends PostgresMappedRowSetTestCase
 {
+    public function test_reconciliation_removes_late_rows_only_within_its_composite_scope(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $unused, string $tableName): void {
+            $quotedTable = $connection->quoteSingleIdentifier($tableName);
+            $connection->executeStatement('ALTER TABLE '.$quotedTable." ADD COLUMN owner TEXT NOT NULL DEFAULT 'one', ADD UNIQUE (owner, id)");
+            $this->insertRow($connection, $tableName, ['id' => 'keep', 'owner' => 'one', 'status' => 'old', 'note' => 'preserved']);
+            $this->insertRow($connection, $tableName, ['id' => 'outside', 'owner' => 'two', 'status' => 'untouched']);
+            $table = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, $tableName, ['owner', 'id'], configuredScope: new MappedKey(['owner' => 'one'])));
+            $table->reconcileRows([new MappedRow(new MappedKey(['owner' => 'one', 'id' => 'keep']), ['status' => 'saved'])]);
+            $this->insertRow($connection, $tableName, ['id' => 'late', 'owner' => 'one', 'status' => 'concurrent']);
+
+            $connection->transactional(fn () => $table->flush());
+            $table->clear();
+            self::assertFalse($this->fetchRow($connection, $tableName, 'late'));
+            self::assertSame('untouched', $this->fetchRow($connection, $tableName, 'outside')['status']);
+            self::assertSame(['status' => 'saved', 'note' => 'preserved'], $table->row('keep', ['status', 'note']));
+
+            $table->reconcileRows([]);
+            $connection->transactional(fn () => $table->flush());
+            $table->clear();
+            self::assertSame([], $table->rows());
+            self::assertNotFalse($this->fetchRow($connection, $tableName, 'outside'));
+        });
+    }
+
+    public function test_reconciliation_preserves_membership_expectations_before_writes(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $this->insertRow($connection, $tableName, ['id' => 'keep', 'status' => 'old']);
+            $table->expectSameRowKeys(['keep']);
+            $table->reconcileRows([new MappedRow(new MappedKey(['id' => 'keep']), ['status' => 'saved'])]);
+            $this->insertRow($connection, $tableName, ['id' => 'late', 'status' => 'concurrent']);
+
+            $this->expectException(ConcurrencyException::class);
+            try {
+                $connection->transactional(fn () => $table->flush());
+            } finally {
+                self::assertSame('old', $this->fetchRow($connection, $tableName, 'keep')['status']);
+                self::assertNotFalse($this->fetchRow($connection, $tableName, 'late'));
+            }
+        });
+    }
+
+    public function test_successive_reconciliations_cancel_an_unobserved_upsert(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $table->reconcileRows([new MappedRow(new MappedKey(['id' => 'added']), ['status' => 'new'])]);
+            $table->reconcileRows([]);
+            $this->insertRow($connection, $tableName, ['id' => 'late', 'status' => 'concurrent']);
+            $connection->transactional(fn () => $table->flush());
+            $table->clear();
+
+            self::assertSame([], $table->rows());
+        });
+    }
+
     public function test_row_returns_projected_columns(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {

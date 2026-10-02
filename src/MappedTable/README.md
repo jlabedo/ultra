@@ -55,11 +55,15 @@ $table->withKey($key)->insert();
 `rows(...)` returns a list of `MappedRow` objects containing a structured `MappedKey` and the projected columns. It overlays buffered mutations. `expectSameRowKeys(...)` buffers an optimistic expectation that the row-key set has not changed before `flush()`.
 
 `reconcileRows(iterable $rows)` accepts desired `MappedRow` values, upserts their supplied columns and deletes
-rows missing from that set within the adapter's scope. It reads storage immediately through `rows()`, including
-buffered changes in the comparison, and buffers all writes for flush. An empty set removes every visible row;
-successive calls reconcile against earlier buffered changes. Unspecified columns and existing optimistic
-expectations are preserved. Repeated keys merge their supplied columns in input order, with the last supplied
-value winning. Reconciliation does not register new optimistic expectations.
+rows missing from that set within the adapter's scope at flush. Preparing reconciliation does not read storage.
+The desired membership is reflected immediately in `row()` and `rows()`, alongside buffered column changes.
+An empty set clears the scope; successive calls supersede earlier membership and discard writes to removed rows.
+Unspecified columns on retained rows and existing optimistic expectations are preserved. Repeated keys merge their supplied columns in input order, with the last supplied
+value winning. Reconciliation does not register new optimistic expectations. Without prior expectations, it
+imposes the saved membership, removing rows added to storage before the flush deletion. An earlier
+`expectSameRowKeys()` still rejects concurrent membership changes. A key expectation registered after
+reconciliation checks the local membership without replacing any earlier committed expectation. Later explicit
+row writes can add or remove keys from the reconciled set. `clear()` discards the reconciliation.
 
 ### Expectations and the unit-of-work view
 
@@ -86,7 +90,7 @@ Adapters implement `Ultra\MappedTable\MappedRowSetAdapter`:
 - `lock(MappedKey $key)` acquires a cooperative transaction-scoped guard, even for a missing row
 - `row(MappedKey $key, array $columns = [])` reads one row, optionally projecting columns
 - `rows(array $columns = [])` reads all rows as `MappedRow` values
-- `apply(RowSetUpdatePlan $plan)` receives optional row-set key expectations (plus the keys to leave out of that comparison) and the sorted batch of immutable row plans; it checks the key expectations and the check-only plans against committed rows before applying the writes
+- `apply(RowSetUpdatePlan $plan)` receives optional row-set key expectations (plus the keys to leave out of that comparison) the sorted batch of immutable row plans and optional retained row keys; it checks the key expectations and the check-only plans against committed rows before applying the writes, then removes rows outside the retained set within its scope
 
 `MappedRowSet` itself does not open transactions. If you need atomicity across a flush, open the surrounding transaction on the underlying storage before calling `flush()`.
 

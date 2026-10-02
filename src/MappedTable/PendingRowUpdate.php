@@ -19,8 +19,9 @@ final readonly class PendingRowUpdate
     public function insert(): self
     {
         if (RowUpdatePlan::EXPECTED_PRESENT === $this->update->expectedPresence) {
-            if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+            if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
                 $this->update->mode = RowUpdatePlan::MODE_REPLACE;
+                $this->update->removedByReconciliation = false;
 
                 return $this;
             }
@@ -34,6 +35,7 @@ final readonly class PendingRowUpdate
 
         $this->update->expectedPresence = RowUpdatePlan::EXPECTED_ABSENT;
         $this->update->mode = RowUpdatePlan::MODE_INSERT;
+        $this->update->removedByReconciliation = false;
 
         return $this;
     }
@@ -44,7 +46,7 @@ final readonly class PendingRowUpdate
      */
     public function expectAbsent(): self
     {
-        if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+        if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
             return $this;
         }
 
@@ -75,7 +77,7 @@ final readonly class PendingRowUpdate
      */
     public function expectPresent(): self
     {
-        if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+        if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
             throw new ConcurrencyException(sprintf(
                 'Cannot expect table "%s", row "%s" to be present because it is deleted in this unit of work.',
                 $this->tableName,
@@ -100,6 +102,7 @@ final readonly class PendingRowUpdate
 
     public function upsert(): self
     {
+        $this->update->removedByReconciliation = false;
         if (RowUpdatePlan::EXPECTED_PRESENT === $this->update->expectedPresence) {
             if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
                 $this->update->mode = RowUpdatePlan::MODE_REPLACE;
@@ -128,6 +131,9 @@ final readonly class PendingRowUpdate
 
     public function delete(): self
     {
+        if ($this->update->removedByReconciliation) {
+            return $this;
+        }
         if (
             RowUpdatePlan::MODE_INSERT === $this->update->mode
             && RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence
@@ -153,7 +159,7 @@ final readonly class PendingRowUpdate
      */
     public function expectColumnValue(string $column, mixed $value): self
     {
-        if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+        if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register expected column values for table "%s", row "%s" because it is deleted in this unit of work.',
                 $this->tableName,
@@ -220,7 +226,7 @@ final readonly class PendingRowUpdate
 
     public function setColumn(string $column, mixed $value): self
     {
-        if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+        if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register column updates for table "%s", row "%s" because it is already marked for delete.',
                 $this->tableName,

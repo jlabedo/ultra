@@ -131,6 +131,38 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
                 default => array_map($this->flushOne(...), $batch),
             };
         }
+
+        if (null !== $plan->retainedRowKeys) {
+            $this->deleteRowsOutside($plan->retainedRowKeys);
+        }
+    }
+
+    /** @param list<MappedKey> $keys */
+    private function deleteRowsOutside(array $keys): void
+    {
+        $where = [];
+        $params = $this->scopeParams();
+        if (null !== $this->configuredScope) {
+            foreach ($this->configuredScope->columns() as $column) {
+                $where[] = sprintf('%s = %s', $this->connection->quoteSingleIdentifier($column), $this->placeholder($column));
+            }
+        }
+
+        $retained = [];
+        foreach ($keys as $key) {
+            $this->assertKey($key);
+            $retained[] = '('.implode(' AND ', $this->keyWhereClauses()).')';
+            array_push($params, ...$this->encodedKeyValues($key));
+        }
+        if ([] !== $retained) {
+            $where[] = 'NOT ('.implode(' OR ', $retained).')';
+        }
+
+        $this->connection->executeStatement(sprintf(
+            'DELETE FROM %s%s',
+            $this->connection->quoteSingleIdentifier($this->tableName),
+            [] === $where ? '' : ' WHERE '.implode(' AND ', $where),
+        ), $params);
     }
 
     private function flushOne(RowUpdatePlan $update): void

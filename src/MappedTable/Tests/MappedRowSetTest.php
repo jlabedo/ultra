@@ -33,6 +33,116 @@ final class MappedRowSetTest extends TestCase
     private const ID_COLUMN = 'id';
     private const COLUMNS = ['status', 'note', 'version_a', 'version_b'];
 
+    public function test_reconciliation_buffers_changes_without_reading_storage(): void
+    {
+        $adapter = new RecordingMappedRowSetAdapter();
+        $table = new MappedRowSet($adapter);
+        $table->reconcileRows([new MappedRow(new MappedKey(['id' => 'desired']), ['status' => 'new'])]);
+        $table->updatePlan();
+
+        self::assertSame(0, $adapter->reads);
+        self::assertTrue($table->hasPendingChanges());
+        self::assertSame([], $adapter->batches);
+    }
+
+    public function test_empty_reconciliation_is_pending_and_clear_discards_it(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'existing', 'status' => 'old']);
+        $table->reconcileRows([]);
+        self::assertTrue($table->hasPendingChanges());
+        self::assertSame([], $table->rows());
+        self::assertFalse($table->row('existing'));
+
+        $table->clear();
+        self::assertFalse($table->hasPendingChanges());
+        self::assertSame(['status' => 'old'], $table->row('existing', ['status']));
+    }
+
+    public function test_reconciliation_removes_rows_added_after_it_was_buffered(): void
+    {
+        [$database, $table] = $this->newTable();
+        $table->reconcileRows([new MappedRow(new MappedKey(['id' => 'desired']), ['status' => 'saved'])]);
+        $this->seedRow($database, ['id' => 'late', 'status' => 'concurrent']);
+        self::assertFalse($table->row('late'));
+        $this->flushInTransaction($database, $table);
+        $table->clear();
+
+        self::assertFalse($table->row('late'));
+        self::assertSame(['status' => 'saved'], $table->row('desired', ['status']));
+    }
+
+    public function test_reconciliation_can_remove_an_unobserved_pending_upsert(): void
+    {
+        [$database, $table] = $this->newTable();
+        $table->reconcileRows([new MappedRow(new MappedKey(['id' => 'added']), ['status' => 'new'])]);
+        $table->reconcileRows([]);
+        $this->flushInTransaction($database, $table);
+        $table->clear();
+
+        self::assertSame([], $table->rows());
+    }
+
+    public function test_reconciliation_keeps_expectations_on_removed_rows(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'removed', 'status' => 'old']);
+        $table->withKey('removed')->expectColumnValue('status', 'old');
+        $table->reconcileRows([]);
+        $this->seedRow($database, ['id' => 'removed', 'status' => 'concurrent']);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushInTransaction($database, $table);
+    }
+
+    public function test_row_operations_after_reconciliation_override_its_membership(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'removed', 'status' => 'old']);
+        $table->reconcileRows([new MappedRow(new MappedKey(['id' => 'removed']), ['status' => 'updated'])]);
+        $table->withKey('removed')->delete();
+        $table->withKey('added')->upsert()->setColumn('status', 'new');
+        $table->expectSameRowKeys(['added']);
+
+        $this->flushInTransaction($database, $table);
+        $table->clear();
+        self::assertFalse($table->row('removed'));
+        self::assertSame(['status' => 'new'], $table->row('added', ['status']));
+    }
+
+    public function test_membership_expectation_after_reconciliation_rejects_a_different_local_set(): void
+    {
+        [, $table] = $this->newTable();
+        $table->reconcileRows([]);
+
+        $this->expectException(ConcurrencyException::class);
+        $table->expectSameRowKeys(['stale']);
+    }
+
+    public function test_absence_expectation_after_reconciliation_uses_the_local_view(): void
+    {
+        [$database, $table] = $this->newTable();
+        $this->seedRow($database, ['id' => 'removed', 'status' => 'old']);
+        $table->withKey('removed')->expectColumnValue('status', 'old');
+        $table->reconcileRows([]);
+        $table->withKey('removed')->expectAbsent();
+        $table->withKey('unseen')->expectAbsent();
+        $this->seedRow($database, ['id' => 'unseen', 'status' => 'late']);
+        $this->flushInTransaction($database, $table);
+        $table->clear();
+
+        self::assertSame([], $table->rows());
+    }
+
+    public function test_presence_expectation_after_reconciliation_rejects_a_removed_row(): void
+    {
+        [, $table] = $this->newTable();
+        $table->reconcileRows([]);
+
+        $this->expectException(ConcurrencyException::class);
+        $table->withKey('removed')->expectPresent();
+    }
+
     public function test_reconciliation_upserts_desired_rows_and_deletes_removed_rows_within_scope(): void
     {
         $database = new InMemoryRowDatabase();
@@ -971,6 +1081,8 @@ final class MappedRowSetTest extends TestCase
 
 final class RecordingMappedRowSetAdapter implements MappedRowSetAdapter
 {
+    public int $reads = 0;
+
     /** @var list<array{expectedRowKeys: list<MappedKey>|null, rowUpdates: list<RowUpdatePlan>}> */
     public array $batches = [];
 
@@ -986,11 +1098,13 @@ final class RecordingMappedRowSetAdapter implements MappedRowSetAdapter
 
     public function row(MappedKey $key, array $columns = []): array|false
     {
+        ++$this->reads;
         return false;
     }
 
     public function rows(array $columns = []): array
     {
+        ++$this->reads;
         return [];
     }
 

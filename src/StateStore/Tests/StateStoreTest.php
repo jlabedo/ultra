@@ -617,6 +617,32 @@ final class StateStoreTest extends TestCase
         ], $database->row('order_lines', 'line_id', 'line-3', ['order_id', 'sku', 'quantity'], ['order_id' => 'order-123']));
     }
 
+    public function test_load_then_save_imposes_collection_membership_without_expectations(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderWithLinesState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending']);
+        $loaded = $store->load(OrderWithLinesState::class, 'order-123');
+        self::assertInstanceOf(OrderWithLinesState::class, $loaded);
+        $store->save($loaded);
+        $database->seedRow('order_lines', 'line_id', ['order_id' => 'order-123', 'line_id' => 'late', 'sku' => 'SKU', 'quantity' => 1]);
+
+        $this->flushRegistryInTransaction($database, $registry);
+        $registry->clear();
+        self::assertSame([], $store->load(OrderWithLinesState::class, 'order-123')->lines);
+    }
+
+    public function test_observe_then_save_rejects_collection_membership_changes_before_flush(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderWithLinesState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending']);
+        $observed = $store->observe(OrderWithLinesState::class, 'order-123');
+        $store->save($observed);
+        $database->seedRow('order_lines', 'line_id', ['order_id' => 'order-123', 'line_id' => 'late', 'sku' => 'SKU', 'quantity' => 1]);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flushRegistryInTransaction($database, $registry);
+    }
+
     public function test_expect_rejects_collection_insert_or_delete(): void
     {
         [$database, , $store, $registry] = $this->newStore([OrderWithLinesState::class]);

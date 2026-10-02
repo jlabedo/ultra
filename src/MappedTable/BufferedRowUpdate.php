@@ -15,6 +15,9 @@ final class BufferedRowUpdate
 
     public ?string $mode = null;
 
+    /** Local absence imposed by reconciliation, independent of committed-row expectations. */
+    public bool $removedByReconciliation = false;
+
     /** @var array<string, mixed> */
     public array $expectedColumns = [];
 
