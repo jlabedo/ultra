@@ -14,6 +14,9 @@ This package owns the event-sourced state model:
 
 The companion `ultra/event-sourced-state-compiler` package analyzes event-sourced entities and generates optimized loaders.
 
+`EventSourcedStateStore::load()` currently reads one event-store page (the default is 1,000 events).
+States with larger matching streams are not fully reconstructed.
+
 ## Matching Event Tags
 
 An event-sourced entity is loaded from one or more stream tag dimensions. For example:

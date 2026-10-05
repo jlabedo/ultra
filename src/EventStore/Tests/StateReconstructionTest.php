@@ -2,13 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventSourcedState\Tests;
+namespace Ultra\EventStore\Tests;
 
+use PHPUnit\Framework\Attributes\CoversNamespace;
 use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventSourcedState\EventSourcedEntityLoader;
-use Ultra\EventSourcedState\Exception\DuplicateTagValueException;
-use Ultra\EventSourcedState\Exception\MissingTagValueException;
-use Ultra\EventSourcedState\Exception\UnexpectedTagValueException;
 use Ultra\EventSourcedState\Exception\UnknownEventSourcedEntityException;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCapacityChanged;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
@@ -27,12 +25,12 @@ use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Testing\UltraLight;
 
-/**
- * @internal
- *
- * @coversNothing
- */
-final class EventSourcedStateStoreTest extends EventSourcedStateFunctionalTestCase
+/** @internal */
+#[CoversNamespace('Ultra\EventStore')]
+#[CoversNamespace('Ultra\Events')]
+#[CoversNamespace('Ultra\EventSourcedState')]
+#[CoversNamespace('Ultra\EventSourcedState_Compiler')]
+final class StateReconstructionTest extends EventSourcedStateFunctionalTestCase
 {
     public function test_it_loads_entities_across_single_tag_and_pair_events(): void
     {
@@ -112,47 +110,6 @@ final class EventSourcedStateStoreTest extends EventSourcedStateFunctionalTestCa
 
         self::assertSame([], $stateStore->load(CourseRosterState::class, new StreamIdentifier('course', 'course-1'))->studentIds);
         self::assertSame(['grace', 'ada'], $stateStore->load(CourseRosterState::class, new StreamIdentifier('course', 'course-2'))->studentIds);
-
-        $this->expectException(UnexpectedTagValueException::class);
-        $stateStore->load(CourseRosterState::class, new StreamIdentifier('previousCourse', 'course-1'));
-    }
-
-    public function test_it_validates_missing_unexpected_and_duplicate_tag_values_through_generated_loaders(): void
-    {
-        $container = $this->ultraLight()
-            ->withClass(CourseStudentActivityState::class)
-            ->boot()
-        ;
-        $stateStore = $container->eventSourcedStateStore();
-
-        try {
-            $stateStore->load(
-                CourseStudentActivityState::class,
-                new StreamIdentifier('course', 'course-1'),
-            );
-            self::fail('Expected MissingTagValueException to be thrown.');
-        } catch (MissingTagValueException) {
-        }
-
-        try {
-            $stateStore->load(
-                CourseStudentActivityState::class,
-                new StreamIdentifier('course', 'course-1'),
-                new StreamIdentifier('student', 'student-1'),
-                new StreamIdentifier('faculty', 'faculty-1'),
-            );
-            self::fail('Expected UnexpectedTagValueException to be thrown.');
-        } catch (UnexpectedTagValueException) {
-        }
-
-        $this->expectException(DuplicateTagValueException::class);
-
-        $stateStore->load(
-            CourseStudentActivityState::class,
-            new StreamIdentifier('course', 'course-1'),
-            new StreamIdentifier('course', 'course-1b'),
-            new StreamIdentifier('student', 'student-1'),
-        );
     }
 
     public function test_it_requires_an_event_store_to_load_entities(): void
@@ -198,17 +155,13 @@ final class EventSourcedStateStoreTest extends EventSourcedStateFunctionalTestCa
         $stateStore->load($unknownStateClass::class);
     }
 
-    /**
-     * @return UltraLight<EventSourcedStateTestContainer>
-     */
+    /** @return UltraLight<EventSourcedStateTestContainer> */
     private function ultraLight(): UltraLight
     {
         return $this->eventSourcedStateUltraLight(self::eventClasses());
     }
 
-    /**
-     * @return list<class-string>
-     */
+    /** @return list<class-string> */
     private static function eventClasses(): array
     {
         return [

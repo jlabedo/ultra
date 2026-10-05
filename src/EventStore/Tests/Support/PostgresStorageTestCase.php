@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventStore_Postgres\Tests\Support;
+namespace Ultra\EventStore\Tests\Support;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
@@ -10,7 +10,7 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\Testing\PostgresTestSupport;
 
-abstract class PostgresEventStoreTestCase extends TestCase
+abstract class PostgresStorageTestCase extends TestCase
 {
     protected function postgresDsn(): string
     {

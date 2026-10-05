@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventStore_Postgres\Tests;
+namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
@@ -12,9 +12,10 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\Exception\ConcurrencyException;
 use Ultra\EventStore\StreamQuery;
-use Ultra\EventStore_Postgres\Tests\Support\PostgresEventStoreTestCase;
+use Ultra\EventStore\Tests\Support\PostgresStorageTestCase;
 use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\Concurrent\Worker;
+use Ultra\Testing\Concurrent\Outcome;
 use Ultra\Testing\PostgresTestSupport;
 
 /**
@@ -23,7 +24,7 @@ use Ultra\Testing\PostgresTestSupport;
 #[CoversNothing]
 #[Group('slow')]
 #[Group('event-store-concurrency')]
-final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
+final class ConcurrentAppendTest extends PostgresStorageTestCase
 {
     #[DataProvider('implementationAndLockStrategyProvider')]
     public function test_concurrent_append_from_another_process_waits_for_the_lock_and_then_fails_with_concurrency_exception(
@@ -71,57 +72,6 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
         }, $implementation, $lockStrategy);
     }
 
-    #[DataProvider('implementationAndLockStrategyProvider')]
-    public function test_concurrent_append_for_the_same_course_and_another_student_succeeds(
-        string $implementation,
-        string $lockStrategy,
-    ): void {
-        $dsn = $this->postgresDsn();
-
-        $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn, $implementation, $lockStrategy): void {
-            $studentOneQuery = StreamQuery::forStream(
-                new DomainIdentifier('courseId', 'course-123'),
-                new DomainIdentifier('studentId', 'student-1'),
-            )->ofTypes('student.subscribed');
-            $studentTwoQuery = StreamQuery::forStream(
-                new DomainIdentifier('courseId', 'course-123'),
-                new DomainIdentifier('studentId', 'student-2'),
-            )->ofTypes('student.subscribed');
-
-            $studentOneEvent = new Event(
-                eventType: 'student.subscribed',
-                payload: [],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-1'],
-            );
-            $studentTwoEvent = new Event(
-                eventType: 'student.subscribed',
-                payload: [],
-                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-123', 'studentId' => 'student-2'],
-            );
-
-            $store->append([$studentOneEvent]);
-
-            $cluster = new Cluster(timeout: 10.0);
-
-            $wA = $this->spawnHoldThenCommitWorker($cluster, $dsn, $prefix, $implementation, $lockStrategy, $studentOneEvent, $studentOneQuery);
-            $wB = $this->spawnAppendOnceWorker($cluster, $dsn, $prefix, $implementation, $lockStrategy, $studentTwoEvent, lockTimeoutMs: 5_000);
-
-            $wA->awaitCheckpoint('ready');
-
-            $wB->awaitCheckpoint('attempting');
-            $wB->release('attempting');
-
-            $wA->release('ready');
-
-            $wAOutcome = $wA->join(5.0);
-            $wBOutcome = $wB->join(5.0);
-
-            self::assertSame('ok', $wAOutcome->value(), $wA->stderr());
-            self::assertSame('ok', $wBOutcome->value(), $wB->stderr());
-            self::assertCount(2, $store->load($studentOneQuery)->events);
-            self::assertCount(1, $store->load($studentTwoQuery)->events);
-        }, $implementation, $lockStrategy);
-    }
 
     #[DataProvider('implementationAndLockStrategyProvider')]
     public function test_bucket_lock_allows_concurrent_write_for_same_course_and_different_student_pair(
@@ -254,6 +204,55 @@ final class PostgresEventStoreConcurrencyTest extends PostgresEventStoreTestCase
             }
 
             self::assertCount(2, $store->load($combinedQuery)->events);
+        }, $implementation, $lockStrategy);
+    }
+
+    #[DataProvider('implementationAndLockStrategyProvider')]
+    public function test_two_workers_race_to_append_exactly_one_succeeds(
+        string $implementation,
+        string $lockStrategy,
+    ): void {
+        $dsn = $this->postgresDsn();
+        $this->withPostgresStore(function (EventStore $store, $_connection, string $prefix) use ($dsn, $implementation, $lockStrategy): void {
+            $query = StreamQuery::forStream(
+                new DomainIdentifier('courseId', 'course-abc'),
+                new DomainIdentifier('studentId', 'student-1'),
+            )->ofTypes('student.subscribed');
+            $event = new Event(
+                eventType: 'student.subscribed',
+                payload: ['slot' => 1],
+                domainIds: ['facultyId' => 'faculty-1', 'courseId' => 'course-abc', 'studentId' => 'student-1'],
+            );
+            $store->append([$event]);
+            $cluster = new Cluster(timeout: 10.0);
+            $makeWorker = static function () use ($dsn, $prefix, $implementation, $lockStrategy, $query, $event): string {
+                $connection = PostgresTestSupport::connection($dsn);
+                $workerStore = PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
+                $condition = $workerStore->load($query)->appendCondition();
+                checkpoint('loaded');
+                try {
+                    $workerStore->append([$event], $condition);
+                    return 'appended';
+                } catch (ConcurrencyException) {
+                    return 'concurrency';
+                } finally {
+                    $connection->close();
+                }
+            };
+            $first = $cluster->spawn($makeWorker);
+            $second = $cluster->spawn($makeWorker);
+            $first->awaitCheckpoint('loaded');
+            $second->awaitCheckpoint('loaded');
+            $cluster->releaseAll('loaded');
+            $outcomes = $cluster->joinAll();
+            $diagnostic = implode(', ', array_map(
+                static fn (Outcome $outcome): string => $outcome->isSuccess() ? (string) $outcome->value() : $outcome->exceptionMessage(),
+                $outcomes,
+            ));
+
+            self::assertCount(1, array_filter($outcomes, static fn (Outcome $outcome): bool => $outcome->isSuccess() && 'appended' === $outcome->value()), $diagnostic);
+            self::assertCount(1, array_filter($outcomes, static fn (Outcome $outcome): bool => $outcome->isSuccess() && 'concurrency' === $outcome->value()), $diagnostic);
+            self::assertCount(2, $store->load($query)->events);
         }, $implementation, $lockStrategy);
     }
 
