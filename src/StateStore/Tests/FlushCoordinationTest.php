@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\StateStore\Tests;
 
-use PHPUnit\Framework\TestCase;
+use Ultra\StateStore\Tests\Support\StateStoreTestCase;
+use Ultra\StateStore\Tests\OrderState;
+use Ultra\StateStore\Tests\OrderStatusView;
 use Ultra\StateStore\GuardLockMode;
 use Ultra\StateStore\GuardLockAdapter;
 use Ultra\MappedTable\MappedKey;
@@ -12,11 +14,9 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapter;
 use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\StateStore\StateTableRegistry;
-use Ultra\StateStore\Exception\UnknownQueryGuardException;
-use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /** @internal */
-final class StateTableRegistryTest extends TestCase
+final class FlushCoordinationTest extends StateStoreTestCase
 {
     public function test_flush_consolidates_and_orders_all_guards_before_queries_and_writes(): void
     {
@@ -52,31 +52,6 @@ final class StateTableRegistryTest extends TestCase
         ], $trace->getArrayCopy());
     }
 
-    public function test_a_failed_query_prevents_every_table_plan_from_being_applied(): void
-    {
-        $trace = new \ArrayObject();
-        $first = new MappedRowSet(new RegistryRecordingAdapter('a', $trace));
-        $second = new MappedRowSet(new RegistryRecordingAdapter('b', $trace));
-        $first->withKey('one')->insert()->setColumn('status', 'pending');
-        $second->withKey('two')->insert()->setColumn('status', 'pending');
-        $registry = new StateTableRegistry(['a' => $first, 'b' => $second], guardLockAdapter: new RegistryRecordingGuardAdapter($trace));
-        $registry->lock('a', new MappedKey(['id' => 'anchor']));
-        $registry->expectQuery(static function () use ($trace): bool {
-            $trace[] = 'validate';
-
-            return false;
-        }, true, 'changed query');
-
-        try {
-            $registry->flush();
-            self::fail('The query expectation should fail before applying any plan.');
-        } catch (ConcurrencyException $exception) {
-            self::assertStringContainsString('changed query', $exception->getMessage());
-            self::assertSame(['lock:a:anchor', 'validate'], $trace->getArrayCopy());
-        }
-        $registry->clear();
-        self::assertFalse($registry->hasPendingChanges());
-    }
     public function test_manual_guards_belong_to_the_registry_without_creating_a_row_set(): void
     {
         $trace = new \ArrayObject();
@@ -103,20 +78,19 @@ final class StateTableRegistryTest extends TestCase
         $registry->flush();
     }
 
-    public function test_unknown_guards_cannot_be_queued_directly_in_the_registry(): void
-    {
-        $registry = new StateTableRegistry([]);
-        foreach ([GuardLockMode::SHARED, GuardLockMode::EXCLUSIVE] as $mode) {
-            try {
-                $registry->guard('unknown', 'company', $mode);
-                self::fail('An unknown guard must not bypass validation through the registry.');
-            } catch (UnknownQueryGuardException $exception) {
-                self::assertSame('unknown', $exception->guardName);
-            }
-            self::assertFalse($registry->hasPendingChanges());
-        }
-    }
 
+
+    public function test_state_locks_use_the_same_mapped_row_for_different_state_views(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class, OrderStatusView::class]);
+        $store->lock(new OrderState('order-1', 'pending', null));
+        $store->lock(new OrderStatusView('order-1', 'pending'));
+        self::assertTrue($registry->hasPendingChanges());
+        $this->flush($database, $registry);
+        self::assertNull($store->load(OrderState::class, 'order-1'));
+        $registry->clear();
+        self::assertFalse($registry->hasPendingChanges());
+    }
 }
 
 /** Records the coordination protocol; Postgres tests cover transaction-level lock behavior. */

@@ -194,6 +194,8 @@ guarantee is made without a benchmark.
 
 ## Tests
 
+For suite ownership, see [StateStore test guarantees](README.md#test-ownership-and-maintenance).
+
 - The existing coworking scenarios and competing-kernel races pass after removing all service-level manual guards.
 - Two independent Postgres connections verify shared reader compatibility, reader/writer exclusion, protection of
   insertion/deletion/move scopes before query validation, and exclusive consolidation across mapped views.
@@ -206,7 +208,7 @@ guarantee is made without a benchmark.
 Run the focused framework tests from the repository root, with the local Postgres fixture running:
 
 ```bash
-ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' bin/phpunit src/StateStore/Tests/QueryGuardTest.php src/StateStore/Tests/PostgresQueryGuardTest.php src/StateStore_Bundle/Tests/StateStoreExtensionTest.php
+bin/phpunit src/StateStore/Tests
 ```
 
 Run the application comparison from `examples/coworking` with `vendor/bin/phpunit`.

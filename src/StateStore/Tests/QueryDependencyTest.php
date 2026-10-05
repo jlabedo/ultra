@@ -57,7 +57,7 @@ final readonly class GuardRole
 }
 
 /** @internal */
-final class QueryGuardDefinitionTest extends TestCase
+final class QueryDependencyTest extends TestCase
 {
     public static function mutations(): iterable
     {
@@ -137,7 +137,9 @@ final class QueryGuardDefinitionTest extends TestCase
         try {
             $registry->flush();
             self::fail('Changed query must fail.');
-        } catch (ConcurrencyException) {
+        } catch (ConcurrencyException $exception) {
+            self::assertStringContainsString('iam', $exception->getMessage());
+            self::assertStringContainsString('acme', $exception->getMessage());
             $database->rollBack();
         }
         $registry->clear();

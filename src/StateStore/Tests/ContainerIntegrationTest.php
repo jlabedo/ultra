@@ -2,19 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Ultra\StateStore_Bundle\Tests;
+namespace Ultra\StateStore\Tests;
 
-use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
-use Ultra\EventStore\AppendCondition;
-use Ultra\EventStore\Checkpoint;
+use Ultra\StateStore\Tests\Support\NullEventStore;
+use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 use Ultra\EventStore\EventStore;
-use Ultra\EventStore\LoadResult;
-use Ultra\EventStore\StreamQuery;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
@@ -34,20 +31,6 @@ use Ultra\StateStore_Bundle\StateStoreExtension;
 use Ultra\StateStore_Bundle\TagNames;
 use Ultra\UnitOfWork\UnitOfWork;
 use Ultra\UnitOfWork\UnitOfWorkExtension;
-
-final class NullEventStore implements EventStore
-{
-    public function load(
-        StreamQuery $query,
-        ?Checkpoint $from = null,
-        ?Checkpoint $to = null,
-        int $batchSize = 1000,
-    ): LoadResult {
-        return new LoadResult([], $to ?? $from ?? Checkpoint::beginning(), $query);
-    }
-
-    public function append(array $events, AppendCondition ...$appendConditions): void {}
-}
 
 #[State(table: 'orders')]
 final readonly class BundleOrderState
@@ -83,12 +66,8 @@ final readonly class BundleOrderStatusView
     }
 }
 
-/**
- * @internal
- *
- * @coversNothing
- */
-final class StateStoreExtensionTest extends TestCase
+/** @internal */
+final class ContainerIntegrationTest extends StateStoreTestCase
 {
     public function test_query_guards_are_compiled_injected_and_work_in_a_dumped_container(): void
     {
@@ -180,6 +159,15 @@ final class StateStoreExtensionTest extends TestCase
             'status' => 'shipped',
             'note' => 'draft',
         ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
+        $unitOfWork->clear();
+        $state = new OrderWithLinesState('order-123', 'paid', [new OrderLineState('one', 'SKU', 2)]);
+        $store->save($state);
+        $this->flush($database, $unitOfWork);
+        $unitOfWork->clear();
+        self::assertEquals($state, $store->load(OrderWithLinesState::class, 'order-123'));
+        self::assertSame(['quantity' => 2], $database->row('order_lines', 'line_id', 'one', ['quantity'], ['order_id' => 'order-123']));
+        $this->expectException(\Ultra\StateStore\Exception\UnknownStateException::class);
+        $store->load(OrderLineState::class, 'one');
     }
 
     public function test_bundle_autoconfiguration_marks_states_as_normalizable_resources(): void
@@ -211,9 +199,7 @@ final class StateStoreExtensionTest extends TestCase
         new UnitOfWorkExtension()->build($container);
         new StateStoreExtension()->build($container);
 
-        $container->register(NullEventStore::class, NullEventStore::class)
-            ->setPublic(true)
-        ;
+        $container->register(NullEventStore::class, NullEventStore::class)->setPublic(true);
         $container->setAlias(EventStore::class, NullEventStore::class)->setPublic(true);
 
         $container->register(InMemoryRowDatabase::class, InMemoryRowDatabase::class)
@@ -240,6 +226,10 @@ final class StateStoreExtensionTest extends TestCase
             new Definition(BundleOrderStatusView::class)
                 ->setAutoconfigured(true)
         );
+
+        foreach ([OrderWithLinesState::class, OrderLineState::class] as $class) {
+            $container->setDefinition($class, new Definition($class)->setAutoconfigured(true));
+        }
 
         $container->getAlias(UnitOfWork::class)->setPublic(true);
         if ($withQueryGuard) {

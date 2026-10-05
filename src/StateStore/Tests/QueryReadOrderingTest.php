@@ -12,14 +12,17 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\StateStore\Exception\PendingQueryChangesException;
 use Ultra\StateStore\Exception\UnknownQueryGuardException;
 use Ultra\StateStore\InMemoryGuardLockAdapter;
+use Ultra\StateStore\GuardLockMode;
 use Ultra\StateStore\QueryGuard;
 use Ultra\StateStore\StateTableRegistry;
 
 /** @internal */
-final class QueryGuardTest extends TestCase
+final class QueryReadOrderingTest extends TestCase
 {
     public static function unknownGuards(): iterable
     {
+        yield 'direct registry shared guard' => ['registryShared', 'unknown', []];
+        yield 'direct registry exclusive guard' => ['registryExclusive', 'unknown', []];
         foreach (['lock', 'observe'] as $operation) {
             yield $operation.' with missing definition' => [$operation, 'company_usgae', []];
             yield $operation.' with empty definition' => [$operation, 'empty', ['empty' => []]];
@@ -34,7 +37,9 @@ final class QueryGuardTest extends TestCase
         $guard = new QueryGuard($registry, $name);
         $called = false;
         try {
-            if ('lock' === $operation) {
+            if (str_starts_with($operation, 'registry')) {
+                $registry->guard($name, 'acme', 'registryShared' === $operation ? GuardLockMode::SHARED : GuardLockMode::EXCLUSIVE);
+            } elseif ('lock' === $operation) {
                 $guard->lock('acme');
             } else {
                 $guard->observe('acme', static function () use (&$called): int {
@@ -57,6 +62,7 @@ final class QueryGuardTest extends TestCase
     {
         yield 'insert' => ['insert', 'acme'];
         yield 'update' => ['update', 'acme'];
+        yield 'writer after an unrelated check-only row' => ['update_after_check', 'acme'];
         yield 'delete' => ['delete', 'acme'];
         yield 'move from queried scope' => ['move', 'acme'];
         yield 'move into queried scope' => ['move', 'globex'];
@@ -67,13 +73,16 @@ final class QueryGuardTest extends TestCase
     public function test_affected_reads_are_rejected_before_executing_or_registering_the_query(string $mutation, string $scope): void
     {
         [, $table, , $registry, $guard] = $this->fixture();
+        if ('update_after_check' === $mutation) {
+            $table->withKey('a-check-only')->expectColumnValue('company_id', 'acme');
+        }
         $row = $table->withKey('booking-1');
         if ('insert' === $mutation || 'numeric' === $mutation) {
             $row->insert()->setColumns(['company_id' => 'numeric' === $mutation ? 123 : 'acme', 'minutes' => 60]);
         } else {
             $row->expectColumnValue('company_id', 'acme');
             match ($mutation) {
-                'update' => $row->setColumn('minutes', 120),
+                'update', 'update_after_check' => $row->setColumn('minutes', 120),
                 'delete' => $row->delete(),
                 'move' => $row->setColumn('company_id', 'globex'),
             };

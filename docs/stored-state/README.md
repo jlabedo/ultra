@@ -69,3 +69,31 @@ When several state classes target the same physical table, they share the same `
 For named guards declared from mapped-state dependencies, read the [query guard contract](query-guards.md). It owns declaration rules, read ordering, flush replay, exceptions and caller responsibilities.
 
 For explicit SQL expectations and manually coordinated locks, read [manual queries and guards](manual-queries.md). These mechanisms supplement row expectations; the caller is responsible for enrolling every writer that affects the invariant.
+
+## Test ownership and maintenance
+
+The context's suites live in `src/StateStore/Tests`, including Symfony assembly from `StateStore_Bundle`.
+Each file owns a guarantee; providers express alternative mappings, observation APIs or mutation kinds.
+
+| Guarantee | Suite |
+| --- | --- |
+| Scalar and composite identifiers, renamed columns and embedded values round-trip through the physical mapping | [StateMappingTest](../../src/StateStore/Tests/StateMappingTest.php) |
+| State views read buffered changes and retain the original storage expectations | [BufferedStateViewTest](../../src/StateStore/Tests/BufferedStateViewTest.php) |
+| Value, presence and absence observations protect the dependency actually read, with or without a save | [StateObservationTest](../../src/StateStore/Tests/StateObservationTest.php) |
+| Collection hydration, reconciliation and expectations respect owner and item identities | [CollectionOwnershipTest](../../src/StateStore/Tests/CollectionOwnershipTest.php) |
+| Recorded queries replay before writes, compare strictly and reject mutable expected values | [QueryReplayTest](../../src/StateStore/Tests/QueryReplayTest.php) |
+| Guarded decision reads reject affected pending changes before executing or queuing a query | [QueryReadOrderingTest](../../src/StateStore/Tests/QueryReadOrderingTest.php) |
+| Declared property and collection dependencies compile and enroll the relevant writers | [QueryDependencyTest](../../src/StateStore/Tests/QueryDependencyTest.php) |
+| Flush consolidates and orders guards before replay and writes; clear removes pending work | [FlushCoordinationTest](../../src/StateStore/Tests/FlushCoordinationTest.php) |
+| Cooperative guards share or exclude competing transactions and remain separate from persistence locks | [CooperativeLockingTest](../../src/StateStore/Tests/CooperativeLockingTest.php) |
+| Symfony discovers root states and collection items, shares table views and assembles guards in dumped containers | [ContainerIntegrationTest](../../src/StateStore/Tests/ContainerIntegrationTest.php) |
+
+The shared fixture derives mappings from attributes and opens explicit transaction boundaries; assertions stay
+in the suites. Postgres contention cases retain two real connections. Row-plan mechanics, backend encodings and
+intrinsic persistence locks belong to [MappedTable's suites](mapped-table.md#test-ownership-and-maintenance);
+StateStore covers their composition with objects, collections and decision guards.
+
+Extend the owning suite instead of creating a file for another implementation class or table. Before deleting
+a case, identify its replacement and compare covered source lines and detection of the same mutants on unchanged
+production code. Analyze survivors before adding scenarios. See [development verification](../development.md#tests)
+for the commands.

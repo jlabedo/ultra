@@ -1,0 +1,137 @@
+<?php
+
+declare(strict_types=1);
+
+namespace Ultra\StateStore\Tests;
+
+use Ultra\StateStore\Tests\Support\StateStoreTestCase;
+use Ultra\StateStore\StateStore;
+use Ultra\UnitOfWork\Exception\ConcurrencyException;
+
+/** @internal */
+final class BufferedStateViewTest extends StateStoreTestCase
+{
+    public function test_a_row_loaded_again_in_the_same_unit_of_work_reads_its_own_writes(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class]);
+        $database->seedRow('orders', 'order_id', [
+            'order_id' => 'order-123',
+            'status' => 'pending',
+            'note' => 'draft',
+        ]);
+
+        $first = $store->load(OrderState::class, 'order-123');
+        $store->expect($first);
+        $store->save($first->withOrderStatus('paid'));
+
+        $second = $store->load(OrderState::class, 'order-123');
+        self::assertSame('paid', $second?->orderStatus);
+        $store->expect($second);
+        $store->save($second->withOrderStatus('shipped'));
+        $this->flush($database, $registry);
+
+        self::assertSame(['status' => 'shipped'], $database->row('orders', 'order_id', 'order-123', ['status']));
+    }
+
+    public function test_a_collection_loaded_again_in_the_same_unit_of_work_reads_its_own_writes(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderWithLinesState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending']);
+        $database->seedRow('order_lines', 'line_id', ['order_id' => 'order-123', 'line_id' => 'line-1', 'sku' => 'SKU-1', 'quantity' => 1]);
+
+        $first = $store->load(OrderWithLinesState::class, 'order-123');
+        $store->expect($first);
+        $store->save(new OrderWithLinesState('order-123', 'pending', [...$first->lines, new OrderLineState('line-2', 'SKU-2', 2)]));
+
+        $second = $store->load(OrderWithLinesState::class, 'order-123');
+        self::assertCount(2, $second?->lines ?? []);
+        $store->expect($second);
+        $store->save(new OrderWithLinesState('order-123', 'pending', [...$second->lines, new OrderLineState('line-3', 'SKU-3', 3)]));
+        $this->flush($database, $registry);
+
+        $lines = $store->load(OrderWithLinesState::class, 'order-123')?->lines ?? [];
+        self::assertSame(['line-1', 'line-2', 'line-3'], array_map(static fn (OrderLineState $line): string => $line->lineId, $lines));
+    }
+
+
+    public function test_expectations_registered_before_own_writes_still_reject_a_concurrent_change(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending', 'note' => 'draft']);
+
+        $first = $store->load(OrderState::class, 'order-123');
+        $store->expect($first);
+        $store->save($first->withOrderStatus('paid'));
+        $second = $store->load(OrderState::class, 'order-123');
+        $store->expect($second);
+        $database->writeRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'cancelled', 'note' => 'draft']);
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flush($database, $registry);
+    }
+
+
+    public function test_state_classes_sharing_a_row_see_each_other_writes(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class, OrderStatusView::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending', 'note' => 'draft']);
+
+        $staleView = $store->load(OrderStatusView::class, 'order-123');
+        $order = $store->load(OrderState::class, 'order-123');
+        $store->expect($order);
+        $store->save($order->withOrderStatus('paid'));
+
+        try {
+            $store->expect($staleView);
+            self::fail('A view loaded before the write must be rejected.');
+        } catch (ConcurrencyException) {
+        }
+
+        $freshView = $store->load(OrderStatusView::class, 'order-123');
+        $store->expect($freshView);
+        $store->save($freshView->withStatus('shipped'));
+        $this->flush($database, $registry);
+
+        self::assertSame(['status' => 'shipped', 'note' => 'draft'], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
+    }
+
+    public function test_after_clear_a_stale_state_is_checked_against_storage(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending', 'note' => 'draft']);
+
+        $stale = $store->load(OrderState::class, 'order-123');
+        $store->expect($stale);
+        $registry->clear();
+        $database->writeRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'paid', 'note' => 'draft']);
+
+        $store->expect($stale);
+        $store->save($stale->withOrderStatus('shipped'));
+
+        $this->expectException(ConcurrencyException::class);
+        $this->flush($database, $registry);
+    }
+
+    public function test_observe_reads_own_inserts_and_updates_without_losing_the_original_expectation(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class, OrderStatusView::class]);
+        self::assertNull($store->observe(OrderState::class, 'order-123'));
+        $store->save(new OrderState('order-123', 'pending', null));
+        $created = $store->observe(OrderState::class, 'order-123');
+        self::assertSame('pending', $created->orderStatus);
+        $store->save($created->withOrderStatus('paid'));
+        $view = $store->observe(OrderStatusView::class, 'order-123');
+        self::assertSame('paid', $view->status);
+        $store->save($view->withStatus('shipped'));
+        $this->flush($database, $registry);
+        $registry->clear();
+        self::assertSame('shipped', $store->load(OrderState::class, 'order-123')->orderStatus);
+
+        $observed = $store->observe(OrderState::class, 'order-123');
+        $store->save($observed->withOrderStatus('delivered'));
+        self::assertSame('delivered', $store->observe(OrderState::class, 'order-123')->orderStatus);
+        $database->writeRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'cancelled', 'note' => null]);
+        $this->expectException(ConcurrencyException::class);
+        $this->flush($database, $registry);
+    }
+}
