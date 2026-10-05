@@ -86,6 +86,13 @@ docker compose up
 
 Postgres integration tests use `ULTRA_TEST_POSTGRES_DSN`. The root `composer test` script sets it to `pgsql://ultra:ultra@127.0.0.1:55432/ultra_test`, which matches the database started by `docker compose up`.
 
+## IAM example
+
+[The IAM context](examples/iam/README.md) exercises StateStore with tenant-scoped
+RBAC, groups, resource grants, revocation, expiration and transactional auditing.
+Writes use StateStore; authorization reads use indexed SQL directly. Its Postgres
+integration tests are included in the root suite.
+
 ## License
 
 Ultra is private and proprietary for now. No license for public use, distribution, or modification is currently granted.
