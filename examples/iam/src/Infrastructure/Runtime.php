@@ -25,6 +25,8 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\PostgresGuardLockAdapter;
+use Ultra\StateStore\QueryGuard;
+use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateStore;
@@ -37,6 +39,7 @@ final readonly class Runtime
 {
     public Administration $administration;
     public Authorization $authorization;
+    public QueryGuard $authorizationGuard;
     public Provisioning $provisioning;
     public StateStore $states;
     public TransactionalUnitOfWorkRunner $runner;
@@ -62,11 +65,21 @@ final readonly class Runtime
             $metadata[$class] = $state->toArray();
             $tables[$state->tableKey] = new MappedRowSet($adapters->create($state->tableName, array_values($state->idPropertyColumns)));
         }
-        $registry = new StateTableRegistry($tables, $adapters, guardLockAdapter: new PostgresGuardLockAdapter($connection));
-        $this->states = new StateStore(new StateMetadataRegistry($metadata), $registry, new UltraNormalizer(__DIR__.'/../../var/normalizers'));
+        $metadataRegistry = new StateMetadataRegistry($metadata);
+        $definition = new QueryGuardDefinition();
+        foreach ([SubjectState::class, GroupState::class, MembershipState::class] as $class) {
+            $definition->watch($class, scopeBy: 'id.tenantId')->whenPropertiesChange('active');
+        }
+        $definition->watch(BindingState::class, scopeBy: 'id.tenantId')->whenPropertiesChange('active', 'expiresAt');
+        $definition->watch(RoleState::class, scopeBy: 'id.tenantId')->whenPropertiesChange('active', 'permissions');
+        $registry = new StateTableRegistry($tables, $adapters,
+            queryGuardDefinitions: ['iam_authorization' => $definition->compile($metadataRegistry)],
+            guardLockAdapter: new PostgresGuardLockAdapter($connection));
+        $this->states = new StateStore($metadataRegistry, $registry, new UltraNormalizer(__DIR__.'/../../var/normalizers'));
+        $this->authorizationGuard = new QueryGuard($registry, 'iam_authorization');
         $this->runner = new TransactionalUnitOfWorkRunner($registry, $transactions ?? new DoctrineTransactionManager($connection, TransactionIsolationLevel::READ_COMMITTED));
         $this->authorization = new Authorization($connection, $clock);
-        $this->administration = new Administration($this->states, $this->runner, $this->authorization, $clock);
+        $this->administration = new Administration($this->states, $this->runner, $this->authorization, $this->authorizationGuard, $clock);
         $this->provisioning = new Provisioning($this->states, $this->runner, $clock);
     }
 }

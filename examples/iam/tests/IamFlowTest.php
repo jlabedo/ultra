@@ -18,6 +18,11 @@ use Doctrine\DBAL\TransactionIsolationLevel;
 use IamExample\Infrastructure\Runtime;
 use IamExample\Infrastructure\Schema;
 use IamExample\State\RoleState;
+use IamExample\State\BindingState;
+use IamExample\State\GroupState;
+use IamExample\State\MembershipState;
+use IamExample\State\SubjectState;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Ultra\Time\StatickClock;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
@@ -325,6 +330,83 @@ final class IamFlowTest extends TestCase
         }
         $this->runtime->administration->setSubject($this->admin, 'after');
         self::assertSame(0, (int) $this->connection->fetchOne("SELECT count(*) FROM iam_subjects WHERE subject_id = 'external'"));
+    }
+
+    public static function guardedMutations(): iterable
+    {
+        foreach (['subject', 'group', 'membership', 'role', 'permissions', 'binding', 'expiration'] as $mutation) {
+            yield $mutation => [$mutation];
+        }
+    }
+
+    #[DataProvider('guardedMutations')]
+    public function test_direct_state_writers_wait_for_authorization_readers_in_their_tenant(string $mutation): void
+    {
+        $this->runtime->administration->setGroup($this->admin, 'staff');
+        $this->runtime->administration->setMembership($this->admin, new MembershipId('acme', 'staff', 'ada'), true);
+        $writer = new Runtime($this->other, $this->clock);
+        $write = function () use ($writer, $mutation): void {
+            $writer->runner->run(function () use ($writer, $mutation): void {
+                [$class, $id] = match ($mutation) {
+                    'subject' => [SubjectState::class, $this->ada],
+                    'group' => [GroupState::class, new LocalId('acme', 'staff')],
+                    'membership' => [MembershipState::class, new MembershipId('acme', 'staff', 'ada')],
+                    'role', 'permissions' => [RoleState::class, new LocalId('acme', 'administrator')],
+                    default => [BindingState::class, BindingId::forPrincipal($this->admin, 'subject', 'administrator', Scope::tenant())],
+                };
+                $original = $writer->states->observe($class, $id);
+                $next = match ($mutation) {
+                    'subject' => new SubjectState($id, false),
+                    'group' => new GroupState($id, false),
+                    'membership' => new MembershipState($id, false),
+                    'role' => new RoleState($id, $original->name, $original->permissions, false),
+                    'permissions' => new RoleState($id, $original->name, [], $original->active),
+                    'expiration' => new BindingState($id, true, $this->clock->now()->getTimestamp() + 60),
+                    default => new BindingState($id, false),
+                };
+                $writer->states->save($next);
+            });
+        };
+        $this->other->executeStatement("SET lock_timeout = '50ms'");
+        self::assertTrue($this->runtime->authorizationGuard->observe('acme', fn (): bool =>
+            $this->runtime->authorization->allows($this->admin, Permission::ManageIam, Scope::tenant())));
+        $this->runtime->states->expectQuery(function () use ($writer, $write): bool {
+            // All guards are held when query expectations are replayed, before any writes.
+            try {
+                $write();
+                self::fail('A direct writer must participate without calling Administration or a query.');
+            } catch (\Doctrine\DBAL\Exception\DriverException $exception) {
+                self::assertSame('55P03', $exception->getSQLState());
+                self::assertFalse($this->other->isTransactionActive());
+            }
+            // The same declarations protect another tenant independently, including provisioning.
+            $writer->provisioning->createTenant(new LocalId('other', 'admin'));
+            self::assertTrue($writer->authorization->allows(new LocalId('other', 'admin'), Permission::ManageIam, Scope::tenant()));
+            // Ordinary authorization SQL reads do not wait for a guard.
+            self::assertTrue($writer->authorization->allows($this->admin, Permission::ManageIam, Scope::tenant()));
+
+            return true;
+        }, true);
+        $this->runtime->runner->run(static fn () => null);
+        // Completion releases the reader's guard; retrying the direct writer can commit.
+        $write();
+        self::assertFalse($this->other->isTransactionActive());
+    }
+
+    public function test_guarded_authorization_rejects_a_pending_permission_revocation_before_reading_sql(): void
+    {
+        $id = new LocalId('acme', 'administrator');
+        $role = $this->runtime->states->observe(RoleState::class, $id);
+        $this->runtime->states->save(new RoleState($id, $role->name, []));
+        try {
+            $this->runtime->authorizationGuard->observe('acme', static fn (): bool => throw new \RuntimeException('Must not read stale SQL'));
+            self::fail('An initial guarded read must not ignore a pending revocation.');
+        } catch (\Ultra\StateStore\Exception\PendingQueryChangesException $exception) {
+            self::assertSame('iam_authorization', $exception->guardName);
+            self::assertSame('acme', $exception->guardValue);
+        }
+        $this->runtime->runner->run(static fn () => null);
+        self::assertFalse($this->runtime->authorization->allows($this->admin, Permission::ManageIam, Scope::tenant()));
     }
 
     private function runtimeBeforeFlush(callable $beforeFlush): Runtime

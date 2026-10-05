@@ -19,6 +19,7 @@ use IamExample\State\SubjectState;
 use IamExample\State\TenantState;
 use Psr\Clock\ClockInterface;
 use Ultra\StateStore\StateStore;
+use Ultra\StateStore\QueryGuard;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
 
 /** Command boundary. The actor is a verified identity supplied by the transport, never by a request body. */
@@ -28,6 +29,7 @@ final readonly class Administration
         private StateStore $states,
         private TransactionalUnitOfWorkRunner $runner,
         private Authorization $authorization,
+        private QueryGuard $authorizationGuard,
         private ClockInterface $clock,
     ) {}
 
@@ -112,13 +114,10 @@ final readonly class Administration
         }
         $this->runner->run(function () use ($actor, $operation, $target, $change): void {
             $this->requireExisting(TenantState::class, $actor->tenantId);
-            $tenant = new TenantState($actor->tenantId);
-            // Every IAM writer participates, including writers of role permission collections.
-            $this->states->lock($tenant);
             // An earlier successful check must not let an administrator recreate access after their revocation.
-            $allowed = $this->states->observeQuery(
+            $allowed = $this->authorizationGuard->observe(
+                $actor->tenantId,
                 fn (): bool => $this->authorization->allows($actor, Permission::ManageIam, Scope::tenant()),
-                name: 'IAM administration authorization',
             );
             if (!$allowed) {
                 throw new AccessDenied('IAM administration requires iam:manage at tenant scope.');

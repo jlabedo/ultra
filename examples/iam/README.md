@@ -113,10 +113,11 @@ ci-dessous sur la même transaction, comme le fait l'administration IAM.
 ## Concurrence : une garde par tenant
 
 Les commandes décident avant l'ouverture de la transaction, conformément au
-runner Ultra. Chaque commande enregistre une garde manuelle sur `TenantState`
-et une `observeQuery()` sur son autorisation. Au flush, la garde est acquise,
-l'autorisation est relue à l'heure courante, puis les attentes optimistes et les
-écritures sont appliquées. Une révocation ou expiration entre décision et flush
+runner Ultra. `Runtime` compile un query guard nommé `iam_authorization`, puis
+l'injecte dans `Administration`. La commande observe son autorisation via
+`QueryGuard::observe($actor->tenantId, ...)`, avant de préparer ses écritures.
+Au flush, les gardes sont acquises, l'autorisation est relue à l'heure courante,
+puis les attentes optimistes et les écritures sont appliquées. Une révocation ou expiration entre décision et flush
 invalide la commande avec `ConcurrencyException`. Aucun retry automatique n'est
 effectué : le transport peut recommencer la commande avec une nouvelle décision.
 
@@ -129,17 +130,32 @@ un autre sujet. La garde et la relecture ordonnent cette attribution par rapport
 à la révocation. Une simple deuxième vérification sans garde laisserait une
 nouvelle fenêtre de concurrence.
 
-Tous les writers IAM, y compris ceux modifiant les permissions d'une collection,
-utilisent cette garde. Elle sérialise les commits IAM **d'un même tenant**, sans
-verrouiller les vérifications ordinaires d'accès ni les autres tenants. Le
+La définition couvre `active` sur les sujets, groupes et appartenances,
+`active` et `expiresAt` sur les attributions, ainsi que les rôles :
+
+```php
+$definition
+    ->watch(RoleState::class, scopeBy: 'id.tenantId')
+    ->whenPropertiesChange('active', 'permissions');
+```
+
+Les readers demandent une garde partagée. StateStore déduit automatiquement les
+gardes exclusives des plans de mutation, y compris pour les permissions d'une
+collection vidée, le provisioning et les writers utilisant directement
+`Runtime::$states`. Les requêtes initiales qui ignoreraient une mutation locale
+déjà préparée sont rejetées. Les gardes restent **par tenant** : les mutations
+affectant l'autorisation d'un même tenant se sérialisent, les readers peuvent
+partager leur garde et les autres tenants restent indépendants. Les vérifications
+ordinaires via `Authorization::allows()` restent des lectures SQL sans garde. Le
 `Ultra\UnitOfWork\DoctrineTransactionManager` possède sa transaction et est
 configuré ici à `READ COMMITTED`, afin que
 la relecture voie les révocations validées pendant l'attente de la garde. Les
 commandes ne peuvent pas être imbriquées dans un autre runner : une requête SQL
 ne verrait pas les révocations encore bufferisées dans la même unité de travail.
 
-Des écritures SQL directes, des writers qui oublient la garde ou des snapshots
-répétés hors de ce protocole invalident cette garantie. Le port bas niveau
+Des écritures SQL directes ou via des row sets indépendants de ce registre,
+des dépendances omises dans la définition, ou des snapshots répétés hors de ce
+protocole invalident cette garantie. Le port bas niveau
 `Runtime::$states` est destiné à la composition et aux tests ; la frontière
 applicative normale reste `Administration`.
 
@@ -153,14 +169,15 @@ configurable et restauration de l'isolation précédente. `observeExists()` a é
 ajouté à StateStore pour exprimer une dépendance à l'existence sans observer tout
 l'état.
 
-Deux améliorations concrètes sont consignées dans [la TODO](../../TODO.md) :
+Les query guards déclaratifs couvrent désormais les propriétés et collections
+avec une interface exprimée dans le modèle objet. L'exemple utilise cette
+[API](../../docs/stored-state/query-guards.md) pour déduire la participation des
+writers, sans verrou manuel sur `TenantState`.
 
-- Les query guards déclaratifs ne couvrent pas les tables de `StateCollection`.
-  La garde manuelle par tenant est correcte avec les primitives actuelles mais
-  limite le débit d'écriture et exige la coopération explicite des writers.
-- Le DDL est écrit à la main dans `Infrastructure/schema.sql`. Il manque un lien
-  StateStore → Schema pour dériver tables, identifiants et collections, puis
-  déclarer les contraintes et index métier.
+Le DDL reste écrit à la main dans `Infrastructure/schema.sql`. Il manque un lien
+StateStore → Schema pour dériver tables, identifiants et collections, puis
+déclarer les contraintes et index métier. Cette amélioration est consignée dans
+[la TODO](../../TODO.md).
 
 La suppression explicite de StateStore figure déjà dans la TODO. Elle serait
 utile pour une purge de données, mais ne bloque pas les révocations métier de

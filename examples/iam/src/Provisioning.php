@@ -34,7 +34,6 @@ final readonly class Provisioning
                 throw new \DomainException('The tenant already exists.');
             }
             $tenant = new TenantState($tenantId);
-            $this->states->lock($tenant);
             $this->states->save($tenant);
             $this->states->save(new SubjectState($initialAdministrator));
             $this->states->save(new RoleState(
