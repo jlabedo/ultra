@@ -3,6 +3,10 @@
 
 declare(strict_types=1);
 
+if (false === getenv('ULTRA_TEST_POSTGRES_DSN')) {
+    putenv('ULTRA_TEST_POSTGRES_DSN=pgsql://ultra:ultra@127.0.0.1:55432/ultra_test');
+}
+
 $toolName = 'phpunit';
 
 require dirname(__DIR__) . '/tools/bootstrap/tool-proxy.php';

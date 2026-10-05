@@ -9,14 +9,14 @@ use Doctrine\DBAL\Exception\DriverException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
-use Ultra\MappedTable\Tests\PostgresMappedRowSetTestCase;
+use Ultra\Testing\PostgresRowSetTestCase;
 use Ultra\StateStore\PostgresGuardLockAdapter;
 use Ultra\StateStore\QueryGuard;
 use Ultra\StateStore\StateTableRegistry;
 use Ultra\Testing\PostgresTestSupport;
 
 /** @internal */
-final class PostgresQueryGuardTest extends PostgresMappedRowSetTestCase
+final class PostgresQueryGuardTest extends PostgresRowSetTestCase
 {
     public function test_readers_share_a_guard_and_hold_back_a_writer_until_commit(): void
     {

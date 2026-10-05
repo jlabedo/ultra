@@ -10,6 +10,7 @@ Documentation follows contexts rather than Composer package boundaries. Use the 
 | Decision state injection, derived IDs or CHECK | [Stateful contracts](message-handling/stateful.md), then [bindings and examples](message-handling/decisions.md) | StatefulMessageHandling |
 | Async dispatch, queue delivery, outbox or deployment compatibility | [Async delivery](message-handling/async.md) | MessageHandling, MessageHandling_PostgresQueue |
 | Event queries, checkpoints, append conditions or state replay | [Event sourcing](event-sourcing/README.md) | Events, EventStore, EventStore_Postgres, EventSourcedState, EventSourcedState_Compiler |
+| Row buffering, row-set reconciliation, mapped keys or storage adapters | [Mapped Table](stored-state/mapped-table.md) | MappedTable |
 | State mapping, collections or optimistic row expectations | [Stored-state contracts](stored-state/README.md), then [mapping](stored-state/mapping.md) | StateStore, StateStore_Bundle, MappedTable |
 | Set-based invariants, query observations or cooperative locking | [Query guards](stored-state/query-guards.md) | StateStore, MappedTable |
 | Manual SQL expectations or explicit guards | [Manual queries](stored-state/manual-queries.md) | StateStore |

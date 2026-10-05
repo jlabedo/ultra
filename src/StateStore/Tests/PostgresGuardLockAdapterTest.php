@@ -8,13 +8,13 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\Tests\PostgresMappedRowSetTestCase;
+use Ultra\Testing\PostgresRowSetTestCase;
 use Ultra\StateStore\PostgresGuardLockAdapter;
 use Ultra\StateStore\StateTableRegistry;
 use Ultra\Testing\PostgresTestSupport;
 
 /** @internal */
-final class PostgresGuardLockAdapterTest extends PostgresMappedRowSetTestCase
+final class PostgresGuardLockAdapterTest extends PostgresRowSetTestCase
 {
     public function test_manual_locks_are_deferred_and_held_until_the_transaction_ends(): void
     {

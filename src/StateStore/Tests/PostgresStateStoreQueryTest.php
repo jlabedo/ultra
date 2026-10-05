@@ -9,7 +9,7 @@ use Doctrine\DBAL\Exception\DriverException;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedKey;
 use Ultra\StateStore\PostgresGuardLockAdapter;
-use Ultra\MappedTable\Tests\PostgresMappedRowSetTestCase;
+use Ultra\Testing\PostgresRowSetTestCase;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\StateStore\StateMetadata;
 use Ultra\StateStore\StateMetadataRegistry;
@@ -29,7 +29,7 @@ final readonly class ManualIdentityState
 }
 
 /** @internal */
-final class PostgresStateStoreQueryTest extends PostgresMappedRowSetTestCase
+final class PostgresStateStoreQueryTest extends PostgresRowSetTestCase
 {
     public function test_every_manual_guard_is_held_before_queries_are_replayed_and_rows_are_written(): void
     {

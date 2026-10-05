@@ -86,8 +86,8 @@ rejected immediately. This also guards states whose mapping contains only their 
 
 Adapters implement `Ultra\MappedTable\MappedRowSetAdapter`:
 
-- `tableName()` supplies the physical table identity used for ordering manual guards
-- `lock(MappedKey $key)` acquires a cooperative transaction-scoped guard, even for a missing row
+- `keyColumns()` supplies the complete physical row key
+- `scope()` supplies any bound key columns that limit this row-set view
 - `row(MappedKey $key, array $columns = [])` reads one row, optionally projecting columns
 - `rows(array $columns = [])` reads all rows as `MappedRow` values
 - `apply(RowSetUpdatePlan $plan)` receives optional row-set key expectations (plus the keys to leave out of that comparison) the sorted batch of immutable row plans and optional retained row keys; it checks the key expectations and the check-only plans against committed rows before applying the writes, then removes rows outside the retained set within its scope
@@ -127,3 +127,33 @@ Check-only rows are checked in one `SELECT ... FOR SHARE` per table, so they sta
 for inspection; `flush()` applies its own plan through the adapter. Cooperative decision guards and query replay
 belong to `StateStore`'s coordinating unit of work and its dedicated guard adapter. They are acquired before the
 mapped row sets are flushed. The persistence locks described above stay local to each mapped adapter.
+
+## Test ownership and maintenance
+
+Each suite owns one guarantee and its cases. Tests are not grouped by implementation class or physical table.
+The shared fixture sets up storage, performs independent committed reads and cleans up transactions; it contains
+no assertions or model of the expected behavior. Common persistence cases use a backend data provider so the
+same scenario exercises the in-memory and Postgres adapters, including their factories.
+
+| Guarantee | Suite | Cases |
+| --- | --- | --- |
+| Reads expose the unit-of-work view without changing storage | [BufferedViewTest](../../src/MappedTable/Tests/BufferedViewTest.php) | Committed projections and structured rows, overlays of updates/inserts/deletes, check-only observations. |
+| Writes have distinct insert, update, upsert, replacement and deletion semantics | [WriteSemanticsTest](../../src/MappedTable/Tests/WriteSemanticsTest.php) | Preservation of unspecified values, conflicts, multiple deletions, replacement expectations, cancellation and merging. |
+| Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/MappedTable/Tests/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, concurrent insertions/deletions and first-expectation retention. |
+| Saved membership supersedes earlier membership within its scope | [MembershipReconciliationTest](../../src/MappedTable/Tests/MembershipReconciliationTest.php) | Late rows, empty and successive sets, duplicate keys, retained columns, earlier expectations and later explicit operations. |
+| Preparation, flush, clear and transactions retain their separate responsibilities | [FlushLifecycleTest](../../src/MappedTable/Tests/FlushLifecycleTest.php) | Preparation without I/O, sorted immutable snapshots, check-only writes, complete cleanup, external rollback and in-memory transaction snapshots. |
+| Keys and scopes address independent rows | [KeyAndScopeIsolationTest](../../src/MappedTable/Tests/KeyAndScopeIsolationTest.php) | Composite keys, scalar shortcuts, colliding IDs, multiple scope columns and invalid addresses. |
+| Persisted column values survive encoding and decoding | [ColumnValueRoundTripTest](../../src/MappedTable/Tests/ColumnValueRoundTripTest.php) | Text/UUID/integer arrays, escaping and nulls, JSON, dates, booleans, single and multiple writes and optimistic typed comparisons. |
+| Persistence observations hold competing writers until their transaction ends | [PersistenceLockingTest](../../src/MappedTable/Tests/PersistenceLockingTest.php) | Two real Postgres connections, present/absent checks, insert/upsert/update contention, release and transaction requirements. |
+
+Add or change a case in the suite owning its guarantee. A new file needs a distinct guarantee, rather than a
+new implementation class. Use another dataset for a different input or failure mode of the same guarantee;
+do not duplicate a scenario for each adapter. Buffer-only rules use the in-memory fixture. Backend behavior
+such as SQL types, unchanged row versions and locking requires Postgres cases.
+
+Before removing a case, identify the remaining scenario that protects its guarantee. Compare tests, covered
+source lines and detection of the same mutations before and after on unchanged production code. Coverage
+metadata changes are not evidence of newly exercised behavior, and a surviving mutant needs analysis before
+adding a test. These measurements complement the contract review; neither a coverage percentage nor a
+mutation score proves that the suite is sufficient. For setup and execution, use
+[development verification](../development.md#tests).

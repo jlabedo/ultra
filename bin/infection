@@ -3,6 +3,9 @@
 
 declare(strict_types=1);
 
+// Infection needs PHPUnit's normal output to distinguish passing tests from detected mutations.
+putenv('PAO_DISABLE=1');
+
 $toolName = 'infection';
 
 require dirname(__DIR__) . '/tools/bootstrap/tool-proxy.php';

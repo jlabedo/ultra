@@ -75,8 +75,8 @@
         "install-tools": "php tools/bootstrap/install.php",
         "post-install-cmd": "@install-tools",
         "post-update-cmd": "@install-tools",
-        "test": "ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' bin/phpunit",
-        "test:coverage": "ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' bin/phpunit --coverage",
+        "test": "bin/phpunit",
+        "test:coverage": "bin/phpunit --coverage",
         "cs-fix": "bin/php-cs-fixer fix"
     }
 }

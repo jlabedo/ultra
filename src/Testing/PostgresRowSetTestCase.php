@@ -2,16 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable\Tests;
+namespace Ultra\Testing;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
-use Ultra\Testing\PostgresTestSupport;
 
-abstract class PostgresMappedRowSetTestCase extends TestCase
+abstract class PostgresRowSetTestCase extends TestCase
 {
     /**
      * @param array<string, PostgresMappedColumnType> $columnTypes

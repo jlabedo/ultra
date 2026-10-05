@@ -8,19 +8,23 @@ For Postgres integration, start the database defined by [docker-compose.yml](../
 
 ## Tests
 
-The root suite uses PHPUnit through [bin/phpunit](../bin/phpunit), configured by [phpunit.xml](../phpunit.xml). Run from the repository root:
+Run [PHPUnit](../bin/phpunit) from the repository root ([configuration](../phpunit.xml)):
 
 ```bash
-composer test
-composer test:coverage
-composer test -- src/StateStore/Tests
+bin/phpunit
+bin/phpunit --coverage-text
+bin/phpunit src/StateStore/Tests
 ```
 
-The Composer scripts define the local Postgres URL in [composer.json](../composer.json), so these commands include integration tests without additional environment setup. Arguments after `--` target a package or select tests.
+Postgres tests use the local database by default.
 
-For a different database, invoke `bin/phpunit` directly with the desired `ULTRA_TEST_POSTGRES_DSN`; the Composer scripts override that variable.
+For mutation testing:
 
-Postgres integration tests skip when their required DSN is absent. Report skipped coverage when the change requires database verification. Example applications may have their own Composer setup and test configuration; follow their local instructions.
+```bash
+bin/infection --filter=src/MappedTable --test-framework-extra-args=src/MappedTable/Tests
+```
+
+Report skipped coverage when the change requires database verification. Example applications may have their own Composer setup and test configuration; follow their local instructions.
 
 ## Documentation changes
 
