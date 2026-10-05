@@ -62,6 +62,31 @@ final readonly class StateStore
         return $state;
     }
 
+    /**
+     * Observe only the root row's presence in this unit of work's view.
+     * Selects identifier columns without hydrating the state or loading its collections.
+     * Presence or absence is checked at flush; column values and collections are not expected.
+     *
+     * @param class-string $stateClass
+     */
+    public function observeExists(string $stateClass, int|string|object $id): bool
+    {
+        $metadata = $this->metadataRegistry->metadataFor($stateClass);
+        $this->assertIdentifierType($metadata, $id);
+        $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
+        $key = $metadata->keyFromNormalizedId($normalizedId);
+        $table = $this->tableRegistry->tableFor($metadata);
+        $exists = false !== $table->row($key, array_values($metadata->idPropertyColumns));
+        $expectation = $table->withKey($key);
+        if ($exists) {
+            $expectation->expectPresent();
+        } else {
+            $expectation->expectAbsent();
+        }
+
+        return $exists;
+    }
+
     public function save(object $state): void
     {
         [$metadata, $normalizedState] = $this->normalizeState($state);

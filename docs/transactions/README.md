@@ -34,6 +34,24 @@ interface TransactionManager
 
 Implementations commit when the callback returns and roll back when it throws. `NoTransactionManager` is provided for packages that do not need a real transaction boundary.
 
+`DoctrineTransactionManager` is the optional Doctrine DBAL adapter (requires `doctrine/dbal`):
+
+```php
+$transactions = new DoctrineTransactionManager(
+    $connection,
+    isolationLevel: TransactionIsolationLevel::READ_COMMITTED,
+);
+```
+
+It owns its transaction, commits and returns the callback result on success, and rolls back
+on failure. An already active connection transaction is rejected, rather than joining a
+boundary whose commit it cannot control. Nested work should join the unit-of-work runner
+before it reaches this adapter. Without an explicit isolation level, the connection's
+configuration is used. With one, the adapter temporarily sets it through DBAL and restores
+the previous level after commit or rollback. Configure isolation through DBAL as well so its
+cached connection configuration remains consistent with the database session.
+
+
 ## UnitOfWorkRunner
 
 `UnitOfWorkRunner` is the user-facing API for application work that should flush on success and clear afterward:

@@ -6,6 +6,7 @@ Ultra is a private PHP monorepo for exploring composable application building bl
 
 - [Documentation by context and task](docs/README.md): contracts, usage and package ownership.
 - [Contributor instructions](AGENTS.md): change rules and verification requirements.
+- [IAM example](examples/iam/README.md): tenant-scoped RBAC with StateStore writes, direct SQL authorization reads and transactional auditing.
 
 Runtime requirements and tooling are defined in [composer.json](composer.json).
 

@@ -1,0 +1,38 @@
+{
+    "name": "ultra/iam-example",
+    "type": "project",
+    "license": "proprietary",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../src/*",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "require": {
+        "php": ">=8.5",
+        "ext-pdo_pgsql": "*",
+        "doctrine/dbal": "^4.0",
+        "ultra/mapped-table": "dev-main",
+        "ultra/mapper": "dev-main",
+        "ultra/mapper-compiler": "dev-main",
+        "ultra/state-store": "dev-main",
+        "ultra/unit-of-work": "dev-main",
+        "ultra/time": "dev-main"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^13.0"
+    },
+    "autoload": {
+        "psr-4": {
+            "IamExample\\": "src/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    }
+}

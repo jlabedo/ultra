@@ -79,6 +79,49 @@ final class PostgresStateStoreQueryTest extends PostgresMappedRowSetTestCase
             }
         });
     }
+    public function test_observe_exists_ignores_changed_values_in_postgres(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $metadata = new StateMetadata(ManualQueryState::class, $tableName, $tableName.'#id', 'id', 'string', true, ['id' => 'id'], ['status' => 'status'], ['status' => 'status']);
+            $registry = new StateTableRegistry([$metadata->tableKey => $table]);
+            $store = new StateStore(new StateMetadataRegistry([ManualQueryState::class => $metadata->toArray()]), $registry, new UltraNormalizer());
+            // A null status cannot hydrate ManualQueryState, but its row still exists.
+            $this->insertRow($connection, $tableName, ['id' => 'row-1', 'status' => null]);
+            self::assertTrue($store->observeExists(ManualQueryState::class, 'row-1'));
+            $connection->update($tableName, ['status' => 'changed'], ['id' => 'row-1']);
+            $connection->transactional($registry->flush(...));
+            $registry->clear();
+            self::assertSame('changed', $store->load(ManualQueryState::class, 'row-1')->status);
+        });
+    }
+
+    public function test_observe_exists_rejects_a_deleted_postgres_row(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $metadata = new StateMetadata(ManualQueryState::class, $tableName, $tableName.'#id', 'id', 'string', true, ['id' => 'id'], ['status' => 'status'], ['status' => 'status']);
+            $registry = new StateTableRegistry([$metadata->tableKey => $table]);
+            $store = new StateStore(new StateMetadataRegistry([ManualQueryState::class => $metadata->toArray()]), $registry, new UltraNormalizer());
+            $this->insertRow($connection, $tableName, ['id' => 'row-1', 'status' => 'pending']);
+            self::assertTrue($store->observeExists(ManualQueryState::class, 'row-1'));
+            $connection->delete($tableName, ['id' => 'row-1']);
+            $this->expectException(ConcurrencyException::class);
+            $connection->transactional($registry->flush(...));
+        });
+    }
+
+    public function test_observe_exists_rejects_a_competing_postgres_creation_without_a_local_write(): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            $metadata = new StateMetadata(ManualQueryState::class, $tableName, $tableName.'#id', 'id', 'string', true, ['id' => 'id'], ['status' => 'status'], ['status' => 'status']);
+            $registry = new StateTableRegistry([$metadata->tableKey => $table]);
+            $store = new StateStore(new StateMetadataRegistry([ManualQueryState::class => $metadata->toArray()]), $registry, new UltraNormalizer());
+            self::assertFalse($store->observeExists(ManualQueryState::class, 'row-1'));
+            $this->insertRow($connection, $tableName, ['id' => 'row-1', 'status' => 'created']);
+            $this->expectException(ConcurrencyException::class);
+            $connection->transactional($registry->flush(...));
+        });
+    }
+
     public function test_observe_identity_only_state_guards_own_insert_then_committed_presence(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {

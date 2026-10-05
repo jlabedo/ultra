@@ -36,6 +36,14 @@ The package owns:
 - `expectMissing(StateClass::class, $id)` when it is absent: a later save is an insert, and a competing creation
   causes a concurrency conflict.
 
+`observeExists(StateClass::class, $id)` returns a boolean and observes only the root row's
+presence or absence. It selects the identifier columns, without hydrating the state or loading
+its collections. Column changes and collection changes do not invalidate this observation;
+a competing deletion or creation does. It sees buffered writes and retains earlier expectations.
+Use it for references whose existence is the only dependency. Use `observe()` when the decision
+also depends on values or collection membership. Existing stronger expectations are not removed
+by a subsequent `observeExists()` call.
+
 The presence check also applies to states containing only an identifier or having no optimistic columns.
 Columns marked `optimistic: false` remain excluded from value comparisons. Scalar and composite identifiers use
 the same mapping and validation as `load()`.

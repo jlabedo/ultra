@@ -14,6 +14,7 @@
         "ultra/container": "*"
     },
     "suggest": {
+        "doctrine/dbal": "Required for DoctrineTransactionManager.",
         "symfony/dependency-injection": "Register UnitOfWork services and mediator transaction advice through the Ultra container extension.",
         "ultra/event-store": "Decorate EventStore with EventStoreUnitOfWork when the bundle is used.",
         "ultra/message-handling": "Wrap compiled mediator handlers in the transactional unit-of-work runner."

@@ -237,6 +237,7 @@ final class StateStoreTest extends TestCase
         );
 
         $id = new AcceptanceId('identity-1', 'terms-2026');
+        self::assertFalse($store->observeExists(TermsAcceptanceState::class, $id));
         self::assertNull($store->observe(TermsAcceptanceState::class, $id));
         $store->save(new TermsAcceptanceState($id, '2026-07-10T10:00:00Z'));
         $this->flushRegistryInTransaction($database, $registry);
@@ -250,6 +251,8 @@ final class StateStoreTest extends TestCase
             'terms_id' => 'terms-2026',
         ])));
 
+        self::assertTrue($store->observeExists(TermsAcceptanceState::class, new AcceptanceId('identity-1', 'terms-2026')));
+        self::assertFalse($store->observeExists(TermsAcceptanceState::class, new AcceptanceId('identity-2', 'terms-2026')));
         $loaded = $store->observe(TermsAcceptanceState::class, new AcceptanceId('identity-1', 'terms-2026'));
         self::assertInstanceOf(TermsAcceptanceState::class, $loaded);
         self::assertSame('identity-1', $loaded->acceptanceId->identityId);
@@ -798,6 +801,52 @@ final class StateStoreTest extends TestCase
 
         $this->expectException(ConcurrencyException::class);
         $this->flushRegistryInTransaction($database, $registry);
+    }
+
+    public function test_observe_exists_ignores_column_and_collection_changes_without_hydrating(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderWithLinesState::class]);
+        // Required state columns are deliberately absent: existence must not hydrate this state.
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123']);
+        self::assertTrue($store->observeExists(OrderWithLinesState::class, 'order-123'));
+        self::assertTrue($registry->hasPendingChanges());
+        $database->writeRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'paid']);
+        $database->seedRow('order_lines', 'line_id', ['order_id' => 'order-123', 'line_id' => 'new', 'sku' => 'sku', 'quantity' => 1]);
+        $this->flushRegistryInTransaction($database, $registry);
+        $registry->clear();
+        self::assertSame('paid', $store->load(OrderWithLinesState::class, 'order-123')->status);
+    }
+
+    public function test_observe_exists_rejects_a_concurrent_deletion(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123']);
+        self::assertTrue($store->observeExists(OrderState::class, 'order-123'));
+        $database->deleteRowByKey('orders', new \Ultra\MappedTable\MappedKey(['order_id' => 'order-123']));
+        $this->expectException(ConcurrencyException::class);
+        $this->flushRegistryInTransaction($database, $registry);
+    }
+
+    public function test_observe_exists_guards_absence_and_sees_own_insert(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class]);
+        self::assertFalse($store->observeExists(OrderState::class, 'order-123'));
+        $store->save(new OrderState('order-123', 'pending', null));
+        self::assertTrue($store->observeExists(OrderState::class, 'order-123'));
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'competing']);
+        $this->expectException(ConcurrencyException::class);
+        $this->flushRegistryInTransaction($database, $registry);
+    }
+
+    public function test_observe_exists_clear_discards_presence_expectation(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([OrderState::class]);
+        $database->seedRow('orders', 'order_id', ['order_id' => 'order-123']);
+        self::assertTrue($store->observeExists(OrderState::class, 'order-123'));
+        $registry->clear();
+        $database->deleteRowByKey('orders', new \Ultra\MappedTable\MappedKey(['order_id' => 'order-123']));
+        $this->flushRegistryInTransaction($database, $registry);
+        self::assertFalse($registry->hasPendingChanges());
     }
 
     public function test_observe_hydrates_state_and_guards_a_read_without_saving(): void
