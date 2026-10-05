@@ -17,25 +17,13 @@
   des collections du State supprimé. Couvrir la suppression et les conflits avec
   des tests en mémoire et Postgres.
 
-- [ ] Déplacer le mécanisme des query guards dans MappedTable et fournir un
-  binding StateStore. MappedTable doit porter les définitions physiques
-  (tables, colonnes, scopes), la déduction des gardes d'écriture depuis les
-  plans, y compris les réconciliations, les observations, la relecture des
-  requêtes et l'acquisition des gardes au flush. Conserver un coordinateur
-  commun à plusieurs row sets : acquérir toutes les gardes et relire toutes
-  les requêtes avant la première écriture, dans une seule transaction.
-  Le binding StateStore doit traduire une API exprimée dans le modèle objet,
-  par exemple `watch(RoleState::class, scopeBy: 'id.tenantId')`,
-  `whenPropertiesChange('active')` et `whenCollectionChanges('permissions')`,
-  en dépendances physiques, en tenant compte des identifiants composites et
-  des renommages `ownerColumns`. Les dépendances de propriétés et de
-  collections se combinent comme un OU. Le scope identifie une garde, pas
-  la clé du State. Couvrir ajouts, suppressions, modifications et collections
-  vidées, sans lecture supplémentaire pour déduire les scopes. Valider les
-  usages directs avec MappedTable, le binding StateStore et la concurrence
-  Postgres, notamment une révocation validée pendant l'attente de la garde.
-  L'exemple IAM conserve pour l'instant `lock(TenantState)` et
-  `observeQuery()` ; sa granularité par tenant est suffisante.
+- [ ] Améliorer l'API déclarative des query guards de StateStore pour exprimer
+  les dépendances dans le modèle objet : par exemple
+  `watch(RoleState::class, scopeBy: 'id.tenantId')`,
+  `whenPropertiesChange('active')` et `whenCollectionChanges('permissions')`.
+  Résoudre les chemins de propriétés et les noms de collections vers leur
+  mapping physique, et combiner les dépendances comme un OU. Couvrir les
+  mutations des collections et conserver la granularité des gardes par scope.
 
 - [ ] Relier les métadonnées StateStore à Schema pour dériver le schéma de base
   (identifiants composites, colonnes et tables des collections), avec déclaration
