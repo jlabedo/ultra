@@ -1,7 +1,7 @@
 # Query guards
 
 `QueryGuard` protects decisions based on queries over mapped rows. The developer declares the states, scope
-columns and value columns that affect a query. Readers request shared guards; `StateTableRegistry` automatically
+properties and property or collection dependencies that affect a query. Readers request shared guards; `StateTableRegistry` automatically
 derives exclusive guards for affected writers, including actions that never call the query.
 
 The decision reads storage without acquiring locks. Flush acquires the guards, replays the recorded queries and
@@ -18,21 +18,41 @@ use Ultra\StateStore\QueryGuardDefinition;
 public function __construct(
     #[DefineQueryGuard('company_usage', static function (QueryGuardDefinition $definition): void {
         $definition
-            ->watch(Booking::class, keyBy: 'company_id')
-            ->whenColumnsChange('charged', 'start_at', 'end_at');
+            ->watch(Booking::class, scopeBy: 'companyId')
+            ->whenPropertiesChange('charged', 'start', 'end');
     })]
     private QueryGuard $companyUsage,
 ) {}
 ```
 
-The declaration uses physical column names, validated against the state's compiled mapping. `keyBy` selects the
-column whose value identifies a dynamic guard. It is not necessarily the primary key. `whenColumnsChange()`
-selects mutations affecting the query; omitting it includes every mutation. Insertions, deletions and changes to
-the scope column always participate. A replacement conservatively participates too.
+The declaration uses mapped property paths, resolved to physical columns at compilation. `scopeBy` selects
+one integer or string property whose value identifies a guard; it is not necessarily the state's identifier.
+Use the identifier property name for a scalar ID, `id.tenantId` for a composite ID component, and `address.city`
+for an embedded property. Physical column names are not accepted as property paths.
+
+`whenPropertiesChange()` selects properties affecting the query; their dependencies combine as an OR.
+A collection property name watches its entire contents. Repeated calls accumulate dependencies.
+Omitting this method watches all mapped properties and collections. Paths into collection elements such as
+`permissions.active` are not supported.
+Insertions, deletions and changes to the scope always participate for the root row, even for a collection-only
+watch. Replacements and blind upserts conservatively participate too.
+
+```php
+$definition
+    ->watch(RoleState::class, scopeBy: 'id.tenantId')
+    ->whenPropertiesChange('active', 'permissions');
+```
+
+Collection dependencies watch item additions, deletions and value changes, as well as membership reconciliation,
+including empty collections. A reconciliation conservatively participates even if its desired contents are
+unchanged. For a watched collection, `scopeBy` must reference the owner's identifier or a component of it:
+the collection's `ownerColumns` mapping determines the physical scope column. Other scope properties are
+rejected at compilation because item and empty-collection plans cannot recover them without another read.
+Collection observations without mutations do not request writer guards.
 
 The name identifies the same guard across repositories and actions. A definition can call `watch()` several times
-to cover multiple registered root states. Repeated declarations of the same name must compile to the same
-definition. Use physical column names, including for embedded mappings.
+to cover multiple registered states. Repeated declarations of the same name must compile to the same definition.
+Property order, collection order and duplicate dependencies are normalized during compilation.
 
 `StateStore_Bundle` discovers constructor declarations on autowired services, executes their configuration
 closures during compilation, registers global write rules, and injects each guard into its parameter. Only plain
@@ -120,7 +140,7 @@ validate the isolation level.
 | `Ultra\StateStore\Exception\PendingQueryChangesException` | An initial read would ignore a pending write in the same declared scope. Decide before preparing affected writes. The exception exposes `guardName`, `guardValue`, `tableKey` and `key`. |
 | `Ultra\UnitOfWork\Exception\ConcurrencyException` | A replayed query result differs from its expected value. Roll back the flush and retry the whole decision from fresh reads if appropriate; retry is not automatic. |
 | `LogicException` | An affected write lacks its previous scope, uses a non-scalar scope or is a blind upsert; or guard acquisition has no adapter or active transaction. Correct the observation, write plan or configuration. |
-| `InvalidArgumentException` | `whenColumnsChange()` was called without columns, or an expected query result contains objects or other unsupported values. Correct the declaration or normalize the result. |
+| `InvalidArgumentException` | `whenPropertiesChange()` was called without names, or an expected query result contains objects or other unsupported values. Correct the declaration or normalize the result. |
 
 Unknown previous scopes can fail during either an initial read or flush. This failure must not be interpreted as
 an unrelated mutation. Optimistic row conflicts still use the mapped-table concurrency checks. An advisory guard
@@ -128,28 +148,23 @@ does not replace the row's presence and column expectations.
 
 ## Manual construction
 
-Without the bundle, provide definitions to `StateTableRegistry` using the same table keys as its registered row
-sets. The metadata uses physical column names; `columns: null` watches every mutation.
+Without the bundle, compile the same builder against the registered state metadata:
 
 ```php
-use Ultra\StateStore\StateTableRegistry;
+$definition = new QueryGuardDefinition();
+$definition->watch(Booking::class, scopeBy: 'companyId')
+    ->whenPropertiesChange('charged', 'start', 'end');
 
 $tables = new StateTableRegistry(
     [$bookingMetadata->tableKey => $bookingRows],
-    queryGuardDefinitions: [
-        'company_usage' => [[
-            'tableKey' => $bookingMetadata->tableKey,
-            'keyBy' => 'company_id',
-            'columns' => ['charged', 'start_at', 'end_at'],
-        ]],
-    ],
-    guardLockAdapter: $locks,
+    queryGuardDefinitions: ['company_usage' => $definition->compile($metadataRegistry)],
+    guardLockAdapter: $guardAdapter,
 );
-$companyUsage = new QueryGuard($tables, 'company_usage');
 ```
 
-Constructing `QueryGuard` alone registers no dependencies. Manual definitions must refer to registered table keys
-and mapped columns; the bundle's compile-time mapping validation is not performed for these arrays.
+`compile()` returns plain physical writer rules. Supply the same table keys and metadata as the registry's root
+row sets, and an adapter factory when using collections. Hand-written physical rule arrays remain possible,
+but bypass the builder's property and collection validation.
 
 ## Supported scope and developer responsibilities
 
@@ -158,10 +173,10 @@ and mapped columns; the bundle's compile-time mapping validation is not performe
   Coworking guards cover a whole company or room.
 - Existing rows must have an optimistic expectation on their scope column before an affected mutation. Observe
   absence before inserting through StateStore. A scope excluded from optimistic observation needs an explicit
-  column expectation. Blind upserts are rejected because their previous scope is unknown. No additional database
-  reads are used to discover old scopes.
-- Write rules apply to root row tables registered with `StateTableRegistry`. Independently flushed MappedRowSet
-  instances, collection-item tables and direct SQL writes are not automatically enrolled.
+  column expectation. Blind upserts are rejected when their previous scope is unknown; an identifier scope is
+  already known from the immutable row key. No additional database reads are used to discover old scopes.
+- Write rules apply to root row tables and declared collection tables managed by `StateTableRegistry`.
+  Independently flushed MappedRowSet instances and direct SQL writes are not automatically enrolled.
 - Queries use shared mode and mutations use exclusive mode. Inverse protocols are not configurable.
 - The developer must declare every dependency affecting the query and ensure all writers follow the same
   protocol. SQL is not parsed. Guards do not replace database constraints or optimistic state observations.

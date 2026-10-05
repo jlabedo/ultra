@@ -14,19 +14,27 @@ final class QueryGuardWriteRules
     /**
      * @param array<string, RowSetUpdatePlan> $plans
      * @param array<string, list<array{tableKey: string, keyBy: string, columns: list<string>|null}>> $definitions
+     * @param array<string, list<MappedKey>> $reconciliationScopes
      * @return iterable<array{name: string, value: int|string, tableKey: string, key: MappedKey}>
      */
-    public static function requests(array $plans, array $definitions): iterable
+    public static function requests(array $plans, array $definitions, array $reconciliationScopes = []): iterable
     {
         foreach ($definitions as $name => $scopes) {
             foreach ($scopes as $scope) {
-                foreach ($plans[$scope['tableKey']]->rowUpdates as $plan) {
+                foreach ($plans[$scope['tableKey']]->rowUpdates ?? [] as $plan) {
                     if (!$plan->writes()) {
                         continue;
                     }
                     foreach (self::requestsForPlan($name, $scope['keyBy'], $scope['columns'], $plan) as $request) {
                         yield [...$request, 'tableKey' => $scope['tableKey'], 'key' => $plan->key];
                     }
+                }
+                foreach ($reconciliationScopes[$scope['tableKey']] ?? [] as $key) {
+                    $value = $key->values[$scope['keyBy']] ?? null;
+                    if (!is_int($value) && !is_string($value)) {
+                        throw new \LogicException(sprintf('Query guard "%s" needs its scope in the collection owner key.', $name));
+                    }
+                    yield ['name' => $name, 'value' => $value, 'tableKey' => $scope['tableKey'], 'key' => $key];
                 }
             }
         }
@@ -52,7 +60,7 @@ final class QueryGuardWriteRules
             return;
         }
 
-        if (!$insert && (!array_key_exists($keyBy, $before) || RowUpdatePlan::MODE_UPSERT === $plan->mode)) {
+        if (!$insert && (!array_key_exists($keyBy, $before) || (RowUpdatePlan::MODE_UPSERT === $plan->mode && !array_key_exists($keyBy, $plan->key->values)))) {
             throw new \LogicException(sprintf(
                 'Query guard "%s" requires observing column "%s" before changing an existing row (or observing its absence before inserting).',
                 $name, $keyBy,

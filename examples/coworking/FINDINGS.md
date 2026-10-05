@@ -266,7 +266,7 @@ concurrent plan change is detected or waits for that check. Member registration 
 email violations in one validation, as in Doctrine.
 
 The direct variant uses `StateStore::observe(Class, id)` and constructor-injected `QueryGuard` instances declared
-with `#[DefineQueryGuard]`. `watch(Booking::class, keyBy: 'company_id')` and `whenColumnsChange()` compile global
+with `#[DefineQueryGuard]`. `watch(Booking::class, scopeBy: 'companyId')` and `whenPropertiesChange()` compile global
 write rules; a second guard watches room-booking dependencies. `QueryGuard::observe(value, callback)` queues a
 shared guard and records the query result. Flush derives exclusive guards from affected row plans, including old
 and new scope values, consolidates modes before acquisition, checks query results, then runs the row-set plans.
@@ -319,14 +319,14 @@ cost of the decision-based flavor. Direct StateStore makes those steps explicit 
 
 Package tests also verify shared reader compatibility, exclusion of writers that never call a query, old/new
 scope protection, and exclusive consolidation across mapped views before query validation. Constructor injection
-works in a dumped container; unknown columns and conflicting definitions fail compilation. Guards remain held
+works in a dumped container; unknown property paths and conflicting definitions fail compilation. Guards remain held
 until transaction completion and use their own namespace. The direct flavor joins the
 same deterministic competing-kernel tests as the decision variants: overlap, quota drain, plan downgrade and
 unrelated bookings.
 
-The query guard contract supports non-null scalar scope values on registered row tables, requires
-observed scopes for existing-row mutations and rejects blind upserts. It does not derive composite or calendar
-scopes or enroll independently flushed row sets and collection-item tables. See
+The query guard contract supports non-null scalar scope values on registered root and declared collection tables.
+Existing-row mutations require known scopes; identifier scopes are available from row keys, while other scopes
+require observations. It does not derive composite or calendar scopes or enroll independently flushed row sets. See
 [the query guard documentation](../../docs/stored-state/query-guards.md) for the complete contract and test commands.
 
 ## 11. StateStore decisions with guarded queries

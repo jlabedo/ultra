@@ -55,23 +55,22 @@ use Ultra\StateStore\QueryGuardDefinition;
 public function __construct(
     #[DefineQueryGuard('company_usage', static function (QueryGuardDefinition $definition): void {
         $definition
-            ->watch(Booking::class, keyBy: 'company_id')
-            ->whenColumnsChange('charged', 'start_at', 'end_at');
+            ->watch(Booking::class, scopeBy: 'companyId')
+            ->whenPropertiesChange('charged', 'start', 'end');
     })]
     private QueryGuard $companyUsage,
 ) {}
 ```
 
 The configuration closure runs during compilation, after state metadata is available. Use it to declare mapped
-dependencies, without reading application data or requiring runtime services. The compiler validates columns,
+dependencies, without reading application data or requiring runtime services. The compiler validates property paths and collections,
 registers the writer rules in `StateTableRegistry` and injects the guard. A dumped container retains plain metadata
 and ordinary guard services; it does not replay the configuration closures at runtime.
 
 Compilation fails with `LogicException` for an empty name, a parameter with another type, an empty definition,
-an unregistered watched state, an unknown physical column, conflicting definitions for the same name, or a
-missing `GuardLockAdapter`. `whenColumnsChange()` with no arguments raises `InvalidArgumentException`.
-Repeated names must produce identical compiled scopes; declaration order and watched-column order are sorted,
-but duplicate `watch()` entries are not removed. Prefer one consistent declaration per query dependency.
+an unregistered watched state, an unknown mapped property or collection, a collection scope outside the owner identifier, conflicting definitions for the same name, or a
+missing `GuardLockAdapter`. `whenPropertiesChange()` with no arguments raises `InvalidArgumentException`.
+Repeated names must produce identical compiled scopes; dependency order and duplicates are normalized. Prefer one consistent declaration per query dependency.
 
 The developer supplies complete query dependencies; the compiler does not inspect SQL. Read the [query guard
 contract](query-guards.md) for decision ordering, replay, exceptions and the supported scope.

@@ -166,6 +166,55 @@ final class PostgresQueryGuardTest extends PostgresMappedRowSetTestCase
         });
     }
 
+    public static function collectionMutations(): iterable
+    {
+        foreach (['insert', 'update', 'delete', 'empty'] as $mutation) {
+            yield $mutation => [$mutation];
+        }
+    }
+
+    #[DataProvider('collectionMutations')]
+    public function test_collection_writers_participate_without_calling_the_guarded_query(string $mutation): void
+    {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName) use ($mutation): void {
+            $connection->executeStatement('ALTER TABLE '.$tableName.' ADD UNIQUE (status, version_a, id)');
+            $this->insertRow($connection, $tableName, ['id' => 'read', 'status' => 'acme', 'version_a' => 'editor', 'note' => 'old']);
+            $collection = new \Ultra\StateStore\StateCollectionMetadata('permissions', $tableName, 'permissions', false,
+                ['tenantId' => 'status', 'roleId' => 'version_a'], \stdClass::class, 'id', true, ['id' => 'id'], ['note' => 'note']);
+            $state = new \Ultra\StateStore\StateMetadata(\stdClass::class, $tableName, 'root', 'id', \stdClass::class, false,
+                ['tenantId' => 'status', 'roleId' => 'version_a'], [], [], collections: ['permissions' => $collection]);
+            $definition = new \Ultra\StateStore\QueryGuardDefinition();
+            $definition->watch(\stdClass::class, scopeBy: 'id.tenantId')->whenPropertiesChange('permissions');
+            $definitions = ['collection_usage' => $definition->compile(new \Ultra\StateStore\StateMetadataRegistry([\stdClass::class => $state]))];
+            $reader = new StateTableRegistry(['root' => $table], queryGuardDefinitions: $definitions, guardLockAdapter: new PostgresGuardLockAdapter($connection));
+            $guard = new QueryGuard($reader, 'collection_usage');
+            $guard->observe('acme', fn (): int => (int) $connection->fetchOne('SELECT count(*) FROM '.$tableName));
+            $other = PostgresTestSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
+            $writer = new StateTableRegistry([], new \Ultra\MappedTable\PostgresMappedRowSetAdapterFactory($other), $definitions, new PostgresGuardLockAdapter($other));
+            $items = $writer->collectionFor($collection, ['tenantId' => 'acme', 'roleId' => 'editor']);
+            $key = new \Ultra\MappedTable\MappedKey(['status' => 'acme', 'version_a' => 'editor', 'id' => 'insert' === $mutation ? 'write' : 'read']);
+            match ($mutation) {
+                'insert' => $items->withKey($key)->insert()->setColumn('note', 'new'),
+                'update' => $items->withKey($key)->expectColumnValue('note', 'old')->setColumn('note', 'new'),
+                'delete' => $items->withKey($key)->delete(),
+                'empty' => $items->reconcileRows([]),
+            };
+            try {
+                $connection->beginTransaction();
+                $reader->flush();
+                $this->assertGuardBlocks($other, $writer);
+                $connection->commit();
+                $this->flushWithTimeout($other, $writer);
+                $reader->clear();
+                $count = (int) $connection->fetchOne('SELECT count(*) FROM '.$tableName);
+                self::assertSame(match ($mutation) { 'insert' => 2, 'update' => 1, default => 0 }, $count);
+            } finally {
+                PostgresTestSupport::resetSharedConnection($other);
+                $other->close();
+            }
+        });
+    }
+
     private function registry(Connection $connection, MappedRowSet $table): StateTableRegistry
     {
         return new StateTableRegistry(['test' => $table], queryGuardDefinitions: $this->definitions(), guardLockAdapter: new PostgresGuardLockAdapter($connection));

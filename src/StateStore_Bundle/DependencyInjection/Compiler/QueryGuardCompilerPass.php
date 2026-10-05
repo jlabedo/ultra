@@ -12,7 +12,6 @@ use Ultra\StateStore\Attribute\DefineQueryGuard;
 use Ultra\StateStore\GuardLockAdapter;
 use Ultra\StateStore\QueryGuard;
 use Ultra\StateStore\QueryGuardDefinition;
-use Ultra\StateStore\StateMetadata;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateTableRegistry;
 
@@ -52,21 +51,7 @@ final class QueryGuardCompilerPass implements CompilerPassInterface
                 if ([] === $builder->scopes) {
                     throw new \LogicException('Query guard "'.$attribute->name.'" has no watched states.');
                 }
-                $scopes = [];
-                foreach ($builder->scopes as $scope) {
-                    $state = isset($metadata[$scope->stateClass]) ? StateMetadata::fromArray($metadata[$scope->stateClass]) : null;
-                    if (null === $state) {
-                        throw new \LogicException('Query guard "'.$attribute->name.'" watches an unregistered state: '.$scope->stateClass);
-                    }
-                    $known = [...$state->keyColumns(), ...$state->selectedColumns()];
-                    foreach ([$scope->keyBy, ...($scope->columns ?? [])] as $column) {
-                        if (!in_array($column, $known, true)) {
-                            throw new \LogicException(sprintf('Unknown column "%s" on state "%s" for query guard "%s".', $column, $scope->stateClass, $attribute->name));
-                        }
-                    }
-                    $scopes[] = ['tableKey' => $state->tableKey, 'keyBy' => $scope->keyBy, 'columns' => $scope->columns];
-                }
-                usort($scopes, static fn (array $left, array $right): int => $left <=> $right);
+                $scopes = $builder->compile(new StateMetadataRegistry($metadata));
                 if (isset($guards[$attribute->name]) && $guards[$attribute->name] !== $scopes) {
                     throw new \LogicException('Conflicting definitions for query guard "'.$attribute->name.'".');
                 }

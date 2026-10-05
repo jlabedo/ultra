@@ -17,14 +17,6 @@
   des collections du State supprimé. Couvrir la suppression et les conflits avec
   des tests en mémoire et Postgres.
 
-- [ ] Améliorer l'API déclarative des query guards de StateStore pour exprimer
-  les dépendances dans le modèle objet : par exemple
-  `watch(RoleState::class, scopeBy: 'id.tenantId')`,
-  `whenPropertiesChange('active')` et `whenCollectionChanges('permissions')`.
-  Résoudre les chemins de propriétés et les noms de collections vers leur
-  mapping physique, et combiner les dépendances comme un OU. Couvrir les
-  mutations des collections et conserver la granularité des gardes par scope.
-
 - [ ] Relier les métadonnées StateStore à Schema pour dériver le schéma de base
   (identifiants composites, colonnes et tables des collections), avec déclaration
   des index, contraintes uniques et références. Les exemples coworking et IAM

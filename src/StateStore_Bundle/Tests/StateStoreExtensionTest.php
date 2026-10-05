@@ -124,10 +124,10 @@ final class StateStoreExtensionTest extends TestCase
     {
         $container = $this->createContainer(withQueryGuard: true);
         $store = $container->get('test.state_store');
-        // A blind upsert might create or replace a row: its old scope is unknown.
+        // The identifier scope is known even for a blind upsert; its writer guard needs a transaction.
         $store->save(new BundleOrderState('one', 'pending', 'draft'));
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('orders_status');
+        $this->expectExceptionMessage('active transaction');
         $container->get(UnitOfWork::class)->flush();
     }
 
@@ -138,10 +138,10 @@ final class StateStoreExtensionTest extends TestCase
         $this->createContainer(withQueryGuard: true, withGuardAdapter: false);
     }
 
-    public function test_unknown_guard_columns_are_rejected_during_compilation(): void
+    public function test_unknown_guard_properties_are_rejected_during_compilation(): void
     {
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('Unknown column "missing"');
+        $this->expectExceptionMessage('Unknown mapped property "missing"');
         $this->createContainer(extraGuardRepository: BundleInvalidGuardRepository::class);
     }
 
@@ -261,7 +261,7 @@ final readonly class BundleGuardedRepository
     public function __construct(
         private InMemoryRowDatabase $database,
         #[DefineQueryGuard('orders_status', static function (QueryGuardDefinition $definition): void {
-            $definition->watch(BundleOrderState::class, keyBy: 'order_id')->whenColumnsChange('status');
+            $definition->watch(BundleOrderState::class, scopeBy: 'orderId')->whenPropertiesChange('status');
         })]
         private QueryGuard $statusGuard,
     ) {}
@@ -276,7 +276,7 @@ final readonly class BundleInvalidGuardRepository
 {
     public function __construct(
         #[DefineQueryGuard('invalid', static function (QueryGuardDefinition $definition): void {
-            $definition->watch(BundleOrderState::class, keyBy: 'order_id')->whenColumnsChange('missing');
+            $definition->watch(BundleOrderState::class, scopeBy: 'orderId')->whenPropertiesChange('missing');
         })]
         private QueryGuard $guard,
     ) {}
@@ -286,7 +286,7 @@ final readonly class BundleConflictingGuardRepository
 {
     public function __construct(
         #[DefineQueryGuard('orders_status', static function (QueryGuardDefinition $definition): void {
-            $definition->watch(BundleOrderState::class, keyBy: 'order_id')->whenColumnsChange('note');
+            $definition->watch(BundleOrderState::class, scopeBy: 'orderId')->whenPropertiesChange('note');
         })]
         private QueryGuard $guard,
     ) {}

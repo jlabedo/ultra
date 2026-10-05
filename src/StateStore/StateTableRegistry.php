@@ -21,6 +21,9 @@ final class StateTableRegistry implements UnitOfWork
     /** @var array<string, MappedRowSet> */
     private array $collectionTables = [];
 
+    /** @var array<string, array{tableKey: string, scope: MappedKey}> */
+    private array $collectionScopes = [];
+
     /** @var list<array{query: \Closure, expected: mixed, name: ?string}> */
     private array $queryExpectations = [];
 
@@ -67,6 +70,7 @@ final class StateTableRegistry implements UnitOfWork
 
         $scope = $collection->ownerKey($normalizedOwnerId);
         $key = $collection->tableKey.'#'.$scope->fingerprint();
+        $this->collectionScopes[$key] = ['tableKey' => $collection->tableKey, 'scope' => $scope];
 
         return $this->collectionTables[$key] ??= new MappedRowSet($this->adapterFactory->createScoped(
             $collection->tableName,
@@ -77,7 +81,7 @@ final class StateTableRegistry implements UnitOfWork
 
     public function flush(): void
     {
-        foreach (QueryGuardWriteRules::requests($this->updatePlans(), $this->queryGuardDefinitions) as $request) {
+        foreach (QueryGuardWriteRules::requests($this->updatePlans(), $this->queryGuardDefinitions, $this->reconciliationScopes()) as $request) {
             $this->guard($request['name'], $request['value'], GuardLockMode::EXCLUSIVE);
         }
         $this->acquireGuards();
@@ -95,7 +99,7 @@ final class StateTableRegistry implements UnitOfWork
     public function assertQueryCanBeObserved(string $name, int|string $value): void
     {
         $scopes = $this->queryGuardScopes($name);
-        foreach (QueryGuardWriteRules::requests($this->updatePlans(), [$name => $scopes]) as $request) {
+        foreach (QueryGuardWriteRules::requests($this->updatePlans(), [$name => $scopes], $this->reconciliationScopes()) as $request) {
             if ((string) $request['value'] === (string) $value) {
                 throw new PendingQueryChangesException($name, $value, $request['tableKey'], $request['key']);
             }
@@ -116,7 +120,29 @@ final class StateTableRegistry implements UnitOfWork
     /** @return array<string, RowSetUpdatePlan> */
     private function updatePlans(): array
     {
-        return array_map(static fn (MappedRowSet $table): RowSetUpdatePlan => $table->updatePlan(), $this->tables);
+        $plans = array_map(static fn (MappedRowSet $table): RowSetUpdatePlan => $table->updatePlan(), $this->tables);
+        foreach ($this->collectionTables as $key => $table) {
+            $tableKey = $this->collectionScopes[$key]['tableKey'];
+            $plans[$tableKey] = new RowSetUpdatePlan(null, [
+                ...($plans[$tableKey]->rowUpdates ?? []), ...$table->updatePlan()->rowUpdates,
+            ]);
+        }
+
+        return $plans;
+    }
+
+    /** @return array<string, list<MappedKey>> */
+    private function reconciliationScopes(): array
+    {
+        $scopes = [];
+        foreach ($this->collectionTables as $key => $table) {
+            if (null !== $table->updatePlan()->retainedRowKeys) {
+                $context = $this->collectionScopes[$key];
+                $scopes[$context['tableKey']][] = $context['scope'];
+            }
+        }
+
+        return $scopes;
     }
 
     private function acquireGuards(): void
@@ -183,6 +209,7 @@ final class StateTableRegistry implements UnitOfWork
         }
 
         $this->collectionTables = [];
+        $this->collectionScopes = [];
         $this->queryExpectations = [];
         $this->guards = [];
         $this->locks = [];

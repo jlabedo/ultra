@@ -22,14 +22,14 @@ final readonly class BookingRepository
         private StateStore $states,
         #[DefineQueryGuard('state_store_company_usage', static function (QueryGuardDefinition $definition): void {
             $definition
-                ->watch(BookingState::class, keyBy: 'company_id')
-                ->whenColumnsChange('charged', 'start_at', 'end_at');
+                ->watch(BookingState::class, scopeBy: 'companyId')
+                ->whenPropertiesChange('charged', 'start', 'end');
         })]
         private QueryGuard $companyUsage,
         #[DefineQueryGuard('state_store_room_bookings', static function (QueryGuardDefinition $definition): void {
             $definition
-                ->watch(BookingState::class, keyBy: 'room_id')
-                ->whenColumnsChange('status', 'start_at', 'end_at');
+                ->watch(BookingState::class, scopeBy: 'roomId')
+                ->whenPropertiesChange('status', 'start', 'end');
         })]
         private QueryGuard $roomBookings,
     ) {}
