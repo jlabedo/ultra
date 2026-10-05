@@ -28,6 +28,13 @@ if (!is_file($toolBinary)) {
     exit(1);
 }
 
+if ($toolName === 'phpunit') {
+    // Keep Infection's interpreter options and coverage extensions in the PHPUnit process.
+    require $toolBinary;
+
+    exit(0);
+}
+
 exit(run(array_merge([PHP_BINARY, $toolBinary], array_slice($_SERVER['argv'], 1))));
 
 /**
