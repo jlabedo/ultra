@@ -272,7 +272,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
                 ['course_id' => $rightCourseId, 'name' => 'Physics 201'],
             ], $rows);
             self::assertSame([], $activity->pendingInSegment('course_names', 0, 255));
-            self::assertFalse($leases->hasLiveCoordinator());
+            self::assertFalse($leases->hasLiveCoordinator(ProjectionCoordinator::COORDINATOR_KEY));
         });
     }
 

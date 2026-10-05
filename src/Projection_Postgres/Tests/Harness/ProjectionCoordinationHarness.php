@@ -61,7 +61,7 @@ final readonly class HarnessCourseNamesProjection
         private string $tableName,
     ) {
         $this->table = new MappedRowSet(
-            new PostgresMappedRowSetAdapter($this->connection, $this->tableName, 'course_id'),
+            new PostgresMappedRowSetAdapter($this->connection, $this->tableName, ['course_id']),
         );
     }
 
