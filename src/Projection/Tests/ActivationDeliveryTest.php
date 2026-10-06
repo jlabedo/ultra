@@ -4,64 +4,22 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests;
 
-use PHPUnit\Framework\Attributes\CoversClass;
-use Ultra\Events\Attribute\Event as EventAttribute;
+use PHPUnit\Framework\Attributes\CoversNamespace;
 use Ultra\EventStore\Event;
-use Ultra\MessageHandling\MediatorInterface;
-use Ultra\MessageHandling\MessageContext;
-use Ultra\Projection\Attribute\Projection;
-use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\MessageHandling\MessageHandlingProjectionActivator;
 use Ultra\Projection\MessageHandling\ProjectionMessageHandler;
 use Ultra\Projection\MessageHandling\RunProjectionSegment;
 use Ultra\Projection\MessageHandling\WakeProjectionCoordinator;
-use Ultra\Projection\Tests\Support\ProjectionFunctionalTestCase;
+use Ultra\Projection\Tests\Support\MessageHandlingTrackingProjection;
+use Ultra\Projection\Tests\Support\ProjectionTestCase;
+use Ultra\Projection\Tests\Support\RecordingMediator;
 
-final class RecordingMediator implements MediatorInterface
+/** @internal */
+#[CoversNamespace('Ultra\\Projection')]
+#[CoversNamespace('Ultra\\Projection_Postgres')]
+final class ActivationDeliveryTest extends ProjectionTestCase
 {
-    /** @var list<object> */
-    public array $messages = [];
-
-    public function send(object $message, array|MessageContext $context = []): mixed
-    {
-        $this->messages[] = $message;
-
-        return null;
-    }
-}
-
-#[EventAttribute('message_handling_projection.course_created')]
-final readonly class MessageHandlingProjectionCourseCreated
-{
-    public function __construct(
-        public string $courseId,
-        public string $name,
-    ) {}
-}
-
-#[Projection(name: 'message_handling_tracking_projection', partitionBy: 'courseId')]
-final class MessageHandlingTrackingProjection
-{
-    /** @var array<string, string> */
-    public array $names = [];
-
-    #[ProjectionHandler]
-    public function onCourseCreated(MessageHandlingProjectionCourseCreated $event): void
-    {
-        $this->names[$event->courseId] = $event->name;
-    }
-}
-
-/**
- * @internal
- */
-#[CoversClass(MessageHandlingProjectionActivator::class)]
-#[CoversClass(ProjectionMessageHandler::class)]
-#[CoversClass(RunProjectionSegment::class)]
-#[CoversClass(WakeProjectionCoordinator::class)]
-final class MessageHandlingProjectionIntegrationTest extends ProjectionFunctionalTestCase
-{
-    public function test_activator_dispatches_wake_and_segment_messages_through_the_mediator(): void
+    public function test_activation_delivers_a_wakeup_or_a_specific_durable_worker_claim(): void
     {
         $mediator = new RecordingMediator();
         $activator = new MessageHandlingProjectionActivator($mediator, 'test-projection');
@@ -79,7 +37,7 @@ final class MessageHandlingProjectionIntegrationTest extends ProjectionFunctiona
         );
     }
 
-    public function test_projection_segment_message_runs_the_claimed_projection_segment(): void
+    public function test_a_delivered_segment_message_catches_up_and_acknowledges_its_claim(): void
     {
         $projection = new MessageHandlingTrackingProjection();
         $container = $this->projectionUltraLight()
@@ -99,7 +57,7 @@ final class MessageHandlingProjectionIntegrationTest extends ProjectionFunctiona
             maxCycles: 3,
         );
 
-        $event = self::courseCreatedEvent('course-1', 'Intro to Projections');
+        $event = self::messageEvent('course-1', 'Intro to Projections');
         $eventStore->append([$event]);
 
         $runner->ensureInitialized($runtime);
@@ -111,7 +69,7 @@ final class MessageHandlingProjectionIntegrationTest extends ProjectionFunctiona
         self::assertSame([], $activity->pendingInSegment($runtime->projectionId(), 0, 255));
     }
 
-    private static function courseCreatedEvent(string $courseId, string $name): Event
+    private static function messageEvent(string $courseId, string $name): Event
     {
         return new Event(
             eventType: 'message_handling_projection.course_created',

@@ -4,17 +4,16 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests;
 
-use PHPUnit\Framework\Attributes\CoversClass;
-use PHPUnit\Framework\TestCase;
+use PHPUnit\Framework\Attributes\CoversNamespace;
 use Ultra\Projection\InMemory\InMemoryProjectionCoordinatorLeaseRepository;
+use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
 
-/**
- * @internal
- */
-#[CoversClass(InMemoryProjectionCoordinatorLeaseRepository::class)]
-final class InMemoryProjectionCoordinatorLeaseRepositoryTest extends TestCase
+/** @internal */
+#[CoversNamespace('Ultra\\Projection')]
+#[CoversNamespace('Ultra\\Projection_Postgres')]
+final class LeaderLivenessTest extends ProjectionTestCase
 {
     public function test_expired_lease_can_be_reacquired_after_advancing_the_injected_clock(): void
     {

@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection_Postgres\Tests;
+namespace Ultra\Projection\Tests;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\Group;
-use Ultra\Events\Attribute\Event as EventAttribute;
+use Ultra\Coordination\Lease\CoordinatorLease;
+use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease;
+use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTracker;
 use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Checkpoint;
@@ -16,21 +18,17 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\Projection\Attribute\Projection;
-use Ultra\Projection\Attribute\ProjectionHandler;
-use Ultra\Projection\Attribute\ProjectionInitializer;
-use Ultra\Coordination\Lease\CoordinatorLease;
-use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease;
-use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTracker;
 use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionCoordinatorResult;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\ProjectionCatalog;
-use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRunResult;
+use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\Tests\Support\ConcurrencyCourseNamesProjection;
+use Ultra\Projection\Tests\Support\PostgresProjectionTestCase;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
 use Ultra\Testing\Concurrent\Cluster;
@@ -38,56 +36,11 @@ use Ultra\Testing\PostgresTestSupport;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
 
-#[EventAttribute('course.created')]
-final readonly class ConcurrencyCourseCreated
-{
-    public function __construct(
-        public string $courseId,
-        public string $name,
-    ) {}
-}
-
-#[Projection(name: 'course_names', partitionBy: 'courseId')]
-final class ConcurrencyCourseNamesProjection
-{
-    public function __construct(
-        private readonly Connection $connection,
-        private readonly string $tableName,
-    ) {}
-
-    #[ProjectionInitializer]
-    public function initialize(): void
-    {
-        $this->connection->executeStatement(sprintf(
-            'CREATE TABLE IF NOT EXISTS %s (
-                course_id TEXT PRIMARY KEY,
-                name      TEXT NOT NULL
-            )',
-            $this->tableName,
-        ));
-    }
-
-    #[ProjectionHandler]
-    public function onCourseCreated(ConcurrencyCourseCreated $event): void
-    {
-        $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (course_id, name) VALUES (?, ?)
-                 ON CONFLICT (course_id) DO UPDATE SET name = EXCLUDED.name',
-                $this->tableName,
-            ),
-            [$event->courseId, $event->name],
-        );
-    }
-}
-
-/**
- * @internal
- */
+/** @internal */
 #[CoversNothing]
 #[Group('slow')]
 #[Group('projection-concurrency')]
-final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProjectionTestCase
+final class ConcurrentExecutionTest extends PostgresProjectionTestCase
 {
     public function test_leader_and_follower_can_process_different_segments_concurrently(): void
     {
@@ -396,7 +349,7 @@ final class PostgresProjectionCoordinatorConcurrencyTest extends PostgresProject
         $right = null;
 
         for ($i = 0; $i < 1024; ++$i) {
-            $courseId = 'course-'.$i;
+            $courseId = 'projection-concurrency-course-'.$i;
             $bucket = BucketHasher::bucketFor($courseId);
 
             if (null === $left && $bucket < 128) {

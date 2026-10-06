@@ -2,31 +2,64 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Projection_Postgres\Tests;
+namespace Ultra\Projection\Tests;
 
 use Doctrine\DBAL\Connection;
+use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\Group;
 use Symfony\Component\Console\Application;
 use Symfony\Component\Console\Input\ArrayInput;
 use Symfony\Component\Console\Output\BufferedOutput;
-use Ultra\EventStore\EventStore;
-use Ultra\Projection\ProjectionRunner;
+use Symfony\Component\Console\Tester\CommandTester;
 use Ultra\Coordination\Lease\CoordinatorLease;
+use Ultra\EventStore\EventStore;
+use Ultra\Projection\Bundle\Command\ListSegmentsCommand;
 use Ultra\Projection\Coordination\ProjectionActivity;
+use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
+use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\Tests\Support\PostgresProjectionTestCase;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\Tests\Harness\ProjectionCoordinationHarness;
 use Ultra\Testing\PostgresTestSupport;
 
-require_once __DIR__.'/Harness/ProjectionCoordinationHarness.php';
-
-/**
- * @internal
- */
-#[CoversNothing]
-#[Group('slow')]
-final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestCase
+/** @internal */
+#[CoversNamespace('Ultra\\Projection')]
+#[CoversNamespace('Ultra\\Projection_Postgres')]
+final class OperatorCommandsTest extends PostgresProjectionTestCase
 {
+    public function test_lists_segments_from_the_projection_segment_repository(): void
+    {
+        $repository = new InMemoryProjectionSegmentRepository();
+        $repository->ensureInitialized('course_names');
+        $repository->splitSegment('course_names', 0);
+        self::assertNotNull($repository->claimSegment('course_names', 128, 'worker-1'));
+
+        $tester = new CommandTester(new ListSegmentsCommand($repository));
+
+        self::assertSame(0, $tester->execute(['projection-id' => 'course_names']));
+
+        $output = $tester->getDisplay();
+        self::assertStringContainsString('bucket_from', $output);
+        self::assertStringContainsString('bucket_to', $output);
+        self::assertStringContainsString('0', $output);
+        self::assertStringContainsString('127', $output);
+        self::assertStringContainsString('128', $output);
+        self::assertStringContainsString('255', $output);
+        self::assertStringContainsString('worker-1', $output);
+    }
+
+    public function test_reports_when_a_projection_has_no_segments(): void
+    {
+        $tester = new CommandTester(new ListSegmentsCommand(new InMemoryProjectionSegmentRepository()));
+
+        self::assertSame(0, $tester->execute(['projection-id' => 'course_names']));
+
+        self::assertStringContainsString('No segments found for "course_names".', $tester->getDisplay());
+    }
+
+    #[Group('slow')]
+    #[CoversNothing]
     public function test_manual_harness_command_creates_schema_runs_backfill_and_leaves_tables_available(): void
     {
         $dsn = $this->postgresDsn();
@@ -37,7 +70,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
             $dsn,
             $eventStorePrefix,
             $projectionPrefix,
-            __DIR__.'/Harness/projection-coordination-harness',
+            dirname(__DIR__, 2).'/Projection_Postgres/Tests/Harness/projection-coordination-harness',
         );
 
         try {
@@ -113,6 +146,8 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
         }
     }
 
+    #[Group('slow')]
+    #[CoversNothing]
     public function test_console_backfill_command_spawns_process_workers_until_seeded_events_are_projected(): void
     {
         $this->withPostgresProjectionCoordinatorRuntime(function (
@@ -129,7 +164,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
                 $this->postgresDsn(),
                 $eventStorePrefix,
                 $projectionPrefix,
-                __DIR__.'/Harness/projection-coordination-harness',
+                dirname(__DIR__, 2).'/Projection_Postgres/Tests/Harness/projection-coordination-harness',
             );
 
             [$seedCode, $seedOutput] = $this->runHarnessCommand($application, [
@@ -175,6 +210,7 @@ final class PostgresProjectionProcessHarnessTest extends PostgresProjectionTestC
      *
      * @return array{0: int, 1: string}
      */
+
     private function runHarnessCommand(Application $application, array $input): array
     {
         $output = new BufferedOutput();
