@@ -236,9 +236,9 @@ All projection suites live in [src/Projection/Tests](../../src/Projection/Tests)
 | Deduplicated activity and acknowledgement of observed counters | [ActivityAcknowledgementTest](../../src/Projection/Tests/ActivityAcknowledgementTest.php) |
 | Leader processing, worker scaling, fairness and loop termination | [CoordinationSchedulingTest](../../src/Projection/Tests/CoordinationSchedulingTest.php) |
 | Standalone projection lease expiry and wake debounce | [LeaderLivenessTest](../../src/Projection/Tests/LeaderLivenessTest.php) |
-| Concurrent leader/follower execution and leader takeover | [ConcurrentExecutionTest](../../src/Projection/Tests/ConcurrentExecutionTest.php) |
+| Concurrent leader/follower execution across independent segments | [ConcurrentExecutionTest](../../src/Projection/Tests/ConcurrentExecutionTest.php) |
 | Catalog lookup, Symfony discovery and activity-enabled append | [ProjectionRegistrationTest](../../src/Projection/Tests/ProjectionRegistrationTest.php) |
 | Delivery of coordinator wakeups and durable worker claims | [ActivationDeliveryTest](../../src/Projection/Tests/ActivationDeliveryTest.php) |
 | Segment listing, process backfill and reset commands | [OperatorCommandsTest](../../src/Projection/Tests/OperatorCommandsTest.php) |
 
-Run the fast suites with `bin/phpunit src/Projection/Tests`; use `--group slow` for the Postgres process scenarios. The process harness remains in [Projection_Postgres/Tests/Harness](../../src/Projection_Postgres/Tests/Harness) for direct console use. The event-store and generic coordination contracts remain owned by their contexts; Projection verifies their composition.
+Run the fast suites with `bin/phpunit src/Projection/Tests`; use `--group slow` for the Postgres process scenarios. The process harness remains in [Projection_Postgres/Tests/Harness](../../src/Projection_Postgres/Tests/Harness) for direct console use. The event-store and generic coordination contracts remain owned by their contexts; Projection verifies their composition. Lease expiry and takeover belong to [Coordination’s ownership suite](../../src/Coordination/Tests/LeaseOwnershipTest.php).

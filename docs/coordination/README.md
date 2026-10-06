@@ -54,7 +54,7 @@ Implementations: `InMemory\InMemoryCoordinatorLease`,
 The Postgres implementation currently serializes access to an existing
 coordinator row. On an absent key, simultaneous callers can both return true
 from `acquire()` or `markWakeEnqueued()`: exclusive ownership and wake debounce
-do not hold during that first-row race.
+do not hold during that first-row race. Corrections are tracked in [TODO](../../TODO.md).
 
 ### `Lease\Activator`
 
