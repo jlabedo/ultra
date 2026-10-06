@@ -116,3 +116,17 @@ try {
 The package stays intentionally small so concrete packages can implement their own buffering, locking, and validation strategies without forcing a bigger shared protocol.
 
 For service registration, read [Symfony wiring](symfony.md).
+
+## Guarantee suites
+
+The context's runtime and container guarantees live together under `src/UnitOfWork/Tests`.
+
+| Guarantee | Suite and useful variants |
+| --- | --- |
+| Components retain caller order for flush and clear; pending work is aggregated; work finishes before the flush transaction and always clears | [FlushCoordinationTest](../../src/UnitOfWork/Tests/FlushCoordinationTest.php): keyed arrays, generators with repeated keys, empty/clean/dirty components, success, work failure and flush failure |
+| A transaction manager owns commit/rollback, preserves callback results and failures, rejects external transactions and restores isolation | [TransactionOwnershipTest](../../src/UnitOfWork/Tests/TransactionOwnershipTest.php): real Postgres transactions with connection, overridden and identical isolation; the no-op implementation preserves callback semantics |
+| Nested work shares the outer boundary; caught failures or explicit rollback-only prevent flushing; later runs start clean | [NestedWorkTest](../../src/UnitOfWork/Tests/NestedWorkTest.php): success, propagated/caught failures, active and idle rollback-only requests, runner reuse |
+| Compiled handlers and hooks share one work boundary and retain caller context | [HandlerWorkBoundaryTest](../../src/UnitOfWork/Tests/HandlerWorkBoundaryTest.php): commands, queries, synchronous events, asynchronous consumers, hook writes and handler/flush failures |
+| Container assembly collects participants in priority order, decorates the event store and supplies the runner and default transaction manager | [ContainerCompositionTest](../../src/UnitOfWork/Tests/ContainerCompositionTest.php): autoconfiguration, explicit tags, priority, flush and clear |
+
+[Local support](../../src/UnitOfWork/Tests/Support) shares call recording and container setup without moving assertions out of the suites. Compiled test artifacts use a separate directory per case; Postgres tables are temporary and scoped to each connection. Storage semantics remain owned by EventStore, MappedTable, StateStore and MessageHandling; these suites verify their coordination boundaries and assembly. Follow the shared [test-refactoring rules](../development.md#refactoring-tests) when changing this map.
