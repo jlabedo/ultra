@@ -35,11 +35,12 @@ final class MessageRouterGenerator
     /**
      * Generate the PHP source and write it to disk.
      *
-     * The class name is derived from a content hash of the generated code:
+     * The class name is derived from the output directory and generated code:
      * the code is first built with a placeholder, hashed, and the placeholder
      * is replaced with the final name ({baseName}_{hash}). This ensures the
      * filename changes when the generated code changes (cache invalidation)
-     * and stays stable when it doesn't.
+     * and stays stable within a build directory when it doesn't. Independent
+     * build directories have distinct class identities, even for identical code.
      *
      * @param array<class-string, list<string>|string> $routes message class → handler service ID (single) or list of IDs (multi)
      *

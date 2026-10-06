@@ -78,7 +78,6 @@ The coexistence cases compile the same fixtures twice, remove the first applicat
 verify that both applications remain usable with independent state.
 
 The test bus is injected through `EventBusInterface`, including as a synthetic service in dumped containers.
-It avoids the [compiled-router loading limitation](README.md#compiled-artifacts) of the empty event bus.
 Publication ordering and context propagation still use the instrumented bus in `EventPublicationTest`;
 the routing guarantees belong to [MessageHandling](README.md#guarantee-suites).
 

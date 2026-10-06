@@ -15,9 +15,12 @@ See [MediatorInterface](../../src/MessageHandling/Runtime/MediatorInterface.php)
 
 ## Compiled artifacts
 
-Generated routers use class names derived from their content. Loading identical router classes from
-different build directories in the same PHP process currently fails with a class redeclaration; two
-applications with empty event buses reproduce this limitation. The correction is tracked in [TODO](../../TODO.md).
+Generated routers and handlers use class names derived from their content and output directory.
+The same compilation in the same directory retains stable identities; changing generated code changes
+the identity. Independent build directories have distinct identities, so applications with identical
+routers, including empty mediators and event buses, can coexist in the same PHP process. Contextual
+wrappers also include the output directory in their identities, and each application's routers resolve
+its own handler services.
 
 ## Guarantee suites
 

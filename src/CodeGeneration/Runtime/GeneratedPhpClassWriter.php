@@ -11,6 +11,9 @@ final class GeneratedPhpClassWriter
     ) {}
 
     /**
+     * Class identities depend on the generated content and output directory so
+     * independent builds can be loaded in the same process.
+     *
      * @param callable(string): string $buildCode Receives the temporary class-name placeholder.
      *
      * @return array{className: string, filePath: string}
@@ -18,9 +21,10 @@ final class GeneratedPhpClassWriter
     public function writeContentAddressed(string $baseName, string $outputDir, callable $buildCode, string $placeholder): array
     {
         $code = $buildCode($placeholder);
-        $className = $baseName.'_'.substr(sha1($code), 0, 8);
+        $outputDir = rtrim($outputDir, '/');
+        $className = $baseName.'_'.substr(sha1($outputDir."\0".$code), 0, 8);
         $code = str_replace($placeholder, $className, $code);
-        $filePath = rtrim($outputDir, '/').'/'.$className.'.php';
+        $filePath = $outputDir.'/'.$className.'.php';
 
         $this->fileWriter->write($filePath, $code);
 
