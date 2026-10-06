@@ -9,7 +9,6 @@
     <testsuite name="Ultra Test Suite">
       <directory suffix="Test.php">./src/*/Tests</directory>
       <directory suffix="Test.php">./tests</directory>
-      <directory suffix="Test.php">./examples/iam/tests</directory>
     </testsuite>
   </testsuites>
   <source>

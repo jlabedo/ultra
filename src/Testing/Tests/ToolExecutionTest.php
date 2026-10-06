@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Ultra\Testing\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
 /** @internal */
+#[Group('slow')]
 final class ToolExecutionTest extends TestCase
 {
     /** @return iterable<string, array{int, int}> */
