@@ -13,8 +13,10 @@ class and its file, so separate compilations can share an artifact directory. Ke
 moving precompiled artifacts to another directory; their identity does not depend on the directory path.
 A class already loaded for that namespace remains reusable, and an instance keeps its generated normalizers
 even when their files are removed. Register runtime normalizers before generating or loading the configuration.
-Within a generation namespace, types whose names become identical when backslashes are replaced by
-underscores still collide; this existing limitation is tracked in [TODO](../../TODO.md).
+Generated class names escape underscores as `__` and namespace separators as `_s`, so types such as
+`Acme\A_B` and `Acme_A\B` remain distinct within the same generation namespace. Literal escape-like
+names such as `Acme\A_sB` also remain distinct from `Acme\A\B`. Precompiled artifacts must use
+the naming scheme of the runtime version loading them.
 
 
 ## Custom normalizers
@@ -23,7 +25,10 @@ Register RuntimeNormalizerInterface implementations during configuration, before
 
 Denormalization checks representation structure, including required properties and scalar types; it is not a business-rule validation engine.
 
-Runtime-normalized objects shared by two properties can currently be rejected as circular references; the correction is tracked in [TODO](../../TODO.md).
+Normalization rejects references to objects still in the active traversal. An object can be shared
+by several properties and normalized at each occurrence once its previous normalization has completed.
+Each call leaves the active traversal when it returns or throws, so a failed normalization does not
+affect subsequent calls.
 
 See [UltraNormalizer](../../src/Mapper/Runtime/UltraNormalizer.php).
 
@@ -35,10 +40,10 @@ The context's runtime, compiler and Symfony guarantees are tested together in `s
 | --- | --- | --- |
 | Representations preserve values in both directions | [RepresentationTest](../../src/Mapper/Tests/RepresentationTest.php) | Scalars, nested objects and value wrappers, keyed collections, unions, nulls, dates, enums, constructor and stored properties, virtual properties. |
 | Invalid data reports its origin | [DenormalizationErrorsTest](../../src/Mapper/Tests/DenormalizationErrorsTest.php) | Required properties, scalar types, collection indices, nested paths, unions, custom normalizers and caller context; path construction with runtime variables. |
-| Traversal rejects cycles and resets after each root call | [NormalizationSafetyTest](../../src/Mapper/Tests/NormalizationSafetyTest.php) | A circular graph, recovery after failure and repeated calls. |
+| Traversal rejects cycles and accepts shared objects | [NormalizationSafetyTest](../../src/Mapper/Tests/NormalizationSafetyTest.php) | A circular graph, shared runtime-normalized properties, recovery after failure and repeated calls. |
 | Normalizer resolution respects configuration and the generated cache | [NormalizerResolutionTest](../../src/Mapper/Tests/NormalizerResolutionTest.php) | Exact registered types at root and in nested generated code, subclasses and late registration. |
 | Generated files are usable runtime artifacts | [CompilationLifecycleTest](../../src/Mapper/Tests/CompilationLifecycleTest.php) | Standalone default cache, first-use generation, instance reuse, loading precompiled files without regeneration and generated class names. |
-| Compilation identities preserve independent configurations | [GenerationIdentityTest](../../src/Mapper/Tests/GenerationIdentityTest.php) | Different runtime configurations in one process and artifact directory; moved precompiled artifacts retain their namespace. |
+| Compilation identities preserve independent configurations and types | [GenerationIdentityTest](../../src/Mapper/Tests/GenerationIdentityTest.php) | Different runtime configurations in one process and artifact directory; types with colliding flattened names or literal escape-like names through first-use generation and precompilation; moved precompiled artifacts retain their namespace. |
 | Shapes describe usable representations for storage compilation | [NormalizationShapeTest](../../src/Mapper/Tests/NormalizationShapeTest.php) | Stored fields, value wrappers, enums, property shapes, precise runtime return types and closed array shapes; rejection of ambiguous shapes. |
 | Symfony configuration produces working compiled normalizers | [ContainerCompilationTest](../../src/Mapper/Tests/ContainerCompilationTest.php) | Resource tags, AsValue autoconfiguration, runtime type tags, class parameters, multiple types and invalid configuration. |
 

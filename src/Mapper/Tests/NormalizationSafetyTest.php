@@ -8,6 +8,9 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use Ultra\Mapper\Exception\CircularReferenceException;
 use Ultra\Mapper\Tests\Fixtures\CircularA;
 use Ultra\Mapper\Tests\Fixtures\CircularB;
+use Ultra\Mapper\Tests\Fixtures\RuntimeEmail;
+use Ultra\Mapper\Tests\Fixtures\RuntimeEmailNormalizer;
+use Ultra\Mapper\Tests\Fixtures\SharedRuntimeEmails;
 use Ultra\Mapper\Tests\Support\MapperTestCase;
 
 /** @internal */
@@ -15,6 +18,21 @@ use Ultra\Mapper\Tests\Support\MapperTestCase;
 #[CoversNamespace('Ultra\Mapper_Compiler')]
 final class NormalizationSafetyTest extends MapperTestCase
 {
+    public function test_runtime_normalized_objects_can_be_shared_by_multiple_properties(): void
+    {
+        $email = new RuntimeEmail('ada@example.test');
+        $object = new SharedRuntimeEmails($email, $email);
+        $normalizer = $this->normalizer();
+        $normalizer->registerRuntimeNormalizer(new RuntimeEmailNormalizer());
+        $representation = [
+            'primary' => 'runtime-email:ada@example.test',
+            'secondary' => 'runtime-email:ada@example.test',
+        ];
+
+        self::assertSame($representation, $normalizer->toScalar($object));
+        self::assertSame($representation, $normalizer->toScalar($object));
+    }
+
     public function test_circular_references_are_rejected_and_traversal_resets_after_failure(): void
     {
         $object = new CircularA();

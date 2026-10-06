@@ -11,7 +11,9 @@ final class GeneratedNormalizerName
 
     public static function forType(string $className, string $generationNamespace): string
     {
-        return trim($generationNamespace, '\\').'\\__Normalizer_'.str_replace('\\', '_', ltrim($className, '\\'));
+        $className = ltrim($className, '\\');
+
+        return trim($generationNamespace, '\\').'\\__Normalizer_'.strtr($className, ['_' => '__', '\\' => '_s']);
     }
 
     public static function cacheFileName(string $normalizerClass): string

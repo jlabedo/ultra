@@ -211,6 +211,11 @@ readonly class CustomerWithRuntimeEmail
     ) {}
 }
 
+readonly class SharedRuntimeEmails
+{
+    public function __construct(public RuntimeEmail $primary, public RuntimeEmail $secondary) {}
+}
+
 
 #[AsValue]
 final class HookedEmail
@@ -395,4 +400,30 @@ class MalformedArrayNormalizer extends ArrayShapeNormalizer
     {
         return ['bad-key' => 1];
     }
+}
+
+namespace Ultra\Mapper\Tests\Fixtures\Collision;
+
+readonly class A_B
+{
+    public function __construct(public int $id) {}
+}
+
+readonly class A_sB
+{
+    public function __construct(public int $id) {}
+}
+
+namespace Ultra\Mapper\Tests\Fixtures\Collision\A;
+
+readonly class B
+{
+    public function __construct(public string $name) {}
+}
+
+namespace Ultra\Mapper\Tests\Fixtures\Collision_A;
+
+readonly class B
+{
+    public function __construct(public string $name) {}
 }

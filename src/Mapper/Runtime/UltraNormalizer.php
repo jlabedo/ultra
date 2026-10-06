@@ -20,7 +20,7 @@ class UltraNormalizer
     /**
      * @var array<int, true>
      */
-    private array $visitedOids = [];
+    private array $activeOids = [];
 
     public function __construct(
         string $cacheDir = __DIR__.'/../../../var/normalizer_cache',
@@ -39,21 +39,18 @@ class UltraNormalizer
      */
     public function toScalar(object $object): mixed
     {
-        $isRootNormalizer = empty($this->visitedOids);
         $oid = spl_object_id($object);
-        if (isset($this->visitedOids[$oid])) {
+        if (isset($this->activeOids[$oid])) {
             throw new CircularReferenceException('Circular reference detected for object id '.$oid);
         }
-        $this->visitedOids[$oid] = true;
+        $this->activeOids[$oid] = true;
 
         try {
             $normalizer = $this->generatedNormalizers[$object::class] ?? $this->runtimeNormalizers[$object::class] ?? $this->createNormalizer($object::class);
 
             return $normalizer->toScalar($object, $this);
         } finally {
-            if ($isRootNormalizer) {
-                $this->visitedOids = [];
-            }
+            unset($this->activeOids[$oid]);
         }
     }
 

@@ -1,14 +1,5 @@
 # TODO
 
-- [ ] Corriger le parcours Mapper pour accepter un même objet normalisé par runtime
-  dans plusieurs propriétés sans le confondre avec un cycle. Distinguer les objets
-  encore dans le parcours actif de ceux déjà visités ; voir [Mapper](docs/mapping/README.md).
-
-- [ ] Distinguer les noms de types Mapper dont l'aplatissement produit le même
-  nom de normalizer : `Acme\A_B` et `Acme_A\B` partagent actuellement leur classe
-  générée dans un même namespace de génération. Couvrir leur utilisation dans
-  une même configuration ; voir [Mapper](docs/mapping/README.md).
-
 - [ ] Permettre de charger des classes compilées identiques depuis plusieurs
   répertoires dans un même processus. Deux applications avec un bus d'événements
   vide produisent aujourd'hui le même nom de classe et son second chargement
