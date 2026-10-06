@@ -8,10 +8,16 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Asynchronous;
 use Ultra\MessageHandling\Attribute\Before;
+use Ultra\MessageHandling\Attribute\EventHandler;
 use Ultra\MessageHandling\Attribute\Handles;
+use Ultra\MessageHandling\Exception\NoHandlerFound;
+use Ultra\MessageHandling\Exception\UnknownEvent;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\ProceedResult;
+use Ultra\MessageHandling_Compiler\Tests\Fixtures\FarewellMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
+use Ultra\MessageHandling_Compiler\Tests\Fixtures\RecordedEvent;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
 #[CoversNamespace('Ultra\\MessageHandling')]
@@ -108,5 +114,79 @@ final class CompilationContractTest extends MessageHandlingCompilerTestCase
             })
             ->boot()
         ;
+    }
+
+    public function test_it_loads_identical_empty_routers_from_different_build_directories(): void
+    {
+        $first = $this->ultraLight()
+            ->withBuildDir(dirname(__DIR__, 3).'/var/message_handling_compiler_tests/empty-first')
+            ->boot();
+        $second = $this->ultraLight()
+            ->withBuildDir(dirname(__DIR__, 3).'/var/message_handling_compiler_tests/empty-second')
+            ->boot();
+
+        foreach ([$first, $second] as $application) {
+            try {
+                $application->mediator()->send(new GreetingMessage('unknown'));
+                self::fail('An empty mediator must reject unknown messages.');
+            } catch (NoHandlerFound $exception) {
+                self::assertStringContainsString(GreetingMessage::class, $exception->getMessage());
+            }
+
+            try {
+                $application->eventBus()->publish(new GreetingMessage('unknown'));
+                self::fail('An empty event bus must reject unknown events.');
+            } catch (UnknownEvent $exception) {
+                self::assertStringContainsString(GreetingMessage::class, $exception->getMessage());
+            }
+        }
+    }
+
+    public function test_it_keeps_handler_services_independent_across_identical_compilations(): void
+    {
+        $handler = static fn (string $prefix): object => new class($prefix) {
+            /** @var list<string> */
+            public array $events = [];
+
+            public function __construct(private string $prefix) {}
+
+            #[Handles]
+            public function greet(GreetingMessage $message): string
+            {
+                return $this->prefix.' hello, '.$message->name.'!';
+            }
+
+            #[Handles]
+            public function farewell(FarewellMessage $message, MediatorInterface $mediator): string
+            {
+                return $mediator->send(new GreetingMessage($message->name));
+            }
+
+            #[EventHandler]
+            public function record(RecordedEvent $event): void
+            {
+                $this->events[] = $this->prefix.':'.$event->payload;
+            }
+        };
+        $firstHandler = $handler('First');
+        $secondHandler = $handler('Second');
+        $application = $this->ultraLight()->withEventClass(RecordedEvent::class);
+        $first = $application
+            ->withBuildDir(dirname(__DIR__, 3).'/var/message_handling_compiler_tests/handlers-first')
+            ->withService($firstHandler, 'greeting-handler')
+            ->boot();
+        $second = $application
+            ->withBuildDir(dirname(__DIR__, 3).'/var/message_handling_compiler_tests/handlers-second')
+            ->withService($secondHandler, 'greeting-handler')
+            ->boot();
+
+        self::assertSame('First hello, Alice!', $first->mediator()->send(new GreetingMessage('Alice')));
+        self::assertSame('Second hello, Bob!', $second->mediator()->send(new GreetingMessage('Bob')));
+        self::assertSame('First hello, Carol!', $first->mediator()->send(new FarewellMessage('Carol')));
+        self::assertSame('Second hello, Dan!', $second->mediator()->send(new FarewellMessage('Dan')));
+        $first->eventBus()->publish(new RecordedEvent('first'));
+        $second->eventBus()->publish(new RecordedEvent('second'));
+        self::assertSame(['First:first'], $firstHandler->events);
+        self::assertSame(['Second:second'], $secondHandler->events);
     }
 }

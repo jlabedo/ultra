@@ -28,7 +28,7 @@ final class HandlerClassGenerator
     /**
      * Generate a handler class file and return its metadata.
      *
-     * The class name is derived from a content hash of the generated code
+     * The class name is derived from the output directory and generated code
      * (same approach as MessageRouterGenerator): build with placeholder,
      * hash, replace.
      *
