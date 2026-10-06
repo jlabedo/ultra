@@ -96,6 +96,11 @@ final readonly class AcceptanceState
 
 Mapper Compiler resolves whether the identifier normalizes to one scalar or a flat object shape. `column` and `columns` only override conventional column names. Composite components must normalize to `int|string`.
 
+The [Symfony integration](symfony.md#services-and-state-discovery) requires one complete key mapping per
+physical table. Manually assembled metadata and row sets can address a table through different unique candidate
+keys, such as `contact_id` and `email`. Those row sets have separate buffers; each adapter must use its metadata's
+complete key columns, backed by the corresponding unique constraint in PostgreSQL.
+
 ## Embedded value objects
 
 `#[StateEmbedded]` keeps a value object in the state model while flattening its

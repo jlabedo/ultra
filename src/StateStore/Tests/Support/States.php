@@ -205,3 +205,23 @@ final readonly class RightBoundaryState
 {
     public function __construct(#[StateId(column: 'c')] public string $id, public string $value) {}
 }
+
+#[State(table: 'contacts')]
+final readonly class ContactByIdState
+{
+    public function __construct(
+        #[StateId(column: 'contact_id')] public int $id,
+        public string $email,
+        public string $name,
+    ) {}
+}
+
+#[State(table: 'contacts')]
+final readonly class ContactByEmailState
+{
+    public function __construct(
+        #[StateId(column: 'email')] public string $id,
+        #[StateColumn('contact_id')] public int $contactId,
+        public string $name,
+    ) {}
+}

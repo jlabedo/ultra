@@ -108,6 +108,25 @@ final class StateMappingTest extends StateStoreTestCase
             self::assertFalse($store->observeExists($state::class, new AcceptanceId('identity-2', $id->termsId)));
         }
     }
+    public function test_manual_row_sets_preserve_distinct_candidate_keys_for_the_same_table(): void
+    {
+        [$database, , $store, $registry] = $this->newStore([ContactByIdState::class, ContactByEmailState::class]);
+        $database->seedRow('contacts', 'contact_id', [
+            'contact_id' => 42, 'email' => 'one@example.test', 'name' => 'Alice',
+        ]);
+
+        self::assertEquals(new ContactByIdState(42, 'one@example.test', 'Alice'), $store->load(ContactByIdState::class, 42));
+        self::assertEquals(new ContactByEmailState('one@example.test', 42, 'Alice'), $store->observe(ContactByEmailState::class, 'one@example.test'));
+        $store->save(new ContactByEmailState('one@example.test', 42, 'Bob'));
+        self::assertEquals(new ContactByEmailState('one@example.test', 42, 'Bob'), $store->load(ContactByEmailState::class, 'one@example.test'));
+        $this->flush($database, $registry);
+        $registry->clear();
+
+        self::assertSame(['name' => 'Bob'], $database->row('contacts', 'contact_id', 42, ['name']));
+        self::assertEquals(new ContactByIdState(42, 'one@example.test', 'Bob'), $store->load(ContactByIdState::class, 42));
+        self::assertEquals(new ContactByEmailState('one@example.test', 42, 'Bob'), $store->load(ContactByEmailState::class, 'one@example.test'));
+    }
+
     public static function independentTableMappings(): iterable
     {
         yield 'same key names and identifier in different tables' => [

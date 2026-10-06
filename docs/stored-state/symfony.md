@@ -9,7 +9,9 @@ call `StateStoreExtension::build()` before compilation, alongside the mapper and
 Register `#[Ultra\StateStore\Attribute\State]` classes as autoconfigured resources and repositories as autowired
 services. The extension discovers state mappings, creates shared `MappedRowSet` services for their physical
 tables, and registers `StateMetadataRegistry`, `StateTableRegistry` and `StateStore`. `StateTableRegistry` is tagged
-for the composite unit of work.
+for the composite unit of work. All registered roots and collections targeting one physical table must use the
+same complete key columns; compilation rejects conflicting mappings. Collection keys include both owner and
+item columns. A separate root view over an item table must therefore map that complete key.
 
 The application provides `MappedRowSetAdapterFactory` and a configured mapper. Query guards additionally require
 `GuardLockAdapter`. For a PostgreSQL application using DoctrineBundle:

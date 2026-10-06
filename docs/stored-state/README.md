@@ -62,7 +62,9 @@ a null result and chooses any manual guards required for set-based rules.
 - collection expectations use the loaded item id set to reject concurrent inserts or deletes in the collection
 - buffered writes are committed later by flushing `StateTableRegistry`, which coordinates the underlying `MappedRowSet` units of work
 
-When several state classes target the same physical table, they share the same `MappedRowSet` unit of work but only read and write the columns each class maps.
+State classes targeting the same physical table and complete key mapping share a `MappedRowSet` unit of work,
+but only read and write the columns each class maps. See [mapping](mapping.md) for manually assembled row sets
+using different candidate keys.
 
 ## Query dependencies
 
@@ -77,7 +79,7 @@ Each file owns a guarantee; providers express alternative mappings, observation 
 
 | Guarantee | Suite |
 | --- | --- |
-| Scalar and composite identifiers, renamed columns and embedded values round-trip through the physical mapping | [StateMappingTest](../../src/StateStore/Tests/StateMappingTest.php) |
+| State representations, embedded values and manual candidate keys preserve their physical mapping | [StateMappingTest](../../src/StateStore/Tests/StateMappingTest.php) |
 | State views read buffered changes and retain the original storage expectations | [BufferedStateViewTest](../../src/StateStore/Tests/BufferedStateViewTest.php) |
 | Value, presence and absence observations protect the dependency actually read, with or without a save | [StateObservationTest](../../src/StateStore/Tests/StateObservationTest.php) |
 | Collection hydration, reconciliation and expectations respect owner and item identities | [CollectionOwnershipTest](../../src/StateStore/Tests/CollectionOwnershipTest.php) |
@@ -93,7 +95,5 @@ in the suites. Postgres contention cases retain two real connections. Row-plan m
 intrinsic persistence locks belong to [MappedTable's suites](mapped-table.md#test-ownership-and-maintenance);
 StateStore covers their composition with objects, collections and decision guards.
 
-Extend the owning suite instead of creating a file for another implementation class or table. Before deleting
-a case, identify its replacement and compare covered source lines and detection of the same mutants on unchanged
-production code. Analyze survivors before adding scenarios. See [development verification](../development.md#tests)
-for the commands.
+Use the shared [test-refactoring rules](../development.md#refactoring-tests) to maintain these guarantees
+and compare coverage and mutations.
