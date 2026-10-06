@@ -15,6 +15,29 @@ Packages live in `src/`, examples in `examples/`, and integration applications i
 - Follow the surrounding style. Use docblocks for generics, shapes and intent that PHP types cannot express.
 - Do not run `php-cs-fixer` or `composer cs-fix`. Leave formatting-only changes to CI.
 
+## Commit messages
+
+Write commit messages in English so history uses the same vocabulary as code and contracts. Use this subject format:
+
+```text
+type(Context): imperative description of the change
+```
+
+- Use `feat` for new behavior, `fix` for corrections, `perf` for performance improvements, `refactor` for restructuring with unchanged behavior, `test` for test-only changes, `docs` for documentation-only changes, `build` for dependencies or build tooling, and `ci` for CI configuration. Choose the type from the purpose of the change; a fix with regression tests is still `fix`.
+- Use the exact primary package name from `src/` as the context, preserving spelling and case: `StateStore`, `Mapper`, `StatefulMessageHandling`, etc. Compiler and integration changes use their owning context (`Mapper` for `Mapper_Compiler` or `Mapper_Bundle`). Use `Testing` for shared test infrastructure and `Repository` for repository-wide contributor rules or tooling. For changes spanning contexts, use the main owning context and name the others in the body; use `Repository` when there is no single owner.
+- Describe the changed behavior, guarantee or constraint. Include the relevant code identifier or domain term when it helps retrieval; preserve its exact spelling. Keep the subject readable in `git log --oneline`, moving supporting detail to the body.
+- Add a body when the reason or consequences cannot be understood from the subject. Explain the trigger or previous limitation, why the change is needed, and any relevant tradeoff. Name affected symbols, related contexts or contract paths that future agents can search for, and record verification actually performed or why it was not run.
+- Before committing, check the message against the staged diff: it must describe the entire change accurately. Split unrelated changes into separate commits.
+
+Examples:
+
+```text
+fix(Mapper): isolate generated normalizer identities by compilation namespace
+test(StatefulMessageHandling): run binding compilation failures in process
+perf(StateStore): bound cooperative lock waits in PostgreSQL tests
+docs(Repository): define searchable commit messages
+```
+
 ## Verification
 
 - Every behavior change includes functional test coverage. Implementation-detail coverage is appropriate for complex logic or hard-to-reproduce cases.
