@@ -37,7 +37,7 @@ bin/phpunit-audit -v
 bin/phpunit-audit --no-ansi > var/phpunit-audit.txt
 ```
 
-The audit uses Symfony Process to run the existing `bin/phpunit` wrapper from the repository root three times by default, without a process timeout. It preserves the wrapper's environment, PHPUnit configuration and PAO. The default root selection includes IAM tests and excludes the `slow` group, as specified in [phpunit.xml](../phpunit.xml). Arguments after `--` are passed to PHPUnit.
+The audit uses Symfony Process to run the existing `bin/phpunit` wrapper from the repository root three times by default, without a process timeout. It preserves the wrapper's environment, PHPUnit configuration and PAO. The default test selection and excluded groups come from [phpunit.xml](../phpunit.xml). Arguments after `--` are passed to PHPUnit.
 
 Symfony Console renders the report on stdout with styled summaries and aligned tables of runs, slowest methods and functional contexts. Long method names and source locations wrap to fit the terminal. Use `--no-ansi` to save plain text as shown above. Progress goes to stderr; raw PHPUnit/PAO output is streamed there with `-v` and shown on unsuccessful runs. Symfony Console also provides `--help`, verbosity and color options.
 
@@ -59,9 +59,15 @@ Report skipped coverage when the change requires database verification. Example 
 
 ## Refactoring tests
 
-Use the owning context's guarantees to organize suites and cases. Share setup and cleanup; keep assertions in the suites. Before deleting a case, identify the remaining scenario protecting its guarantee and compare covered source lines and detection of the same mutants on unchanged production code. Investigate surviving mutants before adding cases.
+Use the owning context's guarantees to organize suites and name cases by observable outcomes. For each change, find the existing scenario protecting its guarantee. Extend that case or its data provider when the arrangement and assertions fit; add a case or suite for a distinct guarantee that remains unprotected. Review nearby cases for duplication as part of the same change.
 
-Give independent generated compilations distinct class identities; reserve method-level process isolation for cases that need a fresh interpreter.
+Exercise behavior through the caller's interface. Reserve implementation-detail coverage for complex logic or hard-to-reproduce failures. Share setup and cleanup, keeping assertions in the suites. Verify simple fixture changes through the functional suites or a disposable probe; PostgreSQL's own DDL atomicity does not need a context guarantee suite.
+
+For concurrency, establish the critical state before releasing the competitor and observe actual overlap, such as a request waiting on a held lock. Bound waits and check the result after that same request resumes. A readiness barrier alone can still allow sequential execution.
+
+Before deleting a case, identify the remaining scenario protecting its guarantee and compare covered source lines and detection of the same mutants on unchanged production code. Investigate surviving mutants before adding cases. Verify claimed regression tests against the previous implementation or a deliberately broken variant; a performance refactor can preserve an existing guarantee without introducing another regression case.
+
+Give independent generated compilations distinct class identities; reserve method-level process isolation for cases that need a fresh interpreter. Use concurrent workers only when the scenario requires requests in flight together, and keep these cases in the `slow` group.
 
 ## Documentation changes
 

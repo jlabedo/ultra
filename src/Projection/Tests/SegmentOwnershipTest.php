@@ -6,11 +6,13 @@ namespace Ultra\Projection\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Projection\Tests\Support\TrackingProjection;
+use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\PostgresTestSupport;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
@@ -50,29 +52,84 @@ final class SegmentOwnershipTest extends ProjectionTestCase
         self::assertNull($repository->claimSegment('courses', 0, 'worker-2'));
     }
 
-    public function test_a_postgres_claim_joins_the_callers_transaction_and_rolls_back_with_it(): void
+    #[DataProvider('claimTransactions')]
+    #[Group('slow')]
+    #[Group('projection-concurrency')]
+    public function test_competing_claims_wait_for_the_callers_transaction_outcome(bool $commit): void
     {
         $fixture = $this->fixture('postgres');
         $fixture->segments->ensureInitialized('courses');
-        $observer = PostgresTestSupport::connection(getenv('ULTRA_TEST_POSTGRES_DSN'));
-        $otherSegments = new PostgresProjectionSegmentRepository($observer, $fixture->prefix);
+        $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
+        $prefix = $fixture->prefix;
+        $holderPid = (int) $fixture->connection->fetchOne('SELECT pg_backend_pid()');
+        $cluster = new Cluster(timeout: 5.0);
+        $worker = null;
 
         try {
             $fixture->connection->beginTransaction();
             self::assertNotNull($fixture->segments->claimSegment('courses', 0, 'worker-1'));
             self::assertSame(1, $fixture->connection->getTransactionNestingLevel());
             self::assertSame('worker-1', $fixture->segments->listSegments('courses')[0]->workerId);
-            self::assertNull($otherSegments->listSegments('courses')[0]->workerId);
 
-            $fixture->connection->rollBack();
+            $worker = $cluster->spawn(static function () use ($dsn, $prefix): ?string {
+                $connection = PostgresTestSupport::connection($dsn);
+                try {
+                    $segments = new PostgresProjectionSegmentRepository($connection, $prefix);
+                    checkpoint('ready', [
+                        'pid' => (int) $connection->fetchOne('SELECT pg_backend_pid()'),
+                        'owner' => $segments->listSegments('courses')[0]->workerId,
+                    ]);
 
-            self::assertNull($fixture->segments->listSegments('courses')[0]->workerId);
-            self::assertNotNull($otherSegments->claimSegment('courses', 0, 'worker-2'));
-            self::assertSame('worker-2', $fixture->segments->listSegments('courses')[0]->workerId);
+                    return $segments->claimSegment('courses', 0, 'worker-2')?->workerId;
+                } finally {
+                    $connection->close();
+                }
+            });
+            $ready = $worker->awaitCheckpoint('ready');
+            self::assertNull($ready->payload['owner']);
+            $worker->release('ready');
+
+            // Observe the claim waiting on our lock before letting the same request resume.
+            $deadline = microtime(true) + 5.0;
+            $blocked = 0;
+            do {
+                // Pump the worker protocol so the release reaches the child process.
+                $outcome = $worker->outcome();
+                if (null !== $outcome) {
+                    break;
+                }
+                $blocked = (int) $fixture->connection->fetchOne(
+                    'SELECT count(*) FROM unnest(pg_blocking_pids(CAST(? AS INTEGER))) AS blocker(pid)
+                     WHERE pid = CAST(? AS INTEGER)',
+                    [$ready->payload['pid'], $holderPid],
+                );
+                if (1 === $blocked) {
+                    break;
+                }
+                usleep(1_000);
+            } while (microtime(true) < $deadline);
+            self::assertSame(1, $blocked, 'The competing claim must wait on the caller-held lock. '.$outcome?->exceptionMessage());
+
+            if ($commit) {
+                $fixture->connection->commit();
+            } else {
+                $fixture->connection->rollBack();
+            }
+
+            $outcome = $worker->join();
+            self::assertTrue($outcome->isSuccess(), $outcome->exceptionMessage());
+            self::assertSame($commit ? null : 'worker-2', $outcome->value());
+            self::assertSame($commit ? 'worker-1' : 'worker-2', $fixture->segments->listSegments('courses')[0]->workerId);
         } finally {
+            $worker?->stop();
             PostgresTestSupport::resetSharedConnection($fixture->connection);
-            $observer->close();
         }
+    }
+
+    public static function claimTransactions(): iterable
+    {
+        yield 'commit preserves ownership' => [true];
+        yield 'rollback makes the claim available' => [false];
     }
 
     #[DataProvider('backends')]

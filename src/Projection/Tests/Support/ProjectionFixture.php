@@ -132,7 +132,7 @@ final class ProjectionFixture
     /** @param list<string> $statements */
     private function executeSchemaStatements(array $statements): void
     {
-        // One result reports errors from any statement and rolls back the whole batch.
+        // The native pgsql driver reads one result: a DO block reports every DDL error through it.
         $this->connection->executeStatement(
             "DO \$projection_fixture_ddl\$\nBEGIN\n"
             .implode(";\n", $statements)

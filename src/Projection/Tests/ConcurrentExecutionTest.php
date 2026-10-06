@@ -42,50 +42,6 @@ use Ultra\Time\StatickClock;
 #[Group('projection-concurrency')]
 final class ConcurrentExecutionTest extends PostgresProjectionTestCase
 {
-    public function test_competing_connections_can_only_claim_a_segment_once(): void
-    {
-        $fixture = $this->fixture('postgres');
-        $fixture->segments->ensureInitialized('courses');
-        $dsn = $this->postgresDsn();
-        $prefix = $fixture->prefix;
-        $cluster = new Cluster(timeout: 5.0);
-        $workers = [];
-
-        try {
-            foreach (['worker-1', 'worker-2'] as $workerId) {
-                $worker = $cluster->spawn(static function () use ($dsn, $prefix, $workerId): ?string {
-                    $connection = PostgresTestSupport::connection($dsn);
-                    try {
-                        $segments = new PostgresProjectionSegmentRepository($connection, $prefix);
-                        checkpoint('ready');
-
-                        return $segments->claimSegment('courses', 0, $workerId)?->workerId;
-                    } finally {
-                        $connection->close();
-                    }
-                });
-                $workers[] = $worker;
-                $worker->awaitCheckpoint('ready');
-            }
-
-            $cluster->releaseAll('ready');
-            $winners = [];
-            foreach ($cluster->joinAll() as $outcome) {
-                self::assertTrue($outcome->isSuccess(), $outcome->exceptionMessage());
-                if (null !== $outcome->value()) {
-                    $winners[] = $outcome->value();
-                }
-            }
-
-            self::assertCount(1, $winners);
-            self::assertSame($winners[0], $fixture->segments->listSegments('courses')[0]->workerId);
-        } finally {
-            foreach ($workers as $worker) {
-                $worker->stop();
-            }
-        }
-    }
-
     public function test_leader_and_follower_can_process_different_segments_concurrently(): void
     {
         $dsn = $this->postgresDsn();
