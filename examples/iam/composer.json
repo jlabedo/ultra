@@ -25,7 +25,8 @@
         "ultra/time": "dev-main"
     },
     "require-dev": {
-        "phpunit/phpunit": "^13.0"
+        "phpunit/phpunit": "^13.0",
+        "ultra/testing-postgres": "dev-main"
     },
     "autoload": {
         "psr-4": {

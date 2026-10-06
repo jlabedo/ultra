@@ -32,6 +32,7 @@ use Ultra\Projection\Tests\Support\PostgresProjectionTestCase;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
 use Ultra\Testing\Concurrent\Cluster;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\PostgresTestSupport;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
@@ -94,7 +95,7 @@ final class ConcurrentExecutionTest extends PostgresProjectionTestCase
                 static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $testFile): ProjectionCoordinatorResult {
                     require_once $testFile;
 
-                    $connection = PostgresTestSupport::connection($dsn);
+                    $connection = PostgresConnectionSupport::connection($dsn);
                     $innerStore = PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams');
 
                     // Inline barrier: fires once on the first load(), holding the segment
@@ -168,7 +169,7 @@ final class ConcurrentExecutionTest extends PostgresProjectionTestCase
                 static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $testFile): ProjectionRunResult {
                     require_once $testFile;
 
-                    $connection = PostgresTestSupport::connection($dsn);
+                    $connection = PostgresConnectionSupport::connection($dsn);
                     $activityRepository = new ProjectionActivity(new PostgresDirtyKeyTracker($connection, $projectionPrefix.'dirty_keys'));
                     $runner = new ProjectionRunner(
                         PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams'),

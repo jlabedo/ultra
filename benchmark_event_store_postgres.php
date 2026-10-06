@@ -11,6 +11,7 @@ use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\PostgresTestSupport;
 
 exit(main());
@@ -21,7 +22,7 @@ exit(main());
 function main(): int
 {
     $config = benchmarkConfig();
-    $connection = PostgresTestSupport::connection($config['dsn']);
+    $connection = PostgresConnectionSupport::connection($config['dsn']);
     $prefix = benchmarkTablePrefix();
     $schema = PostgresTestSupport::schemaForImplementation($prefix, $config['implementation'], $config['lockStrategy']);
     $logger = new class() extends AbstractLogger {

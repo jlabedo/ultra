@@ -46,6 +46,7 @@
         "ultra/state-store-bundle": "self.version",
         "ultra/stateful-message-handling": "self.version",
         "ultra/symfony-bundle": "self.version",
+        "ultra/testing-postgres": "self.version",
         "ultra/time": "self.version",
         "ultra/unit-of-work": "self.version"
     },
@@ -76,7 +77,10 @@
             "Ultra\\StateStore_Bundle\\": "src/StoredState/Symfony/",
             "Ultra\\StatefulMessageHandling\\": "src/MessageHandling/Stateful/",
             "Ultra\\SymfonyBundle\\": "src/Symfony/Bundle/",
-            "Ultra\\Testing\\": "src/Testing/",
+            "Ultra\\Testing\\": [
+                "src/Testing/",
+                "src/Testing/Postgres/"
+            ],
             "Ultra\\Time\\": "src/Time/Runtime/",
             "Ultra\\UnitOfWork\\": "src/UnitOfWork/Runtime/"
         },

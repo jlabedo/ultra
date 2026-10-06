@@ -10,7 +10,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 
 /** @internal */
 #[CoversNamespace('Ultra\MappedTable')]
@@ -35,7 +35,7 @@ final class PersistenceLockingTest extends RowSetTestCase
         } else {
             $fixture->rows->withKey('row')->expectAbsent();
         }
-        $other = PostgresTestSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
+        $other = PostgresConnectionSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
         $competing = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $fixture->tableName));
         if ('update' === $operation) {
             $competing->withKey('row')->setColumn('status', 'paid');

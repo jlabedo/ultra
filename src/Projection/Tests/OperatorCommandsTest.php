@@ -21,7 +21,7 @@ use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\Tests\Support\PostgresProjectionTestCase;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\Tests\Harness\ProjectionCoordinationHarness;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 
 /** @internal */
 #[CoversNamespace('Ultra\\Projection')]
@@ -131,7 +131,7 @@ final class OperatorCommandsTest extends PostgresProjectionTestCase
                 $projectionPrefix.'dirty_keys',
             )));
         } finally {
-            PostgresTestSupport::resetSharedConnection($connection);
+            PostgresConnectionSupport::resetSharedConnection($connection);
 
             foreach (array_reverse(ProjectionCoordinationHarness::schemas($eventStorePrefix, $projectionPrefix)) as $schema) {
                 foreach ($schema->dropStatements() as $statement) {

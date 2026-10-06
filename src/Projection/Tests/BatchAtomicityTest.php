@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Checkpoint;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
@@ -67,7 +67,7 @@ final class BatchAtomicityTest extends ProjectionTestCase
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $fixture->store->append([self::courseCreatedEvent('projection-outer-transaction-course', 'Math')]);
         $fixture->runner->ensureInitialized($runtime);
-        $observer = PostgresTestSupport::connection(getenv('ULTRA_TEST_POSTGRES_DSN'));
+        $observer = PostgresConnectionSupport::connection(getenv('ULTRA_TEST_POSTGRES_DSN'));
         $fixture->connection->beginTransaction();
         try {
             $result = $fixture->runner->backfillClaimedOnce($runtime, 'durable_projection', 0, 'worker');

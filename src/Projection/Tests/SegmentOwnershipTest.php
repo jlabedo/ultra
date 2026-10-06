@@ -13,7 +13,7 @@ use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Projection\Tests\Support\TrackingProjection;
 use Ultra\Testing\Concurrent\Cluster;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
 
@@ -72,7 +72,7 @@ final class SegmentOwnershipTest extends ProjectionTestCase
             self::assertSame('worker-1', $fixture->segments->listSegments('courses')[0]->workerId);
 
             $worker = $cluster->spawn(static function () use ($dsn, $prefix): ?string {
-                $connection = PostgresTestSupport::connection($dsn);
+                $connection = PostgresConnectionSupport::connection($dsn);
                 try {
                     $segments = new PostgresProjectionSegmentRepository($connection, $prefix);
                     checkpoint('ready', [
@@ -122,7 +122,7 @@ final class SegmentOwnershipTest extends ProjectionTestCase
             self::assertSame($commit ? 'worker-1' : 'worker-2', $fixture->segments->listSegments('courses')[0]->workerId);
         } finally {
             $worker?->stop();
-            PostgresTestSupport::resetSharedConnection($fixture->connection);
+            PostgresConnectionSupport::resetSharedConnection($fixture->connection);
         }
     }
 

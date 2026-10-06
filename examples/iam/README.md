@@ -204,9 +204,14 @@ révocation. Elle n'expose pas de serveur HTTP ni de mécanisme d'authentificati
 Le SQL fourni installe un schéma neuf ; il ne constitue pas un moteur de migration.
 
 L'exemple peut aussi être installé indépendamment avec `composer install` puis
-`ULTRA_TEST_POSTGRES_DSN=... composer test` depuis `examples/iam`. Les tests sont
-inclus dans `composer test` à la racine. Ils utilisent des schémas Postgres isolés
-et une deuxième connexion pour simuler les décisions concurrentes. Sans DSN,
+`ULTRA_TEST_POSTGRES_DSN=... composer test` depuis `examples/iam`. Depuis la racine,
+utiliser la configuration PHPUnit IAM comme ci-dessus. Les tests utilisent un schéma Postgres neuf par cas
+et deux connexions partagées pour simuler les décisions concurrentes, via le
+[support de test commun](../../docs/development.md#tests). La création du schéma
+et des tables est validée dans une transaction avant les commandes IAM, qui
+gardent leurs propres transactions. Le nettoyage termine les transactions restantes,
+restaure les paramètres de session et supprime le schéma dans une transaction.
+Les tests de contention utilisent un `lock_timeout` de 10 ms. Sans DSN,
 les tests d'intégration sont ignorés. Après modification des classes de State,
 supprimer `examples/iam/var/normalizers` pour régénérer les normalizers ; cette
 composition explicite les génère une fois puis les réutilise.

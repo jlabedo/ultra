@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MessageHandling\Async\AsyncDelivery;
 use Ultra\MessageHandling\Tests\Support\QueueTestCase;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Time\Duration;
 
 #[CoversNamespace('Ultra\\MessageHandling')]
@@ -81,7 +81,7 @@ final class QueueLeaseTest extends QueueTestCase
         $f = $this->fixture('postgres');
         $f->queue->enqueue($this->envelope('first'));
         $f->queue->enqueue($this->envelope('second'));
-        $other = PostgresTestSupport::connection(getenv('ULTRA_TEST_POSTGRES_DSN'));
+        $other = PostgresConnectionSupport::connection(getenv('ULTRA_TEST_POSTGRES_DSN'));
         try {
             $other->executeStatement("SET lock_timeout = '200ms'");
             $f->connection->beginTransaction();

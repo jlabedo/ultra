@@ -6,6 +6,7 @@ namespace Ultra\EventStore\Tests\Support;
 
 use Doctrine\DBAL\Connection;
 use Ultra\EventStore\InMemoryEventStore;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\PostgresTestSupport;
 
 abstract class StorageTestCase extends EventStoreTestCase
@@ -38,7 +39,7 @@ abstract class StorageTestCase extends EventStoreTestCase
             self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres event-store integration tests.');
         }
 
-        $connection = PostgresTestSupport::sharedConnection($dsn);
+        $connection = PostgresConnectionSupport::sharedConnection($dsn);
         $prefix = PostgresTestSupport::uniquePrefix();
         $schema = PostgresTestSupport::schemaForImplementation($prefix, $backend);
         $this->databases[] = [$connection, $schema->dropStatements()];
@@ -55,7 +56,7 @@ abstract class StorageTestCase extends EventStoreTestCase
     protected function tearDown(): void
     {
         foreach (array_reverse($this->databases) as [$connection, $dropStatements]) {
-            PostgresTestSupport::resetSharedConnection($connection);
+            PostgresConnectionSupport::resetSharedConnection($connection);
             foreach ($dropStatements as $statement) {
                 $connection->executeStatement($statement);
             }

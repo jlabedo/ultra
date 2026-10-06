@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use Ultra\Coordination\Tests\Support\CoordinationTestCase;
 use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease;
 use Ultra\Testing\Concurrent\Cluster;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Time\StatickClock;
 
 /** @internal */
@@ -26,7 +26,7 @@ final class LeasePersistenceTest extends CoordinationTestCase
         $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
         $cluster = new Cluster(timeout: 3.0);
         $worker = $cluster->spawn(static function () use ($dsn, $table): bool {
-            $connection = PostgresTestSupport::connection($dsn);
+            $connection = PostgresConnectionSupport::connection($dsn);
             $clock = new StatickClock(new \DateTimeImmutable('2026-01-01T00:00:00Z'));
             try {
                 $connection->fetchOne("SELECT set_config('application_name', ?, false)", [$table]);

@@ -9,7 +9,7 @@ use Ultra\MessageHandling\Async\AsyncEnvelope;
 use Ultra\MessageHandling\Async\AsyncHeaderNames;
 use Ultra\MessageHandling\Async\AsyncHeaders;
 use Ultra\MessageHandling\MessageContext;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Time\StatickClock;
 
 abstract class QueueTestCase extends TestCase
@@ -32,7 +32,7 @@ abstract class QueueTestCase extends TestCase
             if (false === $dsn || '' === $dsn) {
                 self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run the Postgres queue guarantees.');
             }
-            $connection = PostgresTestSupport::sharedConnection($dsn);
+            $connection = PostgresConnectionSupport::sharedConnection($dsn);
         }
         $fixture = new QueueFixture(new StatickClock(new \DateTimeImmutable('2026-01-01 00:00:00')), $connection);
         $this->fixtures[] = $fixture;

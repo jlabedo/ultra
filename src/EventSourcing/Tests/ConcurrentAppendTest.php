@@ -16,6 +16,7 @@ use Ultra\EventStore\Tests\Support\PostgresStorageTestCase;
 use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\Concurrent\Worker;
 use Ultra\Testing\Concurrent\Outcome;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\PostgresTestSupport;
 
 /**
@@ -226,7 +227,7 @@ final class ConcurrentAppendTest extends PostgresStorageTestCase
             $store->append([$event]);
             $cluster = new Cluster(timeout: 10.0);
             $makeWorker = static function () use ($dsn, $prefix, $implementation, $lockStrategy, $query, $event): string {
-                $connection = PostgresTestSupport::connection($dsn);
+                $connection = PostgresConnectionSupport::connection($dsn);
                 $workerStore = PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
                 $condition = $workerStore->load($query)->appendCondition();
                 checkpoint('loaded');
@@ -283,7 +284,7 @@ final class ConcurrentAppendTest extends PostgresStorageTestCase
         ?StreamQuery $appendQuery = null,
     ): Worker {
         return $cluster->spawn(static function () use ($dsn, $prefix, $implementation, $lockStrategy, $event, $appendQuery): string {
-            $connection = PostgresTestSupport::connection($dsn);
+            $connection = PostgresConnectionSupport::connection($dsn);
             $store = PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
             $appendConditions = [];
@@ -319,7 +320,7 @@ final class ConcurrentAppendTest extends PostgresStorageTestCase
         ?int $lockTimeoutMs = null,
     ): Worker {
         return $cluster->spawn(static function () use ($dsn, $prefix, $implementation, $lockStrategy, $event, $appendQuery, $lockTimeoutMs): string {
-            $connection = PostgresTestSupport::connection($dsn);
+            $connection = PostgresConnectionSupport::connection($dsn);
             $store = PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
 
             if (null !== $lockTimeoutMs) {

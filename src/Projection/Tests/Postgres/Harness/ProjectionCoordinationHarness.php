@@ -40,7 +40,7 @@ use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 
 #[EventAttribute('harness.course.created')]
 final readonly class HarnessCourseCreated
@@ -144,7 +144,7 @@ final class ProjectionCoordinationHarness
 
     public static function connection(string $dsn): Connection
     {
-        return PostgresTestSupport::sharedConnection($dsn);
+        return PostgresConnectionSupport::sharedConnection($dsn);
     }
 
     public static function readModelTable(string $projectionPrefix): string

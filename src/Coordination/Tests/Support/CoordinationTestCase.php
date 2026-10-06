@@ -14,7 +14,7 @@ use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease;
 use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLeaseSchema;
 use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTracker;
 use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTrackerSchema;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Time\StatickClock;
 
 abstract class CoordinationTestCase extends TestCase
@@ -46,7 +46,7 @@ abstract class CoordinationTestCase extends TestCase
         if (false === $dsn || '' === $dsn) {
             self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres coordination guarantees.');
         }
-        $connection = PostgresTestSupport::connection($dsn);
+        $connection = PostgresConnectionSupport::connection($dsn);
         $table = 'coordination_guarantees_'.bin2hex(random_bytes(8));
         $schema = 'leases' === $kind ? new PostgresCoordinatorLeaseSchema($table) : new PostgresDirtyKeyTrackerSchema($table);
         $this->tables[] = [$connection, $schema];
@@ -60,7 +60,7 @@ abstract class CoordinationTestCase extends TestCase
     {
         try {
             foreach (array_reverse($this->tables) as [$connection, $schema]) {
-                PostgresTestSupport::resetSharedConnection($connection);
+                PostgresConnectionSupport::resetSharedConnection($connection);
                 foreach ($schema->dropStatements() as $statement) {
                     $connection->executeStatement($statement);
                 }

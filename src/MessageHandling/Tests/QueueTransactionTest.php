@@ -21,7 +21,7 @@ use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\MessageHandling\Tests\Support\QueueTestCase;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
 use Ultra\Testing\UltraLightContainerFactoryInterface;
@@ -131,7 +131,7 @@ final class QueueTransactionTest extends QueueTestCase
     public function test_buffered_enqueues_participate_in_the_callers_transaction(bool $commit): void
     {
         $f = $this->fixture('postgres');
-        $other = PostgresTestSupport::connection(getenv('ULTRA_TEST_POSTGRES_DSN'));
+        $other = PostgresConnectionSupport::connection(getenv('ULTRA_TEST_POSTGRES_DSN'));
         try {
             $peer = $f->peer($other);
             $buffer = new AsyncQueueUnitOfWork($f->queue);

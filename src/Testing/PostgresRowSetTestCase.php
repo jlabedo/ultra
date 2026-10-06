@@ -22,7 +22,7 @@ abstract class PostgresRowSetTestCase extends TestCase
             self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres mapped-row-set integration tests.');
         }
 
-        $connection = PostgresTestSupport::sharedConnection($dsn);
+        $connection = PostgresConnectionSupport::sharedConnection($dsn);
         $tableName = 'ultra_mapped_row_set_'.bin2hex(random_bytes(4));
 
         try {
@@ -46,7 +46,7 @@ abstract class PostgresRowSetTestCase extends TestCase
                 $tableName,
             );
         } finally {
-            PostgresTestSupport::resetSharedConnection($connection);
+            PostgresConnectionSupport::resetSharedConnection($connection);
 
             $connection->executeStatement(sprintf(
                 'DROP TABLE IF EXISTS %s',

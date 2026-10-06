@@ -27,6 +27,7 @@ use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
 use Ultra\Projection_Postgres\PostgresProjectionImplementation;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\PostgresTestSupport;
 use Ultra\Time\ClockInterface;
 use Ultra\Time\SystemClock;
@@ -65,7 +66,7 @@ final class ProjectionFixture
             if (false === $dsn || '' === $dsn) {
                 TestCase::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN for Postgres projection guarantees.');
             }
-            $this->connection = PostgresTestSupport::sharedConnection($dsn);
+            $this->connection = PostgresConnectionSupport::sharedConnection($dsn);
             $eventPrefix = $this->prefix.'event_';
             $this->schemas = [
                 PostgresTestSupport::schemaForImplementation($eventPrefix, 'query-streams'),
@@ -118,7 +119,7 @@ final class ProjectionFixture
         if (null === $this->connection) {
             return;
         }
-        PostgresTestSupport::resetSharedConnection($this->connection);
+        PostgresConnectionSupport::resetSharedConnection($this->connection);
         $statements = [];
         foreach ($this->readModels as $table) {
             $statements[] = 'DROP TABLE IF EXISTS '.$table;

@@ -13,7 +13,7 @@ use Ultra\Testing\PostgresRowSetTestCase;
 use Ultra\StateStore\PostgresGuardLockAdapter;
 use Ultra\StateStore\QueryGuard;
 use Ultra\StateStore\StateTableRegistry;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\InMemoryRowDatabase;
@@ -38,7 +38,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             $this->insertRow($connection, $tableName, ['id' => 'one', 'status' => 'acme', 'note' => 'old']);
             $registry = $this->registry($connection, $table);
             $guard = new QueryGuard($registry, 'usage');
-            $other = PostgresTestSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
+            $other = PostgresConnectionSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
             $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
             $otherRegistry = $this->registry($other, $otherTable);
             $otherGuard = new QueryGuard($otherRegistry, 'usage');
@@ -63,7 +63,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 $this->flushWithTimeout($other, $otherRegistry);
                 self::assertSame('new', $this->fetchRow($connection, $tableName, 'one')['note']);
             } finally {
-                PostgresTestSupport::resetSharedConnection($other);
+                PostgresConnectionSupport::resetSharedConnection($other);
             }
         });
     }
@@ -88,7 +88,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             } else {
                 $table->withKey('one')->expectColumnValue('status', 'old')->delete();
             }
-            $other = PostgresTestSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
+            $other = PostgresConnectionSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
             $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
             $otherRegistry = $this->registry($other, $otherTable);
             $otherGuard = new QueryGuard($otherRegistry, 'usage');
@@ -112,7 +112,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 }
                 $this->flushWithTimeout($other, $otherRegistry);
             } finally {
-                PostgresTestSupport::resetSharedConnection($other);
+                PostgresConnectionSupport::resetSharedConnection($other);
             }
         });
     }
@@ -126,7 +126,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             $guard = new QueryGuard($combined, 'usage');
             $guard->lock('acme');
             $table->withKey('one')->expectColumnValue('status', 'acme')->setColumn('note', 'new');
-            $other = PostgresTestSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
+            $other = PostgresConnectionSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
             $otherRegistry = $this->registry($other, new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName)));
             $otherGuard = new QueryGuard($otherRegistry, 'usage');
             try {
@@ -138,7 +138,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 }, 1);
                 $connection->transactional($combined->flush(...));
             } finally {
-                PostgresTestSupport::resetSharedConnection($other);
+                PostgresConnectionSupport::resetSharedConnection($other);
             }
         });
     }
@@ -149,7 +149,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             $this->insertRow($connection, $tableName, ['id' => 'one', 'status' => 'acme', 'note' => 'old']);
             $registry = $this->registry($connection, $table);
             (new QueryGuard($registry, 'usage'))->lock('acme');
-            $other = PostgresTestSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
+            $other = PostgresConnectionSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
             $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
             try {
                 $connection->beginTransaction();
@@ -161,7 +161,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 $registry->clear();
                 self::assertFalse($registry->hasPendingChanges());
             } finally {
-                PostgresTestSupport::resetSharedConnection($other);
+                PostgresConnectionSupport::resetSharedConnection($other);
             }
         });
     }
@@ -199,7 +199,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             $reader = new StateTableRegistry(['root' => $table], queryGuardDefinitions: $definitions, guardLockAdapter: new PostgresGuardLockAdapter($connection));
             $guard = new QueryGuard($reader, 'collection_usage');
             $guard->observe('acme', fn (): int => (int) $connection->fetchOne('SELECT count(*) FROM '.$tableName));
-            $other = PostgresTestSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
+            $other = PostgresConnectionSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
             $writer = new StateTableRegistry([], new \Ultra\MappedTable\PostgresMappedRowSetAdapterFactory($other), $definitions, new PostgresGuardLockAdapter($other));
             $items = $writer->collectionFor($collection, ['tenantId' => 'acme', 'roleId' => 'editor']);
             $key = new \Ultra\MappedTable\MappedKey(['status' => 'acme', 'version_a' => 'editor', 'id' => 'insert' === $mutation ? 'write' : 'read']);
@@ -219,7 +219,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 $count = (int) $connection->fetchOne('SELECT count(*) FROM '.$tableName);
                 self::assertSame(match ($mutation) { 'insert' => 2, 'update' => 1, default => 0 }, $count);
             } finally {
-                PostgresTestSupport::resetSharedConnection($other);
+                PostgresConnectionSupport::resetSharedConnection($other);
             }
         });
     }
@@ -257,7 +257,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
     public function test_manual_locks_are_deferred_and_held_until_the_transaction_ends(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $other = PostgresTestSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
+            $other = PostgresConnectionSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
             $otherRegistry = new StateTableRegistry([], guardLockAdapter: new PostgresGuardLockAdapter($other));
             $registry = new StateTableRegistry([], guardLockAdapter: new PostgresGuardLockAdapter($connection));
             try {
@@ -284,8 +284,8 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 $registry->clear();
                 self::assertFalse($registry->hasPendingChanges());
             } finally {
-                PostgresTestSupport::resetSharedConnection($connection);
-                PostgresTestSupport::resetSharedConnection($other);
+                PostgresConnectionSupport::resetSharedConnection($connection);
+                PostgresConnectionSupport::resetSharedConnection($other);
             }
         });
     }
@@ -293,7 +293,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
     public function test_manual_guards_do_not_reuse_automatic_absent_row_locks(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $other = PostgresTestSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
+            $other = PostgresConnectionSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
             $otherRegistry = new StateTableRegistry([], guardLockAdapter: new PostgresGuardLockAdapter($other));
             $table->withKey('anchor')->expectAbsent();
             $otherRegistry->lock($tableName, new MappedKey(['id' => 'anchor']));
@@ -306,7 +306,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 });
                 self::assertFalse($table->row('anchor'));
             } finally {
-                PostgresTestSupport::resetSharedConnection($other);
+                PostgresConnectionSupport::resetSharedConnection($other);
                 $connection->rollBack();
             }
         });
@@ -341,7 +341,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
     public function test_every_manual_guard_is_held_before_queries_are_replayed_and_rows_are_written(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $other = PostgresTestSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
+            $other = PostgresConnectionSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
             $otherRegistry = new StateTableRegistry([], guardLockAdapter: new PostgresGuardLockAdapter($other));
             $metadata = new StateMetadata(ManualQueryState::class, $tableName, $tableName.'#id', 'id', 'string', true, ['id' => 'id'], ['status' => 'status'], ['status' => 'status']);
             $registry = new StateTableRegistry([$metadata->tableKey => $table], guardLockAdapter: new PostgresGuardLockAdapter($connection));
@@ -381,7 +381,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 $otherRegistry->lock($tableName, new MappedKey(['id' => 'z']));
                 $other->transactional($otherRegistry->flush(...));
             } finally {
-                PostgresTestSupport::resetSharedConnection($other);
+                PostgresConnectionSupport::resetSharedConnection($other);
             }
         });
     }

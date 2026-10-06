@@ -10,7 +10,7 @@ use Ultra\MessageHandling\Async\InMemoryQueue;
 use Ultra\MessageHandling_PostgresQueue\MapperAsyncEnvelopeCodec;
 use Ultra\MessageHandling_PostgresQueue\PostgresAsyncQueue;
 use Ultra\MessageHandling_PostgresQueue\PostgresAsyncQueueSchema;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Time\StatickClock;
 
 final readonly class QueueFixture
@@ -53,7 +53,7 @@ final readonly class QueueFixture
     public function close(): void
     {
         if (null === $this->connection) return;
-        PostgresTestSupport::resetSharedConnection($this->connection);
+        PostgresConnectionSupport::resetSharedConnection($this->connection);
         foreach (new PostgresAsyncQueueSchema($this->tablePrefix)->dropStatements() as $statement) {
             $this->connection->executeStatement($statement);
         }

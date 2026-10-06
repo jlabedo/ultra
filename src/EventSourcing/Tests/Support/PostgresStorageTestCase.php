@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\PostgresTestSupport;
 
 abstract class PostgresStorageTestCase extends TestCase
@@ -30,7 +31,7 @@ abstract class PostgresStorageTestCase extends TestCase
         string $implementation = 'hstore',
         string $lockStrategy = 'shared-exclusive',
     ): void {
-        $connection = PostgresTestSupport::sharedConnection($this->postgresDsn());
+        $connection = PostgresConnectionSupport::sharedConnection($this->postgresDsn());
         $prefix = PostgresTestSupport::uniquePrefix();
         $schema = PostgresTestSupport::schemaForImplementation($prefix, $implementation, $lockStrategy);
 
@@ -43,7 +44,7 @@ abstract class PostgresStorageTestCase extends TestCase
 
             $callback($store, $connection, $prefix);
         } finally {
-            PostgresTestSupport::resetSharedConnection($connection);
+            PostgresConnectionSupport::resetSharedConnection($connection);
 
             foreach ($schema->dropStatements() as $statement) {
                 $connection->executeStatement($statement);

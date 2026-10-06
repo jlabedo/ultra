@@ -12,7 +12,7 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 
 /** Storage setup and independent committed reads; assertions stay in the guarantee suites. */
 final class RowSetFixture
@@ -124,7 +124,7 @@ final class RowSetFixture
     public function close(): void
     {
         if ($this->storage instanceof Connection) {
-            PostgresTestSupport::resetSharedConnection($this->storage);
+            PostgresConnectionSupport::resetSharedConnection($this->storage);
             $this->storage->executeStatement('DROP TABLE IF EXISTS '.$this->storage->quoteSingleIdentifier($this->tableName));
         } else {
             while ($this->storage->isTransactionActive()) {

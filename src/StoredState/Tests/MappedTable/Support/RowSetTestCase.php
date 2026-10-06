@@ -8,7 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 
 abstract class RowSetTestCase extends TestCase
 {
@@ -30,7 +30,7 @@ abstract class RowSetTestCase extends TestCase
             if (false === $dsn || '' === $dsn) {
                 self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run the Postgres guarantee cases.');
             }
-            $storage = PostgresTestSupport::sharedConnection($dsn);
+            $storage = PostgresConnectionSupport::sharedConnection($dsn);
         } else {
             $storage = new InMemoryRowDatabase();
         }

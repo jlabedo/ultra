@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace IamExample\Tests;
 
 use Doctrine\DBAL\Connection;
-use Doctrine\DBAL\DriverManager;
-use Doctrine\DBAL\Tools\DsnParser;
 use IamExample\AccessDenied;
 use IamExample\Domain\BindingId;
 use IamExample\Domain\LocalId;
@@ -24,6 +22,7 @@ use IamExample\State\MembershipState;
 use IamExample\State\SubjectState;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Time\StatickClock;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\TransactionManager;
@@ -45,15 +44,15 @@ final class IamFlowTest extends TestCase
         if (false === $dsn || '' === $dsn) {
             self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run IAM Postgres tests.');
         }
-        $params = new DsnParser(['postgres' => 'pgsql', 'postgresql' => 'pgsql'])->parse($dsn);
-        $this->connection = DriverManager::getConnection($params);
-        $this->other = DriverManager::getConnection($params);
+        $this->connection = PostgresConnectionSupport::sharedConnection($dsn, self::class);
+        $this->other = PostgresConnectionSupport::sharedConnection($dsn, self::class.'.competitor');
         $this->schema = 'iam_test_'.bin2hex(random_bytes(8));
-        $this->connection->executeStatement('CREATE SCHEMA '.$this->schema);
-        foreach ([$this->connection, $this->other] as $connection) {
+        $this->connection->transactional(function (Connection $connection): void {
+            $connection->executeStatement('CREATE SCHEMA '.$this->schema);
             $connection->executeStatement('SET search_path TO '.$this->schema);
-        }
-        Schema::install($this->connection);
+            Schema::install($connection);
+        });
+        $this->other->executeStatement('SET search_path TO '.$this->schema);
         $this->clock = new StatickClock(new \DateTimeImmutable('2026-10-05 12:00:00 UTC'));
         $this->runtime = new Runtime($this->connection, $this->clock);
         $this->admin = new LocalId('acme', 'admin');
@@ -65,9 +64,15 @@ final class IamFlowTest extends TestCase
     protected function tearDown(): void
     {
         if (isset($this->connection)) {
-            $this->other->close();
-            $this->connection->executeStatement('DROP SCHEMA '.$this->schema.' CASCADE');
-            $this->connection->close();
+            foreach ([$this->connection, $this->other] as $connection) {
+                PostgresConnectionSupport::resetSharedConnection($connection);
+            }
+            $this->other->executeStatement('RESET search_path');
+            $this->other->executeStatement('RESET lock_timeout');
+            $this->connection->transactional(function (Connection $connection): void {
+                $connection->executeStatement('RESET search_path');
+                $connection->executeStatement('DROP SCHEMA IF EXISTS '.$this->schema.' CASCADE');
+            });
         }
     }
 
@@ -367,7 +372,7 @@ final class IamFlowTest extends TestCase
                 $writer->states->save($next);
             });
         };
-        $this->other->executeStatement("SET lock_timeout = '50ms'");
+        $this->other->executeStatement("SET lock_timeout = '10ms'");
         self::assertTrue($this->runtime->authorizationGuard->observe('acme', fn (): bool =>
             $this->runtime->authorization->allows($this->admin, Permission::ManageIam, Scope::tenant())));
         $this->runtime->states->expectQuery(function () use ($writer, $write): bool {

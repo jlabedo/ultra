@@ -8,7 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\TransactionIsolationLevel;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
-use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\UnitOfWork\DoctrineTransactionManager;
 use Ultra\UnitOfWork\NoTransactionManager;
 use Ultra\UnitOfWork\TransactionManager;
@@ -111,7 +111,7 @@ final class TransactionOwnershipTest extends TestCase
         if (false === $dsn || '' === $dsn) {
             self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run transaction ownership tests.');
         }
-        $this->connection = PostgresTestSupport::connection($dsn);
+        $this->connection = PostgresConnectionSupport::connection($dsn);
         $this->connection->executeStatement('CREATE TEMP TABLE unit_of_work_values (value TEXT NOT NULL)');
     }
 }
