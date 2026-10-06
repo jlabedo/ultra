@@ -105,7 +105,7 @@ final readonly class BookRoom
   loaded or expected. A state depending on a nullable state must therefore be nullable itself. Every loaded state is
   expected, and the expectation is checked at flush even if the state is not saved, so a concurrent change to a
   source row (the member moved company) makes the flush fail.
-- `#[StateReader]` handlers follow the same rules.
+- Stored-state `#[StateReader]` handlers use the same binding and loading rules; see [their consistency responsibilities](stateful.md#consistency-responsibilities).
 - A method bound by convention adds a loading round without any attribute on the parameter: read the message's id
   methods to see a handler's dependencies.
 - Limitation: a method can only depend on states of the same flavor. An event-sourced state cannot feed a state-store
@@ -138,7 +138,7 @@ The aspect always hydrates an object. Commands should ask the state whether it h
 
 ## Example
 
-A full course/student subscription example (events, states, commands, and tests) lives under [StatefulMessageHandling/Tests/Example](../../src/StatefulMessageHandling/Tests/Example): create course, subscribe/unsubscribe students, with check mode and explicit course existence on the state.
+The [course commands](../../src/StatefulMessageHandling/Tests/Example/Command) use the event-sourced [events](../../src/EventSourcedState/Tests/Example/Event) and [states](../../src/EventSourcedState/Tests/Example/State). The [guarantee suites](stateful.md#test-ownership-and-maintenance) exercise course creation, subscriptions, unsubscriptions and CHECK alongside stored-state decisions.
 
 ## Dependencies
 

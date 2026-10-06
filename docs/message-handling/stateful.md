@@ -14,7 +14,9 @@ Event-sourced decisions reconstruct their states from relevant events and append
 
 ## Consistency responsibilities
 
-The handler signature identifies injected states whose reads receive automatic optimistic concurrency protection. Event-sourced decisions retain append conditions from all loading rounds. Stored-state decisions register expectations for loaded or missing states, including states that are not subsequently saved.
+For `#[DecisionHandler]`, the signature identifies injected states whose reads receive automatic optimistic concurrency protection. Event-sourced decisions retain append conditions from all loading rounds. Stored-state decisions register expectations for loaded or missing states, including states that are not subsequently saved.
+
+`#[StateReader]` resolves bindings and loads stored states without registering the decision aspects' optimistic expectations. Enroll those dependencies explicitly when a reader participates in a decision.
 
 This is only part of a decision's consistency boundary. The caller is responsible for additional dependencies, including reads performed by services and queries that need explicit expectations or query guards. See [StateStore](../stored-state/README.md) for those mechanisms.
 
@@ -44,7 +46,32 @@ A concurrency conflict is distinct from a business invariant violation. Retry po
 
 - [EventSourcedDecisionAspect](../../src/StatefulMessageHandling/EventSourcedDecisionAspect.php)
 - [StateStoreDecisionAspect](../../src/StatefulMessageHandling/StateStoreDecisionAspect.php)
+- [StateStoreReadAspect](../../src/StatefulMessageHandling/StateStoreReadAspect.php)
 - [DecisionMode](../../src/StatefulMessageHandling/DecisionMode.php)
 - [EventStoreUnitOfWork](../../src/EventStore/EventStoreUnitOfWork.php)
 - [AsyncQueueUnitOfWork](../../src/MessageHandling/Async/AsyncQueueUnitOfWork.php)
 - [PostgresAsyncQueue](../../src/MessageHandling_PostgresQueue/PostgresAsyncQueue.php)
+
+## Test ownership and maintenance
+
+The guarantee suites live in `src/StatefulMessageHandling/Tests`; persistence primitives remain owned by
+[Event sourcing](../event-sourcing/README.md#test-ownership) and
+[StateStore](../stored-state/README.md#test-ownership-and-maintenance).
+
+| Guarantee | Suite |
+| --- | --- |
+| Self and separate handlers receive the requested state, including nested and composite identities, nullable stored states and read-only handlers | [StateInjectionTest](../../src/StatefulMessageHandling/Tests/StateInjectionTest.php) |
+| Independent and dependent states load in the right rounds, observe prior decisions and propagate missing source states | [DependentStateLoadingTest](../../src/StatefulMessageHandling/Tests/DependentStateLoadingTest.php) |
+| Ambiguous, missing, cyclic or incompatible bindings fail during compilation | [BindingDeclarationTest](../../src/StatefulMessageHandling/Tests/BindingDeclarationTest.php) |
+| Loaded dependencies guard append or flush, even when they produce no returned save and during CHECK | [ReadConsistencyTest](../../src/StatefulMessageHandling/Tests/ReadConsistencyTest.php) |
+| CHECK executes the decision and services, preserves violations, propagates other exceptions and bypasses returned effects | [CheckModeTest](../../src/StatefulMessageHandling/Tests/CheckModeTest.php) |
+| Only registered returned objects are appended or saved; the original result is preserved, including mixed decisions | [DecisionEffectsTest](../../src/StatefulMessageHandling/Tests/DecisionEffectsTest.php) |
+| Events are appended before publication, with the same final child context in storage and on the bus | [EventPublicationTest](../../src/StatefulMessageHandling/Tests/EventPublicationTest.php) |
+| Dumped Symfony containers assemble each available persistence family and select aspects from the handler’s state parameters | [ContainerAssemblyTest](../../src/StatefulMessageHandling/Tests/ContainerAssemblyTest.php) |
+
+Providers express alternative persistence families, binding forms or result shapes. Shared support assembles
+real extensions and cleans generated files; assertions remain in the suites. Generated-runtime cases run
+in separate processes so each case can own and remove its compilation directory.
+
+Use the shared [test-refactoring rules](../development.md#refactoring-tests) to maintain these guarantees
+and compare coverage and mutations.
