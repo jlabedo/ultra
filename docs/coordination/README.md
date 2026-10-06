@@ -51,6 +51,11 @@ The coordinator key lets independent subsystems each run their own singleton.
 Implementations: `InMemory\InMemoryCoordinatorLease`,
 `Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease`.
 
+The Postgres implementation currently serializes access to an existing
+coordinator row. On an absent key, simultaneous callers can both return true
+from `acquire()` or `markWakeEnqueued()`: exclusive ownership and wake debounce
+do not hold during that first-row race.
+
 ### `Lease\Activator`
 
 The minimal "work is available" signal. How a worker is actually woken (enqueue a
@@ -71,3 +76,22 @@ under **its own private service ids**, not under the `DirtyKeyTracker` /
 with any application that wires its own coordination services for an unrelated
 job. (The projection runtime follows this: see
 `ProjectionExtension::DIRTY_KEY_TRACKER_ID` / `COORDINATOR_LEASE_ID`.)
+
+## Guarantee suites
+
+Runtime and Postgres guarantees live together under
+[`src/Coordination/Tests`](../../src/Coordination/Tests). Common scenarios run
+against both implementations through a backend provider; setup and cleanup stay
+in the context's support fixture, with assertions in the suites.
+
+| Guarantee | Suite |
+| --- | --- |
+| Coalesced observations, busiest keys, limits, channel isolation and lost-update-safe acknowledgements | [PendingWorkTest](../../src/Coordination/Tests/PendingWorkTest.php) |
+| Exclusive ownership, holder-only release and renewal, independent keys and expiration | [LeaseOwnershipTest](../../src/Coordination/Tests/LeaseOwnershipTest.php) |
+| Wake debounce, live-holder suppression, expiry and recorded work signals | [WakeSignalsTest](../../src/Coordination/Tests/WakeSignalsTest.php) |
+| Postgres contention on an existing lease row, transaction visibility and rollback | [LeasePersistenceTest](../../src/Coordination/Tests/LeasePersistenceTest.php) |
+
+The persistence suite uses a separate worker process and connection. Projection
+keeps its own composition scenarios for bucket activity, scheduling and worker
+activation. General audit and deletion rules are in
+[Refactoring tests](../development.md#refactoring-tests).
