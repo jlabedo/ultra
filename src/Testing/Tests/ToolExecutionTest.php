@@ -9,7 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 
 /** @internal */
-final class ToolProxyTest extends TestCase
+final class ToolExecutionTest extends TestCase
 {
     /** @return iterable<string, array{int, int}> */
     public static function outcomes(): iterable
