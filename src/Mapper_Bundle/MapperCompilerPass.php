@@ -7,12 +7,16 @@ namespace Ultra\Mapper_Bundle;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\Mapper\RuntimeNormalizerInterface;
+use Ultra\Mapper\GeneratedNormalizerName;
 use Ultra\Mapper_Bundle\TagNames;
 use Ultra\Mapper_Compiler\NormalizerGenerator;
 
 final readonly class MapperCompilerPass implements CompilerPassInterface
 {
-    public function __construct(private string $outputDir) {}
+    public function __construct(
+        private string $outputDir,
+        private string $generationNamespace = GeneratedNormalizerName::DEFAULT_NAMESPACE,
+    ) {}
 
     public function process(ContainerBuilder $container): void
     {
@@ -109,9 +113,8 @@ final readonly class MapperCompilerPass implements CompilerPassInterface
                 throw new \RuntimeException(sprintf('Cannot compile mapper normalizer for missing class "%s".', $className));
             }
 
-            $normalizerClassBaseName = '__Normalizer_'.str_replace('\\', '_', ltrim($className, '\\'));
-            $normalizerClass = 'Ultra\Normalizer\Generated\\'.$normalizerClassBaseName;
-            $cacheFile = rtrim($this->outputDir, '/').'/'.$normalizerClassBaseName.'.php';
+            $normalizerClass = GeneratedNormalizerName::forType($className, $this->generationNamespace);
+            $cacheFile = rtrim($this->outputDir, '/').'/'.GeneratedNormalizerName::cacheFileName($normalizerClass);
             $fileGen = NormalizerGenerator::for($className, $normalizerClass, $runtimeNormalizedTypes);
 
             file_put_contents($cacheFile, $fileGen->generate());

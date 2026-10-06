@@ -6,6 +6,14 @@ Compiled normalizers are a central example of Ultra's preference for moving work
 
 UltraNormalizer can generate a missing normalizer on first use when Mapper_Compiler is available, then cache and load the generated PHP class. This supports standalone use. Precompiling normalizers is the recommended production approach so generation does not occur on the first runtime call.
 
+`UltraNormalizer`, `MapperCompilerPass` and `MapperExtension` accept a `generationNamespace` argument,
+defaulting to `Ultra\Normalizer\Generated`. Use a distinct namespace for each compilation or runtime
+configuration that can coexist in a PHP process. The namespace and handled type identify both the generated
+class and its file, so separate compilations can share an artifact directory. Keep the namespace when
+moving precompiled artifacts to another directory; their identity does not depend on the directory path.
+A class already loaded for that namespace remains reusable, and an instance keeps its generated normalizers
+even when their files are removed. Register runtime normalizers before generating or loading the configuration.
+
 
 ## Custom normalizers
 
@@ -28,6 +36,7 @@ The context's runtime, compiler and Symfony guarantees are tested together in `s
 | Traversal rejects cycles and resets after each root call | [NormalizationSafetyTest](../../src/Mapper/Tests/NormalizationSafetyTest.php) | A circular graph, recovery after failure and repeated calls. |
 | Normalizer resolution respects configuration and the generated cache | [NormalizerResolutionTest](../../src/Mapper/Tests/NormalizerResolutionTest.php) | Exact registered types at root and in nested generated code, subclasses and late registration. |
 | Generated files are usable runtime artifacts | [CompilationLifecycleTest](../../src/Mapper/Tests/CompilationLifecycleTest.php) | Standalone default cache, first-use generation, instance reuse, loading precompiled files without regeneration and generated class names. |
+| Compilation identities preserve independent configurations | [GenerationIdentityTest](../../src/Mapper/Tests/GenerationIdentityTest.php) | Different runtime configurations in one process and artifact directory; moved precompiled artifacts retain their namespace. |
 | Shapes describe usable representations for storage compilation | [NormalizationShapeTest](../../src/Mapper/Tests/NormalizationShapeTest.php) | Stored fields, value wrappers, enums, property shapes, precise runtime return types and closed array shapes; rejection of ambiguous shapes. |
 | Symfony configuration produces working compiled normalizers | [ContainerCompilationTest](../../src/Mapper/Tests/ContainerCompilationTest.php) | Resource tags, AsValue autoconfiguration, runtime type tags, class parameters, multiple types and invalid configuration. |
 

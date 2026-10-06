@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\Mapper_Example\Tests;
 
 use PHPUnit\Framework\TestCase;
+use Ultra\Mapper\GeneratedNormalizerName;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Example\Domain\RuntimeEmail;
 use Ultra\Mapper_Example\Domain\RuntimeEmailNormalizer;
@@ -32,7 +33,9 @@ final class MapperExtensionTest extends TestCase
         self::bootKernel();
 
         $cacheDir = self::$kernel->getBuildDir().'/mapper';
-        $cacheFile = $cacheDir.'/__Normalizer_Ultra_Mapper_Example_Domain_UserRegistered.php';
+        $cacheFile = $cacheDir.'/'.GeneratedNormalizerName::cacheFileName(
+            GeneratedNormalizerName::forType(UserRegistered::class, GeneratedNormalizerName::DEFAULT_NAMESPACE),
+        );
         $this->assertFileExists($cacheFile);
 
         $normalizer = new UltraNormalizer($cacheDir);

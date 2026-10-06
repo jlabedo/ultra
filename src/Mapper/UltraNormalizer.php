@@ -7,8 +7,6 @@ use Ultra\Mapper_Compiler\NormalizerGenerator;
 
 class UltraNormalizer
 {
-    private const string NAMESPACE = 'Ultra\Normalizer\Generated';
-
     private string $cacheDir;
 
     /** @var array<class-string, RuntimeNormalizerInterface> */
@@ -24,7 +22,10 @@ class UltraNormalizer
      */
     private array $visitedOids = [];
 
-    public function __construct(string $cacheDir = __DIR__.'/../../var/normalizer_cache')
+    public function __construct(
+        string $cacheDir = __DIR__.'/../../var/normalizer_cache',
+        private string $generationNamespace = GeneratedNormalizerName::DEFAULT_NAMESPACE,
+    )
     {
         $this->cacheDir = $cacheDir;
         if (!is_dir($this->cacheDir)) {
@@ -75,11 +76,10 @@ class UltraNormalizer
 
     private function createNormalizer(string $className): NormalizerInterface
     {
-        $normalizerClassBaseName = '__Normalizer_'.str_replace('\\', '_', ltrim($className, '\\'));
-        $normalizerClass = self::NAMESPACE.'\\'.$normalizerClassBaseName;
+        $normalizerClass = GeneratedNormalizerName::forType($className, $this->generationNamespace);
 
         if (!class_exists($normalizerClass, false)) {
-            $cacheFile = $this->cacheDir.'/'.$normalizerClassBaseName.'.php';
+            $cacheFile = $this->cacheDir.'/'.GeneratedNormalizerName::cacheFileName($normalizerClass);
             if (!file_exists($cacheFile)) {
                 if (!class_exists(NormalizerGenerator::class)) {
                     throw new \RuntimeException("Cannot generate normalizer for class '{$className}' on the fly because the ultra/mapper-compiler package is not installed. Try running \"composer require ultra/mapper-compiler\".");

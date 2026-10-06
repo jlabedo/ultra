@@ -8,16 +8,19 @@ use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\Container\ContainerExtension;
 use Ultra\Mapper\Attribute\AsValue;
+use Ultra\Mapper\GeneratedNormalizerName;
 use Ultra\Mapper\RuntimeNormalizerInterface;
 use Ultra\Mapper\UltraNormalizer;
 
 final class MapperExtension implements ContainerExtension
 {
+    public function __construct(private readonly string $generationNamespace = GeneratedNormalizerName::DEFAULT_NAMESPACE) {}
+
     public function build(ContainerBuilder $container): void
     {
 
         $container->register(UltraNormalizer::class, UltraNormalizer::class)
-            ->setArguments(['%kernel.build_dir%/mapper'])
+            ->setArguments(['%kernel.build_dir%/mapper', $this->generationNamespace])
         ;
 
         $container->registerForAutoconfiguration(RuntimeNormalizerInterface::class)
@@ -35,6 +38,6 @@ final class MapperExtension implements ContainerExtension
 
         $buildDir = (string) $container->getParameter('kernel.build_dir');
 
-        $container->addCompilerPass(new MapperCompilerPass($buildDir.'/mapper'));
+        $container->addCompilerPass(new MapperCompilerPass($buildDir.'/mapper', $this->generationNamespace));
     }
 }
