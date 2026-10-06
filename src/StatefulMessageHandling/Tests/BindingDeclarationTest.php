@@ -5,12 +5,8 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Ultra\StatefulMessageHandling\Tests\Support\DecisionTestCase;
 
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class BindingDeclarationTest extends DecisionTestCase
 {
     #[DataProvider('invalidBindings')]
