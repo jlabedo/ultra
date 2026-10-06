@@ -7,7 +7,7 @@
 | [WorkerLifecycleTest](Concurrent/WorkerLifecycleTest.php) | Real child processes return values or exception descriptions, report logs and stderr, respect waiting deadlines, and disappear after abort, stop or cluster destruction. |
 | [ToolExecutionTest](ToolExecutionTest.php) | The PHPUnit proxy preserves interpreter options, arguments, output and passing or failing exit status. |
 | [ContainerSetupTest](ContainerSetupTest.php) | Derived UltraLight setup preserves registration, leaves the base setup reusable, selects the requested container factory, and rejects duplicate service identities. |
-| [PostgresFixtureIsolationTest](PostgresFixtureIsolationTest.php) | Shared connections retain identity while reset rolls back every nested transaction and releases session advisory locks. Fresh connections use a different backend. |
+| [PostgresFixtureIsolationTest](PostgresFixtureIsolationTest.php) | Shared connections retain identity while reset rolls back every nested transaction and releases session advisory locks. Named sessions and fresh connections use independent backends; resetting one session preserves another's transaction and locks. |
 
 The process suites belong to the `slow` group. The PID observations require the POSIX extension. Deadline checks begin after the child reaches a checkpoint, so startup time does not determine the asserted deadline.
 

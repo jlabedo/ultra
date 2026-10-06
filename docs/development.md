@@ -18,6 +18,12 @@ bin/phpunit src/StateStore/Tests
 
 Postgres tests use the local database by default.
 
+`PostgresTestSupport::sharedConnection($dsn)` reuses the primary session. Pass a name as the second argument
+to reuse a separate session for a concurrent actor; names identify independent connections within each DSN.
+Call `resetSharedConnection()` in `finally` to roll back nested transactions and release session advisory locks.
+Shared connections close at process shutdown. `CooperativeLockingTest` reuses a named competing session and
+bounds expected lock waits with a transaction-local `lock_timeout` of 10 ms, after the holder has acquired its locks.
+
 ### Timing audit
 
 After setup, run the executable audit from any directory:

@@ -21,7 +21,7 @@ use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
 
 final class PostgresTestSupport
 {
-    /** @var array<string, Connection> */
+    /** @var array<string, array<string, Connection>> */
     private static array $connections = [];
 
     public static function connection(string $dsn): Connection
@@ -34,17 +34,18 @@ final class PostgresTestSupport
         );
     }
 
-    public static function sharedConnection(string $dsn): Connection
+    /** Callers reset borrowed connections; shutdown closes each named session. */
+    public static function sharedConnection(string $dsn, string $name = 'default'): Connection
     {
-        if (!isset(self::$connections[$dsn])) {
-            self::$connections[$dsn] = self::connection($dsn);
+        if (!isset(self::$connections[$dsn][$name])) {
+            self::$connections[$dsn][$name] = self::connection($dsn);
 
-            register_shutdown_function(static function () use ($dsn): void {
-                self::$connections[$dsn]?->close();
+            register_shutdown_function(static function () use ($dsn, $name): void {
+                self::$connections[$dsn][$name]->close();
             });
         }
 
-        return self::$connections[$dsn];
+        return self::$connections[$dsn][$name];
     }
 
     public static function resetSharedConnection(Connection $connection): void
