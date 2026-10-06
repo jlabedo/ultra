@@ -61,23 +61,25 @@ final class CompilationLifecycleTest extends MapperTestCase
         $container->setDefinition('record', new Definition(\stdClass::class)
             ->addResourceTag(TagNames::NORMALIZABLE, ['class' => Foo::class]));
         new MapperCompilerPass($cache, generationNamespace: $this->generationNamespace)->process($container);
-        $files = $this->generatedFiles($cache);
-        self::assertNotEmpty($files);
-        foreach ($files as $file => $code) {
-            file_put_contents($file, $code."\n\$GLOBALS['mapper_loaded_artifacts'][] = __FILE__;\n");
-        }
         $compiled = $this->generatedFiles($cache);
-        $GLOBALS['mapper_loaded_artifacts'] = [];
-        try {
-            $normalizer = $this->normalizer();
-
-            self::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
-
-            self::assertNotEmpty($GLOBALS['mapper_loaded_artifacts']);
-            self::assertSame($compiled, $this->generatedFiles($cache));
-        } finally {
-            unset($GLOBALS['mapper_loaded_artifacts']);
+        self::assertNotEmpty($compiled);
+        // An old timestamp reveals even a byte-for-byte regeneration.
+        $compiledAt = 946_684_800;
+        foreach (array_keys($compiled) as $file) {
+            touch($file, $compiledAt);
         }
+        $includedBefore = get_included_files();
+        $normalizer = $this->normalizer();
+
+        self::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
+
+        $loaded = array_diff(get_included_files(), $includedBefore);
+        foreach (array_keys($compiled) as $file) {
+            self::assertContains($file, $loaded);
+            clearstatcache(true, $file);
+            self::assertSame($compiledAt, filemtime($file));
+        }
+        self::assertSame($compiled, $this->generatedFiles($cache));
     }
 
     #[DataProvider('generatedClassNames')]

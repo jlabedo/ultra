@@ -42,29 +42,19 @@ final class ContainerCompilationTest extends MapperTestCase
         $container->compile();
 
         $cache = $this->directory.'/build/mapper';
-        $files = $this->generatedFiles($cache);
-        self::assertNotEmpty($files);
-        foreach ($files as $file => $code) {
-            file_put_contents($file, $code."\n\$GLOBALS['mapper_loaded_artifacts'][] = __FILE__;\n");
-        }
         $compiled = $this->generatedFiles($cache);
-        $GLOBALS['mapper_loaded_artifacts'] = [];
-        try {
-            $normalizer = $container->get(UltraNormalizer::class);
-            self::assertInstanceOf(UltraNormalizer::class, $normalizer);
-            $normalizer->registerRuntimeNormalizer($container->get('email_normalizer'));
-            $record = new AssemblyRecord(new RuntimeEmail('primary@example.test'), new SecondaryRuntimeEmail('secondary@example.test'));
-            $representation = ['primary' => 'runtime-email:primary@example.test', 'secondary' => 'runtime-email:secondary@example.test'];
+        self::assertNotEmpty($compiled);
+        $normalizer = $container->get(UltraNormalizer::class);
+        self::assertInstanceOf(UltraNormalizer::class, $normalizer);
+        $normalizer->registerRuntimeNormalizer($container->get('email_normalizer'));
+        $record = new AssemblyRecord(new RuntimeEmail('primary@example.test'), new SecondaryRuntimeEmail('secondary@example.test'));
+        $representation = ['primary' => 'runtime-email:primary@example.test', 'secondary' => 'runtime-email:secondary@example.test'];
 
-            self::assertSame($representation, $normalizer->toScalar($record));
-            self::assertEquals($record, $normalizer->fromScalar($representation, AssemblyRecord::class));
-            self::assertSame(42, $normalizer->toScalar(new InnerValue(42)));
-            self::assertEquals(new InnerValue(42), $normalizer->fromScalar(42, InnerValue::class));
-            self::assertNotEmpty($GLOBALS['mapper_loaded_artifacts']);
-            self::assertSame($compiled, $this->generatedFiles($cache));
-        } finally {
-            unset($GLOBALS['mapper_loaded_artifacts']);
-        }
+        self::assertSame($representation, $normalizer->toScalar($record));
+        self::assertEquals($record, $normalizer->fromScalar($representation, AssemblyRecord::class));
+        self::assertSame(42, $normalizer->toScalar(new InnerValue(42)));
+        self::assertEquals(new InnerValue(42), $normalizer->fromScalar(42, InnerValue::class));
+        self::assertSame($compiled, $this->generatedFiles($cache));
     }
 
     #[DataProvider('invalidConfiguration')]

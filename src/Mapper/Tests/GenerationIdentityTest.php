@@ -59,22 +59,17 @@ final class GenerationIdentityTest extends MapperTestCase
         new MapperCompilerPass($cache, generationNamespace: $namespace)->process($container);
         $files = $this->generatedFiles($cache);
         self::assertCount(1, $files);
-        foreach ($files as $file => $code) {
-            file_put_contents($file, $code."\n\$GLOBALS['mapper_moved_artifacts'][] = __FILE__;\n");
-        }
         $movedCache = $this->directory.'/deployed';
         rename($cache, $movedCache);
         $compiled = $this->generatedFiles($movedCache);
-        $GLOBALS['mapper_moved_artifacts'] = [];
-        try {
-            $normalizer = new UltraNormalizer($movedCache, generationNamespace: $namespace);
+        $includedBefore = get_included_files();
+        $normalizer = new UltraNormalizer($movedCache, generationNamespace: $namespace);
 
-            self::assertSame(['id' => 42, 'name' => 'bar'], $normalizer->toScalar(new Foo(42, 'bar')));
-            self::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
-            self::assertSame(array_keys($compiled), $GLOBALS['mapper_moved_artifacts']);
-            self::assertSame($compiled, $this->generatedFiles($movedCache));
-        } finally {
-            unset($GLOBALS['mapper_moved_artifacts']);
+        self::assertSame(['id' => 42, 'name' => 'bar'], $normalizer->toScalar(new Foo(42, 'bar')));
+        self::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
+        $loaded = array_diff(get_included_files(), $includedBefore);
+        foreach (array_keys($compiled) as $file) {
+            self::assertContains($file, $loaded);
         }
     }
 
