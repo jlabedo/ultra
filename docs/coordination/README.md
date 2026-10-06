@@ -26,6 +26,10 @@ exactly the counters it observed.
 - The counter is the basis of the lost-update-safe drain: `drainSeen()` subtracts
   only the observed value, so markers bumped concurrently during processing
   survive to the next cycle. Re-processing a key is therefore harmless.
+- `drainSeen()` returns the number of keys whose positive live counter was
+  reduced by a positive observed counter. Missing keys, already drained keys
+  and non-positive observations do not count; repeating an observation after
+  its counter reaches zero returns `0` in both implementations.
 - Row count is bounded by the number of *distinct dirty keys*, not by event
   volume.
 
@@ -51,10 +55,11 @@ The coordinator key lets independent subsystems each run their own singleton.
 Implementations: `InMemory\InMemoryCoordinatorLease`,
 `Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease`.
 
-The Postgres implementation currently serializes access to an existing
-coordinator row. On an absent key, simultaneous callers can both return true
-from `acquire()` or `markWakeEnqueued()`: exclusive ownership and wake debounce
-do not hold during that first-row race. Corrections are tracked in [TODO](../../TODO.md).
+The Postgres implementation creates a missing coordinator row before reading
+it under a row lock, within the same transaction. Concurrent callers wait for
+the first reservation to commit, then evaluate its current state. Exclusive
+ownership, wake debounce and live-holder suppression therefore also apply to
+the first reservation on a previously absent key.
 
 ### `Lease\Activator`
 
@@ -86,12 +91,14 @@ in the context's support fixture, with assertions in the suites.
 
 | Guarantee | Suite |
 | --- | --- |
-| Coalesced observations, busiest keys, limits, channel isolation and lost-update-safe acknowledgements | [PendingWorkTest](../../src/Coordination/Tests/PendingWorkTest.php) |
+| Coalesced observations, busiest keys, limits, channel isolation, lost-update-safe acknowledgements and reduced-key counts | [PendingWorkTest](../../src/Coordination/Tests/PendingWorkTest.php) |
 | Exclusive ownership, holder-only release and renewal, independent keys and expiration | [LeaseOwnershipTest](../../src/Coordination/Tests/LeaseOwnershipTest.php) |
 | Wake debounce, live-holder suppression, expiry and recorded work signals | [WakeSignalsTest](../../src/Coordination/Tests/WakeSignalsTest.php) |
-| Postgres contention on an existing lease row, transaction visibility and rollback | [LeasePersistenceTest](../../src/Coordination/Tests/LeasePersistenceTest.php) |
+| Postgres contention on absent and existing keys, exclusive lease and wake reservations, live-holder suppression, transaction visibility and rollback | [LeasePersistenceTest](../../src/Coordination/Tests/LeasePersistenceTest.php) |
 
-The persistence suite uses a separate worker process and connection. Projection
-keeps its own composition scenarios for bucket activity, scheduling and worker
-activation. General audit and deletion rules are in
+The persistence suite's contention cases use a separate worker process and
+connection, and belong to the `slow` group. They observe the competing request
+waiting on a database lock before allowing the first transaction to commit.
+Projection keeps its own composition scenarios for bucket activity, scheduling
+and worker activation. General audit and deletion rules are in
 [Refactoring tests](../development.md#refactoring-tests).

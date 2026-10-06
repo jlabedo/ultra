@@ -9,17 +9,6 @@
   des 1 000 premiers événements. Protéger la reconstruction sur plusieurs pages ;
   voir la [limite actuelle](docs/event-sourcing/states.md).
 
-- [ ] Rendre atomiques la première acquisition de lease et la première réservation
-  de wake dans Coordination Postgres. Sur une clé absente, deux appels concurrents
-  peuvent actuellement retourner tous deux `true`, contrairement à l'exclusivité
-  et au debounce annoncés. Couvrir ces courses avec deux connexions synchronisées ;
-  voir [Coordination](docs/coordination/README.md).
-
-- [ ] Clarifier puis aligner le nombre de clés touchées retourné par `drainSeen()`
-  entre mémoire et Postgres. Répéter une observation après avoir vidé son compteur
-  retourne actuellement `0` en mémoire et `1` en Postgres, sans travail restant ;
-  voir [Coordination](docs/coordination/README.md).
-
 - [ ] Créer les index déclarés lors de la création d'une table dans Schema.
   `CreateTable` conserve les définitions d'index, mais son SQL les omet ; couvrir
   l'effet réel sur Postgres, voir [Schema](docs/schema/README.md).

@@ -55,6 +55,8 @@ final class PendingWorkTest extends CoordinationTestCase
         self::assertEquals([new PendingKey('a', $key, 1)], $tracker->pendingForChannel('a'));
         self::assertSame(1, $tracker->drainSeen('a', [$key => 10]));
         self::assertSame([], $tracker->pendingForChannel('a'));
+        self::assertSame(0, $tracker->drainSeen('a', $seen));
+        self::assertSame(0, $tracker->drainSeen('a', [$key => 10]));
         $tracker->bump('a', $key);
         self::assertEquals([new PendingKey('a', $key, 1)], $tracker->pendingForChannel('a'));
     }

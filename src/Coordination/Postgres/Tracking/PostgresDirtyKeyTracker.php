@@ -91,7 +91,7 @@ final readonly class PostgresDirtyKeyTracker implements DirtyKeyTracker
                  SET counter = GREATEST(dirty.counter - seen.seen_counter, 0),
                      updated_at = statement_timestamp()
                  FROM (VALUES %2$s) AS seen(key, seen_counter)
-                 WHERE dirty.channel = ? AND dirty.key = seen.key',
+                 WHERE dirty.channel = ? AND dirty.key = seen.key AND dirty.counter > 0',
                 $this->table,
                 implode(', ', $values),
             ),

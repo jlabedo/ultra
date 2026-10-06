@@ -36,7 +36,6 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
                 }
             }
 
-            $this->upsertRow($coordinatorKey, $now);
             $this->connection->executeStatement(
                 sprintf(
                     'UPDATE %s
@@ -118,7 +117,6 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
         try {
             $row = $this->lockRow($coordinatorKey);
             $now = $this->clock->now();
-            $this->upsertRow($coordinatorKey, $now);
 
             if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
                 $leaseExpiresAt = new DatePoint((string) $row['lease_expires_at']);
@@ -164,6 +162,10 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
     /** @return null|array{worker_id: null|string, lease_expires_at: null|string, wake_enqueued_until: null|string} */
     private function lockRow(string $coordinatorKey): ?array
     {
+        // A competing insert can wait on the unique key. Read the row only
+        // after that wait so the decision includes the committed reservation.
+        $this->upsertRow($coordinatorKey, $this->clock->now());
+
         $row = $this->connection->executeQuery(
             sprintf(
                 'SELECT worker_id, lease_expires_at, wake_enqueued_until FROM %s WHERE coordinator_key = ? FOR UPDATE',

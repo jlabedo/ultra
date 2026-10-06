@@ -51,7 +51,9 @@ interface DirtyKeyTracker
      * `$seen` maps key => the counter value the caller observed before
      * processing. Concurrent bumps that happened after observation remain,
      * leaving the key pending for the next cycle. Returns the number of keys
-     * touched.
+     * whose positive live counter was reduced by a positive observed counter.
+     * Missing keys, already drained keys and non-positive observations do not
+     * contribute to the count.
      *
      * @param array<string, int> $seen
      */
