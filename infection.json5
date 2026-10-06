@@ -1,5 +1,6 @@
 {
     "$schema": "https://raw.githubusercontent.com/infection/infection/0.32.6/resources/schema.json",
+    "tmpDir": "var/infection",
     "source": {
         "directories": [
             "src"

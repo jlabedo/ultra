@@ -18,7 +18,7 @@ Packages live in `src/`, examples in `examples/`, and integration applications i
 ## Verification
 
 - Every behavior change includes functional test coverage. Implementation-detail coverage is appropriate for complex logic or hard-to-reproduce cases.
-- Keep tests alongside the package under `src/<Package>/Tests`; shared support is in `src/Testing`.
+- Group each context's guarantee suites under `src/<PrimaryPackage>/Tests`, including its compiler and integration packages; shared support is in `src/Testing`.
 - For test setup, package-targeted runs or Postgres integration, read [development verification](docs/development.md).
 - Before finishing, run checks appropriate to the change and update affected contracts or examples. For documentation changes, verify local links and distinguish current behavior from planned work.
 
