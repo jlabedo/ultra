@@ -1,0 +1,20 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Ultra\Projection_Postgres\Tests\Harness\ProjectionCoordinationHarness;
+
+require_once __DIR__ . '/../../../../../vendor/autoload.php';
+require_once __DIR__ . '/ProjectionCoordinationHarness.php';
+
+$dsn = getenv('ULTRA_PROJECTION_HARNESS_DSN') ?: getenv('ULTRA_TEST_POSTGRES_DSN');
+$eventStorePrefix = getenv('ULTRA_PROJECTION_HARNESS_EVENT_PREFIX') ?: 'projection_harness_event_';
+$projectionPrefix = getenv('ULTRA_PROJECTION_HARNESS_PROJECTION_PREFIX') ?: 'projection_harness_projection_';
+
+if (!is_string($dsn) || '' === $dsn) {
+    throw new LogicException('ULTRA_PROJECTION_HARNESS_DSN or ULTRA_TEST_POSTGRES_DSN must be set.');
+}
+
+$application = ProjectionCoordinationHarness::createApplication($dsn, $eventStorePrefix, $projectionPrefix, __FILE__);
+exit($application->run());

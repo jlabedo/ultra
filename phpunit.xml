@@ -18,6 +18,7 @@
     <exclude>
       <directory>./src/*/Tests</directory>
       <directory>./src/*/vendor</directory>
+      <directory>./src/*/*/vendor</directory>
     </exclude>
   </source>
 </phpunit>

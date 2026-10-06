@@ -10,11 +10,11 @@ Schema currently separates reconciliation operations from Postgres SQL generatio
 
 The caller supplies current and target SchemaDefinition values. Stable table and column identities are distinct from SQL names: keeping an identity while changing its name expresses a rename; removing an identity expresses a drop, and adding one expresses creation. SchemaReconciler produces operations, and PostgresSqlGenerator produces SQL statements. StateStore does not currently derive or create its SQL schema automatically.
 
-See [SchemaReconciler](../../src/Schema/SchemaReconciler.php) and [PostgresSqlGenerator](../../src/Schema/PostgresSqlGenerator.php).
+See [SchemaReconciler](../../src/Schema/Runtime/SchemaReconciler.php) and [PostgresSqlGenerator](../../src/Schema/Runtime/PostgresSqlGenerator.php).
 
 ## Guarantee suites
 
-The tests live together under [src/Schema/Tests](../../src/Schema/Tests), organized by observable guarantees:
+The tests live together under [src/Schema/Runtime/Tests](../../src/Schema/Tests), organized by observable guarantees:
 
 | Guarantee | Suite |
 | --- | --- |

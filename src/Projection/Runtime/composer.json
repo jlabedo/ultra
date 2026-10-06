@@ -1,0 +1,32 @@
+{
+    "name": "ultra/projection",
+    "description": "Ultra Framework - Projection Definitions",
+    "type": "library",
+    "license": "proprietary",
+    "authors": [
+        {
+            "name": "Jean de La Bédoyère",
+            "email": "1191198+jlabedo@users.noreply.github.com"
+        }
+    ],
+    "require": {
+        "php": ">=8.4",
+        "psr/clock": "^1.0",
+        "symfony/console": "7.*|8.*",
+        "symfony/dependency-injection": "7.*|8.*",
+        "ultra/container": "*",
+        "ultra/coordination": "self.version",
+        "ultra/event-store": "self.version",
+        "ultra/mapper": "self.version",
+        "ultra/time": "self.version"
+    },
+    "suggest": {
+        "ultra/message-handling": "Enables mediator-based projection worker activation.",
+        "ultra/message-handling-compiler": "Compiles the optional projection message handlers for Symfony applications."
+    },
+    "autoload": {
+        "psr-4": {
+            "Ultra\\Projection\\": ""
+        }
+    }
+}

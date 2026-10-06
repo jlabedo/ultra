@@ -3,7 +3,6 @@
 declare(strict_types=1);
 
 require_once __DIR__ . '/vendor/autoload.php';
-require_once __DIR__ . '/src/EventStore_Postgres/Tests/Support/PostgresTestSupport.php';
 
 use Doctrine\DBAL\Connection;
 use Psr\Log\AbstractLogger;
@@ -12,11 +11,7 @@ use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\PostgresEventStoreSchemaDefinition;
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestConnection;
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSchemaForImplementation;
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestStoreForImplementation;
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedLockStrategies;
-use function Ultra\EventStore_Postgres\Tests\Support\postgresTestSupportedImplementations;
+use Ultra\Testing\PostgresTestSupport;
 
 exit(main());
 
@@ -26,9 +21,9 @@ exit(main());
 function main(): int
 {
     $config = benchmarkConfig();
-    $connection = postgresTestConnection($config['dsn']);
+    $connection = PostgresTestSupport::connection($config['dsn']);
     $prefix = benchmarkTablePrefix();
-    $schema = postgresTestSchemaForImplementation($prefix, $config['implementation'], $config['lockStrategy']);
+    $schema = PostgresTestSupport::schemaForImplementation($prefix, $config['implementation'], $config['lockStrategy']);
     $logger = new class() extends AbstractLogger {
         public function log($level, $message, array $context = []): void
         {
@@ -52,7 +47,7 @@ function main(): int
     try {
         createSchema($connection, $schema);
 
-        $store = postgresTestStoreForImplementation(
+        $store = PostgresTestSupport::storeForImplementation(
             $connection,
             $prefix,
             $config['implementation'],
@@ -224,7 +219,7 @@ function benchmarkConfig(): array
 function resolveImplementationOption(array $options): string
 {
     $implementation = strtolower(trim(resolveStringOption($options, 'implementation', 'hstore')));
-    $supportedImplementations = postgresTestSupportedImplementations();
+    $supportedImplementations = PostgresTestSupport::supportedImplementations();
 
     if (! in_array($implementation, $supportedImplementations, true)) {
         throw new \InvalidArgumentException(sprintf(
@@ -242,7 +237,7 @@ function resolveImplementationOption(array $options): string
 function resolveLockStrategyOption(array $options): string
 {
     $lockStrategy = strtolower(trim(resolveStringOption($options, 'lock-strategy', 'shared-exclusive')));
-    $supportedLockStrategies = postgresTestSupportedLockStrategies();
+    $supportedLockStrategies = PostgresTestSupport::supportedLockStrategies();
 
     if (! in_array($lockStrategy, $supportedLockStrategies, true)) {
         throw new \InvalidArgumentException(sprintf(

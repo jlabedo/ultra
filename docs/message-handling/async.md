@@ -14,7 +14,7 @@ An external action can succeed before queue acknowledgement fails. An outbox doe
 
 Applications must handle duplicate delivery and preserve compatibility with handler routes referenced by messages already in the queue during deployments. See [TODO](../../TODO.md) for planned retry work.
 
-See [QueueWorker](../../src/MessageHandling/Async/QueueWorker.php) and [PostgresAsyncQueue](../../src/MessageHandling_PostgresQueue/PostgresAsyncQueue.php).
+See [QueueWorker](../../src/MessageHandling/Runtime/Async/QueueWorker.php) and [PostgresAsyncQueue](../../src/MessageHandling/PostgresQueue/PostgresAsyncQueue.php).
 
 ## Guarantee suites
 

@@ -208,7 +208,7 @@ For suite ownership, see [StateStore test guarantees](README.md#test-ownership-a
 Run the focused framework tests from the repository root, with the local Postgres fixture running:
 
 ```bash
-bin/phpunit src/StateStore/Tests
+bin/phpunit src/StoredState/Tests
 ```
 
 Run the application comparison from `examples/coworking` with `vendor/bin/phpunit`.

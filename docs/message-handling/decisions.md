@@ -138,7 +138,7 @@ The aspect always hydrates an object. Commands should ask the state whether it h
 
 ## Example
 
-The [course commands](../../src/StatefulMessageHandling/Tests/Example/Command) use the event-sourced [events](../../src/EventSourcedState/Tests/Example/Event) and [states](../../src/EventSourcedState/Tests/Example/State). The [guarantee suites](stateful.md#test-ownership-and-maintenance) exercise course creation, subscriptions, unsubscriptions and CHECK alongside stored-state decisions.
+The [course commands](../../src/MessageHandling/Tests/Stateful/Example/Command) use the event-sourced [events](../../src/EventSourcing/Tests/State/Example/Event) and [states](../../src/EventSourcing/Tests/State/Example/State). The [guarantee suites](stateful.md#test-ownership-and-maintenance) exercise course creation, subscriptions, unsubscriptions and CHECK alongside stored-state decisions.
 
 ## Dependencies
 

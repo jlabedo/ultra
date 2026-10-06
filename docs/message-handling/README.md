@@ -11,7 +11,7 @@ Decision logic can be on the message itself or a separate handler. The stateful 
 
 MessageContext is immutable. Propagated entries contain scalars, null or lists of those values; local entries prefixed with a dot can contain in-process values and are excluded by propagated(). MessageContextPropagator assigns message and correlation IDs; child contexts receive a new message ID, retain correlation and record the parent's message ID as causation.
 
-See [MediatorInterface](../../src/MessageHandling/MediatorInterface.php), [EventBusInterface](../../src/MessageHandling/EventBusInterface.php) and [MessageContext](../../src/MessageHandling/MessageContext.php).
+See [MediatorInterface](../../src/MessageHandling/Runtime/MediatorInterface.php), [EventBusInterface](../../src/MessageHandling/Runtime/EventBusInterface.php) and [MessageContext](../../src/MessageHandling/Runtime/MessageContext.php).
 
 ## Compiled artifacts
 
@@ -21,7 +21,7 @@ applications with empty event buses reproduce this limitation. The correction is
 
 ## Guarantee suites
 
-The context's suites live in [MessageHandling/Tests](../../src/MessageHandling/Tests), including compiled routing and Postgres queue integration. Compiler fixtures and container support remain under [MessageHandling_Compiler/Tests](../../src/MessageHandling_Compiler/Tests) for consumers of that setup.
+The context's suites live in [MessageHandling/Tests](../../src/MessageHandling/Tests), including compiled routing and Postgres queue integration. Compiler fixtures and container support live under [Tests/Compiler](../../src/MessageHandling/Tests/Compiler); decision guarantees and their setup live under [Tests/Stateful](../../src/MessageHandling/Tests/Stateful).
 
 | Guarantee | Suite |
 | --- | --- |

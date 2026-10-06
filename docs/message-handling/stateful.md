@@ -44,30 +44,30 @@ A concurrency conflict is distinct from a business invariant violation. Retry po
 
 ## Code references
 
-- [EventSourcedDecisionAspect](../../src/StatefulMessageHandling/EventSourcedDecisionAspect.php)
-- [StateStoreDecisionAspect](../../src/StatefulMessageHandling/StateStoreDecisionAspect.php)
-- [StateStoreReadAspect](../../src/StatefulMessageHandling/StateStoreReadAspect.php)
-- [DecisionMode](../../src/StatefulMessageHandling/DecisionMode.php)
-- [EventStoreUnitOfWork](../../src/EventStore/EventStoreUnitOfWork.php)
-- [AsyncQueueUnitOfWork](../../src/MessageHandling/Async/AsyncQueueUnitOfWork.php)
-- [PostgresAsyncQueue](../../src/MessageHandling_PostgresQueue/PostgresAsyncQueue.php)
+- [EventSourcedDecisionAspect](../../src/MessageHandling/Stateful/EventSourcedDecisionAspect.php)
+- [StateStoreDecisionAspect](../../src/MessageHandling/Stateful/StateStoreDecisionAspect.php)
+- [StateStoreReadAspect](../../src/MessageHandling/Stateful/StateStoreReadAspect.php)
+- [DecisionMode](../../src/MessageHandling/Stateful/DecisionMode.php)
+- [EventStoreUnitOfWork](../../src/EventSourcing/EventStore/EventStoreUnitOfWork.php)
+- [AsyncQueueUnitOfWork](../../src/MessageHandling/Runtime/Async/AsyncQueueUnitOfWork.php)
+- [PostgresAsyncQueue](../../src/MessageHandling/PostgresQueue/PostgresAsyncQueue.php)
 
 ## Test ownership and maintenance
 
-The guarantee suites live in `src/StatefulMessageHandling/Tests`; persistence primitives remain owned by
+The guarantee suites live in `src/MessageHandling/Tests/Stateful`; persistence primitives remain owned by
 [Event sourcing](../event-sourcing/README.md#test-ownership) and
 [StateStore](../stored-state/README.md#test-ownership-and-maintenance).
 
 | Guarantee | Suite |
 | --- | --- |
-| Self and separate handlers receive the requested state, including nested and composite identities, nullable stored states and read-only handlers; independent compilations retain their own services and states after generated-file cleanup | [StateInjectionTest](../../src/StatefulMessageHandling/Tests/StateInjectionTest.php) |
-| Independent and dependent states load in the right rounds, observe prior decisions and propagate missing source states | [DependentStateLoadingTest](../../src/StatefulMessageHandling/Tests/DependentStateLoadingTest.php) |
-| Ambiguous, missing, cyclic or incompatible bindings fail during compilation | [BindingDeclarationTest](../../src/StatefulMessageHandling/Tests/BindingDeclarationTest.php) |
-| Loaded dependencies guard append or flush, even when they produce no returned save and during CHECK | [ReadConsistencyTest](../../src/StatefulMessageHandling/Tests/ReadConsistencyTest.php) |
-| CHECK executes the decision and services, preserves violations, propagates other exceptions and bypasses returned effects | [CheckModeTest](../../src/StatefulMessageHandling/Tests/CheckModeTest.php) |
-| Only registered returned objects are appended or saved; the original result is preserved, including mixed decisions | [DecisionEffectsTest](../../src/StatefulMessageHandling/Tests/DecisionEffectsTest.php) |
-| Events are appended before publication, with the same final child context in storage and on the bus | [EventPublicationTest](../../src/StatefulMessageHandling/Tests/EventPublicationTest.php) |
-| Dumped Symfony containers assemble each available persistence family and select aspects from the handler’s state parameters | [ContainerAssemblyTest](../../src/StatefulMessageHandling/Tests/ContainerAssemblyTest.php) |
+| Self and separate handlers receive the requested state, including nested and composite identities, nullable stored states and read-only handlers; independent compilations retain their own services and states after generated-file cleanup | [StateInjectionTest](../../src/MessageHandling/Tests/Stateful/StateInjectionTest.php) |
+| Independent and dependent states load in the right rounds, observe prior decisions and propagate missing source states | [DependentStateLoadingTest](../../src/MessageHandling/Tests/Stateful/DependentStateLoadingTest.php) |
+| Ambiguous, missing, cyclic or incompatible bindings fail during compilation | [BindingDeclarationTest](../../src/MessageHandling/Tests/Stateful/BindingDeclarationTest.php) |
+| Loaded dependencies guard append or flush, even when they produce no returned save and during CHECK | [ReadConsistencyTest](../../src/MessageHandling/Tests/Stateful/ReadConsistencyTest.php) |
+| CHECK executes the decision and services, preserves violations, propagates other exceptions and bypasses returned effects | [CheckModeTest](../../src/MessageHandling/Tests/Stateful/CheckModeTest.php) |
+| Only registered returned objects are appended or saved; the original result is preserved, including mixed decisions | [DecisionEffectsTest](../../src/MessageHandling/Tests/Stateful/DecisionEffectsTest.php) |
+| Events are appended before publication, with the same final child context in storage and on the bus | [EventPublicationTest](../../src/MessageHandling/Tests/Stateful/EventPublicationTest.php) |
+| Dumped Symfony containers assemble each available persistence family and select aspects from the handler’s state parameters | [ContainerAssemblyTest](../../src/MessageHandling/Tests/Stateful/ContainerAssemblyTest.php) |
 
 Providers express alternative persistence families, binding forms or result shapes. Shared support assembles
 real extensions and cleans generated files; assertions remain in the suites. Cases run in PHPUnit's main

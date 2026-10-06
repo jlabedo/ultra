@@ -13,7 +13,7 @@ Run [PHPUnit](../bin/phpunit) from the repository root ([configuration](../phpun
 ```bash
 bin/phpunit
 bin/phpunit --coverage-text
-bin/phpunit src/StateStore/Tests
+bin/phpunit src/StoredState/Tests
 ```
 
 Postgres tests use the local database through DBAL's `pdo_pgsql` driver by default; PHP must have `pdo_pgsql` enabled.
@@ -32,7 +32,7 @@ After setup, run the executable audit from any directory:
 ```bash
 bin/phpunit-audit
 bin/phpunit-audit --runs=5 --top=30
-bin/phpunit-audit --runs=1 --top=10 -- src/StateStore/Tests
+bin/phpunit-audit --runs=1 --top=10 -- src/StoredState/Tests
 bin/phpunit-audit -v
 bin/phpunit-audit --no-ansi > var/phpunit-audit.txt
 ```
@@ -47,12 +47,12 @@ Each passage writes a temporary JUnit report, removed after collection. Command 
 
 The top 20 methods are ranked by the median of their total case duration per passage, combining all datasets before taking the median. The report includes the case count, the median of each passage's slowest case, failures/skips and variation. A spread greater than 20% of the median is flagged; it is a noise indicator, not a performance budget. Nonzero PHPUnit exit statuses are retained, and changes to the case selection between passages stop the audit rather than producing an inconsistent ranking.
 
-Functional context totals sum these method medians; percentages refer to that sum, not the total command duration. Package attribution follows [documentation routing](README.md#task-routing), including compiler and storage adapters. The root mediator and mapper applications belong to their corresponding contexts; IAM has a separate integration category. New packages without an attribution appear as `Unmapped` until the audit's mapping is updated.
+Functional context totals sum these method medians; percentages refer to that sum, not the total command duration. Attribution uses the context directory under `src/`, following [documentation routing](README.md#task-routing). All package roles and test subdirectories within a context share that attribution. The root mediator and mapper applications belong to their corresponding contexts; IAM has a separate integration category. New contexts without an attribution appear as `Unmapped` until the audit's mapping is updated.
 
 For mutation testing:
 
 ```bash
-bin/infection --filter=src/MappedTable --test-framework-extra-args=src/MappedTable/Tests
+bin/infection --filter=src/StoredState/MappedTable --test-framework-extra-args=src/StoredState/Tests/MappedTable
 ```
 
 Report skipped coverage when the change requires database verification. Example applications may have their own Composer setup and test configuration; follow their local instructions.

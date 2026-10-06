@@ -25,7 +25,7 @@ Denormalization checks representation structure, including required properties a
 
 Runtime-normalized objects shared by two properties can currently be rejected as circular references; the correction is tracked in [TODO](../../TODO.md).
 
-See [UltraNormalizer](../../src/Mapper/UltraNormalizer.php).
+See [UltraNormalizer](../../src/Mapper/Runtime/UltraNormalizer.php).
 
 ## Test ownership and maintenance
 

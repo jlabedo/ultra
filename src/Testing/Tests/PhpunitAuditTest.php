@@ -29,7 +29,7 @@ final class PhpunitAuditTest extends TestCase
         self::assertStringContainsString('3 methods; 4 cases per run; 3 runs', $output);
         self::assertMatchesRegularExpression('/MappingTest::test_mapping[^\n]*\n\s+1\s+11\.000\s+1\s+11\.000\s+/m', $output);
         self::assertMatchesRegularExpression('/EventTest::test_rows[^\n]*\n\s+2\s+10\.000\s+2\s+9\.000\s+100\.0% \*\s+OK\s*$/m', $output);
-        self::assertStringContainsString('src/EventStore_Postgres/Tests/EventTest.php:42', $output);
+        self::assertStringContainsString('src/EventSourcing/Tests/Postgres/EventTest.php:42', $output);
         self::assertMatchesRegularExpression('/Event sourcing\s+12\.000\s+52\.2%/', $output);
         self::assertMatchesRegularExpression('/Mapping\s+11\.000\s+47\.8%/', $output);
         self::assertMatchesRegularExpression('/Run\s+Duration \(s\)\s+Failed\/errors\s+Skipped/', $output);
@@ -222,7 +222,7 @@ final class PhpunitAuditTest extends TestCase
     {
         $passages = [];
         foreach ([[1, 9, 11], [2, 18, 1], [4, 6, 11]] as [$first, $second, $mapping]) {
-            $passages[] = ['exit' => 0, 'xml' => sprintf('<testsuites><testsuite><testcase class="EventTest" name="test_rows with data set &quot;first&quot;" file="%%ROOT%%/src/EventStore_Postgres/Tests/EventTest.php" line="42" time="%d"/><testsuite><testcase class="EventTest" name="test_rows with data set #1" file="%%ROOT%%/src/EventStore_Postgres/Tests/EventTest.php" line="42" time="%d"/><testcase class="MappingTest" name="test_mapping" file="src/Mapper_Compiler/Tests/MappingTest.php" time="%d"/><testcase class="CompileTest" name="test_compile" file="./src/EventSourcedState_Compiler/Tests/CompileTest.php" time="2"/></testsuite></testsuite></testsuites>', $first, $second, $mapping)];
+            $passages[] = ['exit' => 0, 'xml' => sprintf('<testsuites><testsuite><testcase class="EventTest" name="test_rows with data set &quot;first&quot;" file="%%ROOT%%/src/EventSourcing/Tests/Postgres/EventTest.php" line="42" time="%d"/><testsuite><testcase class="EventTest" name="test_rows with data set #1" file="%%ROOT%%/src/EventSourcing/Tests/Postgres/EventTest.php" line="42" time="%d"/><testcase class="MappingTest" name="test_mapping" file="src/Mapper/Tests/Compiler/MappingTest.php" time="%d"/><testcase class="CompileTest" name="test_compile" file="./src/EventSourcing/Tests/Compiler/CompileTest.php" time="2"/></testsuite></testsuite></testsuites>', $first, $second, $mapping)];
         }
 
         return $passages;

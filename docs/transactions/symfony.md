@@ -1,6 +1,6 @@
 # Unit-of-work Symfony integration
 
-[UnitOfWorkExtension](../../src/UnitOfWork/UnitOfWorkExtension.php) wires services directly from the UnitOfWork package.
+[UnitOfWorkExtension](../../src/UnitOfWork/Runtime/UnitOfWorkExtension.php) wires services directly from the UnitOfWork package.
 
 The extension registers the composite unit of work, the transaction manager and UnitOfWorkRunner. For runner behavior, nested failures and flush ordering, read the [transaction contract](README.md).
 

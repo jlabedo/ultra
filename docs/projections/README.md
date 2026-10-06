@@ -13,7 +13,7 @@ It is intentionally split into two layers:
 - definition/runtime: what a projection is and how it applies events
 - coordination: how workers are woken up and steered toward stale work
 
-Postgres-specific persistence lives in `src/Projection_Postgres`. This package keeps the runtime algorithm storage-agnostic and ships in-memory implementations for tests and local wiring.
+Postgres-specific persistence lives in `src/Projection/Postgres`. This package keeps the runtime algorithm storage-agnostic and ships in-memory implementations for tests and local wiring.
 
 ## Partition ordering
 
@@ -33,7 +33,7 @@ generated dispatch does not justify its additional complexity.
 
 ### `ProjectionDefinition`
 
-[ProjectionDefinition.php](../../src/Projection/ProjectionDefinition.php) is the static description of a projection class.
+[ProjectionDefinition.php](../../src/Projection/Runtime/ProjectionDefinition.php) is the static description of a projection class.
 
 It is built from attributes and reflection and contains:
 
@@ -53,7 +53,7 @@ It also knows how to:
 
 ### `ProjectionRuntime`
 
-[ProjectionRuntime.php](../../src/Projection/ProjectionRuntime.php) binds a concrete projection object to its definition and an `UltraNormalizer`.
+[ProjectionRuntime.php](../../src/Projection/Runtime/ProjectionRuntime.php) binds a concrete projection object to its definition and an `UltraNormalizer`.
 
 It is the execution-facing object used by workers:
 
@@ -69,7 +69,7 @@ Rule of thumb:
 
 ### `ProjectionCatalog`
 
-[ProjectionCatalog.php](../../src/Projection/ProjectionCatalog.php) is a registry of runtimes and definitions keyed by projection id.
+[ProjectionCatalog.php](../../src/Projection/Runtime/ProjectionCatalog.php) is a registry of runtimes and definitions keyed by projection id.
 
 It is used by:
 
@@ -80,9 +80,9 @@ It is used by:
 
 ### `ProjectionRunner`
 
-[ProjectionRunner.php](../../src/Projection/ProjectionRunner.php) is the low-level executor.
+[ProjectionRunner.php](../../src/Projection/Runtime/ProjectionRunner.php) is the low-level executor.
 
-It works with an `EventStore` and a [ProjectionSegmentRepositoryInterface.php](../../src/Projection/ProjectionSegmentRepositoryInterface.php).
+It works with an `EventStore` and a [ProjectionSegmentRepositoryInterface.php](../../src/Projection/Runtime/ProjectionSegmentRepositoryInterface.php).
 
 Its job is:
 
@@ -104,17 +104,17 @@ The segment repository owns runtime state such as:
 - checkpoint
 - lease state
 
-Segments are represented by [ProjectionSegment.php](../../src/Projection/ProjectionSegment.php).
+Segments are represented by [ProjectionSegment.php](../../src/Projection/Runtime/ProjectionSegment.php).
 
 Postgres claims use a conditional `UPDATE ... RETURNING` to acquire ownership and
 read the segment in one atomic operation. A claim joins an existing connection
 transaction: other sessions see ownership only after commit, and rollback restores
 the previous owner.
 
-`ProjectionRunner` accepts a [ProjectionTransactionManagerInterface.php](../../src/Projection/ProjectionTransactionManagerInterface.php).
-The default [NoOpProjectionTransactionManager.php](../../src/Projection/NoOpProjectionTransactionManager.php) keeps in-memory and custom
+`ProjectionRunner` accepts a [ProjectionTransactionManagerInterface.php](../../src/Projection/Runtime/ProjectionTransactionManagerInterface.php).
+The default [NoOpProjectionTransactionManager.php](../../src/Projection/Runtime/NoOpProjectionTransactionManager.php) keeps in-memory and custom
 storage usage lightweight. Postgres-backed read models should wire the DBAL-based transaction manager from
-`src/Projection_Postgres` with the same connection used by projection read-model repositories and the segment
+`src/Projection/Postgres` with the same connection used by projection read-model repositories and the segment
 repository. This makes event application, `#[ProjectionFlush]`, and checkpoint advancement commit or roll back as
 one unit. First-time segment creation and `#[ProjectionInitializer]` execution are also wrapped together in the
 same transaction manager. Projection deletion likewise wraps `#[ProjectionResetter]` execution and segment-state
@@ -126,7 +126,7 @@ The coordination model is intentionally separate from segment execution.
 
 ### Activity Recording
 
-[ProjectionActivityRecorder.php](../../src/Projection/Coordination/ProjectionActivityRecorder.php) runs after events have been appended successfully.
+[ProjectionActivityRecorder.php](../../src/Projection/Runtime/Coordination/ProjectionActivityRecorder.php) runs after events have been appended successfully.
 
 It:
 
@@ -146,7 +146,7 @@ Important details:
 
 ### Bucket Activity
 
-[ProjectionActivity](../../src/Projection/Coordination/ProjectionActivity.php)
+[ProjectionActivity](../../src/Projection/Runtime/Coordination/ProjectionActivity.php)
 adapts Coordination's DirtyKeyTracker to projection IDs and bucket numbers.
 Counters absorb repeated signals. Workers subtract only the counters observed
 before processing once their claimed segment catches up, preserving concurrent
@@ -158,7 +158,7 @@ requiring activity hints.
 
 ### Global Coordinator
 
-[ProjectionCoordinator.php](../../src/Projection/Coordination/ProjectionCoordinator.php) is a single leader worker for the whole app.
+[ProjectionCoordinator.php](../../src/Projection/Runtime/Coordination/ProjectionCoordinator.php) is a single leader worker for the whole app.
 
 It does not wake per projection. Instead it:
 
@@ -176,11 +176,11 @@ It does not wake per projection. Instead it:
 
 This is important: the coordinator is not only a scheduler. It is also a worker and always participates in processing.
 
-Coordinator liveness uses [CoordinatorLease](../../src/Coordination/Lease/CoordinatorLease.php).
+Coordinator liveness uses [CoordinatorLease](../../src/Coordination/Runtime/Lease/CoordinatorLease.php).
 
 ### Activation
 
-[ProjectionActivatorInterface](../../src/Projection/Coordination/ProjectionActivatorInterface.php)
+[ProjectionActivatorInterface](../../src/Projection/Runtime/Coordination/ProjectionActivatorInterface.php)
 extends Coordination's work-availability signal with activation of a specific
 claimed projection worker. MessageHandlingProjectionActivator implements this
 through message handling; in-memory activation is available for tests. Activation
@@ -188,9 +188,9 @@ is a wake-up mechanism, while scheduling state remains in the repositories.
 
 ### Scaling Policy
 
-[ProjectionScalingPolicyInterface.php](../../src/Projection/Coordination/ProjectionScalingPolicyInterface.php) receives the current global affected-bucket view and decides how many extra worker wake-ups should be emitted.
+[ProjectionScalingPolicyInterface.php](../../src/Projection/Runtime/Coordination/ProjectionScalingPolicyInterface.php) receives the current global affected-bucket view and decides how many extra worker wake-ups should be emitted.
 
-The default implementation, [DefaultProjectionScalingPolicy.php](../../src/Projection/Coordination/DefaultProjectionScalingPolicy.php), returns `0`.
+The default implementation, [DefaultProjectionScalingPolicy.php](../../src/Projection/Runtime/Coordination/DefaultProjectionScalingPolicy.php), returns `0`.
 
 That means:
 
@@ -201,10 +201,10 @@ That means:
 
 The current adapters include:
 
-- [InMemoryProjectionSegmentRepository](../../src/Projection/InMemory/InMemoryProjectionSegmentRepository.php)
-- [InMemoryDirtyKeyTracker](../../src/Coordination/InMemory/InMemoryDirtyKeyTracker.php)
-- [InMemoryCoordinatorLease](../../src/Coordination/InMemory/InMemoryCoordinatorLease.php)
-- [InMemoryProjectionActivator](../../src/Projection/InMemory/InMemoryProjectionActivator.php)
+- [InMemoryProjectionSegmentRepository](../../src/Projection/Runtime/InMemory/InMemoryProjectionSegmentRepository.php)
+- [InMemoryDirtyKeyTracker](../../src/Coordination/Runtime/InMemory/InMemoryDirtyKeyTracker.php)
+- [InMemoryCoordinatorLease](../../src/Coordination/Runtime/InMemory/InMemoryCoordinatorLease.php)
+- [InMemoryProjectionActivator](../../src/Projection/Runtime/InMemory/InMemoryProjectionActivator.php)
 
 These support tests and local composition. Durable cross-process coordination
 uses the adapters in Projection_Postgres and Coordination_Postgres.
@@ -228,7 +228,7 @@ The key design choice is:
 
 ## Guarantee suites
 
-All projection suites live in [src/Projection/Tests](../../src/Projection/Tests), including Postgres and Symfony integration. Memory and Postgres share scenarios where their checkpoint and segment behavior can diverge. See the shared [test-refactoring convention](../development.md#refactoring-tests).
+All projection suites live in [src/Projection/Runtime/Tests](../../src/Projection/Tests), including Postgres and Symfony integration. Memory and Postgres share scenarios where their checkpoint and segment behavior can diverge. See the shared [test-refactoring convention](../development.md#refactoring-tests).
 
 | Guarantee | Suite |
 | --- | --- |
@@ -246,4 +246,4 @@ All projection suites live in [src/Projection/Tests](../../src/Projection/Tests)
 | Delivery of coordinator wakeups and durable worker claims | [ActivationDeliveryTest](../../src/Projection/Tests/ActivationDeliveryTest.php) |
 | Segment listing, process backfill and reset commands | [OperatorCommandsTest](../../src/Projection/Tests/OperatorCommandsTest.php) |
 
-Run the fast suites with `bin/phpunit src/Projection/Tests`; use `--group slow` for the Postgres process scenarios. The process harness remains in [Projection_Postgres/Tests/Harness](../../src/Projection_Postgres/Tests/Harness) for direct console use. The event-store and generic coordination contracts remain owned by their contexts; Projection verifies their composition. Lease expiry and takeover belong to [Coordination’s ownership suite](../../src/Coordination/Tests/LeaseOwnershipTest.php).
+Run the fast suites with `bin/phpunit src/Projection/Tests`; use `--group slow` for the Postgres process scenarios. The process harness remains in [Tests/Postgres/Harness](../../src/Projection/Tests/Postgres/Harness) for direct console use. The event-store and generic coordination contracts remain owned by their contexts; Projection verifies their composition. Lease expiry and takeover belong to [Coordination’s ownership suite](../../src/Coordination/Tests/LeaseOwnershipTest.php).

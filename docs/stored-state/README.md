@@ -74,21 +74,21 @@ For explicit SQL expectations and manually coordinated locks, read [manual queri
 
 ## Test ownership and maintenance
 
-The context's suites live in `src/StateStore/Tests`, including Symfony assembly from `StateStore_Bundle`.
+The context's suites live in `src/StoredState/Tests`, including Symfony assembly from `StateStore_Bundle`.
 Each file owns a guarantee; providers express alternative mappings, observation APIs or mutation kinds.
 
 | Guarantee | Suite |
 | --- | --- |
-| State representations, embedded values and manual candidate keys preserve their physical mapping | [StateMappingTest](../../src/StateStore/Tests/StateMappingTest.php) |
-| State views read buffered changes and retain the original storage expectations | [BufferedStateViewTest](../../src/StateStore/Tests/BufferedStateViewTest.php) |
-| Value, presence and absence observations protect the dependency actually read, with or without a save | [StateObservationTest](../../src/StateStore/Tests/StateObservationTest.php) |
-| Collection hydration, reconciliation and expectations respect owner and item identities | [CollectionOwnershipTest](../../src/StateStore/Tests/CollectionOwnershipTest.php) |
-| Recorded queries replay before writes, compare strictly and reject mutable expected values | [QueryReplayTest](../../src/StateStore/Tests/QueryReplayTest.php) |
-| Guarded decision reads reject affected pending changes before executing or queuing a query | [QueryReadOrderingTest](../../src/StateStore/Tests/QueryReadOrderingTest.php) |
-| Declared property and collection dependencies compile and enroll the relevant writers | [QueryDependencyTest](../../src/StateStore/Tests/QueryDependencyTest.php) |
-| Flush consolidates and orders guards before replay and writes; clear removes pending work | [FlushCoordinationTest](../../src/StateStore/Tests/FlushCoordinationTest.php) |
-| Cooperative guards share or exclude competing transactions and remain separate from persistence locks | [CooperativeLockingTest](../../src/StateStore/Tests/CooperativeLockingTest.php) |
-| Symfony discovers root states and collection items, shares table views and assembles guards in dumped containers | [ContainerIntegrationTest](../../src/StateStore/Tests/ContainerIntegrationTest.php) |
+| State representations, embedded values and manual candidate keys preserve their physical mapping | [StateMappingTest](../../src/StoredState/Tests/StateMappingTest.php) |
+| State views read buffered changes and retain the original storage expectations | [BufferedStateViewTest](../../src/StoredState/Tests/BufferedStateViewTest.php) |
+| Value, presence and absence observations protect the dependency actually read, with or without a save | [StateObservationTest](../../src/StoredState/Tests/StateObservationTest.php) |
+| Collection hydration, reconciliation and expectations respect owner and item identities | [CollectionOwnershipTest](../../src/StoredState/Tests/CollectionOwnershipTest.php) |
+| Recorded queries replay before writes, compare strictly and reject mutable expected values | [QueryReplayTest](../../src/StoredState/Tests/QueryReplayTest.php) |
+| Guarded decision reads reject affected pending changes before executing or queuing a query | [QueryReadOrderingTest](../../src/StoredState/Tests/QueryReadOrderingTest.php) |
+| Declared property and collection dependencies compile and enroll the relevant writers | [QueryDependencyTest](../../src/StoredState/Tests/QueryDependencyTest.php) |
+| Flush consolidates and orders guards before replay and writes; clear removes pending work | [FlushCoordinationTest](../../src/StoredState/Tests/FlushCoordinationTest.php) |
+| Cooperative guards share or exclude competing transactions and remain separate from persistence locks | [CooperativeLockingTest](../../src/StoredState/Tests/CooperativeLockingTest.php) |
+| Symfony discovers root states and collection items, shares table views and assembles guards in dumped containers | [ContainerIntegrationTest](../../src/StoredState/Tests/ContainerIntegrationTest.php) |
 
 The shared fixture derives mappings from attributes and opens explicit transaction boundaries; assertions stay
 in the suites. Postgres contention cases retain two real connections. Row-plan mechanics, backend encodings and

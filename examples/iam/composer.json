@@ -5,7 +5,7 @@
     "repositories": [
         {
             "type": "path",
-            "url": "../../src/*",
+            "url": "../../src/*/*",
             "options": {
                 "symlink": true
             }

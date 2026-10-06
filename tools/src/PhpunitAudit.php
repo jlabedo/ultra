@@ -262,7 +262,7 @@ final class PhpunitAudit extends SingleCommandApplication
         return count($values) % 2 ? $values[$middle] : ($values[$middle - 1] + $values[$middle]) / 2;
     }
 
-    /** Package ownership follows docs/README.md's task routing, including compiler adapters. */
+    /** Source directories follow the functional contexts in docs/README.md's task routing. */
     private static function context(string $file): string
     {
         if (str_starts_with($file, 'tests/mediator_example/')) {
@@ -279,15 +279,15 @@ final class PhpunitAudit extends SingleCommandApplication
         }
 
         return match ($match[1]) {
-            'MessageHandling', 'MessageHandling_Compiler', 'MessageHandling_PostgresQueue', 'StatefulMessageHandling' => 'Message handling',
-            'Events', 'EventStore', 'EventStore_Postgres', 'EventSourcedState', 'EventSourcedState_Compiler' => 'Event sourcing',
-            'StateStore', 'StateStore_Bundle', 'MappedTable' => 'Stored state',
-            'Mapper', 'Mapper_Compiler', 'Mapper_Bundle' => 'Mapping',
-            'Projection', 'Projection_Postgres' => 'Projections',
-            'Coordination', 'Coordination_Postgres' => 'Coordination',
+            'MessageHandling' => 'Message handling',
+            'EventSourcing' => 'Event sourcing',
+            'StoredState' => 'Stored state',
+            'Mapper' => 'Mapping',
+            'Projection' => 'Projections',
+            'Coordination' => 'Coordination',
             'UnitOfWork' => 'Transactions',
             'Schema' => 'Schema',
-            'Container', 'SymfonyBundle' => 'Symfony integration',
+            'Symfony' => 'Symfony integration',
             'CodeGeneration' => 'Code generation',
             'Time' => 'Time',
             'Testing' => 'Testing/tooling',

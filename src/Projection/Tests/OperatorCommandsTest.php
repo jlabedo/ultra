@@ -70,7 +70,7 @@ final class OperatorCommandsTest extends PostgresProjectionTestCase
             $dsn,
             $eventStorePrefix,
             $projectionPrefix,
-            dirname(__DIR__, 2).'/Projection_Postgres/Tests/Harness/projection-coordination-harness',
+            __DIR__.'/Postgres/Harness/projection-coordination-harness',
         );
 
         try {
@@ -164,7 +164,7 @@ final class OperatorCommandsTest extends PostgresProjectionTestCase
                 $this->postgresDsn(),
                 $eventStorePrefix,
                 $projectionPrefix,
-                dirname(__DIR__, 2).'/Projection_Postgres/Tests/Harness/projection-coordination-harness',
+                __DIR__.'/Postgres/Harness/projection-coordination-harness',
             );
 
             [$seedCode, $seedOutput] = $this->runHarnessCommand($application, [
