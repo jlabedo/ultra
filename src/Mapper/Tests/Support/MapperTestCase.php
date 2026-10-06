@@ -27,6 +27,22 @@ abstract class MapperTestCase extends TestCase
         return new UltraNormalizer($this->directory.'/normalizers');
     }
 
+    /** @return array<string, string> Files addressed by their real paths, with their contents. */
+    protected function generatedFiles(string $directory): array
+    {
+        if (!is_dir($directory)) {
+            return [];
+        }
+
+        $files = [];
+        foreach (new \RecursiveIteratorIterator(new \RecursiveDirectoryIterator($directory, \FilesystemIterator::SKIP_DOTS)) as $file) {
+            $files[$file->getRealPath()] = (string) file_get_contents($file->getPathname());
+        }
+        ksort($files);
+
+        return $files;
+    }
+
     protected function tearDown(): void
     {
         foreach ([$this->directory, ...$this->extraDirectories] as $directory) {

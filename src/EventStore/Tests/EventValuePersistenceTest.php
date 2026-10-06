@@ -30,9 +30,9 @@ final class EventValuePersistenceTest extends StorageTestCase
 
         $events = $store->load($query)->events;
         self::assertSame(['unregistered.created', 'unregistered.updated'], array_column($events, 'eventType'));
-        self::assertEquals($domainIds, $events[0]->domainIds);
-        self::assertEquals($payload, $events[0]->payload);
-        self::assertEquals($metadata, $events[0]->metadata);
+        self::assertSame(self::sortAssociativeKeys($domainIds), self::sortAssociativeKeys($events[0]->domainIds));
+        self::assertSame(self::sortAssociativeKeys($payload), self::sortAssociativeKeys($events[0]->payload));
+        self::assertSame(self::sortAssociativeKeys($metadata), self::sortAssociativeKeys($events[0]->metadata));
         self::assertSame([], $events[1]->metadata);
         foreach ($events as $event) {
             self::assertInstanceOf(\DateTimeImmutable::class, $event->recordedAt);
@@ -41,5 +41,25 @@ final class EventValuePersistenceTest extends StorageTestCase
             new DomainIdentifier('course', $domainIds['course']),
             new DomainIdentifier('student', 's2'),
         ))->events, 'payload'), 'slot'));
+    }
+
+    /**
+     * Ignore associative-key order from JSONB without changing list order or scalar types.
+     *
+     * @param array<array-key, mixed> $values
+     * @return array<array-key, mixed>
+     */
+    private static function sortAssociativeKeys(array $values): array
+    {
+        foreach ($values as $key => $value) {
+            if (is_array($value)) {
+                $values[$key] = self::sortAssociativeKeys($value);
+            }
+        }
+        if (!array_is_list($values)) {
+            ksort($values);
+        }
+
+        return $values;
     }
 }

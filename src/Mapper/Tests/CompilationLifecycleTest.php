@@ -8,15 +8,20 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
 use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
 use Ultra\Mapper\DenormalizationContext;
 use Ultra\Mapper\Tests\Fixtures\Foo;
 use Ultra\Mapper\Tests\Support\MapperTestCase;
 use Ultra\Mapper\UltraNormalizer;
+use Ultra\Mapper_Bundle\MapperCompilerPass;
+use Ultra\Mapper_Bundle\TagNames;
 use Ultra\Mapper_Compiler\NormalizerGenerator;
 
 /** @internal */
 #[CoversNamespace('Ultra\Mapper')]
 #[CoversNamespace('Ultra\Mapper_Compiler')]
+#[CoversNamespace('Ultra\Mapper_Bundle')]
 #[RunTestsInSeparateProcesses]
 #[PreserveGlobalState(false)]
 final class CompilationLifecycleTest extends MapperTestCase
@@ -29,36 +34,46 @@ final class CompilationLifecycleTest extends MapperTestCase
         $normalizer = new UltraNormalizer();
 
         self::assertSame(['id' => 42, 'name' => 'bar'], $normalizer->toScalar(new Foo(42, 'bar')));
-        self::assertFileExists($cache.'/__Normalizer_Ultra_Mapper_Tests_Fixtures_Foo.php');
+        self::assertNotEmpty($this->generatedFiles($cache));
     }
 
     public function test_first_use_generates_a_file_and_the_instance_reuses_its_normalizer(): void
     {
         $normalizer = $this->normalizer();
-        $file = $this->directory.'/normalizers/__Normalizer_Ultra_Mapper_Tests_Fixtures_Foo.php';
-        self::assertFileDoesNotExist($file);
+        $cache = $this->directory.'/normalizers';
+        self::assertSame([], $this->generatedFiles($cache));
 
         self::assertSame(['id' => 42, 'name' => 'bar'], $normalizer->toScalar(new Foo(42, 'bar')));
-        self::assertFileExists($file);
-        unlink($file);
+        $files = $this->generatedFiles($cache);
+        self::assertNotEmpty($files);
+        foreach (array_keys($files) as $file) {
+            unlink($file);
+        }
 
         self::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
-        self::assertFileDoesNotExist($file);
+        self::assertSame([], $this->generatedFiles($cache));
     }
 
     public function test_precompiled_file_is_loaded_without_being_regenerated(): void
     {
+        $cache = $this->directory.'/normalizers';
+        $container = new ContainerBuilder();
+        $container->setDefinition('record', new Definition(\stdClass::class)
+            ->addResourceTag(TagNames::NORMALIZABLE, ['class' => Foo::class]));
+        new MapperCompilerPass($cache)->process($container);
+        $files = $this->generatedFiles($cache);
+        self::assertNotEmpty($files);
+        foreach ($files as $file => $code) {
+            file_put_contents($file, $code."\n\$GLOBALS['mapper_loaded_artifacts'][] = __FILE__;\n");
+        }
+        $compiled = $this->generatedFiles($cache);
+        $GLOBALS['mapper_loaded_artifacts'] = [];
         $normalizer = $this->normalizer();
-        $class = 'Ultra\Normalizer\Generated\__Normalizer_Ultra_Mapper_Tests_Fixtures_Foo';
-        $file = $this->directory.'/normalizers/__Normalizer_Ultra_Mapper_Tests_Fixtures_Foo.php';
-        $code = NormalizerGenerator::for(Foo::class, $class, [])->generate()."\n// Precompiled artifact\n";
-        file_put_contents($file, $code);
-        self::assertFalse(class_exists($class, false));
 
         self::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
 
-        self::assertTrue(class_exists($class, false));
-        self::assertSame($code, file_get_contents($file));
+        self::assertNotEmpty($GLOBALS['mapper_loaded_artifacts']);
+        self::assertSame($compiled, $this->generatedFiles($cache));
     }
 
     #[DataProvider('generatedClassNames')]
