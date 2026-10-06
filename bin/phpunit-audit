@@ -1,0 +1,17 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+$root = dirname(__DIR__);
+$autoload = $root.'/tools/vendor/autoload.php';
+
+if (!is_file($autoload)) {
+    fwrite(STDERR, "Run composer install before auditing.\n");
+
+    exit(1);
+}
+
+require $autoload;
+
+(new \UltraDev\Tools\PhpunitAudit($root))->run();
