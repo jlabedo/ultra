@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Ultra\EventSourcedState;
 
 use Ultra\EventSourcedState\Exception\UnknownEventSourcedEntityException;
+use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\DomainIdentifier;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
+use Ultra\EventStore\StreamQuery;
 
 final readonly class EventSourcedStateStore
 {
@@ -36,7 +39,7 @@ final readonly class EventSourcedStateStore
             ));
         }
 
-        $events = $this->eventStore->load($loader->query(...$identifiers))->events;
+        $events = $this->loadEvents($loader->query(...$identifiers));
 
         return $loader->hydrate($events, ...$identifiers);
     }
@@ -52,5 +55,23 @@ final readonly class EventSourcedStateStore
         }
 
         return $loader;
+    }
+
+    /** @return \Generator<int, Event> */
+    private function loadEvents(StreamQuery $query): \Generator
+    {
+        $checkpoint = Checkpoint::beginning();
+
+        while (true) {
+            $result = $this->eventStore->load($query, from: $checkpoint);
+            yield from $result->events;
+
+            if (!$result->hasMore) {
+                return;
+            }
+
+            $checkpoint = $result->checkpoint;
+            unset($result);
+        }
     }
 }

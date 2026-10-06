@@ -31,10 +31,12 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
         int $batchSize = 1000,
     ): LoadResult {
         $baseResult = $this->inner->load($query, $from, $to, $batchSize);
-        $pendingEvents = null === $to ? $this->pendingEventsMatching($query) : [];
+        if ($baseResult->hasMore || null !== $to) {
+            return $baseResult;
+        }
 
         return new LoadResult(
-            [...$baseResult->events, ...$pendingEvents],
+            [...$baseResult->events, ...$this->pendingEventsMatching($query)],
             $baseResult->checkpoint,
             $query,
         );

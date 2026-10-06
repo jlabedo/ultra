@@ -85,27 +85,40 @@ final class CheckpointReplayTest extends StorageTestCase
         $second = $store->load($query, from: $first->checkpoint, batchSize: 2);
         self::assertSame(['first', 'second'], array_column(array_column($first->events, 'payload'), 'name'));
         self::assertSame(['third', 'fourth'], array_column(array_column($second->events, 'payload'), 'name'));
+        self::assertTrue($first->hasMore);
+        self::assertTrue($second->hasMore);
+        self::assertFalse($first->checkpoint->contains(new Sequence(4)));
         $last = $store->load($query, from: $second->checkpoint, batchSize: 2);
         self::assertSame(['later'], array_column(array_column($last->events, 'payload'), 'name'));
+        self::assertFalse($last->hasMore);
         if ('memory' === $backend) {
             self::assertSame(7, $last->checkpoint->gapFloor->value);
             self::assertTrue($last->checkpoint->isSimplePosition());
         }
         $caughtUp = $store->load($query, from: $last->checkpoint);
         self::assertSame([], $caughtUp->events);
+        self::assertFalse($caughtUp->hasMore);
         self::assertEquals($last->checkpoint, $caughtUp->checkpoint);
+        $complete = $store->load($query, batchSize: 5);
+        self::assertCount(5, $complete->events);
+        self::assertFalse($complete->hasMore);
 
         $replayFirst = $store->load($query, to: $saved, batchSize: 2);
         $replayLast = $store->load($query, from: $replayFirst->checkpoint, to: $saved, batchSize: 2);
         self::assertSame(['first', 'second'], array_column(array_column($replayFirst->events, 'payload'), 'name'));
+        self::assertTrue($replayFirst->hasMore);
         self::assertTrue($replayFirst->checkpoint->contains(new Sequence(3)));
         self::assertFalse($replayFirst->checkpoint->contains(new Sequence(4)));
         self::assertSame(['third', 'fourth'], array_column(array_column($replayLast->events, 'payload'), 'name'));
+        self::assertFalse($replayLast->hasMore);
         self::assertEquals($saved, $replayLast->checkpoint);
         self::assertSame([], $store->load($query, to: $empty)->events);
         self::assertEquals($empty, $store->load($query, to: $empty)->checkpoint);
         self::assertEquals($saved, $store->load(StreamQuery::none(), from: $empty, to: $saved)->checkpoint);
         self::assertEquals($saved, $store->load(StreamQuery::none(), from: $saved)->checkpoint);
+        self::assertFalse($store->load($query, to: $empty)->hasMore);
+        self::assertFalse($store->load(StreamQuery::none(), from: $empty, to: $saved)->hasMore);
+        self::assertFalse($store->load(StreamQuery::none(), from: $saved)->hasMore);
     }
 
     #[DataProvider('backends')]

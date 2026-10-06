@@ -13,6 +13,9 @@ interface EventStore
 {
     /**
      * Load events matching the query.
+     *
+     * batchSize bounds persisted events; a unit of work can add pending events to the final page.
+     * Use LoadResult::hasMore to decide whether to continue from the returned checkpoint.
      */
     public function load(
         StreamQuery $query,

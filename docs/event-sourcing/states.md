@@ -14,8 +14,11 @@ This package owns the event-sourced state model:
 
 The companion `ultra/event-sourced-state-compiler` package analyzes event-sourced entities and generates optimized loaders.
 
-`EventSourcedStateStore::load()` currently reads one event-store page (the default is 1,000 events).
-States with larger matching streams are not fully reconstructed.
+`EventSourcedStateStore::load()` follows [event-store pagination](event-store.md#eventstore-interface)
+through `hasMore` and the returned checkpoints, passing a lazy event generator to `EventSourcedEntityLoader::hydrate(iterable $events, ...)`.
+The compiled loader creates one state and folds each page as it arrives, releasing the page before loading the next.
+Each persisted page is read once. Replay memory is bounded by the current page; the state and pending buffer retain their own data.
+With `EventStoreUnitOfWork`, the final page includes matching pending events, applied once after the persisted history.
 
 ## Matching Event Tags
 

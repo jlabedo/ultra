@@ -98,6 +98,9 @@ Its job is:
 10. abandon the segment if the transaction fails
 Split and merge are separate explicit operations on segment ranges.
 
+The runner uses [event-store pagination](../event-sourcing/event-store.md#eventstore-interface) to determine catch-up:
+`hasMore = false` completes the claim and permits acknowledgement of observed activity, including for a full final page.
+
 The segment repository owns runtime state such as:
 
 - current bucket range

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
+use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventSourcedState\EventSourcedEntityLoader;
 use Ultra\EventSourcedState\Exception\UnknownEventSourcedEntityException;
@@ -22,7 +23,9 @@ use Ultra\EventSourcedState\Tests\Support\EventSourcedStateFunctionalTestCase;
 use Ultra\EventSourcedState\Tests\Support\EventSourcedStateTestContainer;
 use Ultra\EventStore\DomainIdentifier as StreamIdentifier;
 use Ultra\EventStore\Event as StoredEvent;
+use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\Tests\Support\PageLifetimeEventStore;
 use Ultra\Testing\UltraLight;
 
 /** @internal */
@@ -92,6 +95,69 @@ final class StateReconstructionTest extends EventSourcedStateFunctionalTestCase
         self::assertSame(['matched'], $state->statuses);
     }
 
+    #[DataProvider('stateHistories')]
+    public function test_it_reconstructs_states_in_batches_and_applies_pending_events_once(int $persistedCount, int $pendingCount): void
+    {
+        $container = $this->ultraLight()
+            ->withClass(SubscriptionPairStatusState::class)
+            ->boot()
+        ;
+
+        $persistedEvents = [];
+        $pendingEvents = [];
+        $statuses = [];
+        for ($i = 1; $i <= $persistedCount + $pendingCount; ++$i) {
+            $statuses[] = $status = 'status-'.$i;
+            $event = new StoredEvent(
+                'subscription.pair_confirmed',
+                ['courseId' => 'course-1', 'studentId' => 'student-1', 'status' => $status],
+                ['course' => 'course-1', 'student' => 'student-1'],
+            );
+            if ($i <= $persistedCount) {
+                $persistedEvents[] = $event;
+            } else {
+                $pendingEvents[] = $event;
+            }
+        }
+        $container->eventStore()->append($persistedEvents);
+
+        $eventStore = new PageLifetimeEventStore($container->eventStore());
+        $loadingStore = $eventStore;
+        if (0 < $pendingCount) {
+            $loadingStore = new EventStoreUnitOfWork($eventStore);
+            $loadingStore->append($pendingEvents);
+        }
+        $stateStore = new EventSourcedStateStore([
+            SubscriptionPairStatusState::class => $container->eventSourcedStateStore()->loader(SubscriptionPairStatusState::class),
+        ], $loadingStore);
+
+        $state = $stateStore->load(
+            SubscriptionPairStatusState::class,
+            new StreamIdentifier('course', 'course-1'),
+            new StreamIdentifier('student', 'student-1'),
+        );
+
+        self::assertSame($statuses, $state->statuses);
+        // The loader's foreach may still reference the last event when it asks the generator for the next page.
+        self::assertLessThanOrEqual(1, $eventStore->maxRetainedEvents);
+    }
+
+    /** @return iterable<string, array{int, int}> */
+    public static function stateHistories(): iterable
+    {
+        yield 'empty stream' => [0, 0];
+        yield 'partial first page' => [999, 0];
+        yield 'full first page' => [1000, 0];
+        yield 'partial second page' => [1001, 0];
+        yield 'full second page' => [2000, 0];
+        yield 'partial third page' => [2001, 0];
+        yield 'pending events only beyond a page' => [0, 1001];
+        yield 'pending event fills the first page' => [999, 1];
+        yield 'pending events after a full page' => [1000, 2];
+        yield 'pending events after two full pages' => [2000, 2];
+        yield 'pending events after a partial third page' => [2001, 2];
+    }
+
     public function test_it_loads_events_matched_through_a_tag_alias_with_the_value_of_the_aliased_tag(): void
     {
         $container = $this->ultraLight()
@@ -120,7 +186,7 @@ final class StateReconstructionTest extends EventSourcedStateFunctionalTestCase
                 return StreamQuery::forStream(new StreamIdentifier('course', 'course-1'));
             }
 
-            public function hydrate(array $events, StreamIdentifier ...$identifiers): object
+            public function hydrate(iterable $events, StreamIdentifier ...$identifiers): object
             {
                 return new \stdClass();
             }

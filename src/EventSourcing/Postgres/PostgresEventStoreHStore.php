@@ -126,7 +126,7 @@ final class PostgresEventStoreHStore implements EventStore
         $types = [...$fromTypes, ...$domainTypes];
 
         $whereClause = $this->andPredicates($fromPredicate, $domainPredicate);
-        $params[] = $batchSize;
+        $params[] = $batchSize + 1;
         $types[] = ParameterType::INTEGER;
 
         $rows = $this->connection->executeQuery(
@@ -150,10 +150,16 @@ final class PostgresEventStoreHStore implements EventStore
             $types,
         )->fetchAllAssociative();
 
+        $hasMore = count($rows) > $batchSize;
+        if ($hasMore) {
+            array_pop($rows);
+        }
+
         return new LoadResult(
             $this->mapEvents($rows),
             $this->captureCheckpoint($from, $rows),
             $query,
+            $hasMore,
         );
     }
 
@@ -193,6 +199,7 @@ final class PostgresEventStoreHStore implements EventStore
             $this->mapEvents($rows),
             $this->captureCheckpoint($from, $rows, capturedInGap: false),
             $query,
+            hasMore: true,
         );
     }
 

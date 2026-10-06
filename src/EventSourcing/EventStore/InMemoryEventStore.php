@@ -55,7 +55,7 @@ final class InMemoryEventStore implements EventStore
     private function loadEvents(StreamQuery $query, ?Checkpoint $from, ?Checkpoint $to, int $batchSize): LoadResult
     {
         $rows = [];
-        $limit = null === $to ? $batchSize : $batchSize + 1;
+        $limit = $batchSize + 1;
 
         foreach ($this->events as $index => $event) {
             $sequence = new Sequence($index + 1);
@@ -69,9 +69,9 @@ final class InMemoryEventStore implements EventStore
             }
         }
 
-        $reachedToBound = null !== $to && count($rows) <= $batchSize;
-        if (null !== $to && !$reachedToBound) {
-            $rows = array_slice($rows, 0, $batchSize);
+        $hasMore = count($rows) > $batchSize;
+        if ($hasMore) {
+            array_pop($rows);
         }
 
         $events = array_map(
@@ -79,7 +79,7 @@ final class InMemoryEventStore implements EventStore
             $rows,
         );
 
-        if ($reachedToBound) {
+        if (null !== $to && !$hasMore) {
             return new LoadResult($events, $to, $query);
         }
 
@@ -88,7 +88,7 @@ final class InMemoryEventStore implements EventStore
             $checkpoint = $checkpoint->record($sequence, inGap: false);
         }
 
-        return new LoadResult($events, $checkpoint, $query);
+        return new LoadResult($events, $checkpoint, $query, $hasMore);
     }
 
     private function wasAlreadySeen(Sequence $sequence, ?Checkpoint $from): bool

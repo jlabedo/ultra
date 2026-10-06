@@ -137,7 +137,7 @@ final readonly class ProjectionRunner
 
             $query = $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
             $result = $this->eventStore->load($query, $segment->checkpoint, null, $limit);
-            $caughtUp = count($result->events) < $limit;
+            $caughtUp = !$result->hasMore;
 
             $this->transactionManager->transactional(function () use ($runtime, $segment, $result, $workerId, $caughtUp, $seenCounters): void {
                 foreach ($result->events as $event) {
@@ -242,7 +242,7 @@ final readonly class ProjectionRunner
         try {
             $query = $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
             $result = $this->eventStore->load($query, $segment->checkpoint, null, $limit);
-            $caughtUp = count($result->events) < $limit;
+            $caughtUp = !$result->hasMore;
 
             $this->transactionManager->transactional(function () use ($runtime, $segment, $result, $workerId, $caughtUp): void {
                 foreach ($result->events as $event) {

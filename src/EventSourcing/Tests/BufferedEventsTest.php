@@ -34,12 +34,64 @@ final class BufferedEventsTest extends StorageTestCase
 
         $visible = $uow->load($query);
         self::assertSame(['persisted', 'pending', 'next pending'], array_column(array_column($visible->events, 'payload'), 'name'));
+        self::assertFalse($visible->hasMore);
         self::assertSame(['persisted'], array_column(array_column($store->load($query)->events, 'payload'), 'name'));
         self::assertEquals($persisted->checkpoint, $visible->checkpoint);
         self::assertEquals($persisted->appendCondition(), $visible->appendCondition());
         self::assertSame(['pending', 'next pending'], array_column(array_column($uow->load($query, from: $persisted->checkpoint)->events, 'payload'), 'name'));
-        self::assertSame(['persisted'], array_column(array_column($uow->load($query, to: $persisted->checkpoint)->events, 'payload'), 'name'));
+        $replay = $uow->load($query, to: $persisted->checkpoint);
+        self::assertSame(['persisted'], array_column(array_column($replay->events, 'payload'), 'name'));
+        self::assertFalse($replay->hasMore);
         self::assertSame([], $uow->load(StreamQuery::none())->events);
+    }
+
+    #[DataProvider('persistedHistories')]
+    public function test_pending_events_are_added_only_to_the_last_page_even_when_it_exceeds_the_batch_size(int $persistedCount): void
+    {
+        $store = $this->store();
+        $uow = new EventStoreUnitOfWork($store);
+        $query = StreamQuery::forStream(new DomainIdentifier('course', 'c1'));
+        $persistedNames = [];
+        for ($i = 1; $i <= $persistedCount; ++$i) {
+            $persistedNames[] = $name = 'persisted-'.$i;
+            $store->append([self::event('created', ['course' => 'c1'], ['name' => $name])]);
+        }
+        $checkpoint = $store->load($query)->checkpoint;
+        $pendingNames = ['pending-1', 'pending-2', 'pending-3'];
+        $uow->append(array_map(
+            static fn (string $name) => self::event('created', ['course' => 'c1'], ['name' => $name]),
+            $pendingNames,
+        ));
+
+        $from = null;
+        for ($offset = 0; $offset <= $persistedCount; $offset += 2) {
+            $page = $uow->load($query, from: $from, batchSize: 2);
+            $hasMore = $offset + 2 < $persistedCount;
+            $expectedNames = array_slice($persistedNames, $offset, 2);
+            if (!$hasMore) {
+                array_push($expectedNames, ...$pendingNames);
+            }
+
+            self::assertSame($expectedNames, array_column(array_column($page->events, 'payload'), 'name'));
+            self::assertSame($hasMore, $page->hasMore);
+            $from = $page->checkpoint;
+            if (!$hasMore) {
+                break;
+            }
+        }
+
+        self::assertEquals($checkpoint, $page->checkpoint);
+        self::assertGreaterThan(2, count($page->events));
+    }
+
+    /** @return iterable<string, array{int}> */
+    public static function persistedHistories(): iterable
+    {
+        yield 'empty persisted stream' => [0];
+        yield 'partial first page' => [1];
+        yield 'full first page' => [2];
+        yield 'partial second page' => [3];
+        yield 'full second page' => [4];
     }
 
     #[DataProvider('backends')]

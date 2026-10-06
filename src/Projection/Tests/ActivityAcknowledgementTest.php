@@ -54,7 +54,7 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         self::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
         self::assertCount(1, $activity->pendingInSegment('tracking_projection', 0, 255));
 
-        $secondResult = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 10);
+        $secondResult = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
 
         self::assertSame(1, $secondResult->processedEvents);
         self::assertTrue($secondResult->caughtUp);

@@ -13,7 +13,7 @@ interface EventSourcedEntityLoader
     public function query(DomainIdentifier ...$identifiers): StreamQuery;
 
     /**
-     * @param list<Event> $events
+     * @param iterable<Event> $events
      */
-    public function hydrate(array $events, DomainIdentifier ...$identifiers): object;
+    public function hydrate(iterable $events, DomainIdentifier ...$identifiers): object;
 }

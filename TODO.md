@@ -1,9 +1,5 @@
 # TODO
 
-- [ ] Paginer `EventSourcedStateStore::load()` pour reconstruire les states au-delà
-  des 1 000 premiers événements. Protéger la reconstruction sur plusieurs pages ;
-  voir la [limite actuelle](docs/event-sourcing/states.md).
-
 - [ ] Créer les index déclarés lors de la création d'une table dans Schema.
   `CreateTable` conserve les définitions d'index, mais son SQL les omet ; couvrir
   l'effet réel sur Postgres, voir [Schema](docs/schema/README.md).

@@ -12,7 +12,7 @@ a stream does not require exclusive ownership by a domain entity.
 - **StreamQuery** – Immutable branch list for stream queries. Each branch matches domain identifiers with AND semantics and event types with OR semantics. An empty event type list means all event types. Use `all()` for unfiltered reads, `forStream(...)->ofTypes(...)` for one branch, and `anyOf(...)` for OR-composition. `none()` has no branches and matches no events.
 - **Sequence** – Persistence ordering value. Sequence `0` is the beginning position; persisted events use positive sequence numbers.
 - **Checkpoint** – Gap-aware sequence position with a stable `gapFloor` plus explicitly observed `gapSeqNos`.
-- **LoadResult** – Result of `load()`: visible `Event` objects, the base `StreamQuery`, the next `Checkpoint`, and `appendCondition()` for optimistic writes.
+- **LoadResult** – Result of `load()`: visible `Event` objects, the base `StreamQuery`, the next `Checkpoint`, `hasMore` for pagination, and `appendCondition()` for optimistic writes.
 - **AppendCondition** – Optimistic-concurrency expectation tied to one exact `StreamQuery` and the checkpoint that was loaded for it.
 
 ## EventStore Interface
@@ -33,6 +33,12 @@ interface EventStore
 
 `from` is the last checkpoint already seen. `to` is an optional replay or upper bound checkpoint.
 The checkpoint returned by `load()` is the next cursor for catch-up and paginated reads.
+`hasMore` is true when another matching persisted event is visible beyond the returned page, within `to` when supplied.
+Stores inspect one extra event to determine this flag; that event is excluded from the returned list and checkpoint.
+Use `hasMore` to continue pagination, including when the last page is exactly full.
+
+`batchSize` limits persisted events. With `EventStoreUnitOfWork`, the final catch-up page also includes all matching
+pending events and can exceed that size.
 
 `append()` can validate zero, one, or many append conditions in the same write. That lets a store acquire locks once, validate every relevant stream snapshot, and insert once.
 Append conditions cannot use global queries such as `StreamQuery::all()`, because that would require serializing writes behind one global stream lock.
@@ -56,7 +62,10 @@ This matters when using the unit of work wrapper.
 
 It gives read-your-own-writes semantics while still keeping optimistic concurrency aligned with the wrapped store:
 
-- `load()` returns persisted events plus buffered pending events that match the query.
+- Pages with `hasMore = true` contain persisted events only.
+- The final catch-up page (`hasMore = false`) appends all matching buffered pending events in append order,
+  even when the visible event count then exceeds `batchSize`. This also applies when the persisted stream is empty.
+- Bounded replay (`to`) excludes pending events on every page.
 - `load()->checkpoint` stays the checkpoint from the wrapped store.
 - `flush()` forwards all buffered events in a single inner `append(...)` call.
 - Buffered append conditions are passed through unchanged.

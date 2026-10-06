@@ -51,7 +51,8 @@ final class EventSourcedEntityLoaderGenerator
                     return {$queryCode};
                 }
 
-                public function hydrate(array \$events, \\Ultra\\EventStore\\DomainIdentifier ...\$identifiers): {$entityClassName}
+                /** @param iterable<\\Ultra\\EventStore\\Event> \$events */
+                public function hydrate(iterable \$events, \\Ultra\\EventStore\\DomainIdentifier ...\$identifiers): {$entityClassName}
                 {
                     \$query = \$this->query(...\$identifiers);
                     \$state = new \\{$definition->entityClass}();

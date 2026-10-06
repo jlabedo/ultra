@@ -10,12 +10,13 @@ namespace Ultra\EventStore;
 readonly class LoadResult
 {
     /**
-     * @param list<Event> $events events matching the query, ordered by sequence ascending
+     * @param list<Event> $events events matching the query, in replay order
      */
     public function __construct(
         public array $events,
         public Checkpoint $checkpoint,
         public StreamQuery $baseQuery,
+        public bool $hasMore = false,
     ) {}
 
     public function appendCondition(): AppendCondition

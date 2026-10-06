@@ -36,7 +36,7 @@ final class CheckpointProgressTest extends ProjectionTestCase
 
         $runner->ensureInitialized($runtime);
         $firstResult = $runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
-        $secondResult = $runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 10);
+        $secondResult = $runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
 
         self::assertSame(1, $firstResult->processedEvents);
         self::assertFalse($firstResult->caughtUp);
