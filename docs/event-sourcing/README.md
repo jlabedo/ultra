@@ -32,6 +32,5 @@ the `slow` and `event-store-concurrency` groups. Lock-namespace tests cover the 
 asserting SQL text or hash values.
 
 Support contains setup and observations, with assertions in the suites. The fixtures under
-`EventSourcedState/Tests` keep their existing paths for StatefulMessageHandling consumers. Compare covered
-source lines and detection of identical mutants on unchanged production before deleting a case; analyse
-survivors before adding one. See [development verification](../development.md#tests).
+`EventSourcedState/Tests` keep their existing paths for StatefulMessageHandling consumers. See
+[development verification](../development.md#tests) and the [refactoring checks](../development.md#refactoring-tests).

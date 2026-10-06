@@ -151,9 +151,6 @@ new implementation class. Use another dataset for a different input or failure m
 do not duplicate a scenario for each adapter. Buffer-only rules use the in-memory fixture. Backend behavior
 such as SQL types, unchanged row versions and locking requires Postgres cases.
 
-Before removing a case, identify the remaining scenario that protects its guarantee. Compare tests, covered
-source lines and detection of the same mutations before and after on unchanged production code. Coverage
-metadata changes are not evidence of newly exercised behavior, and a surviving mutant needs analysis before
-adding a test. These measurements complement the contract review; neither a coverage percentage nor a
-mutation score proves that the suite is sufficient. For setup and execution, use
-[development verification](../development.md#tests).
+Use [development verification](../development.md#tests) for setup and execution, and the
+[refactoring checks](../development.md#refactoring-tests) before removing or adding cases. Coverage metadata
+changes are not evidence of newly exercised behavior; coverage and mutation scores complement the contract review.

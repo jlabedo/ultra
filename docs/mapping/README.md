@@ -13,6 +13,8 @@ Register RuntimeNormalizerInterface implementations during configuration, before
 
 Denormalization checks representation structure, including required properties and scalar types; it is not a business-rule validation engine.
 
+Runtime-normalized objects shared by two properties can currently be rejected as circular references; the correction is tracked in [TODO](../../TODO.md).
+
 See [UltraNormalizer](../../src/Mapper/UltraNormalizer.php).
 
 ## Test ownership and maintenance
@@ -34,7 +36,5 @@ the compilation and container suites use a few focused scenarios rather than rep
 Tests that generate normalizers use separate processes and temporary directories, so a previously loaded
 class or cache file cannot make another test pass. The shared setup manages those directories and contains no assertions.
 
-Before deleting a case, identify the remaining scenario protecting its guarantee and compare covered source
-lines and detection of the same mutations on unchanged production code. Analyze survivors before adding
-tests; permissions, duplicate generation or equivalent changes do not automatically justify another case.
-See [development verification](../development.md#tests) for commands.
+See [development verification](../development.md#tests) for commands and the
+[refactoring checks](../development.md#refactoring-tests) before deleting or adding cases.

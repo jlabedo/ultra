@@ -1,5 +1,13 @@
 # TODO
 
+- [ ] Corriger le parcours Mapper pour accepter un même objet normalisé par runtime
+  dans plusieurs propriétés sans le confondre avec un cycle. Distinguer les objets
+  encore dans le parcours actif de ceux déjà visités ; voir [Mapper](docs/mapping/README.md).
+
+- [ ] Paginer `EventSourcedStateStore::load()` pour reconstruire les states au-delà
+  des 1 000 premiers événements. Protéger la reconstruction sur plusieurs pages ;
+  voir la [limite actuelle](docs/event-sourcing/states.md).
+
 - [ ] Ajouter un module de retry au framework. La politique de retry reste
   actuellement à la charge de l'appelant ; définir le périmètre du module,
   notamment les conflits optimistes et son éventuelle articulation avec la

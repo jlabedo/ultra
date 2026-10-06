@@ -26,6 +26,10 @@ bin/infection --filter=src/MappedTable --test-framework-extra-args=src/MappedTab
 
 Report skipped coverage when the change requires database verification. Example applications may have their own Composer setup and test configuration; follow their local instructions.
 
+## Refactoring tests
+
+Use the owning context's guarantees to organize suites and cases. Share setup and cleanup; keep assertions in the suites. Before deleting a case, identify the remaining scenario protecting its guarantee and compare covered source lines and detection of the same mutants on unchanged production code. Investigate surviving mutants before adding cases.
+
 ## Documentation changes
 
 Verify relative file links and section anchors in changed pages and their incoming references. Run `git diff --check`. A documentation-only change does not require executing the application suite unless it changes executable examples or claims that need runtime verification.
