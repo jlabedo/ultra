@@ -16,6 +16,8 @@ use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\Events\Attribute\Event;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\SelfHandler;
+use Ultra\MessageHandling\EventBusInterface;
+use Ultra\MessageHandling\MessageContext;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
 use Ultra\StateStore\Attribute\StateId;
@@ -25,6 +27,17 @@ use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Attribute\StateReader;
 use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\StatefulMessageHandling\Violation;
+
+final class DecisionEventBus implements EventBusInterface
+{
+    /** @var list<object> */
+    public array $events = [];
+
+    public function publish(object $event, array|MessageContext $context = []): void
+    {
+        $this->events[] = $event;
+    }
+}
 
 #[Event('alias_decision.desk_booked')]
 final readonly class AliasDeskBooked

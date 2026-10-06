@@ -13,6 +13,7 @@ use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\Mapper_Bundle\MapperExtension;
+use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension;
@@ -48,7 +49,7 @@ abstract class DecisionTestCase extends TestCase
         $dir = $this->buildDirectory();
         $application = (new UltraLight())
             ->withBuildDir($dir)
-            ->withBundle(new MessageHandlingExtension(), new MapperExtension(), new StatefulMessageHandlingExtension())
+            ->withBundle(new MessageHandlingExtension(), $this->mapperExtension(), new StatefulMessageHandlingExtension())
             ->withAlias('test.mediator', MediatorInterface::class)
             ->withClass(...$classes);
 
@@ -57,6 +58,7 @@ abstract class DecisionTestCase extends TestCase
                 ->withBundle(new EventsExtension(), new EventSourcedStateExtension())
                 ->withClass(...$events)
                 ->withService(new InMemoryEventStore(), InMemoryEventStore::class)
+                ->withService(new \Ultra\StatefulMessageHandling\Tests\DecisionEventBus(), EventBusInterface::class)
                 ->withAlias(EventStore::class, InMemoryEventStore::class);
         }
         if ($stored) {
@@ -71,6 +73,11 @@ abstract class DecisionTestCase extends TestCase
         }
 
         return $application;
+    }
+
+    protected function mapperExtension(): MapperExtension
+    {
+        return new MapperExtension(generationNamespace: 'Ultra\\StatefulMessageHandling\\Tests\\Generated\\Compilation_'.bin2hex(random_bytes(8)));
     }
 
     /** @return UltraLight<UltraLightContainer> */
@@ -156,7 +163,7 @@ abstract class DecisionTestCase extends TestCase
         parent::tearDown();
     }
 
-    private static function removeGeneratedFiles(string $dir): void
+    protected static function removeGeneratedFiles(string $dir): void
     {
         if (!is_dir($dir)) {
             return;

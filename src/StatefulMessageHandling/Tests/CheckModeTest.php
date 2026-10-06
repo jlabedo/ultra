@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
@@ -15,8 +13,6 @@ use Ultra\StatefulMessageHandling\Tests\Support\DecisionTestCase;
 use Ultra\StatefulMessageHandling\DecisionMode;
 use Ultra\StatefulMessageHandling\Violation;
 
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class CheckModeTest extends DecisionTestCase
 {
     #[DataProvider('checkedDecisions')]

@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
@@ -15,10 +13,9 @@ use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MessageHandling\EventBusInterface;
 use Ultra\StatefulMessageHandling\Tests\Support\DecisionTestCase;
 
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class ContainerAssemblyTest extends DecisionTestCase
 {
     #[DataProvider('families')]
@@ -28,7 +25,8 @@ final class ContainerAssemblyTest extends DecisionTestCase
         $builder->setParameter('kernel.build_dir', $this->buildDirectory());
         $builder->setAlias('test.mediator', \Ultra\MessageHandling\MediatorInterface::class)->setPublic(true);
         $builder->register(DecisionService::class, DecisionService::class);
-        $extensions = [new \Ultra\MessageHandling\MessageHandlingExtension(), new \Ultra\Mapper_Bundle\MapperExtension(), new \Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension()];
+        $builder->register(EventBusInterface::class, DecisionEventBus::class)->setSynthetic(true)->setPublic(true);
+        $extensions = [new \Ultra\MessageHandling\MessageHandlingExtension(), $this->mapperExtension(), new \Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension()];
         $classes = [];
         if ('stored' !== $family) {
             $classes = [CourseCreated::class, \Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState::class];
@@ -66,6 +64,7 @@ final class ContainerAssemblyTest extends DecisionTestCase
         file_put_contents($file, (new PhpDumper($builder))->dump(['class' => $class]));
         require $file;
         $container = new $class();
+        $container->set(EventBusInterface::class, new DecisionEventBus());
         $event = new CourseCreated('course', 'Math', 12);
         $state = new DecisionOrderState('order', 'paid');
         $command = match ($family) {

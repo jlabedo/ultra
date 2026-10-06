@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\StatefulMessageHandling\Tests;
 
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
@@ -16,8 +14,6 @@ use Ultra\MessageHandling\MessageContextKeys;
 use Ultra\MessageHandling\ProceedResult;
 use Ultra\StatefulMessageHandling\Tests\Support\DecisionTestCase;
 
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class EventPublicationTest extends DecisionTestCase
 {
     public function test_appended_events_are_published_after_append_with_the_final_child_context(): void

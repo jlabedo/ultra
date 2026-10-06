@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\Exception\ConcurrencyException as EventConcurrencyException;
@@ -16,8 +14,6 @@ use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\StatefulMessageHandling\DecisionMode;
 use Ultra\StatefulMessageHandling\Tests\Support\DecisionTestCase;
 
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class ReadConsistencyTest extends DecisionTestCase
 {
     public function test_all_event_loading_rounds_guard_the_final_append(): void

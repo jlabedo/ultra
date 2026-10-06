@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
@@ -16,8 +14,6 @@ use Ultra\StatefulMessageHandling\Tests\Support\DecisionTestCase;
 use Ultra\StatefulMessageHandling\DecisionMode;
 use Ultra\StatefulMessageHandling\Violation;
 
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class DependentStateLoadingTest extends DecisionTestCase
 {
     public function test_independent_states_replay_the_shared_round_and_observe_prior_decisions(): void

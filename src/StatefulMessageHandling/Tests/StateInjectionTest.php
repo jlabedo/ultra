@@ -5,19 +5,16 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MessageHandling\EventBusInterface;
 use Ultra\StateStore\Exception\StateNotFoundException;
 use Ultra\StatefulMessageHandling\Tests\Example\Command\CreateCourseCommand;
 use Ultra\StatefulMessageHandling\Tests\Support\DecisionTestCase;
 
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class StateInjectionTest extends DecisionTestCase
 {
     #[DataProvider('handlerOrganizations')]
@@ -95,5 +92,71 @@ final class StateInjectionTest extends DecisionTestCase
         $container = $this->storedApplication(ShipDecisionOrderCommand::class)->boot();
         $this->expectException(StateNotFoundException::class);
         $container->get('test.mediator')->send(new ShipDecisionOrderCommand('missing'));
+    }
+
+    #[DataProvider('persistenceFamilies')]
+    public function test_independent_compilations_keep_their_own_services_and_states_after_file_cleanup(string $family): void
+    {
+        $command = static fn (mixed $result): object => match ($family) {
+            'events' => new InspectDecisionCourse('course', $result),
+            'stored' => new InspectDecisionOrder('order', $result),
+            'mixed' => new InspectMixedDecision('course', 'order', $result),
+        };
+        $firstEvent = new CourseCreated('course', 'First', 12);
+        $firstState = new DecisionOrderState('order', 'first');
+        $firstResult = match ($family) {
+            'events' => $firstEvent,
+            'stored' => $firstState,
+            'mixed' => [$firstEvent, $firstState],
+        };
+        $first = $this->inspectedApplication($family)->withService(new DecisionEventBus(), EventBusInterface::class)->boot();
+        $firstMediator = $first->get('test.mediator');
+        self::assertSame($firstResult, $firstMediator->send($command($firstResult)));
+        $firstDirectory = $first->getParameter('kernel.build_dir');
+        self::assertDirectoryExists($firstDirectory);
+        self::removeGeneratedFiles($firstDirectory);
+        self::assertDirectoryDoesNotExist($firstDirectory);
+
+        $second = $this->inspectedApplication($family)->withService(new DecisionEventBus(), EventBusInterface::class)->boot();
+        $secondMediator = $second->get('test.mediator');
+        self::assertNotSame($first->container(), $second->container());
+        self::assertNotSame($firstMediator::class, $secondMediator::class);
+        self::assertNotSame($first->get(DecisionService::class), $second->get(DecisionService::class));
+        if ('stored' !== $family) {
+            self::assertSame([], $second->get(InMemoryEventStore::class)->load(StreamQuery::all())->events);
+        }
+        if ('events' !== $family) {
+            self::assertNull($second->get('test.state_store')->load(DecisionOrderState::class, 'order'));
+        }
+
+        $secondEvent = new CourseCreated('course', 'Second', 24);
+        $secondState = new DecisionOrderState('order', 'second');
+        $secondResult = match ($family) {
+            'events' => $secondEvent,
+            'stored' => $secondState,
+            'mixed' => [$secondEvent, $secondState],
+        };
+        self::assertSame($secondResult, $secondMediator->send($command($secondResult)));
+        self::assertNull($firstMediator->send($command(null)));
+        self::assertSame(2, $first->get(DecisionService::class)->calls);
+        self::assertSame(1, $second->get(DecisionService::class)->calls);
+        self::assertDirectoryDoesNotExist($firstDirectory);
+        if ('stored' !== $family) {
+            self::assertSame(['First'], array_column(array_column($first->get(InMemoryEventStore::class)->load(StreamQuery::all())->events, 'payload'), 'name'));
+            self::assertSame(['Second'], array_column(array_column($second->get(InMemoryEventStore::class)->load(StreamQuery::all())->events, 'payload'), 'name'));
+            self::assertSame([$firstEvent], $first->get(EventBusInterface::class)->events);
+            self::assertSame([$secondEvent], $second->get(EventBusInterface::class)->events);
+        }
+        if ('events' !== $family) {
+            self::assertEquals($firstState, $first->get('test.state_store')->load(DecisionOrderState::class, 'order'));
+            self::assertEquals($secondState, $second->get('test.state_store')->load(DecisionOrderState::class, 'order'));
+        }
+    }
+
+    public static function persistenceFamilies(): iterable
+    {
+        yield 'event-sourced' => ['events'];
+        yield 'stored' => ['stored'];
+        yield 'mixed' => ['mixed'];
     }
 }

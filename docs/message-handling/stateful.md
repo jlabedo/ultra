@@ -60,7 +60,7 @@ The guarantee suites live in `src/StatefulMessageHandling/Tests`; persistence pr
 
 | Guarantee | Suite |
 | --- | --- |
-| Self and separate handlers receive the requested state, including nested and composite identities, nullable stored states and read-only handlers | [StateInjectionTest](../../src/StatefulMessageHandling/Tests/StateInjectionTest.php) |
+| Self and separate handlers receive the requested state, including nested and composite identities, nullable stored states and read-only handlers; independent compilations retain their own services and states after generated-file cleanup | [StateInjectionTest](../../src/StatefulMessageHandling/Tests/StateInjectionTest.php) |
 | Independent and dependent states load in the right rounds, observe prior decisions and propagate missing source states | [DependentStateLoadingTest](../../src/StatefulMessageHandling/Tests/DependentStateLoadingTest.php) |
 | Ambiguous, missing, cyclic or incompatible bindings fail during compilation | [BindingDeclarationTest](../../src/StatefulMessageHandling/Tests/BindingDeclarationTest.php) |
 | Loaded dependencies guard append or flush, even when they produce no returned save and during CHECK | [ReadConsistencyTest](../../src/StatefulMessageHandling/Tests/ReadConsistencyTest.php) |
@@ -70,8 +70,17 @@ The guarantee suites live in `src/StatefulMessageHandling/Tests`; persistence pr
 | Dumped Symfony containers assemble each available persistence family and select aspects from the handler’s state parameters | [ContainerAssemblyTest](../../src/StatefulMessageHandling/Tests/ContainerAssemblyTest.php) |
 
 Providers express alternative persistence families, binding forms or result shapes. Shared support assembles
-real extensions and cleans generated files; assertions remain in the suites. Generated-runtime cases run
-in separate processes so each case can own and remove its compilation directory.
+real extensions and cleans generated files; assertions remain in the suites. Cases run in PHPUnit's main
+process. Each compilation owns a directory and a logical Mapper generation namespace; dumped containers
+also have distinct class names. Every application receives fresh stores and services; applications with
+events also receive a fresh test event bus.
+The coexistence cases compile the same fixtures twice, remove the first application's generated files and
+verify that both applications remain usable with independent state.
+
+The test bus is injected through `EventBusInterface`, including as a synthetic service in dumped containers.
+It avoids an existing limitation of the empty compiled event bus: its identical generated content has the
+same class name in different directories, and loading both files would redeclare the class. Publication
+ordering and context propagation still use the instrumented bus in `EventPublicationTest`.
 
 Use the shared [test-refactoring rules](../development.md#refactoring-tests) to maintain these guarantees
 and compare coverage and mutations.
