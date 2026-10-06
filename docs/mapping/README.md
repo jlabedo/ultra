@@ -13,6 +13,8 @@ class and its file, so separate compilations can share an artifact directory. Ke
 moving precompiled artifacts to another directory; their identity does not depend on the directory path.
 A class already loaded for that namespace remains reusable, and an instance keeps its generated normalizers
 even when their files are removed. Register runtime normalizers before generating or loading the configuration.
+Within a generation namespace, types whose names become identical when backslashes are replaced by
+underscores still collide; this existing limitation is tracked in [TODO](../../TODO.md).
 
 
 ## Custom normalizers
