@@ -29,7 +29,7 @@ final class EnvelopeRepresentationTest extends QueueTestCase
         $f = $this->fixture('postgres');
         $envelope = $this->envelope('hello');
         $f->queue->enqueue(new AsyncEnvelope($envelope->message, MessageContext::fromArray($attributes)->withLocal('runtime', new \stdClass()), $envelope->headers));
-        $row = $f->connection->fetchAssociative('SELECT body, headers, attributes FROM '.$f->tablePrefix.'messages');
+        $row = $f->connection->fetchAssociative("SELECT convert_from(body, 'UTF8') AS body, headers, attributes FROM ".$f->tablePrefix.'messages');
         self::assertIsArray($row);
         self::assertSame('{"value":"hello"}', $row['body']);
         self::assertStringContainsString('test.route', $row['headers']);

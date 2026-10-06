@@ -73,11 +73,11 @@ final class ProjectionFixture
                 new PostgresDirtyKeyTrackerSchema($this->prefix.'dirty_keys'),
                 new PostgresCoordinatorLeaseSchema($this->prefix.'coordinator_lease'),
             ];
+            $statements = [];
             foreach ($this->schemas as $schema) {
-                foreach ($schema->createStatements() as $sql) {
-                    $this->connection->executeStatement($sql);
-                }
+                $statements = [...$statements, ...$schema->createStatements()];
             }
+            $this->executeSchemaStatements($statements);
             $implementation = new PostgresProjectionImplementation($this->connection, $this->prefix, $clock);
             $this->store = PostgresTestSupport::storeForImplementation($this->connection, $eventPrefix, 'query-streams');
             $this->segments = $implementation->createSegmentRepository();
@@ -119,13 +119,24 @@ final class ProjectionFixture
             return;
         }
         PostgresTestSupport::resetSharedConnection($this->connection);
+        $statements = [];
         foreach ($this->readModels as $table) {
-            $this->connection->executeStatement('DROP TABLE IF EXISTS '.$table);
+            $statements[] = 'DROP TABLE IF EXISTS '.$table;
         }
         foreach (array_reverse($this->schemas) as $schema) {
-            foreach ($schema->dropStatements() as $sql) {
-                $this->connection->executeStatement($sql);
-            }
+            $statements = [...$statements, ...$schema->dropStatements()];
         }
+        $this->executeSchemaStatements($statements);
+    }
+
+    /** @param list<string> $statements */
+    private function executeSchemaStatements(array $statements): void
+    {
+        // One result reports errors from any statement and rolls back the whole batch.
+        $this->connection->executeStatement(
+            "DO \$projection_fixture_ddl\$\nBEGIN\n"
+            .implode(";\n", $statements)
+            .";\nEND;\n\$projection_fixture_ddl\$",
+        );
     }
 }

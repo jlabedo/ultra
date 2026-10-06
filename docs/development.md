@@ -16,7 +16,8 @@ bin/phpunit --coverage-text
 bin/phpunit src/StateStore/Tests
 ```
 
-Postgres tests use the local database by default.
+Postgres tests use the local database through DBAL's `pdo_pgsql` driver by default; PHP must have `pdo_pgsql` enabled.
+Set `ULTRA_TEST_POSTGRES_DSN` to use another database or driver. An explicit `pgsql://` DSN keeps the native `pgsql` driver.
 
 `PostgresTestSupport::sharedConnection($dsn)` reuses the primary session. Pass a name as the second argument
 to reuse a separate session for a concurrent actor; names identify independent connections within each DSN.

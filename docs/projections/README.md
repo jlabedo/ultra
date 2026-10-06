@@ -106,6 +106,11 @@ The segment repository owns runtime state such as:
 
 Segments are represented by [ProjectionSegment.php](../../src/Projection/ProjectionSegment.php).
 
+Postgres claims use a conditional `UPDATE ... RETURNING` to acquire ownership and
+read the segment in one atomic operation. A claim joins an existing connection
+transaction: other sessions see ownership only after commit, and rollback restores
+the previous owner.
+
 `ProjectionRunner` accepts a [ProjectionTransactionManagerInterface.php](../../src/Projection/ProjectionTransactionManagerInterface.php).
 The default [NoOpProjectionTransactionManager.php](../../src/Projection/NoOpProjectionTransactionManager.php) keeps in-memory and custom
 storage usage lightweight. Postgres-backed read models should wire the DBAL-based transaction manager from
@@ -231,14 +236,21 @@ All projection suites live in [src/Projection/Tests](../../src/Projection/Tests)
 | Initial creation, reset and lifecycle rollback | [ProjectionLifecycleTest](../../src/Projection/Tests/ProjectionLifecycleTest.php) |
 | Ordered partition batches, checkpoint resume and replay | [CheckpointProgressTest](../../src/Projection/Tests/CheckpointProgressTest.php) |
 | Atomic read-model writes, flush and checkpoint, including caller-owned transactions | [BatchAtomicityTest](../../src/Projection/Tests/BatchAtomicityTest.php) |
-| Exclusive segment ownership and expired claims | [SegmentOwnershipTest](../../src/Projection/Tests/SegmentOwnershipTest.php) |
+| Exclusive segment ownership, expired claims and caller-owned claim transactions | [SegmentOwnershipTest](../../src/Projection/Tests/SegmentOwnershipTest.php) |
 | Split/merge ranges, checkpoint gaps and stale completion | [SegmentTopologyTest](../../src/Projection/Tests/SegmentTopologyTest.php) |
 | Deduplicated activity and acknowledgement of observed counters | [ActivityAcknowledgementTest](../../src/Projection/Tests/ActivityAcknowledgementTest.php) |
 | Leader processing, worker scaling, fairness and loop termination | [CoordinationSchedulingTest](../../src/Projection/Tests/CoordinationSchedulingTest.php) |
 | Standalone projection lease expiry and wake debounce | [LeaderLivenessTest](../../src/Projection/Tests/LeaderLivenessTest.php) |
-| Concurrent leader/follower execution across independent segments | [ConcurrentExecutionTest](../../src/Projection/Tests/ConcurrentExecutionTest.php) |
+| Competing claims on one segment and concurrent leader/follower execution across independent segments | [ConcurrentExecutionTest](../../src/Projection/Tests/ConcurrentExecutionTest.php) |
 | Catalog lookup, Symfony discovery and activity-enabled append | [ProjectionRegistrationTest](../../src/Projection/Tests/ProjectionRegistrationTest.php) |
 | Delivery of coordinator wakeups and durable worker claims | [ActivationDeliveryTest](../../src/Projection/Tests/ActivationDeliveryTest.php) |
 | Segment listing, process backfill and reset commands | [OperatorCommandsTest](../../src/Projection/Tests/OperatorCommandsTest.php) |
+| Atomic fixture cleanup and propagation of DDL errors | [FixtureIsolationTest](../../src/Projection/Tests/FixtureIsolationTest.php) |
+
+The Postgres [projection fixture](../../src/Projection/Tests/Support/ProjectionFixture.php)
+creates and drops its schema objects in separate `DO` blocks. Each block sends one
+statement, propagates any operation error, and rolls back the whole block on
+failure. Every fixture retains its own table prefix and resets the shared connection
+before cleanup.
 
 Run the fast suites with `bin/phpunit src/Projection/Tests`; use `--group slow` for the Postgres process scenarios. The process harness remains in [Projection_Postgres/Tests/Harness](../../src/Projection_Postgres/Tests/Harness) for direct console use. The event-store and generic coordination contracts remain owned by their contexts; Projection verifies their composition. Lease expiry and takeover belong to [Coordination’s ownership suite](../../src/Coordination/Tests/LeaseOwnershipTest.php).

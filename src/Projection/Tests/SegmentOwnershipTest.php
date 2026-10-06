@@ -8,8 +8,10 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Projection\Tests\Support\TrackingProjection;
+use Ultra\Testing\PostgresTestSupport;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
 
@@ -46,6 +48,31 @@ final class SegmentOwnershipTest extends ProjectionTestCase
         self::assertSame(0, $claimed->checkpoint->gapFloor->value);
         self::assertSame('worker-1', $claimed->workerId);
         self::assertNull($repository->claimSegment('courses', 0, 'worker-2'));
+    }
+
+    public function test_a_postgres_claim_joins_the_callers_transaction_and_rolls_back_with_it(): void
+    {
+        $fixture = $this->fixture('postgres');
+        $fixture->segments->ensureInitialized('courses');
+        $observer = PostgresTestSupport::connection(getenv('ULTRA_TEST_POSTGRES_DSN'));
+        $otherSegments = new PostgresProjectionSegmentRepository($observer, $fixture->prefix);
+
+        try {
+            $fixture->connection->beginTransaction();
+            self::assertNotNull($fixture->segments->claimSegment('courses', 0, 'worker-1'));
+            self::assertSame(1, $fixture->connection->getTransactionNestingLevel());
+            self::assertSame('worker-1', $fixture->segments->listSegments('courses')[0]->workerId);
+            self::assertNull($otherSegments->listSegments('courses')[0]->workerId);
+
+            $fixture->connection->rollBack();
+
+            self::assertNull($fixture->segments->listSegments('courses')[0]->workerId);
+            self::assertNotNull($otherSegments->claimSegment('courses', 0, 'worker-2'));
+            self::assertSame('worker-2', $fixture->segments->listSegments('courses')[0]->workerId);
+        } finally {
+            PostgresTestSupport::resetSharedConnection($fixture->connection);
+            $observer->close();
+        }
     }
 
     #[DataProvider('backends')]

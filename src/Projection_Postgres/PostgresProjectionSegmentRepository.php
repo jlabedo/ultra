@@ -60,57 +60,34 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     ): ?ProjectionSegment {
         $now = $this->clock->now();
 
-        $this->connection->beginTransaction();
+        $row = $this->connection->executeQuery(
+            sprintf(
+                'UPDATE %s
+                 SET worker_id = ?,
+                     lease_expires_at = CAST(? AS TIMESTAMPTZ),
+                     updated_at = CAST(? AS TIMESTAMPTZ)
+                 WHERE projection_id = ?
+                   AND bucket_from = ?
+                   AND (worker_id IS NULL OR worker_id = ?)
+                   AND (lease_expires_at IS NULL OR lease_expires_at >= CAST(? AS TIMESTAMPTZ) OR worker_id = ?)
+                 RETURNING bucket_from, bucket_to, checkpoint',
+                $this->segmentsTable(),
+            ),
+            [$workerId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom, $workerId, $now, $workerId],
+            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
+        )->fetchAssociative();
 
-        try {
-            $row = $this->connection->executeQuery(
-                sprintf(
-                    'SELECT bucket_from, bucket_to, checkpoint
-                     FROM %s
-                     WHERE projection_id = ?
-                       AND bucket_from = ?
-                       AND (worker_id IS NULL OR worker_id = ?)
-                       AND (lease_expires_at IS NULL OR lease_expires_at >= CAST(? AS TIMESTAMPTZ) OR worker_id = ?)
-                     FOR UPDATE',
-                    $this->segmentsTable(),
-                ),
-                [$projectionId, $bucketFrom, $workerId, $now, $workerId],
-                [ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
-            )->fetchAssociative();
-
-            if (false === $row) {
-                $this->connection->rollBack();
-
-                return null;
-            }
-
-            $this->connection->executeStatement(
-                sprintf(
-                    'UPDATE %s
-                     SET worker_id = ?,
-                         lease_expires_at = CAST(? AS TIMESTAMPTZ),
-                         updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ?',
-                    $this->segmentsTable(),
-                ),
-                [$workerId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom],
-                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER],
-            );
-
-            $this->connection->commit();
-
-            return new ProjectionSegment(
-                projectionId: $projectionId,
-                bucketFrom: (int) $row['bucket_from'],
-                bucketTo: (int) $row['bucket_to'],
-                checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-                workerId: $workerId,
-            );
-        } catch (\Throwable $e) {
-            $this->connection->rollBack();
-
-            throw $e;
+        if (false === $row) {
+            return null;
         }
+
+        return new ProjectionSegment(
+            projectionId: $projectionId,
+            bucketFrom: (int) $row['bucket_from'],
+            bucketTo: (int) $row['bucket_to'],
+            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+            workerId: $workerId,
+        );
     }
 
     public function completeClaimedSegment(
