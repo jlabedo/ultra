@@ -4,6 +4,11 @@
   dans plusieurs propriétés sans le confondre avec un cycle. Distinguer les objets
   encore dans le parcours actif de ceux déjà visités ; voir [Mapper](docs/mapping/README.md).
 
+- [ ] Permettre de charger des classes compilées identiques depuis plusieurs
+  répertoires dans un même processus. Deux applications avec un bus d'événements
+  vide produisent aujourd'hui le même nom de classe et son second chargement
+  échoue par redéclaration ; voir les [artefacts de routage](docs/message-handling/README.md#compiled-artifacts).
+
 - [ ] Paginer `EventSourcedStateStore::load()` pour reconstruire les states au-delà
   des 1 000 premiers événements. Protéger la reconstruction sur plusieurs pages ;
   voir la [limite actuelle](docs/event-sourcing/states.md).

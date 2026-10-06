@@ -13,6 +13,12 @@ MessageContext is immutable. Propagated entries contain scalars, null or lists o
 
 See [MediatorInterface](../../src/MessageHandling/MediatorInterface.php), [EventBusInterface](../../src/MessageHandling/EventBusInterface.php) and [MessageContext](../../src/MessageHandling/MessageContext.php).
 
+## Compiled artifacts
+
+Generated routers use class names derived from their content. Loading identical router classes from
+different build directories in the same PHP process currently fails with a class redeclaration; two
+applications with empty event buses reproduce this limitation. The correction is tracked in [TODO](../../TODO.md).
+
 ## Guarantee suites
 
 The context's suites live in [MessageHandling/Tests](../../src/MessageHandling/Tests), including compiled routing and Postgres queue integration. Compiler fixtures and container support remain under [MessageHandling_Compiler/Tests](../../src/MessageHandling_Compiler/Tests) for consumers of that setup.
