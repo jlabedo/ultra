@@ -6,8 +6,6 @@ namespace Ultra\Mapper\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Ultra\Mapper\Tests\Fixtures\AssemblyRecord;
@@ -25,8 +23,6 @@ use Ultra\Mapper_Bundle\TagNames;
 #[CoversNamespace('Ultra\Mapper')]
 #[CoversNamespace('Ultra\Mapper_Compiler')]
 #[CoversNamespace('Ultra\Mapper_Bundle')]
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class ContainerCompilationTest extends MapperTestCase
 {
     public function test_configuration_compiles_tagged_and_attributed_types_with_runtime_normalizers(): void
@@ -34,7 +30,7 @@ final class ContainerCompilationTest extends MapperTestCase
         $container = new ContainerBuilder();
         $container->setParameter('kernel.build_dir', $this->directory.'/build');
         $container->setParameter('email_normalizer_class', MultiTypeRuntimeEmailNormalizer::class);
-        new MapperExtension()->build($container);
+        new MapperExtension(generationNamespace: $this->generationNamespace)->build($container);
         $container->getDefinition(UltraNormalizer::class)->setPublic(true);
         $container->setDefinition('record', new Definition(\stdClass::class)
             ->addResourceTag(TagNames::NORMALIZABLE, ['class' => AssemblyRecord::class]));
@@ -53,18 +49,22 @@ final class ContainerCompilationTest extends MapperTestCase
         }
         $compiled = $this->generatedFiles($cache);
         $GLOBALS['mapper_loaded_artifacts'] = [];
-        $normalizer = $container->get(UltraNormalizer::class);
-        self::assertInstanceOf(UltraNormalizer::class, $normalizer);
-        $normalizer->registerRuntimeNormalizer($container->get('email_normalizer'));
-        $record = new AssemblyRecord(new RuntimeEmail('primary@example.test'), new SecondaryRuntimeEmail('secondary@example.test'));
-        $representation = ['primary' => 'runtime-email:primary@example.test', 'secondary' => 'runtime-email:secondary@example.test'];
+        try {
+            $normalizer = $container->get(UltraNormalizer::class);
+            self::assertInstanceOf(UltraNormalizer::class, $normalizer);
+            $normalizer->registerRuntimeNormalizer($container->get('email_normalizer'));
+            $record = new AssemblyRecord(new RuntimeEmail('primary@example.test'), new SecondaryRuntimeEmail('secondary@example.test'));
+            $representation = ['primary' => 'runtime-email:primary@example.test', 'secondary' => 'runtime-email:secondary@example.test'];
 
-        self::assertSame($representation, $normalizer->toScalar($record));
-        self::assertEquals($record, $normalizer->fromScalar($representation, AssemblyRecord::class));
-        self::assertSame(42, $normalizer->toScalar(new InnerValue(42)));
-        self::assertEquals(new InnerValue(42), $normalizer->fromScalar(42, InnerValue::class));
-        self::assertNotEmpty($GLOBALS['mapper_loaded_artifacts']);
-        self::assertSame($compiled, $this->generatedFiles($cache));
+            self::assertSame($representation, $normalizer->toScalar($record));
+            self::assertEquals($record, $normalizer->fromScalar($representation, AssemblyRecord::class));
+            self::assertSame(42, $normalizer->toScalar(new InnerValue(42)));
+            self::assertEquals(new InnerValue(42), $normalizer->fromScalar(42, InnerValue::class));
+            self::assertNotEmpty($GLOBALS['mapper_loaded_artifacts']);
+            self::assertSame($compiled, $this->generatedFiles($cache));
+        } finally {
+            unset($GLOBALS['mapper_loaded_artifacts']);
+        }
     }
 
     #[DataProvider('invalidConfiguration')]
@@ -81,7 +81,7 @@ final class ContainerCompilationTest extends MapperTestCase
         $this->expectException($exception);
         $this->expectExceptionMessage($reason);
 
-        new MapperCompilerPass($this->directory.'/normalizers')->process($container);
+        new MapperCompilerPass($this->directory.'/normalizers', generationNamespace: $this->generationNamespace)->process($container);
     }
 
     /** @return iterable<string, array{string, ?string, array, class-string<\Throwable>, string}> */

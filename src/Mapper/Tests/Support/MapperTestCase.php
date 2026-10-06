@@ -13,6 +13,7 @@ require_once __DIR__.'/MappingFixtures.php';
 abstract class MapperTestCase extends TestCase
 {
     protected string $directory;
+    protected string $generationNamespace;
 
     /** @var list<string> */
     protected array $extraDirectories = [];
@@ -20,11 +21,12 @@ abstract class MapperTestCase extends TestCase
     protected function setUp(): void
     {
         $this->directory = sys_get_temp_dir().'/ultra_mapper_'.bin2hex(random_bytes(8));
+        $this->generationNamespace = 'Ultra\\Mapper\\Tests\\Generated\\Case'.bin2hex(random_bytes(8));
     }
 
     protected function normalizer(): UltraNormalizer
     {
-        return new UltraNormalizer($this->directory.'/normalizers');
+        return new UltraNormalizer($this->directory.'/normalizers', generationNamespace: $this->generationNamespace);
     }
 
     /** @return array<string, string> Files addressed by their real paths, with their contents. */

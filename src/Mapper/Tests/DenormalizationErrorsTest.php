@@ -6,8 +6,6 @@ namespace Ultra\Mapper\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Ultra\Mapper\DenormalizationContext;
 use Ultra\Mapper\Exception\DenormalizationException;
 use Ultra\Mapper\Path;
@@ -23,8 +21,6 @@ use Ultra\Mapper\Tests\Support\MapperTestCase;
 /** @internal */
 #[CoversNamespace('Ultra\Mapper')]
 #[CoversNamespace('Ultra\Mapper_Compiler')]
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class DenormalizationErrorsTest extends MapperTestCase
 {
     /** @param class-string $type */

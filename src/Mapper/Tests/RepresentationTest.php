@@ -6,8 +6,6 @@ namespace Ultra\Mapper\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Ultra\Mapper\Tests\Fixtures\Address;
 use Ultra\Mapper\Tests\Fixtures\ArrayOfArrayOfObject;
 use Ultra\Mapper\Tests\Fixtures\ArrayOfArrays;
@@ -32,8 +30,6 @@ use Ultra\Mapper\Tests\Support\MapperTestCase;
 /** @internal */
 #[CoversNamespace('Ultra\Mapper')]
 #[CoversNamespace('Ultra\Mapper_Compiler')]
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class RepresentationTest extends MapperTestCase
 {
     #[DataProvider('representations')]

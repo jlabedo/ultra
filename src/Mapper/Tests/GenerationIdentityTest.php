@@ -5,8 +5,6 @@ declare(strict_types=1);
 namespace Ultra\Mapper\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
-use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Ultra\Mapper\Tests\Fixtures\CustomerWithRuntimeEmail;
@@ -23,8 +21,6 @@ use Ultra\Mapper_Bundle\TagNames;
 #[CoversNamespace('Ultra\Mapper')]
 #[CoversNamespace('Ultra\Mapper_Compiler')]
 #[CoversNamespace('Ultra\Mapper_Bundle')]
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class GenerationIdentityTest extends MapperTestCase
 {
     public function test_configurations_coexist_in_the_same_process_and_artifact_directory(): void

@@ -7,7 +7,7 @@ namespace Ultra\Mapper\Tests;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\PreserveGlobalState;
-use PHPUnit\Framework\Attributes\RunTestsInSeparateProcesses;
+use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Ultra\Mapper\DenormalizationContext;
@@ -22,10 +22,10 @@ use Ultra\Mapper_Compiler\NormalizerGenerator;
 #[CoversNamespace('Ultra\Mapper')]
 #[CoversNamespace('Ultra\Mapper_Compiler')]
 #[CoversNamespace('Ultra\Mapper_Bundle')]
-#[RunTestsInSeparateProcesses]
-#[PreserveGlobalState(false)]
 final class CompilationLifecycleTest extends MapperTestCase
 {
+    #[RunInSeparateProcess]
+    #[PreserveGlobalState(false)]
     public function test_standalone_use_has_a_working_default_cache(): void
     {
         $cache = dirname(__DIR__, 3).'/var/normalizer_cache';
@@ -60,7 +60,7 @@ final class CompilationLifecycleTest extends MapperTestCase
         $container = new ContainerBuilder();
         $container->setDefinition('record', new Definition(\stdClass::class)
             ->addResourceTag(TagNames::NORMALIZABLE, ['class' => Foo::class]));
-        new MapperCompilerPass($cache)->process($container);
+        new MapperCompilerPass($cache, generationNamespace: $this->generationNamespace)->process($container);
         $files = $this->generatedFiles($cache);
         self::assertNotEmpty($files);
         foreach ($files as $file => $code) {
@@ -68,12 +68,16 @@ final class CompilationLifecycleTest extends MapperTestCase
         }
         $compiled = $this->generatedFiles($cache);
         $GLOBALS['mapper_loaded_artifacts'] = [];
-        $normalizer = $this->normalizer();
+        try {
+            $normalizer = $this->normalizer();
 
-        self::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
+            self::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
 
-        self::assertNotEmpty($GLOBALS['mapper_loaded_artifacts']);
-        self::assertSame($compiled, $this->generatedFiles($cache));
+            self::assertNotEmpty($GLOBALS['mapper_loaded_artifacts']);
+            self::assertSame($compiled, $this->generatedFiles($cache));
+        } finally {
+            unset($GLOBALS['mapper_loaded_artifacts']);
+        }
     }
 
     #[DataProvider('generatedClassNames')]

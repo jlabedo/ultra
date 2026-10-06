@@ -42,8 +42,10 @@ The context's runtime, compiler and Symfony guarantees are tested together in `s
 
 Add cases to the suite owning their guarantee. Representation cases run once through UltraNormalizer;
 the compilation and container suites use a few focused scenarios rather than replaying every conversion.
-Tests that generate normalizers use separate processes and temporary directories, so a previously loaded
-class or cache file cannot make another test pass. The shared setup manages those directories and contains no assertions.
+Tests that generate normalizers use a distinct generation namespace and temporary directory per case,
+so a previously loaded class or cache file cannot make another test pass. Only the standalone default-cache
+case requires a fresh process to exercise the default namespace before a class is loaded. The shared setup
+manages the namespaces and directories and contains no assertions.
 
 See [development verification](../development.md#tests) for commands and the
 [refactoring checks](../development.md#refactoring-tests) before deleting or adding cases.
