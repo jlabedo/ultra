@@ -15,3 +15,23 @@ An external action can succeed before queue acknowledgement fails. An outbox doe
 Applications must handle duplicate delivery and preserve compatibility with handler routes referenced by messages already in the queue during deployments. See [TODO](../../TODO.md) for planned retry work.
 
 See [QueueWorker](../../src/MessageHandling/Async/QueueWorker.php) and [PostgresAsyncQueue](../../src/MessageHandling_PostgresQueue/PostgresAsyncQueue.php).
+
+## Guarantee suites
+
+These suites belong to [MessageHandling/Tests](../../src/MessageHandling/Tests), alongside the [routing and context guarantees](README.md#guarantee-suites).
+
+| Guarantee | Suite |
+| --- | --- |
+| Deferred single dispatch, mixed event subscriptions, original routes and sender channels | [AsyncRoutingTest](../../src/MessageHandling/Tests/AsyncRoutingTest.php) |
+| Dispatch versus execution advice for inline and queued handlers | [AdvicePhasesTest](../../src/MessageHandling/Tests/AdvicePhasesTest.php) |
+| Release and exception propagation; drain stops on lookup, execution or acknowledgement failure | [DeliveryOutcomeTest](../../src/MessageHandling/Tests/DeliveryOutcomeTest.php) |
+| Reservation ownership, expiry, renewal, stale deliveries and concurrent reservations | [QueueLeaseTest](../../src/MessageHandling/Tests/QueueLeaseTest.php) |
+| Relative/absolute scheduling, release delay and invalid options | [QueueSchedulingTest](../../src/MessageHandling/Tests/QueueSchedulingTest.php) |
+| Queue-name isolation for replacement, reservation and acknowledgement | [QueueIsolationTest](../../src/MessageHandling/Tests/QueueIsolationTest.php) |
+| Replacing a pending message by key | [QueueReplacementTest](../../src/MessageHandling/Tests/QueueReplacementTest.php) |
+| Persistent binary envelope bodies, headers and propagated attributes | [EnvelopeRepresentationTest](../../src/MessageHandling/Tests/EnvelopeRepresentationTest.php) |
+| Buffered enqueues/acknowledgements, transaction visibility and assembly with the unit of work | [QueueTransactionTest](../../src/MessageHandling/Tests/QueueTransactionTest.php) |
+
+Lease, scheduling and replacement cases run against memory and Postgres through providers. Persistence cases use independent connections to observe transaction visibility and competing reservations. Transaction ordering and EventStore behavior remain owned by their respective contexts; these suites verify queue participation in that composition.
+
+Use the shared [test refactoring workflow](../development.md#refactoring-tests).

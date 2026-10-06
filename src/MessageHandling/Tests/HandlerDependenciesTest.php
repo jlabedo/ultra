@@ -2,137 +2,47 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling_Compiler\Tests;
+namespace Ultra\MessageHandling\Tests;
 
+use PHPUnit\Framework\Attributes\CoversNamespace;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\ProceedResult;
+use Ultra\MessageHandling\Tests\Support\ConfiguredLeftEntity;
+use Ultra\MessageHandling\Tests\Support\ConfiguredRightEntity;
+use Ultra\MessageHandling\Tests\Support\Entity;
+use Ultra\MessageHandling\Tests\Support\EntityConfig;
+use Ultra\MessageHandling\Tests\Support\EntityManager;
+use Ultra\MessageHandling\Tests\Support\EntityRepository;
+use Ultra\MessageHandling\Tests\Support\Greeter;
+use Ultra\MessageHandling\Tests\Support\LeftEntity;
+use Ultra\MessageHandling\Tests\Support\LeftRepository;
+use Ultra\MessageHandling\Tests\Support\RightEntity;
+use Ultra\MessageHandling\Tests\Support\RightRepository;
+use Ultra\MessageHandling\Tests\Support\SelfHandlerGreeter;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\EmptyMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\ProcessEntityMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\ProcessPairMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
-final class MediatorServiceInjectionGreeter
-{
-    public function greet(string $name): string
-    {
-        return 'Hello, '.$name.'!';
-    }
-}
+require_once __DIR__.'/Support/HandlerFixtures.php';
 
-final class MediatorServiceInjectionEntity
-{
-    public bool $processed = false;
-
-    public function __construct(public readonly string $id) {}
-
-    public function process(): void
-    {
-        $this->processed = true;
-    }
-}
-
-final class MediatorServiceInjectionEntityRepository
-{
-    /** @var array<string, MediatorServiceInjectionEntity> */
-    public array $saved = [];
-
-    public function load(ProcessEntityMessage $message): MediatorServiceInjectionEntity
-    {
-        return new MediatorServiceInjectionEntity($message->entityId);
-    }
-
-    public function save(MediatorServiceInjectionEntity $entity): void
-    {
-        $this->saved[$entity->id] = $entity;
-    }
-}
-
-final readonly class MediatorServiceInjectionLeftEntity
-{
-    public function __construct(public string $id) {}
-}
-
-final readonly class MediatorServiceInjectionRightEntity
-{
-    public function __construct(public string $id) {}
-}
-
-final class MediatorServiceInjectionLeftRepository
-{
-    public function load(ProcessPairMessage $message): MediatorServiceInjectionLeftEntity
-    {
-        return new MediatorServiceInjectionLeftEntity($message->leftId);
-    }
-}
-
-final class MediatorServiceInjectionRightRepository
-{
-    public function load(ProcessPairMessage $message): MediatorServiceInjectionRightEntity
-    {
-        return new MediatorServiceInjectionRightEntity($message->rightId);
-    }
-}
-
-#[\Attribute(\Attribute::TARGET_CLASS)]
-final readonly class MediatorServiceInjectionEntityConfig
-{
-    public function __construct(public string $idProperty) {}
-}
-
-#[MediatorServiceInjectionEntityConfig(idProperty: 'leftId')]
-final readonly class MediatorServiceInjectionConfiguredLeftEntity
-{
-    public function __construct(public string $id) {}
-}
-
-#[MediatorServiceInjectionEntityConfig(idProperty: 'rightId')]
-final readonly class MediatorServiceInjectionConfiguredRightEntity
-{
-    public function __construct(public string $id) {}
-}
-
-final class MediatorServiceInjectionEntityManager
-{
-    /** @var list<array{class: class-string, id: string}> */
-    public array $findCalls = [];
-
-    /** @var array<class-string, array<string, object>> */
-    public array $saved = [];
-
-    /**
-     * @param class-string $class
-     */
-    public function find(string $class, string $id): object
-    {
-        $this->findCalls[] = ['class' => $class, 'id' => $id];
-
-        return new $class($id);
-    }
-
-    public function save(object $entity): void
-    {
-        $this->saved[$entity::class][$entity->id] = $entity;
-    }
-}
-
-/**
- * @internal
- *
- * @coversNothing
- */
-final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
+#[CoversNamespace('Ultra\\MessageHandling')]
+#[CoversNamespace('Ultra\\MessageHandling_Compiler')]
+#[CoversNamespace('Ultra\\MessageHandling_PostgresQueue')]
+final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
 {
     public function test_it_resolves_handler_method_dependencies_from_services(): void
     {
         $mediator = $this->ultraLight()
-            ->withService(new MediatorServiceInjectionGreeter())
+            ->withService(new Greeter())
             ->withService(new class {
                 #[Handles]
-                public function handle(EmptyMessage $message, MediatorServiceInjectionGreeter $greeter): string
+                public function handle(EmptyMessage $message, Greeter $greeter): string
                 {
                     return $greeter->greet('pong');
                 }
@@ -145,22 +55,22 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
     public function test_it_lets_around_advice_provide_a_handler_dependency(): void
     {
-        $repository = new MediatorServiceInjectionEntityRepository();
+        $repository = new EntityRepository();
 
         $mediator = $this->ultraLight()
             ->withService($repository)
             ->withService(new class {
                 #[Handles]
-                public function handle(ProcessEntityMessage $message, MediatorServiceInjectionEntity $entity): string
+                public function handle(ProcessEntityMessage $message, Entity $__result): string
                 {
-                    $entity->process();
+                    $__result->process();
 
-                    return $entity->id;
+                    return $__result->id;
                 }
             })
             ->withService(new class($repository) {
                 public function __construct(
-                    private readonly MediatorServiceInjectionEntityRepository $repository,
+                    private readonly EntityRepository $repository,
                 ) {}
 
                 #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
@@ -169,7 +79,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                         $type = $parameter->getType();
                         if (
                             $type instanceof \ReflectionNamedType
-                            && MediatorServiceInjectionEntity::class === $type->getName()
+                            && Entity::class === $type->getName()
                         ) {
                             return MatchResult::apply(provides: [$index]);
                         }
@@ -201,8 +111,8 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                 #[Handles]
                 public function handle(
                     ProcessPairMessage $message,
-                    MediatorServiceInjectionLeftEntity $left,
-                    MediatorServiceInjectionRightEntity $right,
+                    LeftEntity $left,
+                    RightEntity $right,
                 ): string {
                     return $left->id.'+'.$right->id;
                 }
@@ -218,8 +128,8 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                             && in_array(
                                 $type->getName(),
                                 [
-                                    MediatorServiceInjectionLeftEntity::class,
-                                    MediatorServiceInjectionRightEntity::class,
+                                    LeftEntity::class,
+                                    RightEntity::class,
                                 ],
                                 true,
                             )
@@ -233,8 +143,8 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                 public function execute(callable $proceed, ProcessPairMessage $message, MessageContext $context): ProceedResult
                 {
                     return $proceed(provided: [
-                        new MediatorServiceInjectionLeftRepository()->load($message),
-                        new MediatorServiceInjectionRightRepository()->load($message),
+                        new LeftRepository()->load($message),
+                        new RightRepository()->load($message),
                     ]);
                 }
             })
@@ -246,8 +156,8 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
     public function test_it_composes_multiple_around_advices_that_each_provide_one_dependency(): void
     {
-        $leftRepository = new MediatorServiceInjectionLeftRepository();
-        $rightRepository = new MediatorServiceInjectionRightRepository();
+        $leftRepository = new LeftRepository();
+        $rightRepository = new RightRepository();
 
         $mediator = $this->ultraLight()
             ->withService($leftRepository)
@@ -256,16 +166,16 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                 #[Handles]
                 public function handle(
                     ProcessPairMessage $message,
-                    MediatorServiceInjectionLeftEntity $left,
-                    MediatorServiceInjectionRightEntity $right,
+                    LeftEntity $left,
+                    RightEntity $right,
                 ): string {
                     return $left->id.'+'.$right->id;
                 }
             })
             ->withService(new class($leftRepository, $rightRepository) {
                 public function __construct(
-                    private readonly MediatorServiceInjectionLeftRepository $leftRepository,
-                    private readonly MediatorServiceInjectionRightRepository $rightRepository,
+                    private readonly LeftRepository $leftRepository,
+                    private readonly RightRepository $rightRepository,
                 ) {}
 
                 #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
@@ -274,7 +184,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                         $type = $parameter->getType();
                         if (
                             $type instanceof \ReflectionNamedType
-                            && MediatorServiceInjectionLeftEntity::class === $type->getName()
+                            && LeftEntity::class === $type->getName()
                         ) {
                             return MatchResult::apply(provides: [$index], config: ['side' => 'left']);
                         }
@@ -288,7 +198,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                         $type = $parameter->getType();
                         if (
                             $type instanceof \ReflectionNamedType
-                            && MediatorServiceInjectionRightEntity::class === $type->getName()
+                            && RightEntity::class === $type->getName()
                         ) {
                             return MatchResult::apply(provides: [$index], config: ['side' => 'right']);
                         }
@@ -318,7 +228,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
     public function test_it_supports_generic_entity_loading_advice_based_on_handler_parameter_metadata(): void
     {
-        $entityManager = new MediatorServiceInjectionEntityManager();
+        $entityManager = new EntityManager();
 
         $mediator = $this->ultraLight()
             ->withService($entityManager)
@@ -326,14 +236,14 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                 #[Handles]
                 public function handle(
                     ProcessPairMessage $message,
-                    MediatorServiceInjectionConfiguredLeftEntity $left,
-                    MediatorServiceInjectionConfiguredRightEntity $right,
+                    ConfiguredLeftEntity $left,
+                    ConfiguredRightEntity $right,
                 ): string {
                     return $left->id.'+'.$right->id;
                 }
             })
             ->withService(new class($entityManager) {
-                public function __construct(private readonly MediatorServiceInjectionEntityManager $entityManager) {}
+                public function __construct(private readonly EntityManager $entityManager) {}
 
                 #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     $method = $ctx->method();
@@ -347,7 +257,7 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
                         }
 
                         $attributes = new \ReflectionClass($type->getName())
-                            ->getAttributes(MediatorServiceInjectionEntityConfig::class)
+                            ->getAttributes(EntityConfig::class)
                         ;
                         if ([] === $attributes) {
                             continue;
@@ -390,10 +300,29 @@ final class MediatorServiceInjectionTest extends MessageHandlingCompilerTestCase
 
         self::assertSame('left-100+right-200', $mediator->send(new ProcessPairMessage('left-100', 'right-200')));
         self::assertSame([
-            ['class' => MediatorServiceInjectionConfiguredLeftEntity::class, 'id' => 'left-100'],
-            ['class' => MediatorServiceInjectionConfiguredRightEntity::class, 'id' => 'right-200'],
+            ['class' => ConfiguredLeftEntity::class, 'id' => 'left-100'],
+            ['class' => ConfiguredRightEntity::class, 'id' => 'right-200'],
         ], $entityManager->findCalls);
-        self::assertArrayHasKey(MediatorServiceInjectionConfiguredLeftEntity::class, $entityManager->saved);
-        self::assertArrayHasKey(MediatorServiceInjectionConfiguredRightEntity::class, $entityManager->saved);
+        self::assertArrayHasKey(ConfiguredLeftEntity::class, $entityManager->saved);
+        self::assertArrayHasKey(ConfiguredRightEntity::class, $entityManager->saved);
+    }
+
+    public function test_it_injects_services_into_self_handling_methods(): void
+    {
+        $message = new readonly class('Bob') {
+            public function __construct(public string $name) {}
+
+            #[SelfHandler]
+            public function greet(SelfHandlerGreeter $greeter): string
+            {
+                return $greeter->greet($this->name);
+            }
+        };
+        $mediator = $this->ultraLight()
+            ->withClass($message::class, SelfHandlerGreeter::class)
+            ->boot()->mediator()
+        ;
+
+        self::assertSame('Hello, Bob!', $mediator->send($message));
     }
 }

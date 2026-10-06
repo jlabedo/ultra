@@ -2,18 +2,22 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MessageHandling_Compiler\Tests;
+namespace Ultra\MessageHandling\Tests;
 
+use PHPUnit\Framework\Attributes\CoversNamespace;
+use PHPUnit\Framework\Attributes\DataProvider;
+use Ultra\MessageHandling\Attribute\Around;
+use Ultra\MessageHandling\Attribute\Asynchronous;
 use Ultra\MessageHandling\Attribute\Before;
 use Ultra\MessageHandling\Attribute\EventHandler;
-use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\Handles;
-use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\MessageContextKeys;
+use Ultra\MessageHandling\MessageContextPropagator;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
+use Ultra\MessageHandling\ProceedResult;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\FarewellMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\GreetingMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\RecordedEvent;
@@ -63,53 +67,26 @@ final class RecordedMessageContexts
     public array $entries = [];
 }
 
-/**
- * @internal
- *
- * @coversNothing
- */
-final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCase
+#[CoversNamespace('Ultra\\MessageHandling')]
+#[CoversNamespace('Ultra\\MessageHandling_Compiler')]
+#[CoversNamespace('Ultra\\MessageHandling_PostgresQueue')]
+final class ContextPropagationTest extends MessageHandlingCompilerTestCase
 {
-    public function test_it_propagates_context_through_nested_mediator_sends(): void
+    #[DataProvider('boundaryContexts')]
+    public function test_it_propagates_context_through_nested_mediator_sends(bool $typed): void
     {
         $contexts = new RecordedMessageContexts();
 
         $mediator = $this->ultraLight()
             ->withService($contexts)
-            ->withService(new class {
-                #[Handles]
-                public function handle(GreetingMessage $message, MediatorInterface $mediator): string
-                {
-                    return $mediator->send(new FarewellMessage($message->name));
-                }
-            })
-            ->withService(new class {
-                #[Handles]
-                public function handle(FarewellMessage $message): string
-                {
-                    return 'child: '.$message->name;
-                }
-            })
-            ->withService(new class($contexts) {
-                public function __construct(private readonly RecordedMessageContexts $contexts) {}
-
-                #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
-                    return MatchResult::apply();
-                })]
-                public function record(object $message, MessageContext $context): void
-                {
-                    $this->contexts->entries[] = [
-                        'message' => $message::class,
-                        'context' => $context->all(),
-                    ];
-                }
-            })
+            ->withClass(ForwardingHandler::class, ChildHandler::class)
+            ->withService(new ContextRecorder($contexts))
             ->boot()->mediator()
         ;
 
         self::assertSame(
             'child: nested',
-            $mediator->send(new GreetingMessage('nested'), ['traceId' => 'trace-456']),
+            $mediator->send(new GreetingMessage('nested'), $typed ? MessageContext::coerce(['traceId' => 'trace-456']) : ['traceId' => 'trace-456']),
         );
 
         $this->assertMessageFlowContexts(
@@ -120,59 +97,6 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
         );
     }
 
-    public function test_it_accepts_message_context_instances_at_the_send_boundary(): void
-    {
-        $contexts = new RecordedMessageContexts();
-
-        $mediator = $this->ultraLight()
-            ->withService($contexts)
-            ->withService(new class {
-                #[Handles]
-                public function handle(GreetingMessage $message, MediatorInterface $mediator): string
-                {
-                    return $mediator->send(new FarewellMessage($message->name));
-                }
-            })
-            ->withService(new class {
-                #[Handles]
-                public function handle(FarewellMessage $message): string
-                {
-                    return 'child: '.$message->name;
-                }
-            })
-            ->withService(new class($contexts) {
-                public function __construct(private readonly RecordedMessageContexts $contexts) {}
-
-                #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
-                    return MatchResult::apply();
-                })]
-                public function record(object $message, MessageContext $context): void
-                {
-                    $this->contexts->entries[] = [
-                        'message' => $message::class,
-                        'context' => $context->all(),
-                    ];
-                }
-            })
-            ->boot()->mediator()
-        ;
-
-        self::assertSame(
-            'child: typed',
-            $mediator->send(
-                new GreetingMessage('typed'),
-                MessageContext::coerce(['traceId' => 'trace-typed']),
-            ),
-        );
-
-        $this->assertMessageFlowContexts(
-            $contexts->entries,
-            GreetingMessage::class,
-            FarewellMessage::class,
-            'trace-typed',
-        );
-    }
-
     public function test_it_uses_a_configured_message_context_propagator_service(): void
     {
         $contexts = new RecordedMessageContexts();
@@ -180,34 +104,8 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
         $mediator = $this->ultraLight()
             ->withService(new FixedMessageContextPropagator(), MessageContextPropagatorInterface::class)
             ->withService($contexts)
-            ->withService(new class {
-                #[Handles]
-                public function handle(GreetingMessage $message, MediatorInterface $mediator): string
-                {
-                    return $mediator->send(new FarewellMessage($message->name));
-                }
-            })
-            ->withService(new class {
-                #[Handles]
-                public function handle(FarewellMessage $message): string
-                {
-                    return 'child: '.$message->name;
-                }
-            })
-            ->withService(new class($contexts) {
-                public function __construct(private readonly RecordedMessageContexts $contexts) {}
-
-                #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
-                    return MatchResult::apply();
-                })]
-                public function record(object $message, MessageContext $context): void
-                {
-                    $this->contexts->entries[] = [
-                        'message' => $message::class,
-                        'context' => $context->all(),
-                    ];
-                }
-            })
+            ->withClass(ForwardingHandler::class, ChildHandler::class)
+            ->withService(new ContextRecorder($contexts))
             ->boot()->mediator()
         ;
 
@@ -273,20 +171,7 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
                     }
                 }
             })
-            ->withService(new class($contexts) {
-                public function __construct(private readonly RecordedMessageContexts $contexts) {}
-
-                #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
-                    return MatchResult::apply();
-                })]
-                public function record(object $message, MessageContext $context): void
-                {
-                    $this->contexts->entries[] = [
-                        'message' => $message::class,
-                        'context' => $context->all(),
-                    ];
-                }
-            })
+            ->withService(new ContextRecorder($contexts))
             ->boot()->eventBus()
         ;
 
@@ -325,5 +210,163 @@ final class MediatorContextPropagationTest extends MessageHandlingCompilerTestCa
             $childContext[MessageContextKeys::MESSAGE_ID],
             $grandchildContext[MessageContextKeys::CAUSATION_ID],
         );
+    }
+
+    public function test_message_context_is_preserved_through_enqueue_and_delivery(): void
+    {
+        $capturedContext = null;
+
+        $container = $this->ultraLight()
+            ->withService(new class($capturedContext) {
+                public ?MessageContext $captured;
+
+                public function __construct(?MessageContext &$captured)
+                {
+                    $this->captured = &$captured;
+                }
+
+                #[Around]
+                public function captureContext(callable $proceed, object $message, MessageContext $context): ProceedResult
+                {
+                    $this->captured = $context;
+
+                    return $proceed();
+                }
+            })
+            ->withService(new class {
+                #[Handles]
+                #[Asynchronous]
+                public function handle(GreetingMessage $message): string
+                {
+                    return 'handled';
+                }
+            })
+            ->boot()
+        ;
+
+        $container->mediator()->send(new GreetingMessage('context-test'), [
+            'traceId' => 'my-trace-123',
+        ]);
+
+        // Context was not yet captured (advice runs at dequeue time)
+        self::assertNull($capturedContext);
+
+        $container->queueWorker()->drain();
+
+        // Now the context should be captured with the original values preserved
+        self::assertNotNull($capturedContext);
+        self::assertArrayHasKey(MessageContextKeys::MESSAGE_ID, $capturedContext->all());
+        self::assertArrayHasKey(MessageContextKeys::CORRELATION_ID, $capturedContext->all());
+        self::assertSame('my-trace-123', $capturedContext->get('traceId'));
+    }
+
+    /**
+     * @param list<array{message: class-string, context: array<array-key, mixed>}> $entries
+     */
+    private function assertMessageFlowContexts(
+        array $entries,
+        string $firstMessage,
+        string $secondMessage,
+        string $traceId,
+    ): void {
+        self::assertCount(2, $entries);
+        self::assertSame($firstMessage, $entries[0]['message']);
+        self::assertSame($secondMessage, $entries[1]['message']);
+        self::assertSame($traceId, $entries[0]['context']['traceId']);
+        self::assertSame($traceId, $entries[1]['context']['traceId']);
+        self::assertArrayHasKey(MessageContextKeys::MESSAGE_ID, $entries[0]['context']);
+        self::assertArrayHasKey(MessageContextKeys::CORRELATION_ID, $entries[0]['context']);
+        self::assertArrayHasKey(MessageContextKeys::MESSAGE_ID, $entries[1]['context']);
+        self::assertArrayHasKey(MessageContextKeys::CORRELATION_ID, $entries[1]['context']);
+        self::assertArrayHasKey(MessageContextKeys::CAUSATION_ID, $entries[1]['context']);
+        self::assertSame(
+            $entries[0]['context'][MessageContextKeys::MESSAGE_ID],
+            $entries[0]['context'][MessageContextKeys::CORRELATION_ID],
+        );
+        self::assertSame(
+            $entries[0]['context'][MessageContextKeys::CORRELATION_ID],
+            $entries[1]['context'][MessageContextKeys::CORRELATION_ID],
+        );
+        self::assertSame(
+            $entries[0]['context'][MessageContextKeys::MESSAGE_ID],
+            $entries[1]['context'][MessageContextKeys::CAUSATION_ID],
+        );
+    }
+
+    /** @return iterable<string, array{bool}> */
+    public static function boundaryContexts(): iterable
+    {
+        yield 'array' => [false];
+        yield 'MessageContext' => [true];
+    }
+
+    public function test_it_normalizes_a_context_without_ids(): void
+    {
+        $propagator = new MessageContextPropagator();
+
+        $context = $propagator->normalizeContext(MessageContext::empty());
+
+        self::assertNotSame('', $context->get(MessageContextKeys::MESSAGE_ID));
+        self::assertSame(
+            $context->get(MessageContextKeys::MESSAGE_ID),
+            $context->get(MessageContextKeys::CORRELATION_ID),
+        );
+        self::assertFalse($context->has(MessageContextKeys::CAUSATION_ID));
+    }
+
+    public function test_it_preserves_existing_ids_when_normalizing_a_context(): void
+    {
+        $propagator = new MessageContextPropagator();
+
+        $context = MessageContext::fromArray([
+            MessageContextKeys::MESSAGE_ID => 'message-1',
+            MessageContextKeys::CORRELATION_ID => 'correlation-1',
+            MessageContextKeys::CAUSATION_ID => 'causation-1',
+        ]);
+
+        self::assertSame($context->all(), $propagator->normalizeContext($context)->all());
+    }
+
+    public function test_child_contexts_keep_correlation_and_record_the_immediate_parent(): void
+    {
+        $propagator = new MessageContextPropagator();
+        $root = $propagator->normalizeContext(MessageContext::empty());
+        $parent = $root;
+        for ($depth = 0; $depth < 2; ++$depth) {
+            $child = $propagator->createChildContext($parent);
+            self::assertNotSame($parent->get(MessageContextKeys::MESSAGE_ID), $child->get(MessageContextKeys::MESSAGE_ID));
+            self::assertSame($root->get(MessageContextKeys::CORRELATION_ID), $child->get(MessageContextKeys::CORRELATION_ID));
+            self::assertSame($parent->get(MessageContextKeys::MESSAGE_ID), $child->get(MessageContextKeys::CAUSATION_ID));
+            $parent = $child;
+        }
+    }
+}
+
+final readonly class ContextRecorder
+{
+    public function __construct(private RecordedMessageContexts $contexts) {}
+
+    #[Before]
+    public function record(object $message, MessageContext $context): void
+    {
+        $this->contexts->entries[] = ['message' => $message::class, 'context' => $context->all()];
+    }
+}
+
+final class ForwardingHandler
+{
+    #[Handles]
+    public function handle(GreetingMessage $message, MediatorInterface $mediator): string
+    {
+        return $mediator->send(new FarewellMessage($message->name));
+    }
+}
+
+final class ChildHandler
+{
+    #[Handles]
+    public function handle(FarewellMessage $message): string
+    {
+        return 'child: '.$message->name;
     }
 }
