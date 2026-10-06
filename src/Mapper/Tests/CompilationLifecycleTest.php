@@ -83,6 +83,7 @@ final class CompilationLifecycleTest extends MapperTestCase
     #[DataProvider('generatedClassNames')]
     public function test_generated_files_can_be_loaded_with_the_requested_class_name(string $class): void
     {
+        $class .= '_'.bin2hex(random_bytes(8));
         $normalizer = $this->normalizer();
         $file = $this->directory.'/normalizer.php';
         file_put_contents($file, NormalizerGenerator::for(Foo::class, $class, [])->generate());
