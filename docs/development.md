@@ -8,7 +8,7 @@ For Postgres integration, start the database defined by [docker-compose.yml](../
 
 ## Mago
 
-The repository's [Mago binary](../bin/mago) uses [mago.toml](../mago.toml). Run it from the repository root:
+The repository's [Mago wrapper](../bin/mago) uses [mago.toml](../mago.toml). Run it from the repository root:
 
 ```bash
 bin/mago lint
@@ -17,6 +17,9 @@ bin/mago lint src/StoredState/StateStore/StateStore.php
 bin/mago config --show linter
 bin/mago list-files --command analyzer
 ```
+
+The first run requires network access to download the platform binary. For download failures, see
+the [Composer installation guide](https://mago.carthage.software/latest/en/guide/installation/#composer).
 
 Source selection covers `src/`, `tests/`, `examples/*/src/**/*.php` and `examples/*/tests/**/*.php`.
 Analysis loads dependency metadata from `vendor/` and `tools/vendor/phpunit/`, where the tooling bootstrap
