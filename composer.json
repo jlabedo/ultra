@@ -122,7 +122,6 @@
         "post-install-cmd": "@install-tools",
         "post-update-cmd": "@install-tools",
         "test": "bin/phpunit",
-        "test:coverage": "bin/phpunit --coverage",
-        "cs-fix": "bin/php-cs-fixer fix"
+        "test:coverage": "bin/phpunit --coverage"
     }
 }

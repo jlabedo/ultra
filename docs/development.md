@@ -11,6 +11,7 @@ For Postgres integration, start the database defined by [docker-compose.yml](../
 The repository's [Mago wrapper](../bin/mago) uses [mago.toml](../mago.toml). Run it from the repository root:
 
 ```bash
+bin/mago format --check
 bin/mago lint
 bin/mago analyze
 bin/mago lint src/StoredState/StateStore/StateStore.php
@@ -45,7 +46,8 @@ use `array-key` for maps that can contain such keys so analysis preserves necess
 Validation boundaries take unvalidated inputs and describe the narrower type only after validation. Review automatic
 analysis fixes against the guarantee suites before retaining them.
 
-The existing Composer formatting script is still defined in [composer.json](../composer.json).
+Use `bin/mago format` to apply formatting with the same configuration.
+Leave formatting-only changes to CI, as required by the [contributor rules](../AGENTS.md).
 
 ## Tests
 
