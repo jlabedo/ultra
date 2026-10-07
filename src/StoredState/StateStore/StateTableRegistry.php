@@ -24,6 +24,12 @@ final class StateTableRegistry implements UnitOfWork
     /** @var array<string, array{tableKey: string, scope: MappedKey}> */
     private array $collectionScopes = [];
 
+    /** @var array<string, true> */
+    private array $collectionDeletions = [];
+
+    /** @var array<string, array<string, true>> */
+    private array $deletedStates = [];
+
     /** @var list<array{query: \Closure, expected: mixed, name: ?string}> */
     private array $queryExpectations = [];
 
@@ -79,9 +85,35 @@ final class StateTableRegistry implements UnitOfWork
         ));
     }
 
+    /** Buffer owned collections with the root deletion so flush can remove children before their parent. */
+    public function delete(StateMetadata $metadata, mixed $normalizedId): void
+    {
+        $key = $metadata->keyFromNormalizedId($normalizedId);
+        $this->tableFor($metadata)->withKey($key)->delete();
+        $this->deletedStates[$metadata->tableKey][$key->fingerprint()] = true;
+        foreach ($metadata->collections as $collection) {
+            $this->collectionFor($collection, $normalizedId)->reconcileRows([]);
+            $collectionKey = $collection->tableKey.'#'.$collection->ownerKey($normalizedId)->fingerprint();
+            $this->collectionDeletions[$collectionKey] = true;
+        }
+    }
+
+    /** A deleted owner cannot be saved again until this unit of work is cleared. */
+    public function assertCanSave(StateMetadata $metadata, MappedKey $key): void
+    {
+        if (isset($this->deletedStates[$metadata->tableKey][$key->fingerprint()])) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot save state "%s", row "%s" because it is deleted in this unit of work.',
+                $metadata->stateClass,
+                (string) $key,
+            ));
+        }
+    }
+
     public function flush(): void
     {
-        foreach (QueryGuardWriteRules::requests($this->updatePlans(), $this->queryGuardDefinitions, $this->reconciliationScopes()) as $request) {
+        $plans = $this->updatePlans();
+        foreach (QueryGuardWriteRules::requests($plans, $this->queryGuardDefinitions, $this->reconciliationScopes()) as $request) {
             $this->guard($request['name'], $request['value'], GuardLockMode::EXCLUSIVE);
         }
         $this->acquireGuards();
@@ -90,7 +122,8 @@ final class StateTableRegistry implements UnitOfWork
                 throw new ConcurrencyException(sprintf('Query expectation failed%s.', null === $expectation['name'] ? '' : ' for "'.$expectation['name'].'"'));
             }
         }
-        foreach ([...$this->tables, ...$this->collectionTables] as $table) {
+        $beforeDeletes = array_intersect_key($this->collectionTables, $this->collectionDeletions);
+        foreach ([...$beforeDeletes, ...$this->tables, ...array_diff_key($this->collectionTables, $beforeDeletes)] as $table) {
             $table->flush();
         }
     }
@@ -210,6 +243,8 @@ final class StateTableRegistry implements UnitOfWork
 
         $this->collectionTables = [];
         $this->collectionScopes = [];
+        $this->collectionDeletions = [];
+        $this->deletedStates = [];
         $this->queryExpectations = [];
         $this->guards = [];
         $this->locks = [];

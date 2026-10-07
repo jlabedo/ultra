@@ -12,7 +12,9 @@ use Ultra\MappedTable\PostgresMappedRowSetAdapter;
 use Ultra\Testing\PostgresRowSetTestCase;
 use Ultra\StateStore\PostgresGuardLockAdapter;
 use Ultra\StateStore\QueryGuard;
+use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\StateStore\StateTableRegistry;
+use Ultra\StateStore\Tests\Support\StateStoreFixture;
 use Ultra\Testing\PostgresConnectionSupport;
 
 use Ultra\MappedTable\MappedKey;
@@ -86,7 +88,11 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             } elseif ('move' === $mutation) {
                 $table->withKey('one')->expectColumnValue('status', 'old')->setColumn('status', 'new');
             } else {
-                $table->withKey('one')->expectColumnValue('status', 'old')->delete();
+                $metadata = new StateMetadata(ManualQueryState::class, $tableName, 'test', 'id', 'string', true,
+                    ['id' => 'id'], ['status' => 'status'], ['status' => 'status']);
+                $store = new StateStore(new StateMetadataRegistry([ManualQueryState::class => $metadata]), $registry, new UltraNormalizer());
+                $store->observe(ManualQueryState::class, 'one');
+                $store->delete(ManualQueryState::class, 'one');
             }
             $other = PostgresConnectionSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
             $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
@@ -384,5 +390,49 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 PostgresConnectionSupport::resetSharedConnection($other);
             }
         });
+    }
+
+    public function test_owner_cleanup_is_excluded_by_a_query_reader_and_can_be_retried_after_commit(): void
+    {
+        $fixture = StateStoreFixture::forBackend('postgres', [OrderWithLinesState::class]);
+        try {
+            $fixture->store->save(new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'SKU', 1)]));
+            $fixture->flush();
+            $fixture->registry->clear();
+            $definition = new QueryGuardDefinition();
+            $definition->watch(OrderWithLinesState::class, scopeBy: 'orderId')->whenPropertiesChange('lines');
+            $definitions = ['usage' => $definition->compile($fixture->metadata)];
+            [, $reader] = $fixture->newStore([OrderWithLinesState::class], $definitions);
+            (new QueryGuard($reader, 'usage'))->lock('one');
+            $other = PostgresConnectionSupport::sharedConnection((string) getenv('ULTRA_TEST_POSTGRES_DSN'), self::class);
+            $previousSearchPath = $other->fetchOne('SHOW search_path');
+            try {
+                $other->executeStatement("SELECT set_config('search_path', ?, false)", [$fixture->storage->fetchOne('SHOW search_path')]);
+                [$store, $writer] = $fixture->newStore([OrderWithLinesState::class], $definitions, $other);
+                $store->observe(OrderWithLinesState::class, 'one');
+                $store->delete(OrderWithLinesState::class, 'one');
+                $fixture->storage->beginTransaction();
+                $reader->flush();
+                try {
+                    $other->transactional(function () use ($other, $writer): void {
+                        $other->executeStatement("SET LOCAL lock_timeout = '10ms'");
+                        $writer->flush();
+                    });
+                    self::fail('The deletion must be excluded while the reader holds the shared guard.');
+                } catch (DriverException $exception) {
+                    self::assertSame('55P03', $exception->getSQLState());
+                }
+                self::assertNotNull($fixture->store->load(OrderWithLinesState::class, 'one'));
+                $fixture->storage->commit();
+                $other->transactional($writer->flush(...));
+                self::assertNull($fixture->store->load(OrderWithLinesState::class, 'one'));
+                self::assertSame([], $fixture->collectionRows($fixture->metadata->metadataFor(OrderWithLinesState::class)->collections['lines'], 'one'));
+            } finally {
+                PostgresConnectionSupport::resetSharedConnection($other);
+                $other->executeStatement("SELECT set_config('search_path', ?, false)", [$previousSearchPath]);
+            }
+        } finally {
+            $fixture->close();
+        }
     }
 }

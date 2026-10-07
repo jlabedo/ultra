@@ -115,6 +115,9 @@ flush transaction then:
 3. Replays query expectations.
 4. Checks optimistic row expectations and applies writes.
 
+For explicit owner deletion, the registry applies collection cleanup before root deletion while keeping guards
+and query replay ahead of every write. See [StateStore deletion](README.md#deletion) for ownership and rollback.
+
 Each flush consolidates modes before acquisition, avoiding a shared-to-exclusive upgrade within that flush.
 PostgreSQL uses transaction-scoped advisory shared and exclusive locks in the same query-guard namespace,
 separate from manual row and automatic absent-row guards.

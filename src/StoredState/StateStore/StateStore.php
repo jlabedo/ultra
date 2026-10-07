@@ -91,6 +91,7 @@ final readonly class StateStore
     {
         [$metadata, $normalizedState] = $this->normalizeState($state);
         $key = $metadata->keyFromNormalizedState($normalizedState);
+        $this->tableRegistry->assertCanSave($metadata, $key);
         $normalizedId = $normalizedState[$metadata->idProperty];
 
         $this->tableRegistry->tableFor($metadata)
@@ -104,6 +105,20 @@ final readonly class StateStore
                 $this->collectionRows($collection, $normalizedId, $this->normalizedCollectionItems($metadata, $normalizedState, $collection)),
             );
         }
+    }
+
+    /**
+     * Buffer deletion of the root row and the collections declared by this state class.
+     * Existing optimistic expectations are retained; no state or collection is read here.
+     *
+     * @param class-string $stateClass
+     */
+    public function delete(string $stateClass, int|string|object $id): void
+    {
+        $metadata = $this->metadataRegistry->metadataFor($stateClass);
+        $this->assertIdentifierType($metadata, $id);
+        $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
+        $this->tableRegistry->delete($metadata, $normalizedId);
     }
 
     /**

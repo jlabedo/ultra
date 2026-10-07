@@ -1,6 +1,6 @@
 # State Store
 
-Mapper-backed object state loading and saving on top of `Ultra\MappedTable\MappedRowSet`.
+Mapper-backed object state loading, saving and deletion on top of `Ultra\MappedTable\MappedRowSet`.
 
 ## Purpose
 
@@ -16,7 +16,7 @@ The package owns:
 
 - attribute-based state-to-row mapping
 - row hydration through `Ultra\Mapper\UltraNormalizer`
-- optimistic save expectations backed by `Ultra\MappedTable`
+- optimistic write expectations backed by `Ultra\MappedTable`
 - support for multiple state classes over the same table
 - declared query dependencies and automatic reader/writer guards
 
@@ -66,6 +66,44 @@ State classes targeting the same physical table and complete key mapping share a
 but only read and write the columns each class maps. See [mapping](mapping.md) for manually assembled row sets
 using different candidate keys.
 
+## Deletion
+
+`delete(StateClass::class, $id)` buffers deletion of the root row and empties the collections declared by that
+state class for this owner. It accepts the same scalar and composite identifiers as `load()`, validates their
+types, and reads neither the state nor its collections. It also works when stored values cannot hydrate that
+state representation.
+
+```php
+if (null !== $stateStore->observe(OrderWithLinesState::class, 'order-123')) {
+    $stateStore->delete(OrderWithLinesState::class, 'order-123');
+}
+```
+
+Deletion retains all previously registered expectations, including those registered through another state view
+of the same mapped row. Use `observe()`, or `load()` followed by `expect()`, before deletion to protect root values
+and collection membership. Without these expectations, deletion only requires the root to exist at flush; changed
+root values and collection members added before flush are deleted too. Collection observations guard membership,
+as for saves, without comparing item values. A missing or concurrently deleted root causes `ConcurrencyException`.
+When absence was already expected, deletion only checks that absence; it also cancels a buffered insertion made
+after that expectation while retaining the check against competing creation.
+
+`load()` and presence observations immediately see the buffered deletion, while storage changes only at flush.
+Deletion supersedes buffered updates and collection saves for that owner. Repeating deletion is allowed. A later
+`save()` of the deleted row, including through another view sharing its mapped key, throws `ConcurrencyException`
+until `clear()`; deletion is the final mutation of that owner in this unit of work. `clear()` discards both deletion
+and its expectations, allowing a fresh decision and save.
+
+Flush acquires query guards and replays queries before applying any deletion. It checks and empties the deleted
+owners' collection scopes before deleting root rows, then saves other owners' collections after their roots.
+This ordering supports immediate foreign keys from collection rows to their owner without database cascades.
+Use one surrounding transaction: a conflict on either the parent or its collections requires rollback of the
+whole flush, followed by `clear()`, as described in [transactions](../transactions/README.md).
+
+The supplied state class defines which collections are deleted. Collections exposed only by other state classes
+and unrelated referencing tables are not discovered or cascaded by StateStore; use a representation declaring
+the owned collections when deleting their parent. Deletions and collection cleanup participate in the declared
+[query guards](query-guards.md), with the same requirements for observing a non-identifier scope before mutation.
+
 ## Query dependencies
 
 For named guards declared from mapped-state dependencies, read the [query guard contract](query-guards.md). It owns declaration rules, read ordering, flush replay, exceptions and caller responsibilities.
@@ -79,10 +117,10 @@ Each file owns a guarantee; providers express alternative mappings, observation 
 
 | Guarantee | Suite |
 | --- | --- |
-| State representations, embedded values and manual candidate keys preserve their physical mapping | [StateMappingTest](../../src/StoredState/Tests/StateMappingTest.php) |
-| State views read buffered changes and retain the original storage expectations | [BufferedStateViewTest](../../src/StoredState/Tests/BufferedStateViewTest.php) |
-| Value, presence and absence observations protect the dependency actually read, with or without a save | [StateObservationTest](../../src/StoredState/Tests/StateObservationTest.php) |
-| Collection hydration, reconciliation and expectations respect owner and item identities | [CollectionOwnershipTest](../../src/StoredState/Tests/CollectionOwnershipTest.php) |
+| State representations, embedded values and manual candidate keys preserve their physical mapping; deletion needs a valid identifier but no hydratable representation | [StateMappingTest](../../src/StoredState/Tests/StateMappingTest.php) |
+| State views share buffered writes and deletions, preserve original expectations and start fresh after clear | [BufferedStateViewTest](../../src/StoredState/Tests/BufferedStateViewTest.php) |
+| Value, presence and absence observations protect the dependency actually read, including across deletion and shared views | [StateObservationTest](../../src/StoredState/Tests/StateObservationTest.php) |
+| Collection hydration, reconciliation and owner cleanup respect identities, membership expectations and atomic rollback with immediate foreign keys | [CollectionOwnershipTest](../../src/StoredState/Tests/CollectionOwnershipTest.php) |
 | Recorded queries replay before writes, compare strictly and reject mutable expected values | [QueryReplayTest](../../src/StoredState/Tests/QueryReplayTest.php) |
 | Guarded decision reads reject affected pending changes before executing or queuing a query | [QueryReadOrderingTest](../../src/StoredState/Tests/QueryReadOrderingTest.php) |
 | Declared property and collection dependencies compile and enroll the relevant writers | [QueryDependencyTest](../../src/StoredState/Tests/QueryDependencyTest.php) |
@@ -90,8 +128,10 @@ Each file owns a guarantee; providers express alternative mappings, observation 
 | Cooperative guards share or exclude competing transactions and remain separate from persistence locks | [CooperativeLockingTest](../../src/StoredState/Tests/CooperativeLockingTest.php) |
 | Symfony discovers root states and collection items, shares table views and assembles guards in dumped containers | [ContainerIntegrationTest](../../src/StoredState/Tests/ContainerIntegrationTest.php) |
 
-The shared fixture derives mappings from attributes and opens explicit transaction boundaries; assertions stay
-in the suites. Postgres contention cases retain two real connections. Row-plan mechanics, backend encodings and
+The shared [fixture](../../src/StoredState/Tests/Support/StateStoreFixture.php) derives mappings from attributes
+and opens explicit transaction boundaries; assertions stay in the suites. Memory and Postgres share owner-cleanup
+and conflict cases. Postgres setup creates the needed tables in an isolated schema with immediate foreign keys;
+contention cases retain two real connections. Row-plan mechanics, backend encodings and
 intrinsic persistence locks belong to [MappedTable's suites](mapped-table.md#test-ownership-and-maintenance);
 StateStore covers their composition with objects, collections and decision guards.
 

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\StateStore\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 use Ultra\StateStore\StateStore;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
@@ -133,5 +134,51 @@ final class BufferedStateViewTest extends StateStoreTestCase
         $database->writeRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'cancelled', 'note' => null]);
         $this->expectException(ConcurrencyException::class);
         $this->flush($database, $registry);
+    }
+
+    #[DataProvider('backends')]
+    public function test_clear_reopens_a_deleted_owner_shared_by_other_state_views(string $backend): void
+    {
+        $fixture = $this->stateFixture($backend, [OrderWithLinesState::class, OrderStatusView::class]);
+        $state = new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'SKU', 1)]);
+        $fixture->store->save($state);
+        $fixture->flush();
+        $fixture->registry->clear();
+        $fixture->store->observe(OrderWithLinesState::class, 'one');
+        $fixture->store->delete(OrderWithLinesState::class, 'one');
+        try {
+            $fixture->store->save(new OrderStatusView('one', 'paid'));
+            self::fail('A deleted owner cannot be saved through another view.');
+        } catch (ConcurrencyException $exception) {
+            self::assertStringContainsString('deleted in this unit of work', $exception->getMessage());
+        }
+        $fixture->registry->clear();
+
+        self::assertFalse($fixture->registry->hasPendingChanges());
+        self::assertEquals($state, $fixture->store->load(OrderWithLinesState::class, 'one'));
+        $fixture->store->save(new OrderWithLinesState('one', 'paid', $state->lines));
+        $fixture->flush();
+        $fixture->registry->clear();
+        self::assertSame('paid', $fixture->store->load(OrderWithLinesState::class, 'one')->status);
+    }
+
+    #[DataProvider('backends')]
+    public function test_deletion_supersedes_buffered_updates_while_other_owners_can_be_created(string $backend): void
+    {
+        $fixture = $this->stateFixture($backend, [OrderWithLinesState::class]);
+        $fixture->store->save(new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'OLD', 1)]));
+        $fixture->flush();
+        $fixture->registry->clear();
+        $fixture->store->observe(OrderWithLinesState::class, 'one');
+        $fixture->store->save(new OrderWithLinesState('one', 'paid', [new OrderLineState('new', 'NEW', 3)]));
+        $fixture->store->delete(OrderWithLinesState::class, 'one');
+        $other = new OrderWithLinesState('two', 'pending', [new OrderLineState('line', 'OTHER', 2)]);
+        $fixture->store->save($other);
+
+        $fixture->flush();
+        $fixture->registry->clear();
+        self::assertNull($fixture->store->load(OrderWithLinesState::class, 'one'));
+        self::assertEquals($other, $fixture->store->load(OrderWithLinesState::class, 'two'));
+        self::assertSame([], $fixture->collectionRows($fixture->metadata->metadataFor(OrderWithLinesState::class)->collections['lines'], 'one'));
     }
 }

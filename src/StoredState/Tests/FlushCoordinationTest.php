@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\StateStore\Tests;
 
+use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\StateStore\Tests\Support\StateStoreTestCase;
+use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\StateStore\Tests\OrderState;
 use Ultra\StateStore\Tests\OrderStatusView;
 use Ultra\StateStore\GuardLockMode;
@@ -90,6 +92,27 @@ final class FlushCoordinationTest extends StateStoreTestCase
         self::assertNull($store->load(OrderState::class, 'order-1'));
         $registry->clear();
         self::assertFalse($registry->hasPendingChanges());
+    }
+
+    #[DataProvider('backends')]
+    public function test_deletion_with_an_unknown_query_scope_fails_before_removing_collections(string $backend): void
+    {
+        $fixture = $this->stateFixture($backend, [OrderWithLinesState::class]);
+        $initial = new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'SKU', 1)]);
+        $fixture->store->save($initial);
+        $fixture->flush();
+        $fixture->registry->clear();
+        $definition = new QueryGuardDefinition();
+        $definition->watch(OrderWithLinesState::class, scopeBy: 'status')->whenPropertiesChange('status');
+        [$store, $registry] = $fixture->newStore([OrderWithLinesState::class], ['usage' => $definition->compile($fixture->metadata)]);
+        $store->delete(OrderWithLinesState::class, 'one');
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('requires observing column "status"');
+        try {
+            $fixture->flush($registry);
+        } finally {
+            self::assertEquals($initial, $fixture->store->load(OrderWithLinesState::class, 'one'));
+        }
     }
 }
 

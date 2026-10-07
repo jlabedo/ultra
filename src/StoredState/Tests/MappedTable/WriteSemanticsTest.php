@@ -119,4 +119,21 @@ final class WriteSemanticsTest extends RowSetTestCase
         self::assertFalse($fixture->stored('row'));
         self::assertFalse($fixture->stored('cancelled'));
     }
+
+    #[DataProvider('backends')]
+    public function test_deleting_expected_absent_rows_only_checks_absence(string $backend): void
+    {
+        $fixture = $this->fixture($backend);
+        $fixture->rows->withKey('absent')->expectAbsent()->delete();
+        $fixture->flush();
+        self::assertFalse($fixture->stored('absent'));
+
+        $fixture->seed(['id' => 'absent', 'status' => 'competing']);
+        $this->expectException(ConcurrencyException::class);
+        try {
+            $fixture->flush();
+        } finally {
+            self::assertSame(['status' => 'competing'], $fixture->stored('absent', ['status']));
+        }
+    }
 }

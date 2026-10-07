@@ -61,15 +61,19 @@ For mutation testing:
 bin/infection --filter=src/StoredState/MappedTable --test-framework-extra-args=src/StoredState/Tests/MappedTable
 ```
 
+When covering `CooperativeLockingTest`, use `--threads=1`: its query guard names share database-wide advisory
+locks, even across isolated schemas. Run `--noop` with the same selection and settings before comparing results;
+all unchanged mutants must survive. Concurrent runs against that database can produce false detections.
+
 Report skipped coverage when the change requires database verification. Example applications may have their own Composer setup and test configuration; follow their local instructions.
 
 ## Refactoring tests
 
-Use the owning context's guarantees to organize suites and name cases by observable outcomes. For each change, find the existing scenario protecting its guarantee. Extend that case or its data provider when the arrangement and assertions fit; add a case or suite for a distinct guarantee that remains unprotected. Review nearby cases for duplication as part of the same change.
+Use the owning context's guarantees to organize suites and name cases by observable outcomes. For each change, find the existing scenario protecting its guarantee. Extend that case or its data provider when the arrangement and assertions fit; add a case or suite for a distinct guarantee that remains unprotected. When a feature spans guarantees, distribute its cases among their existing owners: deletion can affect buffering, observations, collection ownership and query guards. Review nearby cases for duplication as part of the same change, and extend their shared fixture instead of creating a parallel setup path.
 
 Exercise behavior through the caller's interface. Reserve implementation-detail coverage for complex logic or hard-to-reproduce failures. Share setup and cleanup, keeping assertions in the suites. Verify simple fixture changes through the functional suites or a disposable probe; PostgreSQL's own DDL atomicity does not need a context guarantee suite.
 
-For concurrency, establish the critical state before releasing the competitor and observe actual overlap, such as a request waiting on a held lock. Bound waits and check the result after that same request resumes. A readiness barrier alone can still allow sequential execution.
+For concurrency, establish the critical state before releasing the competitor. An exclusion test can acquire the holder's lock, check a bounded `lock_timeout` in the competing transaction, then retry after commit. To verify that an in-flight request resumes correctly, observe it waiting on the held lock and check that same request after release. Name the case for the guarantee it demonstrates; a readiness barrier alone can still allow sequential execution.
 
 Before deleting a case, identify the remaining scenario protecting its guarantee and compare covered source lines and detection of the same mutants on unchanged production code. Investigate surviving mutants before adding cases. Verify claimed regression tests against the previous implementation or a deliberately broken variant; a performance refactor can preserve an existing guarantee without introducing another regression case.
 

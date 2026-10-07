@@ -50,6 +50,10 @@ $key = new MappedKey([
 $table->withKey($key)->insert();
 ```
 
+`withKey($key)->delete()` buffers a conditional deletion, retaining existing column and presence expectations.
+Without a prior absence expectation, the row must still exist at flush. Deleting an expected-absent row only
+checks absence; a buffered insertion for that key is cancelled, and a competing creation still causes a conflict.
+
 `row(...)` reads the current row through the adapter and overlays any buffered in-memory mutations for the same id, so callers can observe pending state before `flush()`.
 
 `rows(...)` returns a list of `MappedRow` objects containing a structured `MappedKey` and the projected columns. It overlays buffered mutations. `expectSameRowKeys(...)` buffers an optimistic expectation that the row-key set has not changed before `flush()`.

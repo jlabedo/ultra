@@ -66,6 +66,7 @@ final class QueryDependencyTest extends TestCase
         yield 'item value change' => ['update'];
         yield 'empty collection' => ['empty'];
         yield 'root property only' => ['active'];
+        yield 'root deletion' => ['delete'];
     }
 
     #[DataProvider('mutations')]
@@ -81,7 +82,9 @@ final class QueryDependencyTest extends TestCase
             default => [new GuardPermission('read')],
         };
         $state = $metadata->metadataFor(GuardRole::class);
-        if ('active' === $mutation) {
+        if ('delete' === $mutation) {
+            $store->delete(GuardRole::class, $id);
+        } elseif ('active' === $mutation) {
             $registry->tableFor($state)->withKey($state->keyFromNormalizedId(['tenantId' => 'acme', 'roleId' => 'editor']))->setColumn('enabled', false);
         } elseif ('remove' === $mutation) {
             $collection = $state->collections['permissions'];
@@ -107,7 +110,12 @@ final class QueryDependencyTest extends TestCase
         $database->commit();
         $registry->clear();
         self::assertFalse($registry->hasPendingChanges());
-        self::assertCount(count($items), $store->load(GuardRole::class, $id)->permissions);
+        if ('delete' === $mutation) {
+            self::assertNull($store->load(GuardRole::class, $id));
+            self::assertSame([], $registry->collectionFor($state->collections['permissions'], ['tenantId' => 'acme', 'roleId' => 'editor'])->rows());
+        } else {
+            self::assertCount(count($items), $store->load(GuardRole::class, $id)->permissions);
+        }
     }
 
     public function test_unwatched_properties_and_collection_observations_do_not_require_a_writer_guard(): void
@@ -124,14 +132,25 @@ final class QueryDependencyTest extends TestCase
         self::assertSame([['ultra:query_guard:iam', 'acme', GuardLockMode::SHARED]], $trace->getArrayCopy());
     }
 
-    public function test_failed_replay_prevents_both_root_and_collection_writes(): void
+    public static function preparedWrites(): iterable
+    {
+        yield 'save' => [false];
+        yield 'delete' => [true];
+    }
+
+    #[DataProvider('preparedWrites')]
+    public function test_failed_replay_prevents_both_root_and_collection_writes(bool $delete): void
     {
         [$database, $store, $registry, $guard] = $this->fixture();
         $id = new GuardRoleId('acme', 'editor');
         $result = true;
         $guard->observe('acme', static function () use (&$result): bool { return $result; });
         $store->observe(GuardRole::class, $id);
-        $store->save(new GuardRole($id, false, '', new GuardRoleLabel('Changed'), []));
+        if ($delete) {
+            $store->delete(GuardRole::class, $id);
+        } else {
+            $store->save(new GuardRole($id, false, '', new GuardRoleLabel('Changed'), []));
+        }
         $result = false;
         $database->beginTransaction();
         try {

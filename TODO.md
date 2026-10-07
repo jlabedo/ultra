@@ -19,12 +19,6 @@
   commencée sur une autre branche avec Coordination. Évaluer les primitives
   manquantes à partir de ce cas d'usage et revoir le nom du module si nécessaire.
 
-- [ ] Ajouter la suppression explicite dans StateStore, afin que l'appelant puisse
-  supprimer un State sans accéder au MappedRowSet sous-jacent. Préserver les
-  attentes optimistes et la participation aux query guards ; préciser le devenir
-  des collections du State supprimé. Couvrir la suppression et les conflits avec
-  des tests en mémoire et Postgres.
-
 - [ ] Relier les métadonnées StateStore à Schema pour dériver le schéma de base
   (identifiants composites, colonnes et tables des collections), avec déclaration
   des index, contraintes uniques et références. Les exemples coworking et IAM

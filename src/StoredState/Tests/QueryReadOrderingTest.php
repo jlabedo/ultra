@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ultra\StateStore\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
-use PHPUnit\Framework\TestCase;
+use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
@@ -14,10 +14,11 @@ use Ultra\StateStore\Exception\UnknownQueryGuardException;
 use Ultra\StateStore\InMemoryGuardLockAdapter;
 use Ultra\StateStore\GuardLockMode;
 use Ultra\StateStore\QueryGuard;
+use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\StateStore\StateTableRegistry;
 
 /** @internal */
-final class QueryReadOrderingTest extends TestCase
+final class QueryReadOrderingTest extends StateStoreTestCase
 {
     public static function unknownGuards(): iterable
     {
@@ -195,5 +196,39 @@ final class QueryReadOrderingTest extends TestCase
         ], guardLockAdapter: new InMemoryGuardLockAdapter($database));
 
         return [$database, $table, $otherTable, $registry, new QueryGuard($registry, 'company_usage')];
+    }
+
+    #[DataProvider('backends')]
+    public function test_deletion_rejects_affected_query_reads_but_replays_earlier_observations_before_writes(string $backend): void
+    {
+        $fixture = $this->stateFixture($backend, [OrderWithLinesState::class]);
+        $fixture->store->save(new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'SKU', 1)]));
+        $fixture->flush();
+        $fixture->registry->clear();
+        $definition = new QueryGuardDefinition();
+        $definition->watch(OrderWithLinesState::class, scopeBy: 'orderId')->whenPropertiesChange('lines');
+        [$store, $registry] = $fixture->newStore([OrderWithLinesState::class], ['usage' => $definition->compile($fixture->metadata)]);
+        $guard = new QueryGuard($registry, 'usage');
+        $scope = 'one';
+        $reads = [];
+        $guard->observe($scope, function () use ($fixture, &$reads): int {
+            $count = count($fixture->store->load(OrderWithLinesState::class, 'one')->lines);
+            $reads[] = $count;
+
+            return $count;
+        });
+        $store->observe(OrderWithLinesState::class, 'one');
+        $store->delete(OrderWithLinesState::class, 'one');
+        try {
+            $guard->observe($scope, static fn (): int => throw new \RuntimeException('Must not read pending deletions.'));
+            self::fail('An affected query must be rejected before reading storage.');
+        } catch (PendingQueryChangesException $exception) {
+            self::assertSame($scope, $exception->guardValue);
+        }
+        self::assertSame(1, $guard->observe('unrelated', static fn (): int => 1));
+        $fixture->flush($registry);
+        self::assertSame([1, 1], $reads);
+        $registry->clear();
+        self::assertNull($store->load(OrderWithLinesState::class, 'one'));
     }
 }

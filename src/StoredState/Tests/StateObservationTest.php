@@ -137,4 +137,53 @@ final class StateObservationTest extends StateStoreTestCase
         $this->flush($database, $registry);
         self::assertNull($store->load(OrderIdentityState::class, 'order-123'));
     }
+
+    public static function absenceDecisions(): iterable
+    {
+        foreach (self::backends() as $name => [$backend]) {
+            foreach ([false, true] as $insert) {
+                yield $name.($insert ? ' cancelled insertion' : ' observed absence') => [$backend, $insert];
+            }
+        }
+    }
+
+    #[DataProvider('absenceDecisions')]
+    public function test_deletion_retains_absence_expectations_and_cancels_own_insertions(string $backend, bool $insert): void
+    {
+        $fixture = $this->stateFixture($backend, [OrderWithLinesState::class]);
+        self::assertNull($fixture->store->observe(OrderWithLinesState::class, 'one'));
+        if ($insert) {
+            $fixture->store->save(new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'SKU', 1)]));
+        }
+        $fixture->store->delete(OrderWithLinesState::class, 'one');
+        self::assertNull($fixture->store->load(OrderWithLinesState::class, 'one'));
+        $fixture->flush();
+        self::assertSame([], $fixture->collectionRows($fixture->metadata->metadataFor(OrderWithLinesState::class)->collections['lines'], 'one'));
+
+        [$competitor, $registry] = $fixture->newStore([OrderWithLinesState::class]);
+        $competitor->save(new OrderWithLinesState('one', 'competing', []));
+        $fixture->flush($registry);
+        $this->expectException(ConcurrencyException::class);
+        try {
+            $fixture->flush();
+        } finally {
+            self::assertSame('competing', $competitor->load(OrderWithLinesState::class, 'one')->status);
+        }
+    }
+
+    #[DataProvider('backends')]
+    public function test_deletion_preserves_expectations_registered_through_another_state_view(string $backend): void
+    {
+        $fixture = $this->stateFixture($backend, [OrderState::class, OrderStatusView::class]);
+        $fixture->store->save(new OrderState('one', 'pending', 'draft'));
+        $fixture->flush();
+        $fixture->registry->clear();
+        $fixture->store->observe(OrderState::class, 'one');
+        $fixture->store->delete(OrderStatusView::class, 'one');
+        [$competitor, $registry] = $fixture->newStore([OrderState::class]);
+        $competitor->save(new OrderState('one', 'pending', 'changed'));
+        $fixture->flush($registry);
+        $this->expectException(ConcurrencyException::class);
+        $fixture->flush();
+    }
 }

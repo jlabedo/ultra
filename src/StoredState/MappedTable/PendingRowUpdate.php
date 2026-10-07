@@ -134,11 +134,8 @@ final readonly class PendingRowUpdate
         if ($this->update->removedByReconciliation) {
             return $this;
         }
-        if (
-            RowUpdatePlan::MODE_INSERT === $this->update->mode
-            && RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence
-        ) {
-            // Inserting and then deleting the same row before flush is a no-op.
+        if (RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence) {
+            // Deleting an expected-absent row only checks absence, including a cancelled insertion.
             $this->update->mode = null;
             $this->update->expectedColumns = [];
             $this->update->setColumns = [];

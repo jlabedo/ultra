@@ -157,4 +157,30 @@ final class StateMappingTest extends StateStoreTestCase
             self::assertSame($columns, $database->rowByKey($table, new \Ultra\MappedTable\MappedKey($key), array_keys($columns)));
         }
     }
+
+    public function test_identifier_validation_and_unknown_states_do_not_queue_work(): void
+    {
+        $fixture = $this->stateFixture('memory', [OrderState::class, CompositeOrderState::class, CounterState::class]);
+        foreach ([[OrderState::class, 1], [CompositeOrderState::class, 'one'], [CounterState::class, '1'], [\stdClass::class, 'one']] as [$class, $id]) {
+            try {
+                $fixture->store->delete($class, $id);
+                self::fail('Invalid state identities must be rejected.');
+            } catch (\InvalidArgumentException|\Ultra\StateStore\Exception\UnknownStateException) {
+            }
+        }
+        self::assertFalse($fixture->registry->hasPendingChanges());
+    }
+
+    #[DataProvider('backends')]
+    public function test_deletion_does_not_require_a_hydratable_state(string $backend): void
+    {
+        $fixture = $this->stateFixture($backend, [OrderIdentityState::class, OrderWithLinesState::class]);
+        $fixture->store->save(new OrderIdentityState('one'));
+        $fixture->flush();
+        $fixture->registry->clear();
+        $fixture->store->delete(OrderWithLinesState::class, 'one');
+        $fixture->flush();
+        $fixture->registry->clear();
+        self::assertFalse($fixture->store->observeExists(OrderIdentityState::class, 'one'));
+    }
 }
