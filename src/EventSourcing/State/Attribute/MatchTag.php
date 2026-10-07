@@ -8,10 +8,11 @@ namespace Ultra\EventSourcedState\Attribute;
 final readonly class MatchTag
 {
     /**
-     * @param string ...$tags
+     * @var array<array-key, string> $tags
      */
     public array $tags;
 
+    /** @param string ...$tags */
     public function __construct(string ...$tags)
     {
         $this->tags = $tags;

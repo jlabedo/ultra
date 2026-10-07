@@ -12,14 +12,12 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 
-#[AsCommand(
-    name: 'projection:segment:list',
-    description: 'List all segments for a projection.',
-)]
+#[AsCommand(name: 'projection:segment:list', description: 'List all segments for a projection.')]
 final class ListSegmentsCommand extends Command
 {
-    public function __construct(private readonly ProjectionSegmentRepositoryInterface $repository)
-    {
+    public function __construct(
+        private readonly ProjectionSegmentRepositoryInterface $repository,
+    ) {
         parent::__construct();
     }
 

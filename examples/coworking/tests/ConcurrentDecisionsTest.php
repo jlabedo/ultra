@@ -5,13 +5,13 @@ declare(strict_types=1);
 namespace App\Tests;
 
 use App\Booking\Domain\Slot;
+use App\Booking\StateStoreDirect\BookingService as DirectBookingService;
+use App\Booking\StateStoreDirect\Repository\BookingRepository as DirectBookingRepository;
 use App\Kernel;
 use App\Tests\Driver\BookingDriver;
 use App\Tests\Driver\EventSourcedDriver;
-use App\Tests\Driver\StateStoreDriver;
 use App\Tests\Driver\StateStoreDirectDriver;
-use App\Booking\StateStoreDirect\BookingService as DirectBookingService;
-use App\Booking\StateStoreDirect\Repository\BookingRepository as DirectBookingRepository;
+use App\Tests\Driver\StateStoreDriver;
 use Psr\Container\ContainerInterface;
 use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\MessageHandling\MediatorInterface;
@@ -52,7 +52,10 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
         [$first, $second] = $this->drivers($flavor);
         $this->given($first);
 
-        $this->assertLosesRace(fn () => $first->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00')), fn () => $second->book('b2', 'blue', 'grace', Slot::of('2026-09-10 10:30', '2026-09-10 11:30')));
+        $this->assertLosesRace(
+            fn() => $first->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00')),
+            fn() => $second->book('b2', 'blue', 'grace', Slot::of('2026-09-10 10:30', '2026-09-10 11:30')),
+        );
 
         self::assertSame(['b2'], $first->bookingsOnDay('blue', '2026-09-10'));
     }
@@ -63,7 +66,10 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
         [$first, $second] = $this->drivers($flavor);
         $this->given($first, monthlyMinutes: 60);
 
-        $this->assertLosesRace(fn () => $first->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00')), fn () => $second->book('b2', 'red', 'grace', Slot::of('2026-09-11 10:00', '2026-09-11 11:00')));
+        $this->assertLosesRace(
+            fn() => $first->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00')),
+            fn() => $second->book('b2', 'red', 'grace', Slot::of('2026-09-11 10:00', '2026-09-11 11:00')),
+        );
 
         self::assertSame(60, $first->usedMinutes('acme', '2026-09'));
     }
@@ -74,7 +80,10 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
         [$first, $second] = $this->drivers($flavor);
         $this->given($first, monthlyMinutes: 120);
 
-        $this->assertLosesRace(fn () => $first->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00')), fn () => $second->changeCompanyPlan('acme', 30));
+        $this->assertLosesRace(
+            fn() => $first->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00')),
+            fn() => $second->changeCompanyPlan('acme', 30),
+        );
 
         self::assertSame(0, $first->usedMinutes('acme', '2026-09'));
     }
@@ -84,7 +93,10 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
         [$first, $second] = $this->drivers('stateStoreDirect');
         $this->given($first, monthlyMinutes: 120);
 
-        $this->assertLosesRace(fn () => $first->changeCompanyPlan('acme', 30), fn () => $second->changeCompanyPlan('acme', 60));
+        $this->assertLosesRace(
+            fn() => $first->changeCompanyPlan('acme', 30),
+            fn() => $second->changeCompanyPlan('acme', 60),
+        );
 
         $first->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
         self::assertSame(60, $first->usedMinutes('acme', '2026-09'));
@@ -95,8 +107,8 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
         [$first, $second] = $this->drivers('stateStore');
         $this->given($first);
         $this->assertLosesRace(
-            fn () => $first->bookWeekly('series', 'blue', 'ada', Slot::of('2026-09-08 10:00', '2026-09-08 11:00'), 3),
-            fn () => $second->book('winner', 'blue', 'grace', Slot::of('2026-09-22 10:00', '2026-09-22 11:00')),
+            fn() => $first->bookWeekly('series', 'blue', 'ada', Slot::of('2026-09-08 10:00', '2026-09-08 11:00'), 3),
+            fn() => $second->book('winner', 'blue', 'grace', Slot::of('2026-09-22 10:00', '2026-09-22 11:00')),
         );
         self::assertNull($first->bookingStatus('series#0'));
         self::assertNull($first->bookingStatus('series#1'));
@@ -111,8 +123,8 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
         $this->given($first);
         $first->book('existing', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
         $this->assertLosesRace(
-            fn () => $first->closeRoomForDay('blue', '2026-09-10'),
-            fn () => $second->book('winner', 'blue', 'grace', Slot::of('2026-09-10 14:00', '2026-09-10 15:00')),
+            fn() => $first->closeRoomForDay('blue', '2026-09-10'),
+            fn() => $second->book('winner', 'blue', 'grace', Slot::of('2026-09-10 14:00', '2026-09-10 15:00')),
         );
         self::assertSame('confirmed', $first->bookingStatus('existing'));
         self::assertSame(['existing', 'winner'], $first->bookingsOnDay('blue', '2026-09-10'));
@@ -127,10 +139,12 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
         $first->registerCompany('globex', 'Globex', 600);
         $first->registerMember('hank', 'globex', 'hank@example.test');
 
-        self::getContainer()->get(UnitOfWorkRunner::class)->run(function () use ($first, $second): void {
-            $first->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
-            $second->book('b2', 'red', 'hank', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
-        });
+        self::getContainer()
+            ->get(UnitOfWorkRunner::class)
+            ->run(function () use ($first, $second): void {
+                $first->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
+                $second->book('b2', 'red', 'hank', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
+            });
 
         self::assertSame(['b1'], $first->bookingsOnDay('blue', '2026-09-10'));
         self::assertSame(['b2'], $first->bookingsOnDay('red', '2026-09-10'));
@@ -139,10 +153,12 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
     private function assertLosesRace(callable $loser, callable $winner): void
     {
         try {
-            self::getContainer()->get(UnitOfWorkRunner::class)->run(function () use ($loser, $winner): void {
-                $loser();
-                $winner();
-            });
+            self::getContainer()
+                ->get(UnitOfWorkRunner::class)
+                ->run(function () use ($loser, $winner): void {
+                    $loser();
+                    $winner();
+                });
         } catch (\Ultra\EventStore\Exception\ConcurrencyException|\Ultra\UnitOfWork\Exception\ConcurrencyException) {
             return;
         }
@@ -174,11 +190,22 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
     private function driver(string $flavor, ContainerInterface $container): BookingDriver
     {
         if ('stateStoreDirect' === $flavor) {
-            return new StateStoreDirectDriver($container->get(DirectBookingService::class), $container->get(DirectBookingRepository::class), $container->get(StateStore::class));
+            return new StateStoreDirectDriver(
+                $container->get(DirectBookingService::class),
+                $container->get(DirectBookingRepository::class),
+                $container->get(StateStore::class),
+            );
         }
 
         return 'eventSourced' === $flavor
-            ? new EventSourcedDriver($container->get(MediatorInterface::class), $container->get(EventSourcedStateStore::class))
-            : new StateStoreDriver($container->get(MediatorInterface::class), $container->get(StateStore::class), $container->get(\App\Booking\StateStore\Repository\BookingRepository::class));
+            ? new EventSourcedDriver(
+                $container->get(MediatorInterface::class),
+                $container->get(EventSourcedStateStore::class),
+            )
+            : new StateStoreDriver(
+                $container->get(MediatorInterface::class),
+                $container->get(StateStore::class),
+                $container->get(\App\Booking\StateStore\Repository\BookingRepository::class),
+            );
     }
 }

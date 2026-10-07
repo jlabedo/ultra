@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -10,7 +12,10 @@ class ObjectCodeGenerator implements CodeGenerator
     /**
      * @param array<string, ObjectPropertyCodeGenerator> $properties
      */
-    public function __construct(private array $properties, private \ReflectionClass $refClass) {}
+    public function __construct(
+        private array $properties,
+        private \ReflectionClass $refClass,
+    ) {}
 
     public function generateNormalization(string $objectVar): string
     {
@@ -21,7 +26,7 @@ class ObjectCodeGenerator implements CodeGenerator
                 PHP;
         }
 
-        return "[\n".implode(",\n", $lines)."\n]";
+        return "[\n" . implode(",\n", $lines) . "\n]";
     }
 
     public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
@@ -30,22 +35,29 @@ class ObjectCodeGenerator implements CodeGenerator
 
         $hasNonPromotedProperties = false;
         foreach ($this->properties as $name => $generator) {
-            if (!$this->refClass->getProperty($name)->isPromoted()) {
-                $hasNonPromotedProperties = true;
-
-                break;
+            if ($this->refClass->getProperty($name)->isPromoted()) {
+                continue;
             }
+
+            $hasNonPromotedProperties = true;
+
+            break;
         }
 
         $internalDataVar = $hasNonPromotedProperties ? '$value' : $dataVar;
 
         $code = "new \\{$this->refClass->getName()}(";
+        /** @var array<array-key, string> $constructorArgs */
         $constructorArgs = [];
         if ($constructor) {
             foreach ($constructor->getParameters() as $param) {
                 $name = $param->getName();
                 if (isset($this->properties[$name])) {
-                    $constructorArgs[$name] = $this->properties[$name]->generateDenormalization($internalDataVar, $bodyBuilder, $path);
+                    $constructorArgs[$name] = $this->properties[$name]->generateDenormalization(
+                        $internalDataVar,
+                        $bodyBuilder,
+                        $path,
+                    );
                 } elseif ($param->allowsNull()) {
                     $constructorArgs[] = 'null';
                 } else {
@@ -53,11 +65,7 @@ class ObjectCodeGenerator implements CodeGenerator
                 }
             }
         }
-        if ($constructorArgs) {
-            $code .= "\n".implode(",\n", $constructorArgs)."\n)";
-        } else {
-            $code .= ')';
-        }
+        $code .= $constructorArgs ? "\n" . implode(",\n", $constructorArgs) . "\n)" : ')';
 
         if ($hasNonPromotedProperties) {
             $code = "\$obj = {$code};\n";
@@ -67,7 +75,10 @@ class ObjectCodeGenerator implements CodeGenerator
                     continue;
                 }
 
-                $code .= "\$obj->{$name} = ".$generator->generateDenormalization($internalDataVar, $bodyBuilder, $path).";\n";
+                $code .=
+                    "\$obj->{$name} = "
+                    . $generator->generateDenormalization($internalDataVar, $bodyBuilder, $path)
+                    . ";\n";
             }
 
             return <<<PHP

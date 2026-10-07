@@ -12,7 +12,7 @@ final readonly class Checkpoint
     public array $gapSeqNos;
 
     /**
-     * @param list<Sequence> $gapSeqNos
+     * @param array<array-key, mixed> $gapSeqNos Sequence values are checked, sorted and deduplicated.
      */
     public function __construct(Sequence $gapFloor, array $gapSeqNos)
     {
@@ -52,19 +52,13 @@ final readonly class Checkpoint
             throw new \InvalidArgumentException('Checkpoint payload is missing gapFloor or gapSeqNos.');
         }
 
-        return new self(
-            new Sequence($gapFloor),
-            array_map(
-                static function (mixed $sequence): Sequence {
-                    if (!is_int($sequence)) {
-                        throw new \InvalidArgumentException('Checkpoint gap sequence numbers must be integers.');
-                    }
+        return new self(new Sequence($gapFloor), array_map(static function (mixed $sequence): Sequence {
+            if (!is_int($sequence)) {
+                throw new \InvalidArgumentException('Checkpoint gap sequence numbers must be integers.');
+            }
 
-                    return new Sequence($sequence);
-                },
-                array_values($gapSeqNos),
-            ),
-        );
+            return new Sequence($sequence);
+        }, array_values($gapSeqNos)));
     }
 
     public function record(Sequence $sequence, bool $inGap): self
@@ -82,8 +76,7 @@ final readonly class Checkpoint
 
     public function contains(Sequence $sequence): bool
     {
-        return $sequence->isAtOrBefore($this->gapFloor)
-            || $this->containsGapSeqNo($sequence);
+        return $sequence->isAtOrBefore($this->gapFloor) || $this->containsGapSeqNo($sequence);
     }
 
     /**
@@ -91,10 +84,7 @@ final readonly class Checkpoint
      */
     public function gapSeqNoValues(): array
     {
-        return array_map(
-            static fn (Sequence $sequence): int => $sequence->value,
-            $this->gapSeqNos,
-        );
+        return array_map(static fn(Sequence $sequence): int => $sequence->value, $this->gapSeqNos);
     }
 
     public function isSimplePosition(): bool
@@ -114,7 +104,7 @@ final readonly class Checkpoint
     }
 
     /**
-     * @param list<Sequence> $gapSeqNos
+     * @param array<array-key, mixed> $gapSeqNos
      *
      * @return list<Sequence>
      */

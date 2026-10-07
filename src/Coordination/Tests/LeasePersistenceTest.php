@@ -30,17 +30,20 @@ final class LeasePersistenceTest extends CoordinationTestCase
 
     #[DataProvider('reservations')]
     #[Group('slow')]
-    public function test_contenders_wait_for_the_transaction_and_only_the_committed_reservation_succeeds(bool $existingRow, string $operation, string $contenderOperation): void
-    {
+    public function test_contenders_wait_for_the_transaction_and_only_the_committed_reservation_succeeds(
+        bool $existingRow,
+        string $operation,
+        string $contenderOperation,
+    ): void {
         [$connection, $table] = $this->postgresTable('leases');
         $clock = new StatickClock(new \DateTimeImmutable('2026-01-01T00:00:00Z'));
         $lease = new PostgresCoordinatorLease($connection, $table, $clock);
         if ($existingRow) {
-            self::assertTrue($lease->acquire('a', 'seed'));
+            static::assertTrue($lease->acquire('a', 'seed'));
             $lease->release('a', 'seed');
         }
         $connection->beginTransaction();
-        self::assertTrue('acquire' === $operation ? $lease->acquire('a', 'w1') : $lease->markWakeEnqueued('a'));
+        static::assertTrue('acquire' === $operation ? $lease->acquire('a', 'w1') : $lease->markWakeEnqueued('a'));
         $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
         $cluster = new Cluster(timeout: 3.0);
         $worker = $cluster->spawn(static function () use ($dsn, $table, $contenderOperation): bool {
@@ -61,22 +64,25 @@ final class LeasePersistenceTest extends CoordinationTestCase
         do {
             $worker->pump();
             $connection->executeStatement('SELECT pg_stat_clear_snapshot()');
-            $waiting = (int) $connection->fetchOne("SELECT count(*) FROM pg_stat_activity WHERE application_name = ? AND wait_event_type = 'Lock'", [$table]);
+            $waiting =
+                (int) $connection->fetchOne("SELECT count(*) FROM pg_stat_activity WHERE application_name = ? AND wait_event_type = 'Lock'", [
+                    $table,
+                ]);
             if (1 === $waiting) {
                 break;
             }
             usleep(1_000);
         } while (microtime(true) < $deadline);
-        self::assertSame(1, $waiting, 'The contender must wait on the uncommitted reservation.');
-        self::assertNull($worker->outcome());
+        static::assertSame(1, $waiting, 'The contender must wait on the uncommitted reservation.');
+        static::assertNull($worker->outcome());
         $connection->commit();
         $outcome = $worker->join();
-        self::assertTrue($outcome->isSuccess(), $outcome->exceptionMessage() ?? '');
-        self::assertFalse($outcome->value());
-        self::assertSame(0, $connection->getTransactionNestingLevel());
+        static::assertTrue($outcome->isSuccess(), $outcome->exceptionMessage() ?? '');
+        static::assertFalse($outcome->value());
+        static::assertSame(0, $connection->getTransactionNestingLevel());
         if ('acquire' === $operation) {
             $lease->release('a', 'w2');
-            self::assertTrue($lease->hasLiveCoordinator('a'));
+            static::assertTrue($lease->hasLiveCoordinator('a'));
         }
     }
 
@@ -85,11 +91,11 @@ final class LeasePersistenceTest extends CoordinationTestCase
         [$connection, $table] = $this->postgresTable('leases');
         $clock = new StatickClock(new \DateTimeImmutable('2026-01-01T00:00:00Z'));
         $lease = new PostgresCoordinatorLease($connection, $table, $clock);
-        self::assertTrue($lease->acquire('a', 'w1'));
+        static::assertTrue($lease->acquire('a', 'w1'));
         $lease->release('a', 'w1');
         $connection->beginTransaction();
-        self::assertTrue($lease->acquire('a', 'w3'));
+        static::assertTrue($lease->acquire('a', 'w3'));
         $connection->rollBack();
-        self::assertFalse($lease->hasLiveCoordinator('a'));
+        static::assertFalse($lease->hasLiveCoordinator('a'));
     }
 }

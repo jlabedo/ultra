@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -7,11 +9,13 @@ use Ultra\Mapper\Path;
 
 class CollectionCodeGenerator implements CodeGenerator
 {
-    public function __construct(private CodeGenerator $next) {}
+    public function __construct(
+        private CodeGenerator $next,
+    ) {}
 
     public function generateNormalization(string $objectVar): string
     {
-        return 'array_map(fn($v) => '.$this->next->generateNormalization('$v').", {$objectVar})";
+        return 'array_map(fn($v) => ' . $this->next->generateNormalization('$v') . ", {$objectVar})";
     }
 
     public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string

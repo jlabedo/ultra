@@ -235,10 +235,10 @@ final readonly class BucketLockStrategy implements LockStrategy
         [$readKeys, $writeKeys] = $this->lockKeys($readQueries, $writeEvents);
         $lockInstructions = [];
         foreach ($readKeys as $readKey) {
-            $lockInstructions[$readKey."\0A"] = [$readKey, 'A'];
+            $lockInstructions[$readKey . "\0A"] = [$readKey, 'A'];
         }
         foreach ($writeKeys as $writeKey) {
-            $lockInstructions[$writeKey."\0B"] = [$writeKey, 'B'];
+            $lockInstructions[$writeKey . "\0B"] = [$writeKey, 'B'];
         }
 
         if ([] === $lockInstructions) {
@@ -254,13 +254,12 @@ final readonly class BucketLockStrategy implements LockStrategy
             $buckets[] = $bucket;
         }
 
-        $connection->executeQuery(
-            sprintf('SELECT %s(?::text[], ?::text[])', $this->acquireMultiXactFunction($tablePrefix)),
-            [
+        $connection
+            ->executeQuery(sprintf('SELECT %s(?::text[], ?::text[])', $this->acquireMultiXactFunction($tablePrefix)), [
                 $this->postgresStringArrayLiteral($namespaces),
                 $this->postgresStringArrayLiteral($buckets),
-            ],
-        )->free();
+            ])
+            ->free();
     }
 
     /**
@@ -291,7 +290,7 @@ final readonly class BucketLockStrategy implements LockStrategy
 
     private function acquireMultiXactFunction(string $tablePrefix): string
     {
-        return $tablePrefix.'acquire_multi_xact';
+        return $tablePrefix . 'acquire_multi_xact';
     }
 
     /**
@@ -300,13 +299,17 @@ final readonly class BucketLockStrategy implements LockStrategy
     private function postgresStringArrayLiteral(array $values): string
     {
         $encoded = array_map(
-            static fn (string $value): string => '"'.strtr($value, [
-                '\\' => '\\\\',
-                '"' => '\"',
-            ]).'"',
+            static fn(string $value): string => (
+                '"'
+                . strtr($value, [
+                    '\\' => '\\\\',
+                    '"' => '\"',
+                ])
+                . '"'
+            ),
             $values,
         );
 
-        return '{'.implode(',', $encoded).'}';
+        return '{' . implode(',', $encoded) . '}';
     }
 }

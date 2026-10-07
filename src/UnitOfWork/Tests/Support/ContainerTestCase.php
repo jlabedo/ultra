@@ -20,7 +20,7 @@ abstract class ContainerTestCase extends TestCase
 
     protected function setUp(): void
     {
-        $this->buildDir = dirname(__DIR__, 4).'/var/unit_of_work_tests/'.bin2hex(random_bytes(8));
+        $this->buildDir = dirname(__DIR__, 4) . '/var/unit_of_work_tests/' . bin2hex(random_bytes(8));
     }
 
     protected function tearDown(): void
@@ -40,7 +40,6 @@ abstract class ContainerTestCase extends TestCase
             ->withAlias('test.inner_event_store', RecordingEventStore::class)
             ->withAlias('test.unit_of_work', UnitOfWork::class)
             ->withAlias('test.transactions', TransactionManager::class)
-            ->withAlias('test.runner', UnitOfWorkRunner::class)
-        ;
+            ->withAlias('test.runner', UnitOfWorkRunner::class);
     }
 }

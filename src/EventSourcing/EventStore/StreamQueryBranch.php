@@ -55,7 +55,11 @@ readonly class StreamQueryBranch
 
     public function withBucketRange(string $dimension, int $from, int $to): self
     {
-        return new self($this->domainIdentifiers, $this->eventTypes, ['dimension' => $dimension, 'from' => $from, 'to' => $to]);
+        return new self($this->domainIdentifiers, $this->eventTypes, [
+            'dimension' => $dimension,
+            'from' => $from,
+            'to' => $to,
+        ]);
     }
 
     public function matches(Event $event): bool

@@ -67,7 +67,6 @@ final readonly class UnitOfWorkAsyncMessage {}
 #[CoversNamespace('Ultra\\MessageHandling_PostgresQueue')]
 final class QueueTransactionTest extends QueueTestCase
 {
-
     public function test_enqueue_is_buffered_until_flush(): void
     {
         $inner = new InMemoryQueue();
@@ -75,15 +74,15 @@ final class QueueTransactionTest extends QueueTestCase
 
         $messageId = $queue->enqueue($this->envelope('first'));
 
-        self::assertSame(1, $queue->pendingCount());
-        self::assertSame(0, $inner->count());
+        static::assertSame(1, $queue->pendingCount());
+        static::assertSame(0, $inner->count());
         $queue->flush();
 
-        self::assertSame(1, $inner->count());
+        static::assertSame(1, $inner->count());
 
         $delivery = $inner->reserve();
-        self::assertNotNull($delivery);
-        self::assertSame($messageId->value, $delivery->messageId->value);
+        static::assertNotNull($delivery);
+        static::assertSame($messageId->value, $delivery->messageId->value);
     }
 
     public function test_clear_drops_buffered_enqueues(): void
@@ -95,8 +94,8 @@ final class QueueTransactionTest extends QueueTestCase
         $queue->clear();
         $queue->flush();
 
-        self::assertSame(0, $queue->pendingCount());
-        self::assertSame(0, $inner->count());
+        static::assertSame(0, $queue->pendingCount());
+        static::assertSame(0, $inner->count());
     }
 
     public function test_acknowledge_is_buffered_until_flush(): void
@@ -106,18 +105,18 @@ final class QueueTransactionTest extends QueueTestCase
         $receiver = new AsyncReceiverUnitOfWork($inner);
 
         $delivery = $receiver->reserve();
-        self::assertNotNull($delivery);
+        static::assertNotNull($delivery);
 
         $receiver->acknowledge($delivery);
 
-        self::assertTrue($receiver->hasPendingChanges());
-        self::assertSame(1, $inner->count());
+        static::assertTrue($receiver->hasPendingChanges());
+        static::assertSame(1, $inner->count());
 
         $receiver->flush();
 
-        self::assertFalse($receiver->hasPendingChanges());
-        self::assertSame(0, $inner->count());
-        self::assertSame($messageId->value, $delivery->messageId->value);
+        static::assertFalse($receiver->hasPendingChanges());
+        static::assertSame(0, $inner->count());
+        static::assertSame($messageId->value, $delivery->messageId->value);
     }
 
     /** @return iterable<string, array{bool}> */
@@ -138,15 +137,17 @@ final class QueueTransactionTest extends QueueTestCase
             $id = $buffer->enqueue($this->envelope('outbox'));
             $f->connection->beginTransaction();
             $buffer->flush();
-            self::assertNull($peer->reserve());
-            if ($commit) $f->connection->commit();
-            else $f->connection->rollBack();
+            static::assertNull($peer->reserve());
+            if ($commit)
+                $f->connection->commit();
+            else
+                $f->connection->rollBack();
             $delivery = $peer->reserve();
             if ($commit) {
-                self::assertNotNull($delivery);
-                self::assertSame($id->value, $delivery->messageId->value);
+                static::assertNotNull($delivery);
+                static::assertSame($id->value, $delivery->messageId->value);
             } else {
-                self::assertNull($delivery);
+                static::assertNull($delivery);
             }
         } finally {
             $other->close();
@@ -157,7 +158,8 @@ final class QueueTransactionTest extends QueueTestCase
     {
         $executed = false;
 
-        $container = $this->ultraLight()
+        $container = $this
+            ->ultraLight()
             ->withClass(NoopEventStore::class)
             ->withAlias(EventStore::class, NoopEventStore::class)
             ->withService(new class($executed) {
@@ -175,18 +177,17 @@ final class QueueTransactionTest extends QueueTestCase
                     $this->executed = true;
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
         $container->mediator()->send(new UnitOfWorkAsyncMessage());
 
-        self::assertFalse($executed);
-        self::assertSame(0, $container->queueWorker()->drain());
+        static::assertFalse($executed);
+        static::assertSame(0, $container->queueWorker()->drain());
 
         $container->unitOfWork()->flush();
 
-        self::assertSame(1, $container->queueWorker()->drain());
-        self::assertTrue($executed);
+        static::assertSame(1, $container->queueWorker()->drain());
+        static::assertTrue($executed);
     }
 
     /**
@@ -203,12 +204,11 @@ final class QueueTransactionTest extends QueueTestCase
         };
 
         return new UltraLight()
-            ->withBuildDir(dirname(__DIR__, 3).'/var/message_handling_uow_tests')
+            ->withBuildDir(dirname(__DIR__, 3) . '/var/message_handling_uow_tests')
             ->withContainerFactory($containerFactory)
             ->withBundle(new UnitOfWorkExtension(), new MessageHandlingExtension())
             ->withAlias('test.mediator', MediatorInterface::class)
             ->withAlias('test.queue_worker', QueueWorker::class)
-            ->withAlias('test.unit_of_work', UnitOfWork::class)
-        ;
+            ->withAlias('test.unit_of_work', UnitOfWork::class);
     }
 }

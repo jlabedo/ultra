@@ -34,22 +34,21 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
 
     public function affectedBuckets(int $limit = 256): array
     {
-        $rows = $this->connection->executeQuery(
-            sprintf(
-                'SELECT projection_id, bucket_no, counter
+        $rows = $this->connection
+            ->executeQuery(
+                sprintf('SELECT projection_id, bucket_no, counter
                  FROM %s
                  WHERE counter > 0
                  ORDER BY projection_id ASC, counter DESC, bucket_no ASC
-                 LIMIT ?',
-                $this->bucketActivityTable(),
-            ),
-            [$limit],
-            [ParameterType::INTEGER],
-        )->fetchAllAssociative();
+                 LIMIT ?', $this->bucketActivityTable()),
+                [$limit],
+                [ParameterType::INTEGER],
+            )
+            ->fetchAllAssociative();
 
         return array_map(
-            static fn (array $row): ProjectionBucketActivity => new ProjectionBucketActivity(
-                $row['projection_id'],
+            static fn(array $row): ProjectionBucketActivity => new ProjectionBucketActivity(
+                (string) $row['projection_id'],
                 (int) $row['bucket_no'],
                 (int) $row['counter'],
             ),
@@ -59,24 +58,23 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
 
     public function pendingBucketsForSegment(string $projectionId, int $bucketFrom, int $bucketTo): array
     {
-        $rows = $this->connection->executeQuery(
-            sprintf(
-                'SELECT projection_id, bucket_no, counter
+        $rows = $this->connection
+            ->executeQuery(
+                sprintf('SELECT projection_id, bucket_no, counter
                  FROM %s
                  WHERE projection_id = ?
                    AND bucket_no >= ?
                    AND bucket_no <= ?
                    AND counter > 0
-                 ORDER BY counter DESC, bucket_no ASC',
-                $this->bucketActivityTable(),
-            ),
-            [$projectionId, $bucketFrom, $bucketTo],
-            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
-        )->fetchAllAssociative();
+                 ORDER BY counter DESC, bucket_no ASC', $this->bucketActivityTable()),
+                [$projectionId, $bucketFrom, $bucketTo],
+                [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
+            )
+            ->fetchAllAssociative();
 
         return array_map(
-            static fn (array $row): ProjectionBucketActivity => new ProjectionBucketActivity(
-                $row['projection_id'],
+            static fn(array $row): ProjectionBucketActivity => new ProjectionBucketActivity(
+                (string) $row['projection_id'],
                 (int) $row['bucket_no'],
                 (int) $row['counter'],
             ),
@@ -86,7 +84,7 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
 
     public function decrementSeenBuckets(string $projectionId, array $seenCounters): int
     {
-        $seenCounters = array_filter($seenCounters, static fn (int $counter): bool => $counter > 0);
+        $seenCounters = array_filter($seenCounters, static fn(int $counter): bool => $counter > 0);
         if ([] === $seenCounters) {
             return 0;
         }
@@ -123,6 +121,6 @@ final readonly class PostgresProjectionBucketActivityRepository implements Proje
 
     private function bucketActivityTable(): string
     {
-        return $this->tablePrefix.'bucket_activity';
+        return $this->tablePrefix . 'bucket_activity';
     }
 }

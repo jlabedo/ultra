@@ -12,13 +12,16 @@ use Ultra\MessageHandling\MessageContext;
 
 final readonly class MapperAsyncEnvelopeCodec implements AsyncEnvelopeCodecInterface
 {
-    public function __construct(private UltraNormalizer $normalizer) {}
+    public function __construct(
+        private UltraNormalizer $normalizer,
+    ) {}
 
     public function encode(AsyncEnvelope $envelope): EncodedAsyncEnvelope
     {
-        $headers = $envelope->headers
-            ->with(AsyncHeaderNames::CONTENT_TYPE, 'application/json')
-            ->with(AsyncHeaderNames::MESSAGE_TYPE, $envelope->message::class);
+        $headers = $envelope->headers->with(AsyncHeaderNames::CONTENT_TYPE, 'application/json')->with(
+            AsyncHeaderNames::MESSAGE_TYPE,
+            $envelope->message::class,
+        );
 
         return new EncodedAsyncEnvelope(
             $this->encodeJson($this->normalizer->toScalar($envelope->message), 'async message body'),
@@ -31,7 +34,10 @@ final readonly class MapperAsyncEnvelopeCodec implements AsyncEnvelopeCodecInter
     {
         $messageType = $headers->getString(AsyncHeaderNames::MESSAGE_TYPE);
         if (null === $messageType || '' === $messageType) {
-            throw new \RuntimeException(sprintf('Encoded async message is missing the "%s" header.', AsyncHeaderNames::MESSAGE_TYPE));
+            throw new \RuntimeException(sprintf(
+                'Encoded async message is missing the "%s" header.',
+                AsyncHeaderNames::MESSAGE_TYPE,
+            ));
         }
 
         if (!class_exists($messageType)) {
@@ -57,6 +63,7 @@ final readonly class MapperAsyncEnvelopeCodec implements AsyncEnvelopeCodecInter
     private function decodeJson(string $json, string $description): array|bool|float|int|string|null
     {
         try {
+            /** @var array|bool|float|int|string|null */
             return json_decode($json, true, flags: JSON_THROW_ON_ERROR);
         } catch (\JsonException $e) {
             throw new \RuntimeException(sprintf('Unable to decode %s from JSON.', $description), previous: $e);

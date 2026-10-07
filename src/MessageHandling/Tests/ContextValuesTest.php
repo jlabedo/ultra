@@ -14,16 +14,26 @@ final class ContextValuesTest extends TestCase
 {
     public function test_propagated_values_are_preserved_when_deriving_an_immutable_context(): void
     {
-        $values = ['string' => 'value', 'int' => 1, 'float' => 1.5, 'bool' => true, 'null' => null, 'list' => ['a', 1, null]];
+        $values = [
+            'string' => 'value',
+            'int' => 1,
+            'float' => 1.5,
+            'bool' => true,
+            'null' => null,
+            'list' => ['a', 1, null],
+        ];
         $original = MessageContext::fromArray($values);
-        $derived = $original->with('string', 'changed')->merge(MessageContext::fromArray(['extra' => 2]))->without('int');
-        self::assertSame($values, $original->propagated()->all());
-        self::assertSame('changed', $derived->get('string'));
-        self::assertFalse($derived->has('int'));
-        self::assertSame(2, $derived->get('extra'));
-        self::assertNull($derived->get('null', 'fallback'));
-        self::assertSame('fallback', $derived->get('missing', 'fallback'));
-        self::assertSame(['a', 1, null], $derived->get('list'));
+        $derived = $original
+            ->with('string', 'changed')
+            ->merge(MessageContext::fromArray(['extra' => 2]))
+            ->without('int');
+        static::assertSame($values, $original->propagated()->all());
+        static::assertSame('changed', $derived->get('string'));
+        static::assertFalse($derived->has('int'));
+        static::assertSame(2, $derived->get('extra'));
+        static::assertNull($derived->get('null', 'fallback'));
+        static::assertSame('fallback', $derived->get('missing', 'fallback'));
+        static::assertSame(['a', 1, null], $derived->get('list'));
     }
 
     /** @return iterable<string, array{string}> */
@@ -38,17 +48,21 @@ final class ContextValuesTest extends TestCase
     {
         $value = new \stdClass();
         $context = MessageContext::fromArray(['traceId' => 'trace-1', '.other' => $value])->withLocal($key, $value);
-        self::assertSame($value, $context->local('service'));
-        self::assertSame($value, $context->get('.service'));
-        self::assertSame(['traceId' => 'trace-1'], $context->propagated()->all());
+        static::assertSame($value, $context->local('service'));
+        static::assertSame($value, $context->get('.service'));
+        static::assertSame(['traceId' => 'trace-1'], $context->propagated()->all());
     }
 
     /** @return iterable<string, array{mixed, string}> */
     public static function invalidValues(): iterable
     {
-        foreach (['object' => new \stdClass(), 'map' => ['nested' => 'map'], 'nested list' => [[1]]] as $name => $value) {
+        foreach ([
+            'object' => new \stdClass(),
+            'map' => ['nested' => 'map'],
+            'nested list' => [[1]],
+        ] as $name => $value) {
             foreach (['fromArray', 'with', 'merge'] as $operation) {
-                yield $name.' via '.$operation => [$value, $operation];
+                yield $name . ' via ' . $operation => [$value, $operation];
             }
         }
     }

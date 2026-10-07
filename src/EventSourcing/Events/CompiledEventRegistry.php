@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Ultra\Events;
 
 /**
- * @param array<string, class-string> $events event name => event class
+ * @param array<array-key, class-string> $events event name => event class
  */
 final readonly class CompiledEventRegistry implements EventRegistryInterface
 {
     /**
-     * @param array<string, class-string>                $events
+     * @param array<array-key, class-string>                $events
      * @param array<class-string, array<string, string>> $domainIdentifiers
      * @param array<class-string, bool>                  $domainIdentifierRequiresScope
      */
@@ -27,7 +27,9 @@ final readonly class CompiledEventRegistry implements EventRegistryInterface
 
     public function getName(string $eventClass): ?string
     {
-        return array_search($eventClass, $this->events, true) ?: null;
+        $name = array_search($eventClass, $this->events, true);
+
+        return false === $name ? null : (string) $name;
     }
 
     public function getDomainIdentifiers(object $event): array
@@ -40,16 +42,22 @@ final readonly class CompiledEventRegistry implements EventRegistryInterface
         if (!($this->domainIdentifierRequiresScope[$event::class] ?? false)) {
             $identifiers = [];
             foreach ($eventClassIdentifiers as $name => $propertyName) {
+                // @mago-expect analysis:string-member-selector
+                // @mago-expect analysis:ambiguous-object-property-access
                 $identifiers[$name] = $event->{$propertyName};
             }
 
+            // @mago-expect analysis:less-specific-nested-return-statement
             return $identifiers;
         }
 
-        return (\Closure::bind(
+        // @mago-expect analysis:mixed-return-statement
+        return \Closure::bind(
             static function () use ($event, $eventClassIdentifiers): array {
                 $identifiers = [];
                 foreach ($eventClassIdentifiers as $name => $propertyName) {
+                    // @mago-expect analysis:string-member-selector
+                    // @mago-expect analysis:ambiguous-object-property-access
                     $identifiers[$name] = $event->{$propertyName};
                 }
 
@@ -57,7 +65,7 @@ final readonly class CompiledEventRegistry implements EventRegistryInterface
             },
             null,
             $event::class,
-        ))();
+        )();
     }
 
     public function all(): array

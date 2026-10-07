@@ -6,7 +6,6 @@ namespace IamExample\Infrastructure;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\TransactionIsolationLevel;
-use Ultra\UnitOfWork\DoctrineTransactionManager;
 use IamExample\Administration;
 use IamExample\Authorization;
 use IamExample\Provisioning;
@@ -31,8 +30,9 @@ use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
-use Ultra\UnitOfWork\TransactionManager;
+use Ultra\UnitOfWork\DoctrineTransactionManager;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
+use Ultra\UnitOfWork\TransactionManager;
 
 /** Explicit composition root; no Symfony container or hand-written mapping metadata. */
 final readonly class Runtime
@@ -46,24 +46,37 @@ final readonly class Runtime
 
     public function __construct(Connection $connection, ClockInterface $clock, ?TransactionManager $transactions = null)
     {
-        $classes = [TenantState::class, SubjectState::class, GroupState::class, RoleState::class,
-            BindingState::class, MembershipState::class, AuditEntry::class];
+        $classes = [
+            TenantState::class,
+            SubjectState::class,
+            GroupState::class,
+            RoleState::class,
+            BindingState::class,
+            MembershipState::class,
+            AuditEntry::class,
+        ];
         $shapes = [];
         $analyzer = new NormalizationShapeAnalyzer();
         foreach ([...$classes, PermissionState::class] as $class) {
-            foreach ((new \ReflectionClass($class))->getProperties() as $property) {
-                if ([] !== $property->getAttributes(StateId::class)) {
-                    $shapes[$class] = $analyzer->forProperty($property);
+            foreach (new \ReflectionClass($class)->getProperties() as $property) {
+                if ([] === $property->getAttributes(StateId::class)) {
+                    continue;
                 }
+
+                $shapes[$class] = $analyzer->forProperty($property);
             }
         }
         $metadataFactory = new StateMetadataFactory($shapes);
         $adapters = new PostgresMappedRowSetAdapterFactory($connection);
-        $metadata = $tables = [];
+        $metadata = [];
+        $tables = [];
         foreach ($classes as $class) {
             $state = $metadataFactory->create($class);
             $metadata[$class] = $state->toArray();
-            $tables[$state->tableKey] = new MappedRowSet($adapters->create($state->tableName, array_values($state->idPropertyColumns)));
+            $tables[$state->tableKey] = new MappedRowSet($adapters->create(
+                $state->tableName,
+                array_values($state->idPropertyColumns),
+            ));
         }
         $metadataRegistry = new StateMetadataRegistry($metadata);
         $definition = new QueryGuardDefinition();
@@ -72,14 +85,30 @@ final readonly class Runtime
         }
         $definition->watch(BindingState::class, scopeBy: 'id.tenantId')->whenPropertiesChange('active', 'expiresAt');
         $definition->watch(RoleState::class, scopeBy: 'id.tenantId')->whenPropertiesChange('active', 'permissions');
-        $registry = new StateTableRegistry($tables, $adapters,
+        $registry = new StateTableRegistry(
+            $tables,
+            $adapters,
             queryGuardDefinitions: ['iam_authorization' => $definition->compile($metadataRegistry)],
-            guardLockAdapter: new PostgresGuardLockAdapter($connection));
-        $this->states = new StateStore($metadataRegistry, $registry, new UltraNormalizer(__DIR__.'/../../var/normalizers'));
+            guardLockAdapter: new PostgresGuardLockAdapter($connection),
+        );
+        $this->states = new StateStore(
+            $metadataRegistry,
+            $registry,
+            new UltraNormalizer(__DIR__ . '/../../var/normalizers'),
+        );
         $this->authorizationGuard = new QueryGuard($registry, 'iam_authorization');
-        $this->runner = new TransactionalUnitOfWorkRunner($registry, $transactions ?? new DoctrineTransactionManager($connection, TransactionIsolationLevel::READ_COMMITTED));
+        $this->runner = new TransactionalUnitOfWorkRunner(
+            $registry,
+            $transactions ?? new DoctrineTransactionManager($connection, TransactionIsolationLevel::READ_COMMITTED),
+        );
         $this->authorization = new Authorization($connection, $clock);
-        $this->administration = new Administration($this->states, $this->runner, $this->authorization, $this->authorizationGuard, $clock);
+        $this->administration = new Administration(
+            $this->states,
+            $this->runner,
+            $this->authorization,
+            $this->authorizationGuard,
+            $clock,
+        );
         $this->provisioning = new Provisioning($this->states, $this->runner, $clock);
     }
 }

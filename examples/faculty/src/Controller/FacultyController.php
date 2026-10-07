@@ -74,11 +74,13 @@ final class FacultyController extends AbstractController
     {
         $payload = $request->toArray();
 
-        $this->mediator->send(new CreateCourseCommand(
-            (string) $payload['courseId'],
-            (string) $payload['name'],
-            (int) $payload['capacity'],
-        ));
+        $this->mediator->send(
+            new CreateCourseCommand(
+                (string) $payload['courseId'],
+                (string) $payload['name'],
+                (int) $payload['capacity'],
+            ),
+        );
 
         return $this->json(
             $this->mediator->send(new GetCourseStatsByIdQuery((string) $payload['courseId'])),
@@ -91,10 +93,7 @@ final class FacultyController extends AbstractController
     {
         $payload = $request->toArray();
 
-        $this->mediator->send(new ChangeCourseCapacityCommand(
-            $courseId,
-            (int) $payload['capacity'],
-        ));
+        $this->mediator->send(new ChangeCourseCapacityCommand($courseId, (int) $payload['capacity']));
 
         return $this->json($this->mediator->send(new GetCourseStatsByIdQuery($courseId)));
     }
@@ -121,11 +120,13 @@ final class FacultyController extends AbstractController
     {
         $payload = $request->toArray();
 
-        $this->mediator->send(new EnrollStudentInFacultyCommand(
-            (string) $payload['studentId'],
-            (string) $payload['firstName'],
-            (string) $payload['lastName'],
-        ));
+        $this->mediator->send(
+            new EnrollStudentInFacultyCommand(
+                (string) $payload['studentId'],
+                (string) $payload['firstName'],
+                (string) $payload['lastName'],
+            ),
+        );
 
         return $this->json(
             $this->mediator->send(new GetStudentProfileByIdQuery((string) $payload['studentId'])),

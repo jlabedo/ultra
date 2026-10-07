@@ -33,20 +33,12 @@ final class FacultyReadModelProjection
             return null;
         }
 
-        return new CourseStatsView(
-            $courseId,
-            $course['name'],
-            $course['capacity'],
-            $course['subscribedStudents'],
-        );
+        return new CourseStatsView($courseId, $course['name'], $course['capacity'], $course['subscribedStudents']);
     }
 
     public function overview(): FacultyOverviewView
     {
-        return new FacultyOverviewView(
-            $this->courses(),
-            $this->students(),
-        );
+        return new FacultyOverviewView($this->courses(), $this->students());
     }
 
     /**
@@ -80,12 +72,7 @@ final class FacultyReadModelProjection
         $subscriptions = array_keys($student['subscribedCourseIds']);
         sort($subscriptions);
 
-        return new StudentProfileView(
-            $studentId,
-            $student['firstName'],
-            $student['lastName'],
-            $subscriptions,
-        );
+        return new StudentProfileView($studentId, $student['firstName'], $student['lastName'], $subscriptions);
     }
 
     /**
@@ -101,12 +88,7 @@ final class FacultyReadModelProjection
             $subscriptions = array_keys($student['subscribedCourseIds']);
             sort($subscriptions);
 
-            $views[] = new StudentProfileView(
-                $studentId,
-                $student['firstName'],
-                $student['lastName'],
-                $subscriptions,
-            );
+            $views[] = new StudentProfileView($studentId, $student['firstName'], $student['lastName'], $subscriptions);
         }
 
         return $views;

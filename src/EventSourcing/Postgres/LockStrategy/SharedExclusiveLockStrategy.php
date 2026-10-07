@@ -21,29 +21,26 @@ final readonly class SharedExclusiveLockStrategy implements LockStrategy
     public function createStatements(string $tablePrefix): array
     {
         return [
-            sprintf(
-                <<<'SQL'
-                    CREATE FUNCTION %1$sacquire_advisory_locks(lock_ids BIGINT[], exclusive_modes BOOLEAN[]) RETURNS void AS $$
-                    DECLARE
-                        position INTEGER;
-                    BEGIN
-                        IF COALESCE(array_length(lock_ids, 1), 0) <> COALESCE(array_length(exclusive_modes, 1), 0) THEN
-                            RAISE EXCEPTION 'Lock id and mode array lengths must match';
-                        END IF;
+            sprintf(<<<'SQL'
+                CREATE FUNCTION %1$sacquire_advisory_locks(lock_ids BIGINT[], exclusive_modes BOOLEAN[]) RETURNS void AS $$
+                DECLARE
+                    position INTEGER;
+                BEGIN
+                    IF COALESCE(array_length(lock_ids, 1), 0) <> COALESCE(array_length(exclusive_modes, 1), 0) THEN
+                        RAISE EXCEPTION 'Lock id and mode array lengths must match';
+                    END IF;
 
-                        FOR position IN 1..COALESCE(array_length(lock_ids, 1), 0)
-                        LOOP
-                            IF exclusive_modes[position] THEN
-                                PERFORM pg_advisory_xact_lock(lock_ids[position]);
-                            ELSE
-                                PERFORM pg_advisory_xact_lock_shared(lock_ids[position]);
-                            END IF;
-                        END LOOP;
-                    END;
-                    $$ LANGUAGE plpgsql
-                    SQL,
-                $tablePrefix,
-            ),
+                    FOR position IN 1..COALESCE(array_length(lock_ids, 1), 0)
+                    LOOP
+                        IF exclusive_modes[position] THEN
+                            PERFORM pg_advisory_xact_lock(lock_ids[position]);
+                        ELSE
+                            PERFORM pg_advisory_xact_lock_shared(lock_ids[position]);
+                        END IF;
+                    END LOOP;
+                END;
+                $$ LANGUAGE plpgsql
+                SQL, $tablePrefix),
         ];
     }
 
@@ -81,13 +78,15 @@ final readonly class SharedExclusiveLockStrategy implements LockStrategy
 
         ksort($lockInstructions, SORT_NUMERIC);
 
-        $connection->executeQuery(
-            sprintf('SELECT %s(?::bigint[], ?::boolean[])', $this->acquireAdvisoryLocksFunction($tablePrefix)),
-            [
-                $this->postgresIntArrayLiteral(array_keys($lockInstructions)),
-                $this->postgresBoolArrayLiteral(array_values($lockInstructions)),
-            ],
-        )->free();
+        $connection
+            ->executeQuery(
+                sprintf('SELECT %s(?::bigint[], ?::boolean[])', $this->acquireAdvisoryLocksFunction($tablePrefix)),
+                [
+                    $this->postgresIntArrayLiteral(array_keys($lockInstructions)),
+                    $this->postgresBoolArrayLiteral(array_values($lockInstructions)),
+                ],
+            )
+            ->free();
     }
 
     /**
@@ -118,12 +117,12 @@ final readonly class SharedExclusiveLockStrategy implements LockStrategy
 
     private function acquireAdvisoryLocksFunction(string $tablePrefix): string
     {
-        return $tablePrefix.'acquire_advisory_locks';
+        return $tablePrefix . 'acquire_advisory_locks';
     }
 
     private function advisoryLockId(string $queryStreamKey): int
     {
-        return unpack('J', hex2bin(hash('xxh3', $queryStreamKey)))[1];
+        return unpack('J', hash('xxh3', $queryStreamKey, true))[1];
     }
 
     /**
@@ -131,7 +130,7 @@ final readonly class SharedExclusiveLockStrategy implements LockStrategy
      */
     private function postgresIntArrayLiteral(array $values): string
     {
-        return '{'.implode(',', $values).'}';
+        return '{' . implode(',', $values) . '}';
     }
 
     /**
@@ -139,11 +138,8 @@ final readonly class SharedExclusiveLockStrategy implements LockStrategy
      */
     private function postgresBoolArrayLiteral(array $values): string
     {
-        $encoded = array_map(
-            static fn (string $value): string => 'exclusive' === $value ? 'true' : 'false',
-            $values,
-        );
+        $encoded = array_map(static fn(string $value): string => 'exclusive' === $value ? 'true' : 'false', $values);
 
-        return '{'.implode(',', $encoded).'}';
+        return '{' . implode(',', $encoded) . '}';
     }
 }

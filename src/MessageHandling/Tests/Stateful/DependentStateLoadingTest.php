@@ -9,9 +9,9 @@ use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\StatefulMessageHandling\DecisionMode;
 use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\StatefulMessageHandling\Tests\Support\DecisionTestCase;
-use Ultra\StatefulMessageHandling\DecisionMode;
 use Ultra\StatefulMessageHandling\Violation;
 
 final class DependentStateLoadingTest extends DecisionTestCase
@@ -20,19 +20,71 @@ final class DependentStateLoadingTest extends DecisionTestCase
     {
         $container = $this->courseApplication()->boot();
         $mediator = $container->get('test.mediator');
-        $mediator->send(new \Ultra\StatefulMessageHandling\Tests\Example\Command\CreateCourseCommand('course', 'Math', 1));
-        self::assertEquals([new \Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed('course', 'ada')], $mediator->send(new \Ultra\StatefulMessageHandling\Tests\Example\Command\SubscribeStudentToCourseCommand('course', 'ada')));
-        self::assertSame(['course.full', 'student.already_subscribed'], array_map(static fn (Violation $v): string => $v->code, $mediator->send(new \Ultra\StatefulMessageHandling\Tests\Example\Command\SubscribeStudentToCourseCommand('course', 'ada'), [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK])));
+        $mediator->send(new \Ultra\StatefulMessageHandling\Tests\Example\Command\CreateCourseCommand(
+            'course',
+            'Math',
+            1,
+        ));
+        static::assertEquals(
+            [new \Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed('course', 'ada')],
+            $mediator->send(new \Ultra\StatefulMessageHandling\Tests\Example\Command\SubscribeStudentToCourseCommand(
+                'course',
+                'ada',
+            )),
+        );
+        static::assertSame(
+            ['course.full', 'student.already_subscribed'],
+            array_map(static fn(Violation $v): string => $v->code, $mediator->send(
+                new \Ultra\StatefulMessageHandling\Tests\Example\Command\SubscribeStudentToCourseCommand(
+                    'course',
+                    'ada',
+                ),
+                [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK],
+            )),
+        );
         try {
-            $mediator->send(new \Ultra\StatefulMessageHandling\Tests\Example\Command\SubscribeStudentToCourseCommand('course', 'grace'));
-            self::fail('A rejected decision must append no effects.');
+            $mediator->send(new \Ultra\StatefulMessageHandling\Tests\Example\Command\SubscribeStudentToCourseCommand(
+                'course',
+                'grace',
+            ));
+            static::fail('A rejected decision must append no effects.');
         } catch (InvariantViolation $exception) {
-            self::assertSame(['course.full'], array_map(static fn (Violation $v): string => $v->code, $exception->violations));
+            static::assertSame(
+                ['course.full'],
+                array_map(static fn(Violation $v): string => $v->code, $exception->violations),
+            );
         }
-        self::assertEquals([new \Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed('course', 'ada')], $mediator->send(new \Ultra\StatefulMessageHandling\Tests\Example\Command\UnsubscribeStudentFromCourseCommand('course', 'ada')));
-        self::assertCount(3, $container->get(InMemoryEventStore::class)->load(StreamQuery::forStream(new DomainIdentifier('course', 'course')))->events);
-        self::assertCount(2, $container->get(InMemoryEventStore::class)->load(StreamQuery::forStream(new DomainIdentifier('student', 'ada')))->events);
-        self::assertSame([], $mediator->send(new \Ultra\StatefulMessageHandling\Tests\Example\Command\SubscribeStudentToCourseCommand('course', 'ada'), [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK]));
+        static::assertEquals(
+            [new \Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed('course', 'ada')],
+            $mediator->send(new \Ultra\StatefulMessageHandling\Tests\Example\Command\UnsubscribeStudentFromCourseCommand(
+                'course',
+                'ada',
+            )),
+        );
+        static::assertCount(
+            3,
+            $container->get(InMemoryEventStore::class)->load(StreamQuery::forStream(new DomainIdentifier(
+                'course',
+                'course',
+            )))->events,
+        );
+        static::assertCount(
+            2,
+            $container->get(InMemoryEventStore::class)->load(StreamQuery::forStream(new DomainIdentifier(
+                'student',
+                'ada',
+            )))->events,
+        );
+        static::assertSame(
+            [],
+            $mediator->send(
+                new \Ultra\StatefulMessageHandling\Tests\Example\Command\SubscribeStudentToCourseCommand(
+                    'course',
+                    'ada',
+                ),
+                [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK],
+            ),
+        );
     }
 
     #[DataProvider('eventBindings')]
@@ -42,9 +94,17 @@ final class DependentStateLoadingTest extends DecisionTestCase
         $mediator = $container->get('test.mediator');
         $mediator->send(new JoinDependentCompany('ada', 'acme'));
         $mediator->send(new JoinDependentCompany('grace', 'acme'));
-        $command = TakeDependentSeatForCompany::class === $commandClass ? new $commandClass('ada', 'acme', '2026-09') : new $commandClass('ada', '2026-09');
-        self::assertEquals(new DependentSeatTaken('acme@2026-09', 'ada'), $mediator->send($command));
-        self::assertCount(1, $container->get(InMemoryEventStore::class)->load(StreamQuery::forStream(new DomainIdentifier('companyMonth', 'acme@2026-09')))->events);
+        $command = TakeDependentSeatForCompany::class === $commandClass
+            ? new $commandClass('ada', 'acme', '2026-09')
+            : new $commandClass('ada', '2026-09');
+        static::assertEquals(new DependentSeatTaken('acme@2026-09', 'ada'), $mediator->send($command));
+        static::assertCount(
+            1,
+            $container->get(InMemoryEventStore::class)->load(StreamQuery::forStream(new DomainIdentifier(
+                'companyMonth',
+                'acme@2026-09',
+            )))->events,
+        );
         if (TakeDependentSeatForCompany::class !== $commandClass) {
             $this->expectException(InvariantViolation::class);
             $mediator->send(new $commandClass('grace', '2026-09'));
@@ -65,15 +125,24 @@ final class DependentStateLoadingTest extends DecisionTestCase
         $database->seedRow('dependent_members', 'member_id', ['member_id' => 'ada', 'company_id' => 'acme']);
         $database->seedRow('dependent_companies', 'company_id', ['company_id' => 'acme', 'monthly_minutes' => 120]);
         $mediator = $container->get('test.mediator');
-        self::assertNull($mediator->send(new GetDependentUsage('ada', '2026-09')));
-        self::assertEquals(new DependentUsageRow('acme@2026-09', 60), $mediator->send(new ChargeDependentMinutes('ada', '2026-09', 60)));
-        self::assertEquals(new DependentUsageRow('acme@2026-09', 90), $mediator->send(new ChargeDependentMinutes('ada', '2026-09', 30)));
-        self::assertSame(90, $mediator->send(new GetDependentUsage('ada', '2026-09')));
+        static::assertNull($mediator->send(new GetDependentUsage('ada', '2026-09')));
+        static::assertEquals(
+            new DependentUsageRow('acme@2026-09', 60),
+            $mediator->send(new ChargeDependentMinutes('ada', '2026-09', 60)),
+        );
+        static::assertEquals(
+            new DependentUsageRow('acme@2026-09', 90),
+            $mediator->send(new ChargeDependentMinutes('ada', '2026-09', 30)),
+        );
+        static::assertSame(90, $mediator->send(new GetDependentUsage('ada', '2026-09')));
         try {
             $mediator->send(new ChargeDependentMinutes('ada', '2026-09', 60));
-            self::fail('The decision must use the previously buffered dependent state.');
+            static::fail('The decision must use the previously buffered dependent state.');
         } catch (InvariantViolation $exception) {
-            self::assertEquals([new Violation('quota.exceeded', 'acme@2026-09 would use 150 minutes.')], $exception->violations);
+            static::assertEquals(
+                [new Violation('quota.exceeded', 'acme@2026-09 would use 150 minutes.')],
+                $exception->violations,
+            );
         }
     }
 
@@ -81,11 +150,17 @@ final class DependentStateLoadingTest extends DecisionTestCase
     public function test_missing_sources_skip_dependent_loads_and_propagate_null(string $memberId, array $codes): void
     {
         $container = $this->storedApplication(ChargeDependentMinutes::class, GetDependentUsage::class)->boot();
-        $container->get(InMemoryRowDatabase::class)->seedRow('dependent_members', 'member_id', ['member_id' => 'orphan', 'company_id' => 'unknown']);
+        $container->get(InMemoryRowDatabase::class)->seedRow('dependent_members', 'member_id', [
+            'member_id' => 'orphan',
+            'company_id' => 'unknown',
+        ]);
         $mediator = $container->get('test.mediator');
-        self::assertSame($codes, array_map(static fn (Violation $v): string => $v->code, $mediator->send(new ChargeDependentMinutes($memberId, '2026-09', 10), [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK])));
-        self::assertNull($mediator->send(new GetDependentUsage($memberId, '2026-09')));
-        self::assertNull($container->get('test.state_store')->load(DependentUsageRow::class, 'unknown@2026-09'));
+        static::assertSame($codes, array_map(static fn(Violation $v): string => $v->code, $mediator->send(
+            new ChargeDependentMinutes($memberId, '2026-09', 10),
+            [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK],
+        )));
+        static::assertNull($mediator->send(new GetDependentUsage($memberId, '2026-09')));
+        static::assertNull($container->get('test.state_store')->load(DependentUsageRow::class, 'unknown@2026-09'));
     }
 
     public static function missingSources(): iterable

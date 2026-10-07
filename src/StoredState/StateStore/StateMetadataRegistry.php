@@ -6,23 +6,14 @@ namespace Ultra\StateStore;
 
 use Ultra\StateStore\Exception\UnknownStateException;
 
+/** @phpstan-import-type StateMetadataDefinition from StateMetadata */
 final readonly class StateMetadataRegistry
 {
     /** @var array<class-string, StateMetadata> */
     private array $metadata;
 
     /**
-     * @param array<class-string, array{
-     *     stateClass: class-string,
-     *     tableName: string,
-     *     tableKey: string,
-     *     idProperty: string,
-     *     idType: string,
-     *     idScalar: bool,
-     *     idPropertyColumns: array<string, string>,
-     *     propertyColumns: array<string, string>,
-     *     optimisticPropertyColumns: array<string, string>
-     * }|StateMetadata> $metadata
+     * @param array<class-string, StateMetadataDefinition|StateMetadata> $metadata
      */
     public function __construct(array $metadata)
     {

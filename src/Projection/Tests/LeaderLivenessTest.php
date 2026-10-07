@@ -20,13 +20,13 @@ final class LeaderLivenessTest extends ProjectionTestCase
         $clock = new StatickClock(new \DateTimeImmutable('2024-01-01T00:00:00+00:00'));
         $repository = new InMemoryProjectionCoordinatorLeaseRepository($clock);
 
-        self::assertTrue($repository->acquire('worker-1', Duration::seconds(30)));
-        self::assertTrue($repository->hasLiveCoordinator());
+        static::assertTrue($repository->acquire('worker-1', Duration::seconds(30)));
+        static::assertTrue($repository->hasLiveCoordinator());
 
         $clock->sleep(Duration::seconds(31));
 
-        self::assertFalse($repository->hasLiveCoordinator());
-        self::assertTrue($repository->acquire('worker-2', Duration::seconds(30)));
+        static::assertFalse($repository->hasLiveCoordinator());
+        static::assertTrue($repository->acquire('worker-2', Duration::seconds(30)));
     }
 
     public function test_wake_enqueued_ttl_expires_against_the_injected_clock(): void
@@ -34,11 +34,11 @@ final class LeaderLivenessTest extends ProjectionTestCase
         $clock = new StatickClock(new \DateTimeImmutable('2024-01-01T00:00:00+00:00'));
         $repository = new InMemoryProjectionCoordinatorLeaseRepository($clock);
 
-        self::assertTrue($repository->markWakeEnqueued(Duration::seconds(30)));
-        self::assertFalse($repository->markWakeEnqueued(Duration::seconds(30)));
+        static::assertTrue($repository->markWakeEnqueued(Duration::seconds(30)));
+        static::assertFalse($repository->markWakeEnqueued(Duration::seconds(30)));
 
         $clock->sleep(Duration::seconds(31));
 
-        self::assertTrue($repository->markWakeEnqueued(Duration::seconds(30)));
+        static::assertTrue($repository->markWakeEnqueued(Duration::seconds(30)));
     }
 }

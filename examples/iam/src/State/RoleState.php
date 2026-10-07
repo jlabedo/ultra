@@ -4,11 +4,10 @@ declare(strict_types=1);
 
 namespace IamExample\State;
 
-use Ultra\StateStore\Attribute\State;
-use Ultra\StateStore\Attribute\StateId;
-use Ultra\StateStore\Attribute\StateColumn;
-use Ultra\StateStore\Attribute\StateCollection;
 use IamExample\Domain\LocalId;
+use Ultra\StateStore\Attribute\State;
+use Ultra\StateStore\Attribute\StateCollection;
+use Ultra\StateStore\Attribute\StateId;
 
 #[State(table: 'iam_roles')]
 final readonly class RoleState

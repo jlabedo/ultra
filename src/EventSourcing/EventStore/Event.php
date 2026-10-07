@@ -7,9 +7,9 @@ namespace Ultra\EventStore;
 readonly class Event
 {
     /**
-     * @param array<string, mixed>  $payload
+     * @param array<array-key, mixed>  $payload
      * @param array<string, string> $domainIds dimension => value
-     * @param array<string, mixed>  $metadata
+     * @param array<array-key, mixed>  $metadata
      */
     public function __construct(
         public string $eventType,

@@ -92,16 +92,13 @@ final class EventSourcedEntityLoaderGenerator
 
         $branches = [];
         foreach ($definition->criteriaGroups as $group) {
-            $identifiers = array_map(
-                static fn (string $tag): string => isset($definition->aliases[$tag])
-                    ? sprintf(
-                        'new \Ultra\EventStore\DomainIdentifier(%s, $%s->value)',
-                        PhpCode::exportString($tag),
-                        PhpCode::identifier($definition->aliases[$tag], 'tag'),
-                    )
-                    : '$'.PhpCode::identifier($tag, 'tag'),
-                $group->tags,
-            );
+            $identifiers = array_map(static fn(string $tag): string => isset($definition->aliases[$tag])
+                ? sprintf(
+                    'new \Ultra\EventStore\DomainIdentifier(%s, $%s->value)',
+                    PhpCode::exportString($tag),
+                    PhpCode::identifier($definition->aliases[$tag], 'tag'),
+                )
+                : '$' . PhpCode::identifier($tag, 'tag'), $group->tags);
             $branch = sprintf(
                 '\Ultra\EventStore\StreamQuery::forStream(%s)->ofTypes(%s)',
                 implode(', ', $identifiers),
@@ -114,10 +111,7 @@ final class EventSourcedEntityLoaderGenerator
             return $branches[0];
         }
 
-        return sprintf(
-            '\Ultra\EventStore\StreamQuery::anyOf(%s)',
-            implode(",\n            ", $branches),
-        );
+        return sprintf('\Ultra\EventStore\StreamQuery::anyOf(%s)', implode(",\n            ", $branches));
     }
 
     private function buildDispatchCode(EventSourcedEntityDefinition $definition): string
@@ -138,9 +132,11 @@ final class EventSourcedEntityLoaderGenerator
             ltrim($definition->entityClass, '\\'),
         );
 
-        return "            match (\$event->eventType) {\n"
-            .implode("\n", $cases)
-            ."\n{$defaultCase}\n"
-            .'            };';
+        return (
+            "            match (\$event->eventType) {\n"
+            . implode("\n", $cases)
+            . "\n{$defaultCase}\n"
+            . '            };'
+        );
     }
 }

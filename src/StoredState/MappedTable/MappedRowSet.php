@@ -34,7 +34,8 @@ final class MappedRowSet implements UnitOfWork
         $updateKey = $key->fingerprint();
         if (!isset($this->updates[$updateKey])) {
             $update = new BufferedRowUpdate($key);
-            $update->removedByReconciliation = null !== $this->reconciledKeys && !isset($this->reconciledKeys[$updateKey]);
+            $update->removedByReconciliation =
+                null !== $this->reconciledKeys && !isset($this->reconciledKeys[$updateKey]);
             $this->updates[$updateKey] = $update;
         }
         $update = $this->updates[$updateKey];
@@ -58,12 +59,14 @@ final class MappedRowSet implements UnitOfWork
         }
 
         foreach ($this->updates as $fingerprint => $update) {
-            if (!array_key_exists($fingerprint, $desiredKeys)) {
-                // Discard superseded writes, but retain expectations on the committed row.
-                $update->mode = null;
-                $update->setColumns = [];
-                $update->removedByReconciliation = true;
+            if (array_key_exists($fingerprint, $desiredKeys)) {
+                continue;
             }
+
+            // Discard superseded writes, but retain expectations on the committed row.
+            $update->mode = null;
+            $update->setColumns = [];
+            $update->removedByReconciliation = true;
         }
         $this->reconciledKeys = $desiredKeys;
     }
@@ -71,7 +74,12 @@ final class MappedRowSet implements UnitOfWork
     /** An immutable snapshot of the buffered row changes and expectations. */
     public function updatePlan(): RowSetUpdatePlan
     {
-        return new RowSetUpdatePlan($this->expectedRowKeys, $this->sortedPlans(), $this->ignoredRowKeys, $this->retainedRowKeys());
+        return new RowSetUpdatePlan(
+            $this->expectedRowKeys,
+            $this->sortedPlans(),
+            $this->ignoredRowKeys,
+            $this->retainedRowKeys(),
+        );
     }
 
     /**
@@ -107,27 +115,33 @@ final class MappedRowSet implements UnitOfWork
         $retainedKeys = $this->retainedRowKeys();
         $retained = null === $retainedKeys ? null : array_fill_keys($this->keyFingerprints($retainedKeys), true);
         foreach ($this->adapter->rows($columns) as $row) {
-            if (null === $retained || isset($retained[$row->key->fingerprint()])) {
-                $rows[$row->key->fingerprint()] = $row;
+            if (!(null === $retained || isset($retained[$row->key->fingerprint()]))) {
+                continue;
             }
+
+            $rows[$row->key->fingerprint()] = $row;
         }
 
         foreach ($this->sortedWritePlans() as $plan) {
             $fingerprint = $plan->key->fingerprint();
-            $projected = $this->projectRow(
-                $this->applyPlanToRow($rows[$fingerprint]->columns ?? false, $plan),
-                $columns,
-            );
+            $row = $rows[$fingerprint] ?? null;
+            $projected = $this->projectRow($this->applyPlanToRow($row->columns ?? false, $plan), $columns);
 
             if (false === $projected) {
                 unset($rows[$fingerprint]);
-            } else {
-                $rows[$fingerprint] = new MappedRow($plan->key, $projected);
+
+                continue;
             }
+            $rows[$fingerprint] = new MappedRow($plan->key, $projected);
         }
 
         $rows = array_values($rows);
-        usort($rows, static fn (MappedRow $left, MappedRow $right): int => $left->key->fingerprint() <=> $right->key->fingerprint());
+        usort(
+            $rows,
+            static fn(MappedRow $left, MappedRow $right): int => (
+                $left->key->fingerprint() <=> $right->key->fingerprint()
+            ),
+        );
 
         return $rows;
     }
@@ -152,7 +166,9 @@ final class MappedRowSet implements UnitOfWork
             sort($actual, SORT_STRING);
             sort($fingerprints, SORT_STRING);
             if ($actual !== $fingerprints) {
-                throw new ConcurrencyException('Row-set key expectation differs from the reconciled rows in this unit of work.');
+                throw new ConcurrencyException(
+                    'Row-set key expectation differs from the reconciled rows in this unit of work.',
+                );
             }
 
             // Reconciliation decides membership locally. Keep any earlier committed expectation unchanged.
@@ -164,17 +180,23 @@ final class MappedRowSet implements UnitOfWork
         foreach ($this->sortedWritePlans() as $plan) {
             $written[$plan->key->fingerprint()] = $plan->key;
             if ((RowUpdatePlan::MODE_DELETE !== $plan->mode) !== isset($expectedSet[$plan->key->fingerprint()])) {
-                throw new ConcurrencyException('Row-set key expectation differs from the rows written in this unit of work.');
+                throw new ConcurrencyException(
+                    'Row-set key expectation differs from the rows written in this unit of work.',
+                );
             }
         }
 
         $committed = array_values(array_filter(
             $expected,
-            static fn (MappedKey $key): bool => !isset($written[$key->fingerprint()]),
+            static fn(MappedKey $key): bool => !isset($written[$key->fingerprint()]),
         ));
-        usort($committed, static fn (MappedKey $left, MappedKey $right): int => $left->fingerprint() <=> $right->fingerprint());
+        usort(
+            $committed,
+            static fn(MappedKey $left, MappedKey $right): int => $left->fingerprint() <=> $right->fingerprint(),
+        );
 
-        if (null === $this->expectedRowKeys) {
+        $expectedRowKeys = $this->expectedRowKeys;
+        if (null === $expectedRowKeys) {
             $this->expectedRowKeys = $committed;
             $this->ignoredRowKeys = array_values($written);
 
@@ -184,12 +206,12 @@ final class MappedRowSet implements UnitOfWork
         // Keep the first expectation; the new one must agree with it on rows neither of them ignores.
         $previousIgnored = array_fill_keys($this->keyFingerprints($this->ignoredRowKeys), true);
         $previous = array_values(array_filter(
-            $this->keyFingerprints($this->expectedRowKeys),
-            static fn (string $fingerprint): bool => !isset($written[$fingerprint]),
+            $this->keyFingerprints($expectedRowKeys),
+            static fn(string $fingerprint): bool => !isset($written[$fingerprint]),
         ));
         $current = array_values(array_filter(
             $this->keyFingerprints($committed),
-            static fn (string $fingerprint): bool => !isset($previousIgnored[$fingerprint]),
+            static fn(string $fingerprint): bool => !isset($previousIgnored[$fingerprint]),
         ));
         if ($previous !== $current) {
             throw new ConcurrencyException('Conflicting row-set key expectations were registered.');
@@ -225,9 +247,10 @@ final class MappedRowSet implements UnitOfWork
         foreach ($this->sortedWritePlans() as $plan) {
             if (RowUpdatePlan::MODE_DELETE === $plan->mode) {
                 unset($keys[$plan->key->fingerprint()]);
-            } else {
-                $keys[$plan->key->fingerprint()] = $plan->key;
+
+                continue;
             }
+            $keys[$plan->key->fingerprint()] = $plan->key;
         }
         ksort($keys, SORT_STRING);
 
@@ -242,13 +265,13 @@ final class MappedRowSet implements UnitOfWork
         if (!$key instanceof MappedKey) {
             $unboundColumns = array_values(array_filter(
                 $keyColumns,
-                static fn (string $column): bool => null === $scope || !$scope->contains($column),
+                static fn(string $column): bool => null === $scope || !$scope->contains($column),
             ));
             if (1 !== count($unboundColumns)) {
-                throw new \InvalidArgumentException(sprintf(
-                    'A scalar key cannot address row-set key columns [%s].',
-                    implode(', ', $keyColumns),
-                ));
+                throw new \InvalidArgumentException(sprintf('A scalar key cannot address row-set key columns [%s].', implode(
+                    ', ',
+                    $keyColumns,
+                )));
             }
 
             $key = new MappedKey([$unboundColumns[0] => $key]);
@@ -276,7 +299,12 @@ final class MappedRowSet implements UnitOfWork
             }
         }
 
-        usort($plans, static fn (RowUpdatePlan $left, RowUpdatePlan $right): int => $left->key->fingerprint() <=> $right->key->fingerprint());
+        usort(
+            $plans,
+            static fn(RowUpdatePlan $left, RowUpdatePlan $right): int => (
+                $left->key->fingerprint() <=> $right->key->fingerprint()
+            ),
+        );
 
         return $plans;
     }
@@ -288,13 +316,16 @@ final class MappedRowSet implements UnitOfWork
      */
     private function sortedWritePlans(): array
     {
-        return array_values(array_filter($this->sortedPlans(), static fn (RowUpdatePlan $plan): bool => $plan->writes()));
+        return array_values(array_filter($this->sortedPlans(), static fn(RowUpdatePlan $plan): bool => $plan->writes()));
     }
 
-    /** @param list<MappedKey> $keys @return list<string> */
+    /**
+     * @param list<MappedKey> $keys
+     * @return list<string>
+     */
     private function keyFingerprints(array $keys): array
     {
-        return array_map(static fn (MappedKey $key): string => $key->fingerprint(), $keys);
+        return array_map(static fn(MappedKey $key): string => $key->fingerprint(), $keys);
     }
 
     /**

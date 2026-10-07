@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -18,8 +20,11 @@ class CollectionCodeGeneratorBuilder implements CodeGeneratorBuilder
         return !$valueType instanceof BuiltinType;
     }
 
-    public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
-    {
+    public function build(
+        Type $type,
+        CodeGeneratorBuilderRegistry $registry,
+        CodeGeneratorContext $context,
+    ): CodeGenerator {
         if (!$type instanceof CollectionType) {
             throw new \InvalidArgumentException('Type must be CollectionType');
         }

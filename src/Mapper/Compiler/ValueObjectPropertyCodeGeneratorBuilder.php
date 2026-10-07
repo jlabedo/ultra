@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -15,11 +17,14 @@ class ValueObjectPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
         }
         $ref = new \ReflectionClass($type->getClassName());
 
-        return $ref->getAttributes(AsValue::class) && 1 === \count(self::storedProperties($ref));
+        return [] !== $ref->getAttributes(AsValue::class) && 1 === \count(self::storedProperties($ref));
     }
 
-    public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
-    {
+    public function build(
+        Type $type,
+        CodeGeneratorBuilderRegistry $registry,
+        CodeGeneratorContext $context,
+    ): CodeGenerator {
         if (!$type instanceof ObjectType) {
             throw new \InvalidArgumentException('Type must be ObjectType');
         }
@@ -42,7 +47,7 @@ class ValueObjectPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
     {
         return array_values(array_filter(
             $ref->getProperties(),
-            static fn (\ReflectionProperty $property): bool => !$property->isVirtual(),
+            static fn(\ReflectionProperty $property): bool => !$property->isVirtual(),
         ));
     }
 }

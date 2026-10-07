@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace IamExample\State;
 
+use IamExample\Domain\LocalId;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateId;
-use Ultra\StateStore\Attribute\StateColumn;
-use IamExample\Domain\LocalId;
 
 #[State(table: 'iam_groups')]
 final readonly class GroupState

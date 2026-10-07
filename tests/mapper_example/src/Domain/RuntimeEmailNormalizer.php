@@ -24,8 +24,12 @@ final class RuntimeEmailNormalizer implements RuntimeNormalizerInterface
         return $value->value();
     }
 
-    public function fromScalar(array|bool|float|int|string|null $value, string $type, UltraNormalizer $normalizer, DenormalizationContext $context): mixed
-    {
+    public function fromScalar(
+        array|bool|float|int|string|null $value,
+        string $type,
+        UltraNormalizer $normalizer,
+        DenormalizationContext $context,
+    ): mixed {
         if (!is_string($value)) {
             throw new \InvalidArgumentException('Expected string');
         }

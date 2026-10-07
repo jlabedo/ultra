@@ -23,11 +23,10 @@ abstract class PostgresRowSetTestCase extends TestCase
         }
 
         $connection = PostgresConnectionSupport::sharedConnection($dsn);
-        $tableName = 'ultra_mapped_row_set_'.bin2hex(random_bytes(4));
+        $tableName = 'ultra_mapped_row_set_' . bin2hex(random_bytes(4));
 
         try {
-            $connection->executeStatement(sprintf(
-                'CREATE TABLE %s (
+            $connection->executeStatement(sprintf('CREATE TABLE %s (
                     id TEXT PRIMARY KEY,
                     status TEXT NULL,
                     note TEXT NULL,
@@ -36,9 +35,7 @@ abstract class PostgresRowSetTestCase extends TestCase
                     tags TEXT[] NULL,
                     payload JSONB NULL,
                     expires_on DATE NULL
-                )',
-                $connection->quoteSingleIdentifier($tableName),
-            ));
+                )', $connection->quoteSingleIdentifier($tableName)));
 
             $callback(
                 $connection,
@@ -69,7 +66,10 @@ abstract class PostgresRowSetTestCase extends TestCase
     protected function fetchRow(Connection $connection, string $tableName, string $id): array|false
     {
         return $connection->fetchAssociative(
-            sprintf('SELECT id, status, note, version_a, version_b FROM %s WHERE id = ?', $connection->quoteSingleIdentifier($tableName)),
+            sprintf(
+                'SELECT id, status, note, version_a, version_b FROM %s WHERE id = ?',
+                $connection->quoteSingleIdentifier($tableName),
+            ),
             [$id],
         );
     }
@@ -80,7 +80,10 @@ abstract class PostgresRowSetTestCase extends TestCase
     protected function fetchRowWithTags(Connection $connection, string $tableName, string $id): array|false
     {
         $row = $connection->fetchAssociative(
-            sprintf('SELECT id, status, note, version_a, version_b, tags FROM %s WHERE id = ?', $connection->quoteSingleIdentifier($tableName)),
+            sprintf(
+                'SELECT id, status, note, version_a, version_b, tags FROM %s WHERE id = ?',
+                $connection->quoteSingleIdentifier($tableName),
+            ),
             [$id],
         );
 

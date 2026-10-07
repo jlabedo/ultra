@@ -32,11 +32,15 @@ final class MapperExtensionTest extends TestCase
     {
         self::bootKernel();
 
-        $cacheDir = self::$kernel->getBuildDir().'/mapper';
-        $cacheFile = $cacheDir.'/'.GeneratedNormalizerName::cacheFileName(
-            GeneratedNormalizerName::forType(UserRegistered::class, GeneratedNormalizerName::DEFAULT_NAMESPACE),
-        );
-        $this->assertFileExists($cacheFile);
+        $cacheDir = self::$kernel->getBuildDir() . '/mapper';
+        $cacheFile =
+            $cacheDir
+            . '/'
+            . GeneratedNormalizerName::cacheFileName(GeneratedNormalizerName::forType(
+                UserRegistered::class,
+                GeneratedNormalizerName::DEFAULT_NAMESPACE,
+            ));
+        static::assertFileExists($cacheFile);
 
         $normalizer = new UltraNormalizer($cacheDir);
         $normalizer->registerRuntimeNormalizer(new RuntimeEmailNormalizer());
@@ -44,13 +48,13 @@ final class MapperExtensionTest extends TestCase
         $event = new UserRegistered(new RuntimeEmail('user@example.test'), 'User');
         $payload = $normalizer->toScalar($event);
 
-        $this->assertSame('user@example.test', $payload['email']);
-        $this->assertSame('User', $payload['name']);
+        static::assertSame('user@example.test', $payload['email']);
+        static::assertSame('User', $payload['name']);
 
         $rehydrated = $normalizer->fromScalar($payload, UserRegistered::class);
-        $this->assertInstanceOf(UserRegistered::class, $rehydrated);
-        $this->assertSame('user@example.test', $rehydrated->email->value());
-        $this->assertSame('User', $rehydrated->name);
+        static::assertInstanceOf(UserRegistered::class, $rehydrated);
+        static::assertSame('user@example.test', $rehydrated->email->value());
+        static::assertSame('User', $rehydrated->name);
     }
 
     protected static function bootKernel(array $options = []): void
@@ -65,9 +69,6 @@ final class MapperExtensionTest extends TestCase
 
     protected static function createKernel(array $options = []): Kernel
     {
-        return new Kernel(
-            $options['environment'] ?? 'test',
-            $options['debug'] ?? true,
-        );
+        return new Kernel($options['environment'] ?? 'test', $options['debug'] ?? true);
     }
 }

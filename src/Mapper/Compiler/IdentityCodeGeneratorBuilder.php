@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -11,8 +13,11 @@ class IdentityCodeGeneratorBuilder implements CodeGeneratorBuilder
         return true; // Fallback builder
     }
 
-    public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
-    {
+    public function build(
+        Type $type,
+        CodeGeneratorBuilderRegistry $registry,
+        CodeGeneratorContext $context,
+    ): CodeGenerator {
         return new IdentityCodeGenerator($type, $context->typeCheck);
     }
 }

@@ -10,6 +10,6 @@ final readonly class BucketHasher
 
     public static function bucketFor(string $value): int
     {
-        return hexdec(substr(md5($value), 0, 2));
+        return (int) hexdec(substr(md5($value), 0, 2));
     }
 }

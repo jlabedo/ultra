@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace App;
 
 use App\VO\Email;
@@ -13,13 +15,18 @@ use Ultra\Mapper_Compiler\NormalizerGenerator;
 #[AsCommand(name: 'app:run')]
 class MapValueCommand
 {
-    public function __construct(private UltraNormalizer $normalizer) {}
+    public function __construct(
+        private UltraNormalizer $normalizer,
+    ) {}
 
     public function __invoke(InputInterface $input, OutputInterface $output): int
     {
         $output->writeln('Mapping value objects with Ultra Mapper');
         $output->writeln('---------------------------------------');
-        $output->writeln(sprintf('ultra/mapper-compiler : %s', class_exists(NormalizerGenerator::class) ? 'Yes' : 'No'));
+        $output->writeln(sprintf(
+            'ultra/mapper-compiler : %s',
+            class_exists(NormalizerGenerator::class) ? 'Yes' : 'No',
+        ));
         $email = $this->normalizer->fromScalar('john@example.com', Email::class);
 
         $emailDTO = $this->normalizer->toScalar($email);

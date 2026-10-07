@@ -68,10 +68,12 @@ final readonly class EventSourcedDriver implements BookingDriver
 
     public function usedMinutes(string $companyId, string $month): int
     {
-        return $this->states->load(
-            CompanyMonthUsageState::class,
-            new DomainIdentifier('companyMonth', BookingIds::companyMonth($companyId, $month)),
-        )->usedMinutes();
+        return $this->states
+            ->load(
+                CompanyMonthUsageState::class,
+                new DomainIdentifier('companyMonth', BookingIds::companyMonth($companyId, $month)),
+            )
+            ->usedMinutes();
     }
 
     public function bookingsOnDay(string $roomId, string $day): array

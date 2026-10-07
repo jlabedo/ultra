@@ -33,29 +33,29 @@ final class OperatorCommandsTest extends PostgresProjectionTestCase
         $repository = new InMemoryProjectionSegmentRepository();
         $repository->ensureInitialized('course_names');
         $repository->splitSegment('course_names', 0);
-        self::assertNotNull($repository->claimSegment('course_names', 128, 'worker-1'));
+        static::assertNotNull($repository->claimSegment('course_names', 128, 'worker-1'));
 
         $tester = new CommandTester(new ListSegmentsCommand($repository));
 
-        self::assertSame(0, $tester->execute(['projection-id' => 'course_names']));
+        static::assertSame(0, $tester->execute(['projection-id' => 'course_names']));
 
         $output = $tester->getDisplay();
-        self::assertStringContainsString('bucket_from', $output);
-        self::assertStringContainsString('bucket_to', $output);
-        self::assertStringContainsString('0', $output);
-        self::assertStringContainsString('127', $output);
-        self::assertStringContainsString('128', $output);
-        self::assertStringContainsString('255', $output);
-        self::assertStringContainsString('worker-1', $output);
+        static::assertStringContainsString('bucket_from', $output);
+        static::assertStringContainsString('bucket_to', $output);
+        static::assertStringContainsString('0', $output);
+        static::assertStringContainsString('127', $output);
+        static::assertStringContainsString('128', $output);
+        static::assertStringContainsString('255', $output);
+        static::assertStringContainsString('worker-1', $output);
     }
 
     public function test_reports_when_a_projection_has_no_segments(): void
     {
         $tester = new CommandTester(new ListSegmentsCommand(new InMemoryProjectionSegmentRepository()));
 
-        self::assertSame(0, $tester->execute(['projection-id' => 'course_names']));
+        static::assertSame(0, $tester->execute(['projection-id' => 'course_names']));
 
-        self::assertStringContainsString('No segments found for "course_names".', $tester->getDisplay());
+        static::assertStringContainsString('No segments found for "course_names".', $tester->getDisplay());
     }
 
     #[Group('slow')]
@@ -64,13 +64,13 @@ final class OperatorCommandsTest extends PostgresProjectionTestCase
     {
         $dsn = $this->postgresDsn();
         $connection = ProjectionCoordinationHarness::connection($dsn);
-        $eventStorePrefix = 'projection_manual_event_'.bin2hex(random_bytes(4)).'_';
-        $projectionPrefix = 'projection_manual_projection_'.bin2hex(random_bytes(4)).'_';
+        $eventStorePrefix = 'projection_manual_event_' . bin2hex(random_bytes(4)) . '_';
+        $projectionPrefix = 'projection_manual_projection_' . bin2hex(random_bytes(4)) . '_';
         $application = ProjectionCoordinationHarness::createApplication(
             $dsn,
             $eventStorePrefix,
             $projectionPrefix,
-            __DIR__.'/Postgres/Harness/projection-coordination-harness',
+            __DIR__ . '/Postgres/Harness/projection-coordination-harness',
         );
 
         try {
@@ -83,33 +83,43 @@ final class OperatorCommandsTest extends PostgresProjectionTestCase
                 '--reset-schema' => true,
             ]);
 
-            self::assertSame(0, $exitCode, $output);
-            self::assertStringContainsString('Schema ready.', $output);
-            self::assertStringContainsString('Projected rows: 12', $output);
-            self::assertStringContainsString('Pending buckets: 12', $output);
+            static::assertSame(0, $exitCode, $output);
+            static::assertStringContainsString('Schema ready.', $output);
+            static::assertStringContainsString('Projected rows: 12', $output);
+            static::assertStringContainsString('Pending buckets: 12', $output);
 
-            self::assertSame(12, (int) $connection->fetchOne(sprintf(
-                'SELECT count(*) FROM %s',
-                ProjectionCoordinationHarness::readModelTable($projectionPrefix),
-            )));
-            self::assertSame(12, (int) $connection->fetchOne(sprintf(
-                'SELECT count(*) FROM %sevents',
-                $eventStorePrefix,
-            )));
-            self::assertSame(12, (int) $connection->fetchOne(sprintf(
-                'SELECT count(*) FROM %sdirty_keys WHERE counter > 0',
-                $projectionPrefix,
-            )));
+            static::assertSame(
+                12,
+                (int) $connection->fetchOne(sprintf(
+                    'SELECT count(*) FROM %s',
+                    ProjectionCoordinationHarness::readModelTable($projectionPrefix),
+                )),
+            );
+            static::assertSame(
+                12,
+                (int) $connection->fetchOne(sprintf('SELECT count(*) FROM %sevents', $eventStorePrefix)),
+            );
+            static::assertSame(
+                12,
+                (int) $connection->fetchOne(sprintf(
+                    'SELECT count(*) FROM %sdirty_keys WHERE counter > 0',
+                    $projectionPrefix,
+                )),
+            );
 
             [$resetCode, $resetOutput] = $this->runHarnessCommand($application, [
                 'command' => 'harness:projection-reset',
             ]);
 
-            self::assertSame(0, $resetCode, $resetOutput);
-            self::assertStringContainsString('Projection "harness_course_names" was reset.', $resetOutput);
-            self::assertSame([], new PostgresProjectionSegmentRepository($connection, $projectionPrefix)
-                ->listSegments(ProjectionCoordinationHarness::PROJECTION_ID));
-            self::assertNull($connection->fetchOne(sprintf(
+            static::assertSame(0, $resetCode, $resetOutput);
+            static::assertStringContainsString('Projection "harness_course_names" was reset.', $resetOutput);
+            static::assertSame(
+                [],
+                new PostgresProjectionSegmentRepository($connection, $projectionPrefix)->listSegments(
+                    ProjectionCoordinationHarness::PROJECTION_ID,
+                ),
+            );
+            static::assertNull($connection->fetchOne(sprintf(
                 "SELECT to_regclass('%s')",
                 ProjectionCoordinationHarness::readModelTable($projectionPrefix),
             )));
@@ -121,19 +131,28 @@ final class OperatorCommandsTest extends PostgresProjectionTestCase
                 '--max-cycles' => '64',
             ]);
 
-            self::assertSame(0, $secondBackfillCode, $secondBackfillOutput);
-            self::assertSame(12, (int) $connection->fetchOne(sprintf(
-                'SELECT count(*) FROM %s',
-                ProjectionCoordinationHarness::readModelTable($projectionPrefix),
-            )));
-            self::assertSame(12, (int) $connection->fetchOne(sprintf(
-                'SELECT count(*) FROM %s WHERE counter > 0',
-                $projectionPrefix.'dirty_keys',
-            )));
+            static::assertSame(0, $secondBackfillCode, $secondBackfillOutput);
+            static::assertSame(
+                12,
+                (int) $connection->fetchOne(sprintf(
+                    'SELECT count(*) FROM %s',
+                    ProjectionCoordinationHarness::readModelTable($projectionPrefix),
+                )),
+            );
+            static::assertSame(
+                12,
+                (int) $connection->fetchOne(sprintf(
+                    'SELECT count(*) FROM %s WHERE counter > 0',
+                    $projectionPrefix . 'dirty_keys',
+                )),
+            );
         } finally {
             PostgresConnectionSupport::resetSharedConnection($connection);
 
-            foreach (array_reverse(ProjectionCoordinationHarness::schemas($eventStorePrefix, $projectionPrefix)) as $schema) {
+            foreach (array_reverse(ProjectionCoordinationHarness::schemas(
+                $eventStorePrefix,
+                $projectionPrefix,
+            )) as $schema) {
                 foreach ($schema->dropStatements() as $statement) {
                     $connection->executeStatement($statement);
                 }
@@ -164,7 +183,7 @@ final class OperatorCommandsTest extends PostgresProjectionTestCase
                 $this->postgresDsn(),
                 $eventStorePrefix,
                 $projectionPrefix,
-                __DIR__.'/Postgres/Harness/projection-coordination-harness',
+                __DIR__ . '/Postgres/Harness/projection-coordination-harness',
             );
 
             [$seedCode, $seedOutput] = $this->runHarnessCommand($application, [

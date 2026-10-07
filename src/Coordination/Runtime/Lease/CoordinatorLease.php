@@ -20,9 +20,17 @@ use Ultra\Time\Duration;
  */
 interface CoordinatorLease
 {
-    public function acquire(string $coordinatorKey, string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool;
+    public function acquire(
+        string $coordinatorKey,
+        string $workerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): bool;
 
-    public function renew(string $coordinatorKey, string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): void;
+    public function renew(
+        string $coordinatorKey,
+        string $workerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): void;
 
     public function release(string $coordinatorKey, string $workerId): void;
 

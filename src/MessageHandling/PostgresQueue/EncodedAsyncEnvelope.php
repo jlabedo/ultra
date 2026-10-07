@@ -9,7 +9,7 @@ use Ultra\MessageHandling\Async\AsyncHeaders;
 final readonly class EncodedAsyncEnvelope
 {
     /**
-     * @param array<string, mixed> $attributes
+     * @param array<array-key, mixed> $attributes
      */
     public function __construct(
         public string $body,

@@ -9,5 +9,7 @@ use Ultra\Events\Attribute\Event;
 #[Event('order.placed')]
 final readonly class OrderPlaced
 {
-    public function __construct(public string $orderId) {}
+    public function __construct(
+        public string $orderId,
+    ) {}
 }

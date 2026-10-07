@@ -20,15 +20,18 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
         private ClockInterface $clock = new SystemClock(),
     ) {}
 
-    public function acquire(string $coordinatorKey, string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
-    {
+    public function acquire(
+        string $coordinatorKey,
+        string $workerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): bool {
         $this->connection->beginTransaction();
 
         try {
             $row = $this->lockRow($coordinatorKey);
             $now = $this->clock->now();
             if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
-                $leaseExpiresAt = new DatePoint((string) $row['lease_expires_at']);
+                $leaseExpiresAt = new DatePoint($row['lease_expires_at']);
                 if ($leaseExpiresAt >= $now) {
                     $this->connection->rollBack();
 
@@ -37,13 +40,10 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
             }
 
             $this->connection->executeStatement(
-                sprintf(
-                    'UPDATE %s
+                sprintf('UPDATE %s
                      SET worker_id = ?, lease_expires_at = CAST(? AS TIMESTAMPTZ),
                          wake_enqueued_until = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE coordinator_key = ?',
-                    $this->table,
-                ),
+                     WHERE coordinator_key = ?', $this->table),
                 [$workerId, $now->add($leaseDuration), $now, $coordinatorKey],
                 [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
             );
@@ -60,17 +60,17 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
         }
     }
 
-    public function renew(string $coordinatorKey, string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): void
-    {
+    public function renew(
+        string $coordinatorKey,
+        string $workerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): void {
         $now = $this->clock->now();
 
         $this->connection->executeStatement(
-            sprintf(
-                'UPDATE %s
+            sprintf('UPDATE %s
                  SET lease_expires_at = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE coordinator_key = ? AND worker_id = ?',
-                $this->table,
-            ),
+                 WHERE coordinator_key = ? AND worker_id = ?', $this->table),
             [$now->add($leaseDuration), $now, $coordinatorKey, $workerId],
             [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
         );
@@ -81,12 +81,9 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
         $now = $this->clock->now();
 
         $this->connection->executeStatement(
-            sprintf(
-                'UPDATE %s
+            sprintf('UPDATE %s
                  SET worker_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE coordinator_key = ? AND worker_id = ?',
-                $this->table,
-            ),
+                 WHERE coordinator_key = ? AND worker_id = ?', $this->table),
             [$now, $coordinatorKey, $workerId],
             [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
         );
@@ -94,20 +91,20 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
 
     public function hasLiveCoordinator(string $coordinatorKey): bool
     {
-        $row = $this->connection->executeQuery(
-            sprintf(
-                'SELECT worker_id, lease_expires_at FROM %s WHERE coordinator_key = ?',
-                $this->table,
-            ),
-            [$coordinatorKey],
-            [ParameterType::STRING],
-        )->fetchAssociative();
+        /** @var array{worker_id: ?string, lease_expires_at: ?string}|false $row */
+        $row = $this->connection
+            ->executeQuery(
+                sprintf('SELECT worker_id, lease_expires_at FROM %s WHERE coordinator_key = ?', $this->table),
+                [$coordinatorKey],
+                [ParameterType::STRING],
+            )
+            ->fetchAssociative();
 
         if (false === $row || null === $row['worker_id'] || null === $row['lease_expires_at']) {
             return false;
         }
 
-        return new \DateTimeImmutable((string) $row['lease_expires_at']) >= $this->clock->now();
+        return new \DateTimeImmutable($row['lease_expires_at']) >= $this->clock->now();
     }
 
     public function markWakeEnqueued(string $coordinatorKey, Duration $ttl = new Duration(seconds: 30)): bool
@@ -119,7 +116,7 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
             $now = $this->clock->now();
 
             if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
-                $leaseExpiresAt = new DatePoint((string) $row['lease_expires_at']);
+                $leaseExpiresAt = new DatePoint($row['lease_expires_at']);
                 if ($leaseExpiresAt >= $now) {
                     $this->connection->commit();
 
@@ -128,7 +125,7 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
             }
 
             if (null !== $row && null !== $row['wake_enqueued_until']) {
-                $wakeEnqueuedUntil = new DatePoint((string) $row['wake_enqueued_until']);
+                $wakeEnqueuedUntil = new DatePoint($row['wake_enqueued_until']);
                 if ($wakeEnqueuedUntil >= $now) {
                     $this->connection->commit();
 
@@ -137,12 +134,9 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
             }
 
             $this->connection->executeStatement(
-                sprintf(
-                    'UPDATE %s
+                sprintf('UPDATE %s
                      SET wake_enqueued_until = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE coordinator_key = ?',
-                    $this->table,
-                ),
+                     WHERE coordinator_key = ?', $this->table),
                 [$now->add($ttl), $now, $coordinatorKey],
                 [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
             );
@@ -166,14 +160,17 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
         // after that wait so the decision includes the committed reservation.
         $this->upsertRow($coordinatorKey, $this->clock->now());
 
-        $row = $this->connection->executeQuery(
-            sprintf(
-                'SELECT worker_id, lease_expires_at, wake_enqueued_until FROM %s WHERE coordinator_key = ? FOR UPDATE',
-                $this->table,
-            ),
-            [$coordinatorKey],
-            [ParameterType::STRING],
-        )->fetchAssociative();
+        /** @var array{worker_id: ?string, lease_expires_at: ?string, wake_enqueued_until: ?string}|false $row */
+        $row = $this->connection
+            ->executeQuery(
+                sprintf(
+                    'SELECT worker_id, lease_expires_at, wake_enqueued_until FROM %s WHERE coordinator_key = ? FOR UPDATE',
+                    $this->table,
+                ),
+                [$coordinatorKey],
+                [ParameterType::STRING],
+            )
+            ->fetchAssociative();
 
         return false === $row ? null : $row;
     }

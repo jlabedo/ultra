@@ -7,8 +7,8 @@ namespace App\Faculty\Write;
 use App\Faculty\Event\CourseCreated;
 use App\Faculty\State\CourseState;
 use App\Faculty\Support\FacultyIds;
-use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\MessageHandling\Attribute\SelfHandler;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 
 final readonly class CreateCourseCommand
 {
@@ -26,7 +26,7 @@ final readonly class CreateCourseCommand
     public function decide(CourseState $course): array
     {
         if ($course->exists()) {
-            throw new \InvalidArgumentException('Course already exists: '.$this->courseId);
+            throw new \InvalidArgumentException('Course already exists: ' . $this->courseId);
         }
 
         if ('' === trim($this->name)) {
@@ -38,12 +38,7 @@ final readonly class CreateCourseCommand
         }
 
         return [
-            new CourseCreated(
-                FacultyIds::DEFAULT,
-                $this->courseId,
-                trim($this->name),
-                $this->capacity,
-            ),
+            new CourseCreated(FacultyIds::DEFAULT, $this->courseId, trim($this->name), $this->capacity),
         ];
     }
 }

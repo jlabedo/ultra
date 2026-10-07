@@ -24,8 +24,8 @@ use Ultra\Projection\Coordination\ProjectionCoordinatorResult;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\ProjectionCatalog;
-use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Tests\Support\ConcurrencyCourseNamesProjection;
 use Ultra\Projection\Tests\Support\PostgresProjectionTestCase;
@@ -34,8 +34,6 @@ use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
 use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\PostgresTestSupport;
-use Ultra\Time\Duration;
-use Ultra\Time\StatickClock;
 
 /** @internal */
 #[CoversNothing]
@@ -47,7 +45,7 @@ final class ConcurrentExecutionTest extends PostgresProjectionTestCase
     {
         $dsn = $this->postgresDsn();
 
-        $this->withPostgresProjectionCoordinatorRuntime(function (
+        $this->withPostgresProjectionCoordinatorRuntime(static function (
             Connection $connection,
             EventStore $store,
             PostgresProjectionSegmentRepository $segments,
@@ -57,7 +55,7 @@ final class ConcurrentExecutionTest extends PostgresProjectionTestCase
             string $eventStorePrefix,
             string $projectionPrefix,
         ) use ($dsn): void {
-            $tableName = $projectionPrefix.'course_names_view';
+            $tableName = $projectionPrefix . 'course_names_view';
             [$leftCourseId, $rightCourseId] = self::courseIdsAcrossSplit();
             $leftBucket = BucketHasher::bucketFor($leftCourseId);
             $rightBucket = BucketHasher::bucketFor($rightCourseId);
@@ -91,73 +89,86 @@ final class ConcurrentExecutionTest extends PostgresProjectionTestCase
 
             // Leader: claims its segment, then pauses at 'segment_claimed' before loading
             // events so the follower can concurrently claim the other segment.
-            $leader = $cluster->spawn(
-                static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $testFile): ProjectionCoordinatorResult {
-                    require_once $testFile;
+            $leader = $cluster->spawn(static function () use (
+                $dsn,
+                $eventStorePrefix,
+                $projectionPrefix,
+                $tableName,
+                $testFile,
+            ): ProjectionCoordinatorResult {
+                require_once $testFile;
 
-                    $connection = PostgresConnectionSupport::connection($dsn);
-                    $innerStore = PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams');
+                $connection = PostgresConnectionSupport::connection($dsn);
+                $innerStore = PostgresTestSupport::storeForImplementation(
+                    $connection,
+                    $eventStorePrefix,
+                    'query-streams',
+                );
 
-                    // Inline barrier: fires once on the first load(), holding the segment
-                    // claim open so the follower can grab the other segment concurrently.
-                    $barrierStore = new class($innerStore) implements EventStore {
-                        private bool $checkpointed = false;
+                // Inline barrier: fires once on the first load(), holding the segment
+                // claim open so the follower can grab the other segment concurrently.
+                $barrierStore = new class($innerStore) implements EventStore {
+                    private bool $checkpointed = false;
 
-                        public function __construct(private readonly EventStore $inner) {}
+                    public function __construct(
+                        private readonly EventStore $inner,
+                    ) {}
 
-                        public function load(
-                            StreamQuery $query,
-                            ?Checkpoint $from = null,
-                            ?Checkpoint $to = null,
-                            int $batchSize = 1000,
-                        ): LoadResult {
-                            if (!$this->checkpointed) {
-                                $this->checkpointed = true;
-                                checkpoint('segment_claimed');
-                            }
-
-                            return $this->inner->load($query, $from, $to, $batchSize);
+                    public function load(
+                        StreamQuery $query,
+                        ?Checkpoint $from = null,
+                        ?Checkpoint $to = null,
+                        int $batchSize = 1000,
+                    ): LoadResult {
+                        if (!$this->checkpointed) {
+                            $this->checkpointed = true;
+                            checkpoint('segment_claimed');
                         }
 
-                        public function append(array $events, AppendCondition ...$appendConditions): void
-                        {
-                            $this->inner->append($events, ...$appendConditions);
-                        }
-                    };
-
-                    $activityRepository = new ProjectionActivity(new PostgresDirtyKeyTracker($connection, $projectionPrefix.'dirty_keys'));
-                    $runner = new ProjectionRunner(
-                        $barrierStore,
-                        new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
-                        new PostgresProjectionTransactionManager($connection),
-                        $activityRepository,
-                    );
-                    $coordinator = new ProjectionCoordinator(
-                        new ProjectionCatalog(
-                            new ProjectionRuntime(
-                                new ConcurrencyCourseNamesProjection($connection, $tableName),
-                                new UltraNormalizer(),
-                            ),
-                        ),
-                        $runner,
-                        $activityRepository,
-                        new PostgresCoordinatorLease($connection, $projectionPrefix.'coordinator_lease'),
-                        new InMemoryProjectionActivator(),
-                        new class implements ProjectionScalingPolicyInterface {
-                            public function additionalWorkersRequested(array $affectedBuckets): int
-                            {
-                                return 1;
-                            }
-                        },
-                    );
-
-                    try {
-                        return $coordinator->run('worker-a', batchSize: 100, maxCycles: 8);
-                    } finally {
-                        $connection->close();
+                        return $this->inner->load($query, $from, $to, $batchSize);
                     }
-                },
-            );
+
+                    public function append(array $events, AppendCondition ...$appendConditions): void
+                    {
+                        $this->inner->append($events, ...$appendConditions);
+                    }
+                };
+
+                $activityRepository = new ProjectionActivity(new PostgresDirtyKeyTracker(
+                    $connection,
+                    $projectionPrefix . 'dirty_keys',
+                ));
+                $runner = new ProjectionRunner(
+                    $barrierStore,
+                    new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
+                    new PostgresProjectionTransactionManager($connection),
+                    $activityRepository,
+                );
+                $coordinator = new ProjectionCoordinator(
+                    new ProjectionCatalog(
+                        new ProjectionRuntime(
+                            new ConcurrencyCourseNamesProjection($connection, $tableName),
+                            new UltraNormalizer(),
+                        ),
+                    ),
+                    $runner,
+                    $activityRepository,
+                    new PostgresCoordinatorLease($connection, $projectionPrefix . 'coordinator_lease'),
+                    new InMemoryProjectionActivator(),
+                    new class implements ProjectionScalingPolicyInterface {
+                        public function additionalWorkersRequested(array $affectedBuckets): int
+                        {
+                            return 1;
+                        }
+                    },
+                );
+
+                try {
+                    return $coordinator->run('worker-a', batchSize: 100, maxCycles: 8);
+                } finally {
+                    $connection->close();
+                }
+            });
 
             // Wait until the leader holds a segment before spawning the follower, so it
             // cannot race ahead and claim both segments.
@@ -165,36 +176,37 @@ final class ConcurrentExecutionTest extends PostgresProjectionTestCase
 
             // Follower: process the remote segment already claimed by the leader
             // coordinator while the leader is paused on its local segment.
-            $follower = $cluster->spawn(
-                static function () use ($dsn, $eventStorePrefix, $projectionPrefix, $tableName, $testFile): ProjectionRunResult {
-                    require_once $testFile;
+            $follower = $cluster->spawn(static function () use (
+                $dsn,
+                $eventStorePrefix,
+                $projectionPrefix,
+                $tableName,
+                $testFile,
+            ): ProjectionRunResult {
+                require_once $testFile;
 
-                    $connection = PostgresConnectionSupport::connection($dsn);
-                    $activityRepository = new ProjectionActivity(new PostgresDirtyKeyTracker($connection, $projectionPrefix.'dirty_keys'));
-                    $runner = new ProjectionRunner(
-                        PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams'),
-                        new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
-                        new PostgresProjectionTransactionManager($connection),
-                        $activityRepository,
-                    );
-                    $runtime = new ProjectionRuntime(
-                        new ConcurrencyCourseNamesProjection($connection, $tableName),
-                        new UltraNormalizer(),
-                    );
+                $connection = PostgresConnectionSupport::connection($dsn);
+                $activityRepository = new ProjectionActivity(new PostgresDirtyKeyTracker(
+                    $connection,
+                    $projectionPrefix . 'dirty_keys',
+                ));
+                $runner = new ProjectionRunner(
+                    PostgresTestSupport::storeForImplementation($connection, $eventStorePrefix, 'query-streams'),
+                    new PostgresProjectionSegmentRepository($connection, $projectionPrefix),
+                    new PostgresProjectionTransactionManager($connection),
+                    $activityRepository,
+                );
+                $runtime = new ProjectionRuntime(
+                    new ConcurrencyCourseNamesProjection($connection, $tableName),
+                    new UltraNormalizer(),
+                );
 
-                    try {
-                        return $runner->runClaimedOnce(
-                            $runtime,
-                            'course_names',
-                            128,
-                            'worker-a-course_names-128',
-                            100,
-                        );
-                    } finally {
-                        $connection->close();
-                    }
-                },
-            );
+                try {
+                    return $runner->runClaimedOnce($runtime, 'course_names', 128, 'worker-a-course_names-128', 100);
+                } finally {
+                    $connection->close();
+                }
+            });
 
             $followerOutcome = $follower->join();
 
@@ -218,13 +230,17 @@ final class ConcurrentExecutionTest extends PostgresProjectionTestCase
             self::assertSame(1, $followerResult->processedEvents);
             self::assertGreaterThanOrEqual(1, $followerResult->acknowledgedBuckets);
 
-            $rows = $connection->fetchAllAssociative(
-                sprintf('SELECT course_id, name FROM %s ORDER BY course_id ASC', $tableName),
+            $rows = $connection->fetchAllAssociative(sprintf(
+                'SELECT course_id, name FROM %s ORDER BY course_id ASC',
+                $tableName,
+            ));
+            self::assertSame(
+                [
+                    ['course_id' => $leftCourseId, 'name' => 'Math 101'],
+                    ['course_id' => $rightCourseId, 'name' => 'Physics 201'],
+                ],
+                $rows,
             );
-            self::assertSame([
-                ['course_id' => $leftCourseId, 'name' => 'Math 101'],
-                ['course_id' => $rightCourseId, 'name' => 'Physics 201'],
-            ], $rows);
             self::assertSame([], $activity->pendingInSegment('course_names', 0, 255));
             self::assertFalse($leases->hasLiveCoordinator(ProjectionCoordinator::COORDINATOR_KEY));
         });
@@ -239,7 +255,7 @@ final class ConcurrentExecutionTest extends PostgresProjectionTestCase
         $right = null;
 
         for ($i = 0; $i < 1024; ++$i) {
-            $courseId = 'projection-concurrency-course-'.$i;
+            $courseId = 'projection-concurrency-course-' . $i;
             $bucket = BucketHasher::bucketFor($courseId);
 
             if (null === $left && $bucket < 128) {

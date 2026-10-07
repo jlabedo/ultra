@@ -8,16 +8,18 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
+use Ultra\StatefulMessageHandling\DecisionMode;
 use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\StatefulMessageHandling\Tests\Support\DecisionTestCase;
-use Ultra\StatefulMessageHandling\DecisionMode;
 use Ultra\StatefulMessageHandling\Violation;
 
 final class CheckModeTest extends DecisionTestCase
 {
     #[DataProvider('checkedDecisions')]
-    public function test_check_executes_services_and_reports_violations_without_applying_returned_effects(string $family, bool $invalid): void
-    {
+    public function test_check_executes_services_and_reports_violations_without_applying_returned_effects(
+        string $family,
+        bool $invalid,
+    ): void {
         $container = $this->inspectedApplication($family)->boot();
         $violations = [new Violation('first', 'First violation'), new Violation('second', 'Second violation')];
         $failure = $invalid ? new InvariantViolation($violations) : null;
@@ -28,21 +30,24 @@ final class CheckModeTest extends DecisionTestCase
             'mixed' => new InspectMixedDecision('course', 'order', $effects, $failure),
         };
 
-        self::assertEquals($invalid ? $violations : [], $container->get('test.mediator')->send($command, [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK]));
-        self::assertSame(1, $container->get(DecisionService::class)->calls);
+        static::assertEquals(
+            $invalid ? $violations : [],
+            $container->get('test.mediator')->send($command, [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK]),
+        );
+        static::assertSame(1, $container->get(DecisionService::class)->calls);
         if ('stored' !== $family) {
-            self::assertSame([], $container->get(InMemoryEventStore::class)->load(StreamQuery::all())->events);
+            static::assertSame([], $container->get(InMemoryEventStore::class)->load(StreamQuery::all())->events);
         }
         if ('events' !== $family) {
-            self::assertNull($container->get('test.state_store')->load(DecisionOrderState::class, 'order'));
+            static::assertNull($container->get('test.state_store')->load(DecisionOrderState::class, 'order'));
         }
     }
 
     public static function checkedDecisions(): iterable
     {
         foreach (['events', 'stored', 'mixed'] as $family) {
-            yield $family.' success' => [$family, false];
-            yield $family.' invariant violation' => [$family, true];
+            yield $family . ' success' => [$family, false];
+            yield $family . ' invariant violation' => [$family, true];
         }
     }
 
@@ -58,9 +63,9 @@ final class CheckModeTest extends DecisionTestCase
         };
         try {
             $container->get('test.mediator')->send($command, [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK]);
-            self::fail('Only invariant violations are converted to results.');
+            static::fail('Only invariant violations are converted to results.');
         } catch (\RuntimeException $exception) {
-            self::assertSame($failure, $exception);
+            static::assertSame($failure, $exception);
         }
     }
 
@@ -76,14 +81,17 @@ final class CheckModeTest extends DecisionTestCase
     {
         $previous = new \RuntimeException('original');
         $exception = new InvariantViolation($violations, $previous);
-        self::assertSame($violations, $exception->violations);
-        self::assertSame($message, $exception->getMessage());
-        self::assertSame($previous, $exception->getPrevious());
+        static::assertSame($violations, $exception->violations);
+        static::assertSame($message, $exception->getMessage());
+        static::assertSame($previous, $exception->getPrevious());
     }
 
     public static function violationLists(): iterable
     {
         yield 'empty' => [[], ''];
-        yield 'collected' => [[new Violation('first', 'One'), new Violation('second', 'Two')], 'first: One; second: Two'];
+        yield 'collected' => [
+            [new Violation('first', 'One'), new Violation('second', 'Two')],
+            'first: One; second: Two',
+        ];
     }
 }

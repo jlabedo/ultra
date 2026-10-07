@@ -65,14 +65,29 @@ final readonly class RescheduleBooking
             !$room->exists ? new Violation('room.not_found', 'Room does not exist.') : null,
         ]);
         Violations::throwIfAny([
-            $booking->memberId !== $this->memberId ? new Violation('booking.not_owner', 'Only the member who booked can reschedule.') : null,
-            BookingState::CANCELLED === $booking->status ? new Violation('booking.already_cancelled', 'Booking is cancelled.') : null,
+            $booking->memberId !== $this->memberId
+                ? new Violation('booking.not_owner', 'Only the member who booked can reschedule.')
+                : null,
+            BookingState::CANCELLED === $booking->status
+                ? new Violation('booking.already_cancelled', 'Booking is cancelled.')
+                : null,
         ]);
         Violations::throwIfAny([
-            !BookingPolicy::isRefundable($booking->slot, $now) ? new Violation('booking.too_late_to_reschedule', 'Bookings can only be moved until 24 hours before they start.') : null,
+            !BookingPolicy::isRefundable($booking->slot, $now)
+                ? new Violation(
+                    'booking.too_late_to_reschedule',
+                    'Bookings can only be moved until 24 hours before they start.',
+                )
+                : null,
             ...BookingPolicy::slotViolations($this->slot, $now),
-            !$schedule->isFree($this->slot, ignoringBookingId: $this->bookingId) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
-            BookingPolicy::quotaExceeded($company->monthlyMinutes, $usage->usedMinutes(ignoringBookingId: $this->bookingId), $this->slot->minutes()),
+            !$schedule->isFree($this->slot, ignoringBookingId: $this->bookingId)
+                ? new Violation('slot.unavailable', 'Room is already booked for this slot.')
+                : null,
+            BookingPolicy::quotaExceeded(
+                $company->monthlyMinutes,
+                $usage->usedMinutes(ignoringBookingId: $this->bookingId),
+                $this->slot->minutes(),
+            ),
         ]);
 
         return new BookingRescheduled(

@@ -24,14 +24,17 @@ final readonly class PhpCode
 
     public static function classLiteral(string $className): string
     {
-        return '\\'.ltrim($className, '\\').'::class';
+        return '\\' . ltrim($className, '\\') . '::class';
     }
 
     public static function fqcn(string $className): string
     {
-        return '\\'.ltrim($className, '\\');
+        return '\\' . ltrim($className, '\\');
     }
 
+    /**
+     * @param non-negative-int $levels
+     */
     public function indent(int $levels = 1): self
     {
         if ($levels === 0) {
@@ -40,16 +43,22 @@ final readonly class PhpCode
         $prefix = str_repeat(self::INDENT, $levels);
 
         return new self(implode("\n", array_map(
-            static fn (string $line): string => '' === $line ? '' : $prefix.$line,
+            static fn(string $line): string => '' === $line ? '' : $prefix . $line,
             explode("\n", $this->code),
         )));
     }
 
+    /**
+     * @param non-negative-int $level
+     */
     public static function indentLevel(int $level): string
     {
         return str_repeat(self::INDENT, $level);
     }
 
+    /**
+     * @param non-negative-int $levels
+     */
     public function indentContinuationLines(int $levels): self
     {
         $lines = explode("\n", $this->code);
@@ -62,7 +71,7 @@ final readonly class PhpCode
         return new self(implode("\n", [
             $lines[0],
             ...array_map(
-                static fn (string $line): string => '' === $line ? '' : $prefix.$line,
+                static fn(string $line): string => '' === $line ? '' : $prefix . $line,
                 array_slice($lines, 1),
             ),
         ]));
@@ -75,12 +84,12 @@ final readonly class PhpCode
 
     public static function join(string|self ...$blocks): self
     {
-        $strings = array_map(static fn (string|self $block): string => (string) $block, $blocks);
+        $strings = array_map(static fn(string|self $block): string => (string) $block, $blocks);
 
-        return new self(implode("\n", array_values(array_filter(
-            $strings,
-            static fn (string $block): bool => '' !== $block,
-        ))));
+        return new self(implode(
+            "\n",
+            array_values(array_filter($strings, static fn(string $block): bool => '' !== $block)),
+        ));
     }
 
     public function __toString(): string
@@ -93,7 +102,7 @@ final readonly class PhpCode
      */
     public static function exportStringList(array $values): string
     {
-        return '['.implode(', ', array_map(self::exportString(...), $values)).']';
+        return '[' . implode(', ', array_map(self::exportString(...), $values)) . ']';
     }
 
     public static function exportString(string $value): string
@@ -116,7 +125,7 @@ final readonly class PhpCode
         }
 
         if (preg_match('/^[0-9]/', $normalized)) {
-            $normalized = $fallback.'_'.$normalized;
+            $normalized = $fallback . '_' . $normalized;
         }
 
         return $normalized;

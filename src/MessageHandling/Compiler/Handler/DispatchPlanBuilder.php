@@ -7,7 +7,7 @@ namespace Ultra\MessageHandling_Compiler\Handler;
 final class DispatchPlanBuilder
 {
     public function __construct(
-        private readonly AdviceOrdering $ordering = new AdviceOrdering()
+        private readonly AdviceOrdering $ordering = new AdviceOrdering(),
     ) {}
 
     /**
@@ -32,7 +32,7 @@ final class DispatchPlanBuilder
         $claimedVarNames = []; // depIndex => '$_p{depIndex}'
         foreach ($allArounds as $advice) {
             foreach ($advice->claimedDepIndices as $depIdx) {
-                $claimedVarNames[$depIdx] = '$_p'.$depIdx;
+                $claimedVarNames[$depIdx] = '$_p' . $depIdx;
             }
         }
 
@@ -48,13 +48,6 @@ final class DispatchPlanBuilder
             );
         }
 
-        return new DispatchPlan(
-            $serviceId,
-            $handlerMethod,
-            $depServiceIds,
-            $layers,
-            $claimedVarNames,
-            $returnsVoid,
-        );
+        return new DispatchPlan($serviceId, $handlerMethod, $depServiceIds, $layers, $claimedVarNames, $returnsVoid);
     }
 }

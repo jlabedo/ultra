@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -49,6 +51,6 @@ class CodeGeneratorBuilderRegistry
             }
         }
 
-        throw new \LogicException('No builder found for type '.$type::class);
+        throw new \LogicException('No builder found for type ' . $type::class);
     }
 }

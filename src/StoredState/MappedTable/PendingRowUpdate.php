@@ -164,7 +164,8 @@ final readonly class PendingRowUpdate
             ));
         }
 
-        $rowIsWritten = RowUpdatePlan::MODE_INSERT === $this->update->mode || RowUpdatePlan::MODE_REPLACE === $this->update->mode;
+        $rowIsWritten =
+            RowUpdatePlan::MODE_INSERT === $this->update->mode || RowUpdatePlan::MODE_REPLACE === $this->update->mode;
         if (array_key_exists($column, $this->update->setColumns) || $rowIsWritten) {
             // Inserted and replaced rows are entirely written by this unit of work: unset columns are null.
             if (($this->update->setColumns[$column] ?? null) !== $value) {

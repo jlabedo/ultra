@@ -7,10 +7,10 @@ namespace Ultra\Testing;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\Container\ContainerExtension;
 
-const ULTRA_LIGHT_BUILD_DIR = __DIR__.'/../../var/ultra_light_tests';
+const ULTRA_LIGHT_BUILD_DIR = __DIR__ . '/../../var/ultra_light_tests';
 
 /**
- * @template TContainer of UltraLightContainer
+ * @template TContainer of UltraLightContainer = UltraLightContainer
  */
 final readonly class UltraLight
 {
@@ -184,17 +184,14 @@ final readonly class UltraLight
         $container->setParameter('kernel.build_dir', $this->buildDir);
 
         foreach ($this->classesToDiscover as $class) {
-            $container->register($this->serviceIdForClass($class), $class)
-                ->setAutoconfigured(true)
-                ->setAutowired(true)
-            ;
+            $container->register($this->serviceIdForClass($class), $class)->setAutoconfigured(true)->setAutowired(true);
         }
 
         foreach ($this->eventClasses as $eventClass) {
-            $container->register($this->serviceIdForClass($eventClass), $eventClass)
+            $container
+                ->register($this->serviceIdForClass($eventClass), $eventClass)
                 ->setAutowired(false)
-                ->addResourceTag('ultra_event_bus.event')
-            ;
+                ->addResourceTag('ultra_event_bus.event');
         }
 
         $primaryServices = $this->registerProvidedServices($container);
@@ -223,9 +220,7 @@ final readonly class UltraLight
         $primaryServices = [];
 
         foreach ($this->services as $serviceId => $service) {
-            $primaryId = is_string($serviceId)
-                ? $serviceId
-                : $this->serviceIdForClass($service::class);
+            $primaryId = is_string($serviceId) ? $serviceId : $this->serviceIdForClass($service::class);
 
             if (isset($primaryServices[$primaryId])) {
                 throw new \InvalidArgumentException(sprintf(
@@ -235,10 +230,7 @@ final readonly class UltraLight
                 ));
             }
 
-            $container->register($primaryId, $service::class)
-                ->setAutoconfigured(true)
-                ->setSynthetic(true)
-            ;
+            $container->register($primaryId, $service::class)->setAutoconfigured(true)->setSynthetic(true);
 
             $primaryServices[$primaryId] = $service;
         }

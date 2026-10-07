@@ -25,8 +25,10 @@ final class PersistenceLockingTest extends RowSetTestCase
     }
 
     #[DataProvider('competingWrites')]
-    public function test_a_flushed_observation_blocks_competing_writes_until_its_transaction_ends(string $expectation, string $operation): void
-    {
+    public function test_a_flushed_observation_blocks_competing_writes_until_its_transaction_ends(
+        string $expectation,
+        string $operation,
+    ): void {
         $fixture = $this->fixture('postgres');
         $connection = $fixture->connection();
         if ('present' === $expectation) {
@@ -49,15 +51,15 @@ final class PersistenceLockingTest extends RowSetTestCase
             $other->executeStatement("SET LOCAL lock_timeout = '10ms'");
             try {
                 $competing->flush();
-                self::fail('The competing write must wait for the observation transaction.');
+                static::fail('The competing write must wait for the observation transaction.');
             } catch (DriverException $exception) {
-                self::assertStringContainsString('lock timeout', $exception->getMessage());
+                static::assertStringContainsString('lock timeout', $exception->getMessage());
             } finally {
                 $other->rollBack();
             }
             $connection->commit();
-            $other->transactional(fn () => $competing->flush());
-            self::assertSame(['status' => 'paid'], $fixture->stored('row', ['status']));
+            $other->transactional($competing->flush(...));
+            static::assertSame(['status' => 'paid'], $fixture->stored('row', ['status']));
         } finally {
             if ($connection->isTransactionActive()) {
                 $connection->rollBack();

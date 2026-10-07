@@ -4,10 +4,10 @@ declare(strict_types=1);
 
 namespace Ultra\StatefulMessageHandling\Tests\Example\Command;
 
-use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
 use Ultra\MessageHandling\Attribute\SelfHandler;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 
 readonly class CreateCourseCommand
 {
@@ -22,11 +22,10 @@ readonly class CreateCourseCommand
      */
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(
-        CourseCapacityState $course,
-    ): array {
+    public function decide(CourseCapacityState $course): array
+    {
         if ($course->exists()) {
-            throw new \InvalidArgumentException('Course already exists: '.$this->courseId);
+            throw new \InvalidArgumentException('Course already exists: ' . $this->courseId);
         }
 
         return [

@@ -23,38 +23,37 @@ final class StatefulMessageHandlingExtension implements ContainerExtension
 {
     public function build(ContainerBuilder $container): void
     {
-
         $container->addCompilerPass(new class implements CompilerPassInterface {
             public function process(ContainerBuilder $container): void
             {
                 if ($container->has(EventSourcedStateStore::class)) {
                     $container->setDefinition(
                         EventSourcedDecisionAspect::class,
-                        (new Definition(EventSourcedDecisionAspect::class, [
+                        new Definition(EventSourcedDecisionAspect::class, [
                             new Reference(EventSourcedStateStore::class),
                             new Reference(EventStore::class),
                             new Reference(EventRegistryInterface::class),
                             new Reference(UltraNormalizer::class),
                             new Reference(MessageContextPropagatorInterface::class),
                             new Reference(EventBusInterface::class, ContainerBuilder::NULL_ON_INVALID_REFERENCE),
-                        ]))->addTag(MessageHandlingTagNames::ASPECT),
+                        ])->addTag(MessageHandlingTagNames::ASPECT),
                     );
                 }
 
                 if ($container->has(StateStore::class)) {
                     $container->setDefinition(
                         StateStoreDecisionAspect::class,
-                        (new Definition(StateStoreDecisionAspect::class, [
+                        new Definition(StateStoreDecisionAspect::class, [
                             new Reference(StateStore::class),
                             new Reference(StateMetadataRegistry::class),
-                        ]))->addTag(MessageHandlingTagNames::ASPECT),
+                        ])->addTag(MessageHandlingTagNames::ASPECT),
                     );
 
                     $container->setDefinition(
                         StateStoreReadAspect::class,
-                        (new Definition(StateStoreReadAspect::class, [
+                        new Definition(StateStoreReadAspect::class, [
                             new Reference(StateStore::class),
-                        ]))->addTag(MessageHandlingTagNames::ASPECT),
+                        ])->addTag(MessageHandlingTagNames::ASPECT),
                     );
                 }
             }

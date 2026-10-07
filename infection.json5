@@ -14,5 +14,6 @@
     },
     "phpUnit": {
         "customPath": "bin/phpunit"
-    }
+    },
+    "staticAnalysisTool": "mago"
 }

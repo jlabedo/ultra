@@ -28,8 +28,12 @@ final readonly class CancelBooking
             !$booking->exists() ? new Violation('booking.not_found', 'Booking does not exist.') : null,
         ]);
         Violations::throwIfAny([
-            $booking->memberId !== $this->memberId ? new Violation('booking.not_owner', 'Only the member who booked can cancel.') : null,
-            BookingState::CANCELLED === $booking->status ? new Violation('booking.already_cancelled', 'Booking is already cancelled.') : null,
+            $booking->memberId !== $this->memberId
+                ? new Violation('booking.not_owner', 'Only the member who booked can cancel.')
+                : null,
+            BookingState::CANCELLED === $booking->status
+                ? new Violation('booking.already_cancelled', 'Booking is already cancelled.')
+                : null,
         ]);
 
         return new BookingCancelled(

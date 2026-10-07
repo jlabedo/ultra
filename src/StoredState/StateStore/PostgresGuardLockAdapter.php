@@ -8,7 +8,9 @@ use Doctrine\DBAL\Connection;
 
 final readonly class PostgresGuardLockAdapter implements GuardLockAdapter
 {
-    public function __construct(private Connection $connection) {}
+    public function __construct(
+        private Connection $connection,
+    ) {}
 
     public function acquire(string $namespace, string $key, GuardLockMode $mode): void
     {
@@ -17,9 +19,6 @@ final readonly class PostgresGuardLockAdapter implements GuardLockAdapter
         }
 
         $function = GuardLockMode::SHARED === $mode ? 'pg_advisory_xact_lock_shared' : 'pg_advisory_xact_lock';
-        $this->connection->executeQuery(
-            'SELECT '.$function.'(hashtext(?), hashtext(?))',
-            [$namespace, $key],
-        );
+        $this->connection->executeQuery('SELECT ' . $function . '(hashtext(?), hashtext(?))', [$namespace, $key]);
     }
 }

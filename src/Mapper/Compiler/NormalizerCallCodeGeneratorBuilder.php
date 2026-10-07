@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -12,8 +14,11 @@ class NormalizerCallCodeGeneratorBuilder implements CodeGeneratorBuilder
         return $type instanceof ObjectType && !$context->isRoot;
     }
 
-    public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
-    {
+    public function build(
+        Type $type,
+        CodeGeneratorBuilderRegistry $registry,
+        CodeGeneratorContext $context,
+    ): CodeGenerator {
         if (!$type instanceof ObjectType) {
             throw new \InvalidArgumentException('Type must be ObjectType');
         }

@@ -6,14 +6,15 @@ namespace Ultra\Projection_Postgres;
 
 final readonly class PostgresProjectionSegmentSchema
 {
-    public function __construct(private string $tablePrefix = 'projection_') {}
+    public function __construct(
+        private string $tablePrefix = 'projection_',
+    ) {}
 
     /** @return list<string> */
     public function createStatements(): array
     {
         return [
-            sprintf(
-                "CREATE TABLE IF NOT EXISTS %s (
+            sprintf("CREATE TABLE IF NOT EXISTS %s (
                     projection_id     TEXT        NOT NULL,
                     bucket_from       SMALLINT    NOT NULL,
                     bucket_to         SMALLINT    NOT NULL,
@@ -22,9 +23,7 @@ final readonly class PostgresProjectionSegmentSchema
                     lease_expires_at  TIMESTAMPTZ NULL,
                     updated_at        TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
                     PRIMARY KEY (projection_id, bucket_from)
-                )",
-                $this->segmentsTable(),
-            ),
+                )", $this->segmentsTable()),
         ];
     }
 
@@ -38,6 +37,6 @@ final readonly class PostgresProjectionSegmentSchema
 
     public function segmentsTable(): string
     {
-        return $this->tablePrefix.'segments';
+        return $this->tablePrefix . 'segments';
     }
 }

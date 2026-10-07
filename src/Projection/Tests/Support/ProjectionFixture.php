@@ -13,15 +13,15 @@ use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLeaseSchema;
 use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTrackerSchema;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
-use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\DefaultProjectionScalingPolicy;
+use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\InMemory\InMemoryProjectionSegmentRepository;
 use Ultra\Projection\NoOpProjectionTransactionManager;
-use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionCatalog;
+use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
@@ -52,7 +52,7 @@ final class ProjectionFixture
     {
         $clock ??= new SystemClock();
         $this->activator = new InMemoryProjectionActivator();
-        $this->prefix = 'projection_guarantees_'.bin2hex(random_bytes(4)).'_';
+        $this->prefix = 'projection_guarantees_' . bin2hex(random_bytes(4)) . '_';
 
         if ('memory' === $backend) {
             $this->connection = null;
@@ -67,12 +67,12 @@ final class ProjectionFixture
                 TestCase::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN for Postgres projection guarantees.');
             }
             $this->connection = PostgresConnectionSupport::sharedConnection($dsn);
-            $eventPrefix = $this->prefix.'event_';
+            $eventPrefix = $this->prefix . 'event_';
             $this->schemas = [
                 PostgresTestSupport::schemaForImplementation($eventPrefix, 'query-streams'),
                 new PostgresProjectionSegmentSchema($this->prefix),
-                new PostgresDirtyKeyTrackerSchema($this->prefix.'dirty_keys'),
-                new PostgresCoordinatorLeaseSchema($this->prefix.'coordinator_lease'),
+                new PostgresDirtyKeyTrackerSchema($this->prefix . 'dirty_keys'),
+                new PostgresCoordinatorLeaseSchema($this->prefix . 'coordinator_lease'),
             ];
             $statements = [];
             foreach ($this->schemas as $schema) {
@@ -80,7 +80,11 @@ final class ProjectionFixture
             }
             $this->executeSchemaStatements($statements);
             $implementation = new PostgresProjectionImplementation($this->connection, $this->prefix, $clock);
-            $this->store = PostgresTestSupport::storeForImplementation($this->connection, $eventPrefix, 'query-streams');
+            $this->store = PostgresTestSupport::storeForImplementation(
+                $this->connection,
+                $eventPrefix,
+                'query-streams',
+            );
             $this->segments = $implementation->createSegmentRepository();
             $this->activity = new ProjectionActivity($implementation->createDirtyKeyTracker());
             $this->leases = $implementation->createCoordinatorLease();
@@ -89,8 +93,10 @@ final class ProjectionFixture
         $this->runner = new ProjectionRunner($this->store, $this->segments, $this->transactions, $this->activity);
     }
 
-    public function coordinator(ProjectionRuntime $runtime, ?ProjectionScalingPolicyInterface $scaling = null): ProjectionCoordinator
-    {
+    public function coordinator(
+        ProjectionRuntime $runtime,
+        ?ProjectionScalingPolicyInterface $scaling = null,
+    ): ProjectionCoordinator {
         return new ProjectionCoordinator(
             new ProjectionCatalog($runtime),
             $this->runner,
@@ -103,10 +109,13 @@ final class ProjectionFixture
 
     public function durableProjection(): DurableProjection
     {
-        $table = $this->prefix.'read_model';
+        $table = $this->prefix . 'read_model';
         $this->registerReadModel($table);
 
-        return new DurableProjection($this->connection ?? throw new \LogicException('A durable projection needs Postgres.'), $table);
+        return new DurableProjection(
+            $this->connection ?? throw new \LogicException('A durable projection needs Postgres.'),
+            $table,
+        );
     }
 
     public function registerReadModel(string $table): void
@@ -122,7 +131,7 @@ final class ProjectionFixture
         PostgresConnectionSupport::resetSharedConnection($this->connection);
         $statements = [];
         foreach ($this->readModels as $table) {
-            $statements[] = 'DROP TABLE IF EXISTS '.$table;
+            $statements[] = 'DROP TABLE IF EXISTS ' . $table;
         }
         foreach (array_reverse($this->schemas) as $schema) {
             $statements = [...$statements, ...$schema->dropStatements()];
@@ -136,8 +145,8 @@ final class ProjectionFixture
         // The native pgsql driver reads one result: a DO block reports every DDL error through it.
         $this->connection->executeStatement(
             "DO \$projection_fixture_ddl\$\nBEGIN\n"
-            .implode(";\n", $statements)
-            .";\nEND;\n\$projection_fixture_ddl\$",
+            . implode(";\n", $statements)
+            . ";\nEND;\n\$projection_fixture_ddl\$",
         );
     }
 }

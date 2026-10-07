@@ -85,11 +85,15 @@ final readonly class StateCollectionMetadata
         return $this->keyFromNormalized($normalizedOwnerId, $this->ownerScalar, $this->ownerPropertyColumns, 'owner');
     }
 
-    /** @param array<string, mixed> $normalizedItem */
+    /** @param array<array-key, mixed> $normalizedItem */
     public function itemKey(array $normalizedItem, MappedKey $ownerKey): MappedKey
     {
         if (!array_key_exists($this->itemIdProperty, $normalizedItem)) {
-            throw new \LogicException(sprintf('Collection "%s" item is missing id property "%s".', $this->property, $this->itemIdProperty));
+            throw new \LogicException(sprintf(
+                'Collection "%s" item is missing id property "%s".',
+                $this->property,
+                $this->itemIdProperty,
+            ));
         }
 
         return $ownerKey->mergedWith($this->keyFromNormalized(
@@ -104,7 +108,11 @@ final readonly class StateCollectionMetadata
     public function payloadFromRow(MappedRow $row): array
     {
         $payload = [
-            $this->itemIdProperty => $this->normalizedFromKey($row->key, $this->itemIdScalar, $this->itemIdPropertyColumns),
+            $this->itemIdProperty => $this->normalizedFromKey(
+                $row->key,
+                $this->itemIdScalar,
+                $this->itemIdPropertyColumns,
+            ),
         ];
         foreach ($this->itemPropertyColumns as $property => $column) {
             $payload[$property] = array_key_exists($column, $row->columns) ? $row->columns[$column] : null;
@@ -113,13 +121,20 @@ final readonly class StateCollectionMetadata
         return $payload;
     }
 
-    /** @param array<string, mixed> $normalizedItem @return array<string, mixed> */
+    /**
+     * @param array<array-key, mixed> $normalizedItem
+     * @return array<string, mixed>
+     */
     public function columnsFromNormalized(array $normalizedItem): array
     {
         $columns = [];
         foreach ($this->itemPropertyColumns as $property => $column) {
             if (!array_key_exists($property, $normalizedItem)) {
-                throw new \LogicException(sprintf('Collection "%s" item is missing normalized property "%s".', $this->property, $property));
+                throw new \LogicException(sprintf(
+                    'Collection "%s" item is missing normalized property "%s".',
+                    $this->property,
+                    $property,
+                ));
             }
             $columns[$column] = $normalizedItem[$property];
         }
@@ -132,13 +147,21 @@ final readonly class StateCollectionMetadata
     {
         if ($scalar) {
             if (!is_int($normalized) && !is_string($normalized)) {
-                throw new \LogicException(sprintf('Collection "%s" %s id must normalize to int|string.', $this->property, $role));
+                throw new \LogicException(sprintf(
+                    'Collection "%s" %s id must normalize to int|string.',
+                    $this->property,
+                    $role,
+                ));
             }
 
             return new MappedKey([array_values($mapping)[0] => $normalized]);
         }
         if (!is_array($normalized)) {
-            throw new \LogicException(sprintf('Collection "%s" %s id must normalize to an array.', $this->property, $role));
+            throw new \LogicException(sprintf(
+                'Collection "%s" %s id must normalize to an array.',
+                $this->property,
+                $role,
+            ));
         }
 
         $expectedFields = array_keys($mapping);
@@ -146,14 +169,23 @@ final readonly class StateCollectionMetadata
         sort($expectedFields, SORT_STRING);
         sort($actualFields, SORT_STRING);
         if ($expectedFields !== $actualFields) {
-            throw new \LogicException(sprintf('Collection "%s" %s id normalized fields do not match compiled fields.', $this->property, $role));
+            throw new \LogicException(sprintf(
+                'Collection "%s" %s id normalized fields do not match compiled fields.',
+                $this->property,
+                $role,
+            ));
         }
 
         $values = [];
         foreach ($mapping as $property => $column) {
             $value = $normalized[$property] ?? null;
             if (!is_int($value) && !is_string($value)) {
-                throw new \LogicException(sprintf('Collection "%s" %s id component "%s" must normalize to int|string.', $this->property, $role, $property));
+                throw new \LogicException(sprintf(
+                    'Collection "%s" %s id component "%s" must normalize to int|string.',
+                    $this->property,
+                    $role,
+                    $property,
+                ));
             }
             $values[$column] = $value;
         }

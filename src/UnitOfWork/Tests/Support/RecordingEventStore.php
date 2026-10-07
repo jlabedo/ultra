@@ -16,8 +16,12 @@ final class RecordingEventStore implements EventStore
     /** @var list<list<Event>> */
     public array $appendCalls = [];
 
-    public function load(StreamQuery $query, ?Checkpoint $from = null, ?Checkpoint $to = null, int $batchSize = 1000): LoadResult
-    {
+    public function load(
+        StreamQuery $query,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
+        int $batchSize = 1000,
+    ): LoadResult {
         return new LoadResult([], $to ?? $from ?? Checkpoint::beginning(), $query);
     }
 

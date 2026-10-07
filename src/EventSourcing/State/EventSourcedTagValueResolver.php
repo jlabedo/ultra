@@ -35,9 +35,11 @@ final class EventSourcedTagValueResolver
 
         $missingTags = [];
         foreach ($expectedTags as $tag) {
-            if (!isset($tagValues[$tag])) {
-                $missingTags[] = $tag;
+            if (isset($tagValues[$tag])) {
+                continue;
             }
+
+            $missingTags[] = $tag;
         }
 
         if ([] !== $missingTags) {

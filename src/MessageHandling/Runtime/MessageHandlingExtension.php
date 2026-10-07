@@ -17,40 +17,47 @@ final class MessageHandlingExtension implements ContainerExtension
 {
     public function build(ContainerBuilder $container): void
     {
+        $container->registerAttributeForAutoconfiguration(Advice::class, static function (
+            ChildDefinition $definition,
+            Advice $attribute,
+            \Reflector $reflector,
+        ): void {
+            $definition->addTag(TagNames::ASPECT);
+        });
 
-        $container->registerAttributeForAutoconfiguration(
-            Advice::class,
-            static function (ChildDefinition $definition, Advice $attribute, \ReflectionMethod $reflector): void {
-                $definition->addTag(TagNames::ASPECT);
-            }
-        );
+        $container->registerAttributeForAutoconfiguration(EventHandler::class, static function (
+            ChildDefinition $definition,
+            EventHandler $attribute,
+            \Reflector $reflector,
+        ): void {
+            assert($reflector instanceof \ReflectionMethod, 'Handler attributes apply to methods.');
+            $definition->addTag(TagNames::HANDLER, ['method' => $reflector->getName()]);
+        });
 
-        $container->registerAttributeForAutoconfiguration(
-            EventHandler::class,
-            static function (ChildDefinition $definition, EventHandler $attribute, \ReflectionMethod $reflector): void {
-                $definition->addTag(TagNames::HANDLER, ['method' => $reflector->getName()]);
-            }
-        );
+        $container->registerAttributeForAutoconfiguration(Handles::class, static function (
+            ChildDefinition $definition,
+            Handles $attribute,
+            \Reflector $reflector,
+        ): void {
+            assert($reflector instanceof \ReflectionMethod, 'Handler attributes apply to methods.');
+            $definition->addTag(TagNames::HANDLER, ['method' => $reflector->getName()]);
+        });
 
-        $container->registerAttributeForAutoconfiguration(
-            Handles::class,
-            static function (ChildDefinition $definition, Handles $attribute, \ReflectionMethod $reflector): void {
-                $definition->addTag(TagNames::HANDLER, ['method' => $reflector->getName()]);
-            }
-        );
-
-        $container->registerAttributeForAutoconfiguration(
-            SelfHandler::class,
-            static function (ChildDefinition $definition, SelfHandler $attribute, \ReflectionMethod $reflector): void {
-                $definition->addResourceTag(TagNames::SELF_HANDLER, ['method' => $reflector->getName()]);
-            }
-        );
+        $container->registerAttributeForAutoconfiguration(SelfHandler::class, static function (
+            ChildDefinition $definition,
+            SelfHandler $attribute,
+            \Reflector $reflector,
+        ): void {
+            assert($reflector instanceof \ReflectionMethod, 'Handler attributes apply to methods.');
+            $definition->addResourceTag(TagNames::SELF_HANDLER, ['method' => $reflector->getName()]);
+        });
 
         $this->ensureRouterDefinition($container, MediatorInterface::class);
         $this->ensureRouterDefinition($container, EventBusInterface::class);
 
-        $buildDir = (string) $container->getParameter('kernel.build_dir');
-        $outputDir = $buildDir.'/message_handling';
+        $buildDir = $container->getParameter('kernel.build_dir');
+        assert(is_string($buildDir), 'The kernel build directory must be a string.');
+        $outputDir = $buildDir . '/message_handling';
 
         $container->addCompilerPass(new MessageRouterCompilerPass($outputDir));
     }
@@ -73,9 +80,9 @@ final class MessageHandlingExtension implements ContainerExtension
             return;
         }
 
-        $container->register($interfaceClass)
+        $container
+            ->register($interfaceClass)
             ->addTag(TagNames::ROUTER, ['interface' => $interfaceClass])
-            ->setAbstract(true)
-        ;
+            ->setAbstract(true);
     }
 }

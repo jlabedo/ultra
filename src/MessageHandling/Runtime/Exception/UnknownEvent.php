@@ -8,6 +8,9 @@ final class UnknownEvent extends \RuntimeException
 {
     public function __construct(string $eventClass)
     {
-        parent::__construct(sprintf('Unknown event "%s". Only classes marked with #[Event(name)] may be published.', $eventClass));
+        parent::__construct(sprintf(
+            'Unknown event "%s". Only classes marked with #[Event(name)] may be published.',
+            $eventClass,
+        ));
     }
 }

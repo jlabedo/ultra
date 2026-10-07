@@ -7,28 +7,29 @@ namespace Ultra\StateStore\Tests;
 use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
-use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
-use Ultra\StateStore\Tests\Support\NullEventStore;
-use Ultra\StateStore\Tests\Support\StateStoreTestCase;
+use Symfony\Component\DependencyInjection\Reference;
 use Ultra\EventStore\EventStore;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
+use Ultra\StateStore\Attribute\DefineQueryGuard;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateColumn;
 use Ultra\StateStore\Attribute\StateId;
-use Ultra\StateStore\Attribute\DefineQueryGuard;
-use Ultra\StateStore\QueryGuard;
-use Ultra\StateStore\QueryGuardDefinition;
-use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\StateStore\GuardLockAdapter;
 use Ultra\StateStore\InMemoryGuardLockAdapter;
+use Ultra\StateStore\QueryGuard;
+use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\StateStore\StateStore;
+use Ultra\StateStore\Tests\Support\NullEventStore;
+use Ultra\StateStore\Tests\Support\StateStoreTestCase;
+use Ultra\StateStore_Bundle\DependencyInjection\Compiler\StateStoreCompilerPass;
 use Ultra\StateStore_Bundle\StateStoreExtension;
 use Ultra\StateStore_Bundle\TagNames;
+use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\UnitOfWork;
 use Ultra\UnitOfWork\UnitOfWorkExtension;
 
@@ -72,8 +73,8 @@ final class ContainerIntegrationTest extends StateStoreTestCase
     public function test_query_guards_are_compiled_injected_and_work_in_a_dumped_container(): void
     {
         $builder = $this->createContainer(withQueryGuard: true);
-        $class = 'QueryGuardTestContainer_'.bin2hex(random_bytes(4));
-        $php = (new PhpDumper($builder))->dump(['class' => $class]);
+        $class = 'QueryGuardTestContainer_' . bin2hex(random_bytes(4));
+        $php = new PhpDumper($builder)->dump(['class' => $class]);
         eval(substr($php, 5));
         $container = new $class();
         $database = $container->get(InMemoryRowDatabase::class);
@@ -87,7 +88,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         $database->commit();
         $unitOfWork->clear();
 
-        self::assertSame('pending', $repository->status('one'));
+        static::assertSame('pending', $repository->status('one'));
         $database->seedRow('orders', 'order_id', ['order_id' => 'one', 'status' => 'shipped', 'note' => 'draft']);
         $database->beginTransaction();
         try {
@@ -117,6 +118,18 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         $this->createContainer(withQueryGuard: true, withGuardAdapter: false);
     }
 
+    public function test_state_resources_reject_non_string_class_names_during_compilation(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setDefinition('invalid.state', new Definition(\stdClass::class)->addResourceTag(TagNames::STATE, [
+            'class' => 42,
+        ]));
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('has no class');
+
+        new StateStoreCompilerPass()->process($container);
+    }
+
     public function test_unknown_guard_properties_are_rejected_during_compilation(): void
     {
         $this->expectException(\LogicException::class);
@@ -138,34 +151,43 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         $store = $container->get('test.state_store');
         $unitOfWork = $container->get(UnitOfWork::class);
 
-        self::assertInstanceOf(StateStore::class, $store);
+        static::assertInstanceOf(StateStore::class, $store);
 
         $store->save(new BundleOrderState('order-123', 'pending', 'draft'));
         $unitOfWork->flush();
 
-        self::assertSame([
-            'status' => 'pending',
-            'note' => 'draft',
-        ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
+        static::assertSame(
+            [
+                'status' => 'pending',
+                'note' => 'draft',
+            ],
+            $database->row('orders', 'order_id', 'order-123', ['status', 'note']),
+        );
 
         $view = $store->load(BundleOrderStatusView::class, 'order-123');
-        self::assertInstanceOf(BundleOrderStatusView::class, $view);
+        static::assertInstanceOf(BundleOrderStatusView::class, $view);
 
         $store->expect($view);
         $store->save(new BundleOrderState('order-123', 'shipped', 'draft'));
         $unitOfWork->flush();
 
-        self::assertSame([
-            'status' => 'shipped',
-            'note' => 'draft',
-        ], $database->row('orders', 'order_id', 'order-123', ['status', 'note']));
+        static::assertSame(
+            [
+                'status' => 'shipped',
+                'note' => 'draft',
+            ],
+            $database->row('orders', 'order_id', 'order-123', ['status', 'note']),
+        );
         $unitOfWork->clear();
         $state = new OrderWithLinesState('order-123', 'paid', [new OrderLineState('one', 'SKU', 2)]);
         $store->save($state);
         $this->flush($database, $unitOfWork);
         $unitOfWork->clear();
-        self::assertEquals($state, $store->load(OrderWithLinesState::class, 'order-123'));
-        self::assertSame(['quantity' => 2], $database->row('order_lines', 'line_id', 'one', ['quantity'], ['order_id' => 'order-123']));
+        static::assertEquals($state, $store->load(OrderWithLinesState::class, 'order-123'));
+        static::assertSame(
+            ['quantity' => 2],
+            $database->row('order_lines', 'line_id', 'one', ['quantity'], ['order_id' => 'order-123']),
+        );
         $this->expectException(\Ultra\StateStore\Exception\UnknownStateException::class);
         $store->load(OrderLineState::class, 'one');
     }
@@ -177,24 +199,29 @@ final class ContainerIntegrationTest extends StateStoreTestCase
 
         $definition = new ChildDefinition('');
         $configurator = $container->getAttributeAutoconfigurators()[State::class][0];
-        $configurator(
-            $definition,
-            new State('orders'),
-            new \ReflectionClass(BundleOrderState::class),
-        );
+        $configurator($definition, new State('orders'), new \ReflectionClass(BundleOrderState::class));
 
-        self::assertSame([[
-            'class' => BundleOrderState::class,
-        ]], $definition->getTag(TagNames::STATE));
-        self::assertSame([[
-            'class' => BundleOrderState::class,
-        ]], $definition->getTag(MapperTagNames::NORMALIZABLE));
+        static::assertSame(
+            [[
+                'class' => BundleOrderState::class,
+            ]],
+            $definition->getTag(TagNames::STATE),
+        );
+        static::assertSame(
+            [[
+                'class' => BundleOrderState::class,
+            ]],
+            $definition->getTag(MapperTagNames::NORMALIZABLE),
+        );
     }
 
-    private function createContainer(bool $withQueryGuard = false, ?string $extraGuardRepository = null, bool $withGuardAdapter = true): ContainerBuilder
-    {
+    private function createContainer(
+        bool $withQueryGuard = false,
+        ?string $extraGuardRepository = null,
+        bool $withGuardAdapter = true,
+    ): ContainerBuilder {
         $container = new ContainerBuilder();
-        $container->setParameter('kernel.build_dir', sys_get_temp_dir().'/ultra_state_store_bundle_test');
+        $container->setParameter('kernel.build_dir', sys_get_temp_dir() . '/ultra_state_store_bundle_test');
         new MapperExtension()->build($container);
         new UnitOfWorkExtension()->build($container);
         new StateStoreExtension()->build($container);
@@ -202,29 +229,28 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         $container->register(NullEventStore::class, NullEventStore::class)->setPublic(true);
         $container->setAlias(EventStore::class, NullEventStore::class)->setPublic(true);
 
-        $container->register(InMemoryRowDatabase::class, InMemoryRowDatabase::class)
-            ->setPublic(true)
-        ;
-        $container->register(InMemoryMappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
+        $container->register(InMemoryRowDatabase::class, InMemoryRowDatabase::class)->setPublic(true);
+        $container
+            ->register(InMemoryMappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
             ->setArguments([new Reference(InMemoryRowDatabase::class)])
-            ->setPublic(true)
-        ;
-        $container->setAlias(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)->setPublic(true);
+            ->setPublic(true);
+        $container
+            ->setAlias(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
+            ->setPublic(true);
         if ($withGuardAdapter) {
-            $container->register(GuardLockAdapter::class, InMemoryGuardLockAdapter::class)
+            $container
+                ->register(GuardLockAdapter::class, InMemoryGuardLockAdapter::class)
                 ->setArguments([new Reference(InMemoryRowDatabase::class)]);
         }
         $container->setAlias('test.state_store', StateStore::class)->setPublic(true);
 
         $container->setDefinition(
             BundleOrderState::class,
-            new Definition(BundleOrderState::class)
-                ->setAutoconfigured(true)
+            new Definition(BundleOrderState::class)->setAutoconfigured(true),
         );
         $container->setDefinition(
             BundleOrderStatusView::class,
-            new Definition(BundleOrderStatusView::class)
-                ->setAutoconfigured(true)
+            new Definition(BundleOrderStatusView::class)->setAutoconfigured(true),
         );
 
         foreach ([OrderWithLinesState::class, OrderLineState::class] as $class) {
@@ -233,7 +259,8 @@ final class ContainerIntegrationTest extends StateStoreTestCase
 
         $container->getAlias(UnitOfWork::class)->setPublic(true);
         if ($withQueryGuard) {
-            $container->register(BundleGuardedRepository::class, BundleGuardedRepository::class)
+            $container
+                ->register(BundleGuardedRepository::class, BundleGuardedRepository::class)
                 ->setAutowired(true)
                 ->setPublic(true);
         }
@@ -258,7 +285,10 @@ final readonly class BundleGuardedRepository
 
     public function status(string $id): string
     {
-        return $this->statusGuard->observe($id, fn (): string => $this->database->row('orders', 'order_id', $id)['status']);
+        return $this->statusGuard->observe(
+            $id,
+            fn(): string => $this->database->row('orders', 'order_id', $id)['status'],
+        );
     }
 }
 

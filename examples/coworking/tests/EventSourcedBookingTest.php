@@ -31,12 +31,16 @@ final class EventSourcedBookingTest extends BookingScenarioTestCase
         $this->givenAcmeWithAdaAndGrace();
         $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
 
-        $violations = self::getContainer()->get(MediatorInterface::class)->send(
-            new BookRoom('b2', 'blue', 'grace', Slot::of('2026-09-10 10:30', '2026-09-10 11:30')),
-            [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK],
-        );
+        $violations = self::getContainer()
+            ->get(MediatorInterface::class)
+            ->send(new BookRoom('b2', 'blue', 'grace', Slot::of('2026-09-10 10:30', '2026-09-10 11:30')), [
+                DecisionMode::CONTEXT_KEY => DecisionMode::CHECK,
+            ]);
 
-        self::assertSame(['slot.unavailable'], array_map(static fn (Violation $violation): string => $violation->code, $violations));
+        self::assertSame(
+            ['slot.unavailable'],
+            array_map(static fn(Violation $violation): string => $violation->code, $violations),
+        );
         self::assertSame(['b1'], $this->driver()->bookingsOnDay('blue', '2026-09-10'));
     }
 }

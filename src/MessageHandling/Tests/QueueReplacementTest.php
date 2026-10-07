@@ -19,12 +19,12 @@ final class QueueReplacementTest extends QueueTestCase
         $f = $this->fixture($backend);
         $f->queue->enqueue($this->envelope('old'), new AsyncEnqueueOptions(key: 'refresh', replace: true));
         $id = $f->queue->enqueue($this->envelope('new'), new AsyncEnqueueOptions(key: 'refresh', replace: true));
-        self::assertSame(1, $f->count());
+        static::assertSame(1, $f->count());
         $delivery = $f->queue->reserve();
-        self::assertNotNull($delivery);
-        self::assertSame($id->value, $delivery->messageId->value);
-        self::assertSame('new', $delivery->envelope->message->value);
+        static::assertNotNull($delivery);
+        static::assertSame($id->value, $delivery->messageId->value);
+        static::assertSame('new', $delivery->envelope->message->value);
         $f->queue->acknowledge($delivery);
-        self::assertNull($f->queue->reserve());
+        static::assertNull($f->queue->reserve());
     }
 }

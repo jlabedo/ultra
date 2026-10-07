@@ -34,25 +34,34 @@ final class AdviceExecutionTest extends MessageHandlingCompilerTestCase
     }
 
     #[DataProvider('outcomes')]
-    public function test_advice_receives_the_handler_outcome_and_cleanup_runs_on_both_paths(bool $fails, ?bool $mixed): void
-    {
+    public function test_advice_receives_the_handler_outcome_and_cleanup_runs_on_both_paths(
+        bool $fails,
+        ?bool $mixed,
+    ): void {
         $probe = new OutcomeProbe();
         $failure = $fails ? new \RuntimeException('handler failed') : null;
         $message = new GreetingMessage('hello');
-        $light = $this->ultraLight()
+        $light = $this
+            ->ultraLight()
             ->withService(new class($probe, $failure) {
-                public function __construct(private OutcomeProbe $probe, private ?\Throwable $failure) {}
+                public function __construct(
+                    private OutcomeProbe $probe,
+                    private ?\Throwable $failure,
+                ) {}
 
                 #[Handles]
                 public function handle(GreetingMessage $message): string
                 {
                     $this->probe->entries[] = 'handler';
-                    if (null !== $this->failure) throw $this->failure;
-                    return 'observed: '.$message->name;
+                    if (null !== $this->failure)
+                        throw $this->failure;
+                    return 'observed: ' . $message->name;
                 }
             })
             ->withService(new class($probe) {
-                public function __construct(private OutcomeProbe $probe) {}
+                public function __construct(
+                    private OutcomeProbe $probe,
+                ) {}
 
                 #[Before]
                 public function before(object $message, MessageContext $context): void
@@ -80,8 +89,7 @@ final class AdviceExecutionTest extends MessageHandlingCompilerTestCase
                 {
                     $this->probe->entries[] = 'cleanup';
                 }
-            })
-        ;
+            });
         if (null !== $mixed) {
             $light = $light->withService($mixed ? new MixedAroundOutcome($probe) : new TypedAroundOutcome($probe));
         }
@@ -91,20 +99,20 @@ final class AdviceExecutionTest extends MessageHandlingCompilerTestCase
         if ($fails) {
             try {
                 $mediator->send($message);
-                self::fail('Expected the handler failure.');
+                static::fail('Expected the handler failure.');
             } catch (\RuntimeException $caught) {
-                self::assertSame($failure, $caught);
+                static::assertSame($failure, $caught);
             }
-            self::assertSame($failure, $probe->failure);
-            self::assertNull($probe->value);
-            self::assertSame([...$prefix, 'failure', 'cleanup'], $probe->entries);
+            static::assertSame($failure, $probe->failure);
+            static::assertNull($probe->value);
+            static::assertSame([...$prefix, 'failure', 'cleanup'], $probe->entries);
         } else {
-            self::assertSame('observed: hello', $mediator->send($message));
-            self::assertSame('observed: hello', $probe->value);
-            self::assertNull($probe->failure);
-            self::assertSame([...$prefix, 'success', 'cleanup'], $probe->entries);
+            static::assertSame('observed: hello', $mediator->send($message));
+            static::assertSame('observed: hello', $probe->value);
+            static::assertNull($probe->failure);
+            static::assertSame([...$prefix, 'success', 'cleanup'], $probe->entries);
         }
-        self::assertSame($message, $probe->message);
+        static::assertSame($message, $probe->message);
     }
 
     /** @return iterable<string, array{bool, mixed}> */
@@ -112,18 +120,26 @@ final class AdviceExecutionTest extends MessageHandlingCompilerTestCase
     {
         foreach ([false, true] as $wrapped) {
             $label = $wrapped ? 'with around' : 'without around';
-            yield $label.' string' => [$wrapped, 'observed: hello'];
-            yield $label.' business ProceedResult' => [$wrapped, new ProceedResult('business value', MessageContext::fromArray(['business' => true]))];
+            yield $label . ' string' => [$wrapped, 'observed: hello'];
+            yield $label . ' business ProceedResult' => [
+                $wrapped,
+                new ProceedResult('business value', MessageContext::fromArray(['business' => true])),
+            ];
         }
     }
 
     #[DataProvider('resultWrappers')]
-    public function test_after_returning_receives_the_business_value_and_keeps_its_patch_in_the_result_context(bool $wrapped, mixed $value): void
-    {
+    public function test_after_returning_receives_the_business_value_and_keeps_its_patch_in_the_result_context(
+        bool $wrapped,
+        mixed $value,
+    ): void {
         $probe = new OutcomeProbe();
-        $light = $this->ultraLight()
+        $light = $this
+            ->ultraLight()
             ->withService(new class($value) {
-                public function __construct(private mixed $value) {}
+                public function __construct(
+                    private mixed $value,
+                ) {}
 
                 #[Handles]
                 public function handle(GreetingMessage $message): mixed
@@ -132,7 +148,9 @@ final class AdviceExecutionTest extends MessageHandlingCompilerTestCase
                 }
             })
             ->withService(new class($probe) {
-                public function __construct(private OutcomeProbe $probe) {}
+                public function __construct(
+                    private OutcomeProbe $probe,
+                ) {}
 
                 #[AfterReturning]
                 public function record(object $message, MessageContext $context, mixed $value): array
@@ -143,7 +161,9 @@ final class AdviceExecutionTest extends MessageHandlingCompilerTestCase
             });
         if ($wrapped) {
             $light = $light->withService(new class($probe) {
-                public function __construct(private OutcomeProbe $probe) {}
+                public function __construct(
+                    private OutcomeProbe $probe,
+                ) {}
 
                 #[Around(priority: -10)]
                 public function inspect(callable $proceed, object $message, MessageContext $context): ProceedResult
@@ -154,10 +174,10 @@ final class AdviceExecutionTest extends MessageHandlingCompilerTestCase
                 }
             });
         }
-        self::assertSame($value, $light->boot()->mediator()->send(new GreetingMessage('hello')));
-        self::assertSame($value, $probe->value);
+        static::assertSame($value, $light->boot()->mediator()->send(new GreetingMessage('hello')));
+        static::assertSame($value, $probe->value);
         if ($wrapped) {
-            self::assertSame('recorded', $probe->context?->get('observed'));
+            static::assertSame('recorded', $probe->context?->get('observed'));
         }
     }
 
@@ -165,10 +185,13 @@ final class AdviceExecutionTest extends MessageHandlingCompilerTestCase
     {
         $probe = new OutcomeProbe();
         $message = new SelfGreetingMessage('Dora');
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withClass(SelfGreetingMessage::class)
             ->withService(new class($probe) {
-                public function __construct(private OutcomeProbe $probe) {}
+                public function __construct(
+                    private OutcomeProbe $probe,
+                ) {}
 
                 #[Before]
                 public function before(object $message, MessageContext $context): void
@@ -176,9 +199,10 @@ final class AdviceExecutionTest extends MessageHandlingCompilerTestCase
                     $this->probe->message = $message;
                 }
             })
-            ->boot()->mediator();
-        self::assertSame('Hello, Dora!', $mediator->send($message));
-        self::assertSame($message, $probe->message);
+            ->boot()
+            ->mediator();
+        static::assertSame('Hello, Dora!', $mediator->send($message));
+        static::assertSame($message, $probe->message);
     }
 }
 
@@ -194,7 +218,9 @@ final class OutcomeProbe
 
 final readonly class TypedAroundOutcome
 {
-    public function __construct(private OutcomeProbe $probe) {}
+    public function __construct(
+        private OutcomeProbe $probe,
+    ) {}
 
     #[Around]
     public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
@@ -206,7 +232,9 @@ final readonly class TypedAroundOutcome
 
 final readonly class MixedAroundOutcome
 {
-    public function __construct(private OutcomeProbe $probe) {}
+    public function __construct(
+        private OutcomeProbe $probe,
+    ) {}
 
     #[Around]
     public function around(callable $proceed, object $message, MessageContext $context): mixed

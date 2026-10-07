@@ -9,7 +9,7 @@ use Ultra\Coordination\Tracking\PendingKey;
 
 final class InMemoryDirtyKeyTracker implements DirtyKeyTracker
 {
-    /** @var array<string, array<string, int>> channel => key => counter */
+    /** @var array<array-key, array<array-key, int>> channel => key => counter; numeric strings become integer keys. */
     private array $rows = [];
 
     public function bump(string $channel, string $key): void
@@ -21,15 +21,21 @@ final class InMemoryDirtyKeyTracker implements DirtyKeyTracker
     {
         $all = [];
         foreach (array_keys($this->rows) as $channel) {
-            array_push($all, ...$this->pendingForChannel($channel, PHP_INT_MAX));
+            array_push($all, ...$this->pendingForChannel((string) $channel, PHP_INT_MAX));
         }
 
-        usort(
-            $all,
-            static fn (PendingKey $a, PendingKey $b): int => ($b->counter <=> $a->counter)
-                ?: ($a->channel <=> $b->channel)
-                ?: ($a->key <=> $b->key),
-        );
+        usort($all, static function (PendingKey $a, PendingKey $b): int {
+            $counterOrder = $b->counter <=> $a->counter;
+            if (0 !== $counterOrder) {
+                return $counterOrder;
+            }
+            $channelOrder = $a->channel <=> $b->channel;
+            if (0 !== $channelOrder) {
+                return $channelOrder;
+            }
+
+            return $a->key <=> $b->key;
+        });
 
         return array_slice($all, 0, $limit);
     }
@@ -44,10 +50,14 @@ final class InMemoryDirtyKeyTracker implements DirtyKeyTracker
             $pending[] = new PendingKey($channel, (string) $key, $counter);
         }
 
-        usort(
-            $pending,
-            static fn (PendingKey $a, PendingKey $b): int => ($b->counter <=> $a->counter) ?: ($a->key <=> $b->key),
-        );
+        usort($pending, static function (PendingKey $a, PendingKey $b): int {
+            $counterOrder = $b->counter <=> $a->counter;
+            if (0 !== $counterOrder) {
+                return $counterOrder;
+            }
+
+            return $a->key <=> $b->key;
+        });
 
         return array_slice($pending, 0, $limit);
     }

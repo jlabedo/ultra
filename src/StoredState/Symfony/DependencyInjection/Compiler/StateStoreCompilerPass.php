@@ -11,8 +11,8 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapter;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
-use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper\RuntimeNormalizerInterface;
+use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\GuardLockAdapter;
@@ -38,11 +38,13 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             if (!class_exists($stateClass)) {
                 continue;
             }
-            foreach ((new \ReflectionClass($stateClass))->getProperties() as $property) {
-                if ([] !== $property->getAttributes(\Ultra\StateStore\Attribute\StateId::class)) {
-                    $identityShapes[$stateClass] = $shapeAnalyzer->forProperty($property);
-                    break;
+            foreach (new \ReflectionClass($stateClass)->getProperties() as $property) {
+                if ([] === $property->getAttributes(\Ultra\StateStore\Attribute\StateId::class)) {
+                    continue;
                 }
+
+                $identityShapes[$stateClass] = $shapeAnalyzer->forProperty($property);
+                break;
             }
         }
         $metadataFactory = $this->metadataFactory ?? new StateMetadataFactory($identityShapes);
@@ -70,6 +72,7 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             }
 
             $reflection = $container->getReflectionClass($stateClass);
+            assert(null !== $reflection, 'Discovered state classes must be reflectable.');
             if ($reflection->isAbstract()) {
                 continue;
             }
@@ -96,21 +99,16 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             }
 
             if (!array_key_exists($metadata->tableKey, $tableReferences)) {
-                $serviceId = 'ultra.state_store.table.'.substr(md5($metadata->tableKey), 0, 12);
-                $adapterServiceId = $serviceId.'.adapter';
-                $container->setDefinition(
-                    $adapterServiceId,
-                    (new Definition(MappedRowSetAdapter::class))
-                        ->setFactory([new Reference(MappedRowSetAdapterFactory::class), 'create'])
-                        ->setArguments([$metadata->tableName, $metadata->keyColumns()])
-                );
+                $serviceId = 'ultra.state_store.table.' . substr(md5($metadata->tableKey), 0, 12);
+                $adapterServiceId = $serviceId . '.adapter';
+                $container->setDefinition($adapterServiceId, new Definition(MappedRowSetAdapter::class)->setFactory([
+                    new Reference(MappedRowSetAdapterFactory::class),
+                    'create',
+                ])->setArguments([$metadata->tableName, $metadata->keyColumns()]));
 
-                $container->setDefinition(
-                    $serviceId,
-                    new Definition(MappedRowSet::class, [
-                        new Reference($adapterServiceId),
-                    ])
-                );
+                $container->setDefinition($serviceId, new Definition(MappedRowSet::class, [
+                    new Reference($adapterServiceId),
+                ]));
 
                 $tableReferences[$metadata->tableKey] = new Reference($serviceId);
             }
@@ -119,9 +117,12 @@ final class StateStoreCompilerPass implements CompilerPassInterface
         ksort($stateMetadata);
         ksort($tableReferences);
 
-        $container->setDefinition(StateMetadataRegistry::class, new Definition(StateMetadataRegistry::class, [
-            $stateMetadata,
-        ])->setPublic(false));
+        $container->setDefinition(
+            StateMetadataRegistry::class,
+            new Definition(StateMetadataRegistry::class, [
+                $stateMetadata,
+            ])->setPublic(false),
+        );
 
         $stateTableRegistryArguments = [$tableReferences];
         $stateTableRegistryArguments[] = $container->has(MappedRowSetAdapterFactory::class)
@@ -132,8 +133,9 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             $stateTableRegistryArguments[] = new Reference(GuardLockAdapter::class);
         }
 
-        $container->setDefinition(StateTableRegistry::class, new Definition(StateTableRegistry::class, $stateTableRegistryArguments)
-            ->addTag(self::UNIT_OF_WORK_TAG)
+        $container->setDefinition(
+            StateTableRegistry::class,
+            new Definition(StateTableRegistry::class, $stateTableRegistryArguments)->addTag(self::UNIT_OF_WORK_TAG),
         );
     }
 
@@ -146,9 +148,10 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             if (null !== $class) {
                 $class = $container->getParameterBag()->resolveValue($class);
             }
-            if (null === $class || !is_a($class, RuntimeNormalizerInterface::class, true)) {
+            if (!is_string($class) || !is_a($class, RuntimeNormalizerInterface::class, true)) {
                 continue;
             }
+            // @mago-expect analysis:possibly-static-access-on-interface
             foreach ($class::handledTypes() as $type) {
                 $normalizers[$type] = $class;
             }
@@ -157,7 +160,10 @@ final class StateStoreCompilerPass implements CompilerPassInterface
         return $normalizers;
     }
 
-    /** @param array<string, list<string>> $known @param list<string> $columns */
+    /**
+     * @param array<string, list<string>> $known
+     * @param list<string> $columns
+     */
     private function assertTableKey(array &$known, string $table, array $columns): void
     {
         sort($columns, SORT_STRING);
@@ -168,7 +174,7 @@ final class StateStoreCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * @return list<class-string>
+     * @return list<string>
      */
     private function collectStateClasses(ContainerBuilder $container): array
     {
@@ -177,7 +183,7 @@ final class StateStoreCompilerPass implements CompilerPassInterface
         foreach ($container->findTaggedResourceIds(TagNames::STATE) as $id => $tags) {
             foreach ($tags as $tag) {
                 $class = $tag['class'] ?? $container->findDefinition($id)->getClass();
-                if (null === $class) {
+                if (!is_string($class)) {
                     throw new \LogicException(sprintf(
                         'Service "%s" tagged "%s" has no class; use tag attribute "class" to specify one.',
                         $id,

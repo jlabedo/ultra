@@ -19,12 +19,14 @@ use Ultra\Projection\Tests\Support\TrackingProjection;
 final class SegmentTopologyTest extends ProjectionTestCase
 {
     #[DataProvider('splitStates')]
-    public function test_split_creates_unclaimed_children_and_ignores_stale_parent_completion(string $backend, bool $claimed): void
-    {
+    public function test_split_creates_unclaimed_children_and_ignores_stale_parent_completion(
+        string $backend,
+        bool $claimed,
+    ): void {
         $repository = $this->fixture($backend)->segments;
         $repository->ensureInitialized('courses');
         $segment = $repository->claimSegment('courses', 0, 'worker-1');
-        self::assertNotNull($segment);
+        static::assertNotNull($segment);
         $checkpoint = new Checkpoint(new Sequence(10), [new Sequence(12)]);
         $repository->completeClaimedSegment($segment, $checkpoint, 'worker-1', false);
         if (!$claimed) {
@@ -35,26 +37,26 @@ final class SegmentTopologyTest extends ProjectionTestCase
         $repository->splitSegment('courses', 0);
 
         $segments = $repository->listSegments('courses');
-        self::assertCount(2, $segments);
-        self::assertSame(0, $segments[0]->bucketFrom);
-        self::assertSame(127, $segments[0]->bucketTo);
-        self::assertNull($segments[0]->workerId);
-        self::assertSame(128, $segments[1]->bucketFrom);
-        self::assertSame(255, $segments[1]->bucketTo);
-        self::assertNull($segments[1]->workerId);
-        self::assertSame($checkpoint->serialize(), $segments[0]->checkpoint->serialize());
-        self::assertSame($checkpoint->serialize(), $segments[1]->checkpoint->serialize());
+        static::assertCount(2, $segments);
+        static::assertSame(0, $segments[0]->bucketFrom);
+        static::assertSame(127, $segments[0]->bucketTo);
+        static::assertNull($segments[0]->workerId);
+        static::assertSame(128, $segments[1]->bucketFrom);
+        static::assertSame(255, $segments[1]->bucketTo);
+        static::assertNull($segments[1]->workerId);
+        static::assertSame($checkpoint->serialize(), $segments[0]->checkpoint->serialize());
+        static::assertSame($checkpoint->serialize(), $segments[1]->checkpoint->serialize());
 
         if (null !== $segment) {
             $repository->completeClaimedSegment($segment, Checkpoint::at(new Sequence(5)), 'worker-1', true);
         }
 
         $after = $repository->listSegments('courses');
-        self::assertCount(2, $after);
-        self::assertNull($after[0]->workerId);
-        self::assertNull($after[1]->workerId);
-        self::assertSame($checkpoint->serialize(), $after[0]->checkpoint->serialize());
-        self::assertSame($checkpoint->serialize(), $after[1]->checkpoint->serialize());
+        static::assertCount(2, $after);
+        static::assertNull($after[0]->workerId);
+        static::assertNull($after[1]->workerId);
+        static::assertSame($checkpoint->serialize(), $after[0]->checkpoint->serialize());
+        static::assertSame($checkpoint->serialize(), $after[1]->checkpoint->serialize());
     }
 
     #[DataProvider('backends')]
@@ -65,26 +67,26 @@ final class SegmentTopologyTest extends ProjectionTestCase
         $repository->splitSegment('courses', 0);
         $left = $repository->claimSegment('courses', 0, 'worker-left');
         $right = $repository->claimSegment('courses', 128, 'worker-right');
-        self::assertNotNull($left);
-        self::assertNotNull($right);
+        static::assertNotNull($left);
+        static::assertNotNull($right);
 
         $taken = $repository->takeSegmentsForRange('courses', 0, 255, 'coordinator');
 
-        self::assertCount(2, $taken);
+        static::assertCount(2, $taken);
 
         $repository->replaceSegmentsWithMergedSegment('courses', 0, 255, Checkpoint::at(new Sequence(10)));
         $repository->completeClaimedSegment($left, Checkpoint::at(new Sequence(5)), 'worker-left', true);
         $repository->completeClaimedSegment($right, Checkpoint::at(new Sequence(7)), 'worker-right', true);
 
         $merged_list = $repository->listSegments('courses');
-        self::assertCount(1, $merged_list);
-        self::assertSame(0, $merged_list[0]->bucketFrom);
-        self::assertSame(255, $merged_list[0]->bucketTo);
-        self::assertNull($merged_list[0]->workerId);
+        static::assertCount(1, $merged_list);
+        static::assertSame(0, $merged_list[0]->bucketFrom);
+        static::assertSame(255, $merged_list[0]->bucketTo);
+        static::assertNull($merged_list[0]->workerId);
 
         $merged = $repository->claimSegment('courses', 0, 'worker-merged');
-        self::assertNotNull($merged);
-        self::assertSame(10, $merged->checkpoint->gapFloor->value);
+        static::assertNotNull($merged);
+        static::assertSame(10, $merged->checkpoint->gapFloor->value);
     }
 
     #[DataProvider('backends')]
@@ -102,8 +104,8 @@ final class SegmentTopologyTest extends ProjectionTestCase
     public static function splitStates(): iterable
     {
         foreach (self::backends() as $name => [$backend]) {
-            yield $name.' available' => [$backend, false];
-            yield $name.' claimed' => [$backend, true];
+            yield $name . ' available' => [$backend, false];
+            yield $name . ' claimed' => [$backend, true];
         }
     }
 
@@ -127,22 +129,25 @@ final class SegmentTopologyTest extends ProjectionTestCase
 
         $runner->ensureInitialized($runtime);
         $runner->splitSegment('tracking_projection', 0);
-        self::assertNotNull($runner->claimSegment('tracking_projection', 128, 'worker-right'));
+        static::assertNotNull($runner->claimSegment('tracking_projection', 128, 'worker-right'));
 
         $runner->runClaimedOnce($runtime, 'tracking_projection', 128, 'worker-right', limit: 10);
 
-        self::assertSame([$rightCourseId => 'Science'], $projection->names);
+        static::assertSame([$rightCourseId => 'Science'], $projection->names);
 
         $runner->mergeSegments($runtime, 0, 255, 'coordinator-1', limit: 1);
 
-        self::assertSame([
-            $rightCourseId => 'Science',
-            $leftCourseId => 'Math',
-        ], $projection->names);
+        static::assertSame(
+            [
+                $rightCourseId => 'Science',
+                $leftCourseId => 'Math',
+            ],
+            $projection->names,
+        );
 
         $merged = $runner->claimSegment('tracking_projection', 0, 'worker-merged');
-        self::assertNotNull($merged);
-        self::assertSame(2, $merged->checkpoint->gapFloor->value);
+        static::assertNotNull($merged);
+        static::assertSame(2, $merged->checkpoint->gapFloor->value);
     }
 
     #[DataProvider('backends')]
@@ -157,17 +162,21 @@ final class SegmentTopologyTest extends ProjectionTestCase
         $runner->splitSegment('tracking_projection', 0);
         $left = $runner->claimSegment('tracking_projection', 0, 'worker-left');
         $right = $runner->claimSegment('tracking_projection', 128, 'worker-right');
-        self::assertNotNull($left);
-        self::assertNotNull($right);
+        static::assertNotNull($left);
+        static::assertNotNull($right);
 
-        $segments->completeClaimedSegment($left, new Checkpoint(new Sequence(10), [new Sequence(12)]), 'worker-left', true);
-        $segments->completeClaimedSegment($right, new Checkpoint(new Sequence(10), [new Sequence(13)]), 'worker-right', true);
+        $segments->completeClaimedSegment($left, new Checkpoint(new Sequence(10), [new Sequence(
+            12,
+        )]), 'worker-left', true);
+        $segments->completeClaimedSegment($right, new Checkpoint(new Sequence(10), [new Sequence(
+            13,
+        )]), 'worker-right', true);
 
         $runner->mergeSegments($runtime, 0, 255, 'coordinator-1');
 
         $merged = $runner->claimSegment('tracking_projection', 0, 'worker-merged');
-        self::assertNotNull($merged);
-        self::assertSame(10, $merged->checkpoint->gapFloor->value);
-        self::assertSame([12, 13], $merged->checkpoint->gapSeqNoValues());
+        static::assertNotNull($merged);
+        static::assertSame(10, $merged->checkpoint->gapFloor->value);
+        static::assertSame([12, 13], $merged->checkpoint->gapSeqNoValues());
     }
 }

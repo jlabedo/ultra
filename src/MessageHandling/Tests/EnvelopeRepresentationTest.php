@@ -7,8 +7,8 @@ namespace Ultra\MessageHandling\Tests;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MessageHandling\Async\AsyncEnvelope;
-use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\Async\AsyncHeaderNames;
+use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\Tests\Support\QueueMessage;
 use Ultra\MessageHandling\Tests\Support\QueueTestCase;
 
@@ -28,24 +28,34 @@ final class EnvelopeRepresentationTest extends QueueTestCase
     {
         $f = $this->fixture('postgres');
         $envelope = $this->envelope('hello');
-        $f->queue->enqueue(new AsyncEnvelope($envelope->message, MessageContext::fromArray($attributes)->withLocal('runtime', new \stdClass()), $envelope->headers));
-        $row = $f->connection->fetchAssociative("SELECT convert_from(body, 'UTF8') AS body, headers, attributes FROM ".$f->tablePrefix.'messages');
-        self::assertIsArray($row);
-        self::assertSame('{"value":"hello"}', $row['body']);
-        self::assertStringContainsString('test.route', $row['headers']);
-        self::assertSame($attributes, json_decode($row['attributes'], true, flags: JSON_THROW_ON_ERROR));
+        $f->queue->enqueue(
+            new AsyncEnvelope(
+                $envelope->message,
+                MessageContext::fromArray($attributes)->withLocal('runtime', new \stdClass()),
+                $envelope->headers,
+            ),
+        );
+        $row = $f->connection->fetchAssociative(
+            "SELECT convert_from(body, 'UTF8') AS body, headers, attributes FROM " . $f->tablePrefix . 'messages',
+        );
+        static::assertIsArray($row);
+        static::assertSame('{"value":"hello"}', $row['body']);
+        static::assertStringContainsString('test.route', $row['headers']);
+        static::assertSame($attributes, json_decode($row['attributes'], true, flags: JSON_THROW_ON_ERROR));
 
         $delivery = $f->queue->reserve();
-        self::assertNotNull($delivery);
-        self::assertInstanceOf(QueueMessage::class, $delivery->envelope->message);
-        self::assertSame('hello', $delivery->envelope->message->value);
-        self::assertSame($attributes, $delivery->envelope->messageContext->all());
-        self::assertFalse($delivery->envelope->messageContext->has('.runtime'));
-        self::assertSame('test.route', $delivery->envelope->headers->getString(AsyncHeaderNames::ROUTE));
-        self::assertSame('application/json', $delivery->envelope->headers->getString(AsyncHeaderNames::CONTENT_TYPE));
-        self::assertSame(QueueMessage::class, $delivery->envelope->headers->getString(AsyncHeaderNames::MESSAGE_TYPE));
+        static::assertNotNull($delivery);
+        static::assertInstanceOf(QueueMessage::class, $delivery->envelope->message);
+        static::assertSame('hello', $delivery->envelope->message->value);
+        static::assertSame($attributes, $delivery->envelope->messageContext->all());
+        static::assertFalse($delivery->envelope->messageContext->has('.runtime'));
+        static::assertSame('test.route', $delivery->envelope->headers->getString(AsyncHeaderNames::ROUTE));
+        static::assertSame('application/json', $delivery->envelope->headers->getString(AsyncHeaderNames::CONTENT_TYPE));
+        static::assertSame(
+            QueueMessage::class,
+            $delivery->envelope->headers->getString(AsyncHeaderNames::MESSAGE_TYPE),
+        );
         $f->queue->acknowledge($delivery);
-        self::assertSame(0, $f->count());
+        static::assertSame(0, $f->count());
     }
-
 }

@@ -13,11 +13,11 @@ final class GeneratedNormalizerName
     {
         $className = ltrim($className, '\\');
 
-        return trim($generationNamespace, '\\').'\\__Normalizer_'.strtr($className, ['_' => '__', '\\' => '_s']);
+        return trim($generationNamespace, '\\') . '\\__Normalizer_' . strtr($className, ['_' => '__', '\\' => '_s']);
     }
 
     public static function cacheFileName(string $normalizerClass): string
     {
-        return hash('sha256', $normalizerClass).'.php';
+        return hash('sha256', $normalizerClass) . '.php';
     }
 }

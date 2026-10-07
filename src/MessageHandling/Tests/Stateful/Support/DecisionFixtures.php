@@ -4,29 +4,27 @@ declare(strict_types=1);
 
 namespace Ultra\StatefulMessageHandling\Tests;
 
+use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
+use Ultra\Events\Attribute\Event;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
 use Ultra\EventSourcedState\Attribute\MatchTag;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
-use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\EventStore;
-use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
-use Ultra\Events\Attribute\Event;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
-use Ultra\StateStore\Attribute\State;
-use Ultra\StateStore\Attribute\StateColumn;
-use Ultra\StateStore\Attribute\StateId;
-use Ultra\StateStore\StateStore;
 use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Attribute\StateReader;
 use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\StatefulMessageHandling\Violation;
+use Ultra\StateStore\Attribute\State;
+use Ultra\StateStore\Attribute\StateColumn;
+use Ultra\StateStore\Attribute\StateId;
 
 final class DecisionEventBus implements EventBusInterface
 {
@@ -189,7 +187,7 @@ final readonly class TakeDependentSeat
 
     public function companyMonthId(DependentMemberState $member): string
     {
-        return $member->companyId.'@'.$this->month;
+        return $member->companyId . '@' . $this->month;
     }
 
     #[SelfHandler]
@@ -200,7 +198,10 @@ final readonly class TakeDependentSeat
         DependentMemberState $member,
     ): DependentSeatTaken {
         if ([] !== $seats->memberIds) {
-            throw new InvariantViolation([new Violation('seat.taken', sprintf('Seat of %s already taken.', $seats->companyMonthId))]);
+            throw new InvariantViolation([new Violation('seat.taken', sprintf(
+                'Seat of %s already taken.',
+                $seats->companyMonthId,
+            ))]);
         }
 
         return new DependentSeatTaken($this->companyMonthId($member), $this->memberId);
@@ -217,15 +218,13 @@ final readonly class TakeDependentSeatForCompany
 
     public function companyMonthId(): string
     {
-        return $this->companyId.'@'.$this->month;
+        return $this->companyId . '@' . $this->month;
     }
 
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(
-        #[BindTo(method: 'companyMonthId')]
-        DependentSeatsState $seats,
-    ): DependentSeatTaken {
+    public function decide(#[BindTo(method: 'companyMonthId')] DependentSeatsState $seats): DependentSeatTaken
+    {
         return new DependentSeatTaken($this->companyMonthId(), $this->memberId);
     }
 }
@@ -242,7 +241,7 @@ final readonly class TakeDependentSeatWhileMemberMoves
 
     public function companyMonthId(DependentMemberState $member): string
     {
-        return $member->companyId.'@'.$this->month;
+        return $member->companyId . '@' . $this->month;
     }
 
     #[SelfHandler]
@@ -275,7 +274,7 @@ final readonly class TakeDependentSeatByConvention
 
     public function companyMonthId(DependentMemberState $member): string
     {
-        return $member->companyId.'@'.$this->month;
+        return $member->companyId . '@' . $this->month;
     }
 
     #[SelfHandler]
@@ -283,7 +282,10 @@ final readonly class TakeDependentSeatByConvention
     public function decide(DependentSeatsState $seats, DependentMemberState $member): DependentSeatTaken
     {
         if ([] !== $seats->memberIds) {
-            throw new InvariantViolation([new Violation('seat.taken', sprintf('Seat of %s already taken.', $seats->companyMonthId))]);
+            throw new InvariantViolation([new Violation('seat.taken', sprintf(
+                'Seat of %s already taken.',
+                $seats->companyMonthId,
+            ))]);
         }
 
         return new DependentSeatTaken($this->companyMonthId($member), $this->memberId);
@@ -319,7 +321,9 @@ final readonly class DependentBindingConventionMissingCommand
 
 final readonly class DependentBindingUnknownParameterCommand
 {
-    public function __construct(public string $memberId) {}
+    public function __construct(
+        public string $memberId,
+    ) {}
 
     public function companyMonthId(DependentMemberState $someone): string
     {
@@ -328,15 +332,20 @@ final readonly class DependentBindingUnknownParameterCommand
 
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(DependentMemberState $member, #[BindTo(method: 'companyMonthId')] DependentSeatsState $seats): array
-    {
+    public function decide(
+        DependentMemberState $member,
+        #[BindTo(method: 'companyMonthId')]
+        DependentSeatsState $seats,
+    ): array {
         return [];
     }
 }
 
 final readonly class DependentBindingNonStateParameterCommand
 {
-    public function __construct(public string $memberId) {}
+    public function __construct(
+        public string $memberId,
+    ) {}
 
     public function companyMonthId(\DateTimeImmutable $clock): string
     {
@@ -345,15 +354,20 @@ final readonly class DependentBindingNonStateParameterCommand
 
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(#[BindTo(method: 'companyMonthId')] DependentSeatsState $seats, \DateTimeImmutable $clock): array
-    {
+    public function decide(
+        #[BindTo(method: 'companyMonthId')]
+        DependentSeatsState $seats,
+        \DateTimeImmutable $clock,
+    ): array {
         return [];
     }
 }
 
 final readonly class DependentBindingTypeMismatchCommand
 {
-    public function __construct(public string $memberId) {}
+    public function __construct(
+        public string $memberId,
+    ) {}
 
     public function companyMonthId(DependentSeatsState $member): string
     {
@@ -362,8 +376,11 @@ final readonly class DependentBindingTypeMismatchCommand
 
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(DependentMemberState $member, #[BindTo(method: 'companyMonthId')] DependentSeatsState $seats): array
-    {
+    public function decide(
+        DependentMemberState $member,
+        #[BindTo(method: 'companyMonthId')]
+        DependentSeatsState $seats,
+    ): array {
         return [];
     }
 }
@@ -404,7 +421,9 @@ final readonly class DependentBindingMissingMethodCommand
 
 final readonly class DependentBindingBothTargetsCommand
 {
-    public function __construct(public string $companyMonthId) {}
+    public function __construct(
+        public string $companyMonthId,
+    ) {}
 
     public function seatsId(): string
     {
@@ -421,7 +440,9 @@ final readonly class DependentBindingBothTargetsCommand
 
 final readonly class DependentBindingNoTargetCommand
 {
-    public function __construct(public string $companyMonthId) {}
+    public function __construct(
+        public string $companyMonthId,
+    ) {}
 
     #[SelfHandler]
     #[DecisionHandler]
@@ -482,7 +503,7 @@ final readonly class ChargeDependentMinutes
 
     public function companyMonthId(DependentCompanyRow $company, DependentMemberRow $member): string
     {
-        return $member->companyId.'@'.$this->month;
+        return $member->companyId . '@' . $this->month;
     }
 
     /**
@@ -503,9 +524,13 @@ final readonly class ChargeDependentMinutes
             ])));
         }
 
-        $used = ($usage?->usedMinutes ?? 0) + $this->minutes;
+        $used = ($usage->usedMinutes ?? 0) + $this->minutes;
         if ($used > $company->monthlyMinutes) {
-            throw new InvariantViolation([new Violation('quota.exceeded', sprintf('%s would use %d minutes.', $this->companyMonthId($company, $member), $used))]);
+            throw new InvariantViolation([new Violation('quota.exceeded', sprintf(
+                '%s would use %d minutes.',
+                $this->companyMonthId($company, $member),
+                $used,
+            ))]);
         }
 
         return new DependentUsageRow($this->companyMonthId($company, $member), $used);
@@ -521,7 +546,7 @@ final readonly class GetDependentUsage
 
     public function companyMonthId(DependentMemberRow $member): string
     {
-        return $member->companyId.'@'.$this->month;
+        return $member->companyId . '@' . $this->month;
     }
 
     #[SelfHandler]
@@ -537,7 +562,9 @@ final readonly class GetDependentUsage
 
 final readonly class DependentOnNullableSourceCommand
 {
-    public function __construct(public string $memberId) {}
+    public function __construct(
+        public string $memberId,
+    ) {}
 
     public function companyId(DependentMemberRow $member): string
     {
@@ -596,10 +623,8 @@ final readonly class ConfirmDecisionOrderHandler
 {
     #[Handles]
     #[DecisionHandler]
-    public function handle(
-        ConfirmDecisionOrderCommand $command,
-        DecisionOrderState $order,
-    ): DecisionOrderState {
+    public function handle(ConfirmDecisionOrderCommand $command, DecisionOrderState $order): DecisionOrderState
+    {
         return $order->withStatus('confirmed');
     }
 }
@@ -723,10 +748,8 @@ final readonly class CreateNestedCourseCommand
 
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(
-        #[BindTo('reference.courseId')]
-        CourseCapacityState $course,
-    ): array {
+    public function decide(#[BindTo('reference.courseId')] CourseCapacityState $course): array
+    {
         if ($course->exists()) {
             throw new \InvalidArgumentException('Course already exists');
         }
@@ -748,10 +771,8 @@ final readonly class CreateCourseWithSeparateHandler
 {
     #[Handles]
     #[DecisionHandler]
-    public function handle(
-        CreateCourseWithSeparateHandlerCommand $command,
-        CourseCapacityState $course,
-    ): array {
+    public function handle(CreateCourseWithSeparateHandlerCommand $command, CourseCapacityState $course): array
+    {
         return [new CourseCreated($command->courseId, $command->name, $command->maxCapacity)];
     }
 }
@@ -768,7 +789,11 @@ final class DecisionService
 
 final readonly class InspectDecisionCourse
 {
-    public function __construct(public string $courseId, public mixed $result, public ?\Throwable $failure = null) {}
+    public function __construct(
+        public string $courseId,
+        public mixed $result,
+        public ?\Throwable $failure = null,
+    ) {}
 
     #[SelfHandler]
     #[DecisionHandler]
@@ -785,7 +810,11 @@ final readonly class InspectDecisionCourse
 
 final readonly class InspectDecisionOrder
 {
-    public function __construct(public string $orderId, public mixed $result, public ?\Throwable $failure = null) {}
+    public function __construct(
+        public string $orderId,
+        public mixed $result,
+        public ?\Throwable $failure = null,
+    ) {}
 
     #[SelfHandler]
     #[DecisionHandler]
@@ -802,7 +831,12 @@ final readonly class InspectDecisionOrder
 
 final readonly class InspectMixedDecision
 {
-    public function __construct(public string $courseId, public string $orderId, public mixed $result, public ?\Throwable $failure = null) {}
+    public function __construct(
+        public string $courseId,
+        public string $orderId,
+        public mixed $result,
+        public ?\Throwable $failure = null,
+    ) {}
 
     #[SelfHandler]
     #[DecisionHandler]

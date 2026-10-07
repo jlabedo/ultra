@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -18,8 +20,11 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
         return $type instanceof UnionType;
     }
 
-    public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
-    {
+    public function build(
+        Type $type,
+        CodeGeneratorBuilderRegistry $registry,
+        CodeGeneratorContext $context,
+    ): CodeGenerator {
         if (!$type instanceof UnionType) {
             throw new \InvalidArgumentException('Type must be UnionType');
         }
@@ -36,6 +41,7 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
             /** @var array<array{type: Type, codegen: CodeGenerator}> */
             private array $typeCodeGens;
 
+            /** @param array<array{type: Type, codegen: CodeGenerator}> $typeCodeGens */
             public function __construct(array $typeCodeGens)
             {
                 $this->typeCodeGens = $typeCodeGens;
@@ -50,20 +56,22 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
                     $codegen = $entry['codegen'];
                     if ($subType instanceof ObjectType) {
                         $className = $subType->getClassName();
-                        $cases[] = "    {$objectVar} instanceof \\{$className} => {$codegen->generateNormalization($objectVar)}";
-                    } elseif ($subType instanceof BuiltinType) {
-                        $hasBuiltinType = true;
-                    } else {
-                        throw new \RuntimeException('Not implemented: '.$subType::class);
+                        $cases[] = "    {$objectVar} instanceof \\{$className} => {$codegen->generateNormalization(
+     $objectVar,
+ )}";
+                        continue;
                     }
+                    if ($subType instanceof BuiltinType) {
+                        $hasBuiltinType = true;
+                        continue;
+                    }
+                    throw new \RuntimeException('Not implemented: ' . $subType::class);
                 }
-                if ($hasBuiltinType) {
-                    $cases[] = "    default => {$objectVar}";
-                } else {
-                    $cases[] = "    default => throw new \\InvalidArgumentException('Value does not match any type in union')";
-                }
+                $cases[] = $hasBuiltinType
+                    ? "    default => {$objectVar}"
+                    : "    default => throw new \\InvalidArgumentException('Value does not match any type in union')";
 
-                return "match (true) {\n".implode(",\n", $cases)."\n}";
+                return "match (true) {\n" . implode(",\n", $cases) . "\n}";
             }
 
             public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
@@ -115,8 +123,8 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
                 // Array shape (object)
                 if ($type instanceof ArrayShapeType) {
                     $shape = $type->getShape();
-                    if (!empty($shape)) {
-                        $isset = implode(' && ', array_map(fn ($k) => "isset({$var}[{$k}])", array_keys($shape)));
+                    if ([] !== $shape) {
+                        $isset = implode(' && ', array_map(static fn($k) => "isset({$var}[{$k}])", array_keys($shape)));
 
                         return "is_array({$var}) && {$isset}";
                     }
@@ -134,7 +142,10 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
 
             public function getExpectedDenormalizedType(): Type
             {
-                $types = array_map(fn ($entry) => $entry['codegen']->getExpectedDenormalizedType(), $this->typeCodeGens);
+                $types = array_map(
+                    static fn($entry) => $entry['codegen']->getExpectedDenormalizedType(),
+                    $this->typeCodeGens,
+                );
 
                 return Type::union(...$types);
             }

@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -7,7 +9,9 @@ use Ultra\Mapper\Path;
 
 class NormalizerCallCodeGenerator implements CodeGenerator
 {
-    public function __construct(private string $type) {}
+    public function __construct(
+        private string $type,
+    ) {}
 
     public function generateNormalization(string $objectVar): string
     {

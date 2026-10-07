@@ -9,7 +9,7 @@ final class MessagePropertyPath
     public static function exists(\ReflectionClass $message, string $path): bool
     {
         $segments = explode('.', $path);
-        if ([] === $segments || in_array('', $segments, true)) {
+        if (in_array('', $segments, true)) {
             return false;
         }
 
@@ -24,11 +24,15 @@ final class MessagePropertyPath
             }
 
             $type = $class->getProperty($segment)->getType();
-            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin() || !class_exists($type->getName())) {
+            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                return false;
+            }
+            $className = $type->getName();
+            if (!class_exists($className)) {
                 return false;
             }
 
-            $class = new \ReflectionClass($type->getName());
+            $class = new \ReflectionClass($className);
         }
 
         return true;
@@ -47,9 +51,8 @@ final class MessagePropertyPath
                 ));
             }
 
-            $getter = function (string $property): mixed {
-                return $this->{$property};
-            };
+            // @mago-expect analysis:string-member-selector
+            $getter = fn(string $property): mixed => $this->{$property};
             $value = $getter->call($value, $segment);
         }
 

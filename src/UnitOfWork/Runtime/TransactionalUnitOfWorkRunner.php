@@ -40,6 +40,7 @@ final class TransactionalUnitOfWorkRunner implements UnitOfWorkRunner
         try {
             $result = $work();
 
+            // @mago-expect analyser:redundant-logical-operation
             if (!$this->rollbackOnly && $this->unitOfWork->hasPendingChanges()) {
                 $this->transactionManager->transactional(function (): void {
                     $this->unitOfWork->flush();

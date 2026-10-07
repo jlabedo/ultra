@@ -35,6 +35,7 @@ final readonly class ProjectionRuntime
             return;
         }
 
+        // @mago-expect analysis:string-member-selector
         $this->projection->{$this->definition->initializerMethod}();
     }
 
@@ -44,6 +45,7 @@ final readonly class ProjectionRuntime
             return;
         }
 
+        // @mago-expect analysis:string-member-selector
         $this->projection->{$this->definition->resetterMethod}();
     }
 
@@ -53,6 +55,7 @@ final readonly class ProjectionRuntime
             return;
         }
 
+        // @mago-expect analysis:string-member-selector
         $this->projection->{$this->definition->flushMethod}();
     }
 
@@ -65,6 +68,7 @@ final readonly class ProjectionRuntime
 
         $deserialized = $this->normalizer->fromScalar($event->payload, $handler->eventClass);
         $method = $handler->method;
+        // @mago-expect analysis:string-member-selector
         $this->projection->{$method}($deserialized);
     }
 }

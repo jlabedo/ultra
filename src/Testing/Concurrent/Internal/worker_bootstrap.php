@@ -24,7 +24,7 @@ foreach (explode(PATH_SEPARATOR, $autoloadPath) as $path) {
     require_once $path;
 }
 
-require_once __DIR__.'/functions.php';
+require_once __DIR__ . '/functions.php';
 
 use Ultra\Testing\Concurrent\Internal\WorkerRuntime;
 use Ultra\Testing\Concurrent\Protocol\Codec;
@@ -44,7 +44,7 @@ if (false === $initLine) {
 try {
     $initMessage = Codec::decode($initLine);
 } catch (Throwable $e) {
-    fwrite(STDERR, sprintf("Failed to decode init message: %s (line: %s)\n", $e->getMessage(), trim((string) $initLine)));
+    fwrite(STDERR, sprintf("Failed to decode init message: %s (line: %s)\n", $e->getMessage(), trim($initLine)));
 
     exit(3);
 }
@@ -67,7 +67,7 @@ try {
 } catch (Throwable $e) {
     fwrite(STDERR, sprintf(
         "Failed to unserialize closure: %s\n"
-        ."Hint: captured variables must be serializable. Open connections, PDO instances, and resources cannot be captured — bootstrap them inside the closure.\n",
+        . "Hint: captured variables must be serializable. Open connections, PDO instances, and resources cannot be captured — bootstrap them inside the closure.\n",
         $e->getMessage(),
     ));
 
@@ -93,6 +93,7 @@ try {
 } catch (Throwable $e) {
     $serialized = null;
 
+    // @mago-expect linter:no-empty-catch-clause
     try {
         $serialized = base64_encode(serialize($e));
     } catch (Throwable) {

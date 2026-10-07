@@ -13,14 +13,14 @@ use Ultra\MessageHandling\MessageContext;
 
 final class AuditAspect
 {
-    public function __construct(private readonly AuditLog $log) {}
+    public function __construct(
+        private readonly AuditLog $log,
+    ) {}
 
     #[Before(static function (HandlerMatchContext $ctx): ?MatchResult {
         $method = $ctx->method();
 
-        return [] !== $method->getAttributes(Handles::class)
-            ? MatchResult::apply()
-            : null;
+        return [] !== $method->getAttributes(Handles::class) ? MatchResult::apply() : null;
     }, priority: 10)]
     public function record(object $message, MessageContext $context): void
     {

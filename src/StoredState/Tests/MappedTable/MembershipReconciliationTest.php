@@ -25,25 +25,31 @@ final class MembershipReconciliationTest extends RowSetTestCase
         $rows = $fixture->rows;
         $keep = new MappedKey(['owner' => 'one', 'id' => 'keep']);
         $added = new MappedKey(['owner' => 'one', 'id' => 'added']);
-        $rows->reconcileRows([new MappedRow($keep, ['status' => 'updated']), new MappedRow($added, ['status' => 'new'])]);
+        $rows->reconcileRows([
+            new MappedRow($keep, ['status' => 'updated']),
+            new MappedRow($added, ['status' => 'new']),
+        ]);
         $fixture->seed(['owner' => 'one', 'id' => 'late']);
-        self::assertSame(['status' => 'updated', 'note' => 'preserved'], $rows->row('keep', ['status', 'note']));
-        self::assertFalse($rows->row('remove'));
-        self::assertFalse($rows->row('late'));
-        self::assertSame(['added', 'keep'], array_map(static fn ($row) => $row->key->value('id'), $rows->rows()));
-        self::assertSame(['status' => 'old'], $fixture->stored($keep, ['status']));
+        static::assertSame(['status' => 'updated', 'note' => 'preserved'], $rows->row('keep', ['status', 'note']));
+        static::assertFalse($rows->row('remove'));
+        static::assertFalse($rows->row('late'));
+        static::assertSame(['added', 'keep'], array_map(static fn($row) => $row->key->value('id'), $rows->rows()));
+        static::assertSame(['status' => 'old'], $fixture->stored($keep, ['status']));
         $fixture->flush();
         $rows->clear();
-        self::assertCount(2, $rows->rows());
-        self::assertSame(['status' => 'updated', 'note' => 'preserved'], $rows->row('keep', ['status', 'note']));
-        self::assertSame(['status' => 'new'], $rows->row('added', ['status']));
-        self::assertSame(['status' => 'outside'], $fixture->stored(new MappedKey(['owner' => 'two', 'id' => 'keep']), ['status']));
+        static::assertCount(2, $rows->rows());
+        static::assertSame(['status' => 'updated', 'note' => 'preserved'], $rows->row('keep', ['status', 'note']));
+        static::assertSame(['status' => 'new'], $rows->row('added', ['status']));
+        static::assertSame(
+            ['status' => 'outside'],
+            $fixture->stored(new MappedKey(['owner' => 'two', 'id' => 'keep']), ['status']),
+        );
 
         $rows->reconcileRows([]);
         $fixture->flush();
         $rows->clear();
-        self::assertSame([], $rows->rows());
-        self::assertNotFalse($fixture->stored(new MappedKey(['owner' => 'two', 'id' => 'keep'])));
+        static::assertSame([], $rows->rows());
+        static::assertNotFalse($fixture->stored(new MappedKey(['owner' => 'two', 'id' => 'keep'])));
     }
 
     public function test_successive_memberships_supersede_writes_and_duplicate_keys_merge_in_input_order(): void
@@ -57,12 +63,15 @@ final class MembershipReconciliationTest extends RowSetTestCase
             new MappedRow(new MappedKey(['id' => 'existing']), ['status' => 'first', 'note' => 'preserved']),
             new MappedRow(new MappedKey(['id' => 'existing']), ['status' => 'last']),
         ]);
-        self::assertFalse($rows->row('discarded'));
-        self::assertSame(['status' => 'last', 'note' => 'preserved'], $rows->row('existing', ['status', 'note']));
+        static::assertFalse($rows->row('discarded'));
+        static::assertSame(['status' => 'last', 'note' => 'preserved'], $rows->row('existing', ['status', 'note']));
         $fixture->flush();
         $rows->clear();
-        self::assertFalse($fixture->stored('discarded'));
-        self::assertSame(['status' => 'last', 'note' => 'preserved'], $fixture->stored('existing', ['status', 'note']));
+        static::assertFalse($fixture->stored('discarded'));
+        static::assertSame(
+            ['status' => 'last', 'note' => 'preserved'],
+            $fixture->stored('existing', ['status', 'note']),
+        );
     }
 
     #[DataProvider('backends')]
@@ -74,7 +83,7 @@ final class MembershipReconciliationTest extends RowSetTestCase
         $fixture->seed(['id' => 'late']);
         $fixture->flush();
         $fixture->rows->clear();
-        self::assertSame([], $fixture->rows->rows());
+        static::assertSame([], $fixture->rows->rows());
     }
 
     public function test_explicit_operations_override_saved_membership_and_local_absence(): void
@@ -93,9 +102,9 @@ final class MembershipReconciliationTest extends RowSetTestCase
         $rows->expectSameRowKeys(['removed']);
         $fixture->flush();
         $rows->clear();
-        self::assertSame(['status' => 'restored'], $rows->row('removed', ['status']));
-        self::assertFalse($rows->row('added'));
-        self::assertFalse($rows->row('unseen'));
+        static::assertSame(['status' => 'restored'], $rows->row('removed', ['status']));
+        static::assertFalse($rows->row('added'));
+        static::assertFalse($rows->row('unseen'));
     }
 
     public function test_explicit_deletions_remove_keys_from_saved_membership(): void
@@ -109,8 +118,8 @@ final class MembershipReconciliationTest extends RowSetTestCase
         $rows->expectSameRowKeys(['added']);
         $fixture->flush();
         $rows->clear();
-        self::assertFalse($rows->row('removed'));
-        self::assertSame(['status' => 'new'], $rows->row('added', ['status']));
+        static::assertFalse($rows->row('removed'));
+        static::assertSame(['status' => 'new'], $rows->row('added', ['status']));
     }
 
     /** @return iterable<string, array{string, string}> */
@@ -118,14 +127,16 @@ final class MembershipReconciliationTest extends RowSetTestCase
     {
         foreach (['memory', 'postgres'] as $backend) {
             foreach (['membership', 'retained column', 'removed column'] as $expectation) {
-                yield $backend.' '.$expectation => [$backend, $expectation];
+                yield $backend . ' ' . $expectation => [$backend, $expectation];
             }
         }
     }
 
     #[DataProvider('guardedMemberships')]
-    public function test_reconciliation_preserves_earlier_expectations_before_applying_writes(string $backend, string $expectation): void
-    {
+    public function test_reconciliation_preserves_earlier_expectations_before_applying_writes(
+        string $backend,
+        string $expectation,
+    ): void {
         $fixture = $this->fixture($backend);
         $fixture->seed(['id' => 'existing', 'status' => 'old']);
         $rows = $fixture->rows;
@@ -134,7 +145,9 @@ final class MembershipReconciliationTest extends RowSetTestCase
         } else {
             $rows->withKey('existing')->expectColumnValue('status', 'old');
         }
-        $desired = 'removed column' === $expectation ? [] : [new MappedRow(new MappedKey(['id' => 'existing']), ['status' => 'saved'])];
+        $desired = 'removed column' === $expectation ? [] : [new MappedRow(new MappedKey(['id' => 'existing']), [
+                'status' => 'saved',
+            ])];
         $rows->reconcileRows($desired);
         $rows->expectSameRowKeys('removed column' === $expectation ? [] : ['existing']);
         if ('membership' === $expectation) {
@@ -146,7 +159,10 @@ final class MembershipReconciliationTest extends RowSetTestCase
         try {
             $fixture->flush();
         } finally {
-            self::assertSame(['status' => 'membership' === $expectation ? 'old' : 'concurrent'], $fixture->stored('existing', ['status']));
+            static::assertSame(
+                ['status' => 'membership' === $expectation ? 'old' : 'concurrent'],
+                $fixture->stored('existing', ['status']),
+            );
         }
     }
 

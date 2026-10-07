@@ -51,7 +51,8 @@ abstract class QueueTestCase extends TestCase
     protected function tearDown(): void
     {
         try {
-            foreach (array_reverse($this->fixtures) as $fixture) $fixture->close();
+            foreach (array_reverse($this->fixtures) as $fixture)
+                $fixture->close();
         } finally {
             $this->fixtures = [];
             parent::tearDown();

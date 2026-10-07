@@ -9,8 +9,13 @@ use Ultra\MessageHandling\Attribute\Asynchronous;
 
 final class HandlerDescriptorFactory
 {
-    public function __construct(private AdviceCollector $adviceCollector) {}
+    public function __construct(
+        private AdviceCollector $adviceCollector,
+    ) {}
 
+    /**
+     * @param class-string $className
+     */
     public function createServiceHandler(
         string $serviceId,
         string $className,
@@ -24,10 +29,11 @@ final class HandlerDescriptorFactory
         return $this->create($serviceId, $className, $method, $messageClass, skipFirstParameter: true);
     }
 
-    public function createSelfHandler(
-        string $className,
-        \ReflectionMethod $method,
-    ): HandlerDescriptor {
+    /**
+     * @param class-string $className
+     */
+    public function createSelfHandler(string $className, \ReflectionMethod $method): HandlerDescriptor
+    {
         return $this->create(
             HandlerDescriptor::SELF_SERVICE_ID,
             $className,
@@ -66,6 +72,10 @@ final class HandlerDescriptorFactory
         return $returnType instanceof \ReflectionNamedType && 'void' === $returnType->getName();
     }
 
+    /**
+     * @param class-string $className
+     * @param class-string $messageClass
+     */
     private function create(
         string $serviceId,
         string $className,
@@ -104,6 +114,9 @@ final class HandlerDescriptorFactory
         );
     }
 
+    /**
+     * @return class-string|null
+     */
     private function resolveMessageClass(\ReflectionMethod $method): ?string
     {
         $params = $method->getParameters();
@@ -115,7 +128,7 @@ final class HandlerDescriptorFactory
         if (!$firstType instanceof \ReflectionNamedType || $firstType->isBuiltin()) {
             return null;
         }
-
+        /** @var class-string */
         return $firstType->getName();
     }
 }

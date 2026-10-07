@@ -28,41 +28,42 @@ final class CompilationLifecycleTest extends MapperTestCase
     #[PreserveGlobalState(false)]
     public function test_standalone_use_has_a_working_default_cache(): void
     {
-        $cache = dirname(__DIR__, 3).'/var/normalizer_cache';
+        $cache = dirname(__DIR__, 3) . '/var/normalizer_cache';
         $this->extraDirectories[] = $cache;
         $this->removeDirectory($cache);
         $normalizer = new UltraNormalizer();
 
-        self::assertSame(['id' => 42, 'name' => 'bar'], $normalizer->toScalar(new Foo(42, 'bar')));
-        self::assertNotEmpty($this->generatedFiles($cache));
+        static::assertSame(['id' => 42, 'name' => 'bar'], $normalizer->toScalar(new Foo(42, 'bar')));
+        static::assertNotEmpty($this->generatedFiles($cache));
     }
 
     public function test_first_use_generates_a_file_and_the_instance_reuses_its_normalizer(): void
     {
         $normalizer = $this->normalizer();
-        $cache = $this->directory.'/normalizers';
-        self::assertSame([], $this->generatedFiles($cache));
+        $cache = $this->directory . '/normalizers';
+        static::assertSame([], $this->generatedFiles($cache));
 
-        self::assertSame(['id' => 42, 'name' => 'bar'], $normalizer->toScalar(new Foo(42, 'bar')));
+        static::assertSame(['id' => 42, 'name' => 'bar'], $normalizer->toScalar(new Foo(42, 'bar')));
         $files = $this->generatedFiles($cache);
-        self::assertNotEmpty($files);
+        static::assertNotEmpty($files);
         foreach (array_keys($files) as $file) {
             unlink($file);
         }
 
-        self::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
-        self::assertSame([], $this->generatedFiles($cache));
+        static::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
+        static::assertSame([], $this->generatedFiles($cache));
     }
 
     public function test_precompiled_file_is_loaded_without_being_regenerated(): void
     {
-        $cache = $this->directory.'/normalizers';
+        $cache = $this->directory . '/normalizers';
         $container = new ContainerBuilder();
-        $container->setDefinition('record', new Definition(\stdClass::class)
-            ->addResourceTag(TagNames::NORMALIZABLE, ['class' => Foo::class]));
+        $container->setDefinition('record', new Definition(\stdClass::class)->addResourceTag(TagNames::NORMALIZABLE, [
+            'class' => Foo::class,
+        ]));
         new MapperCompilerPass($cache, generationNamespace: $this->generationNamespace)->process($container);
         $compiled = $this->generatedFiles($cache);
-        self::assertNotEmpty($compiled);
+        static::assertNotEmpty($compiled);
         // An old timestamp reveals even a byte-for-byte regeneration.
         $compiledAt = 946_684_800;
         foreach (array_keys($compiled) as $file) {
@@ -71,31 +72,37 @@ final class CompilationLifecycleTest extends MapperTestCase
         $includedBefore = get_included_files();
         $normalizer = $this->normalizer();
 
-        self::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
+        static::assertEquals(new Foo(42, 'bar'), $normalizer->fromScalar(['id' => 42, 'name' => 'bar'], Foo::class));
 
         $loaded = array_diff(get_included_files(), $includedBefore);
         foreach (array_keys($compiled) as $file) {
-            self::assertContains($file, $loaded);
+            static::assertContains($file, $loaded);
             clearstatcache(true, $file);
-            self::assertSame($compiledAt, filemtime($file));
+            static::assertSame($compiledAt, filemtime($file));
         }
-        self::assertSame($compiled, $this->generatedFiles($cache));
+        static::assertSame($compiled, $this->generatedFiles($cache));
     }
 
     #[DataProvider('generatedClassNames')]
     public function test_generated_files_can_be_loaded_with_the_requested_class_name(string $class): void
     {
-        $class .= '_'.bin2hex(random_bytes(8));
+        $class .= '_' . bin2hex(random_bytes(8));
         $normalizer = $this->normalizer();
-        $file = $this->directory.'/normalizer.php';
+        $file = $this->directory . '/normalizer.php';
         file_put_contents($file, NormalizerGenerator::for(Foo::class, $class, [])->generate());
         require $file;
         $generated = new $class();
 
-        self::assertSame(['id' => 42, 'name' => 'bar'], $generated->toScalar(new Foo(42, 'bar'), $normalizer));
-        self::assertEquals(new Foo(42, 'bar'), $generated->fromScalar(
-            ['id' => 42, 'name' => 'bar'], Foo::class, $normalizer, new DenormalizationContext(),
-        ));
+        static::assertSame(['id' => 42, 'name' => 'bar'], $generated->toScalar(new Foo(42, 'bar'), $normalizer));
+        static::assertEquals(
+            new Foo(42, 'bar'),
+            $generated->fromScalar(
+                ['id' => 42, 'name' => 'bar'],
+                Foo::class,
+                $normalizer,
+                new DenormalizationContext(),
+            ),
+        );
     }
 
     /** @return iterable<string, array{string}> */

@@ -29,9 +29,9 @@ abstract class MigrationTestCase extends TestCase
         $parameters['driver'] = 'pdo_pgsql';
         $this->connection = DriverManager::getConnection($parameters);
         $this->connection->beginTransaction();
-        $schema = 'ultra_schema_guarantees_'.bin2hex(random_bytes(6));
-        $this->connection->executeStatement('CREATE SCHEMA '.$schema);
-        $this->connection->executeStatement('SET LOCAL search_path TO '.$schema.', public');
+        $schema = 'ultra_schema_guarantees_' . bin2hex(random_bytes(6));
+        $this->connection->executeStatement('CREATE SCHEMA ' . $schema);
+        $this->connection->executeStatement('SET LOCAL search_path TO ' . $schema . ', public');
     }
 
     protected function tearDown(): void
@@ -48,7 +48,10 @@ abstract class MigrationTestCase extends TestCase
     protected function create(TableDefinition $table): void
     {
         // New-table index derivation is incomplete; supply the public operations explicitly.
-        $this->execute([new CreateTable($table), ...array_map(static fn ($index) => new AddIndex($table->name, $index), $table->indexes)]);
+        $this->execute([
+            new CreateTable($table),
+            ...array_map(static fn($index) => new AddIndex($table->name, $index), $table->indexes),
+        ]);
     }
 
     /** @param list<\Ultra\Schema\Operations\SchemaOperation> $operations */

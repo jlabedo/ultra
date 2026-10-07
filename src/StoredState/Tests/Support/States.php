@@ -5,11 +5,10 @@ declare(strict_types=1);
 namespace Ultra\StateStore\Tests;
 
 use Ultra\StateStore\Attribute\State;
-use Ultra\StateStore\Attribute\StateColumn;
 use Ultra\StateStore\Attribute\StateCollection;
+use Ultra\StateStore\Attribute\StateColumn;
 use Ultra\StateStore\Attribute\StateEmbedded;
 use Ultra\StateStore\Attribute\StateId;
-use Ultra\StateStore\StateStore;
 
 #[State(table: 'orders')]
 final readonly class OrderState
@@ -89,10 +88,7 @@ final readonly class OrderWithLinesState
         public string $orderId,
         #[StateColumn('status')]
         public string $status,
-        #[StateCollection(
-            itemClass: OrderLineState::class,
-            ownerColumns: ['orderId' => 'order_id'],
-        )]
+        #[StateCollection(itemClass: OrderLineState::class, ownerColumns: ['orderId' => 'order_id'])]
         public array $lines,
     ) {}
 }
@@ -185,32 +181,49 @@ final readonly class OrderWithShippingAddressState
 #[State(table: 'counters')]
 final readonly class CounterState
 {
-    public function __construct(#[StateId] public int $id, public int $count) {}
+    public function __construct(
+        #[StateId]
+        public int $id,
+        public int $count,
+    ) {}
 }
 
 #[State(table: 'archived_counters')]
 final readonly class ArchivedCounterState
 {
-    public function __construct(#[StateId] public int $id, public int $count) {}
+    public function __construct(
+        #[StateId]
+        public int $id,
+        public int $count,
+    ) {}
 }
 
 #[State(table: 'a')]
 final readonly class LeftBoundaryState
 {
-    public function __construct(#[StateId(column: 'bc')] public string $id, public string $value) {}
+    public function __construct(
+        #[StateId(column: 'bc')]
+        public string $id,
+        public string $value,
+    ) {}
 }
 
 #[State(table: 'ab')]
 final readonly class RightBoundaryState
 {
-    public function __construct(#[StateId(column: 'c')] public string $id, public string $value) {}
+    public function __construct(
+        #[StateId(column: 'c')]
+        public string $id,
+        public string $value,
+    ) {}
 }
 
 #[State(table: 'contacts')]
 final readonly class ContactByIdState
 {
     public function __construct(
-        #[StateId(column: 'contact_id')] public int $id,
+        #[StateId(column: 'contact_id')]
+        public int $id,
         public string $email,
         public string $name,
     ) {}
@@ -220,8 +233,10 @@ final readonly class ContactByIdState
 final readonly class ContactByEmailState
 {
     public function __construct(
-        #[StateId(column: 'email')] public string $id,
-        #[StateColumn('contact_id')] public int $contactId,
+        #[StateId(column: 'email')]
+        public string $id,
+        #[StateColumn('contact_id')]
+        public int $contactId,
         public string $name,
     ) {}
 }

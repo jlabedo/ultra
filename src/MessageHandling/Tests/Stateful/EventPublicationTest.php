@@ -22,11 +22,17 @@ final class EventPublicationTest extends DecisionTestCase
         $bus = new class($store) implements EventBusInterface {
             public array $publications = [];
 
-            public function __construct(private InMemoryEventStore $store) {}
+            public function __construct(
+                private InMemoryEventStore $store,
+            ) {}
 
             public function publish(object $event, array|MessageContext $context = []): void
             {
-                $this->publications[] = [$event, MessageContext::coerce($context), $this->store->load(StreamQuery::all())->events];
+                $this->publications[] = [
+                    $event,
+                    MessageContext::coerce($context),
+                    $this->store->load(StreamQuery::all())->events,
+                ];
             }
         };
         $advice = new class {
@@ -36,7 +42,8 @@ final class EventPublicationTest extends DecisionTestCase
                 return $proceed(context: $context->with('publishedBy', 'inner-advice'));
             }
         };
-        $container = $this->courseApplication(InspectDecisionCourse::class)
+        $container = $this
+            ->courseApplication(InspectDecisionCourse::class)
             ->withService(new DecisionService(), DecisionService::class)
             ->withService($store, InMemoryEventStore::class)
             ->withService($bus, EventBusInterface::class)
@@ -44,20 +51,26 @@ final class EventPublicationTest extends DecisionTestCase
             ->boot();
 
         $effects = [new CourseCreated('course', 'Math', 12), new CourseCreated('other', 'History', 8)];
-        $events = $container->get('test.mediator')->send(new InspectDecisionCourse('course', $effects), ['traceId' => 'trace', MessageContextKeys::MESSAGE_ID => 'parent', MessageContextKeys::CORRELATION_ID => 'correlation']);
-        self::assertSame($effects, $events);
-        self::assertCount(2, $bus->publications);
+        $events = $container->get('test.mediator')->send(new InspectDecisionCourse('course', $effects), [
+            'traceId' => 'trace',
+            MessageContextKeys::MESSAGE_ID => 'parent',
+            MessageContextKeys::CORRELATION_ID => 'correlation',
+        ]);
+        static::assertSame($effects, $events);
+        static::assertCount(2, $bus->publications);
         foreach ($bus->publications as $index => [$published, $context, $stored]) {
-            self::assertSame($events[$index], $published);
-            self::assertCount(2, $stored);
-            self::assertSame($context->propagated()->all(), $stored[$index]->metadata);
-            self::assertSame('trace', $stored[$index]->metadata['traceId']);
-            self::assertSame('inner-advice', $stored[$index]->metadata['publishedBy']);
-            self::assertSame('correlation', $stored[$index]->metadata[MessageContextKeys::CORRELATION_ID]);
-            self::assertSame('parent', $stored[$index]->metadata[MessageContextKeys::CAUSATION_ID]);
-            self::assertNotSame('parent', $stored[$index]->metadata[MessageContextKeys::MESSAGE_ID]);
+            static::assertSame($events[$index], $published);
+            static::assertCount(2, $stored);
+            static::assertSame($context->propagated()->all(), $stored[$index]->metadata);
+            static::assertSame('trace', $stored[$index]->metadata['traceId']);
+            static::assertSame('inner-advice', $stored[$index]->metadata['publishedBy']);
+            static::assertSame('correlation', $stored[$index]->metadata[MessageContextKeys::CORRELATION_ID]);
+            static::assertSame('parent', $stored[$index]->metadata[MessageContextKeys::CAUSATION_ID]);
+            static::assertNotSame('parent', $stored[$index]->metadata[MessageContextKeys::MESSAGE_ID]);
         }
-        self::assertNotSame($bus->publications[0][1]->get(MessageContextKeys::MESSAGE_ID), $bus->publications[1][1]->get(MessageContextKeys::MESSAGE_ID));
-
+        static::assertNotSame(
+            $bus->publications[0][1]->get(MessageContextKeys::MESSAGE_ID),
+            $bus->publications[1][1]->get(MessageContextKeys::MESSAGE_ID),
+        );
     }
 }

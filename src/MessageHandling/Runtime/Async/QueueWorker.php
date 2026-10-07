@@ -37,7 +37,11 @@ final readonly class QueueWorker
         if (null === $route || '' === $route) {
             $this->receiver->release($delivery);
 
-            throw new \LogicException(sprintf('Async delivery "%s" is missing the "%s" route header.', $delivery->messageId->value, AsyncHeaderNames::ROUTE));
+            throw new \LogicException(sprintf(
+                'Async delivery "%s" is missing the "%s" route header.',
+                $delivery->messageId->value,
+                AsyncHeaderNames::ROUTE,
+            ));
         }
 
         try {

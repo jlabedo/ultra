@@ -16,10 +16,16 @@ final class RecordingEventStore implements EventStore
     /** @var list<array{events: list<Event>, appendConditions: list<AppendCondition>}> */
     public array $appendCalls = [];
 
-    public function __construct(private readonly EventStore $inner) {}
+    public function __construct(
+        private readonly EventStore $inner,
+    ) {}
 
-    public function load(StreamQuery $query, ?Checkpoint $from = null, ?Checkpoint $to = null, int $batchSize = 1000): LoadResult
-    {
+    public function load(
+        StreamQuery $query,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
+        int $batchSize = 1000,
+    ): LoadResult {
         return $this->inner->load($query, $from, $to, $batchSize);
     }
 

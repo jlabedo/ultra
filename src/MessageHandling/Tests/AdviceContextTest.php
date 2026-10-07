@@ -10,8 +10,8 @@ use Ultra\MessageHandling\Attribute\AfterReturning;
 use Ultra\MessageHandling\Attribute\AfterThrowing;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\Before;
-use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
+use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\ProceedResult;
@@ -29,7 +29,8 @@ final class AdviceContextTest extends MessageHandlingCompilerTestCase
     {
         $seen = [];
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService(new class($seen) {
                 /** @var array<string, mixed> */
                 public array $seen;
@@ -47,7 +48,7 @@ final class AdviceContextTest extends MessageHandlingCompilerTestCase
                 {
                     $this->seen = $context->all();
 
-                    return 'handled: '.$context->get('executorId').':'.$context->get('traceId');
+                    return 'handled: ' . $context->get('executorId') . ':' . $context->get('traceId');
                 }
             })
             ->withService(new class {
@@ -57,24 +58,27 @@ final class AdviceContextTest extends MessageHandlingCompilerTestCase
                     return ['executorId' => 'user-123'];
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('handled: user-123:trace-1', $mediator->send(new GreetingMessage('payload'), ['traceId' => 'trace-1']));
-        self::assertSame('user-123', $seen['executorId']);
-        self::assertSame('trace-1', $seen['traceId']);
+        static::assertSame('handled: user-123:trace-1', $mediator->send(new GreetingMessage('payload'), [
+            'traceId' => 'trace-1',
+        ]));
+        static::assertSame('user-123', $seen['executorId']);
+        static::assertSame('trace-1', $seen['traceId']);
     }
 
     public function test_it_lets_after_returning_and_after_advices_merge_patches_into_the_final_context_seen_by_outer_around_advices(): void
     {
         $finalContext = [];
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService(new class {
                 #[Handles]
                 public function handle(GreetingMessage $message, MessageContext $context): string
                 {
-                    return $context->get('before').':'.$message->name;
+                    return $context->get('before') . ':' . $message->name;
                 }
             })
             ->withService(new class {
@@ -88,8 +92,12 @@ final class AdviceContextTest extends MessageHandlingCompilerTestCase
                 #[AfterReturning(static function (HandlerMatchContext $match): MatchResult {
                     return MatchResult::apply(config: ['key' => 'afterReturning']);
                 }, priority: 20)]
-                public function enrich(object $message, MessageContext $context, mixed $returnValue, array $config): array
-                {
+                public function enrich(
+                    object $message,
+                    MessageContext $context,
+                    mixed $returnValue,
+                    array $config,
+                ): array {
                     return [$config['key'] => $returnValue];
                 }
             })
@@ -135,69 +143,78 @@ final class AdviceContextTest extends MessageHandlingCompilerTestCase
                     return $result;
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('yes:hello', $mediator->send(new GreetingMessage('hello'), ['traceId' => 'trace-1']));
-        self::assertSame('trace-1', $finalContext['traceId']);
-        self::assertSame('yes', $finalContext['before']);
-        self::assertSame('yes:hello', $finalContext['afterReturning']);
-        self::assertSame('done', $finalContext['after']);
-        self::assertSame('done', $finalContext['sameLayer']);
-        self::assertSame('done', $finalContext['outerLayer']);
+        static::assertSame('yes:hello', $mediator->send(new GreetingMessage('hello'), ['traceId' => 'trace-1']));
+        static::assertSame('trace-1', $finalContext['traceId']);
+        static::assertSame('yes', $finalContext['before']);
+        static::assertSame('yes:hello', $finalContext['afterReturning']);
+        static::assertSame('done', $finalContext['after']);
+        static::assertSame('done', $finalContext['sameLayer']);
+        static::assertSame('done', $finalContext['outerLayer']);
     }
 
     public function test_it_passes_derived_context_from_outer_around_advice_to_inner_advice_without_mutating_the_outer_context(): void
     {
         $log = new AdviceOrderingLog();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($log)
             ->withService(new OrderedHandler($log))
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[Around(priority: 0)]
                 public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
-                    $this->log->entries[] = 'outer-before:'.$context->get('trace', 'none');
+                    $this->log->entries[] = 'outer-before:' . $context->get('trace', 'none');
                     $result = $proceed(context: $context->with('trace', 'propagated'));
-                    $this->log->entries[] = 'outer-after:'.$context->get('trace', 'none');
+                    $this->log->entries[] = 'outer-after:' . $context->get('trace', 'none');
 
                     return $result;
                 }
             })
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[Around(priority: 10)]
                 public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
                 {
-                    $this->log->entries[] = 'inner-before:'.$context->get('trace', 'none');
+                    $this->log->entries[] = 'inner-before:' . $context->get('trace', 'none');
                     $result = $proceed();
-                    $this->log->entries[] = 'inner-after:'.$context->get('trace', 'none');
+                    $this->log->entries[] = 'inner-after:' . $context->get('trace', 'none');
 
                     return $result;
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
-        self::assertSame([
-            'outer-before:none',
-            'inner-before:propagated',
-            'handler:ok',
-            'inner-after:propagated',
-            'outer-after:none',
-        ], $log->entries);
+        static::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
+        static::assertSame(
+            [
+                'outer-before:none',
+                'inner-before:propagated',
+                'handler:ok',
+                'inner-after:propagated',
+                'outer-after:none',
+            ],
+            $log->entries,
+        );
     }
 
     public function test_it_propagates_failure_context_changes_across_around_boundaries(): void
     {
         $log = new AdviceOrderingLog();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($log)
             ->withService(new class {
                 #[Handles]
@@ -233,7 +250,9 @@ final class AdviceContextTest extends MessageHandlingCompilerTestCase
                 }
             })
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[AfterThrowing(priority: 0)]
                 public function afterThrowing(object $message, MessageContext $context, \Throwable $throwable): void
@@ -257,19 +276,22 @@ final class AdviceContextTest extends MessageHandlingCompilerTestCase
                     );
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
         try {
             $mediator->send(new GreetingMessage('fail'));
-            self::fail('Expected handler exception to be rethrown.');
+            static::fail('Expected handler exception to be rethrown.');
         } catch (\RuntimeException $exception) {
-            self::assertSame('boom', $exception->getMessage());
+            static::assertSame('boom', $exception->getMessage());
         }
 
-        self::assertSame([
-            'outer-afterThrowing:yes:boom:done',
-            'outer-after:yes:boom:done',
-        ], $log->entries);
+        static::assertSame(
+            [
+                'outer-afterThrowing:yes:boom:done',
+                'outer-after:yes:boom:done',
+            ],
+            $log->entries,
+        );
     }
 }

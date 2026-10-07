@@ -12,8 +12,8 @@ use PHPUnit\Framework\Attributes\RunInSeparateProcess;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\Container\ContainerExtension;
-use Ultra\EventSourcedState\EventSourcedStateExtension;
 use Ultra\Events\EventsExtension;
+use Ultra\EventSourcedState\EventSourcedStateExtension;
 use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\Projection\Bundle\ProjectionExtension;
@@ -43,8 +43,8 @@ final class InstalledExtensionDiscoveryTest extends TestCase
     {
         $extensions = UltraBundle::defaultExtensions();
 
-        self::assertSame(self::EXTENSIONS, array_map(get_class(...), $extensions));
-        self::assertContainsOnlyInstancesOf(ContainerExtension::class, $extensions);
+        static::assertSame(self::EXTENSIONS, array_map(get_class(...), $extensions));
+        static::assertContainsOnlyInstancesOf(ContainerExtension::class, $extensions);
     }
 
     /**
@@ -58,12 +58,12 @@ final class InstalledExtensionDiscoveryTest extends TestCase
         self::hideExtensions(array_diff(self::EXTENSIONS, $available));
 
         $extensions = UltraBundle::defaultExtensions();
-        self::assertSame($available, array_map(get_class(...), $extensions));
+        static::assertSame($available, array_map(get_class(...), $extensions));
 
         $container = new ContainerBuilder();
-        (new UltraBundle())->build($container);
+        new UltraBundle()->build($container);
 
-        self::assertSame($available !== [], $container->hasAlias(UnitOfWorkRunner::class));
+        static::assertSame($available !== [], $container->hasAlias(UnitOfWorkRunner::class));
     }
 
     /** @return iterable<string, array{list<class-string<ContainerExtension>>}> */
@@ -78,10 +78,12 @@ final class InstalledExtensionDiscoveryTest extends TestCase
     public function test_an_installed_extension_must_implement_the_container_contract(): void
     {
         self::hideExtensions(self::EXTENSIONS);
-        require __DIR__.'/Support/InvalidInstalledExtension.php';
+        require __DIR__ . '/Support/InvalidInstalledExtension.php';
 
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('Ultra extension "Ultra\\Events\\EventsExtension" must implement "Ultra\\Container\\ContainerExtension".');
+        $this->expectExceptionMessage(
+            'Ultra extension "Ultra\\Events\\EventsExtension" must implement "Ultra\\Container\\ContainerExtension".',
+        );
 
         UltraBundle::defaultExtensions();
     }
@@ -95,7 +97,7 @@ final class InstalledExtensionDiscoveryTest extends TestCase
     {
         foreach ($extensions as $extension) {
             if (class_exists($extension, false)) {
-                throw new \LogicException('Extension already loaded: '.$extension);
+                throw new \LogicException('Extension already loaded: ' . $extension);
             }
         }
 

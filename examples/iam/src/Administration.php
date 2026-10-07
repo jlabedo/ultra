@@ -18,8 +18,8 @@ use IamExample\State\RoleState;
 use IamExample\State\SubjectState;
 use IamExample\State\TenantState;
 use Psr\Clock\ClockInterface;
-use Ultra\StateStore\StateStore;
 use Ultra\StateStore\QueryGuard;
+use Ultra\StateStore\StateStore;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
 
 /** Command boundary. The actor is a verified identity supplied by the transport, never by a request body. */
@@ -34,8 +34,13 @@ final readonly class Administration
     ) {}
 
     /** @param list<Permission> $permissions */
-    public function defineRole(LocalId $actor, string $roleId, string $name, array $permissions, bool $active = true): void
-    {
+    public function defineRole(
+        LocalId $actor,
+        string $roleId,
+        string $name,
+        array $permissions,
+        bool $active = true,
+    ): void {
         $id = new LocalId($actor->tenantId, $roleId);
         if ('' === trim($name)) {
             throw new \InvalidArgumentException('A role name is required.');
@@ -91,7 +96,10 @@ final readonly class Administration
         }
         $this->write($actor, 'binding.granted', $id, function () use ($id, $expiresAt): BindingState {
             $this->requireExisting(RoleState::class, new LocalId($id->tenantId, $id->roleId));
-            $this->requireExisting('subject' === $id->principalType ? SubjectState::class : GroupState::class, new LocalId($id->tenantId, $id->principalId));
+            $this->requireExisting(
+                'subject' === $id->principalType ? SubjectState::class : GroupState::class,
+                new LocalId($id->tenantId, $id->principalId),
+            );
             $this->states->observe(BindingState::class, $id);
             return new BindingState($id, true, $expiresAt);
         });
@@ -115,20 +123,27 @@ final readonly class Administration
         $this->runner->run(function () use ($actor, $operation, $target, $change): void {
             $this->requireExisting(TenantState::class, $actor->tenantId);
             // An earlier successful check must not let an administrator recreate access after their revocation.
-            $allowed = $this->authorizationGuard->observe(
-                $actor->tenantId,
-                fn (): bool => $this->authorization->allows($actor, Permission::ManageIam, Scope::tenant()),
-            );
+            $allowed = $this->authorizationGuard->observe($actor->tenantId, fn(): bool => $this->authorization->allows(
+                $actor,
+                Permission::ManageIam,
+                Scope::tenant(),
+            ));
             if (!$allowed) {
                 throw new AccessDenied('IAM administration requires iam:manage at tenant scope.');
             }
             $next = $change();
             $this->states->save($next);
-            $this->states->save(new AuditEntry(
-                bin2hex(random_bytes(16)), $actor->tenantId, $actor->localId,
-                $operation, json_encode($target, JSON_THROW_ON_ERROR), $this->clock->now()->getTimestamp(),
-                json_encode($next, JSON_THROW_ON_ERROR),
-            ));
+            $this->states->save(
+                new AuditEntry(
+                    bin2hex(random_bytes(16)),
+                    $actor->tenantId,
+                    $actor->localId,
+                    $operation,
+                    json_encode($target, JSON_THROW_ON_ERROR),
+                    $this->clock->now()->getTimestamp(),
+                    json_encode($next, JSON_THROW_ON_ERROR),
+                ),
+            );
         });
     }
 
@@ -143,7 +158,11 @@ final readonly class Administration
     /** @param class-string $class */
     private function existing(string $class, mixed $id): object
     {
-        return $this->states->observe($class, $id) ?? throw new \DomainException('The referenced IAM state does not exist.');
+        return (
+            $this->states->observe($class, $id) ?? throw new \DomainException(
+                'The referenced IAM state does not exist.',
+            )
+        );
     }
 
     private function sameTenant(LocalId $actor, string $tenantId): void

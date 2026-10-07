@@ -8,7 +8,7 @@ use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
 use Ultra\Time\ClockInterface;
 
-require_once __DIR__.'/Fixtures.php';
+require_once __DIR__ . '/Fixtures.php';
 
 abstract class ProjectionTestCase extends ProjectionFunctionalTestCase
 {
@@ -39,13 +39,17 @@ abstract class ProjectionTestCase extends ProjectionFunctionalTestCase
 
     protected static function courseCreatedEvent(string $courseId, string $name): Event
     {
-        return new Event('runner.course.created', ['courseId' => $courseId, 'name' => $name], ['courseId' => $courseId]);
+        return new Event(
+            'runner.course.created',
+            ['courseId' => $courseId, 'name' => $name],
+            ['courseId' => $courseId],
+        );
     }
 
     protected static function courseIdInBucketRange(int $from, int $to): string
     {
-        for ($i = 0; $i < 10000; ++$i) {
-            $id = 'projection-guarantees-course-'.$i;
+        for ($i = 0; $i < 10_000; ++$i) {
+            $id = 'projection-guarantees-course-' . $i;
             $bucket = BucketHasher::bucketFor($id);
             if ($bucket >= $from && $bucket <= $to) {
                 return $id;

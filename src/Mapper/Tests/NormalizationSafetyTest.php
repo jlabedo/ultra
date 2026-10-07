@@ -29,8 +29,8 @@ final class NormalizationSafetyTest extends MapperTestCase
             'secondary' => 'runtime-email:ada@example.test',
         ];
 
-        self::assertSame($representation, $normalizer->toScalar($object));
-        self::assertSame($representation, $normalizer->toScalar($object));
+        static::assertSame($representation, $normalizer->toScalar($object));
+        static::assertSame($representation, $normalizer->toScalar($object));
     }
 
     public function test_circular_references_are_rejected_and_traversal_resets_after_failure(): void
@@ -41,13 +41,13 @@ final class NormalizationSafetyTest extends MapperTestCase
 
         try {
             $normalizer->toScalar($object);
-            self::fail('Expected a circular reference to be rejected.');
+            static::fail('Expected a circular reference to be rejected.');
         } catch (CircularReferenceException $exception) {
-            self::assertStringContainsString('Circular reference', $exception->getMessage());
+            static::assertStringContainsString('Circular reference', $exception->getMessage());
         }
 
         $object->b = null;
-        self::assertSame(['b' => null], $normalizer->toScalar($object));
-        self::assertSame(['b' => null], $normalizer->toScalar($object));
+        static::assertSame(['b' => null], $normalizer->toScalar($object));
+        static::assertSame(['b' => null], $normalizer->toScalar($object));
     }
 }

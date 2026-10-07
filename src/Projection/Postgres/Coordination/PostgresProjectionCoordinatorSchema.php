@@ -6,22 +6,21 @@ namespace Ultra\Projection_Postgres\Coordination;
 
 final readonly class PostgresProjectionCoordinatorSchema
 {
-    public function __construct(private string $tablePrefix = 'projection_') {}
+    public function __construct(
+        private string $tablePrefix = 'projection_',
+    ) {}
 
     /** @return list<string> */
     public function createStatements(): array
     {
         return [
-            sprintf(
-                'CREATE TABLE IF NOT EXISTS %s (
+            sprintf('CREATE TABLE IF NOT EXISTS %s (
                     coordinator_key      TEXT        NOT NULL PRIMARY KEY,
                     worker_id            TEXT        NULL,
                     lease_expires_at     TIMESTAMPTZ NULL,
                     wake_enqueued_until  TIMESTAMPTZ NULL,
                     updated_at           TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp()
-                )',
-                $this->coordinatorsTable(),
-            ),
+                )', $this->coordinatorsTable()),
         ];
     }
 
@@ -35,6 +34,6 @@ final readonly class PostgresProjectionCoordinatorSchema
 
     private function coordinatorsTable(): string
     {
-        return $this->tablePrefix.'coordinators';
+        return $this->tablePrefix . 'coordinators';
     }
 }

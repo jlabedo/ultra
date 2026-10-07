@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace App\Tests\Driver;
 
 use App\Booking\Domain\Slot;
-use App\Booking\StateStore\State\BookingState;
 use App\Booking\StateStore\Repository\BookingRepository;
+use App\Booking\StateStore\State\BookingState;
 use App\Booking\StateStore\Write;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\StateStore\StateStore;

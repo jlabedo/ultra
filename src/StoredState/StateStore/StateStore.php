@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\StateStore;
 
-use Ultra\Mapper\UltraNormalizer;
 use Ultra\MappedTable\MappedRow;
+use Ultra\Mapper\UltraNormalizer;
 
 final readonly class StateStore
 {
@@ -55,9 +55,10 @@ final readonly class StateStore
         $state = $this->load($stateClass, $id);
         if (null === $state) {
             $this->expectMissing($stateClass, $id);
-        } else {
-            $this->expect($state);
+
+            return null;
         }
+        $this->expect($state);
 
         return $state;
     }
@@ -80,9 +81,10 @@ final readonly class StateStore
         $expectation = $table->withKey($key);
         if ($exists) {
             $expectation->expectPresent();
-        } else {
-            $expectation->expectAbsent();
+
+            return true;
         }
+        $expectation->expectAbsent();
 
         return $exists;
     }
@@ -94,16 +96,20 @@ final readonly class StateStore
         $this->tableRegistry->assertCanSave($metadata, $key);
         $normalizedId = $normalizedState[$metadata->idProperty];
 
-        $this->tableRegistry->tableFor($metadata)
+        $this->tableRegistry
+            ->tableFor($metadata)
             ->withKey($key)
             ->upsert()
-            ->setColumns($metadata->columnsFromNormalized($normalizedState))
-        ;
+            ->setColumns($metadata->columnsFromNormalized($normalizedState));
 
         foreach ($metadata->collections as $collection) {
-            $this->tableRegistry->collectionFor($collection, $normalizedId)->reconcileRows(
-                $this->collectionRows($collection, $normalizedId, $this->normalizedCollectionItems($metadata, $normalizedState, $collection)),
-            );
+            $this->tableRegistry
+                ->collectionFor($collection, $normalizedId)
+                ->reconcileRows($this->collectionRows(
+                    $collection,
+                    $normalizedId,
+                    $this->normalizedCollectionItems($metadata, $normalizedState, $collection),
+                ));
         }
     }
 
@@ -138,21 +144,16 @@ final readonly class StateStore
         $normalizedId = $normalizedState[$metadata->idProperty];
         $expectedColumns = $metadata->optimisticColumnsFromNormalized($normalizedState);
 
-        $this->tableRegistry->tableFor($metadata)
-            ->withKey($key)
-            ->expectPresent()
-            ->expectColumnValues($expectedColumns)
-        ;
+        $this->tableRegistry->tableFor($metadata)->withKey($key)->expectPresent()->expectColumnValues($expectedColumns);
 
         foreach ($metadata->collections as $collection) {
             $items = $this->normalizedCollectionItems($metadata, $normalizedState, $collection);
             $rowSet = $this->tableRegistry->collectionFor($collection, $normalizedId);
             $ownerKey = $collection->ownerKey($normalizedId);
-            $rowSet->expectSameRowKeys(array_map(
-                fn (array $item) => $collection->itemKey($item, $ownerKey),
-                $items,
-            ))
-            ;
+            $rowSet->expectSameRowKeys(array_map(static fn(array $item) => $collection->itemKey(
+                $item,
+                $ownerKey,
+            ), $items));
         }
     }
 
@@ -197,24 +198,21 @@ final readonly class StateStore
 
         $this->assertIdentifierType($metadata, $id);
         $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
-        $this->tableRegistry->tableFor($metadata)
+        $this->tableRegistry
+            ->tableFor($metadata)
             ->withKey($metadata->keyFromNormalizedId($normalizedId))
-            ->expectAbsent()
-        ;
+            ->expectAbsent();
     }
 
     /**
-     * @return array{StateMetadata, array<string, mixed>}
+     * @return array{StateMetadata, array<array-key, mixed>}
      */
     private function normalizeState(object $state): array
     {
         $metadata = $this->metadataRegistry->metadataFor($state::class);
         $normalizedState = $this->normalizer->toScalar($state);
         if (!is_array($normalizedState)) {
-            throw new \LogicException(sprintf(
-                'State "%s" must normalize to an array.',
-                $metadata->stateClass,
-            ));
+            throw new \LogicException(sprintf('State "%s" must normalize to an array.', $metadata->stateClass));
         }
 
         return [$metadata, $normalizedState];
@@ -223,7 +221,9 @@ final readonly class StateStore
     private function loadCollection(StateCollectionMetadata $collection, mixed $normalizedOwnerId): array
     {
         $items = [];
-        foreach ($this->tableRegistry->collectionFor($collection, $normalizedOwnerId)->rows($collection->selectedColumns()) as $row) {
+        foreach ($this->tableRegistry
+            ->collectionFor($collection, $normalizedOwnerId)
+            ->rows($collection->selectedColumns()) as $row) {
             $items[] = $collection->payloadFromRow($row);
         }
 
@@ -231,11 +231,14 @@ final readonly class StateStore
     }
 
     /**
-     * @param list<array<string, mixed>> $items
+     * @param list<array<array-key, mixed>> $items
      * @return iterable<MappedRow>
      */
-    private function collectionRows(StateCollectionMetadata $collection, mixed $normalizedOwnerId, array $items): iterable
-    {
+    private function collectionRows(
+        StateCollectionMetadata $collection,
+        mixed $normalizedOwnerId,
+        array $items,
+    ): iterable {
         $ownerKey = $collection->ownerKey($normalizedOwnerId);
 
         foreach ($items as $item) {
@@ -244,13 +247,19 @@ final readonly class StateStore
     }
 
     /**
-     * @param array<string, mixed> $normalizedState
+     * @param array<array-key, mixed> $normalizedState
      *
-     * @return list<array<string, mixed>>
+     * @return list<array<array-key, mixed>>
      */
-    private function normalizedCollectionItems(StateMetadata $metadata, array $normalizedState, StateCollectionMetadata $collection): array
-    {
-        if (!array_key_exists($collection->property, $normalizedState) || !is_array($normalizedState[$collection->property])) {
+    private function normalizedCollectionItems(
+        StateMetadata $metadata,
+        array $normalizedState,
+        StateCollectionMetadata $collection,
+    ): array {
+        if (
+            !array_key_exists($collection->property, $normalizedState)
+            || !is_array($normalizedState[$collection->property])
+        ) {
             throw new \LogicException(sprintf(
                 'State "%s" collection "%s" must normalize to an array.',
                 $metadata->stateClass,

@@ -8,13 +8,12 @@ use Doctrine\DBAL\Connection;
 use Ultra\Coordination\InMemory\InMemoryDirtyKeyTracker;
 use Ultra\Coordination\Lease\CoordinatorLease;
 use Ultra\Coordination\Tracking\DirtyKeyTracker;
+use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\Checkpoint;
-use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\LoadResult;
 use Ultra\EventStore\StreamQuery;
-use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\Projection\Attribute\Projection;
@@ -76,13 +75,13 @@ final class TestProjectionClass
     #[ProjectionHandler]
     public function onStudentSubscribed(StudentSubscribed $event): void
     {
-        $this->handled[] = 'subscribed:'.$event->studentId;
+        $this->handled[] = 'subscribed:' . $event->studentId;
     }
 
     #[ProjectionHandler]
     public function onCourseCreated(CourseCreatedEvent $event): void
     {
-        $this->handled[] = 'created:'.$event->courseId;
+        $this->handled[] = 'created:' . $event->courseId;
     }
 }
 
@@ -96,12 +95,16 @@ final class TestProjectionClassWithoutInitializer
 #[EventAttribute('student.subscribed')]
 final readonly class DuplicateStudentSubscribed
 {
-    public function __construct(public string $studentId) {}
+    public function __construct(
+        public string $studentId,
+    ) {}
 }
 
 final readonly class EventWithoutAttribute
 {
-    public function __construct(public string $courseId) {}
+    public function __construct(
+        public string $courseId,
+    ) {}
 }
 
 #[Projection(name: 'invalid_builtin_projection', partitionBy: 'courseId')]
@@ -310,15 +313,21 @@ final class CountingLeaseRepository implements CoordinatorLease
     public int $renewCalls = 0;
     public int $releaseCalls = 0;
 
-    public function acquire(string $coordinatorKey, string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
-    {
+    public function acquire(
+        string $coordinatorKey,
+        string $workerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): bool {
         ++$this->acquireCalls;
 
         return true;
     }
 
-    public function renew(string $coordinatorKey, string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): void
-    {
+    public function renew(
+        string $coordinatorKey,
+        string $workerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): void {
         ++$this->renewCalls;
     }
 
@@ -347,7 +356,9 @@ final class CountingDirtyKeyTracker implements DirtyKeyTracker
     public int $pendingCalls = 0;
     public int $pendingForChannelCalls = 0;
 
-    public function __construct(private readonly DirtyKeyTracker $inner = new InMemoryDirtyKeyTracker()) {}
+    public function __construct(
+        private readonly DirtyKeyTracker $inner = new InMemoryDirtyKeyTracker(),
+    ) {}
 
     public function bump(string $channel, string $key): void
     {
@@ -453,24 +464,18 @@ final class ConcurrencyCourseNamesProjection
     #[ProjectionInitializer]
     public function initialize(): void
     {
-        $this->connection->executeStatement(sprintf(
-            'CREATE TABLE IF NOT EXISTS %s (
+        $this->connection->executeStatement(sprintf('CREATE TABLE IF NOT EXISTS %s (
                 course_id TEXT PRIMARY KEY,
                 name      TEXT NOT NULL
-            )',
-            $this->tableName,
-        ));
+            )', $this->tableName));
     }
 
     #[ProjectionHandler]
     public function onCourseCreated(ConcurrencyCourseCreated $event): void
     {
         $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (course_id, name) VALUES (?, ?)
-                 ON CONFLICT (course_id) DO UPDATE SET name = EXCLUDED.name',
-                $this->tableName,
-            ),
+            sprintf('INSERT INTO %s (course_id, name) VALUES (?, ?)
+                 ON CONFLICT (course_id) DO UPDATE SET name = EXCLUDED.name', $this->tableName),
             [$event->courseId, $event->name],
         );
     }

@@ -19,6 +19,8 @@ interface HandlerMatchContext
 
     /**
      * The message class this handler handles.
+     *
+     * @return class-string
      */
     public function messageClass(): string;
 

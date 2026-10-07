@@ -25,20 +25,25 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
 
         $fixture->runner->ensureInitialized($runtime);
         $fixture->runner->ensureInitialized($runtime);
-        self::assertSame(1, $projection->initialized);
-        self::assertCount(1, $fixture->segments->listSegments('tracking_projection'));
+        static::assertSame(1, $projection->initialized);
+        static::assertCount(1, $fixture->segments->listSegments('tracking_projection'));
         $fixture->runner->splitSegment('tracking_projection', 0);
         $projection->names = ['course-1' => 'Math'];
 
         $fixture->runner->deleteProjection($runtime);
 
-        self::assertSame(1, $projection->resets);
-        self::assertSame([], $projection->names);
-        self::assertSame([], $fixture->segments->listSegments('tracking_projection'));
+        static::assertSame(1, $projection->resets);
+        static::assertSame([], $projection->names);
+        static::assertSame([], $fixture->segments->listSegments('tracking_projection'));
         $fixture->runner->ensureInitialized($runtime);
-        self::assertSame(2, $projection->initialized);
+        static::assertSame(2, $projection->initialized);
         $segment = $fixture->segments->listSegments('tracking_projection')[0];
-        self::assertSame([0, 255, 0, null], [$segment->bucketFrom, $segment->bucketTo, $segment->checkpoint->gapFloor->value, $segment->workerId]);
+        static::assertSame([0, 255, 0, null], [
+            $segment->bucketFrom,
+            $segment->bucketTo,
+            $segment->checkpoint->gapFloor->value,
+            $segment->workerId,
+        ]);
     }
 
     #[DataProvider('lifecycleFailures')]
@@ -59,27 +64,27 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
             } else {
                 $fixture->runner->deleteProjection($runtime);
             }
-            self::fail('Expected the lifecycle hook to fail.');
+            static::fail('Expected the lifecycle hook to fail.');
         } catch (\RuntimeException $exception) {
-            self::assertSame('Failed '.$stage.'.', $exception->getMessage());
+            static::assertSame('Failed ' . $stage . '.', $exception->getMessage());
         }
 
         if ('initialize' === $stage) {
-            self::assertSame([], $fixture->segments->listSegments('durable_projection'));
-            self::assertNull($fixture->connection->fetchOne('SELECT to_regclass(?)', [$projection->table]));
+            static::assertSame([], $fixture->segments->listSegments('durable_projection'));
+            static::assertNull($fixture->connection->fetchOne('SELECT to_regclass(?)', [$projection->table]));
         } else {
-            self::assertCount(2, $fixture->segments->listSegments('durable_projection'));
-            self::assertSame([['action' => 'initialize', 'course_id' => null, 'name' => null]], $projection->rows());
+            static::assertCount(2, $fixture->segments->listSegments('durable_projection'));
+            static::assertSame([['action' => 'initialize', 'course_id' => null, 'name' => null]], $projection->rows());
         }
-        self::assertFalse($fixture->connection->isTransactionActive());
+        static::assertFalse($fixture->connection->isTransactionActive());
 
         $projection->failAt = null;
         if ('initialize' === $stage) {
             $fixture->runner->ensureInitialized($runtime);
-            self::assertCount(1, $fixture->segments->listSegments('durable_projection'));
+            static::assertCount(1, $fixture->segments->listSegments('durable_projection'));
         } else {
             $fixture->runner->deleteProjection($runtime);
-            self::assertSame([], $fixture->segments->listSegments('durable_projection'));
+            static::assertSame([], $fixture->segments->listSegments('durable_projection'));
         }
     }
 

@@ -15,10 +15,15 @@ final class InMemoryCoordinatorLease implements CoordinatorLease
     /** @var array<string, array{workerId: null|string, leaseExpiresAt: null|DatePoint, wakeEnqueuedUntil: null|DatePoint}> */
     private array $rows = [];
 
-    public function __construct(private readonly ClockInterface $clock = new SystemClock()) {}
+    public function __construct(
+        private readonly ClockInterface $clock = new SystemClock(),
+    ) {}
 
-    public function acquire(string $coordinatorKey, string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
-    {
+    public function acquire(
+        string $coordinatorKey,
+        string $workerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): bool {
         $row = $this->row($coordinatorKey);
         if ($this->isLeaseExpired($row)) {
             $row['workerId'] = null;
@@ -39,8 +44,11 @@ final class InMemoryCoordinatorLease implements CoordinatorLease
         return true;
     }
 
-    public function renew(string $coordinatorKey, string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): void
-    {
+    public function renew(
+        string $coordinatorKey,
+        string $workerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): void {
         $row = $this->row($coordinatorKey);
         if ($row['workerId'] !== $workerId) {
             return;
@@ -104,7 +112,9 @@ final class InMemoryCoordinatorLease implements CoordinatorLease
     /** @return array{workerId: null|string, leaseExpiresAt: null|DatePoint, wakeEnqueuedUntil: null|DatePoint} */
     private function row(string $coordinatorKey): array
     {
-        return $this->rows[$coordinatorKey] ?? ['workerId' => null, 'leaseExpiresAt' => null, 'wakeEnqueuedUntil' => null];
+        return (
+            $this->rows[$coordinatorKey] ?? ['workerId' => null, 'leaseExpiresAt' => null, 'wakeEnqueuedUntil' => null]
+        );
     }
 
     /** @param array{workerId: null|string, leaseExpiresAt: null|DatePoint, wakeEnqueuedUntil: null|DatePoint} $row */

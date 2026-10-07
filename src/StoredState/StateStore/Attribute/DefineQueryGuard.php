@@ -11,5 +11,8 @@ use Ultra\StateStore\QueryGuardDefinition;
 final readonly class DefineQueryGuard
 {
     /** @param \Closure(QueryGuardDefinition): void $configure */
-    public function __construct(public string $name, public \Closure $configure) {}
+    public function __construct(
+        public string $name,
+        public \Closure $configure,
+    ) {}
 }

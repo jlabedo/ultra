@@ -33,10 +33,13 @@ final class AdvicePhasesTest extends MessageHandlingCompilerTestCase
     public function test_dispatch_advice_runs_once_while_execute_and_default_advice_follow_execution(bool $async): void
     {
         $log = new PhaseLog();
-        $container = $this->ultraLight()
+        $container = $this
+            ->ultraLight()
             ->withService($async ? new QueuedPhaseHandler() : new InlinePhaseHandler())
             ->withService(new class($log) {
-                public function __construct(private readonly PhaseLog $log) {}
+                public function __construct(
+                    private readonly PhaseLog $log,
+                ) {}
 
                 #[Before(static function (HandlerMatchContext $ctx): MatchResult {
                     return MatchResult::apply(phases: [AdvicePhase::Dispatch]);
@@ -70,16 +73,16 @@ final class AdvicePhasesTest extends MessageHandlingCompilerTestCase
             ->boot();
 
         $result = $container->mediator()->send(new GreetingMessage('test'));
-        self::assertSame($async ? null : 'handled: test', $result);
-        self::assertSame(1, $log->dispatch);
-        self::assertSame($async ? 0 : 1, $log->execute);
-        self::assertSame($async ? 0 : 1, $log->before);
-        self::assertSame($async ? 0 : 1, $log->around);
-        self::assertSame($async ? 1 : 0, $container->queueWorker()->drain());
-        self::assertSame(1, $log->dispatch);
-        self::assertSame(1, $log->execute);
-        self::assertSame(1, $log->before);
-        self::assertSame(1, $log->around);
+        static::assertSame($async ? null : 'handled: test', $result);
+        static::assertSame(1, $log->dispatch);
+        static::assertSame($async ? 0 : 1, $log->execute);
+        static::assertSame($async ? 0 : 1, $log->before);
+        static::assertSame($async ? 0 : 1, $log->around);
+        static::assertSame($async ? 1 : 0, $container->queueWorker()->drain());
+        static::assertSame(1, $log->dispatch);
+        static::assertSame(1, $log->execute);
+        static::assertSame(1, $log->before);
+        static::assertSame(1, $log->around);
     }
 }
 
@@ -96,7 +99,7 @@ final class InlinePhaseHandler
     #[Handles]
     public function handle(GreetingMessage $message): string
     {
-        return 'handled: '.$message->name;
+        return 'handled: ' . $message->name;
     }
 }
 
@@ -106,6 +109,6 @@ final class QueuedPhaseHandler
     #[Asynchronous]
     public function handle(GreetingMessage $message): string
     {
-        return 'handled: '.$message->name;
+        return 'handled: ' . $message->name;
     }
 }

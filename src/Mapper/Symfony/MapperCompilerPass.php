@@ -6,9 +6,8 @@ namespace Ultra\Mapper_Bundle;
 
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Ultra\Mapper\RuntimeNormalizerInterface;
 use Ultra\Mapper\GeneratedNormalizerName;
-use Ultra\Mapper_Bundle\TagNames;
+use Ultra\Mapper\RuntimeNormalizerInterface;
 use Ultra\Mapper_Compiler\NormalizerGenerator;
 
 final readonly class MapperCompilerPass implements CompilerPassInterface
@@ -28,16 +27,18 @@ final readonly class MapperCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * @return list<class-string>
+     * @return list<string>
      */
     private function collectTaggedClasses(ContainerBuilder $container): array
     {
         $classes = [];
 
-        foreach ($container->findTaggedResourceIds(TagNames::NORMALIZABLE) as $id => $tags) {
+        /** @var array<string, list<array<string, mixed>>> $resources */
+        $resources = $container->findTaggedResourceIds(TagNames::NORMALIZABLE);
+        foreach ($resources as $id => $tags) {
             foreach ($tags as $tag) {
                 $class = $tag['class'] ?? $container->findDefinition($id)->getClass();
-                if (null === $class) {
+                if (!is_string($class)) {
                     throw new \LogicException(sprintf(
                         'Service "%s" tagged "%s" has no class; use tag attribute "class" to specify one.',
                         $id,
@@ -72,7 +73,7 @@ final readonly class MapperCompilerPass implements CompilerPassInterface
                 ));
             }
             $class = $container->getParameterBag()->resolveValue($class);
-            if (!is_a($class, RuntimeNormalizerInterface::class, true)) {
+            if (!is_string($class) || !class_exists($class) || !is_a($class, RuntimeNormalizerInterface::class, true)) {
                 throw new \LogicException(sprintf(
                     'Service "%s" tagged "%s" must implement %s.',
                     $id,
@@ -80,6 +81,7 @@ final readonly class MapperCompilerPass implements CompilerPassInterface
                     RuntimeNormalizerInterface::class,
                 ));
             }
+            // @mago-expect analyser:possibly-static-access-on-interface
             foreach ($class::handledTypes() as $type) {
                 $types[$type] = true;
             }
@@ -91,7 +93,7 @@ final readonly class MapperCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * @param list<class-string>        $classes
+     * @param list<string>        $classes
      * @param array<class-string, true> $runtimeNormalizedTypes
      */
     private function generateNormalizers(array $classes, array $runtimeNormalizedTypes): void
@@ -101,7 +103,9 @@ final readonly class MapperCompilerPass implements CompilerPassInterface
         }
 
         if (!class_exists(NormalizerGenerator::class)) {
-            throw new \RuntimeException('Cannot compile mapper normalizers because ultra/mapper-compiler is not installed.');
+            throw new \RuntimeException(
+                'Cannot compile mapper normalizers because ultra/mapper-compiler is not installed.',
+            );
         }
 
         if (!is_dir($this->outputDir)) {
@@ -110,11 +114,14 @@ final readonly class MapperCompilerPass implements CompilerPassInterface
 
         foreach ($classes as $className) {
             if (!class_exists($className)) {
-                throw new \RuntimeException(sprintf('Cannot compile mapper normalizer for missing class "%s".', $className));
+                throw new \RuntimeException(sprintf(
+                    'Cannot compile mapper normalizer for missing class "%s".',
+                    $className,
+                ));
             }
 
             $normalizerClass = GeneratedNormalizerName::forType($className, $this->generationNamespace);
-            $cacheFile = rtrim($this->outputDir, '/').'/'.GeneratedNormalizerName::cacheFileName($normalizerClass);
+            $cacheFile = rtrim($this->outputDir, '/') . '/' . GeneratedNormalizerName::cacheFileName($normalizerClass);
             $fileGen = NormalizerGenerator::for($className, $normalizerClass, $runtimeNormalizedTypes);
 
             file_put_contents($cacheFile, $fileGen->generate());

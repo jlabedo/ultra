@@ -14,8 +14,7 @@ final readonly class TermsOfUseAcceptanceStatus implements \JsonSerializable
 
     public function mustAcceptCurrentTermsOfUse(): bool
     {
-        return null !== $this->currentTermsOfUse
-            && !$this->currentTermsOfUse->equals($this->acceptedTermsOfUse);
+        return null !== $this->currentTermsOfUse && !$this->currentTermsOfUse->equals($this->acceptedTermsOfUse);
     }
 
     public function jsonSerialize(): array

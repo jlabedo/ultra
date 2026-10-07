@@ -76,7 +76,14 @@ final readonly class ClassicDriver implements BookingDriver
     {
         $room = $this->entityManager->find(Room::class, $roomId);
 
-        return null === $room ? [] : array_map(static fn (Booking $booking): string => $booking->id, $this->bookings->confirmedOnDay($room, $day));
+        return (
+            null === $room
+                ? []
+                : array_map(
+                    static fn(Booking $booking): string => $booking->id,
+                    $this->bookings->confirmedOnDay($room, $day),
+                )
+        );
     }
 
     public function bookingStatus(string $bookingId): ?string

@@ -55,7 +55,7 @@ final class Worker
         } catch (\Throwable $e) {
             throw new \InvalidArgumentException(
                 'Failed to serialize worker closure. '
-                .'Captured variables must be serializable — bootstrap connections and resources inside the closure.',
+                . 'Captured variables must be serializable — bootstrap connections and resources inside the closure.',
                 previous: $e,
             );
         }
@@ -92,21 +92,29 @@ final class Worker
 
             if ($releaseOthers) {
                 foreach ($this->checkpointQueues as $otherName => $queue) {
-                    if ($otherName !== $name && [] !== $queue) {
-                        array_shift($this->checkpointQueues[$otherName]);
-                        $this->release($otherName);
+                    if (!($otherName !== $name && [] !== $queue)) {
+                        continue;
                     }
+
+                    array_shift($this->checkpointQueues[$otherName]);
+                    $this->release($otherName);
                 }
             }
 
-            if ($this->checkpointQueues[$name] ?? [] !== []) {
-                return array_shift($this->checkpointQueues[$name]);
+            $checkpoint = [] === ($this->checkpointQueues[$name] ?? [])
+                ? null
+                : array_shift($this->checkpointQueues[$name]);
+            if (null !== $checkpoint) {
+                return $checkpoint;
             }
 
             if (!$this->process->isRunning()) {
                 $this->pump(); // drain any final output
-                if ($this->checkpointQueues[$name] ?? [] !== []) {
-                    return array_shift($this->checkpointQueues[$name]);
+                $checkpoint = [] === ($this->checkpointQueues[$name] ?? [])
+                    ? null
+                    : array_shift($this->checkpointQueues[$name]);
+                if (null !== $checkpoint) {
+                    return $checkpoint;
                 }
 
                 throw new WorkerDiedException($this->workerDiedMessage(
@@ -123,7 +131,7 @@ final class Worker
             $timeout,
             $name,
             $this->process->isRunning() ? 'running' : 'stopped',
-            $this->stderrBuffer ?: '(empty)',
+            (bool) $this->stderrBuffer ? $this->stderrBuffer : '(empty)',
         ));
     }
 
@@ -141,6 +149,7 @@ final class Worker
      */
     public function abort(): void
     {
+        // @mago-expect linter:no-empty-catch-clause
         try {
             $this->write(new AbortMessage());
         } catch (\Throwable) {
@@ -182,7 +191,7 @@ final class Worker
         throw new ConcurrentTestTimeoutException(sprintf(
             'Timed out after %.1fs waiting for worker to finish. Stderr: %s',
             $timeout,
-            $this->stderrBuffer ?: '(empty)',
+            (bool) $this->stderrBuffer ? $this->stderrBuffer : '(empty)',
         ));
     }
 
@@ -237,7 +246,7 @@ final class Worker
 
     private function parseLines(): void
     {
-        while (false !== $pos = strpos($this->stdoutRemainder, "\n")) {
+        while (false !== ($pos = strpos($this->stdoutRemainder, "\n"))) {
             $line = substr($this->stdoutRemainder, 0, $pos);
             $this->stdoutRemainder = substr($this->stdoutRemainder, $pos + 1);
 
@@ -251,10 +260,7 @@ final class Worker
             } catch (ProtocolException $e) {
                 $this->process->stop(0.1);
 
-                throw new ProtocolException(
-                    sprintf('Protocol error from worker: %s', $e->getMessage()),
-                    previous: $e,
-                );
+                throw new ProtocolException(sprintf('Protocol error from worker: %s', $e->getMessage()), previous: $e);
             }
 
             $this->route($message);
@@ -265,10 +271,16 @@ final class Worker
     {
         match (true) {
             $message instanceof ReadyMessage => null, // internal; not surfaced to callers
-            $message instanceof CheckpointMessage => $this->checkpointQueues[$message->name][] = new Checkpoint($message->name, $message->payload),
+            $message instanceof CheckpointMessage => $this->checkpointQueues[$message->name][] = new Checkpoint(
+                $message->name,
+                $message->payload,
+            ),
             $message instanceof ResultMessage => $this->outcome = $this->decodeResult($message),
             $message instanceof ExceptionMessage => $this->outcome = $this->decodeException($message),
-            $message instanceof LogMessage => $this->logs[] = ['level' => $message->level, 'message' => $message->message],
+            $message instanceof LogMessage => $this->logs[] = [
+                'level' => $message->level,
+                'message' => $message->message,
+            ],
             default => null, // silently ignore any master→child messages echoed back
         };
     }
@@ -292,6 +304,7 @@ final class Worker
         if (null !== $message->serialized) {
             $raw = base64_decode($message->serialized, true);
             if (false !== $raw) {
+                // @mago-expect linter:no-empty-catch-clause
                 try {
                     $exception = unserialize($raw);
                     if ($exception instanceof \Throwable) {
@@ -329,7 +342,7 @@ final class Worker
             $this->process->getExitCode() ?? -1,
             $context,
             $exceptionDetail,
-            $this->stderrBuffer ?: '(empty)',
+            (bool) $this->stderrBuffer ? $this->stderrBuffer : '(empty)',
         );
     }
 }

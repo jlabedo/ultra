@@ -26,11 +26,8 @@ final readonly class ProjectionCoordinator
         private ProjectionScalingPolicyInterface $scalingPolicy = new DefaultProjectionScalingPolicy(),
     ) {}
 
-    public function run(
-        string $workerId,
-        int $batchSize = 100,
-        int $maxCycles = 32,
-    ): ProjectionCoordinatorResult {
+    public function run(string $workerId, int $batchSize = 100, int $maxCycles = 32): ProjectionCoordinatorResult
+    {
         $acquiredLease = $this->leaseRepository->acquire(self::COORDINATOR_KEY, $workerId);
         if (!$acquiredLease) {
             return new ProjectionCoordinatorResult(false, 0, 0, 0);
@@ -71,15 +68,18 @@ final readonly class ProjectionCoordinator
                             continue;
                         }
 
-                        if (null === $localAssignment) {
-                            $claimWorkerId = $workerId;
-                        } elseif ($remoteAssignments < $additionalWorkers) {
-                            $claimWorkerId = $this->workerIdFor($workerId, $projectionId, $segment->bucketFrom);
-                        } else {
+                        if (null !== $localAssignment && $remoteAssignments >= $additionalWorkers) {
                             continue;
                         }
+                        $claimWorkerId = null === $localAssignment
+                            ? $workerId
+                            : $this->workerIdFor($workerId, $projectionId, $segment->bucketFrom);
 
-                        $claimedSegment = $this->runner->claimSegment($projectionId, $segment->bucketFrom, $claimWorkerId);
+                        $claimedSegment = $this->runner->claimSegment(
+                            $projectionId,
+                            $segment->bucketFrom,
+                            $claimWorkerId,
+                        );
                         if (null === $claimedSegment) {
                             continue;
                         }
@@ -100,7 +100,13 @@ final readonly class ProjectionCoordinator
                 if (null !== $localAssignment) {
                     [$runtime, $projectionId, $bucketFrom, $claimWorkerId] = $localAssignment;
                     do {
-                        $result = $this->runner->runClaimedOnce($runtime, $projectionId, $bucketFrom, $claimWorkerId, $batchSize);
+                        $result = $this->runner->runClaimedOnce(
+                            $runtime,
+                            $projectionId,
+                            $bucketFrom,
+                            $claimWorkerId,
+                            $batchSize,
+                        );
                         if (!$result->claimedSegment) {
                             break;
                         }
@@ -158,13 +164,16 @@ final readonly class ProjectionCoordinator
     {
         $candidates = array_filter(
             $this->runner->listSegments($projectionId),
-            static fn (ProjectionSegment $segment): bool => null === $segment->workerId
-                && $segment->bucketTo > $segment->bucketFrom,
+            static fn(ProjectionSegment $segment): bool => (
+                null === $segment->workerId
+                && $segment->bucketTo > $segment->bucketFrom
+            ),
         );
         usort(
             $candidates,
-            static fn (ProjectionSegment $left, ProjectionSegment $right): int => ($right->bucketTo - $right->bucketFrom)
-                <=> ($left->bucketTo - $left->bucketFrom),
+            static fn(ProjectionSegment $left, ProjectionSegment $right): int => (
+                ($right->bucketTo - $right->bucketFrom) <=> ($left->bucketTo - $left->bucketFrom)
+            ),
         );
 
         return $candidates[0] ?? null;

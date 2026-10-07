@@ -19,7 +19,11 @@ use Ultra\Time\ClockInterface;
 /** Validates the whole booking request before returning the states that the decision aspect will save. */
 final readonly class BookingPlanner
 {
-    public function __construct(private BookingRepository $bookings, private StateStore $states, private ClockInterface $clock) {}
+    public function __construct(
+        private BookingRepository $bookings,
+        private StateStore $states,
+        private ClockInterface $clock,
+    ) {}
 
     /**
      * @param list<array{id: string, slot: Slot}> $occurrences A single slot or weekly series with distinct ids and disjoint slots.
@@ -32,7 +36,9 @@ final readonly class BookingPlanner
         }
         foreach ($occurrences as ['id' => $id]) {
             Violations::throwIfAny([
-                null !== $this->states->observe(BookingState::class, $id) ? new Violation('booking.already_exists', 'Booking already exists.') : null,
+                null !== $this->states->observe(BookingState::class, $id)
+                    ? new Violation('booking.already_exists', 'Booking already exists.')
+                    : null,
             ]);
         }
         Violations::throwIfAny([
@@ -46,19 +52,32 @@ final readonly class BookingPlanner
         foreach ($occurrences as ['slot' => $slot]) {
             Violations::throwIfAny([
                 ...BookingPolicy::slotViolations($slot, $this->clock->now()),
-                $this->bookings->hasOverlap($room, $slot) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
+                $this->bookings->hasOverlap($room, $slot)
+                    ? new Violation('slot.unavailable', 'Room is already booked for this slot.')
+                    : null,
             ]);
             $month = $slot->month();
             $requestedMinutes[$month] = ($requestedMinutes[$month] ?? 0) + $slot->minutes();
         }
         foreach ($requestedMinutes as $month => $minutes) {
             Violations::throwIfAny([
-                BookingPolicy::quotaExceeded($company->monthlyMinutes, $this->bookings->observeUsedMinutes($company, $month), $minutes),
+                BookingPolicy::quotaExceeded(
+                    $company->monthlyMinutes,
+                    $this->bookings->observeUsedMinutes($company, $month),
+                    $minutes,
+                ),
             ]);
         }
 
         return array_map(
-            static fn (array $occurrence): BookingState => new BookingState($occurrence['id'], $room->roomId, $member->memberId, $company->companyId, $occurrence['slot']->start, $occurrence['slot']->end),
+            static fn(array $occurrence): BookingState => new BookingState(
+                $occurrence['id'],
+                $room->roomId,
+                $member->memberId,
+                $company->companyId,
+                $occurrence['slot']->start,
+                $occurrence['slot']->end,
+            ),
             $occurrences,
         );
     }

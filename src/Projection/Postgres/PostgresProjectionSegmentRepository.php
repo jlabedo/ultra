@@ -30,12 +30,9 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $now = $this->clock->now();
 
         $affected = $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
+            sprintf('INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
                  VALUES (?, 0, 255, ?, CAST(? AS TIMESTAMPTZ))
-                 ON CONFLICT (projection_id, bucket_from) DO NOTHING',
-                $this->segmentsTable(),
-            ),
+                 ON CONFLICT (projection_id, bucket_from) DO NOTHING', $this->segmentsTable()),
             [$projectionId, Checkpoint::beginning()->serialize(), $now],
             [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
         );
@@ -60,9 +57,9 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     ): ?ProjectionSegment {
         $now = $this->clock->now();
 
-        $row = $this->connection->executeQuery(
-            sprintf(
-                'UPDATE %s
+        $row = $this->connection
+            ->executeQuery(
+                sprintf('UPDATE %s
                  SET worker_id = ?,
                      lease_expires_at = CAST(? AS TIMESTAMPTZ),
                      updated_at = CAST(? AS TIMESTAMPTZ)
@@ -70,12 +67,20 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                    AND bucket_from = ?
                    AND (worker_id IS NULL OR worker_id = ?)
                    AND (lease_expires_at IS NULL OR lease_expires_at >= CAST(? AS TIMESTAMPTZ) OR worker_id = ?)
-                 RETURNING bucket_from, bucket_to, checkpoint',
-                $this->segmentsTable(),
-            ),
-            [$workerId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom, $workerId, $now, $workerId],
-            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
-        )->fetchAssociative();
+                 RETURNING bucket_from, bucket_to, checkpoint', $this->segmentsTable()),
+                [$workerId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom, $workerId, $now, $workerId],
+                [
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::INTEGER,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                ],
+            )
+            ->fetchAssociative();
 
         if (false === $row) {
             return null;
@@ -109,7 +114,13 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                     $this->segmentsTable(),
                 ),
                 [$checkpoint->serialize(), $now, $segment->projectionId, $segment->bucketFrom, $workerId],
-                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
+                [
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::INTEGER,
+                    ParameterType::STRING,
+                ],
             );
 
             return;
@@ -124,8 +135,22 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                  WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?',
                 $this->segmentsTable(),
             ),
-            [$checkpoint->serialize(), $now->add($leaseDuration), $now, $segment->projectionId, $segment->bucketFrom, $workerId],
-            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
+            [
+                $checkpoint->serialize(),
+                $now->add($leaseDuration),
+                $now,
+                $segment->projectionId,
+                $segment->bucketFrom,
+                $workerId,
+            ],
+            [
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::INTEGER,
+                ParameterType::STRING,
+            ],
         );
     }
 
@@ -168,15 +193,14 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
      */
     public function splitSegment(string $projectionId, int $bucketFrom): void
     {
-        $row = $this->connection->executeQuery(
-            sprintf(
-                'SELECT bucket_from, bucket_to, checkpoint
-                 FROM %s WHERE projection_id = ? AND bucket_from = ?',
-                $this->segmentsTable(),
-            ),
-            [$projectionId, $bucketFrom],
-            [ParameterType::STRING, ParameterType::INTEGER],
-        )->fetchAssociative();
+        $row = $this->connection
+            ->executeQuery(
+                sprintf('SELECT bucket_from, bucket_to, checkpoint
+                 FROM %s WHERE projection_id = ? AND bucket_from = ?', $this->segmentsTable()),
+                [$projectionId, $bucketFrom],
+                [ParameterType::STRING, ParameterType::INTEGER],
+            )
+            ->fetchAssociative();
 
         if (false === $row) {
             throw new \InvalidArgumentException(sprintf(
@@ -208,25 +232,27 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         $this->connection->beginTransaction();
 
         try {
-            $rows = $this->connection->executeQuery(
-                sprintf(
-                    'SELECT bucket_from, bucket_to, checkpoint
+            $rows = $this->connection
+                ->executeQuery(
+                    sprintf('SELECT bucket_from, bucket_to, checkpoint
                      FROM %s
                      WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?
                      ORDER BY bucket_from ASC
-                     FOR UPDATE',
-                    $this->segmentsTable(),
-                ),
-                [$projectionId, $bucketFrom, $bucketTo],
-                [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
-            )->fetchAllAssociative();
+                     FOR UPDATE', $this->segmentsTable()),
+                    [$projectionId, $bucketFrom, $bucketTo],
+                    [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
+                )
+                ->fetchAllAssociative();
 
-            $segments = array_map(static fn (array $row): ProjectionSegment => new ProjectionSegment(
-                projectionId: $projectionId,
-                bucketFrom: (int) $row['bucket_from'],
-                bucketTo: (int) $row['bucket_to'],
-                checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-            ), $rows);
+            $segments = array_map(
+                static fn(array $row): ProjectionSegment => new ProjectionSegment(
+                    projectionId: $projectionId,
+                    bucketFrom: (int) $row['bucket_from'],
+                    bucketTo: (int) $row['bucket_to'],
+                    checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+                ),
+                $rows,
+            );
             $this->assertSegmentsExactlyCoverRange($projectionId, $segments, $bucketFrom, $bucketTo);
 
             $this->connection->executeStatement(
@@ -239,7 +265,14 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                     $this->segmentsTable(),
                 ),
                 [$ownerId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom, $bucketTo],
-                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
+                [
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::INTEGER,
+                    ParameterType::INTEGER,
+                ],
             );
 
             $this->connection->commit();
@@ -252,8 +285,12 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         }
     }
 
-    public function replaceSegmentsWithMergedSegment(string $projectionId, int $bucketFrom, int $bucketTo, Checkpoint $checkpoint): void
-    {
+    public function replaceSegmentsWithMergedSegment(
+        string $projectionId,
+        int $bucketFrom,
+        int $bucketTo,
+        Checkpoint $checkpoint,
+    ): void {
         $segments = $this->segmentsForRange($projectionId, $bucketFrom, $bucketTo);
         if ([] === $segments) {
             throw new \LogicException(sprintf(
@@ -280,13 +317,16 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             );
 
             $this->connection->executeStatement(
-                sprintf(
-                    'INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
-                     VALUES (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ))',
-                    $this->segmentsTable(),
-                ),
+                sprintf('INSERT INTO %s (projection_id, bucket_from, bucket_to, checkpoint, updated_at)
+                     VALUES (?, ?, ?, ?, CAST(? AS TIMESTAMPTZ))', $this->segmentsTable()),
                 [$projectionId, $bucketFrom, $bucketTo, $checkpoint->serialize(), $now],
-                [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER, ParameterType::STRING, ParameterType::STRING],
+                [
+                    ParameterType::STRING,
+                    ParameterType::INTEGER,
+                    ParameterType::INTEGER,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                ],
             );
 
             $this->connection->commit();
@@ -300,47 +340,54 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
     /** @return list<ProjectionSegment> */
     public function listSegments(string $projectionId): array
     {
-        $rows = $this->connection->executeQuery(
-            sprintf(
-                'SELECT bucket_from, bucket_to, checkpoint, worker_id
+        $rows = $this->connection
+            ->executeQuery(
+                sprintf(
+                    'SELECT bucket_from, bucket_to, checkpoint, worker_id
                  FROM %s WHERE projection_id = ? ORDER BY bucket_from ASC',
-                $this->segmentsTable(),
-            ),
-            [$projectionId],
-            [ParameterType::STRING],
-        )->fetchAllAssociative();
+                    $this->segmentsTable(),
+                ),
+                [$projectionId],
+                [ParameterType::STRING],
+            )
+            ->fetchAllAssociative();
 
-        return array_map(static fn (array $row): ProjectionSegment => new ProjectionSegment(
-            projectionId: $projectionId,
-            bucketFrom: (int) $row['bucket_from'],
-            bucketTo: (int) $row['bucket_to'],
-            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-            workerId: $row['worker_id'] ?? null,
-        ), $rows);
+        return array_map(
+            static fn(array $row): ProjectionSegment => new ProjectionSegment(
+                projectionId: $projectionId,
+                bucketFrom: (int) $row['bucket_from'],
+                bucketTo: (int) $row['bucket_to'],
+                checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+                workerId: null === $row['worker_id'] ? null : (string) $row['worker_id'],
+            ),
+            $rows,
+        );
     }
 
     /** @return list<ProjectionSegment> */
     public function availableSegments(string $projectionId): array
     {
-        $rows = $this->connection->executeQuery(
-            sprintf(
-                'SELECT bucket_from, bucket_to, checkpoint
+        $rows = $this->connection
+            ->executeQuery(
+                sprintf('SELECT bucket_from, bucket_to, checkpoint
                  FROM %s
                  WHERE projection_id = ?
                    AND worker_id IS NULL
-                 ORDER BY bucket_from ASC',
-                $this->segmentsTable(),
-            ),
-            [$projectionId],
-            [ParameterType::STRING],
-        )->fetchAllAssociative();
+                 ORDER BY bucket_from ASC', $this->segmentsTable()),
+                [$projectionId],
+                [ParameterType::STRING],
+            )
+            ->fetchAllAssociative();
 
-        return array_map(static fn (array $row): ProjectionSegment => new ProjectionSegment(
-            projectionId: $projectionId,
-            bucketFrom: (int) $row['bucket_from'],
-            bucketTo: (int) $row['bucket_to'],
-            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-        ), $rows);
+        return array_map(
+            static fn(array $row): ProjectionSegment => new ProjectionSegment(
+                projectionId: $projectionId,
+                bucketFrom: (int) $row['bucket_from'],
+                bucketTo: (int) $row['bucket_to'],
+                checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+            ),
+            $rows,
+        );
     }
 
     /**
@@ -412,51 +459,75 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         }
     }
 
+    /**
+     * @return list<ProjectionSegment>
+     */
     private function segmentsForRange(string $projectionId, int $bucketFrom, int $bucketTo): array
     {
-        $rows = $this->connection->executeQuery(
-            sprintf(
-                'SELECT bucket_from, bucket_to, checkpoint
+        $rows = $this->connection
+            ->executeQuery(
+                sprintf('SELECT bucket_from, bucket_to, checkpoint
                  FROM %s
                  WHERE projection_id = ? AND bucket_from >= ? AND bucket_to <= ?
-                 ORDER BY bucket_from ASC',
-                $this->segmentsTable(),
-            ),
-            [$projectionId, $bucketFrom, $bucketTo],
-            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
-        )->fetchAllAssociative();
+                 ORDER BY bucket_from ASC', $this->segmentsTable()),
+                [$projectionId, $bucketFrom, $bucketTo],
+                [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
+            )
+            ->fetchAllAssociative();
 
-        return array_map(static fn (array $row): ProjectionSegment => new ProjectionSegment(
-            projectionId: $projectionId,
-            bucketFrom: (int) $row['bucket_from'],
-            bucketTo: (int) $row['bucket_to'],
-            checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
-        ), $rows);
+        return array_map(
+            static fn(array $row): ProjectionSegment => new ProjectionSegment(
+                projectionId: $projectionId,
+                bucketFrom: (int) $row['bucket_from'],
+                bucketTo: (int) $row['bucket_to'],
+                checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
+            ),
+            $rows,
+        );
     }
 
     /**
      * @param list<ProjectionSegment> $segments
      */
-    private function assertSegmentsExactlyCoverRange(string $projectionId, array $segments, int $bucketFrom, int $bucketTo): void
-    {
-        usort($segments, static fn (ProjectionSegment $left, ProjectionSegment $right): int => $left->bucketFrom <=> $right->bucketFrom);
+    private function assertSegmentsExactlyCoverRange(
+        string $projectionId,
+        array $segments,
+        int $bucketFrom,
+        int $bucketTo,
+    ): void {
+        usort(
+            $segments,
+            static fn(ProjectionSegment $left, ProjectionSegment $right): int => (
+                $left->bucketFrom <=> $right->bucketFrom
+            ),
+        );
 
         $next = $bucketFrom;
         foreach ($segments as $segment) {
             if ($segment->bucketFrom !== $next) {
-                throw new \LogicException(sprintf('Cannot merge [%d-%d] for projection "%s": segments do not cover the range.', $bucketFrom, $bucketTo, $projectionId));
+                throw new \LogicException(sprintf(
+                    'Cannot merge [%d-%d] for projection "%s": segments do not cover the range.',
+                    $bucketFrom,
+                    $bucketTo,
+                    $projectionId,
+                ));
             }
 
             $next = $segment->bucketTo + 1;
         }
 
-        if ($next !== $bucketTo + 1) {
-            throw new \LogicException(sprintf('Cannot merge [%d-%d] for projection "%s": segments do not cover the range.', $bucketFrom, $bucketTo, $projectionId));
+        if ($next !== ($bucketTo + 1)) {
+            throw new \LogicException(sprintf(
+                'Cannot merge [%d-%d] for projection "%s": segments do not cover the range.',
+                $bucketFrom,
+                $bucketTo,
+                $projectionId,
+            ));
         }
     }
 
     private function segmentsTable(): string
     {
-        return $this->tablePrefix.'segments';
+        return $this->tablePrefix . 'segments';
     }
 }

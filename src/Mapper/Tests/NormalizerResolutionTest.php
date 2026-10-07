@@ -23,29 +23,38 @@ final class NormalizerResolutionTest extends MapperTestCase
         $email = new RuntimeEmail('ada@example.test');
         $customer = new CustomerWithRuntimeEmail('Ada', $email, '123');
 
-        self::assertSame('runtime-email:ada@example.test', $normalizer->toScalar($email));
-        self::assertEquals($email, $normalizer->fromScalar('runtime-email:ada@example.test', RuntimeEmail::class));
-        self::assertSame([
-            'name' => 'Ada', 'email' => 'runtime-email:ada@example.test', 'phone' => '123',
-        ], $normalizer->toScalar($customer));
-        self::assertEquals($customer, $normalizer->fromScalar([
-            'name' => 'Ada', 'email' => 'runtime-email:ada@example.test', 'phone' => '123',
+        static::assertSame('runtime-email:ada@example.test', $normalizer->toScalar($email));
+        static::assertEquals($email, $normalizer->fromScalar('runtime-email:ada@example.test', RuntimeEmail::class));
+        static::assertSame(
+            [
+                'name' => 'Ada',
+                'email' => 'runtime-email:ada@example.test',
+                'phone' => '123',
+            ],
+            $normalizer->toScalar($customer),
+        );
+        static::assertEquals($customer, $normalizer->fromScalar([
+            'name' => 'Ada',
+            'email' => 'runtime-email:ada@example.test',
+            'phone' => '123',
         ], CustomerWithRuntimeEmail::class));
 
         $derived = new DerivedRuntimeEmail('derived@example.test');
-        self::assertSame(['value' => 'derived@example.test'], $normalizer->toScalar($derived));
-        self::assertEquals($derived, $normalizer->fromScalar(['value' => 'derived@example.test'], DerivedRuntimeEmail::class));
+        static::assertSame(['value' => 'derived@example.test'], $normalizer->toScalar($derived));
+        static::assertEquals($derived, $normalizer->fromScalar([
+            'value' => 'derived@example.test',
+        ], DerivedRuntimeEmail::class));
     }
 
     public function test_cached_generated_normalizers_take_precedence_over_late_registration(): void
     {
         $normalizer = $this->normalizer();
         $email = new RuntimeEmail('ada@example.test');
-        self::assertSame(['value' => 'ada@example.test'], $normalizer->toScalar($email));
+        static::assertSame(['value' => 'ada@example.test'], $normalizer->toScalar($email));
 
         $normalizer->registerRuntimeNormalizer(new RuntimeEmailNormalizer());
 
-        self::assertSame(['value' => 'ada@example.test'], $normalizer->toScalar($email));
-        self::assertEquals($email, $normalizer->fromScalar(['value' => 'ada@example.test'], RuntimeEmail::class));
+        static::assertSame(['value' => 'ada@example.test'], $normalizer->toScalar($email));
+        static::assertEquals($email, $normalizer->fromScalar(['value' => 'ada@example.test'], RuntimeEmail::class));
     }
 }

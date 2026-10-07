@@ -59,7 +59,11 @@ final class InMemoryEventStore implements EventStore
 
         foreach ($this->events as $index => $event) {
             $sequence = new Sequence($index + 1);
-            if (!$query->matches($event) || $this->wasAlreadySeen($sequence, $from) || $this->isOutsideBound($sequence, $to)) {
+            if (
+                !$query->matches($event)
+                || $this->wasAlreadySeen($sequence, $from)
+                || $this->isOutsideBound($sequence, $to)
+            ) {
                 continue;
             }
 
@@ -74,10 +78,7 @@ final class InMemoryEventStore implements EventStore
             array_pop($rows);
         }
 
-        $events = array_map(
-            static fn (array $row): Event => $row[1],
-            $rows,
-        );
+        $events = array_map(static fn(array $row): Event => $row[1], $rows);
 
         if (null !== $to && !$hasMore) {
             return new LoadResult($events, $to, $query);

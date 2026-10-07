@@ -32,9 +32,11 @@ final readonly class ColumnDefinition
 
     public function equivalentTo(self $other): bool
     {
-        return $this->type === $other->type
+        return (
+            $this->type === $other->type
             && $this->nullable === $other->nullable
             && $this->defaultExpression === $other->defaultExpression
-            && $this->constraints === $other->constraints;
+            && $this->constraints === $other->constraints
+        );
     }
 }

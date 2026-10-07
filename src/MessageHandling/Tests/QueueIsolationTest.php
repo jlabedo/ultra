@@ -18,15 +18,15 @@ final class QueueIsolationTest extends QueueTestCase
         $other = $f->peer($f->connection, 'other');
         $f->queue->enqueue($this->envelope('default'), new AsyncEnqueueOptions(key: 'refresh', replace: true));
         $id = $other->enqueue($this->envelope('other'), new AsyncEnqueueOptions(key: 'refresh', replace: true));
-        self::assertSame(2, $f->count());
+        static::assertSame(2, $f->count());
         $delivery = $other->reserve();
-        self::assertNotNull($delivery);
-        self::assertSame($id->value, $delivery->messageId->value);
+        static::assertNotNull($delivery);
+        static::assertSame($id->value, $delivery->messageId->value);
         $f->queue->acknowledge($delivery);
-        self::assertSame(2, $f->count());
+        static::assertSame(2, $f->count());
         $other->acknowledge($delivery);
         $default = $f->queue->reserve();
-        self::assertNotNull($default);
-        self::assertSame('default', $default->envelope->message->value);
+        static::assertNotNull($default);
+        static::assertSame('default', $default->envelope->message->value);
     }
 }

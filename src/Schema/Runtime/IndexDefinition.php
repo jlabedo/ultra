@@ -27,8 +27,10 @@ final readonly class IndexDefinition
 
     public function equivalentTo(self $other): bool
     {
-        return $this->columns === $other->columns
+        return (
+            $this->columns === $other->columns
             && $this->unique === $other->unique
-            && $this->rawSql === $other->rawSql;
+            && $this->rawSql === $other->rawSql
+        );
     }
 }

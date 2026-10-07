@@ -42,7 +42,6 @@ final readonly class ProjectionDefinition
             ));
         }
 
-        /** @var Projection $attribute */
         $attribute = $attributes[0]->newInstance();
 
         return new self(
@@ -133,6 +132,7 @@ final readonly class ProjectionDefinition
                 ));
             }
 
+            /** @var class-string $eventClass */
             $eventClass = $type->getName();
             $eventType = self::resolveEventTypeName($eventClass, $reflection->getName(), $method->getName());
 
@@ -157,17 +157,19 @@ final readonly class ProjectionDefinition
     private static function resolveInitializerMethod(\ReflectionClass $reflection): ?string
     {
         foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-            if ([] !== $method->getAttributes(ProjectionInitializer::class)) {
-                if (0 !== count($method->getParameters())) {
-                    throw new \LogicException(sprintf(
-                        '#[ProjectionInitializer] method %s::%s must have no parameters.',
-                        $reflection->getName(),
-                        $method->getName(),
-                    ));
-                }
-
-                return $method->getName();
+            if ([] === $method->getAttributes(ProjectionInitializer::class)) {
+                continue;
             }
+
+            if (0 !== count($method->getParameters())) {
+                throw new \LogicException(sprintf(
+                    '#[ProjectionInitializer] method %s::%s must have no parameters.',
+                    $reflection->getName(),
+                    $method->getName(),
+                ));
+            }
+
+            return $method->getName();
         }
 
         return null;
@@ -176,17 +178,19 @@ final readonly class ProjectionDefinition
     private static function resolveFlushMethod(\ReflectionClass $reflection): ?string
     {
         foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-            if ([] !== $method->getAttributes(ProjectionFlush::class)) {
-                if (0 !== count($method->getParameters())) {
-                    throw new \LogicException(sprintf(
-                        '#[ProjectionFlush] method %s::%s must have no parameters.',
-                        $reflection->getName(),
-                        $method->getName(),
-                    ));
-                }
-
-                return $method->getName();
+            if ([] === $method->getAttributes(ProjectionFlush::class)) {
+                continue;
             }
+
+            if (0 !== count($method->getParameters())) {
+                throw new \LogicException(sprintf(
+                    '#[ProjectionFlush] method %s::%s must have no parameters.',
+                    $reflection->getName(),
+                    $method->getName(),
+                ));
+            }
+
+            return $method->getName();
         }
 
         return null;
@@ -195,17 +199,19 @@ final readonly class ProjectionDefinition
     private static function resolveResetterMethod(\ReflectionClass $reflection): ?string
     {
         foreach ($reflection->getMethods(\ReflectionMethod::IS_PUBLIC) as $method) {
-            if ([] !== $method->getAttributes(ProjectionResetter::class)) {
-                if (0 !== count($method->getParameters())) {
-                    throw new \LogicException(sprintf(
-                        '#[ProjectionResetter] method %s::%s must have no parameters.',
-                        $reflection->getName(),
-                        $method->getName(),
-                    ));
-                }
-
-                return $method->getName();
+            if ([] === $method->getAttributes(ProjectionResetter::class)) {
+                continue;
             }
+
+            if (0 !== count($method->getParameters())) {
+                throw new \LogicException(sprintf(
+                    '#[ProjectionResetter] method %s::%s must have no parameters.',
+                    $reflection->getName(),
+                    $method->getName(),
+                ));
+            }
+
+            return $method->getName();
         }
 
         return null;

@@ -10,18 +10,22 @@ use Ultra\MessageHandling\MediatorInterface;
 
 final readonly class BookWeeklyHandler
 {
-    public function __construct(private MediatorInterface $mediator) {}
+    public function __construct(
+        private MediatorInterface $mediator,
+    ) {}
 
     #[Handles]
     public function handle(BookWeekly $command): void
     {
         for ($week = 0; $week < $command->weeks; ++$week) {
-            $this->mediator->send(new BookRoom(
-                BookingIds::occurrence($command->seriesId, $week),
-                $command->roomId,
-                $command->memberId,
-                $command->firstSlot->shiftedByWeeks($week),
-            ));
+            $this->mediator->send(
+                new BookRoom(
+                    BookingIds::occurrence($command->seriesId, $week),
+                    $command->roomId,
+                    $command->memberId,
+                    $command->firstSlot->shiftedByWeeks($week),
+                ),
+            );
         }
     }
 }

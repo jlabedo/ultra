@@ -23,32 +23,57 @@ final class DefinitionCompositionTest extends TestCase
     #[DataProvider('nameOrders')]
     public function test_fragments_combine_by_identity_and_keep_explicit_names(bool $explicitFirst): void
     {
-        $implicit = new SchemaDefinition([new TableDefinition('users', columns: [
-            new ColumnDefinition('id', type: 'uuid'),
-            new ColumnDefinition('email', type: 'text', nullable: true, defaultExpression: "'unknown'", constraints: ['UNIQUE']),
-            new ColumnDefinition('status', type: 'text'),
-        ], indexes: [new IndexDefinition('lookup', columns: ['email']), new IndexDefinition('ids', columns: ['id'])])]);
-        $explicit = new SchemaDefinition([new TableDefinition('users', 'app_users', [
-            new ColumnDefinition('email', 'address', 'text', nullable: true, defaultExpression: "'unknown'", constraints: ['UNIQUE']),
-        ], [new IndexDefinition('lookup', 'email_lookup', ['email'])])]);
+        $implicit = new SchemaDefinition([new TableDefinition(
+            'users',
+            columns: [
+                new ColumnDefinition('id', type: 'uuid'),
+                new ColumnDefinition(
+                    'email',
+                    type: 'text',
+                    nullable: true,
+                    defaultExpression: "'unknown'",
+                    constraints: ['UNIQUE'],
+                ),
+                new ColumnDefinition('status', type: 'text'),
+            ],
+            indexes: [new IndexDefinition('lookup', columns: ['email']), new IndexDefinition('ids', columns: ['id'])],
+        )]);
+        $explicit = new SchemaDefinition([new TableDefinition(
+            'users',
+            'app_users',
+            [
+                new ColumnDefinition(
+                    'email',
+                    'address',
+                    'text',
+                    nullable: true,
+                    defaultExpression: "'unknown'",
+                    constraints: ['UNIQUE'],
+                ),
+            ],
+            [new IndexDefinition('lookup', 'email_lookup', ['email'])],
+        )]);
         $implicit = $implicit->mergedWith($implicit);
         $explicit = $explicit->mergedWith($explicit);
         $merged = $explicitFirst ? $explicit->mergedWith($implicit) : SchemaDefinition::merge($implicit, $explicit);
         $table = $merged->tablesById()['users'];
 
-        self::assertCount(1, $merged->tables);
-        self::assertIsList($merged->tables);
-        self::assertIsList($table->columns);
-        self::assertIsList($table->indexes);
-        self::assertSame('app_users', $table->name);
-        self::assertTrue($table->hasExplicitName);
-        self::assertSame($explicitFirst ? ['email', 'id', 'status'] : ['id', 'email', 'status'], array_keys($table->columnsById()));
-        self::assertSame(['lookup', 'ids'], array_keys($table->indexesById()));
-        self::assertEquals($explicit->tables[0]->columns[0], $table->columnsById()['email']);
-        self::assertEquals($explicit->tables[0]->indexes[0], $table->indexesById()['lookup']);
-        self::assertSame('id', $table->columnsById()['id']->name);
-        self::assertSame('ids', $table->indexesById()['ids']->name);
-        self::assertSame([], new SchemaReconciler()->reconcile($merged, $merged));
+        static::assertCount(1, $merged->tables);
+        static::assertIsList($merged->tables);
+        static::assertIsList($table->columns);
+        static::assertIsList($table->indexes);
+        static::assertSame('app_users', $table->name);
+        static::assertTrue($table->hasExplicitName);
+        static::assertSame(
+            $explicitFirst ? ['email', 'id', 'status'] : ['id', 'email', 'status'],
+            array_keys($table->columnsById()),
+        );
+        static::assertSame(['lookup', 'ids'], array_keys($table->indexesById()));
+        static::assertEquals($explicit->tables[0]->columns[0], $table->columnsById()['email']);
+        static::assertEquals($explicit->tables[0]->indexes[0], $table->indexesById()['lookup']);
+        static::assertSame('id', $table->columnsById()['id']->name);
+        static::assertSame('ids', $table->indexesById()['ids']->name);
+        static::assertSame([], new SchemaReconciler()->reconcile($merged, $merged));
     }
 
     /** @return iterable<string, array{bool}> */
@@ -64,11 +89,19 @@ final class DefinitionCompositionTest extends TestCase
         $id = 'id' === $key ? 'same' : 'other';
         $name = 'name' === $key ? 'same' : 'other';
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('Duplicate '.$kind.' '.$key.' "same"'.('table' === $kind ? '.' : ' in table "users".'));
+        $this->expectExceptionMessage(
+            'Duplicate ' . $kind . ' ' . $key . ' "same"' . ('table' === $kind ? '.' : ' in table "users".'),
+        );
         match ($kind) {
             'table' => new SchemaDefinition([new TableDefinition('same', 'same'), new TableDefinition($id, $name)]),
-            'column' => new TableDefinition('t', 'users', [new ColumnDefinition('same', 'same', 'text'), new ColumnDefinition($id, $name, 'text')]),
-            'index' => new TableDefinition('t', 'users', indexes: [new IndexDefinition('same', 'same'), new IndexDefinition($id, $name)]),
+            'column' => new TableDefinition('t', 'users', [
+                new ColumnDefinition('same', 'same', 'text'),
+                new ColumnDefinition($id, $name, 'text'),
+            ]),
+            'index' => new TableDefinition('t', 'users', indexes: [
+                new IndexDefinition('same', 'same'),
+                new IndexDefinition($id, $name),
+            ]),
         };
     }
 
@@ -77,7 +110,7 @@ final class DefinitionCompositionTest extends TestCase
     {
         foreach (['table', 'column', 'index'] as $kind) {
             foreach (['id', 'name'] as $key) {
-                yield $kind.' '.$key => [$kind, $key];
+                yield $kind . ' ' . $key => [$kind, $key];
             }
         }
     }
@@ -93,15 +126,29 @@ final class DefinitionCompositionTest extends TestCase
         };
         $right = match ($kind) {
             'table' => new TableDefinition('t', ...$changes),
-            'column' => new TableDefinition('t', columns: [new ColumnDefinition('c', ...($changes + ['name' => 'value', 'type' => 'text']))]),
-            'index' => new TableDefinition('t', indexes: [new IndexDefinition('i', ...($changes + ['name' => 'lookup', 'columns' => ['value']]))]),
+            'column' => new TableDefinition('t', columns: [new ColumnDefinition(
+                'c',
+                ...$changes + ['name' => 'value', 'type' => 'text'],
+            )]),
+            'index' => new TableDefinition('t', indexes: [new IndexDefinition(
+                'i',
+                ...$changes + ['name' => 'lookup', 'columns' => ['value']],
+            )]),
         };
         $nameConflict = isset($changes['name']);
-        $id = match ($kind) { 'table' => 't', 'column' => 'c', 'index' => 'i' };
+        $id = match ($kind) {
+            'table' => 't',
+            'column' => 'c',
+            'index' => 'i',
+        };
         $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage($nameConflict
-            ? sprintf('Conflicting %s name for "%s": "%s" and "other".', $kind, $id, match ($kind) { 'table' => 'users', 'column' => 'value', 'index' => 'lookup' })
-            : sprintf('Conflicting %s definition for "%s" in table "t".', $kind, $id));
+        $this->expectExceptionMessage(
+            $nameConflict ? sprintf('Conflicting %s name for "%s": "%s" and "other".', $kind, $id, match ($kind) {
+                    'table' => 'users',
+                    'column' => 'value',
+                    'index' => 'lookup',
+                }) : sprintf('Conflicting %s definition for "%s" in table "t".', $kind, $id),
+        );
         SchemaDefinition::merge(new SchemaDefinition([$left]), new SchemaDefinition([$right]));
     }
 
@@ -109,13 +156,22 @@ final class DefinitionCompositionTest extends TestCase
     public static function conflicts(): iterable
     {
         foreach (['table', 'column', 'index'] as $kind) {
-            yield $kind.' name' => [$kind, ['name' => 'other']];
+            yield $kind . ' name' => [$kind, ['name' => 'other']];
         }
-        foreach (['type' => 'uuid', 'nullable' => true, 'defaultExpression' => 'now()', 'constraints' => ['UNIQUE']] as $key => $value) {
-            yield 'column '.$key => ['column', [$key => $value]];
+        foreach ([
+            'type' => 'uuid',
+            'nullable' => true,
+            'defaultExpression' => 'now()',
+            'constraints' => ['UNIQUE'],
+        ] as $key => $value) {
+            yield 'column ' . $key => ['column', [$key => $value]];
         }
-        foreach (['columns' => ['other'], 'unique' => true, 'rawSql' => 'CREATE INDEX lookup ON users(value)'] as $key => $value) {
-            yield 'index '.$key => ['index', [$key => $value]];
+        foreach ([
+            'columns' => ['other'],
+            'unique' => true,
+            'rawSql' => 'CREATE INDEX lookup ON users(value)',
+        ] as $key => $value) {
+            yield 'index ' . $key => ['index', [$key => $value]];
         }
     }
 

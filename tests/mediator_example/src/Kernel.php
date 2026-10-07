@@ -32,20 +32,14 @@ final class Kernel extends AbstractKernel
     protected function configureContainer(ContainerConfigurator $container): void
     {
         $services = $container->services();
-        $services->defaults()
-            ->autowire()
-            ->autoconfigure()
-        ;
-        $services->load(__NAMESPACE__.'\\', __DIR__.'/');
+        $services->defaults()->autowire()->autoconfigure();
+        $services->load(__NAMESPACE__ . '\\', __DIR__ . '/');
 
-        $services->load(__NAMESPACE__.'\Infrastructure\\', __DIR__.'/Infrastructure/')
-            ->public()
-        ;
+        $services->load(__NAMESPACE__ . '\Infrastructure\\', __DIR__ . '/Infrastructure/')->public();
 
         $services->alias('test.mediator', MediatorInterface::class)->public();
-        $services->set(SelfHandledPing::class)
-            ->autoconfigure(false)
-            ->resourceTag(TagNames::SELF_HANDLER, ['method' => 'handle'])
-        ;
+        $services->set(SelfHandledPing::class)->autoconfigure(false)->resourceTag(TagNames::SELF_HANDLER, [
+            'method' => 'handle',
+        ]);
     }
 }

@@ -8,7 +8,9 @@ use Ultra\UnitOfWork\TransactionManager;
 
 final readonly class RecordingTransactionManager implements TransactionManager
 {
-    public function __construct(private CallLog $log) {}
+    public function __construct(
+        private CallLog $log,
+    ) {}
 
     public function transactional(callable $callback): mixed
     {

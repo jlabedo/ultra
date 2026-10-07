@@ -46,16 +46,12 @@ final class MessageRouterGenerator
      *
      * @return array{className: string, filePath: string}
      */
-    public function generate(
-        string $baseName,
-        RouterDescriptor $descriptor,
-        array $routes,
-        string $outputDir,
-    ): array {
+    public function generate(string $baseName, RouterDescriptor $descriptor, array $routes, string $outputDir): array
+    {
         return $this->classWriter->writeContentAddressed(
             $baseName,
             $outputDir,
-            fn (string $className): string => $this->buildCode($className, $descriptor, $routes),
+            fn(string $className): string => $this->buildCode($className, $descriptor, $routes),
             '__ULTRA_COMPILED_CLASS__',
         );
     }
@@ -65,11 +61,8 @@ final class MessageRouterGenerator
      *
      * @param array<class-string, list<string>|string> $routes
      */
-    public function buildCode(
-        string $className,
-        RouterDescriptor $descriptor,
-        array $routes,
-    ): string {
+    public function buildCode(string $className, RouterDescriptor $descriptor, array $routes): string
+    {
         $routeEntries = [];
 
         foreach ($routes as $messageClass => $handlerServiceIds) {
@@ -79,14 +72,15 @@ final class MessageRouterGenerator
                     $messageClass,
                     PhpCode::exportValue($handlerServiceIds),
                 );
-            } else {
-                $routeEntries[] = $this->buildMultiRouteEntry($messageClass, $handlerServiceIds);
+
+                continue;
             }
+
+            assert(is_array($handlerServiceIds), 'Multi-dispatch routes contain lists of handler service IDs.');
+            $routeEntries[] = $this->buildMultiRouteEntry($messageClass, $handlerServiceIds);
         }
 
-        $routesCode = [] !== $routeEntries
-            ? implode("\n", $routeEntries)."\n"
-            : '';
+        $routesCode = [] !== $routeEntries ? implode("\n", $routeEntries) . "\n" : '';
 
         $interface = ltrim($descriptor->interfaceName, '\\');
         $dispatchMethod = $descriptor->isSingleDispatch
@@ -120,7 +114,7 @@ final class MessageRouterGenerator
     {
         $interface = ltrim($descriptor->interfaceName, '\\');
         $method = $descriptor->methodName;
-        $msgVar = '$'.$descriptor->firstParamName;
+        $msgVar = '$' . $descriptor->firstParamName;
         $returnType = $descriptor->returnsVoid ? 'void' : 'mixed';
         $returnKeyword = $descriptor->returnsVoid ? '' : 'return ';
 
@@ -183,15 +177,15 @@ final class MessageRouterGenerator
      */
     public static function wrapperClassName(string $interfaceName, string $outputDir): string
     {
-        $shortName = substr($interfaceName, strrpos($interfaceName, '\\') + 1);
-        $hash = substr(sha1($interfaceName.$outputDir), 0, 8);
+        $shortName = substr($interfaceName, (int) strrpos($interfaceName, '\\') + 1);
+        $hash = substr(sha1($interfaceName . $outputDir), 0, 8);
 
-        return 'Contextual'.$shortName.'_'.$hash;
+        return 'Contextual' . $shortName . '_' . $hash;
     }
 
     private function buildSingleDispatchMethod(RouterDescriptor $descriptor): string
     {
-        $msgVar = '$'.$descriptor->firstParamName;
+        $msgVar = '$' . $descriptor->firstParamName;
         $exceptionClass = ltrim($descriptor->noHandlerExceptionClass, '\\');
 
         $body = <<<PHP
@@ -215,7 +209,7 @@ final class MessageRouterGenerator
 
     private function buildMultiDispatchMethod(RouterDescriptor $descriptor): string
     {
-        $msgVar = '$'.$descriptor->firstParamName;
+        $msgVar = '$' . $descriptor->firstParamName;
         $exceptionClass = ltrim($descriptor->noHandlerExceptionClass, '\\');
         $method = $descriptor->methodName;
 

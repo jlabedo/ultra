@@ -9,7 +9,9 @@ use Ultra\UnitOfWork\TransactionManager;
 
 final readonly class DoctrineTransactionManager implements TransactionManager
 {
-    public function __construct(private Connection $connection) {}
+    public function __construct(
+        private Connection $connection,
+    ) {}
 
     public function transactional(callable $callback): mixed
     {

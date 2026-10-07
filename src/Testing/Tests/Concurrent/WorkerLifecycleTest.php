@@ -35,16 +35,16 @@ final class WorkerLifecycleTest extends ConcurrentTestCase
     #[DataProvider('results')]
     public function test_success_returns_the_value_without_exception_metadata(mixed $value): void
     {
-        $worker = $this->cluster->spawn(static fn (): mixed => $value);
+        $worker = $this->cluster->spawn(static fn(): mixed => $value);
         $outcome = $worker->join();
-        self::assertTrue($outcome->isSuccess());
-        self::assertFalse($outcome->isFailure());
-        self::assertSame($value, $outcome->value());
-        self::assertNull($outcome->exception());
-        self::assertSame('', $outcome->exceptionClass());
-        self::assertSame('', $outcome->exceptionMessage());
-        self::assertSame($outcome, $worker->outcome());
-        self::assertSame($outcome, $worker->join());
+        static::assertTrue($outcome->isSuccess());
+        static::assertFalse($outcome->isFailure());
+        static::assertSame($value, $outcome->value());
+        static::assertNull($outcome->exception());
+        static::assertSame('', $outcome->exceptionClass());
+        static::assertSame('', $outcome->exceptionMessage());
+        static::assertSame($outcome, $worker->outcome());
+        static::assertSame($outcome, $worker->join());
     }
 
     public function test_failure_preserves_the_exception_and_collects_logs_and_stderr(): void
@@ -55,15 +55,15 @@ final class WorkerLifecycleTest extends ConcurrentTestCase
             throw new \OverflowException('overflow!', 17);
         });
         $outcome = $worker->join();
-        self::assertTrue($outcome->isFailure());
-        self::assertFalse($outcome->isSuccess());
-        self::assertNull($outcome->value());
-        self::assertSame(\OverflowException::class, $outcome->exceptionClass());
-        self::assertSame('overflow!', $outcome->exceptionMessage());
-        self::assertInstanceOf(\OverflowException::class, $outcome->exception());
-        self::assertSame(17, $outcome->exception()->getCode());
-        self::assertSame([['level' => 'info', 'message' => 'hello from worker']], $worker->logs());
-        self::assertStringContainsString('boom from child', $worker->stderr());
+        static::assertTrue($outcome->isFailure());
+        static::assertFalse($outcome->isSuccess());
+        static::assertNull($outcome->value());
+        static::assertSame(\OverflowException::class, $outcome->exceptionClass());
+        static::assertSame('overflow!', $outcome->exceptionMessage());
+        static::assertInstanceOf(\OverflowException::class, $outcome->exception());
+        static::assertSame(17, $outcome->exception()->getCode());
+        static::assertSame([['level' => 'info', 'message' => 'hello from worker']], $worker->logs());
+        static::assertStringContainsString('boom from child', $worker->stderr());
     }
 
     public function test_unserializable_failure_keeps_its_class_and_message(): void
@@ -72,11 +72,14 @@ final class WorkerLifecycleTest extends ConcurrentTestCase
             throw new UnserializableFailure('description survives');
         });
         $outcome = $worker->join();
-        self::assertTrue($outcome->isFailure());
-        self::assertSame(UnserializableFailure::class, $outcome->exceptionClass());
-        self::assertSame('description survives', $outcome->exceptionMessage());
-        self::assertInstanceOf(\RuntimeException::class, $outcome->exception());
-        self::assertSame('['.UnserializableFailure::class.'] description survives', $outcome->exception()->getMessage());
+        static::assertTrue($outcome->isFailure());
+        static::assertSame(UnserializableFailure::class, $outcome->exceptionClass());
+        static::assertSame('description survives', $outcome->exceptionMessage());
+        static::assertInstanceOf(\RuntimeException::class, $outcome->exception());
+        static::assertSame(
+            '[' . UnserializableFailure::class . '] description survives',
+            $outcome->exception()->getMessage(),
+        );
     }
 
     /** @return iterable<string, array{string}> */
@@ -95,11 +98,14 @@ final class WorkerLifecycleTest extends ConcurrentTestCase
         });
         try {
             'checkpoint' === $operation ? $worker->awaitCheckpoint('never') : $worker->join();
-            self::fail('Expected WorkerDiedException');
+            static::fail('Expected WorkerDiedException');
         } catch (WorkerDiedException $e) {
-            self::assertStringContainsString('Worker died (exit code: 77)', $e->getMessage());
-            self::assertStringContainsString('fatal noise', $e->getMessage());
-            self::assertStringContainsString('checkpoint' === $operation ? 'checkpoint "never"' : 'without emitting a result message', $e->getMessage());
+            static::assertStringContainsString('Worker died (exit code: 77)', $e->getMessage());
+            static::assertStringContainsString('fatal noise', $e->getMessage());
+            static::assertStringContainsString(
+                'checkpoint' === $operation ? 'checkpoint "never"' : 'without emitting a result message',
+                $e->getMessage(),
+            );
         }
     }
 
@@ -107,26 +113,30 @@ final class WorkerLifecycleTest extends ConcurrentTestCase
     public static function deadlines(): iterable
     {
         foreach (['checkpoint', 'join'] as $operation) {
-            yield $operation.' default deadline' => [$operation, null];
-            yield $operation.' overridden deadline' => [$operation, 0.1];
+            yield $operation . ' default deadline' => [$operation, null];
+            yield $operation . ' overridden deadline' => [$operation, 0.1];
         }
     }
 
     #[DataProvider('deadlines')]
-    public function test_waiting_on_a_ready_but_blocked_worker_respects_the_deadline(string $operation, ?float $timeout): void
-    {
+    public function test_waiting_on_a_ready_but_blocked_worker_respects_the_deadline(
+        string $operation,
+        ?float $timeout,
+    ): void {
         $cluster = new Cluster(timeout: 0.5);
-        $worker = $cluster->spawn(static function (): void { checkpoint('hold'); });
+        $worker = $cluster->spawn(static function (): void {
+            checkpoint('hold');
+        });
         $worker->awaitCheckpoint('hold', 3.0);
         $started = microtime(true);
         try {
             'checkpoint' === $operation ? $worker->awaitCheckpoint('never', $timeout) : $worker->join($timeout);
-            self::fail('Expected ConcurrentTestTimeoutException');
+            static::fail('Expected ConcurrentTestTimeoutException');
         } catch (ConcurrentTestTimeoutException $e) {
-            self::assertStringContainsString(sprintf('Timed out after %.1fs', $timeout ?? 0.5), $e->getMessage());
-            self::assertStringContainsString('Stderr: (empty)', $e->getMessage());
-            self::assertGreaterThanOrEqual(($timeout ?? 0.5) * 0.8, microtime(true) - $started);
-            self::assertLessThan(2.0, microtime(true) - $started);
+            static::assertStringContainsString(sprintf('Timed out after %.1fs', $timeout ?? 0.5), $e->getMessage());
+            static::assertStringContainsString('Stderr: (empty)', $e->getMessage());
+            static::assertGreaterThanOrEqual(($timeout ?? 0.5) * 0.8, microtime(true) - $started);
+            static::assertLessThan(2.0, microtime(true) - $started);
         } finally {
             $worker->stop();
         }
@@ -145,10 +155,12 @@ final class WorkerLifecycleTest extends ConcurrentTestCase
     public function test_termination_removes_the_real_process_even_while_a_worker_reference_remains(string $action): void
     {
         $cluster = new Cluster();
-        $worker = $cluster->spawn(static function (): void { checkpoint('waiting', getmypid()); });
+        $worker = $cluster->spawn(static function (): void {
+            checkpoint('waiting', getmypid());
+        });
         $pid = $worker->awaitCheckpoint('waiting')->payload;
-        self::assertIsInt($pid);
-        self::assertTrue(posix_kill($pid, 0), 'The child must exist before termination.');
+        static::assertIsInt($pid);
+        static::assertTrue(posix_kill($pid, 0), 'The child must exist before termination.');
         try {
             $started = microtime(true);
             match ($action) {
@@ -156,8 +168,8 @@ final class WorkerLifecycleTest extends ConcurrentTestCase
                 'stop' => $worker->stop(),
                 'destroy' => $cluster = null,
             };
-            self::assertFalse(posix_kill($pid, 0), 'Termination must remove the child process.');
-            self::assertLessThan(2.0, microtime(true) - $started);
+            static::assertFalse(posix_kill($pid, 0), 'Termination must remove the child process.');
+            static::assertLessThan(2.0, microtime(true) - $started);
             $worker->stop(); // Repeated cleanup is safe.
         } finally {
             if (posix_kill($pid, 0)) {

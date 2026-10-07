@@ -44,10 +44,10 @@ final class EntityLoaderCompilerPass implements CompilerPassInterface
 
             $entityDefinition = $analyzer->analyze($entityClass);
             $loaderClass = $this->loaderClassName($entityClass);
-            $filePath = rtrim($this->outputDir, '/').'/'.$loaderClass.'.php';
+            $filePath = rtrim($this->outputDir, '/') . '/' . $loaderClass . '.php';
             $generator->generate($loaderClass, $entityDefinition, $filePath);
 
-            $loaderServiceId = 'ultra.event_sourced_state.loader.'.substr(md5($entityClass), 0, 12);
+            $loaderServiceId = 'ultra.event_sourced_state.loader.' . substr(md5($entityClass), 0, 12);
             $loaderDefinition = new Definition($loaderClass, [
                 new Reference(UltraNormalizer::class),
             ]);
@@ -69,9 +69,9 @@ final class EntityLoaderCompilerPass implements CompilerPassInterface
      */
     private function loaderClassName(string $entityClass): string
     {
-        $short = substr($entityClass, strrpos($entityClass, '\\') + 1);
-        $hash = md5($entityClass.'@'.$this->outputDir);
+        $short = substr($entityClass, (int) strrpos($entityClass, '\\') + 1);
+        $hash = md5($entityClass . '@' . $this->outputDir);
 
-        return 'CompiledEventSourcedEntityLoader_'.$short.'_'.substr($hash, 0, 8);
+        return 'CompiledEventSourcedEntityLoader_' . $short . '_' . substr($hash, 0, 8);
     }
 }

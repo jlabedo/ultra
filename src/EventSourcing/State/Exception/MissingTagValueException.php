@@ -11,10 +11,6 @@ class MissingTagValueException extends \InvalidArgumentException
      */
     public function __construct(string $entityClass, array $missingTags)
     {
-        parent::__construct(sprintf(
-            'Missing tag values for %s: [%s]',
-            $entityClass,
-            implode(', ', $missingTags),
-        ));
+        parent::__construct(sprintf('Missing tag values for %s: [%s]', $entityClass, implode(', ', $missingTags)));
     }
 }

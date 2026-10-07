@@ -40,15 +40,12 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         $activity = $fixture->activity;
         $leases = $fixture->leases;
         $activator = $fixture->activator;
-        $coordinator = $fixture->coordinator(
-            $runtime,
-            new readonly class implements ProjectionScalingPolicyInterface {
-                public function additionalWorkersRequested(array $affectedBuckets): int
-                {
-                    return 2;
-                }
-            },
-        );
+        $coordinator = $fixture->coordinator($runtime, new readonly class implements ProjectionScalingPolicyInterface {
+            public function additionalWorkersRequested(array $affectedBuckets): int
+            {
+                return 2;
+            }
+        });
 
         $eventStore->append([
             self::courseEvent('alpha', 'Math'),
@@ -62,14 +59,14 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
 
         $result = $coordinator->run('coordinator-1');
 
-        self::assertTrue($result->acquiredLease);
-        self::assertSame(1, $result->processedEvents);
-        self::assertSame(1, $result->acknowledgedBuckets);
-        self::assertSame(2, $result->requestedWorkerActivations);
-        self::assertSame(['alpha' => 'Math'], $projection->names);
-        self::assertCount(3, $segments->listSegments('coordinator_projection'));
-        self::assertCount(2, $activator->workerClaims());
-        self::assertFalse($leases->hasLiveCoordinator(self::KEY));
+        static::assertTrue($result->acquiredLease);
+        static::assertSame(1, $result->processedEvents);
+        static::assertSame(1, $result->acknowledgedBuckets);
+        static::assertSame(2, $result->requestedWorkerActivations);
+        static::assertSame(['alpha' => 'Math'], $projection->names);
+        static::assertCount(3, $segments->listSegments('coordinator_projection'));
+        static::assertCount(2, $activator->workerClaims());
+        static::assertFalse($leases->hasLiveCoordinator(self::KEY));
     }
 
     public function test_an_existing_leader_prevents_a_contender_from_processing_work(): void
@@ -83,7 +80,7 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         $activator = $fixture->activator;
         $coordinator = $fixture->coordinator($runtime);
 
-        self::assertTrue($leases->acquire(self::KEY, 'other-worker'));
+        static::assertTrue($leases->acquire(self::KEY, 'other-worker'));
 
         $eventStore->append([
             self::courseEvent('alpha', 'Math'),
@@ -92,12 +89,12 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
 
         $result = $coordinator->run('coordinator-1');
 
-        self::assertFalse($result->acquiredLease);
-        self::assertSame(0, $result->processedEvents);
-        self::assertSame(0, $result->acknowledgedBuckets);
-        self::assertSame(0, $result->requestedWorkerActivations);
-        self::assertSame([], $projection->names);
-        self::assertSame([], $activator->workerClaims());
+        static::assertFalse($result->acquiredLease);
+        static::assertSame(0, $result->processedEvents);
+        static::assertSame(0, $result->acknowledgedBuckets);
+        static::assertSame(0, $result->requestedWorkerActivations);
+        static::assertSame([], $projection->names);
+        static::assertSame([], $activator->workerClaims());
     }
 
     public function test_an_owned_earlier_segment_does_not_starve_later_pending_segments(): void
@@ -116,10 +113,10 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         $leftBucket = BucketHasher::bucketFor('alpha');
         $rightBucket = BucketHasher::bucketFor('beta');
 
-        self::assertLessThan(128, $leftBucket);
-        self::assertGreaterThanOrEqual(128, $rightBucket);
+        static::assertLessThan(128, $leftBucket);
+        static::assertGreaterThanOrEqual(128, $rightBucket);
 
-        self::assertNotNull($segments->claimSegment('coordinator_projection', 0, 'other-worker'));
+        static::assertNotNull($segments->claimSegment('coordinator_projection', 0, 'other-worker'));
 
         $eventStore->append([
             self::courseEvent('alpha', 'Ignored'),
@@ -131,15 +128,15 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
 
         $result = $coordinator->run('coordinator-1');
 
-        self::assertTrue($result->acquiredLease);
-        self::assertSame(1, $result->processedEvents);
-        self::assertSame(1, $result->acknowledgedBuckets);
-        self::assertSame(['beta' => 'Physics'], $projection->names);
+        static::assertTrue($result->acquiredLease);
+        static::assertSame(1, $result->processedEvents);
+        static::assertSame(1, $result->acknowledgedBuckets);
+        static::assertSame(['beta' => 'Physics'], $projection->names);
 
         $remaining = $activity->pendingInSegment('coordinator_projection', 0, 255);
 
-        self::assertCount(1, $remaining);
-        self::assertSame($leftBucket, (int) $remaining[0]->key);
+        static::assertCount(1, $remaining);
+        static::assertSame($leftBucket, (int) $remaining[0]->key);
     }
 
     public function test_the_leader_finishes_its_local_batches_before_the_next_cycle(): void
@@ -160,10 +157,10 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
 
         $firstResult = $coordinator->run('coordinator-1', batchSize: 1, maxCycles: 1);
 
-        self::assertSame(2, $firstResult->processedEvents);
-        self::assertSame(1, $firstResult->acknowledgedBuckets);
-        self::assertSame([], $activity->pendingInSegment('coordinator_projection', 0, 255));
-        self::assertSame(['alpha' => 'Advanced Math'], $projection->names);
+        static::assertSame(2, $firstResult->processedEvents);
+        static::assertSame(1, $firstResult->acknowledgedBuckets);
+        static::assertSame([], $activity->pendingInSegment('coordinator_projection', 0, 255));
+        static::assertSame(['alpha' => 'Advanced Math'], $projection->names);
     }
 
     public function test_an_empty_poll_stops_and_releases_the_leader_lease(): void
@@ -180,16 +177,16 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
 
         $result = $coordinator->run('coordinator-1', maxCycles: 3);
 
-        self::assertTrue($result->acquiredLease);
-        self::assertSame(0, $result->processedEvents);
-        self::assertSame(0, $result->acknowledgedBuckets);
-        self::assertSame(0, $result->requestedWorkerActivations);
-        self::assertSame(1, $leases->acquireCalls);
-        self::assertSame(1, $leases->renewCalls);
-        self::assertSame(1, $leases->releaseCalls);
-        self::assertSame(1, $tracker->pendingCalls);
-        self::assertSame(0, $tracker->pendingForChannelCalls);
-        self::assertSame([], $activator->workerClaims());
+        static::assertTrue($result->acquiredLease);
+        static::assertSame(0, $result->processedEvents);
+        static::assertSame(0, $result->acknowledgedBuckets);
+        static::assertSame(0, $result->requestedWorkerActivations);
+        static::assertSame(1, $leases->acquireCalls);
+        static::assertSame(1, $leases->renewCalls);
+        static::assertSame(1, $leases->releaseCalls);
+        static::assertSame(1, $tracker->pendingCalls);
+        static::assertSame(0, $tracker->pendingForChannelCalls);
+        static::assertSame([], $activator->workerClaims());
     }
 
     public function test_an_unproductive_cycle_stops_without_spinning_on_owned_segments(): void
@@ -201,7 +198,7 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         $segments->ensureInitialized('coordinator_projection');
 
         $bucket = BucketHasher::bucketFor('alpha');
-        self::assertNotNull($segments->claimSegment('coordinator_projection', 0, 'other-worker'));
+        static::assertNotNull($segments->claimSegment('coordinator_projection', 0, 'other-worker'));
 
         $tracker = new CountingDirtyKeyTracker();
         $tracker->bump('coordinator_projection', (string) $bucket);
@@ -213,25 +210,25 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
 
         $result = $coordinator->run('coordinator-1', maxCycles: 3);
 
-        self::assertTrue($result->acquiredLease);
-        self::assertSame(0, $result->processedEvents);
-        self::assertSame(0, $result->acknowledgedBuckets);
-        self::assertSame(0, $result->requestedWorkerActivations);
-        self::assertSame(1, $tracker->pendingCalls);
-        self::assertSame(1, $leases->renewCalls);
-        self::assertSame(1, $leases->releaseCalls);
-        self::assertSame(0, $tracker->pendingForChannelCalls);
+        static::assertTrue($result->acquiredLease);
+        static::assertSame(0, $result->processedEvents);
+        static::assertSame(0, $result->acknowledgedBuckets);
+        static::assertSame(0, $result->requestedWorkerActivations);
+        static::assertSame(1, $tracker->pendingCalls);
+        static::assertSame(1, $leases->renewCalls);
+        static::assertSame(1, $leases->releaseCalls);
+        static::assertSame(0, $tracker->pendingForChannelCalls);
     }
 
     public function test_one_global_leader_catches_up_and_acknowledges_multiple_projections(): void
     {
         $primaryProjection = new RuntimeProjection();
         $secondaryProjection = new SecondaryRuntimeProjection();
-        $container = $this->projectionUltraLight()
+        $container = $this
+            ->projectionUltraLight()
             ->withService($primaryProjection, RuntimeProjection::class)
             ->withService($secondaryProjection, SecondaryRuntimeProjection::class)
-            ->boot()
-        ;
+            ->boot();
         $eventStore = $container->eventStore();
         $activity = $container->projectionActivity();
         $coordinator = $container->projectionCoordinator();
@@ -245,26 +242,23 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
 
         $result = $coordinator->run('coordinator-1');
 
-        self::assertTrue($result->acquiredLease);
-        self::assertSame(4, $result->processedEvents);
-        self::assertSame(4, $result->acknowledgedBuckets);
-        self::assertSame(['course-1' => 'Math', 'course-2' => 'Physics'], $primaryProjection->names);
-        self::assertSame([], $activity->pendingInSegment('runtime_projection', 0, 255));
-        self::assertSame([], $activity->pendingInSegment('secondary_runtime_projection', 0, 255));
+        static::assertTrue($result->acquiredLease);
+        static::assertSame(4, $result->processedEvents);
+        static::assertSame(4, $result->acknowledgedBuckets);
+        static::assertSame(['course-1' => 'Math', 'course-2' => 'Physics'], $primaryProjection->names);
+        static::assertSame([], $activity->pendingInSegment('runtime_projection', 0, 255));
+        static::assertSame([], $activity->pendingInSegment('secondary_runtime_projection', 0, 255));
     }
 
     public function test_default_scaling_keeps_work_on_the_leader(): void
     {
         $policy = new DefaultProjectionScalingPolicy();
 
-        self::assertSame(0, $policy->additionalWorkersRequested(
-            [new PendingKey('runtime_projection', '12', 3)],
-        ));
+        static::assertSame(0, $policy->additionalWorkersRequested([new PendingKey('runtime_projection', '12', 3)]));
     }
 
     private static function courseEvent(string $id, string $name): Event
     {
         return new Event('coordinator.course.created', ['courseId' => $id, 'name' => $name], ['courseId' => $id]);
     }
-
 }

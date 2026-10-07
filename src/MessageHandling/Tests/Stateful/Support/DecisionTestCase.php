@@ -23,7 +23,7 @@ use Ultra\StateStore_Bundle\StateStoreExtension;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
 
-require_once __DIR__.'/DecisionFixtures.php';
+require_once __DIR__ . '/DecisionFixtures.php';
 
 /** Assembles actual extensions and owns generated files; assertions stay in guarantee suites. */
 abstract class DecisionTestCase extends TestCase
@@ -33,7 +33,7 @@ abstract class DecisionTestCase extends TestCase
 
     protected function buildDirectory(): string
     {
-        $dir = dirname(__DIR__, 5).'/var/stateful-tests/'.bin2hex(random_bytes(8));
+        $dir = dirname(__DIR__, 5) . '/var/stateful-tests/' . bin2hex(random_bytes(8));
         $this->buildDirs[] = $dir;
 
         return $dir;
@@ -47,9 +47,13 @@ abstract class DecisionTestCase extends TestCase
     protected function application(array $classes, array $events = [], bool $stored = false): UltraLight
     {
         $dir = $this->buildDirectory();
-        $application = (new UltraLight())
+        $application = new UltraLight()
             ->withBuildDir($dir)
-            ->withBundle(new MessageHandlingExtension(), $this->mapperExtension(), new StatefulMessageHandlingExtension())
+            ->withBundle(
+                new MessageHandlingExtension(),
+                $this->mapperExtension(),
+                new StatefulMessageHandlingExtension(),
+            )
             ->withAlias('test.mediator', MediatorInterface::class)
             ->withClass(...$classes);
 
@@ -66,7 +70,10 @@ abstract class DecisionTestCase extends TestCase
             $application = $application
                 ->withBundle(new StateStoreExtension())
                 ->withService($database, InMemoryRowDatabase::class)
-                ->withService(new InMemoryMappedRowSetAdapterFactory($database), InMemoryMappedRowSetAdapterFactory::class)
+                ->withService(
+                    new InMemoryMappedRowSetAdapterFactory($database),
+                    InMemoryMappedRowSetAdapterFactory::class,
+                )
                 ->withAlias(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
                 ->withAlias('test.state_store', StateStore::class)
                 ->withAlias('test.state_tables', StateTableRegistry::class);
@@ -77,7 +84,10 @@ abstract class DecisionTestCase extends TestCase
 
     protected function mapperExtension(): MapperExtension
     {
-        return new MapperExtension(generationNamespace: 'Ultra\\StatefulMessageHandling\\Tests\\Generated\\Compilation_'.bin2hex(random_bytes(8)));
+        return new MapperExtension(
+            generationNamespace: 'Ultra\\StatefulMessageHandling\\Tests\\Generated\\Compilation_'
+                . bin2hex(random_bytes(8)),
+        );
     }
 
     /** @return UltraLight<UltraLightContainer> */
@@ -128,13 +138,29 @@ abstract class DecisionTestCase extends TestCase
     protected function inspectedApplication(string $family): UltraLight
     {
         $classes = match ($family) {
-            'events' => [\Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState::class, \Ultra\StatefulMessageHandling\Tests\InspectDecisionCourse::class],
-            'stored' => [\Ultra\StatefulMessageHandling\Tests\DecisionOrderState::class, \Ultra\StatefulMessageHandling\Tests\InspectDecisionOrder::class],
-            'mixed' => [\Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState::class, \Ultra\StatefulMessageHandling\Tests\DecisionOrderState::class, \Ultra\StatefulMessageHandling\Tests\InspectMixedDecision::class],
+            'events' => [
+                \Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState::class,
+                \Ultra\StatefulMessageHandling\Tests\InspectDecisionCourse::class,
+            ],
+            'stored' => [
+                \Ultra\StatefulMessageHandling\Tests\DecisionOrderState::class,
+                \Ultra\StatefulMessageHandling\Tests\InspectDecisionOrder::class,
+            ],
+            'mixed' => [
+                \Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState::class,
+                \Ultra\StatefulMessageHandling\Tests\DecisionOrderState::class,
+                \Ultra\StatefulMessageHandling\Tests\InspectMixedDecision::class,
+            ],
         };
 
-        return $this->application($classes, 'stored' === $family ? [] : [\Ultra\EventSourcedState\Tests\Example\Event\CourseCreated::class], 'events' !== $family)
-            ->withService(new \Ultra\StatefulMessageHandling\Tests\DecisionService(), \Ultra\StatefulMessageHandling\Tests\DecisionService::class);
+        return $this->application(
+            $classes,
+            'stored' === $family ? [] : [\Ultra\EventSourcedState\Tests\Example\Event\CourseCreated::class],
+            'events' !== $family,
+        )->withService(
+            new \Ultra\StatefulMessageHandling\Tests\DecisionService(),
+            \Ultra\StatefulMessageHandling\Tests\DecisionService::class,
+        );
     }
 
     protected function flush(UltraLightContainer $container): void
@@ -168,12 +194,12 @@ abstract class DecisionTestCase extends TestCase
         if (!is_dir($dir)) {
             return;
         }
-        chmod($dir, 0700);
+        chmod($dir, 0o700);
         foreach (new \FilesystemIterator($dir) as $file) {
             if ($file->isDir()) {
                 self::removeGeneratedFiles($file->getPathname());
             } else {
-                chmod($file->getPathname(), 0600);
+                chmod($file->getPathname(), 0o600);
                 unlink($file->getPathname());
             }
         }

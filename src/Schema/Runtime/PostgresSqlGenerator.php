@@ -32,7 +32,10 @@ final class PostgresSqlGenerator
         foreach ($operations as $operation) {
             $sql[] = match (true) {
                 $operation instanceof CreateTable => $this->createTable($operation),
-                $operation instanceof DropTable => sprintf('DROP TABLE %s;', $this->quoteIdentifier($operation->tableName)),
+                $operation instanceof DropTable => sprintf(
+                    'DROP TABLE %s;',
+                    $this->quoteIdentifier($operation->tableName),
+                ),
                 $operation instanceof RenameTable => sprintf(
                     'ALTER TABLE %s RENAME TO %s;',
                     $this->quoteIdentifier($operation->fromName),
@@ -133,7 +136,8 @@ final class PostgresSqlGenerator
 
         if ($operation->dropDefault) {
             $clauses[] = sprintf('ALTER COLUMN %s DROP DEFAULT', $columnName);
-        } elseif (null !== $operation->defaultExpression) {
+        }
+        if (!$operation->dropDefault && null !== $operation->defaultExpression) {
             $clauses[] = sprintf('ALTER COLUMN %s SET DEFAULT %s', $columnName, $operation->defaultExpression);
         }
 
@@ -145,11 +149,7 @@ final class PostgresSqlGenerator
             ));
         }
 
-        return sprintf(
-            'ALTER TABLE %s %s;',
-            $this->quoteIdentifier($operation->tableName),
-            implode(', ', $clauses),
-        );
+        return sprintf('ALTER TABLE %s %s;', $this->quoteIdentifier($operation->tableName), implode(', ', $clauses));
     }
 
     private function renderColumnDefinition(ColumnDefinition $column): string

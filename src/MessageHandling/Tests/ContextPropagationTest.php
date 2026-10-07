@@ -31,10 +31,10 @@ final class FixedMessageContextPropagator implements MessageContextPropagatorInt
             return $context;
         }
 
-        return $context
-            ->with(MessageContextKeys::MESSAGE_ID, 'fixed-root')
-            ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation')
-        ;
+        return $context->with(MessageContextKeys::MESSAGE_ID, 'fixed-root')->with(
+            MessageContextKeys::CORRELATION_ID,
+            'fixed-correlation',
+        );
     }
 
     public function createChildContext(MessageContext $parentContext): MessageContext
@@ -42,8 +42,7 @@ final class FixedMessageContextPropagator implements MessageContextPropagatorInt
         return $parentContext
             ->with(MessageContextKeys::MESSAGE_ID, 'fixed-child')
             ->with(MessageContextKeys::CORRELATION_ID, 'fixed-correlation')
-            ->with(MessageContextKeys::CAUSATION_ID, 'fixed-root')
-        ;
+            ->with(MessageContextKeys::CAUSATION_ID, 'fixed-root');
     }
 }
 
@@ -77,17 +76,18 @@ final class ContextPropagationTest extends MessageHandlingCompilerTestCase
     {
         $contexts = new RecordedMessageContexts();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($contexts)
             ->withClass(ForwardingHandler::class, ChildHandler::class)
             ->withService(new ContextRecorder($contexts))
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame(
-            'child: nested',
-            $mediator->send(new GreetingMessage('nested'), $typed ? MessageContext::coerce(['traceId' => 'trace-456']) : ['traceId' => 'trace-456']),
-        );
+        static::assertSame('child: nested', $mediator->send(
+            new GreetingMessage('nested'),
+            $typed ? MessageContext::coerce(['traceId' => 'trace-456']) : ['traceId' => 'trace-456'],
+        ));
 
         $this->assertMessageFlowContexts(
             $contexts->entries,
@@ -101,36 +101,31 @@ final class ContextPropagationTest extends MessageHandlingCompilerTestCase
     {
         $contexts = new RecordedMessageContexts();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService(new FixedMessageContextPropagator(), MessageContextPropagatorInterface::class)
             ->withService($contexts)
             ->withClass(ForwardingHandler::class, ChildHandler::class)
             ->withService(new ContextRecorder($contexts))
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame(
-            'child: custom',
-            $mediator->send(new GreetingMessage('custom'), ['traceId' => 'trace-custom']),
-        );
-        self::assertSame('fixed-root', $contexts->entries[0]['context'][MessageContextKeys::MESSAGE_ID]);
-        self::assertSame(
-            'fixed-correlation',
-            $contexts->entries[0]['context'][MessageContextKeys::CORRELATION_ID],
-        );
-        self::assertSame('fixed-child', $contexts->entries[1]['context'][MessageContextKeys::MESSAGE_ID]);
-        self::assertSame(
-            'fixed-correlation',
-            $contexts->entries[1]['context'][MessageContextKeys::CORRELATION_ID],
-        );
-        self::assertSame('fixed-root', $contexts->entries[1]['context'][MessageContextKeys::CAUSATION_ID]);
+        static::assertSame('child: custom', $mediator->send(new GreetingMessage('custom'), [
+            'traceId' => 'trace-custom',
+        ]));
+        static::assertSame('fixed-root', $contexts->entries[0]['context'][MessageContextKeys::MESSAGE_ID]);
+        static::assertSame('fixed-correlation', $contexts->entries[0]['context'][MessageContextKeys::CORRELATION_ID]);
+        static::assertSame('fixed-child', $contexts->entries[1]['context'][MessageContextKeys::MESSAGE_ID]);
+        static::assertSame('fixed-correlation', $contexts->entries[1]['context'][MessageContextKeys::CORRELATION_ID]);
+        static::assertSame('fixed-root', $contexts->entries[1]['context'][MessageContextKeys::CAUSATION_ID]);
     }
 
     public function test_it_propagates_dispatch_context_to_an_injected_event_bus(): void
     {
         $eventBus = new RecordingEventBus();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($eventBus, EventBusInterface::class)
             ->withService(new class {
                 #[Handles]
@@ -138,28 +133,28 @@ final class ContextPropagationTest extends MessageHandlingCompilerTestCase
                 {
                     $eventBus->publish(new RecordedEvent($message->name));
 
-                    return 'published: '.$message->name;
+                    return 'published: ' . $message->name;
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame(
-            'published: bridge',
-            $mediator->send(new GreetingMessage('bridge'), ['traceId' => 'trace-eb']),
-        );
-        self::assertCount(1, $eventBus->calls);
-        self::assertInstanceOf(RecordedEvent::class, $eventBus->calls[0]['event']);
-        self::assertSame('trace-eb', $eventBus->calls[0]['context']['traceId']);
-        self::assertArrayHasKey(MessageContextKeys::MESSAGE_ID, $eventBus->calls[0]['context']);
-        self::assertArrayHasKey(MessageContextKeys::CORRELATION_ID, $eventBus->calls[0]['context']);
+        static::assertSame('published: bridge', $mediator->send(new GreetingMessage('bridge'), [
+            'traceId' => 'trace-eb',
+        ]));
+        static::assertCount(1, $eventBus->calls);
+        static::assertInstanceOf(RecordedEvent::class, $eventBus->calls[0]['event']);
+        static::assertSame('trace-eb', $eventBus->calls[0]['context']['traceId']);
+        static::assertArrayHasKey(MessageContextKeys::MESSAGE_ID, $eventBus->calls[0]['context']);
+        static::assertArrayHasKey(MessageContextKeys::CORRELATION_ID, $eventBus->calls[0]['context']);
     }
 
     public function test_it_creates_a_new_message_id_for_deeply_nested_event_bus_publish_calls(): void
     {
         $contexts = new RecordedMessageContexts();
 
-        $eventBus = $this->ultraLight()
+        $eventBus = $this
+            ->ultraLight()
             ->withEventClass(RecordedEvent::class)
             ->withService($contexts)
             ->withService(new class {
@@ -172,41 +167,41 @@ final class ContextPropagationTest extends MessageHandlingCompilerTestCase
                 }
             })
             ->withService(new ContextRecorder($contexts))
-            ->boot()->eventBus()
-        ;
+            ->boot()
+            ->eventBus();
 
         $eventBus->publish(new RecordedEvent('root'), ['traceId' => 'trace-nested-event']);
 
-        self::assertCount(3, $contexts->entries);
+        static::assertCount(3, $contexts->entries);
 
         $rootContext = $contexts->entries[0]['context'];
         $childContext = $contexts->entries[1]['context'];
         $grandchildContext = $contexts->entries[2]['context'];
 
-        self::assertSame('trace-nested-event', $rootContext['traceId']);
-        self::assertSame('trace-nested-event', $childContext['traceId']);
-        self::assertSame('trace-nested-event', $grandchildContext['traceId']);
-        self::assertNotSame(
+        static::assertSame('trace-nested-event', $rootContext['traceId']);
+        static::assertSame('trace-nested-event', $childContext['traceId']);
+        static::assertSame('trace-nested-event', $grandchildContext['traceId']);
+        static::assertNotSame(
             $rootContext[MessageContextKeys::MESSAGE_ID],
             $childContext[MessageContextKeys::MESSAGE_ID],
         );
-        self::assertSame(
+        static::assertSame(
             $rootContext[MessageContextKeys::CORRELATION_ID],
             $childContext[MessageContextKeys::CORRELATION_ID],
         );
-        self::assertSame(
+        static::assertSame(
             $rootContext[MessageContextKeys::MESSAGE_ID],
             $childContext[MessageContextKeys::CAUSATION_ID],
         );
-        self::assertNotSame(
+        static::assertNotSame(
             $childContext[MessageContextKeys::MESSAGE_ID],
             $grandchildContext[MessageContextKeys::MESSAGE_ID],
         );
-        self::assertSame(
+        static::assertSame(
             $rootContext[MessageContextKeys::CORRELATION_ID],
             $grandchildContext[MessageContextKeys::CORRELATION_ID],
         );
-        self::assertSame(
+        static::assertSame(
             $childContext[MessageContextKeys::MESSAGE_ID],
             $grandchildContext[MessageContextKeys::CAUSATION_ID],
         );
@@ -216,7 +211,8 @@ final class ContextPropagationTest extends MessageHandlingCompilerTestCase
     {
         $capturedContext = null;
 
-        $container = $this->ultraLight()
+        $container = $this
+            ->ultraLight()
             ->withService(new class($capturedContext) {
                 public ?MessageContext $captured;
 
@@ -226,8 +222,11 @@ final class ContextPropagationTest extends MessageHandlingCompilerTestCase
                 }
 
                 #[Around]
-                public function captureContext(callable $proceed, object $message, MessageContext $context): ProceedResult
-                {
+                public function captureContext(
+                    callable $proceed,
+                    object $message,
+                    MessageContext $context,
+                ): ProceedResult {
                     $this->captured = $context;
 
                     return $proceed();
@@ -241,23 +240,22 @@ final class ContextPropagationTest extends MessageHandlingCompilerTestCase
                     return 'handled';
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
         $container->mediator()->send(new GreetingMessage('context-test'), [
             'traceId' => 'my-trace-123',
         ]);
 
         // Context was not yet captured (advice runs at dequeue time)
-        self::assertNull($capturedContext);
+        static::assertNull($capturedContext);
 
         $container->queueWorker()->drain();
 
         // Now the context should be captured with the original values preserved
-        self::assertNotNull($capturedContext);
-        self::assertArrayHasKey(MessageContextKeys::MESSAGE_ID, $capturedContext->all());
-        self::assertArrayHasKey(MessageContextKeys::CORRELATION_ID, $capturedContext->all());
-        self::assertSame('my-trace-123', $capturedContext->get('traceId'));
+        static::assertNotNull($capturedContext);
+        static::assertArrayHasKey(MessageContextKeys::MESSAGE_ID, $capturedContext->all());
+        static::assertArrayHasKey(MessageContextKeys::CORRELATION_ID, $capturedContext->all());
+        static::assertSame('my-trace-123', $capturedContext->get('traceId'));
     }
 
     /**
@@ -306,12 +304,12 @@ final class ContextPropagationTest extends MessageHandlingCompilerTestCase
 
         $context = $propagator->normalizeContext(MessageContext::empty());
 
-        self::assertNotSame('', $context->get(MessageContextKeys::MESSAGE_ID));
-        self::assertSame(
+        static::assertNotSame('', $context->get(MessageContextKeys::MESSAGE_ID));
+        static::assertSame(
             $context->get(MessageContextKeys::MESSAGE_ID),
             $context->get(MessageContextKeys::CORRELATION_ID),
         );
-        self::assertFalse($context->has(MessageContextKeys::CAUSATION_ID));
+        static::assertFalse($context->has(MessageContextKeys::CAUSATION_ID));
     }
 
     public function test_it_preserves_existing_ids_when_normalizing_a_context(): void
@@ -324,7 +322,7 @@ final class ContextPropagationTest extends MessageHandlingCompilerTestCase
             MessageContextKeys::CAUSATION_ID => 'causation-1',
         ]);
 
-        self::assertSame($context->all(), $propagator->normalizeContext($context)->all());
+        static::assertSame($context->all(), $propagator->normalizeContext($context)->all());
     }
 
     public function test_child_contexts_keep_correlation_and_record_the_immediate_parent(): void
@@ -334,9 +332,18 @@ final class ContextPropagationTest extends MessageHandlingCompilerTestCase
         $parent = $root;
         for ($depth = 0; $depth < 2; ++$depth) {
             $child = $propagator->createChildContext($parent);
-            self::assertNotSame($parent->get(MessageContextKeys::MESSAGE_ID), $child->get(MessageContextKeys::MESSAGE_ID));
-            self::assertSame($root->get(MessageContextKeys::CORRELATION_ID), $child->get(MessageContextKeys::CORRELATION_ID));
-            self::assertSame($parent->get(MessageContextKeys::MESSAGE_ID), $child->get(MessageContextKeys::CAUSATION_ID));
+            static::assertNotSame(
+                $parent->get(MessageContextKeys::MESSAGE_ID),
+                $child->get(MessageContextKeys::MESSAGE_ID),
+            );
+            static::assertSame(
+                $root->get(MessageContextKeys::CORRELATION_ID),
+                $child->get(MessageContextKeys::CORRELATION_ID),
+            );
+            static::assertSame(
+                $parent->get(MessageContextKeys::MESSAGE_ID),
+                $child->get(MessageContextKeys::CAUSATION_ID),
+            );
             $parent = $child;
         }
     }
@@ -344,7 +351,9 @@ final class ContextPropagationTest extends MessageHandlingCompilerTestCase
 
 final readonly class ContextRecorder
 {
-    public function __construct(private RecordedMessageContexts $contexts) {}
+    public function __construct(
+        private RecordedMessageContexts $contexts,
+    ) {}
 
     #[Before]
     public function record(object $message, MessageContext $context): void
@@ -367,6 +376,6 @@ final class ChildHandler
     #[Handles]
     public function handle(FarewellMessage $message): string
     {
-        return 'child: '.$message->name;
+        return 'child: ' . $message->name;
     }
 }

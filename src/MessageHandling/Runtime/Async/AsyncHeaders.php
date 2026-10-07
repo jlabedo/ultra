@@ -12,9 +12,11 @@ namespace Ultra\MessageHandling\Async;
 final readonly class AsyncHeaders
 {
     /**
-     * @param array<string, null|bool|int|float|string|list<null|bool|int|float|string>> $values
+     * @param array<array-key, HeaderValue> $values
      */
-    private function __construct(private array $values) {}
+    private function __construct(
+        private array $values,
+    ) {}
 
     public static function empty(): self
     {
@@ -22,7 +24,7 @@ final readonly class AsyncHeaders
     }
 
     /**
-     * @param array<string, null|bool|int|float|string|list<null|bool|int|float|string>> $values
+     * @param array<array-key, mixed> $values Header names and values are validated before normalization.
      */
     public static function fromArray(array $values): self
     {
@@ -59,7 +61,7 @@ final readonly class AsyncHeaders
         return is_string($value) ? $value : null;
     }
 
-    public function with(string $name, null|bool|int|float|string|array $value): self
+    public function with(string $name, bool|int|float|string|array|null $value): self
     {
         self::assertValidValue($name, $value);
 
@@ -84,7 +86,7 @@ final readonly class AsyncHeaders
     }
 
     /**
-     * @return array<string, null|bool|int|float|string|list<null|bool|int|float|string>>
+     * @return array<array-key, HeaderValue>
      */
     public function all(): array
     {
@@ -101,6 +103,7 @@ final readonly class AsyncHeaders
         return $name;
     }
 
+    /** @phpstan-assert HeaderValue $value */
     private static function assertValidValue(string $name, mixed $value): void
     {
         if (null === $value || is_bool($value) || is_int($value) || is_float($value) || is_string($value)) {
@@ -110,13 +113,19 @@ final readonly class AsyncHeaders
         if (is_array($value) && array_is_list($value)) {
             foreach ($value as $item) {
                 if (null !== $item && !is_bool($item) && !is_int($item) && !is_float($item) && !is_string($item)) {
-                    throw new \InvalidArgumentException(sprintf('Async header "%s" contains a non-scalar list value.', $name));
+                    throw new \InvalidArgumentException(sprintf(
+                        'Async header "%s" contains a non-scalar list value.',
+                        $name,
+                    ));
                 }
             }
 
             return;
         }
 
-        throw new \InvalidArgumentException(sprintf('Async header "%s" must be a scalar, null, or a list of scalar values.', $name));
+        throw new \InvalidArgumentException(sprintf(
+            'Async header "%s" must be a scalar, null, or a list of scalar values.',
+            $name,
+        ));
     }
 }

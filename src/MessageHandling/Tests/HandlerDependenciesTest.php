@@ -29,7 +29,7 @@ use Ultra\MessageHandling_Compiler\Tests\Fixtures\ProcessEntityMessage;
 use Ultra\MessageHandling_Compiler\Tests\Fixtures\ProcessPairMessage;
 use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase;
 
-require_once __DIR__.'/Support/HandlerFixtures.php';
+require_once __DIR__ . '/Support/HandlerFixtures.php';
 
 #[CoversNamespace('Ultra\\MessageHandling')]
 #[CoversNamespace('Ultra\\MessageHandling_Compiler')]
@@ -38,7 +38,8 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
 {
     public function test_it_resolves_handler_method_dependencies_from_services(): void
     {
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService(new Greeter())
             ->withService(new class {
                 #[Handles]
@@ -47,17 +48,18 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
                     return $greeter->greet('pong');
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('Hello, pong!', $mediator->send(new EmptyMessage()));
+        static::assertSame('Hello, pong!', $mediator->send(new EmptyMessage()));
     }
 
     public function test_it_lets_around_advice_provide_a_handler_dependency(): void
     {
         $repository = new EntityRepository();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($repository)
             ->withService(new class {
                 #[Handles]
@@ -77,10 +79,7 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
                     $method = $ctx->method();
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
                         $type = $parameter->getType();
-                        if (
-                            $type instanceof \ReflectionNamedType
-                            && Entity::class === $type->getName()
-                        ) {
+                        if ($type instanceof \ReflectionNamedType && Entity::class === $type->getName()) {
                             return MatchResult::apply(provides: [$index]);
                         }
                     }
@@ -96,25 +95,23 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
                     return $result;
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('entity-123', $mediator->send(new ProcessEntityMessage('entity-123')));
-        self::assertArrayHasKey('entity-123', $repository->saved);
-        self::assertTrue($repository->saved['entity-123']->processed);
+        static::assertSame('entity-123', $mediator->send(new ProcessEntityMessage('entity-123')));
+        static::assertArrayHasKey('entity-123', $repository->saved);
+        static::assertTrue($repository->saved['entity-123']->processed);
     }
 
     public function test_it_lets_one_around_advice_provide_multiple_handler_dependencies(): void
     {
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService(new class {
                 #[Handles]
-                public function handle(
-                    ProcessPairMessage $message,
-                    LeftEntity $left,
-                    RightEntity $right,
-                ): string {
-                    return $left->id.'+'.$right->id;
+                public function handle(ProcessPairMessage $message, LeftEntity $left, RightEntity $right): string
+                {
+                    return $left->id . '+' . $right->id;
                 }
             })
             ->withService(new class {
@@ -140,18 +137,21 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
 
                     return [] === $indices ? null : MatchResult::apply(provides: $indices);
                 })]
-                public function execute(callable $proceed, ProcessPairMessage $message, MessageContext $context): ProceedResult
-                {
+                public function execute(
+                    callable $proceed,
+                    ProcessPairMessage $message,
+                    MessageContext $context,
+                ): ProceedResult {
                     return $proceed(provided: [
                         new LeftRepository()->load($message),
                         new RightRepository()->load($message),
                     ]);
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('left-1+right-2', $mediator->send(new ProcessPairMessage('left-1', 'right-2')));
+        static::assertSame('left-1+right-2', $mediator->send(new ProcessPairMessage('left-1', 'right-2')));
     }
 
     public function test_it_composes_multiple_around_advices_that_each_provide_one_dependency(): void
@@ -159,17 +159,15 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
         $leftRepository = new LeftRepository();
         $rightRepository = new RightRepository();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($leftRepository)
             ->withService($rightRepository)
             ->withService(new class {
                 #[Handles]
-                public function handle(
-                    ProcessPairMessage $message,
-                    LeftEntity $left,
-                    RightEntity $right,
-                ): string {
-                    return $left->id.'+'.$right->id;
+                public function handle(ProcessPairMessage $message, LeftEntity $left, RightEntity $right): string
+                {
+                    return $left->id . '+' . $right->id;
                 }
             })
             ->withService(new class($leftRepository, $rightRepository) {
@@ -182,10 +180,7 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
                     $method = $ctx->method();
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
                         $type = $parameter->getType();
-                        if (
-                            $type instanceof \ReflectionNamedType
-                            && LeftEntity::class === $type->getName()
-                        ) {
+                        if ($type instanceof \ReflectionNamedType && LeftEntity::class === $type->getName()) {
                             return MatchResult::apply(provides: [$index], config: ['side' => 'left']);
                         }
                     }
@@ -196,10 +191,7 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
                     $method = $ctx->method();
                     foreach (array_slice($method->getParameters(), 1) as $index => $parameter) {
                         $type = $parameter->getType();
-                        if (
-                            $type instanceof \ReflectionNamedType
-                            && RightEntity::class === $type->getName()
-                        ) {
+                        if ($type instanceof \ReflectionNamedType && RightEntity::class === $type->getName()) {
                             return MatchResult::apply(provides: [$index], config: ['side' => 'right']);
                         }
                     }
@@ -220,17 +212,18 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
                     return $proceed(provided: [$entity]);
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('left-10+right-20', $mediator->send(new ProcessPairMessage('left-10', 'right-20')));
+        static::assertSame('left-10+right-20', $mediator->send(new ProcessPairMessage('left-10', 'right-20')));
     }
 
     public function test_it_supports_generic_entity_loading_advice_based_on_handler_parameter_metadata(): void
     {
         $entityManager = new EntityManager();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($entityManager)
             ->withService(new class {
                 #[Handles]
@@ -239,11 +232,13 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
                     ConfiguredLeftEntity $left,
                     ConfiguredRightEntity $right,
                 ): string {
-                    return $left->id.'+'.$right->id;
+                    return $left->id . '+' . $right->id;
                 }
             })
             ->withService(new class($entityManager) {
-                public function __construct(private readonly EntityManager $entityManager) {}
+                public function __construct(
+                    private readonly EntityManager $entityManager,
+                ) {}
 
                 #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
                     $method = $ctx->method();
@@ -256,9 +251,7 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
                             continue;
                         }
 
-                        $attributes = new \ReflectionClass($type->getName())
-                            ->getAttributes(EntityConfig::class)
-                        ;
+                        $attributes = new \ReflectionClass($type->getName())->getAttributes(EntityConfig::class);
                         if ([] === $attributes) {
                             continue;
                         }
@@ -270,9 +263,11 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
                         ];
                     }
 
-                    return [] === $entities
-                        ? null
-                        : MatchResult::apply(provides: $indices, config: ['entities' => $entities]);
+                    return (
+                        [] === $entities
+                            ? null
+                            : MatchResult::apply(provides: $indices, config: ['entities' => $entities])
+                    );
                 })]
                 public function execute(
                     callable $proceed,
@@ -295,22 +290,27 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
                     return $result;
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('left-100+right-200', $mediator->send(new ProcessPairMessage('left-100', 'right-200')));
-        self::assertSame([
-            ['class' => ConfiguredLeftEntity::class, 'id' => 'left-100'],
-            ['class' => ConfiguredRightEntity::class, 'id' => 'right-200'],
-        ], $entityManager->findCalls);
-        self::assertArrayHasKey(ConfiguredLeftEntity::class, $entityManager->saved);
-        self::assertArrayHasKey(ConfiguredRightEntity::class, $entityManager->saved);
+        static::assertSame('left-100+right-200', $mediator->send(new ProcessPairMessage('left-100', 'right-200')));
+        static::assertSame(
+            [
+                ['class' => ConfiguredLeftEntity::class, 'id' => 'left-100'],
+                ['class' => ConfiguredRightEntity::class, 'id' => 'right-200'],
+            ],
+            $entityManager->findCalls,
+        );
+        static::assertArrayHasKey(ConfiguredLeftEntity::class, $entityManager->saved);
+        static::assertArrayHasKey(ConfiguredRightEntity::class, $entityManager->saved);
     }
 
     public function test_it_injects_services_into_self_handling_methods(): void
     {
         $message = new readonly class('Bob') {
-            public function __construct(public string $name) {}
+            public function __construct(
+                public string $name,
+            ) {}
 
             #[SelfHandler]
             public function greet(SelfHandlerGreeter $greeter): string
@@ -318,11 +318,8 @@ final class HandlerDependenciesTest extends MessageHandlingCompilerTestCase
                 return $greeter->greet($this->name);
             }
         };
-        $mediator = $this->ultraLight()
-            ->withClass($message::class, SelfHandlerGreeter::class)
-            ->boot()->mediator()
-        ;
+        $mediator = $this->ultraLight()->withClass($message::class, SelfHandlerGreeter::class)->boot()->mediator();
 
-        self::assertSame('Hello, Bob!', $mediator->send($message));
+        static::assertSame('Hello, Bob!', $mediator->send($message));
     }
 }

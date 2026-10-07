@@ -20,7 +20,12 @@ final readonly class Duration
         int $hours = 0,
         int $days = 0,
     ) {
-        $this->microseconds = $microseconds + $seconds * self::MICROSECONDS_PER_SECOND + $minutes * self::MICROSECONDS_PER_MINUTE + $hours * self::MICROSECONDS_PER_HOUR + $days * self::MICROSECONDS_PER_DAY;
+        $this->microseconds =
+            $microseconds
+            + ($seconds * self::MICROSECONDS_PER_SECOND)
+            + ($minutes * self::MICROSECONDS_PER_MINUTE)
+            + ($hours * self::MICROSECONDS_PER_HOUR)
+            + ($days * self::MICROSECONDS_PER_DAY);
     }
 
     public static function zero(): self
@@ -120,11 +125,17 @@ final readonly class Duration
         $remaining %= self::MICROSECONDS_PER_SECOND;
 
         $interval = new \DateInterval('PT0S');
+        // @mago-expect analyser:invalid-property-write
         $interval->d = $days;
+        // @mago-expect analyser:invalid-property-write
         $interval->h = $hours;
+        // @mago-expect analyser:invalid-property-write
         $interval->i = $minutes;
+        // @mago-expect analyser:invalid-property-write
         $interval->s = $seconds;
+        // @mago-expect analyser:invalid-property-write
         $interval->f = $remaining / self::MICROSECONDS_PER_SECOND;
+        // @mago-expect analyser:invalid-property-write
         $interval->invert = $this->microseconds < 0 ? 1 : 0;
 
         return $interval;

@@ -22,15 +22,15 @@ final class QueueLeaseTest extends QueueTestCase
         $id = $f->queue->enqueue($this->envelope('first'));
         $delivery = $f->queue->reserve(Duration::seconds(30));
 
-        self::assertInstanceOf(AsyncDelivery::class, $delivery);
-        self::assertSame($id->value, $delivery->messageId->value);
-        self::assertSame(1, $delivery->attempts);
-        self::assertNull($f->queue->reserve());
-        self::assertSame(1, $f->count());
+        static::assertInstanceOf(AsyncDelivery::class, $delivery);
+        static::assertSame($id->value, $delivery->messageId->value);
+        static::assertSame(1, $delivery->attempts);
+        static::assertNull($f->queue->reserve());
+        static::assertSame(1, $f->count());
 
         $f->queue->acknowledge($delivery);
-        self::assertSame(0, $f->count());
-        self::assertNull($f->queue->reserve());
+        static::assertSame(0, $f->count());
+        static::assertNull($f->queue->reserve());
     }
 
     #[DataProvider('backends')]
@@ -39,20 +39,20 @@ final class QueueLeaseTest extends QueueTestCase
         $f = $this->fixture($backend);
         $id = $f->queue->enqueue($this->envelope('first'));
         $stale = $f->queue->reserve(Duration::seconds(10));
-        self::assertInstanceOf(AsyncDelivery::class, $stale);
+        static::assertInstanceOf(AsyncDelivery::class, $stale);
         $f->clock->sleep(Duration::seconds(11));
         $current = $f->queue->reserve(Duration::seconds(10));
-        self::assertInstanceOf(AsyncDelivery::class, $current);
-        self::assertSame($id->value, $current->messageId->value);
-        self::assertNotSame($stale->leaseId, $current->leaseId);
-        self::assertSame(2, $current->attempts);
+        static::assertInstanceOf(AsyncDelivery::class, $current);
+        static::assertSame($id->value, $current->messageId->value);
+        static::assertNotSame($stale->leaseId, $current->leaseId);
+        static::assertSame(2, $current->attempts);
 
         $f->queue->acknowledge($stale);
-        self::assertSame(1, $f->count());
+        static::assertSame(1, $f->count());
         $f->queue->release($stale);
-        self::assertNull($f->queue->reserve());
+        static::assertNull($f->queue->reserve());
         $f->queue->acknowledge($current);
-        self::assertSame(0, $f->count());
+        static::assertSame(0, $f->count());
     }
 
     #[DataProvider('backends')]
@@ -61,19 +61,19 @@ final class QueueLeaseTest extends QueueTestCase
         $f = $this->fixture($backend);
         $f->queue->enqueue($this->envelope('first'));
         $stale = $f->queue->reserve(Duration::seconds(10));
-        self::assertNotNull($stale);
+        static::assertNotNull($stale);
         $f->clock->sleep(Duration::seconds(11));
         $current = $f->queue->reserve(Duration::seconds(10));
-        self::assertNotNull($current);
+        static::assertNotNull($current);
         $f->queue->renew($stale, Duration::seconds(100));
         $f->clock->sleep(Duration::seconds(11));
         $renewed = $f->queue->reserve(Duration::seconds(10));
-        self::assertNotNull($renewed);
+        static::assertNotNull($renewed);
         $f->queue->renew($renewed, Duration::seconds(30));
         $f->clock->sleep(Duration::seconds(11));
-        self::assertNull($f->queue->reserve());
+        static::assertNull($f->queue->reserve());
         $f->clock->sleep(Duration::seconds(20));
-        self::assertNotNull($f->queue->reserve());
+        static::assertNotNull($f->queue->reserve());
     }
 
     public function test_workers_skip_locked_messages_and_reserve_distinct_deliveries(): void
@@ -86,15 +86,14 @@ final class QueueLeaseTest extends QueueTestCase
             $other->executeStatement("SET lock_timeout = '200ms'");
             $f->connection->beginTransaction();
             $first = $f->queue->reserve();
-            self::assertNotNull($first);
+            static::assertNotNull($first);
             $second = $f->peer($other)->reserve();
-            self::assertNotNull($second);
-            self::assertNotSame($first->messageId->value, $second->messageId->value);
+            static::assertNotNull($second);
+            static::assertNotSame($first->messageId->value, $second->messageId->value);
             $f->connection->commit();
-            self::assertNull($f->queue->reserve());
+            static::assertNull($f->queue->reserve());
         } finally {
             $other->close();
         }
     }
-
 }

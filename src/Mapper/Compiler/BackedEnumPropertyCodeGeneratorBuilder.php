@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -26,8 +28,11 @@ class BackedEnumPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
         return $ref->isBacked();
     }
 
-    public function build(Type $type, CodeGeneratorBuilderRegistry $registry, CodeGeneratorContext $context): CodeGenerator
-    {
+    public function build(
+        Type $type,
+        CodeGeneratorBuilderRegistry $registry,
+        CodeGeneratorContext $context,
+    ): CodeGenerator {
         $enumType = $type;
         $isNullable = false;
         if ($type instanceof NullableType) {
@@ -47,7 +52,11 @@ class BackedEnumPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
         };
 
         return new class($enumClass, $isNullable, $denormalizedType) implements CodeGenerator {
-            public function __construct(private string $enumClass, private bool $isNullable, private Type $denormalizedType) {}
+            public function __construct(
+                private string $enumClass,
+                private bool $isNullable,
+                private Type $denormalizedType,
+            ) {}
 
             public function generateNormalization(string $objectVar): string
             {

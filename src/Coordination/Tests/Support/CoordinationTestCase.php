@@ -31,12 +31,18 @@ abstract class CoordinationTestCase extends TestCase
 
     protected function tracker(string $backend): DirtyKeyTracker
     {
-        return 'memory' === $backend ? new InMemoryDirtyKeyTracker() : new PostgresDirtyKeyTracker(...$this->postgresTable('dirty_keys'));
+        return 'memory' === $backend
+            ? new InMemoryDirtyKeyTracker()
+            : new PostgresDirtyKeyTracker(...$this->postgresTable('dirty_keys'));
     }
 
     protected function lease(string $backend, StatickClock $clock): CoordinatorLease
     {
-        return 'memory' === $backend ? new InMemoryCoordinatorLease($clock) : new PostgresCoordinatorLease(...[...$this->postgresTable('leases'), $clock]);
+        return (
+            'memory' === $backend
+                ? new InMemoryCoordinatorLease($clock)
+                : new PostgresCoordinatorLease(...[...$this->postgresTable('leases'), $clock])
+        );
     }
 
     /** @return array{Connection, string} */
@@ -47,8 +53,10 @@ abstract class CoordinationTestCase extends TestCase
             self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run Postgres coordination guarantees.');
         }
         $connection = PostgresConnectionSupport::connection($dsn);
-        $table = 'coordination_guarantees_'.bin2hex(random_bytes(8));
-        $schema = 'leases' === $kind ? new PostgresCoordinatorLeaseSchema($table) : new PostgresDirtyKeyTrackerSchema($table);
+        $table = 'coordination_guarantees_' . bin2hex(random_bytes(8));
+        $schema = 'leases' === $kind
+            ? new PostgresCoordinatorLeaseSchema($table)
+            : new PostgresDirtyKeyTrackerSchema($table);
         $this->tables[] = [$connection, $schema];
         foreach ($schema->createStatements() as $statement) {
             $connection->executeStatement($statement);

@@ -12,6 +12,9 @@ use Ultra\MessageHandling\Attribute\HandlerMatchContext;
  */
 final readonly class CompileTimeHandlerMatchContext implements HandlerMatchContext
 {
+    /**
+     * @param class-string $messageClass
+     */
     public function __construct(
         private \ReflectionMethod $reflectionMethod,
         private string $messageClass,

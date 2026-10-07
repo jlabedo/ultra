@@ -18,8 +18,14 @@ class EventRegistryCompilerPass implements CompilerPassInterface
         $domainIdentifierRequiresScope = [];
         foreach ($container->findTaggedResourceIds(EventsExtension::EVENT_TAG) as $serviceId => $tags) {
             $class = $container->getDefinition($serviceId)->getClass();
+            if (null === $class || !class_exists($class)) {
+                throw new \LogicException(sprintf('Event service "%s" must have an existing class.', $serviceId));
+            }
             foreach ($tags as $tag) {
                 $name = $tag['name'] ?? $class;
+                if (!is_string($name)) {
+                    throw new \LogicException(sprintf('Event service "%s" must have a string name.', $serviceId));
+                }
                 if (isset($eventMap[$name]) && $eventMap[$name] !== $class) {
                     throw new \LogicException(sprintf(
                         'Duplicate #[Event] name "%s": "%s" and "%s".',
@@ -38,13 +44,18 @@ class EventRegistryCompilerPass implements CompilerPassInterface
             }
         }
 
-        $container->setDefinition(EventRegistryInterface::class, new Definition(
-            CompiledEventRegistry::class,
-            [$eventMap, $domainIdentifierMap, $domainIdentifierRequiresScope]
-        ));
+        $container->setDefinition(
+            EventRegistryInterface::class,
+            new Definition(CompiledEventRegistry::class, [
+                $eventMap,
+                $domainIdentifierMap,
+                $domainIdentifierRequiresScope,
+            ]),
+        );
     }
 
     /**
+     * @param class-string $eventClass
      * @return array{identifiers: array<string, string>, requiresScope: bool}
      */
     private function compileDomainIdentifiers(string $eventClass): array

@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\EventSourcedState\Tests\Support;
 
-use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\Events\EventRegistryInterface;
+use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Testing\UltraLightContainer;

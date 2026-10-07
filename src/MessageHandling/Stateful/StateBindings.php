@@ -24,6 +24,7 @@ use Ultra\StatefulMessageHandling\Attribute\BindTo;
  *     property: ?string,
  *     method: ?string,
  *     sources: list<string>,
+ *     ...
  * }
  * @phpstan-type Plan array{bindings: list<Binding>, rounds: list<list<int>>}
  */
@@ -49,15 +50,19 @@ final class StateBindings
         $method = $ctx->method();
         $messageClass = $ctx->messageClass();
         $messageRef = new \ReflectionClass($messageClass);
-        $parameters = $ctx->isSelfHandler()
-            ? $method->getParameters()
-            : array_slice($method->getParameters(), 1);
+        /** @var list<\ReflectionParameter> $parameters */
+        $parameters = $ctx->isSelfHandler() ? $method->getParameters() : array_slice($method->getParameters(), 1);
 
         /** @var array<string, array{index: int, parameterName: string, stateClass: class-string, allowsNull: bool, bindTo: ?BindTo}> $states */
         $states = [];
         foreach ($parameters as $index => $parameter) {
             $type = $parameter->getType();
-            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin() || !$isState($type->getName())) {
+            if (!$type instanceof \ReflectionNamedType || $type->isBuiltin()) {
+                continue;
+            }
+
+            $stateClass = $type->getName();
+            if (!class_exists($stateClass) || !$isState($stateClass)) {
                 continue;
             }
 
@@ -65,7 +70,7 @@ final class StateBindings
             $states[$parameter->getName()] = [
                 'index' => $index,
                 'parameterName' => $parameter->getName(),
-                'stateClass' => $type->getName(),
+                'stateClass' => $stateClass,
                 'allowsNull' => $type->allowsNull(),
                 'bindTo' => $bindTo,
             ];
@@ -92,15 +97,30 @@ final class StateBindings
             } elseif (null !== $state['bindTo']?->property) {
                 $binding['property'] = $state['bindTo']->property;
             } else {
-                [$binding['property'], $binding['method']] = self::conventionalBinding($messageRef, $method, $state, $conventionalProperty($state['stateClass']));
+                [$binding['property'], $binding['method']] = self::conventionalBinding(
+                    $messageRef,
+                    $method,
+                    $state,
+                    $conventionalProperty($state['stateClass']),
+                );
             }
 
             if (null !== $binding['method']) {
-                $binding['sources'] = self::methodSources($messageRef, $method, $state, $states, $nullableStates, $binding['method']);
-            } elseif (!MessagePropertyPath::exists($messageRef, $binding['property'])) {
+                $binding['sources'] = self::methodSources(
+                    $messageRef,
+                    $method,
+                    $state,
+                    $states,
+                    $nullableStates,
+                    $binding['method'],
+                );
+            } elseif (
+                null === $binding['property']
+                || !MessagePropertyPath::exists($messageRef, $binding['property'])
+            ) {
                 throw new \LogicException(sprintf(
                     'Message %s has no property path "%s" required for state parameter "%s" of %s::%s(). '
-                        .'Either add the property path, or use #[BindTo("property.path")] to bind to a different message property path.',
+                    . 'Either add the property path, or use #[BindTo("property.path")] to bind to a different message property path.',
                     $messageClass,
                     $binding['property'],
                     $state['parameterName'],
@@ -151,10 +171,7 @@ final class StateBindings
             }
         }
 
-        return array_map(
-            static fn (array $binding): ?object => $loaded[$binding['parameterName']],
-            $plan['bindings'],
-        );
+        return array_map(static fn(array $binding): ?object => $loaded[$binding['parameterName']], $plan['bindings']);
     }
 
     /**
@@ -172,7 +189,11 @@ final class StateBindings
             $arguments[$source] = $loaded[$source];
         }
 
-        return $message->{$binding['method']}(...$arguments);
+        $method = $binding['method'];
+        assert(null !== $method, 'A binding without a property must declare a method.');
+
+        // @mago-expect analysis:string-member-selector
+        return $message->{$method}(...$arguments);
     }
 
     /**
@@ -198,15 +219,22 @@ final class StateBindings
      *
      * @return array{?string, ?string} property path or method name
      */
-    private static function conventionalBinding(\ReflectionClass $messageRef, \ReflectionMethod $handler, array $state, string $name): array
-    {
+    private static function conventionalBinding(
+        \ReflectionClass $messageRef,
+        \ReflectionMethod $handler,
+        array $state,
+        string $name,
+    ): array {
         $hasProperty = $messageRef->hasProperty($name);
-        $hasMethod = $messageRef->hasMethod($name) && $messageRef->getMethod($name)->isPublic() && !$messageRef->getMethod($name)->isStatic();
+        $hasMethod =
+            $messageRef->hasMethod($name)
+            && $messageRef->getMethod($name)->isPublic()
+            && !$messageRef->getMethod($name)->isStatic();
 
         if ($hasProperty && $hasMethod) {
             throw new \LogicException(sprintf(
                 'Message %s has both a property and a method named "%s", conventionally bound to state parameter "%s" of %s::%s(). '
-                    .'Use #[BindTo("%s")] or #[BindTo(method: "%s")] to choose one.',
+                . 'Use #[BindTo("%s")] or #[BindTo(method: "%s")] to choose one.',
                 $messageRef->getName(),
                 $name,
                 $state['parameterName'],
@@ -220,7 +248,7 @@ final class StateBindings
         if (!$hasProperty && !$hasMethod) {
             throw new \LogicException(sprintf(
                 'Message %s has no property path or method "%s" required for state parameter "%s" of %s::%s(). '
-                    .'Either add a property or a public method named "%s", or use #[BindTo("property.path")] or #[BindTo(method: "name")].',
+                . 'Either add a property or a public method named "%s", or use #[BindTo("property.path")] or #[BindTo(method: "name")].',
                 $messageRef->getName(),
                 $name,
                 $state['parameterName'],
@@ -256,11 +284,21 @@ final class StateBindings
         );
 
         if (!$messageRef->hasMethod($methodName)) {
-            throw new \LogicException(sprintf('%s: message %s has no method "%s".', $context, $messageRef->getName(), $methodName));
+            throw new \LogicException(sprintf(
+                '%s: message %s has no method "%s".',
+                $context,
+                $messageRef->getName(),
+                $methodName,
+            ));
         }
         $method = $messageRef->getMethod($methodName);
         if (!$method->isPublic() || $method->isStatic()) {
-            throw new \LogicException(sprintf('%s: %s::%s() must be a public instance method.', $context, $messageRef->getName(), $methodName));
+            throw new \LogicException(sprintf(
+                '%s: %s::%s() must be a public instance method.',
+                $context,
+                $messageRef->getName(),
+                $methodName,
+            ));
         }
 
         $sources = [];
@@ -278,7 +316,11 @@ final class StateBindings
             }
 
             $type = $parameter->getType();
-            if (!$type instanceof \ReflectionNamedType || $type->getName() !== $source['stateClass'] || $parameter->isVariadic()) {
+            if (
+                !$type instanceof \ReflectionNamedType
+                || $type->getName() !== $source['stateClass']
+                || $parameter->isVariadic()
+            ) {
                 throw new \LogicException(sprintf(
                     '%s: parameter "$%s" of %s::%s() must be typed %s to match the state parameter of the same name.',
                     $context,
@@ -324,7 +366,14 @@ final class StateBindings
         /** @var array<int, true> $visiting */
         $visiting = [];
 
-        $level = static function (int $position, array $path) use (&$level, &$levels, &$visiting, $bindings, $positions, $handler): int {
+        $level = /** @param list<string> $path */ static function (int $position, array $path) use (
+            &$level,
+            &$levels,
+            &$visiting,
+            $bindings,
+            $positions,
+            $handler,
+        ): int {
             if (isset($levels[$position])) {
                 return $levels[$position];
             }

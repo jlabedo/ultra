@@ -64,8 +64,13 @@ final class RoomDayScheduleState
         unset($this->bookings[$event->bookingId]);
     }
 
-    private function add(string $bookingId, string $memberId, string $companyId, \DateTimeImmutable $start, \DateTimeImmutable $end): void
-    {
+    private function add(
+        string $bookingId,
+        string $memberId,
+        string $companyId,
+        \DateTimeImmutable $start,
+        \DateTimeImmutable $end,
+    ): void {
         $this->bookings[$bookingId] = [
             'slot' => new Slot($start, $end),
             'memberId' => $memberId,

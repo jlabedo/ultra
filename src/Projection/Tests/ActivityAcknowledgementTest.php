@@ -44,24 +44,24 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         $activity->bump('tracking_projection', $bucket);
 
         $runner->ensureInitialized($runtime);
-        self::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
+        static::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
 
         $firstResult = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
 
-        self::assertSame(1, $firstResult->processedEvents);
-        self::assertFalse($firstResult->caughtUp);
-        self::assertSame(0, $firstResult->acknowledgedBuckets);
-        self::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
-        self::assertCount(1, $activity->pendingInSegment('tracking_projection', 0, 255));
+        static::assertSame(1, $firstResult->processedEvents);
+        static::assertFalse($firstResult->caughtUp);
+        static::assertSame(0, $firstResult->acknowledgedBuckets);
+        static::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
+        static::assertCount(1, $activity->pendingInSegment('tracking_projection', 0, 255));
 
         $secondResult = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
 
-        self::assertSame(1, $secondResult->processedEvents);
-        self::assertTrue($secondResult->caughtUp);
-        self::assertSame(1, $secondResult->acknowledgedBuckets);
-        self::assertSame(null, $segments->listSegments('tracking_projection')[0]->workerId);
-        self::assertSame([], $activity->pendingInSegment('tracking_projection', 0, 255));
-        self::assertSame(['course-1' => 'Advanced Math'], $projection->names);
+        static::assertSame(1, $secondResult->processedEvents);
+        static::assertTrue($secondResult->caughtUp);
+        static::assertSame(1, $secondResult->acknowledgedBuckets);
+        static::assertNull($segments->listSegments('tracking_projection')[0]->workerId);
+        static::assertSame([], $activity->pendingInSegment('tracking_projection', 0, 255));
+        static::assertSame(['course-1' => 'Advanced Math'], $projection->names);
     }
 
     #[DataProvider('backends')]
@@ -89,15 +89,15 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
             activityRepository: $activity,
         );
         $runner->ensureInitialized($runtime);
-        self::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
+        static::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
 
         $result = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 10);
         $pending = $activity->pendingInSegment('tracking_projection', 0, 255);
 
-        self::assertTrue($result->caughtUp);
-        self::assertCount(1, $pending);
-        self::assertSame($bucket, (int) $pending[0]->key);
-        self::assertSame(1, $pending[0]->counter);
+        static::assertTrue($result->caughtUp);
+        static::assertCount(1, $pending);
+        static::assertSame($bucket, (int) $pending[0]->key);
+        static::assertSame(1, $pending[0]->counter);
     }
 
     #[DataProvider('backends')]
@@ -117,17 +117,17 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         $activity->bump('failing_tracking_projection', $bucket);
 
         $runner->ensureInitialized($runtime);
-        self::assertNotNull($runner->claimSegment('failing_tracking_projection', 0, 'worker-1'));
+        static::assertNotNull($runner->claimSegment('failing_tracking_projection', 0, 'worker-1'));
 
         try {
             $runner->runClaimedOnce($runtime, 'failing_tracking_projection', 0, 'worker-1', limit: 10);
-            self::fail('Expected the projection handler to throw.');
+            static::fail('Expected the projection handler to throw.');
         } catch (\RuntimeException $e) {
-            self::assertSame('Projection handler failed.', $e->getMessage());
+            static::assertSame('Projection handler failed.', $e->getMessage());
         }
 
-        self::assertCount(1, $activity->pendingInSegment('failing_tracking_projection', 0, 255));
-        self::assertSame(null, $segments->listSegments('failing_tracking_projection')[0]->workerId);
+        static::assertCount(1, $activity->pendingInSegment('failing_tracking_projection', 0, 255));
+        static::assertNull($segments->listSegments('failing_tracking_projection')[0]->workerId);
     }
 
     #[DataProvider('backends')]
@@ -145,8 +145,8 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
             new Event('unrelated.event', [], ['courseId' => 'course-1']),
         ]);
 
-        self::assertSame([], $activity->pendingInSegment('runtime_projection', 0, 255));
-        self::assertSame(0, $activator->workSignals());
+        static::assertSame([], $activity->pendingInSegment('runtime_projection', 0, 255));
+        static::assertSame(0, $activator->workSignals());
     }
 
     #[DataProvider('backends')]
@@ -167,7 +167,11 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
 
         $recorder->record([
             new Event('unrelated.event', [], ['courseId' => 'course-x']),
-            new Event('course.created', ['courseId' => 'course-missing', 'name' => 'Ignored'], ['studentId' => 'student-1']),
+            new Event(
+                'course.created',
+                ['courseId' => 'course-missing', 'name' => 'Ignored'],
+                ['studentId' => 'student-1'],
+            ),
             new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math'], ['courseId' => 'course-1']),
             new Event('course.created', ['courseId' => 'course-1', 'name' => 'Math again'], ['courseId' => 'course-1']),
         ]);
@@ -175,12 +179,12 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         $primaryPending = $activity->pendingInSegment('runtime_projection', 0, 255);
         $secondaryPending = $activity->pendingInSegment('secondary_runtime_projection', 0, 255);
 
-        self::assertCount(1, $primaryPending);
-        self::assertSame(1, $primaryPending[0]->counter);
-        self::assertCount(1, $secondaryPending);
-        self::assertSame(1, $secondaryPending[0]->counter);
-        self::assertSame(1, $activator->workSignals());
-        self::assertSame([], $activator->workerClaims());
+        static::assertCount(1, $primaryPending);
+        static::assertSame(1, $primaryPending[0]->counter);
+        static::assertCount(1, $secondaryPending);
+        static::assertSame(1, $secondaryPending[0]->counter);
+        static::assertSame(1, $activator->workSignals());
+        static::assertSame([], $activator->workerClaims());
     }
 
     #[DataProvider('backends')]
@@ -197,25 +201,25 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         $segmentPending = $activity->pendingInSegment('courses', 40, 45);
         $affectedBuckets = $activity->affected();
 
-        self::assertCount(2, $pending);
-        self::assertSame(2, $pending[0]->counter);
-        self::assertCount(1, $segmentPending);
-        self::assertSame(42, (int) $segmentPending[0]->key);
-        self::assertCount(3, $affectedBuckets);
-        self::assertSame('courses', $affectedBuckets[0]->channel);
-        self::assertSame('courses', $affectedBuckets[1]->channel);
-        self::assertSame('other_courses', $affectedBuckets[2]->channel);
+        static::assertCount(2, $pending);
+        static::assertSame(2, $pending[0]->counter);
+        static::assertCount(1, $segmentPending);
+        static::assertSame(42, (int) $segmentPending[0]->key);
+        static::assertCount(3, $affectedBuckets);
+        static::assertSame('courses', $affectedBuckets[0]->channel);
+        static::assertSame('courses', $affectedBuckets[1]->channel);
+        static::assertSame('other_courses', $affectedBuckets[2]->channel);
 
         $seenCounter = $segmentPending[0]->counter;
         $activity->bump('courses', 42);
-        self::assertSame(1, $activity->drainSeen('courses', [42 => $seenCounter]));
+        static::assertSame(1, $activity->drainSeen('courses', [42 => $seenCounter]));
 
         $remainingSegmentPending = $activity->pendingInSegment('courses', 40, 45);
 
-        self::assertCount(1, $remainingSegmentPending);
-        self::assertSame(1, $remainingSegmentPending[0]->counter);
-        self::assertSame(2, $activity->drainSeen('courses', [42 => 1, 50 => 1]));
-        self::assertSame(1, $activity->drainSeen('other_courses', [3 => 1]));
-        self::assertSame([], $activity->affected());
+        static::assertCount(1, $remainingSegmentPending);
+        static::assertSame(1, $remainingSegmentPending[0]->counter);
+        static::assertSame(2, $activity->drainSeen('courses', [42 => 1, 50 => 1]));
+        static::assertSame(1, $activity->drainSeen('other_courses', [3 => 1]));
+        static::assertSame([], $activity->affected());
     }
 }

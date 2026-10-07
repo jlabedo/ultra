@@ -20,7 +20,11 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
         $this->driver()->registerCompany('acme', 'Acme', 600);
         $this->driver()->registerMember('ada', 'acme', 'Ada@Example.test');
 
-        $this->assertViolation('member.email_taken', fn () => $this->driver()->registerMember('grace', 'acme', ' ada@example.test'));
+        $this->assertViolation('member.email_taken', fn() => $this->driver()->registerMember(
+            'grace',
+            'acme',
+            ' ada@example.test',
+        ));
     }
 
     public function test_overlapping_bookings_are_rejected_and_adjacent_ones_accepted(): void
@@ -28,7 +32,12 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
         $this->givenAcmeWithAdaAndGrace();
 
         $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
-        $this->assertViolation('slot.unavailable', fn () => $this->driver()->book('b2', 'blue', 'grace', Slot::of('2026-09-10 10:30', '2026-09-10 11:30')));
+        $this->assertViolation('slot.unavailable', fn() => $this->driver()->book(
+            'b2',
+            'blue',
+            'grace',
+            Slot::of('2026-09-10 10:30', '2026-09-10 11:30'),
+        ));
         $this->driver()->book('b3', 'blue', 'grace', Slot::of('2026-09-10 11:00', '2026-09-10 12:00'));
         $this->driver()->book('b4', 'red', 'grace', Slot::of('2026-09-10 10:30', '2026-09-10 11:30'));
 
@@ -39,12 +48,42 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
     {
         $this->givenAcmeWithAdaAndGrace();
 
-        $this->assertViolation('slot.off_grid', fn () => $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:15', '2026-09-10 11:00')));
-        $this->assertViolation('slot.outside_opening_hours', fn () => $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-09-10 19:00', '2026-09-10 21:00')));
-        $this->assertViolation('slot.too_long', fn () => $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-09-10 08:00', '2026-09-10 13:00')));
-        $this->assertViolation('slot.in_past', fn () => $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-08-31 10:00', '2026-08-31 11:00')));
-        $this->assertViolation('room.not_found', fn () => $this->driver()->book('b1', 'green', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00')));
-        $this->assertViolation('member.not_found', fn () => $this->driver()->book('b1', 'blue', 'nobody', Slot::of('2026-09-10 10:00', '2026-09-10 11:00')));
+        $this->assertViolation('slot.off_grid', fn() => $this->driver()->book(
+            'b1',
+            'blue',
+            'ada',
+            Slot::of('2026-09-10 10:15', '2026-09-10 11:00'),
+        ));
+        $this->assertViolation('slot.outside_opening_hours', fn() => $this->driver()->book(
+            'b1',
+            'blue',
+            'ada',
+            Slot::of('2026-09-10 19:00', '2026-09-10 21:00'),
+        ));
+        $this->assertViolation('slot.too_long', fn() => $this->driver()->book(
+            'b1',
+            'blue',
+            'ada',
+            Slot::of('2026-09-10 08:00', '2026-09-10 13:00'),
+        ));
+        $this->assertViolation('slot.in_past', fn() => $this->driver()->book(
+            'b1',
+            'blue',
+            'ada',
+            Slot::of('2026-08-31 10:00', '2026-08-31 11:00'),
+        ));
+        $this->assertViolation('room.not_found', fn() => $this->driver()->book(
+            'b1',
+            'green',
+            'ada',
+            Slot::of('2026-09-10 10:00', '2026-09-10 11:00'),
+        ));
+        $this->assertViolation('member.not_found', fn() => $this->driver()->book(
+            'b1',
+            'blue',
+            'nobody',
+            Slot::of('2026-09-10 10:00', '2026-09-10 11:00'),
+        ));
     }
 
     public function test_the_quota_is_pooled_per_company_and_month(): void
@@ -53,7 +92,12 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
 
         $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
         $this->driver()->book('b2', 'red', 'grace', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
-        $this->assertViolation('quota.exceeded', fn () => $this->driver()->book('b3', 'blue', 'ada', Slot::of('2026-09-11 10:00', '2026-09-11 10:30')));
+        $this->assertViolation('quota.exceeded', fn() => $this->driver()->book(
+            'b3',
+            'blue',
+            'ada',
+            Slot::of('2026-09-11 10:00', '2026-09-11 10:30'),
+        ));
         $this->driver()->book('b4', 'blue', 'ada', Slot::of('2026-10-01 10:00', '2026-10-01 12:00'));
 
         self::assertSame(120, $this->driver()->usedMinutes('acme', '2026-09'));
@@ -69,9 +113,9 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
         $this->givenAcmeWithAdaAndGrace();
         $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
 
-        $this->assertViolation('booking.not_owner', fn () => $this->driver()->cancel('b1', 'grace'));
+        $this->assertViolation('booking.not_owner', fn() => $this->driver()->cancel('b1', 'grace'));
         $this->driver()->cancel('b1', 'ada');
-        $this->assertViolation('booking.already_cancelled', fn () => $this->driver()->cancel('b1', 'ada'));
+        $this->assertViolation('booking.already_cancelled', fn() => $this->driver()->cancel('b1', 'ada'));
 
         self::assertSame('cancelled', $this->driver()->bookingStatus('b1'));
         self::assertSame(0, $this->driver()->usedMinutes('acme', '2026-09'));
@@ -113,7 +157,12 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
         $this->driver()->book('b2', 'blue', 'hank', Slot::of('2026-09-10 14:00', '2026-09-10 15:00'));
 
         $this->driver()->reschedule('b1', 'ada', 'blue', Slot::of('2026-09-10 10:30', '2026-09-10 12:30'));
-        $this->assertViolation('slot.unavailable', fn () => $this->driver()->reschedule('b1', 'ada', 'blue', Slot::of('2026-09-10 13:30', '2026-09-10 14:30')));
+        $this->assertViolation('slot.unavailable', fn() => $this->driver()->reschedule(
+            'b1',
+            'ada',
+            'blue',
+            Slot::of('2026-09-10 13:30', '2026-09-10 14:30'),
+        ));
 
         self::assertSame(['b1', 'b2'], $this->driver()->bookingsOnDay('blue', '2026-09-10'));
         self::assertSame(120, $this->driver()->usedMinutes('acme', '2026-09'));
@@ -124,7 +173,12 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
         $this->givenAcmeWithAdaAndGrace();
         $this->driver()->book('b1', 'blue', 'ada', Slot::of('2026-09-02 08:00', '2026-09-02 09:00'));
 
-        $this->assertViolation('booking.too_late_to_reschedule', fn () => $this->driver()->reschedule('b1', 'ada', 'blue', Slot::of('2026-09-03 08:00', '2026-09-03 09:00')));
+        $this->assertViolation('booking.too_late_to_reschedule', fn() => $this->driver()->reschedule(
+            'b1',
+            'ada',
+            'blue',
+            Slot::of('2026-09-03 08:00', '2026-09-03 09:00'),
+        ));
     }
 
     public function test_a_weekly_series_is_all_or_nothing(): void
@@ -132,7 +186,13 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
         $this->givenAcmeWithAdaAndGrace();
         $this->driver()->book('blocker', 'blue', 'grace', Slot::of('2026-09-29 10:00', '2026-09-29 11:00'));
 
-        $this->assertViolation('slot.unavailable', fn () => $this->driver()->bookWeekly('s1', 'blue', 'ada', Slot::of('2026-09-15 10:00', '2026-09-15 11:00'), 4));
+        $this->assertViolation('slot.unavailable', fn() => $this->driver()->bookWeekly(
+            's1',
+            'blue',
+            'ada',
+            Slot::of('2026-09-15 10:00', '2026-09-15 11:00'),
+            4,
+        ));
 
         self::assertSame([], $this->driver()->bookingsOnDay('blue', '2026-09-15'));
         self::assertSame([], $this->driver()->bookingsOnDay('blue', '2026-09-22'));
@@ -150,7 +210,13 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
     {
         $this->givenAcmeWithAdaAndGrace(monthlyMinutes: 120);
 
-        $this->assertViolation('quota.exceeded', fn () => $this->driver()->bookWeekly('s1', 'blue', 'ada', Slot::of('2026-09-08 10:00', '2026-09-08 11:00'), 3));
+        $this->assertViolation('quota.exceeded', fn() => $this->driver()->bookWeekly(
+            's1',
+            'blue',
+            'ada',
+            Slot::of('2026-09-08 10:00', '2026-09-08 11:00'),
+            3,
+        ));
 
         self::assertSame(0, $this->driver()->usedMinutes('acme', '2026-09'));
     }
@@ -169,7 +235,13 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
     {
         $this->givenAcmeWithAdaAndGrace(monthlyMinutes: 120);
         $this->driver()->book('existing', 'red', 'grace', Slot::of('2026-10-08 10:00', '2026-10-08 11:00'));
-        $this->assertViolation('quota.exceeded', fn () => $this->driver()->bookWeekly('s1', 'blue', 'ada', Slot::of('2026-09-22 10:00', '2026-09-22 11:00'), 4));
+        $this->assertViolation('quota.exceeded', fn() => $this->driver()->bookWeekly(
+            's1',
+            'blue',
+            'ada',
+            Slot::of('2026-09-22 10:00', '2026-09-22 11:00'),
+            4,
+        ));
 
         self::assertSame(0, $this->driver()->usedMinutes('acme', '2026-09'));
         self::assertSame(60, $this->driver()->usedMinutes('acme', '2026-10'));
@@ -210,7 +282,11 @@ abstract class BookingScenarioTestCase extends CoworkingKernelTestCase
         try {
             $action();
         } catch (InvariantViolation $violation) {
-            self::assertContains($code, array_map(static fn ($v): string => $v->code, $violation->violations), $violation->getMessage());
+            self::assertContains(
+                $code,
+                array_map(static fn($v): string => $v->code, $violation->violations),
+                $violation->getMessage(),
+            );
 
             return;
         }

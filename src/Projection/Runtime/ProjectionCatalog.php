@@ -38,7 +38,10 @@ final class ProjectionCatalog
     /** @return list<ProjectionDefinition> */
     public function definitions(): array
     {
-        return array_map(static fn (ProjectionRuntime $r): ProjectionDefinition => $r->definition(), array_values($this->runtimes));
+        return array_map(
+            static fn(ProjectionRuntime $r): ProjectionDefinition => $r->definition(),
+            array_values($this->runtimes),
+        );
     }
 
     /** @return list<ProjectionRuntime> */

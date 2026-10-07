@@ -25,11 +25,10 @@ final readonly class AsyncHandlerProxy implements MessageHandlerInterface
     {
         $dispatch = AsyncDispatch::fromContext($context);
 
-        $this->sender->enqueue(new AsyncEnvelope(
-            $message,
-            $context,
-            AsyncHeaders::empty()->with(AsyncHeaderNames::ROUTE, $this->route),
-        ), $dispatch instanceof AsyncDispatch ? AsyncEnqueueOptions::fromDispatch($dispatch) : null);
+        $this->sender->enqueue(
+            new AsyncEnvelope($message, $context, AsyncHeaders::empty()->with(AsyncHeaderNames::ROUTE, $this->route)),
+            $dispatch instanceof AsyncDispatch ? AsyncEnqueueOptions::fromDispatch($dispatch) : null,
+        );
 
         return null;
     }

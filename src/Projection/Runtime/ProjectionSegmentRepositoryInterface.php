@@ -45,7 +45,12 @@ interface ProjectionSegmentRepositoryInterface
         Duration $leaseDuration = new Duration(seconds: 60),
     ): array;
 
-    public function replaceSegmentsWithMergedSegment(string $projectionId, int $bucketFrom, int $bucketTo, Checkpoint $checkpoint): void;
+    public function replaceSegmentsWithMergedSegment(
+        string $projectionId,
+        int $bucketFrom,
+        int $bucketTo,
+        Checkpoint $checkpoint,
+    ): void;
 
     /** @return list<ProjectionSegment> */
     public function listSegments(string $projectionId): array;

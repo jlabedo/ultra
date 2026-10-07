@@ -32,41 +32,35 @@ final readonly class PostgresDirtyKeyTracker implements DirtyKeyTracker
 
     public function pending(int $limit = 256): array
     {
-        $rows = $this->connection->executeQuery(
-            sprintf(
-                'SELECT channel, key, counter FROM %s
+        $rows = $this->connection
+            ->executeQuery(sprintf('SELECT channel, key, counter FROM %s
                  WHERE counter > 0
                  ORDER BY counter DESC, channel ASC, key ASC
-                 LIMIT ?',
-                $this->table,
-            ),
-            [$limit],
-            [ParameterType::INTEGER],
-        )->fetchAllAssociative();
+                 LIMIT ?', $this->table), [$limit], [ParameterType::INTEGER])
+            ->fetchAllAssociative();
 
         return $this->hydrate($rows);
     }
 
     public function pendingForChannel(string $channel, int $limit = 256): array
     {
-        $rows = $this->connection->executeQuery(
-            sprintf(
-                'SELECT channel, key, counter FROM %s
+        $rows = $this->connection
+            ->executeQuery(
+                sprintf('SELECT channel, key, counter FROM %s
                  WHERE channel = ? AND counter > 0
                  ORDER BY counter DESC, key ASC
-                 LIMIT ?',
-                $this->table,
-            ),
-            [$channel, $limit],
-            [ParameterType::STRING, ParameterType::INTEGER],
-        )->fetchAllAssociative();
+                 LIMIT ?', $this->table),
+                [$channel, $limit],
+                [ParameterType::STRING, ParameterType::INTEGER],
+            )
+            ->fetchAllAssociative();
 
         return $this->hydrate($rows);
     }
 
     public function drainSeen(string $channel, array $seen): int
     {
-        $seen = array_filter($seen, static fn (int $counter): bool => $counter > 0);
+        $seen = array_filter($seen, static fn(int $counter): bool => $counter > 0);
         if ([] === $seen) {
             return 0;
         }
@@ -108,7 +102,7 @@ final readonly class PostgresDirtyKeyTracker implements DirtyKeyTracker
     private function hydrate(array $rows): array
     {
         return array_map(
-            static fn (array $row): PendingKey => new PendingKey(
+            static fn(array $row): PendingKey => new PendingKey(
                 (string) $row['channel'],
                 (string) $row['key'],
                 (int) $row['counter'],

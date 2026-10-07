@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\StateStore;
 
+use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\MappedTable\RowUpdatePlan;
-use Ultra\MappedTable\MappedKey;
 
 /** Derive old/new guard keys from conditional row plans, without additional database reads. */
 final class QueryGuardWriteRules
@@ -21,7 +21,8 @@ final class QueryGuardWriteRules
     {
         foreach ($definitions as $name => $scopes) {
             foreach ($scopes as $scope) {
-                foreach ($plans[$scope['tableKey']]->rowUpdates ?? [] as $plan) {
+                $tablePlan = $plans[$scope['tableKey']] ?? null;
+                foreach ($tablePlan->rowUpdates ?? [] as $plan) {
                     if (!$plan->writes()) {
                         continue;
                     }
@@ -32,7 +33,10 @@ final class QueryGuardWriteRules
                 foreach ($reconciliationScopes[$scope['tableKey']] ?? [] as $key) {
                     $value = $key->values[$scope['keyBy']] ?? null;
                     if (!is_int($value) && !is_string($value)) {
-                        throw new \LogicException(sprintf('Query guard "%s" needs its scope in the collection owner key.', $name));
+                        throw new \LogicException(sprintf(
+                            'Query guard "%s" needs its scope in the collection owner key.',
+                            $name,
+                        ));
                     }
                     yield ['name' => $name, 'value' => $value, 'tableKey' => $scope['tableKey'], 'key' => $key];
                 }
@@ -40,7 +44,10 @@ final class QueryGuardWriteRules
         }
     }
 
-    /** @param list<string>|null $columns @return iterable<array{name: string, value: int|string}> */
+    /**
+     * @param list<string>|null $columns
+     * @return iterable<array{name: string, value: int|string}>
+     */
     private static function requestsForPlan(string $name, string $keyBy, ?array $columns, RowUpdatePlan $plan): iterable
     {
         $insert = RowUpdatePlan::MODE_INSERT === $plan->mode;
@@ -49,21 +56,39 @@ final class QueryGuardWriteRules
         $after = RowUpdatePlan::MODE_REPLACE === $plan->mode
             ? [...$plan->setColumns, ...$plan->key->values]
             : [...$before, ...$plan->setColumns];
-        $affected = $insert || $delete || null === $columns || in_array($plan->mode, [RowUpdatePlan::MODE_REPLACE, RowUpdatePlan::MODE_UPSERT], true);
+        $affected =
+            $insert
+            || $delete
+            || null === $columns
+            || in_array($plan->mode, [RowUpdatePlan::MODE_REPLACE, RowUpdatePlan::MODE_UPSERT], true);
         foreach ([$keyBy, ...($columns ?? [])] as $column) {
-            if (array_key_exists($column, $plan->setColumns)
-                && (!array_key_exists($column, $before) || $plan->setColumns[$column] !== $before[$column])) {
-                $affected = true;
+            if (
+                !(
+                    array_key_exists($column, $plan->setColumns)
+                    && (!array_key_exists($column, $before) || $plan->setColumns[$column] !== $before[$column])
+                )
+            ) {
+                continue;
             }
+
+            $affected = true;
         }
         if (!$affected) {
             return;
         }
 
-        if (!$insert && (!array_key_exists($keyBy, $before) || (RowUpdatePlan::MODE_UPSERT === $plan->mode && !array_key_exists($keyBy, $plan->key->values)))) {
+        if (
+            !$insert
+            && (
+                !array_key_exists($keyBy, $before)
+                || RowUpdatePlan::MODE_UPSERT === $plan->mode
+                && !array_key_exists($keyBy, $plan->key->values)
+            )
+        ) {
             throw new \LogicException(sprintf(
                 'Query guard "%s" requires observing column "%s" before changing an existing row (or observing its absence before inserting).',
-                $name, $keyBy,
+                $name,
+                $keyBy,
             ));
         }
         foreach ([$insert ? null : $before, $delete ? null : $after] as $row) {
@@ -72,7 +97,11 @@ final class QueryGuardWriteRules
             }
             $value = $row[$keyBy] ?? null;
             if (!is_int($value) && !is_string($value)) {
-                throw new \LogicException(sprintf('Query guard "%s" needs an int or string value for column "%s".', $name, $keyBy));
+                throw new \LogicException(sprintf(
+                    'Query guard "%s" needs an int or string value for column "%s".',
+                    $name,
+                    $keyBy,
+                ));
             }
             yield ['name' => $name, 'value' => $value];
         }

@@ -13,6 +13,10 @@ final readonly class SystemClock implements ClockInterface
 
     public function sleep(Duration $duration): void
     {
-        usleep($duration->inMicroseconds());
+        $microseconds = $duration->inMicroseconds();
+        if ($microseconds < 0) {
+            throw new \ValueError('usleep(): Argument #1 ($microseconds) must be greater than or equal to 0');
+        }
+        usleep($microseconds);
     }
 }

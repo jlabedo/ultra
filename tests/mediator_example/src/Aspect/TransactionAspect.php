@@ -14,14 +14,14 @@ use Ultra\MessageHandling\ProceedResult;
 
 final class TransactionAspect
 {
-    public function __construct(private readonly TransactionManager $tx) {}
+    public function __construct(
+        private readonly TransactionManager $tx,
+    ) {}
 
     #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
         $method = $ctx->method();
 
-        return [] !== $method->getAttributes(Handles::class)
-            ? MatchResult::apply()
-            : null;
+        return [] !== $method->getAttributes(Handles::class) ? MatchResult::apply() : null;
     })]
     public function wrap(callable $proceed, object $message, MessageContext $context): ProceedResult
     {

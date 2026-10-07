@@ -15,14 +15,7 @@ class InvariantViolation extends \DomainException
         public readonly array $violations,
         ?\Throwable $previous = null,
     ) {
-        $messages = array_map(
-            static fn (Violation $v): string => $v->code.': '.$v->message,
-            $violations,
-        );
-        parent::__construct(
-            implode('; ', $messages),
-            0,
-            $previous,
-        );
+        $messages = array_map(static fn(Violation $v): string => $v->code . ': ' . $v->message, $violations);
+        parent::__construct(implode('; ', $messages), 0, $previous);
     }
 }

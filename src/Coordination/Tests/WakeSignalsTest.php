@@ -21,34 +21,34 @@ final class WakeSignalsTest extends CoordinationTestCase
     {
         $clock = new StatickClock(new \DateTimeImmutable('2026-01-01T00:00:00Z'));
         $lease = $this->lease($backend, $clock);
-        self::assertTrue($lease->markWakeEnqueued('a'));
-        self::assertTrue($lease->markWakeEnqueued('b'));
-        self::assertFalse($lease->markWakeEnqueued('a'));
+        static::assertTrue($lease->markWakeEnqueued('a'));
+        static::assertTrue($lease->markWakeEnqueued('b'));
+        static::assertFalse($lease->markWakeEnqueued('a'));
         $clock->sleep(new Duration(seconds: 30));
-        self::assertFalse($lease->markWakeEnqueued('a'));
+        static::assertFalse($lease->markWakeEnqueued('a'));
         $clock->sleep(new Duration(seconds: 1));
-        self::assertTrue($lease->markWakeEnqueued('a', new Duration(seconds: 10)));
+        static::assertTrue($lease->markWakeEnqueued('a', new Duration(seconds: 10)));
         $clock->sleep(new Duration(seconds: 10));
-        self::assertFalse($lease->markWakeEnqueued('a'));
+        static::assertFalse($lease->markWakeEnqueued('a'));
         $clock->sleep(new Duration(seconds: 1));
-        self::assertTrue($lease->markWakeEnqueued('a'));
-        self::assertTrue($lease->acquire('a', 'w1', new Duration(seconds: 5)));
-        self::assertFalse($lease->markWakeEnqueued('a'));
+        static::assertTrue($lease->markWakeEnqueued('a'));
+        static::assertTrue($lease->acquire('a', 'w1', new Duration(seconds: 5)));
+        static::assertFalse($lease->markWakeEnqueued('a'));
         $lease->release('a', 'w1');
-        self::assertTrue($lease->markWakeEnqueued('a'));
-        self::assertTrue($lease->acquire('a', 'w2', new Duration(seconds: 5)));
+        static::assertTrue($lease->markWakeEnqueued('a'));
+        static::assertTrue($lease->acquire('a', 'w2', new Duration(seconds: 5)));
         $clock->sleep(new Duration(seconds: 5));
-        self::assertFalse($lease->markWakeEnqueued('a'));
+        static::assertFalse($lease->markWakeEnqueued('a'));
         $clock->sleep(new Duration(seconds: 1));
-        self::assertTrue($lease->markWakeEnqueued('a'));
+        static::assertTrue($lease->markWakeEnqueued('a'));
     }
 
     public function test_the_in_memory_activator_records_each_work_signal(): void
     {
         $activator = new InMemoryActivator();
-        self::assertSame(0, $activator->workSignals());
+        static::assertSame(0, $activator->workSignals());
         $activator->signalWorkAvailable();
         $activator->signalWorkAvailable();
-        self::assertSame(2, $activator->workSignals());
+        static::assertSame(2, $activator->workSignals());
     }
 }

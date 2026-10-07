@@ -8,9 +8,6 @@ class UnknownEventSourcedEntityException extends \LogicException
 {
     public function __construct(string $entityClass)
     {
-        parent::__construct(sprintf(
-            'No event-sourced entity loader is registered for %s.',
-            $entityClass,
-        ));
+        parent::__construct(sprintf('No event-sourced entity loader is registered for %s.', $entityClass));
     }
 }

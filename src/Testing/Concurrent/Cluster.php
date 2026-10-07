@@ -30,7 +30,7 @@ final class Cluster
         ?string $autoloadPath = null,
     ) {
         $this->autoloadPath = $autoloadPath ?? self::detectAutoloadPath();
-        $this->bootstrapScript = __DIR__.'/Internal/worker_bootstrap.php';
+        $this->bootstrapScript = __DIR__ . '/Internal/worker_bootstrap.php';
     }
 
     /** Force-kill all still-running workers. Prevents zombies on test failure. */
@@ -91,7 +91,7 @@ final class Cluster
         $autoloadPaths = [];
 
         foreach (ClassLoader::getRegisteredLoaders() as $vendorDir => $registeredLoader) {
-            $candidate = $vendorDir.'/autoload.php';
+            $candidate = $vendorDir . '/autoload.php';
             if (file_exists($candidate)) {
                 $autoloadPaths[] = $candidate;
             }

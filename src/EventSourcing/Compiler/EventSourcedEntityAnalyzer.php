@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\EventSourcedState_Compiler;
 
+use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\Events\Attribute\Event;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
 use Ultra\EventSourcedState\Attribute\MatchTag;
@@ -15,23 +17,20 @@ use Ultra\EventSourcedState\Exception\MissingEventSourcingHandlerError;
 use Ultra\EventSourcedState\Exception\MissingTypeHintError;
 use Ultra\EventSourcedState\Exception\NoTagOverlapError;
 use Ultra\EventSourcedState\Exception\UnnecessaryMatchTagError;
-use Ultra\Events\Attribute\DomainIdentifier;
-use Ultra\Events\Attribute\Event;
 
 final class EventSourcedEntityAnalyzer
 {
+    /**
+     * @param class-string $entityClass
+     */
     public function analyze(string $entityClass): EventSourcedEntityDefinition
     {
         $entityRef = new \ReflectionClass($entityClass);
         $attributes = $entityRef->getAttributes(EventSourcedEntity::class);
         if ([] === $attributes) {
-            throw new \LogicException(sprintf(
-                'Class %s is not marked with #[EventSourcedEntity].',
-                $entityClass,
-            ));
+            throw new \LogicException(sprintf('Class %s is not marked with #[EventSourcedEntity].', $entityClass));
         }
 
-        /** @var EventSourcedEntity $entityAttribute */
         $entityAttribute = $attributes[0]->newInstance();
         $entityTags = $this->normalizeTags($entityAttribute->tags);
         $aliases = $this->normalizeAliases($entityClass, $entityAttribute->aliases, $entityTags);
@@ -57,11 +56,7 @@ final class EventSourcedEntityAnalyzer
             }
 
             if (!$method->isPublic()) {
-                throw new \LogicException(sprintf(
-                    'Handler %s::%s must be public.',
-                    $entityClass,
-                    $method->getName(),
-                ));
+                throw new \LogicException(sprintf('Handler %s::%s must be public.', $entityClass, $method->getName()));
             }
 
             $parameters = $method->getParameters();
@@ -74,6 +69,7 @@ final class EventSourcedEntityAnalyzer
                 throw new MissingTypeHintError($entityClass, $method->getName());
             }
 
+            /** @var class-string $eventClass Non-builtin handler parameter types name the event class. */
             $eventClass = $parameterType->getName();
             $eventTags = $this->eventTags($eventClass);
             $eventName = $this->eventName($eventClass);
@@ -126,7 +122,10 @@ final class EventSourcedEntityAnalyzer
             $compiledGroups[] = new EventSourcedCriteriaGroup($group['tags'], $eventNames);
         }
 
-        usort($compiledGroups, static function (EventSourcedCriteriaGroup $left, EventSourcedCriteriaGroup $right): int {
+        usort($compiledGroups, static function (
+            EventSourcedCriteriaGroup $left,
+            EventSourcedCriteriaGroup $right,
+        ): int {
             $tagComparison = implode('|', $left->tags) <=> implode('|', $right->tags);
             if (0 !== $tagComparison) {
                 return $tagComparison;
@@ -144,9 +143,12 @@ final class EventSourcedEntityAnalyzer
             );
         }
 
-        usort($compiledDispatch, static function (EventSourcedDispatchEntry $left, EventSourcedDispatchEntry $right): int {
-            return $left->eventName <=> $right->eventName;
-        });
+        usort(
+            $compiledDispatch,
+            static fn(EventSourcedDispatchEntry $left, EventSourcedDispatchEntry $right): int => (
+                $left->eventName <=> $right->eventName
+            ),
+        );
 
         return new EventSourcedEntityDefinition(
             entityClass: $entityClass,
@@ -158,7 +160,7 @@ final class EventSourcedEntityAnalyzer
     }
 
     /**
-     * @param list<string> $tags
+     * @param array<array-key, string> $tags
      *
      * @return list<string>
      */
@@ -166,7 +168,7 @@ final class EventSourcedEntityAnalyzer
     {
         $normalized = [];
         foreach ($tags as $tag) {
-            if (!is_string($tag) || '' === $tag) {
+            if ('' === $tag) {
                 throw new \LogicException('Event-sourced entity tags must be non-empty strings.');
             }
             $normalized[$tag] = true;
@@ -186,7 +188,10 @@ final class EventSourcedEntityAnalyzer
         $normalized = [];
         foreach ($aliases as $alias => $tag) {
             if (!is_string($alias) || '' === $alias || !is_string($tag)) {
-                throw new InvalidTagAliasError($entityClass, 'aliases must map an alias name to a tag name, e.g. [\'previousRoomDay\' => \'roomDay\']');
+                throw new InvalidTagAliasError(
+                    $entityClass,
+                    'aliases must map an alias name to a tag name, e.g. [\'previousRoomDay\' => \'roomDay\']',
+                );
             }
             if (in_array($alias, $entityTags, true)) {
                 throw new InvalidTagAliasError($entityClass, sprintf('alias "%s" is already one of its tags', $alias));
@@ -226,18 +231,17 @@ final class EventSourcedEntityAnalyzer
         return array_keys($tags);
     }
 
+    /**
+     * @param class-string $eventClass
+     */
     private function eventName(string $eventClass): string
     {
         $eventRef = new \ReflectionClass($eventClass);
         $attributes = $eventRef->getAttributes(Event::class);
         if ([] === $attributes) {
-            throw new \LogicException(sprintf(
-                'Event class %s has no #[Event] attribute.',
-                $eventClass,
-            ));
+            throw new \LogicException(sprintf('Event class %s has no #[Event] attribute.', $eventClass));
         }
 
-        /** @var Event $event */
         $event = $attributes[0]->newInstance();
 
         return $event->name;
@@ -274,11 +278,7 @@ final class EventSourcedEntityAnalyzer
         foreach ($matchTagAttributes as $attribute) {
             $group = $this->normalizeTags($attribute->newInstance()->tags);
             if ([] === $group) {
-                throw new \LogicException(sprintf(
-                    'Handler %s::%s has an empty #[MatchTag].',
-                    $class,
-                    $method,
-                ));
+                throw new \LogicException(sprintf('Handler %s::%s has an empty #[MatchTag].', $class, $method));
             }
 
             foreach ($group as $tag) {
@@ -303,9 +303,11 @@ final class EventSourcedEntityAnalyzer
     {
         $intersection = [];
         foreach ($entityTags as $tag) {
-            if (in_array($tag, $eventTags, true)) {
-                $intersection[] = $tag;
+            if (!in_array($tag, $eventTags, true)) {
+                continue;
             }
+
+            $intersection[] = $tag;
         }
 
         return $intersection;
@@ -320,7 +322,7 @@ final class EventSourcedEntityAnalyzer
     private function sortTagsByEntityOrder(array $tags, array $entityTags): array
     {
         $positions = array_flip($entityTags);
-        usort($tags, static fn (string $left, string $right): int => $positions[$left] <=> $positions[$right]);
+        usort($tags, static fn(string $left, string $right): int => $positions[$left] <=> $positions[$right]);
 
         return array_values($tags);
     }

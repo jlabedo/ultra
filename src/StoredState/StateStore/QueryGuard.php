@@ -28,7 +28,7 @@ final readonly class QueryGuard
         $this->tables->assertQueryCanBeObserved($this->name, $value);
         $this->lock($value);
         $result = $query();
-        $this->tables->expectQuery($query, $result, $this->name.'('.$value.')');
+        $this->tables->expectQuery($query, $result, $this->name . '(' . $value . ')');
 
         return $result;
     }

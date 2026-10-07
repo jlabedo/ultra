@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore\Tests\Support;
 
+use Ultra\Events\Attribute\DomainIdentifier;
+use Ultra\Events\Attribute\Event;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\Attribute\EventSourcingHandler;
 use Ultra\EventSourcedState\Attribute\MatchTag;
-use Ultra\Events\Attribute\DomainIdentifier;
-use Ultra\Events\Attribute\Event;
 
 #[Event('compiler.no_overlap')]
 final readonly class CompilerNoOverlapEvent

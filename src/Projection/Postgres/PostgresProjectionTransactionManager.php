@@ -9,7 +9,9 @@ use Ultra\Projection\ProjectionTransactionManagerInterface;
 
 final readonly class PostgresProjectionTransactionManager implements ProjectionTransactionManagerInterface
 {
-    public function __construct(private Connection $connection) {}
+    public function __construct(
+        private Connection $connection,
+    ) {}
 
     public function transactional(callable $operation): mixed
     {

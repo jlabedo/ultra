@@ -39,13 +39,15 @@ final readonly class EventSourcedStateStore
             ));
         }
 
-        $events = $this->loadEvents($loader->query(...$identifiers));
+        $events = $this->loadEvents($this->eventStore, $loader->query(...$identifiers));
 
         return $loader->hydrate($events, ...$identifiers);
     }
 
     /**
-     * @param class-string $entityClass
+     * @template T of object
+     * @param class-string<T> $entityClass
+     * @return EventSourcedEntityLoader<T>
      */
     public function loader(string $entityClass): EventSourcedEntityLoader
     {
@@ -54,16 +56,17 @@ final readonly class EventSourcedStateStore
             throw new UnknownEventSourcedEntityException($entityClass);
         }
 
+        /** @var EventSourcedEntityLoader<T> $loader Registered loaders hydrate their indexed entity class. */
         return $loader;
     }
 
     /** @return \Generator<int, Event> */
-    private function loadEvents(StreamQuery $query): \Generator
+    private function loadEvents(EventStore $eventStore, StreamQuery $query): \Generator
     {
         $checkpoint = Checkpoint::beginning();
 
         while (true) {
-            $result = $this->eventStore->load($query, from: $checkpoint);
+            $result = $eventStore->load($query, from: $checkpoint);
             yield from $result->events;
 
             if (!$result->hasMore) {

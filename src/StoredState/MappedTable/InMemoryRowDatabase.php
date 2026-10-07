@@ -35,7 +35,7 @@ final class InMemoryRowDatabase
             ));
         }
 
-        $this->removeWhere($tableName, static fn (array $r): bool => ($r[$idColumn] ?? null) === $row[$idColumn]);
+        $this->removeWhere($tableName, static fn(array $r): bool => ($r[$idColumn] ?? null) === $row[$idColumn]);
         $this->tables[$tableName][] = $row;
     }
 
@@ -92,8 +92,12 @@ final class InMemoryRowDatabase
      *
      * @return list<MappedRow>
      */
-    public function rowsByKey(string $tableName, array $keyColumns, array $columns = [], ?MappedKey $scope = null): array
-    {
+    public function rowsByKey(
+        string $tableName,
+        array $keyColumns,
+        array $columns = [],
+        ?MappedKey $scope = null,
+    ): array {
         $rows = [];
         foreach ($this->tables[$tableName] ?? [] as $row) {
             if (null !== $scope && !self::rowMatches($row, $scope->values)) {
@@ -104,7 +108,11 @@ final class InMemoryRowDatabase
             foreach ($keyColumns as $column) {
                 $value = $row[$column] ?? null;
                 if (!is_int($value) && !is_string($value)) {
-                    throw new \LogicException(sprintf('Table "%s" row has no scalar key column "%s".', $tableName, $column));
+                    throw new \LogicException(sprintf(
+                        'Table "%s" row has no scalar key column "%s".',
+                        $tableName,
+                        $column,
+                    ));
                 }
                 $keyValues[$column] = $value;
             }
@@ -115,7 +123,12 @@ final class InMemoryRowDatabase
             $rows[] = new MappedRow(new MappedKey($keyValues), $projectedColumns);
         }
 
-        usort($rows, static fn (MappedRow $left, MappedRow $right): int => $left->key->fingerprint() <=> $right->key->fingerprint());
+        usort(
+            $rows,
+            static fn(MappedRow $left, MappedRow $right): int => (
+                $left->key->fingerprint() <=> $right->key->fingerprint()
+            ),
+        );
 
         return $rows;
     }
@@ -129,7 +142,7 @@ final class InMemoryRowDatabase
 
     public function deleteRowByKey(string $tableName, MappedKey $key): void
     {
-        $this->removeWhere($tableName, static fn (array $row): bool => self::rowMatches($row, $key->values));
+        $this->removeWhere($tableName, static fn(array $row): bool => self::rowMatches($row, $key->values));
         $this->compactIfEmpty($tableName);
     }
 
@@ -139,8 +152,13 @@ final class InMemoryRowDatabase
      *
      * @return array<string, mixed>|false
      */
-    public function row(string $tableName, string $idColumn, int|string $id, array $columns = [], array $scopeColumns = []): array|false
-    {
+    public function row(
+        string $tableName,
+        string $idColumn,
+        int|string $id,
+        array $columns = [],
+        array $scopeColumns = [],
+    ): array|false {
         $predicate = [...$scopeColumns, $idColumn => $id];
         foreach ($this->tables[$tableName] ?? [] as $row) {
             if (self::rowMatches($row, $predicate)) {
@@ -189,7 +207,9 @@ final class InMemoryRowDatabase
             ));
         }
 
-        $this->deleteRow($tableName, $idColumn, $row[$idColumn], $scopeColumns);
+        $id = $row[$idColumn];
+        assert(is_int($id) || is_string($id), 'Validated rows have an integer or string identifier.');
+        $this->deleteRow($tableName, $idColumn, $id, $scopeColumns);
         $this->tables[$tableName][] = $row;
     }
 
@@ -199,15 +219,15 @@ final class InMemoryRowDatabase
     public function deleteRow(string $tableName, string $idColumn, int|string $id, array $scopeColumns = []): void
     {
         $predicate = [...$scopeColumns, $idColumn => $id];
-        $this->removeWhere($tableName, static fn (array $r): bool => self::rowMatches($r, $predicate));
+        $this->removeWhere($tableName, static fn(array $r): bool => self::rowMatches($r, $predicate));
         $this->compactIfEmpty($tableName);
     }
 
     // --- shared internals ------------------------------------------------------
 
     /**
-     * @param array<string, mixed>      $row
-     * @param array<string, int|string> $predicate
+     * @param array<array-key, mixed>   $row
+     * @param array<array-key, int|string> $predicate
      */
     private static function rowMatches(array $row, array $predicate): bool
     {
@@ -250,7 +270,7 @@ final class InMemoryRowDatabase
 
         $this->tables[$tableName] = array_values(array_filter(
             $this->tables[$tableName],
-            static fn (array $row): bool => !$predicate($row),
+            static fn(array $row): bool => !$predicate($row),
         ));
     }
 

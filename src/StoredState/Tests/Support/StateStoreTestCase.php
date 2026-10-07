@@ -10,7 +10,7 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
 
-require_once __DIR__.'/States.php';
+require_once __DIR__ . '/States.php';
 
 /** Sets up mapped states and transaction boundaries; assertions remain in the suites. */
 abstract class StateStoreTestCase extends TestCase
@@ -41,7 +41,12 @@ abstract class StateStoreTestCase extends TestCase
     {
         $fixture = $this->stateFixture('memory', $stateClasses);
 
-        return [$fixture->storage, $fixture->registry->tableFor($fixture->metadata->metadataFor($stateClasses[0])), $fixture->store, $fixture->registry];
+        return [
+            $fixture->storage,
+            $fixture->registry->tableFor($fixture->metadata->metadataFor($stateClasses[0])),
+            $fixture->store,
+            $fixture->registry,
+        ];
     }
 
     protected function flush(InMemoryRowDatabase $database, \Ultra\UnitOfWork\UnitOfWork $unitOfWork): void

@@ -6,15 +6,15 @@ namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventSourcedState\EventSourcedEntityLoader;
+use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventSourcedState\Exception\UnknownEventSourcedEntityException;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCapacityChanged;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventSourcedState\Tests\Example\Event\StudentEnrolled;
 use Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed;
-use Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\EventSourcedState\Tests\Example\Event\StudentTransferred;
+use Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed;
 use Ultra\EventSourcedState\Tests\Example\Event\SubscriptionPairConfirmed;
 use Ultra\EventSourcedState\Tests\Example\State\CourseRosterState;
 use Ultra\EventSourcedState\Tests\Example\State\CourseStudentActivityState;
@@ -37,21 +37,36 @@ final class StateReconstructionTest extends EventSourcedStateFunctionalTestCase
 {
     public function test_it_loads_entities_across_single_tag_and_pair_events(): void
     {
-        $container = $this->ultraLight()
-            ->withClass(
-                CourseStudentActivityState::class,
-                SubscriptionPairStatusState::class,
-            )
-            ->boot()
-        ;
+        $container = $this
+            ->ultraLight()
+            ->withClass(CourseStudentActivityState::class, SubscriptionPairStatusState::class)
+            ->boot();
 
-        $container->eventStore()->append([
-            new StoredEvent('course.created', ['courseId' => 'course-1', 'name' => 'Math', 'maxCapacity' => 10], ['course' => 'course-1']),
-            new StoredEvent('student.enrolled', ['studentId' => 'student-1'], ['student' => 'student-1']),
-            new StoredEvent('student.subscribed', ['courseId' => 'course-1', 'studentId' => 'student-1'], ['course' => 'course-1', 'student' => 'student-1']),
-            new StoredEvent('course.capacity_changed', ['courseId' => 'course-1', 'maxCapacity' => 25], ['course' => 'course-1']),
-            new StoredEvent('student.unsubscribed', ['courseId' => 'course-1', 'studentId' => 'student-1'], ['course' => 'course-1', 'student' => 'student-1']),
-        ]);
+        $container
+            ->eventStore()
+            ->append([
+                new StoredEvent(
+                    'course.created',
+                    ['courseId' => 'course-1', 'name' => 'Math', 'maxCapacity' => 10],
+                    ['course' => 'course-1'],
+                ),
+                new StoredEvent('student.enrolled', ['studentId' => 'student-1'], ['student' => 'student-1']),
+                new StoredEvent(
+                    'student.subscribed',
+                    ['courseId' => 'course-1', 'studentId' => 'student-1'],
+                    ['course' => 'course-1', 'student' => 'student-1'],
+                ),
+                new StoredEvent(
+                    'course.capacity_changed',
+                    ['courseId' => 'course-1', 'maxCapacity' => 25],
+                    ['course' => 'course-1'],
+                ),
+                new StoredEvent(
+                    'student.unsubscribed',
+                    ['courseId' => 'course-1', 'studentId' => 'student-1'],
+                    ['course' => 'course-1', 'student' => 'student-1'],
+                ),
+            ]);
 
         $stateStore = $container->eventSourcedStateStore();
         $state = $stateStore->load(
@@ -60,30 +75,40 @@ final class StateReconstructionTest extends EventSourcedStateFunctionalTestCase
             new StreamIdentifier('student', 'student-1'),
         );
 
-        self::assertInstanceOf(CourseStudentActivityState::class, $state);
-        self::assertSame(25, $state->maxCapacity);
-        self::assertTrue($state->studentKnown);
-        self::assertSame(0, $state->subscriptionDelta);
-        self::assertSame([
-            'created',
-            'student_enrolled',
-            'student_subscribed',
-            'capacity_changed',
-            'student_unsubscribed',
-        ], $state->applied);
+        static::assertInstanceOf(CourseStudentActivityState::class, $state);
+        static::assertSame(25, $state->maxCapacity);
+        static::assertTrue($state->studentKnown);
+        static::assertSame(0, $state->subscriptionDelta);
+        static::assertSame(
+            [
+                'created',
+                'student_enrolled',
+                'student_subscribed',
+                'capacity_changed',
+                'student_unsubscribed',
+            ],
+            $state->applied,
+        );
     }
 
     public function test_it_requires_all_tags_in_a_multi_tag_match_group(): void
     {
-        $container = $this->ultraLight()
-            ->withClass(SubscriptionPairStatusState::class)
-            ->boot()
-        ;
+        $container = $this->ultraLight()->withClass(SubscriptionPairStatusState::class)->boot();
 
-        $container->eventStore()->append([
-            new StoredEvent('subscription.pair_confirmed', ['courseId' => 'course-1', 'studentId' => 'student-1', 'status' => 'matched'], ['course' => 'course-1', 'student' => 'student-1']),
-            new StoredEvent('subscription.pair_confirmed', ['courseId' => 'course-1', 'studentId' => 'student-2', 'status' => 'other-student'], ['course' => 'course-1', 'student' => 'student-2']),
-        ]);
+        $container
+            ->eventStore()
+            ->append([
+                new StoredEvent(
+                    'subscription.pair_confirmed',
+                    ['courseId' => 'course-1', 'studentId' => 'student-1', 'status' => 'matched'],
+                    ['course' => 'course-1', 'student' => 'student-1'],
+                ),
+                new StoredEvent(
+                    'subscription.pair_confirmed',
+                    ['courseId' => 'course-1', 'studentId' => 'student-2', 'status' => 'other-student'],
+                    ['course' => 'course-1', 'student' => 'student-2'],
+                ),
+            ]);
 
         $stateStore = $container->eventSourcedStateStore();
         $state = $stateStore->load(
@@ -92,22 +117,21 @@ final class StateReconstructionTest extends EventSourcedStateFunctionalTestCase
             new StreamIdentifier('student', 'student-1'),
         );
 
-        self::assertSame(['matched'], $state->statuses);
+        static::assertSame(['matched'], $state->statuses);
     }
 
     #[DataProvider('stateHistories')]
-    public function test_it_reconstructs_states_in_batches_and_applies_pending_events_once(int $persistedCount, int $pendingCount): void
-    {
-        $container = $this->ultraLight()
-            ->withClass(SubscriptionPairStatusState::class)
-            ->boot()
-        ;
+    public function test_it_reconstructs_states_in_batches_and_applies_pending_events_once(
+        int $persistedCount,
+        int $pendingCount,
+    ): void {
+        $container = $this->ultraLight()->withClass(SubscriptionPairStatusState::class)->boot();
 
         $persistedEvents = [];
         $pendingEvents = [];
         $statuses = [];
-        for ($i = 1; $i <= $persistedCount + $pendingCount; ++$i) {
-            $statuses[] = $status = 'status-'.$i;
+        for ($i = 1; $i <= ($persistedCount + $pendingCount); ++$i) {
+            $statuses[] = $status = 'status-' . $i;
             $event = new StoredEvent(
                 'subscription.pair_confirmed',
                 ['courseId' => 'course-1', 'studentId' => 'student-1', 'status' => $status],
@@ -128,7 +152,9 @@ final class StateReconstructionTest extends EventSourcedStateFunctionalTestCase
             $loadingStore->append($pendingEvents);
         }
         $stateStore = new EventSourcedStateStore([
-            SubscriptionPairStatusState::class => $container->eventSourcedStateStore()->loader(SubscriptionPairStatusState::class),
+            SubscriptionPairStatusState::class => $container
+                ->eventSourcedStateStore()
+                ->loader(SubscriptionPairStatusState::class),
         ], $loadingStore);
 
         $state = $stateStore->load(
@@ -137,9 +163,9 @@ final class StateReconstructionTest extends EventSourcedStateFunctionalTestCase
             new StreamIdentifier('student', 'student-1'),
         );
 
-        self::assertSame($statuses, $state->statuses);
+        static::assertSame($statuses, $state->statuses);
         // The loader's foreach may still reference the last event when it asks the generator for the next page.
-        self::assertLessThanOrEqual(1, $eventStore->maxRetainedEvents);
+        static::assertLessThanOrEqual(1, $eventStore->maxRetainedEvents);
     }
 
     /** @return iterable<string, array{int, int}> */
@@ -160,22 +186,43 @@ final class StateReconstructionTest extends EventSourcedStateFunctionalTestCase
 
     public function test_it_loads_events_matched_through_a_tag_alias_with_the_value_of_the_aliased_tag(): void
     {
-        $container = $this->ultraLight()
-            ->withClass(CourseRosterState::class)
-            ->boot()
-        ;
+        $container = $this->ultraLight()->withClass(CourseRosterState::class)->boot();
 
-        $container->eventStore()->append([
-            new StoredEvent('student.subscribed', ['courseId' => 'course-1', 'studentId' => 'ada'], ['course' => 'course-1', 'student' => 'ada']),
-            new StoredEvent('student.subscribed', ['courseId' => 'course-2', 'studentId' => 'grace'], ['course' => 'course-2', 'student' => 'grace']),
-            new StoredEvent('student.transferred', ['studentId' => 'ada', 'previousCourseId' => 'course-1', 'courseId' => 'course-2'], ['student' => 'ada', 'previousCourse' => 'course-1', 'course' => 'course-2']),
-            new StoredEvent('student.transferred', ['studentId' => 'linus', 'previousCourseId' => 'course-3', 'courseId' => 'course-4'], ['student' => 'linus', 'previousCourse' => 'course-3', 'course' => 'course-4']),
-        ]);
+        $container
+            ->eventStore()
+            ->append([
+                new StoredEvent(
+                    'student.subscribed',
+                    ['courseId' => 'course-1', 'studentId' => 'ada'],
+                    ['course' => 'course-1', 'student' => 'ada'],
+                ),
+                new StoredEvent(
+                    'student.subscribed',
+                    ['courseId' => 'course-2', 'studentId' => 'grace'],
+                    ['course' => 'course-2', 'student' => 'grace'],
+                ),
+                new StoredEvent(
+                    'student.transferred',
+                    ['studentId' => 'ada', 'previousCourseId' => 'course-1', 'courseId' => 'course-2'],
+                    ['student' => 'ada', 'previousCourse' => 'course-1', 'course' => 'course-2'],
+                ),
+                new StoredEvent(
+                    'student.transferred',
+                    ['studentId' => 'linus', 'previousCourseId' => 'course-3', 'courseId' => 'course-4'],
+                    ['student' => 'linus', 'previousCourse' => 'course-3', 'course' => 'course-4'],
+                ),
+            ]);
 
         $stateStore = $container->eventSourcedStateStore();
 
-        self::assertSame([], $stateStore->load(CourseRosterState::class, new StreamIdentifier('course', 'course-1'))->studentIds);
-        self::assertSame(['grace', 'ada'], $stateStore->load(CourseRosterState::class, new StreamIdentifier('course', 'course-2'))->studentIds);
+        static::assertSame(
+            [],
+            $stateStore->load(CourseRosterState::class, new StreamIdentifier('course', 'course-1'))->studentIds,
+        );
+        static::assertSame(
+            ['grace', 'ada'],
+            $stateStore->load(CourseRosterState::class, new StreamIdentifier('course', 'course-2'))->studentIds,
+        );
     }
 
     public function test_it_requires_an_event_store_to_load_entities(): void
@@ -197,7 +244,11 @@ final class StateReconstructionTest extends EventSourcedStateFunctionalTestCase
         ]);
 
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('EventSourcedStateStore cannot load '.CourseStudentActivityState::class.' because no event store was configured.');
+        $this->expectExceptionMessage(
+            'EventSourcedStateStore cannot load '
+            . CourseStudentActivityState::class
+            . ' because no event store was configured.',
+        );
 
         $stateStore->load(
             CourseStudentActivityState::class,
@@ -208,10 +259,7 @@ final class StateReconstructionTest extends EventSourcedStateFunctionalTestCase
 
     public function test_it_throws_for_unknown_event_sourced_entities(): void
     {
-        $container = $this->ultraLight()
-            ->withClass(CourseStudentActivityState::class)
-            ->boot()
-        ;
+        $container = $this->ultraLight()->withClass(CourseStudentActivityState::class)->boot();
         $stateStore = $container->eventSourcedStateStore();
 
         $unknownStateClass = new class {};

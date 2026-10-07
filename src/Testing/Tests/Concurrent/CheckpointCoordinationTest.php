@@ -25,16 +25,16 @@ final class CheckpointCoordinationTest extends ConcurrentTestCase
         });
 
         $first = $worker->awaitCheckpoint('first');
-        self::assertSame('first', $first->name);
-        self::assertSame(['version' => 7], $first->payload);
-        self::assertNull($worker->outcome());
+        static::assertSame('first', $first->name);
+        static::assertSame(['version' => 7], $first->payload);
+        static::assertNull($worker->outcome());
         $worker->release('first', ['injected' => 'yes']);
         $second = $worker->awaitCheckpoint('second');
-        self::assertSame('second', $second->name);
-        self::assertNull($second->payload);
-        self::assertNull($worker->outcome());
+        static::assertSame('second', $second->name);
+        static::assertNull($second->payload);
+        static::assertNull($worker->outcome());
         $worker->release('second');
-        self::assertSame([['injected' => 'yes'], null], $worker->join()->value());
+        static::assertSame([['injected' => 'yes'], null], $worker->join()->value());
     }
 
     public function test_uninteresting_checkpoints_can_be_released_while_waiting_for_the_target(): void
@@ -45,30 +45,34 @@ final class CheckpointCoordinationTest extends ConcurrentTestCase
             checkpoint('ready');
             return 'reached';
         });
-        self::assertSame('ready', $worker->awaitCheckpoint('ready', releaseOthers: true)->name);
+        static::assertSame('ready', $worker->awaitCheckpoint('ready', releaseOthers: true)->name);
         $worker->release('ready');
-        self::assertSame('reached', $worker->join()->value());
+        static::assertSame('reached', $worker->join()->value());
     }
 
     public function test_broadcast_release_delivers_the_same_injection_to_independent_workers(): void
     {
         $workers = [];
         foreach (['first', 'second'] as $identity) {
-            $workers[] = $this->cluster->spawn(static function () use ($identity): array {
-                return [$identity, checkpoint('gate')];
-            });
+            $workers[] = $this->cluster->spawn(static fn() => [$identity, checkpoint('gate')]);
         }
         foreach ($workers as $worker) {
             $worker->awaitCheckpoint('gate');
-            self::assertNull($worker->outcome());
+            static::assertNull($worker->outcome());
         }
         $this->cluster->releaseAll('gate', 'shared-value');
         $outcomes = $this->cluster->joinAll();
-        self::assertCount(2, $outcomes);
+        static::assertCount(2, $outcomes);
         foreach ($outcomes as $outcome) {
-            self::assertTrue($outcome->isSuccess());
+            static::assertTrue($outcome->isSuccess());
         }
-        self::assertSame([['first', 'shared-value'], ['second', 'shared-value']], array_map(static fn ($outcome) => $outcome->value(), $outcomes));
+        static::assertSame(
+            [
+                ['first',  'shared-value'],
+                ['second', 'shared-value'],
+            ],
+            array_map(static fn($outcome) => $outcome->value(), $outcomes),
+        );
     }
 
     public function test_join_all_preserves_spawn_order_despite_reverse_completion_and_failure(): void
@@ -89,17 +93,17 @@ final class CheckpointCoordinationTest extends ConcurrentTestCase
             $worker->awaitCheckpoint('gate');
         }
         $third->release('gate');
-        self::assertTrue($third->join()->isFailure());
+        static::assertTrue($third->join()->isFailure());
         $second->release('gate');
-        self::assertSame('second', $second->join()->value());
-        self::assertNull($first->outcome());
+        static::assertSame('second', $second->join()->value());
+        static::assertNull($first->outcome());
         $first->release('gate');
         $outcomes = $this->cluster->joinAll();
-        self::assertCount(3, $outcomes);
-        self::assertSame('first', $outcomes[0]->value());
-        self::assertSame('second', $outcomes[1]->value());
-        self::assertTrue($outcomes[0]->isSuccess());
-        self::assertTrue($outcomes[2]->isFailure());
-        self::assertSame('worker failed', $outcomes[2]->exceptionMessage());
+        static::assertCount(3, $outcomes);
+        static::assertSame('first', $outcomes[0]->value());
+        static::assertSame('second', $outcomes[1]->value());
+        static::assertTrue($outcomes[0]->isSuccess());
+        static::assertTrue($outcomes[2]->isFailure());
+        static::assertSame('worker failed', $outcomes[2]->exceptionMessage());
     }
 }

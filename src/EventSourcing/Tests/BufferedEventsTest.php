@@ -33,16 +33,22 @@ final class BufferedEventsTest extends StorageTestCase
         ]);
 
         $visible = $uow->load($query);
-        self::assertSame(['persisted', 'pending', 'next pending'], array_column(array_column($visible->events, 'payload'), 'name'));
-        self::assertFalse($visible->hasMore);
-        self::assertSame(['persisted'], array_column(array_column($store->load($query)->events, 'payload'), 'name'));
-        self::assertEquals($persisted->checkpoint, $visible->checkpoint);
-        self::assertEquals($persisted->appendCondition(), $visible->appendCondition());
-        self::assertSame(['pending', 'next pending'], array_column(array_column($uow->load($query, from: $persisted->checkpoint)->events, 'payload'), 'name'));
+        static::assertSame(
+            ['persisted', 'pending', 'next pending'],
+            array_column(array_column($visible->events, 'payload'), 'name'),
+        );
+        static::assertFalse($visible->hasMore);
+        static::assertSame(['persisted'], array_column(array_column($store->load($query)->events, 'payload'), 'name'));
+        static::assertEquals($persisted->checkpoint, $visible->checkpoint);
+        static::assertEquals($persisted->appendCondition(), $visible->appendCondition());
+        static::assertSame(
+            ['pending', 'next pending'],
+            array_column(array_column($uow->load($query, from: $persisted->checkpoint)->events, 'payload'), 'name'),
+        );
         $replay = $uow->load($query, to: $persisted->checkpoint);
-        self::assertSame(['persisted'], array_column(array_column($replay->events, 'payload'), 'name'));
-        self::assertFalse($replay->hasMore);
-        self::assertSame([], $uow->load(StreamQuery::none())->events);
+        static::assertSame(['persisted'], array_column(array_column($replay->events, 'payload'), 'name'));
+        static::assertFalse($replay->hasMore);
+        static::assertSame([], $uow->load(StreamQuery::none())->events);
     }
 
     #[DataProvider('persistedHistories')]
@@ -53,35 +59,36 @@ final class BufferedEventsTest extends StorageTestCase
         $query = StreamQuery::forStream(new DomainIdentifier('course', 'c1'));
         $persistedNames = [];
         for ($i = 1; $i <= $persistedCount; ++$i) {
-            $persistedNames[] = $name = 'persisted-'.$i;
+            $persistedNames[] = $name = 'persisted-' . $i;
             $store->append([self::event('created', ['course' => 'c1'], ['name' => $name])]);
         }
         $checkpoint = $store->load($query)->checkpoint;
         $pendingNames = ['pending-1', 'pending-2', 'pending-3'];
-        $uow->append(array_map(
-            static fn (string $name) => self::event('created', ['course' => 'c1'], ['name' => $name]),
-            $pendingNames,
-        ));
+        $uow->append(array_map(static fn(string $name) => self::event(
+            'created',
+            ['course' => 'c1'],
+            ['name' => $name],
+        ), $pendingNames));
 
         $from = null;
         for ($offset = 0; $offset <= $persistedCount; $offset += 2) {
             $page = $uow->load($query, from: $from, batchSize: 2);
-            $hasMore = $offset + 2 < $persistedCount;
+            $hasMore = ($offset + 2) < $persistedCount;
             $expectedNames = array_slice($persistedNames, $offset, 2);
             if (!$hasMore) {
                 array_push($expectedNames, ...$pendingNames);
             }
 
-            self::assertSame($expectedNames, array_column(array_column($page->events, 'payload'), 'name'));
-            self::assertSame($hasMore, $page->hasMore);
+            static::assertSame($expectedNames, array_column(array_column($page->events, 'payload'), 'name'));
+            static::assertSame($hasMore, $page->hasMore);
             $from = $page->checkpoint;
             if (!$hasMore) {
                 break;
             }
         }
 
-        self::assertEquals($checkpoint, $page->checkpoint);
-        self::assertGreaterThan(2, count($page->events));
+        static::assertEquals($checkpoint, $page->checkpoint);
+        static::assertGreaterThan(2, count($page->events));
     }
 
     /** @return iterable<string, array{int}> */
@@ -104,33 +111,39 @@ final class BufferedEventsTest extends StorageTestCase
         $first = self::event('created', ['course' => 'c1'], ['name' => 'first']);
         $second = self::event('renamed', ['course' => 'c1'], ['name' => 'second']);
         $firstCondition = $uow->load($query)->appendCondition();
-        self::assertFalse($uow->hasPendingChanges());
+        static::assertFalse($uow->hasPendingChanges());
         $uow->flush();
         $uow->append([], $firstCondition);
-        self::assertFalse($uow->hasPendingChanges());
-        self::assertSame([], $recording->appendCalls);
+        static::assertFalse($uow->hasPendingChanges());
+        static::assertSame([], $recording->appendCalls);
         $uow->append([$first], $firstCondition);
         $secondCondition = $uow->load($query)->appendCondition();
         $uow->append([$second], $secondCondition);
-        self::assertTrue($uow->hasPendingChanges());
-        self::assertEquals($firstCondition->checkpoint, $secondCondition->checkpoint);
+        static::assertTrue($uow->hasPendingChanges());
+        static::assertEquals($firstCondition->checkpoint, $secondCondition->checkpoint);
 
         $fixture->connection?->beginTransaction();
         $uow->flush();
         $fixture->connection?->commit();
 
-        self::assertSame([['events' => [$first, $second], 'appendConditions' => [$firstCondition, $secondCondition]]], $recording->appendCalls);
-        self::assertSame(['first', 'second'], array_column(array_column($fixture->store->load($query)->events, 'payload'), 'name'));
-        self::assertTrue($uow->hasPendingChanges());
+        static::assertSame(
+            [['events' => [$first, $second], 'appendConditions' => [$firstCondition, $secondCondition]]],
+            $recording->appendCalls,
+        );
+        static::assertSame(
+            ['first', 'second'],
+            array_column(array_column($fixture->store->load($query)->events, 'payload'), 'name'),
+        );
+        static::assertTrue($uow->hasPendingChanges());
         $uow->clear();
-        self::assertFalse($uow->hasPendingChanges());
+        static::assertFalse($uow->hasPendingChanges());
         $uow->flush();
-        self::assertCount(1, $recording->appendCalls);
+        static::assertCount(1, $recording->appendCalls);
         // Clear must discard conditions as well as events, including stale snapshots.
         $uow->append([self::event('archived', ['course' => 'c1'])]);
         $uow->flush();
-        self::assertSame([], $recording->appendCalls[1]['appendConditions']);
-        self::assertCount(3, $fixture->store->load($query)->events);
+        static::assertSame([], $recording->appendCalls[1]['appendConditions']);
+        static::assertCount(3, $fixture->store->load($query)->events);
     }
 
     public function test_clear_discards_buffered_work_after_a_failed_flush(): void
@@ -138,18 +151,22 @@ final class BufferedEventsTest extends StorageTestCase
         $store = $this->store();
         $uow = new EventStoreUnitOfWork($store);
         $query = StreamQuery::forStream(new DomainIdentifier('course', 'c1'));
-        $uow->append([self::event('created', ['course' => 'c1'], ['name' => 'pending'])], $uow->load($query)->appendCondition());
+        $uow->append([self::event(
+            'created',
+            ['course' => 'c1'],
+            ['name' => 'pending'],
+        )], $uow->load($query)->appendCondition());
         $store->append([self::event('created', ['course' => 'c1'], ['name' => 'concurrent'])]);
 
         try {
             $uow->flush();
-            self::fail('A stale condition must reach the wrapped store.');
+            static::fail('A stale condition must reach the wrapped store.');
         } catch (ConcurrencyException) {
         }
-        self::assertTrue($uow->hasPendingChanges());
+        static::assertTrue($uow->hasPendingChanges());
         $uow->clear();
         $uow->flush();
-        self::assertFalse($uow->hasPendingChanges());
-        self::assertSame(['concurrent'], array_column(array_column($uow->load($query)->events, 'payload'), 'name'));
+        static::assertFalse($uow->hasPendingChanges());
+        static::assertSame(['concurrent'], array_column(array_column($uow->load($query)->events, 'payload'), 'name'));
     }
 }

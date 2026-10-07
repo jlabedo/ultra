@@ -23,8 +23,12 @@ abstract class RowSetTestCase extends TestCase
     }
 
     /** @param list<string> $keyColumns @param array<string, PostgresMappedColumnType> $columnTypes */
-    protected function fixture(string $backend = 'memory', array $keyColumns = ['id'], ?MappedKey $scope = null, array $columnTypes = []): RowSetFixture
-    {
+    protected function fixture(
+        string $backend = 'memory',
+        array $keyColumns = ['id'],
+        ?MappedKey $scope = null,
+        array $columnTypes = [],
+    ): RowSetFixture {
         if ('postgres' === $backend) {
             $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
             if (false === $dsn || '' === $dsn) {
@@ -34,7 +38,13 @@ abstract class RowSetTestCase extends TestCase
         } else {
             $storage = new InMemoryRowDatabase();
         }
-        $fixture = new RowSetFixture($storage, 'ultra_guarantees_'.bin2hex(random_bytes(4)), $keyColumns, $scope, $columnTypes);
+        $fixture = new RowSetFixture(
+            $storage,
+            'ultra_guarantees_' . bin2hex(random_bytes(4)),
+            $keyColumns,
+            $scope,
+            $columnTypes,
+        );
         $this->fixtures[] = $fixture;
         return $fixture;
     }

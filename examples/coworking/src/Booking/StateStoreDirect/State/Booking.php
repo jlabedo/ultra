@@ -39,11 +39,29 @@ final readonly class Booking
 
     public function cancelled(bool $refunded): self
     {
-        return new self($this->id, $this->roomId, $this->memberId, $this->companyId, $this->start, $this->end, self::CANCELLED, !$refunded);
+        return new self(
+            $this->id,
+            $this->roomId,
+            $this->memberId,
+            $this->companyId,
+            $this->start,
+            $this->end,
+            self::CANCELLED,
+            !$refunded,
+        );
     }
 
     public function movedTo(string $roomId, Slot $slot): self
     {
-        return new self($this->id, $roomId, $this->memberId, $this->companyId, $slot->start, $slot->end, $this->status, $this->charged);
+        return new self(
+            $this->id,
+            $roomId,
+            $this->memberId,
+            $this->companyId,
+            $slot->start,
+            $slot->end,
+            $this->status,
+            $this->charged,
+        );
     }
 }

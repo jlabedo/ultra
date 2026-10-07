@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace App\Booking\StateStore\Write;
 
+use App\Booking\StateStore\Repository\BookingRepository;
 use App\Booking\StateStore\State\BookingState;
 use App\Booking\StateStore\State\RoomState;
-use App\Booking\StateStore\Repository\BookingRepository;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 
@@ -27,7 +27,7 @@ final readonly class CloseRoomForDay
         }
 
         return array_map(
-            static fn (BookingState $booking): BookingState => $booking->cancelled(refunded: true),
+            static fn(BookingState $booking): BookingState => $booking->cancelled(refunded: true),
             $bookings->observeConfirmedOnDay($room->roomId, $this->day),
         );
     }

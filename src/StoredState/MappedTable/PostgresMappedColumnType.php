@@ -71,7 +71,10 @@ final readonly class PostgresMappedColumnType
         }
 
         if (!is_array($value)) {
-            throw new \InvalidArgumentException(sprintf('Postgres column type "%s" expects a PHP array or null.', $this->sqlType));
+            throw new \InvalidArgumentException(sprintf(
+                'Postgres column type "%s" expects a PHP array or null.',
+                $this->sqlType,
+            ));
         }
 
         return match ($this->kind) {
@@ -96,7 +99,10 @@ final readonly class PostgresMappedColumnType
         }
 
         if (!is_string($value)) {
-            throw new \InvalidArgumentException(sprintf('Postgres column type "%s" expects a database string or null.', $this->sqlType));
+            throw new \InvalidArgumentException(sprintf(
+                'Postgres column type "%s" expects a database string or null.',
+                $this->sqlType,
+            ));
         }
 
         if (self::JSON === $this->kind) {
@@ -107,10 +113,9 @@ final readonly class PostgresMappedColumnType
 
         return match ($this->kind) {
             self::ARRAY_TEXT => $values,
-            self::ARRAY_INT => array_map(
-                static fn (?string $item): ?int => null === $item ? null : (int) $item,
-                $values,
-            ),
+            self::ARRAY_INT => array_map(static fn(?string $item): ?int => null === $item
+                ? null
+                : (int) $item, $values),
             default => throw new \LogicException(sprintf('Unsupported Postgres mapped column kind "%s".', $this->kind)),
         };
     }
@@ -129,7 +134,7 @@ final readonly class PostgresMappedColumnType
             ));
         }
 
-        return $this->sqlType.'[]';
+        return $this->sqlType . '[]';
     }
 
     /**
@@ -143,14 +148,12 @@ final readonly class PostgresMappedColumnType
     {
         return match ($this->kind) {
             self::TEXT => self::encodeTextArray($values),
-            self::DATE => self::encodeTextArray(array_map(
-                static fn (mixed $value): ?string => null === $value ? null : self::encodeDate($value),
-                $values,
-            )),
-            self::JSON => self::encodeTextArray(array_map(
-                static fn (mixed $value): ?string => null === $value ? null : self::encodeJson($value),
-                $values,
-            )),
+            self::DATE => self::encodeTextArray(array_map(static fn(mixed $value): ?string => null === $value
+                ? null
+                : self::encodeDate($value), $values)),
+            self::JSON => self::encodeTextArray(array_map(static fn(mixed $value): ?string => null === $value
+                ? null
+                : self::encodeJson($value), $values)),
             default => throw new \LogicException(sprintf(
                 'Postgres column type "%s" cannot be encoded as a scalar unnest() array.',
                 $this->sqlType,
@@ -174,7 +177,9 @@ final readonly class PostgresMappedColumnType
         }
 
         if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
-            throw new \InvalidArgumentException('Postgres DATE column value must be a YYYY-MM-DD string, DateTimeInterface, or null.');
+            throw new \InvalidArgumentException(
+                'Postgres DATE column value must be a YYYY-MM-DD string, DateTimeInterface, or null.',
+            );
         }
 
         return $value;
@@ -187,7 +192,9 @@ final readonly class PostgresMappedColumnType
         }
 
         if (!is_string($value)) {
-            throw new \InvalidArgumentException('Postgres DATE column value must decode from a database string, DateTimeInterface, or null.');
+            throw new \InvalidArgumentException(
+                'Postgres DATE column value must decode from a database string, DateTimeInterface, or null.',
+            );
         }
 
         return substr($value, 0, 10);
@@ -216,20 +223,17 @@ final readonly class PostgresMappedColumnType
      */
     private static function encodeTextArray(array $values): string
     {
-        return '{'.implode(',', array_map(
-            static function (mixed $value): string {
-                if (null === $value) {
-                    return 'NULL';
-                }
+        return '{' . implode(',', array_map(static function (mixed $value): string {
+            if (null === $value) {
+                return 'NULL';
+            }
 
-                if (!is_string($value) && !is_int($value)) {
-                    throw new \InvalidArgumentException('Postgres text array values must be strings, ints, or null.');
-                }
+            if (!is_string($value) && !is_int($value)) {
+                throw new \InvalidArgumentException('Postgres text array values must be strings, ints, or null.');
+            }
 
-                return '"'.str_replace(['\\', '"'], ['\\\\', '\\"'], (string) $value).'"';
-            },
-            array_values($values),
-        )).'}';
+            return '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], (string) $value) . '"';
+        }, array_values($values))) . '}';
     }
 
     /**
@@ -237,20 +241,17 @@ final readonly class PostgresMappedColumnType
      */
     private static function encodeIntArray(array $values): string
     {
-        return '{'.implode(',', array_map(
-            static function (mixed $value): string {
-                if (null === $value) {
-                    return 'NULL';
-                }
+        return '{' . implode(',', array_map(static function (mixed $value): string {
+            if (null === $value) {
+                return 'NULL';
+            }
 
-                if (!is_int($value)) {
-                    throw new \InvalidArgumentException('Postgres integer array values must be ints or null.');
-                }
+            if (!is_int($value)) {
+                throw new \InvalidArgumentException('Postgres integer array values must be ints or null.');
+            }
 
-                return (string) $value;
-            },
-            array_values($values),
-        )).'}';
+            return (string) $value;
+        }, array_values($values))) . '}';
     }
 
     /**

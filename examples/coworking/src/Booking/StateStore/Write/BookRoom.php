@@ -30,8 +30,12 @@ final readonly class BookRoom
     /** @return list<BookingState> */
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(?RoomState $room, ?MemberState $member, ?CompanyState $company, BookingPlanner $planner): array
-    {
+    public function decide(
+        ?RoomState $room,
+        ?MemberState $member,
+        ?CompanyState $company,
+        BookingPlanner $planner,
+    ): array {
         return $planner->plan([['id' => $this->bookingId, 'slot' => $this->slot]], $room, $member, $company);
     }
 }

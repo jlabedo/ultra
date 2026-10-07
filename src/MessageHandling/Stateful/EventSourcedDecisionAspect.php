@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\StatefulMessageHandling;
 
-use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\EventSourcedStateStore;
@@ -20,7 +19,21 @@ use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\MessageContextPropagatorInterface;
 use Ultra\MessageHandling\ProceedResult;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 
+/**
+ * @phpstan-type EventBinding array{
+ *     index: int,
+ *     parameterName: string,
+ *     stateClass: class-string,
+ *     allowsNull: bool,
+ *     property: ?string,
+ *     method: ?string,
+ *     sources: list<string>,
+ *     domainIdentifierName: string
+ * }
+ * @phpstan-type EventPlan array{bindings: list<EventBinding>, rounds: list<list<int>>}
+ */
 final class EventSourcedDecisionAspect
 {
     public function __construct(
@@ -32,6 +45,10 @@ final class EventSourcedDecisionAspect
         private readonly ?EventBusInterface $eventBus = null,
     ) {}
 
+    /**
+     * @param EventPlan $config
+     * @param callable(...): \Ultra\MessageHandling\ProceedResult $proceed
+     */
     #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
         if ([] === $ctx->method()->getAttributes(DecisionHandler::class)) {
             return null;
@@ -40,7 +57,9 @@ final class EventSourcedDecisionAspect
         $plan = StateBindings::analyze(
             $ctx,
             EventSourcedDecisionAspect::isStateClass(...),
-            static fn (string $stateClass): string => EventSourcedDecisionAspect::getDomainIdentifierName($stateClass).'Id',
+            /** @param class-string $stateClass */ static fn(string $stateClass): string => (
+                EventSourcedDecisionAspect::getDomainIdentifierName($stateClass) . 'Id'
+            ),
             nullableStates: false,
         );
         if (null === $plan) {
@@ -48,42 +67,52 @@ final class EventSourcedDecisionAspect
         }
 
         foreach ($plan['bindings'] as $position => $binding) {
-            $plan['bindings'][$position]['domainIdentifierName'] = EventSourcedDecisionAspect::getDomainIdentifierName($binding['stateClass']);
+            $plan['bindings'][$position]['domainIdentifierName'] = EventSourcedDecisionAspect::getDomainIdentifierName(
+                $binding['stateClass'],
+            );
         }
 
-        return MatchResult::apply(
-            config: $plan,
-            provides: array_column($plan['bindings'], 'index'),
-        );
+        return MatchResult::apply(config: $plan, provides: array_column($plan['bindings'], 'index'));
     })]
     public function around(callable $proceed, object $message, MessageContext $context, array $config): ProceedResult
     {
         // One load per round; every round's append condition guards the final append, so a concurrent change to a
         // source state (whose content decided a dependent id) makes the append fail.
         $appendConditions = [];
-        $states = StateBindings::load($config, $message, function (array $ids) use ($config, &$appendConditions): array {
+        $states = StateBindings::load($config, $message, function (array $ids) use (
+            $config,
+            &$appendConditions,
+        ): array {
+            /** @var array<int, array{\Ultra\EventSourcedState\EventSourcedEntityLoader<object>, DomainIdentifier, StreamQuery}> $prepared */
             $prepared = [];
             foreach ($ids as $position => $id) {
                 $binding = $config['bindings'][$position];
                 if (!is_string($id)) {
-                    throw new \LogicException(sprintf('Id of state parameter "%s" must be string, got %s.', $binding['parameterName'], get_debug_type($id)));
+                    throw new \LogicException(sprintf(
+                        'Id of state parameter "%s" must be string, got %s.',
+                        $binding['parameterName'],
+                        get_debug_type($id),
+                    ));
                 }
                 $identifier = new DomainIdentifier($binding['domainIdentifierName'], $id);
                 $loader = $this->stateStore->loader($binding['stateClass']);
                 $prepared[$position] = [$loader, $identifier, $loader->query($identifier)];
             }
 
-            $loadResult = $this->eventStore->load(StreamQuery::anyOf(...array_column($prepared, 2)));
+            $loadResult = $this->eventStore->load(StreamQuery::anyOf(...array_map(
+                static fn(array $state): StreamQuery => $state[2],
+                $prepared,
+            )));
             $appendConditions[] = $loadResult->appendCondition();
 
-            return array_map(
-                static fn (array $state): object => $state[0]->hydrate($loadResult->events, $state[1]),
-                $prepared,
-            );
+            return array_map(static fn(array $state): object => $state[0]->hydrate(
+                $loadResult->events,
+                $state[1],
+            ), $prepared);
         });
 
         if (DecisionMode::isCheck($context)) {
-            return DecisionMode::check(static fn (): ProceedResult => $proceed(provided: $states), $context);
+            return DecisionMode::check(static fn(): ProceedResult => $proceed(provided: $states), $context);
         }
 
         $proceedResult = $proceed(provided: $states);
@@ -111,9 +140,11 @@ final class EventSourcedDecisionAspect
     {
         $effects = [];
         foreach ($this->objectsFrom($value) as $object) {
-            if (null !== $this->eventClassRegistry->getName($object::class)) {
-                $effects[] = $object;
+            if (null === $this->eventClassRegistry->getName($object::class)) {
+                continue;
             }
+
+            $effects[] = $object;
         }
 
         return $effects;
@@ -138,9 +169,11 @@ final class EventSourcedDecisionAspect
 
         $objects = [];
         foreach ($value as $item) {
-            if (is_object($item)) {
-                $objects[] = $item;
+            if (!is_object($item)) {
+                continue;
             }
+
+            $objects[] = $item;
         }
 
         return $objects;
@@ -167,7 +200,7 @@ final class EventSourcedDecisionAspect
     }
 
     /**
-     * @param array<string, mixed> $metadata
+     * @param array<array-key, mixed> $metadata
      */
     private function toEvent(object $event, array $metadata = []): Event
     {
@@ -178,20 +211,22 @@ final class EventSourcedDecisionAspect
 
         $domainIds = $this->eventClassRegistry->getDomainIdentifiers($event);
         if ([] === $domainIds) {
-            throw new \LogicException(sprintf('Event class %s has no properties with #[DomainIdentifier].', $event::class));
+            throw new \LogicException(sprintf(
+                'Event class %s has no properties with #[DomainIdentifier].',
+                $event::class,
+            ));
         }
 
         $payload = $this->normalizer->toScalar($event);
         if (!is_array($payload)) {
-            throw new \LogicException(sprintf('Event %s normalized payload must be an array, got %s.', $event::class, get_debug_type($payload)));
+            throw new \LogicException(sprintf(
+                'Event %s normalized payload must be an array, got %s.',
+                $event::class,
+                get_debug_type($payload),
+            ));
         }
 
-        return new Event(
-            eventType: $eventType,
-            payload: $payload,
-            domainIds: $domainIds,
-            metadata: $metadata,
-        );
+        return new Event(eventType: $eventType, payload: $payload, domainIds: $domainIds, metadata: $metadata);
     }
 
     private static function isStateClass(string $class): bool
@@ -203,18 +238,15 @@ final class EventSourcedDecisionAspect
         return [] !== new \ReflectionClass($class)->getAttributes(EventSourcedEntity::class);
     }
 
+    /** @param class-string $stateClass */
     private static function getDomainIdentifierName(string $stateClass): string
     {
         $ref = new \ReflectionClass($stateClass);
         $attributes = $ref->getAttributes(EventSourcedEntity::class);
         if ([] === $attributes) {
-            throw new \LogicException(sprintf(
-                'State class %s is not marked with #[EventSourcedEntity].',
-                $stateClass,
-            ));
+            throw new \LogicException(sprintf('State class %s is not marked with #[EventSourcedEntity].', $stateClass));
         }
 
-        /** @var EventSourcedEntity $entity */
         $entity = $attributes[0]->newInstance();
         if (1 !== count($entity->tags)) {
             throw new \LogicException(sprintf(

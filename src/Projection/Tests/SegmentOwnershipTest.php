@@ -9,9 +9,9 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionRuntime;
-use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Projection\Tests\Support\TrackingProjection;
+use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Time\Duration;
@@ -27,13 +27,13 @@ final class SegmentOwnershipTest extends ProjectionTestCase
     {
         $repository = $this->fixture($backend)->segments;
 
-        self::assertTrue($repository->ensureInitialized('courses'));
-        self::assertFalse($repository->ensureInitialized('courses'));
+        static::assertTrue($repository->ensureInitialized('courses'));
+        static::assertFalse($repository->ensureInitialized('courses'));
         $segments = $repository->listSegments('courses');
-        self::assertCount(1, $segments);
-        self::assertSame(0, $segments[0]->bucketFrom);
-        self::assertSame(255, $segments[0]->bucketTo);
-        self::assertNull($segments[0]->workerId);
+        static::assertCount(1, $segments);
+        static::assertSame(0, $segments[0]->bucketFrom);
+        static::assertSame(255, $segments[0]->bucketTo);
+        static::assertNull($segments[0]->workerId);
     }
 
     #[DataProvider('backends')]
@@ -43,13 +43,13 @@ final class SegmentOwnershipTest extends ProjectionTestCase
         $repository->ensureInitialized('courses');
 
         $claimed = $repository->claimSegment('courses', 0, 'worker-1');
-        self::assertNotNull($claimed);
-        self::assertSame('courses', $claimed->projectionId);
-        self::assertSame(0, $claimed->bucketFrom);
-        self::assertSame(255, $claimed->bucketTo);
-        self::assertSame(0, $claimed->checkpoint->gapFloor->value);
-        self::assertSame('worker-1', $claimed->workerId);
-        self::assertNull($repository->claimSegment('courses', 0, 'worker-2'));
+        static::assertNotNull($claimed);
+        static::assertSame('courses', $claimed->projectionId);
+        static::assertSame(0, $claimed->bucketFrom);
+        static::assertSame(255, $claimed->bucketTo);
+        static::assertSame(0, $claimed->checkpoint->gapFloor->value);
+        static::assertSame('worker-1', $claimed->workerId);
+        static::assertNull($repository->claimSegment('courses', 0, 'worker-2'));
     }
 
     #[DataProvider('claimTransactions')]
@@ -67,9 +67,9 @@ final class SegmentOwnershipTest extends ProjectionTestCase
 
         try {
             $fixture->connection->beginTransaction();
-            self::assertNotNull($fixture->segments->claimSegment('courses', 0, 'worker-1'));
-            self::assertSame(1, $fixture->connection->getTransactionNestingLevel());
-            self::assertSame('worker-1', $fixture->segments->listSegments('courses')[0]->workerId);
+            static::assertNotNull($fixture->segments->claimSegment('courses', 0, 'worker-1'));
+            static::assertSame(1, $fixture->connection->getTransactionNestingLevel());
+            static::assertSame('worker-1', $fixture->segments->listSegments('courses')[0]->workerId);
 
             $worker = $cluster->spawn(static function () use ($dsn, $prefix): ?string {
                 $connection = PostgresConnectionSupport::connection($dsn);
@@ -86,7 +86,7 @@ final class SegmentOwnershipTest extends ProjectionTestCase
                 }
             });
             $ready = $worker->awaitCheckpoint('ready');
-            self::assertNull($ready->payload['owner']);
+            static::assertNull($ready->payload['owner']);
             $worker->release('ready');
 
             // Observe the claim waiting on our lock before letting the same request resume.
@@ -98,17 +98,21 @@ final class SegmentOwnershipTest extends ProjectionTestCase
                 if (null !== $outcome) {
                     break;
                 }
-                $blocked = (int) $fixture->connection->fetchOne(
-                    'SELECT count(*) FROM unnest(pg_blocking_pids(CAST(? AS INTEGER))) AS blocker(pid)
-                     WHERE pid = CAST(? AS INTEGER)',
-                    [$ready->payload['pid'], $holderPid],
-                );
+                $blocked = (int) $fixture->connection->fetchOne('SELECT count(*) FROM unnest(pg_blocking_pids(CAST(? AS INTEGER))) AS blocker(pid)
+                     WHERE pid = CAST(? AS INTEGER)', [
+                    $ready->payload['pid'],
+                    $holderPid,
+                ]);
                 if (1 === $blocked) {
                     break;
                 }
                 usleep(1_000);
             } while (microtime(true) < $deadline);
-            self::assertSame(1, $blocked, 'The competing claim must wait on the caller-held lock. '.$outcome?->exceptionMessage());
+            static::assertSame(
+                1,
+                $blocked,
+                'The competing claim must wait on the caller-held lock. ' . $outcome?->exceptionMessage(),
+            );
 
             if ($commit) {
                 $fixture->connection->commit();
@@ -117,9 +121,12 @@ final class SegmentOwnershipTest extends ProjectionTestCase
             }
 
             $outcome = $worker->join();
-            self::assertTrue($outcome->isSuccess(), $outcome->exceptionMessage());
-            self::assertSame($commit ? null : 'worker-2', $outcome->value());
-            self::assertSame($commit ? 'worker-1' : 'worker-2', $fixture->segments->listSegments('courses')[0]->workerId);
+            static::assertTrue($outcome->isSuccess(), $outcome->exceptionMessage());
+            static::assertSame($commit ? null : 'worker-2', $outcome->value());
+            static::assertSame(
+                $commit ? 'worker-1' : 'worker-2',
+                $fixture->segments->listSegments('courses')[0]->workerId,
+            );
         } finally {
             $worker?->stop();
             PostgresConnectionSupport::resetSharedConnection($fixture->connection);
@@ -139,12 +146,12 @@ final class SegmentOwnershipTest extends ProjectionTestCase
         $repository = $this->fixture($backend, $clock)->segments;
         $repository->ensureInitialized('courses');
 
-        self::assertNotNull($repository->claimSegment('courses', 0, 'worker-1', Duration::seconds(30)));
+        static::assertNotNull($repository->claimSegment('courses', 0, 'worker-1', Duration::seconds(30)));
 
         $clock->sleep(Duration::seconds(31));
 
-        self::assertSame(1, $repository->recoverExpiredClaims('courses'));
-        self::assertNotNull($repository->claimSegment('courses', 0, 'worker-2', Duration::seconds(30)));
+        static::assertSame(1, $repository->recoverExpiredClaims('courses'));
+        static::assertNotNull($repository->claimSegment('courses', 0, 'worker-2', Duration::seconds(30)));
     }
 
     #[DataProvider('backends')]
@@ -157,16 +164,11 @@ final class SegmentOwnershipTest extends ProjectionTestCase
         $runner = $fixture->runner;
 
         $runner->ensureInitialized($runtime);
-        self::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
+        static::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
 
-        $result = $runner->runClaimedOnce(
-            $runtime,
-            'tracking_projection',
-            0,
-            'worker-2',
-        );
+        $result = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-2');
 
-        self::assertFalse($result->claimedSegment);
-        self::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
+        static::assertFalse($result->claimedSegment);
+        static::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
     }
 }

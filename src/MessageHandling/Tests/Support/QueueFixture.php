@@ -18,9 +18,11 @@ final readonly class QueueFixture
     public InMemoryQueue|PostgresAsyncQueue $queue;
     public string $tablePrefix;
 
-    public function __construct(public StatickClock $clock, public ?Connection $connection = null)
-    {
-        $this->tablePrefix = 'message_guarantees_'.bin2hex(random_bytes(4)).'_';
+    public function __construct(
+        public StatickClock $clock,
+        public ?Connection $connection = null,
+    ) {
+        $this->tablePrefix = 'message_guarantees_' . bin2hex(random_bytes(4)) . '_';
         if (null === $connection) {
             $this->queue = new InMemoryQueue($clock);
             return;
@@ -47,12 +49,13 @@ final readonly class QueueFixture
     {
         return null === $this->connection
             ? $this->queue->count()
-            : (int) $this->connection->fetchOne('SELECT COUNT(*) FROM '.$this->tablePrefix.'messages');
+            : (int) $this->connection->fetchOne('SELECT COUNT(*) FROM ' . $this->tablePrefix . 'messages');
     }
 
     public function close(): void
     {
-        if (null === $this->connection) return;
+        if (null === $this->connection)
+            return;
         PostgresConnectionSupport::resetSharedConnection($this->connection);
         foreach (new PostgresAsyncQueueSchema($this->tablePrefix)->dropStatements() as $statement) {
             $this->connection->executeStatement($statement);

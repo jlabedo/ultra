@@ -25,14 +25,12 @@ final class ProjectionCompilerPass implements CompilerPassInterface
                 new Reference(UltraNormalizer::class),
             ]);
 
-            $runtimeId = 'ultra.projection.runtime.'.$serviceId;
+            $runtimeId = 'ultra.projection.runtime.' . $serviceId;
             $container->setDefinition($runtimeId, $runtime);
 
             $runtimes[] = new Reference($runtimeId);
         }
 
-        $container->register(ProjectionCatalog::class, ProjectionCatalog::class)
-            ->setArguments($runtimes)
-        ;
+        $container->register(ProjectionCatalog::class, ProjectionCatalog::class)->setArguments($runtimes);
     }
 }

@@ -26,11 +26,8 @@ final readonly class MessageHandlingProjectionActivator implements ProjectionAct
 
     private function workerId(): string
     {
-        return sprintf(
-            '%s-%s-%s',
-            $this->workerIdPrefix,
-            gethostname() ?: 'host',
-            getmypid(),
-        );
+        $hostname = gethostname();
+
+        return sprintf('%s-%s-%s', $this->workerIdPrefix, false === $hostname ? 'host' : $hostname, getmypid());
     }
 }

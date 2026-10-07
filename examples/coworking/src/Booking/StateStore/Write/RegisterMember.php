@@ -41,7 +41,9 @@ final readonly class RegisterMember
         Violations::throwIfAny([
             null !== $member ? new Violation('member.already_registered', 'Member already exists.') : null,
             null === $company ? new Violation('company.not_found', 'Company does not exist.') : null,
-            null !== $emailClaim ? new Violation('member.email_taken', 'Email is already used by another member.') : null,
+            null !== $emailClaim
+                ? new Violation('member.email_taken', 'Email is already used by another member.')
+                : null,
         ]);
 
         return [

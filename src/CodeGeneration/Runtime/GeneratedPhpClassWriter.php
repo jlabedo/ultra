@@ -18,13 +18,17 @@ final class GeneratedPhpClassWriter
      *
      * @return array{className: string, filePath: string}
      */
-    public function writeContentAddressed(string $baseName, string $outputDir, callable $buildCode, string $placeholder): array
-    {
+    public function writeContentAddressed(
+        string $baseName,
+        string $outputDir,
+        callable $buildCode,
+        string $placeholder,
+    ): array {
         $code = $buildCode($placeholder);
         $outputDir = rtrim($outputDir, '/');
-        $className = $baseName.'_'.substr(sha1($outputDir."\0".$code), 0, 8);
+        $className = $baseName . '_' . substr(sha1($outputDir . "\0" . $code), 0, 8);
         $code = str_replace($placeholder, $className, $code);
-        $filePath = $outputDir.'/'.$className.'.php';
+        $filePath = $outputDir . '/' . $className . '.php';
 
         $this->fileWriter->write($filePath, $code);
 

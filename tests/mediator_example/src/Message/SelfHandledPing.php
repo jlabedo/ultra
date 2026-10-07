@@ -9,7 +9,9 @@ use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final class SelfHandledPing
 {
-    public function __construct(public string $payload = '') {}
+    public function __construct(
+        public string $payload = '',
+    ) {}
 
     #[SelfHandler]
     public function handle(SelfHandlingTracker $tracker): string

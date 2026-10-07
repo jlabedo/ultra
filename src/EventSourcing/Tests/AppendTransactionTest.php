@@ -25,22 +25,22 @@ final class AppendTransactionTest extends StorageTestCase
             self::event('created', ['course' => 'c1']),
             self::event('renamed', ['course' => 'c1']),
         ]);
-        self::assertTrue($connection->isTransactionActive());
-        self::assertCount(2, $fixture->store->load($query)->events);
+        static::assertTrue($connection->isTransactionActive());
+        static::assertCount(2, $fixture->store->load($query)->events);
         $connection->rollBack();
-        self::assertSame([], $fixture->store->load($query)->events);
+        static::assertSame([], $fixture->store->load($query)->events);
         $fixture->store->append([self::event('created', ['course' => 'c1'])]);
-        self::assertFalse($connection->isTransactionActive());
-        self::assertCount(1, $fixture->store->load($query)->events);
+        static::assertFalse($connection->isTransactionActive());
+        static::assertCount(1, $fixture->store->load($query)->events);
         try {
             $fixture->store->append([
                 self::event('renamed', ['course' => 'c1']),
                 self::event('renamed', ['course' => 'c1'], ['invalid' => NAN]),
             ]);
-            self::fail('Encoding failure must reject the entire append and close its own transaction.');
+            static::fail('Encoding failure must reject the entire append and close its own transaction.');
         } catch (\JsonException) {
         }
-        self::assertFalse($connection->isTransactionActive());
-        self::assertCount(1, $fixture->store->load($query)->events);
+        static::assertFalse($connection->isTransactionActive());
+        static::assertCount(1, $fixture->store->load($query)->events);
     }
 }

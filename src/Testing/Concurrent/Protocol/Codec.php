@@ -28,13 +28,16 @@ final class Codec
                 'type' => 'result',
                 'value' => $message->value,
             ],
-            $message instanceof ExceptionMessage => array_filter([
-                'type' => 'exception',
-                'class' => $message->class,
-                'message' => $message->message,
-                'trace' => $message->trace,
-                'serialized' => $message->serialized,
-            ], static fn (mixed $v): bool => null !== $v),
+            $message instanceof ExceptionMessage => array_filter(
+                [
+                    'type' => 'exception',
+                    'class' => $message->class,
+                    'message' => $message->message,
+                    'trace' => $message->trace,
+                    'serialized' => $message->serialized,
+                ],
+                static fn(mixed $v): bool => null !== $v,
+            ),
             $message instanceof InitMessage => [
                 'type' => 'init',
                 'closure' => $message->closure,
@@ -50,7 +53,7 @@ final class Codec
             default => throw new ProtocolException(sprintf('Cannot encode unknown message class: %s', $message::class)),
         };
 
-        return json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE)."\n";
+        return json_encode($data, JSON_THROW_ON_ERROR | JSON_UNESCAPED_UNICODE) . "\n";
     }
 
     public static function decode(string $line): Message
@@ -81,26 +84,21 @@ final class Codec
                 level: (string) ($data['level'] ?? 'info'),
                 message: (string) ($data['message'] ?? ''),
             ),
-            'result' => new ResultMessage(
-                value: (string) ($data['value'] ?? ''),
-            ),
+            'result' => new ResultMessage(value: (string) ($data['value'] ?? '')),
             'exception' => new ExceptionMessage(
                 class: (string) ($data['class'] ?? ''),
                 message: (string) ($data['message'] ?? ''),
                 trace: (string) ($data['trace'] ?? ''),
                 serialized: isset($data['serialized']) ? (string) $data['serialized'] : null,
             ),
-            'init' => new InitMessage(
-                closure: (string) ($data['closure'] ?? ''),
-            ),
-            'release' => new ReleaseMessage(
-                name: (string) ($data['name'] ?? ''),
-                inject: $data['inject'] ?? null,
-            ),
+            'init' => new InitMessage(closure: (string) ($data['closure'] ?? '')),
+            'release' => new ReleaseMessage(name: (string) ($data['name'] ?? ''), inject: $data['inject'] ?? null),
             'abort' => new AbortMessage(),
-            default => throw new ProtocolException(
-                sprintf('Unknown message type "%s" (line: %s)', $data['type'], $line),
-            ),
+            default => throw new ProtocolException(sprintf(
+                'Unknown message type "%s" (line: %s)',
+                $data['type'],
+                $line,
+            )),
         };
     }
 }

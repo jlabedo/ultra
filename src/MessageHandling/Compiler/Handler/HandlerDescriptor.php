@@ -14,6 +14,7 @@ final readonly class HandlerDescriptor
     /**
      * @param list<string>           $depServiceIds
      * @param list<AdviceDescriptor> $advices
+     * @param class-string|'' $messageClass
      */
     public function __construct(
         public string $serviceId,
@@ -31,14 +32,14 @@ final readonly class HandlerDescriptor
     /** @param list<AdviceDescriptor> $advices */
     public function withAdvices(array $advices): self
     {
-        return clone ($this, [
+        return clone($this, [
             'advices' => $advices,
         ]);
     }
 
     public function withPriority(int $priority): self
     {
-        return clone ($this, [
+        return clone($this, [
             'priority' => $priority,
         ]);
     }

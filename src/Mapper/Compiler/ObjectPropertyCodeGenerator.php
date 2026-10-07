@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -8,7 +10,11 @@ use Ultra\Mapper\Path;
 
 class ObjectPropertyCodeGenerator implements CodeGenerator
 {
-    public function __construct(public readonly string $name, private CodeGenerator $next, private bool $typeCheck) {}
+    public function __construct(
+        public readonly string $name,
+        private CodeGenerator $next,
+        private bool $typeCheck,
+    ) {}
 
     public function generateNormalization(string $objectVar): string
     {
@@ -27,7 +33,11 @@ class ObjectPropertyCodeGenerator implements CodeGenerator
                 PHP);
         }
 
-        return $this->next->generateDenormalization("{$dataVar}['{$this->name}']", $bodyBuilder, $path->add($this->name));
+        return $this->next->generateDenormalization(
+            "{$dataVar}['{$this->name}']",
+            $bodyBuilder,
+            $path->add($this->name),
+        );
     }
 
     public function getExpectedDenormalizedType(): Type

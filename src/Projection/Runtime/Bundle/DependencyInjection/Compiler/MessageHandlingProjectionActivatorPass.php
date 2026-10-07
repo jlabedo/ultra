@@ -20,11 +20,8 @@ final class MessageHandlingProjectionActivatorPass implements CompilerPassInterf
             return;
         }
 
-        $container->setDefinition(
-            ProjectionActivatorInterface::class,
-            new Definition(MessageHandlingProjectionActivator::class, [
-                new Reference($mediator),
-            ]),
-        );
+        $container->setDefinition(ProjectionActivatorInterface::class, new Definition(MessageHandlingProjectionActivator::class, [
+            new Reference($mediator),
+        ]));
     }
 }

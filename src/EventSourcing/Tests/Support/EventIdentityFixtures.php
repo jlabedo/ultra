@@ -13,8 +13,10 @@ final readonly class MetadataNamedEvent {}
 final readonly class PublicIdentifiedEvent
 {
     public function __construct(
-        #[DomainIdentifier('course')] public string $courseId,
-        #[DomainIdentifier('faculty')] public string $facultyId = 'f1',
+        #[DomainIdentifier('course')]
+        public string $courseId,
+        #[DomainIdentifier('faculty')]
+        public string $facultyId = 'f1',
     ) {}
 }
 
@@ -34,10 +36,13 @@ final class PrivateIdentifiedEvent
 final class ProtectedIdentifiedEvent
 {
     #[DomainIdentifier('course')]
-    protected string $courseId;
+    private string $courseId;
 
-    public function __construct(string $courseId, #[DomainIdentifier('faculty')] public string $facultyId = 'f1')
-    {
+    public function __construct(
+        string $courseId,
+        #[DomainIdentifier('faculty')]
+        public string $facultyId = 'f1',
+    ) {
         $this->courseId = $courseId;
     }
 }

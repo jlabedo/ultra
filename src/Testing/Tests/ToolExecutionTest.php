@@ -21,11 +21,13 @@ final class ToolExecutionTest extends TestCase
     }
 
     #[DataProvider('outcomes')]
-    public function test_phpunit_preserves_interpreter_options_arguments_and_exit_status(int $expectedPrecision, int $expectedExitCode): void
-    {
-        $directory = sys_get_temp_dir().'/ultra_tool_proxy_'.bin2hex(random_bytes(8));
+    public function test_phpunit_preserves_interpreter_options_arguments_and_exit_status(
+        int $expectedPrecision,
+        int $expectedExitCode,
+    ): void {
+        $directory = sys_get_temp_dir() . '/ultra_tool_proxy_' . bin2hex(random_bytes(8));
         mkdir($directory);
-        $testFile = $directory.'/ToolProxyProbeTest.php';
+        $testFile = $directory . '/ToolProxyProbeTest.php';
 
         try {
             file_put_contents($testFile, <<<'PHP'
@@ -41,22 +43,31 @@ final class ToolExecutionTest extends TestCase
                 }
                 PHP);
 
-            $process = new Process([
-                PHP_BINARY,
-                '-d', 'memory_limit=137M',
-                '-d', 'precision=12',
-                'bin/phpunit',
-                '--no-configuration',
-                '--no-extensions',
-                '--colors=never',
-                $testFile,
-            ], dirname(__DIR__, 3), [
-                'PAO_DISABLE' => '1',
-                'ULTRA_TOOL_PROXY_EXPECTED_PRECISION' => (string) $expectedPrecision,
-            ]);
+            $process = new Process(
+                [
+                    PHP_BINARY,
+                    '-d',
+                    'memory_limit=137M',
+                    '-d',
+                    'precision=12',
+                    'bin/phpunit',
+                    '--no-configuration',
+                    '--no-extensions',
+                    '--colors=never',
+                    $testFile,
+                ],
+                dirname(__DIR__, 3),
+                [
+                    'PAO_DISABLE' => '1',
+                    'ULTRA_TOOL_PROXY_EXPECTED_PRECISION' => (string) $expectedPrecision,
+                ],
+            );
 
-            self::assertSame($expectedExitCode, $process->run(), $process->getOutput().$process->getErrorOutput());
-            self::assertStringContainsString(0 === $expectedExitCode ? 'OK (1 test, 2 assertions)' : 'FAILURES!', $process->getOutput());
+            static::assertSame($expectedExitCode, $process->run(), $process->getOutput() . $process->getErrorOutput());
+            static::assertStringContainsString(
+                0 === $expectedExitCode ? 'OK (1 test, 2 assertions)' : 'FAILURES!',
+                $process->getOutput(),
+            );
         } finally {
             if (is_file($testFile)) {
                 unlink($testFile);

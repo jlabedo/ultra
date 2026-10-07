@@ -6,9 +6,9 @@ namespace App\Tests;
 
 use App\Booking\Classic\BookingService;
 use App\Booking\Classic\Repository\BookingRepository;
-use Doctrine\ORM\EntityManagerInterface;
 use App\Tests\Driver\BookingDriver;
 use App\Tests\Driver\ClassicDriver;
+use Doctrine\ORM\EntityManagerInterface;
 
 /**
  * @internal

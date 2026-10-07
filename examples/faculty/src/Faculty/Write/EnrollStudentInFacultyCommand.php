@@ -7,8 +7,8 @@ namespace App\Faculty\Write;
 use App\Faculty\Event\StudentEnrolledInFaculty;
 use App\Faculty\State\StudentState;
 use App\Faculty\Support\FacultyIds;
-use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\MessageHandling\Attribute\SelfHandler;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 
 final readonly class EnrollStudentInFacultyCommand
 {
@@ -26,7 +26,7 @@ final readonly class EnrollStudentInFacultyCommand
     public function decide(StudentState $student): array
     {
         if ($student->isEnrolled()) {
-            throw new \InvalidArgumentException('Student already enrolled: '.$this->studentId);
+            throw new \InvalidArgumentException('Student already enrolled: ' . $this->studentId);
         }
 
         if ('' === trim($this->firstName) || '' === trim($this->lastName)) {

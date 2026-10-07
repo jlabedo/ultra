@@ -8,9 +8,6 @@ final class UnknownStateException extends \InvalidArgumentException
 {
     public function __construct(string $stateClass)
     {
-        parent::__construct(sprintf(
-            'No mapped state was registered for "%s".',
-            $stateClass,
-        ));
+        parent::__construct(sprintf('No mapped state was registered for "%s".', $stateClass));
     }
 }

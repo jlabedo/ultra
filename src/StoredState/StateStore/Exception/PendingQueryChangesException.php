@@ -17,7 +17,10 @@ final class PendingQueryChangesException extends \LogicException
     ) {
         parent::__construct(sprintf(
             'Cannot observe query guard "%s" for "%s": pending write on "%s" with key %s affects this scope. Execute the query before preparing affected writes.',
-            $guardName, $guardValue, $tableKey, $key->fingerprint(),
+            $guardName,
+            $guardValue,
+            $tableKey,
+            $key->fingerprint(),
         ));
     }
 }

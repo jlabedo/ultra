@@ -39,8 +39,13 @@ final class DeliveryOutcomeTest extends QueueTestCase
         $failure = new \RuntimeException('temporary failure');
         $first = $this->envelope('first');
         if ('missing route' === $stage || 'empty route' === $stage) {
-            $first = new AsyncEnvelope($first->message, $first->messageContext, 'missing route' === $stage
-                ? AsyncHeaders::empty() : AsyncHeaders::empty()->with(AsyncHeaderNames::ROUTE, ''));
+            $first = new AsyncEnvelope(
+                $first->message,
+                $first->messageContext,
+                'missing route' === $stage
+                    ? AsyncHeaders::empty()
+                    : AsyncHeaders::empty()->with(AsyncHeaderNames::ROUTE, ''),
+            );
         }
         $f->queue->enqueue($first);
         $f->queue->enqueue($this->envelope('second'));
@@ -51,22 +56,22 @@ final class DeliveryOutcomeTest extends QueueTestCase
 
         try {
             $worker->drain();
-            self::fail('Expected delivery failure.');
+            static::fail('Expected delivery failure.');
         } catch (\Throwable $caught) {
             if ('missing route' === $stage || 'empty route' === $stage) {
-                self::assertInstanceOf(\LogicException::class, $caught);
-                self::assertStringContainsString('route', $caught->getMessage());
+                static::assertInstanceOf(\LogicException::class, $caught);
+                static::assertStringContainsString('route', $caught->getMessage());
             } else {
-                self::assertSame($failure, $caught);
-                self::assertSame($failure, $receiver->reason);
+                static::assertSame($failure, $caught);
+                static::assertSame($failure, $receiver->reason);
             }
         }
-        self::assertSame(2, $f->count());
-        self::assertSame(in_array($stage, ['handler', 'acknowledge'], true) ? ['first'] : [], $handler->messages);
+        static::assertSame(2, $f->count());
+        static::assertSame(in_array($stage, ['handler', 'acknowledge'], true) ? ['first'] : [], $handler->messages);
         $retry = $f->queue->reserve();
-        self::assertNotNull($retry);
-        self::assertSame('first', $retry->envelope->message->value);
-        self::assertSame(2, $retry->attempts);
+        static::assertNotNull($retry);
+        static::assertSame('first', $retry->envelope->message->value);
+        static::assertSame(2, $retry->attempts);
     }
 }
 
@@ -75,7 +80,9 @@ final class RecordingDeliveryHandler implements MessageHandlerInterface
     /** @var list<string> */
     public array $messages = [];
 
-    public function __construct(private ?\Throwable $failure) {}
+    public function __construct(
+        private ?\Throwable $failure,
+    ) {}
 
     public function __invoke(object $message, MessageContext $context): mixed
     {
@@ -91,7 +98,10 @@ final class RecordingDeliveryHandler implements MessageHandlerInterface
 
 final class DeliveryContainer implements ContainerInterface
 {
-    public function __construct(private MessageHandlerInterface $handler, private ?\Throwable $failure) {}
+    public function __construct(
+        private MessageHandlerInterface $handler,
+        private ?\Throwable $failure,
+    ) {}
 
     public function get(string $id): MessageHandlerInterface
     {
@@ -113,7 +123,10 @@ final class AcknowledgementReceiver implements AsyncMessageReceiver
 {
     public ?\Throwable $reason = null;
 
-    public function __construct(private InMemoryQueue $queue, private ?\Throwable $failure) {}
+    public function __construct(
+        private InMemoryQueue $queue,
+        private ?\Throwable $failure,
+    ) {}
 
     public function reserve(Duration $leaseDuration = new Duration(seconds: 30)): ?AsyncDelivery
     {

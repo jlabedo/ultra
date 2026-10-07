@@ -13,12 +13,12 @@ use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
 use Ultra\UnitOfWork\NoTransactionManager;
 use Ultra\UnitOfWork\TagNames;
-use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
-use Ultra\UnitOfWork\UnitOfWork;
-use Ultra\UnitOfWork\UnitOfWorkExtension;
 use Ultra\UnitOfWork\Tests\Support\CallLog;
 use Ultra\UnitOfWork\Tests\Support\ContainerTestCase;
 use Ultra\UnitOfWork\Tests\Support\RecordingEventStore;
+use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
+use Ultra\UnitOfWork\UnitOfWork;
+use Ultra\UnitOfWork\UnitOfWorkExtension;
 
 #[CoversClass(UnitOfWorkExtension::class)]
 final class ContainerCompositionTest extends ContainerTestCase
@@ -26,14 +26,20 @@ final class ContainerCompositionTest extends ContainerTestCase
     public function test_assembly_orders_autoconfigured_and_explicitly_tagged_participants_and_decorates_the_store(): void
     {
         $log = new CallLog();
-        $container = $this->ultraLight()->withService($log)
+        $container = $this
+            ->ultraLight()
+            ->withService($log)
             ->withClass(AutoconfiguredParticipant::class, HighPriorityParticipant::class)
             ->withExtension(new class implements ContainerExtension {
                 public function build(ContainerBuilder $container): void
                 {
-                    $container->register(ExplicitParticipant::class)->setAutowired(true)->addTag(TagNames::UNIT_OF_WORK);
+                    $container
+                        ->register(ExplicitParticipant::class)
+                        ->setAutowired(true)
+                        ->addTag(TagNames::UNIT_OF_WORK);
                 }
-            })->boot();
+            })
+            ->boot();
         /** @var EventStoreUnitOfWork $eventStore */
         $eventStore = $container->get('test.event_store');
         /** @var UnitOfWork $unitOfWork */
@@ -42,25 +48,35 @@ final class ContainerCompositionTest extends ContainerTestCase
         $inner = $container->get('test.inner_event_store');
         $event = new Event('unit_of_work.created', [], ['id' => 'composition']);
 
-        self::assertInstanceOf(EventStoreUnitOfWork::class, $eventStore);
-        self::assertInstanceOf(CompositeUnitOfWork::class, $unitOfWork);
+        static::assertInstanceOf(EventStoreUnitOfWork::class, $eventStore);
+        static::assertInstanceOf(CompositeUnitOfWork::class, $unitOfWork);
         $eventStore->append([$event]);
         $unitOfWork->flush();
-        self::assertSame([[$event]], $inner->appendCalls);
-        self::assertSame(['high:flush', 'autoconfigured:flush', 'explicit:flush'], $log->entries);
+        static::assertSame([[$event]], $inner->appendCalls);
+        static::assertSame(['high:flush', 'autoconfigured:flush', 'explicit:flush'], $log->entries);
 
         $eventStore->append([$event]);
         $unitOfWork->clear();
         $eventStore->flush();
-        self::assertSame([[$event]], $inner->appendCalls);
-        self::assertSame(['high:flush', 'autoconfigured:flush', 'explicit:flush', 'high:clear', 'autoconfigured:clear', 'explicit:clear'], $log->entries);
+        static::assertSame([[$event]], $inner->appendCalls);
+        static::assertSame(
+            [
+                'high:flush',
+                'autoconfigured:flush',
+                'explicit:flush',
+                'high:clear',
+                'autoconfigured:clear',
+                'explicit:clear',
+            ],
+            $log->entries,
+        );
     }
 
     public function test_default_services_offer_the_runner_and_noop_transaction_boundary(): void
     {
         $container = $this->ultraLight()->boot();
-        self::assertInstanceOf(NoTransactionManager::class, $container->get('test.transactions'));
-        self::assertInstanceOf(TransactionalUnitOfWorkRunner::class, $container->get('test.runner'));
+        static::assertInstanceOf(NoTransactionManager::class, $container->get('test.transactions'));
+        static::assertInstanceOf(TransactionalUnitOfWorkRunner::class, $container->get('test.runner'));
     }
 }
 
@@ -68,7 +84,9 @@ abstract class OrderedParticipant implements UnitOfWork
 {
     protected const string NAME = '';
 
-    public function __construct(private CallLog $log) {}
+    public function __construct(
+        private CallLog $log,
+    ) {}
 
     public function hasPendingChanges(): bool
     {
@@ -77,12 +95,12 @@ abstract class OrderedParticipant implements UnitOfWork
 
     public function flush(): void
     {
-        $this->log->entries[] = static::NAME.':flush';
+        $this->log->entries[] = static::NAME . ':flush';
     }
 
     public function clear(): void
     {
-        $this->log->entries[] = static::NAME.':clear';
+        $this->log->entries[] = static::NAME . ':clear';
     }
 }
 

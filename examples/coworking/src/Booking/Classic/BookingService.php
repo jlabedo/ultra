@@ -36,7 +36,9 @@ final readonly class BookingService
     {
         $this->transactional(function () use ($companyId, $name, $monthlyMinutes): void {
             Violations::throwIfAny([
-                null !== $this->entityManager->find(Company::class, $companyId) ? new Violation('company.already_registered', 'Company already exists.') : null,
+                null !== $this->entityManager->find(Company::class, $companyId)
+                    ? new Violation('company.already_registered', 'Company already exists.')
+                    : null,
             ]);
             $this->entityManager->persist(new Company($companyId, $name, $monthlyMinutes));
         });
@@ -54,8 +56,12 @@ final readonly class BookingService
         $email = BookingPolicy::normalizeEmail($email);
         $this->transactional(function () use ($memberId, $companyId, $email): void {
             Violations::throwIfAny([
-                null !== $this->entityManager->find(Member::class, $memberId) ? new Violation('member.already_registered', 'Member already exists.') : null,
-                null !== $this->entityManager->getRepository(Member::class)->findOneBy(['email' => $email]) ? new Violation('member.email_taken', 'Email is already used by another member.') : null,
+                null !== $this->entityManager->find(Member::class, $memberId)
+                    ? new Violation('member.already_registered', 'Member already exists.')
+                    : null,
+                null !== $this->entityManager->getRepository(Member::class)->findOneBy(['email' => $email])
+                    ? new Violation('member.email_taken', 'Email is already used by another member.')
+                    : null,
             ]);
             // A concurrent registration with the same email is caught by the unique index, as a database error.
             $this->entityManager->persist(new Member($memberId, $this->company($companyId), $email));
@@ -66,7 +72,9 @@ final readonly class BookingService
     {
         $this->transactional(function () use ($roomId, $name): void {
             Violations::throwIfAny([
-                null !== $this->entityManager->find(Room::class, $roomId) ? new Violation('room.already_opened', 'Room already exists.') : null,
+                null !== $this->entityManager->find(Room::class, $roomId)
+                    ? new Violation('room.already_opened', 'Room already exists.')
+                    : null,
             ]);
             $this->entityManager->persist(new Room($roomId, $name));
         });
@@ -74,14 +82,19 @@ final readonly class BookingService
 
     public function book(string $bookingId, string $roomId, string $memberId, Slot $slot): void
     {
-        $this->transactional(fn () => $this->bookOne($bookingId, $roomId, $memberId, $slot));
+        $this->transactional(fn() => $this->bookOne($bookingId, $roomId, $memberId, $slot));
     }
 
     public function bookWeekly(string $seriesId, string $roomId, string $memberId, Slot $firstSlot, int $weeks): void
     {
         $this->transactional(function () use ($seriesId, $roomId, $memberId, $firstSlot, $weeks): void {
             for ($week = 0; $week < $weeks; ++$week) {
-                $this->bookOne(BookingIds::occurrence($seriesId, $week), $roomId, $memberId, $firstSlot->shiftedByWeeks($week));
+                $this->bookOne(
+                    BookingIds::occurrence($seriesId, $week),
+                    $roomId,
+                    $memberId,
+                    $firstSlot->shiftedByWeeks($week),
+                );
                 // Later occurrences query the database, so earlier ones must be flushed first.
                 $this->entityManager->flush();
             }
@@ -93,8 +106,12 @@ final readonly class BookingService
         $this->transactional(function () use ($bookingId, $memberId): void {
             $booking = $this->booking($bookingId);
             Violations::throwIfAny([
-                $booking->member->id !== $memberId ? new Violation('booking.not_owner', 'Only the member who booked can cancel.') : null,
-                $booking->isCancelled() ? new Violation('booking.already_cancelled', 'Booking is already cancelled.') : null,
+                $booking->member->id !== $memberId
+                    ? new Violation('booking.not_owner', 'Only the member who booked can cancel.')
+                    : null,
+                $booking->isCancelled()
+                    ? new Violation('booking.already_cancelled', 'Booking is already cancelled.')
+                    : null,
             ]);
 
             $booking->cancel(refunded: BookingPolicy::isRefundable($booking->slot(), $this->clock->now()));
@@ -112,14 +129,27 @@ final readonly class BookingService
 
             Violations::throwIfAny([
                 null === $room ? new Violation('room.not_found', 'Room does not exist.') : null,
-                $booking->member->id !== $memberId ? new Violation('booking.not_owner', 'Only the member who booked can reschedule.') : null,
+                $booking->member->id !== $memberId
+                    ? new Violation('booking.not_owner', 'Only the member who booked can reschedule.')
+                    : null,
                 $booking->isCancelled() ? new Violation('booking.already_cancelled', 'Booking is cancelled.') : null,
             ]);
             Violations::throwIfAny([
-                !BookingPolicy::isRefundable($booking->slot(), $now) ? new Violation('booking.too_late_to_reschedule', 'Bookings can only be moved until 24 hours before they start.') : null,
+                !BookingPolicy::isRefundable($booking->slot(), $now)
+                    ? new Violation(
+                        'booking.too_late_to_reschedule',
+                        'Bookings can only be moved until 24 hours before they start.',
+                    )
+                    : null,
                 ...BookingPolicy::slotViolations($slot, $now),
-                $this->bookings->hasOverlap($room, $slot, ignoringBookingId: $bookingId) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
-                BookingPolicy::quotaExceeded($booking->company->monthlyMinutes, $this->bookings->usedMinutes($booking->company, $slot->month(), ignoringBookingId: $bookingId), $slot->minutes()),
+                $this->bookings->hasOverlap($room, $slot, ignoringBookingId: $bookingId)
+                    ? new Violation('slot.unavailable', 'Room is already booked for this slot.')
+                    : null,
+                BookingPolicy::quotaExceeded(
+                    $booking->company->monthlyMinutes,
+                    $this->bookings->usedMinutes($booking->company, $slot->month(), ignoringBookingId: $bookingId),
+                    $slot->minutes(),
+                ),
             ]);
 
             $booking->moveTo($room, $slot);
@@ -143,7 +173,9 @@ final readonly class BookingService
     private function bookOne(string $bookingId, string $roomId, string $memberId, Slot $slot): void
     {
         Violations::throwIfAny([
-            null !== $this->entityManager->find(Booking::class, $bookingId) ? new Violation('booking.already_exists', 'Booking already exists.') : null,
+            null !== $this->entityManager->find(Booking::class, $bookingId)
+                ? new Violation('booking.already_exists', 'Booking already exists.')
+                : null,
         ]);
         $member = $this->entityManager->find(Member::class, $memberId);
         $room = $this->entityManager->find(Room::class, $roomId);
@@ -158,8 +190,14 @@ final readonly class BookingService
 
         Violations::throwIfAny([
             ...BookingPolicy::slotViolations($slot, $this->clock->now()),
-            $this->bookings->hasOverlap($room, $slot) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
-            BookingPolicy::quotaExceeded($company->monthlyMinutes, $this->bookings->usedMinutes($company, $slot->month()), $slot->minutes()),
+            $this->bookings->hasOverlap($room, $slot)
+                ? new Violation('slot.unavailable', 'Room is already booked for this slot.')
+                : null,
+            BookingPolicy::quotaExceeded(
+                $company->monthlyMinutes,
+                $this->bookings->usedMinutes($company, $slot->month()),
+                $slot->minutes(),
+            ),
         ]);
 
         $this->entityManager->persist(new Booking($bookingId, $room, $member, $company, $slot));
@@ -209,10 +247,12 @@ final readonly class BookingService
     private function transactional(callable $work): void
     {
         try {
-            $this->entityManager->getConnection()->transactional(function () use ($work): void {
-                $work();
-                $this->entityManager->flush();
-            });
+            $this->entityManager
+                ->getConnection()
+                ->transactional(function () use ($work): void {
+                    $work();
+                    $this->entityManager->flush();
+                });
         } finally {
             $this->entityManager->clear();
         }

@@ -8,10 +8,10 @@ use App\Faculty\Event\StudentUnsubscribedFromCourse;
 use App\Faculty\State\CourseState;
 use App\Faculty\State\StudentState;
 use App\Faculty\Support\FacultyIds;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\StatefulMessageHandling\Violation;
-use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final readonly class UnsubscribeStudentFromCourseCommand
 {
@@ -26,11 +26,12 @@ final readonly class UnsubscribeStudentFromCourseCommand
     public function check(CourseState $course, StudentState $student): array
     {
         return array_values(array_filter([
-            !$course->exists()
-                ? new Violation('course.not_found', 'Course does not exist.')
-                : null,
+            !$course->exists() ? new Violation('course.not_found', 'Course does not exist.') : null,
             !$student->isEnrolled()
-                ? new Violation('student.not_enrolled', 'Student must be enrolled in the faculty before unsubscribing from a course.')
+                ? new Violation(
+                    'student.not_enrolled',
+                    'Student must be enrolled in the faculty before unsubscribing from a course.',
+                )
                 : null,
             !$student->isSubscribedTo($this->courseId)
                 ? new Violation('student.not_subscribed', 'Student is not subscribed to this course.')

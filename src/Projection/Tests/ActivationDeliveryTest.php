@@ -27,24 +27,21 @@ final class ActivationDeliveryTest extends ProjectionTestCase
         $activator->signalWorkAvailable();
         $activator->activateWorker('projection-1', 42, 'worker-1');
 
-        self::assertCount(2, $mediator->messages);
-        self::assertInstanceOf(WakeProjectionCoordinator::class, $mediator->messages[0]);
-        self::assertStringStartsWith('test-projection-', $mediator->messages[0]->workerId);
+        static::assertCount(2, $mediator->messages);
+        static::assertInstanceOf(WakeProjectionCoordinator::class, $mediator->messages[0]);
+        static::assertStringStartsWith('test-projection-', $mediator->messages[0]->workerId);
 
-        self::assertEquals(
-            new RunProjectionSegment('projection-1', 42, 'worker-1'),
-            $mediator->messages[1],
-        );
+        static::assertEquals(new RunProjectionSegment('projection-1', 42, 'worker-1'), $mediator->messages[1]);
     }
 
     public function test_a_delivered_segment_message_catches_up_and_acknowledges_its_claim(): void
     {
         $projection = new MessageHandlingTrackingProjection();
-        $container = $this->projectionUltraLight()
+        $container = $this
+            ->projectionUltraLight()
             ->withService($projection, MessageHandlingTrackingProjection::class)
             ->withAlias('test.tracking_projection', MessageHandlingTrackingProjection::class)
-            ->boot()
-        ;
+            ->boot();
         $runtime = $container->projectionCatalog()->runtime('message_handling_tracking_projection');
         $eventStore = $container->eventStore();
         $activity = $container->projectionActivity();
@@ -61,12 +58,12 @@ final class ActivationDeliveryTest extends ProjectionTestCase
         $eventStore->append([$event]);
 
         $runner->ensureInitialized($runtime);
-        self::assertNotNull($runner->claimSegment($runtime->projectionId(), 0, 'worker-1'));
+        static::assertNotNull($runner->claimSegment($runtime->projectionId(), 0, 'worker-1'));
 
         $handler->handleRunProjectionSegment(new RunProjectionSegment($runtime->projectionId(), 0, 'worker-1'));
 
-        self::assertSame(['course-1' => 'Intro to Projections'], $projection->names);
-        self::assertSame([], $activity->pendingInSegment($runtime->projectionId(), 0, 255));
+        static::assertSame(['course-1' => 'Intro to Projections'], $projection->names);
+        static::assertSame([], $activity->pendingInSegment($runtime->projectionId(), 0, 255));
     }
 
     private static function messageEvent(string $courseId, string $name): Event

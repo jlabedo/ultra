@@ -1,0 +1,58 @@
+#:schema https://mago.carthage.software/1.52.0/schema.json
+# Welcome to Mago!
+# For full documentation, see https://mago.carthage.software/1.52.0/en/tools/overview/
+version = "1"
+php-version = "8.5.0"
+
+[source]
+workspace = "."
+paths = ["src", "tests", "examples/*/src/**/*.php", "examples/*/tests/**/*.php"]
+includes = ["vendor", "tools/vendor/phpunit"]
+excludes = []
+
+[source.glob]
+literal-separator = true
+
+[formatter]
+print-width = 120
+tab-width = 4
+use-tabs = false
+
+[linter]
+excludes = ["src/*/Tests/**", "tests/**", "examples/*/tests/**"]
+integrations = ["phpunit", "symfony"]
+
+[linter.rules]
+ambiguous-function-call = { enabled = false }
+cyclomatic-complexity = { enabled = false }
+excessive-parameter-list = { enabled = false }
+literal-named-argument = { enabled = false }
+halstead = { enabled = false }
+kan-defect = { enabled = false }
+no-boolean-flag-parameter = { enabled = false }
+no-else-clause = { enabled = false }
+no-isset = { enabled = false }
+too-many-methods = { enabled = false }
+
+[analyzer]
+# Keep test scenarios, fixtures and integration applications outside type analysis during adoption.
+excludes = ["src/*/Tests/**", "tests/**", "examples/**"]
+# Values remain mixed at validation and dynamic dispatch boundaries until they are checked or consumed.
+ignore = ["mixed-assignment"]
+plugins = ["psr-container"]
+find-unused-definitions = false
+find-unused-expressions = false
+analyze-dead-code = false
+memoize-properties = true
+allow-possibly-undefined-array-keys = true
+check-throws = false
+unchecked-exceptions = ["Error", "LogicException"]
+unchecked-exception-classes = []
+check-missing-override = false
+find-unused-parameters = false
+strict-list-index-checks = false
+strict-array-index-existence = false
+allow-array-truthy-operand = false
+no-boolean-literal-comparison = false
+check-missing-type-hints = false
+register-super-globals = true

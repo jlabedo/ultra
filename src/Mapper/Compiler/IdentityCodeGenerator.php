@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -9,7 +11,10 @@ use Ultra\Mapper\Path;
 
 readonly class IdentityCodeGenerator implements CodeGenerator
 {
-    public function __construct(private Type $type, private bool $typeCheck) {}
+    public function __construct(
+        private Type $type,
+        private bool $typeCheck,
+    ) {}
 
     public function generateNormalization(string $objectVar): string
     {
@@ -20,21 +25,14 @@ readonly class IdentityCodeGenerator implements CodeGenerator
     {
         if ($this->typeCheck && $this->type instanceof BuiltinType) {
             $typeName = $this->type->getTypeIdentifier()->value;
-            $typeCheck = '';
-            $expected = '';
-            if ('int' === $typeName) {
-                $typeCheck = "is_int({$dataVar})";
-                $expected = 'int';
-            } elseif ('string' === $typeName) {
-                $typeCheck = "is_string({$dataVar})";
-                $expected = 'string';
-            } elseif ('float' === $typeName) {
-                $typeCheck = "is_float({$dataVar})";
-                $expected = 'float';
-            } elseif ('bool' === $typeName) {
-                $typeCheck = "is_bool({$dataVar})";
-                $expected = 'bool';
-            }
+            $typeCheck = match ($typeName) {
+                'int' => "is_int({$dataVar})",
+                'string' => "is_string({$dataVar})",
+                'float' => "is_float({$dataVar})",
+                'bool' => "is_bool({$dataVar})",
+                default => '',
+            };
+            $expected = $typeName;
             $denormalizationException = DenormalizationException::class;
             if ($typeCheck) {
                 return <<<PHP

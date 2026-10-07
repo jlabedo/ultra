@@ -10,7 +10,10 @@ final class QueryGuardScopeDefinition
     public ?array $properties = null;
 
     /** @param class-string $stateClass */
-    public function __construct(public readonly string $stateClass, public readonly string $scopeBy) {}
+    public function __construct(
+        public readonly string $stateClass,
+        public readonly string $scopeBy,
+    ) {}
 
     public function whenPropertiesChange(string ...$properties): self
     {

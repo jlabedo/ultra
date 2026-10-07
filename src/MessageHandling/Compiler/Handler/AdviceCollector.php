@@ -12,14 +12,15 @@ final readonly class AdviceCollector
     /**
      * @param list<AdviceDefinition> $adviceDefinitions
      */
-    public function __construct(private array $adviceDefinitions) {}
+    public function __construct(
+        private array $adviceDefinitions,
+    ) {}
 
     /**
      * @return list<AdviceDescriptor>
      */
-    public function collect(
-        HandlerMatchContext $context,
-    ): array {
+    public function collect(HandlerMatchContext $context): array
+    {
         $advices = [];
 
         foreach ($this->adviceDefinitions as $adviceDefinition) {
@@ -36,7 +37,8 @@ final readonly class AdviceCollector
                 continue;
             }
 
-            $canProvide = AdviceType::Around === $adviceDefinition->type || AdviceType::Before === $adviceDefinition->type;
+            $canProvide =
+                AdviceType::Around === $adviceDefinition->type || AdviceType::Before === $adviceDefinition->type;
             if ([] !== $result->provides && !$canProvide) {
                 throw new \LogicException(sprintf(
                     'Advice "%s::%s" (#[%s]) returned a MatchResult with "provides" set, but only #[Around] and #[Before] advices may provide dep-param slots.',

@@ -7,10 +7,10 @@ namespace App\Faculty\Write;
 use App\Faculty\Event\CourseCapacityChanged;
 use App\Faculty\State\CourseState;
 use App\Faculty\Support\FacultyIds;
+use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\StatefulMessageHandling\Violation;
-use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final readonly class ChangeCourseCapacityCommand
 {
@@ -25,14 +25,15 @@ final readonly class ChangeCourseCapacityCommand
     public function check(CourseState $course): array
     {
         return array_values(array_filter([
-            !$course->exists()
-                ? new Violation('course.not_found', 'Course does not exist.')
-                : null,
+            !$course->exists() ? new Violation('course.not_found', 'Course does not exist.') : null,
             $this->capacity <= 0
                 ? new Violation('course.capacity.invalid', 'Course capacity must be greater than zero.')
                 : null,
             $this->capacity < $course->subscribedStudents()
-                ? new Violation('course.capacity.too_small', 'Course capacity cannot be less than the current number of subscribed students.')
+                ? new Violation(
+                    'course.capacity.too_small',
+                    'Course capacity cannot be less than the current number of subscribed students.',
+                )
                 : null,
         ]));
     }

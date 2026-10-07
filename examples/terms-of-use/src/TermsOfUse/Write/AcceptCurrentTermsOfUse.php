@@ -23,10 +23,8 @@ final readonly class AcceptCurrentTermsOfUse
      */
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(
-        CurrentTermsOfUseState $terms,
-        UserTermsOfUseAcceptanceState $user,
-    ): array {
+    public function decide(CurrentTermsOfUseState $terms, UserTermsOfUseAcceptanceState $user): array
+    {
         $currentTermsOfUse = $terms->currentTermsOfUse();
         if (null === $currentTermsOfUse) {
             throw new \LogicException('Current terms of use have not been defined.');
@@ -36,11 +34,6 @@ final readonly class AcceptCurrentTermsOfUse
             return [];
         }
 
-        return [new TermsOfUseAccepted(
-            $this->termsId,
-            $this->userId,
-            $currentTermsOfUse->id,
-            $currentTermsOfUse->url,
-        )];
+        return [new TermsOfUseAccepted($this->termsId, $this->userId, $currentTermsOfUse->id, $currentTermsOfUse->url)];
     }
 }

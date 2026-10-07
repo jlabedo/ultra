@@ -22,7 +22,9 @@ use Ultra\Coordination\Tracking\PendingKey;
  */
 final readonly class ProjectionActivity
 {
-    public function __construct(private DirtyKeyTracker $tracker) {}
+    public function __construct(
+        private DirtyKeyTracker $tracker,
+    ) {}
 
     public function bump(string $projectionId, int $bucket): void
     {
@@ -39,12 +41,18 @@ final readonly class ProjectionActivity
     {
         $affected = $this->tracker->pending(PHP_INT_MAX);
 
-        usort(
-            $affected,
-            static fn (PendingKey $a, PendingKey $b): int => ($a->channel <=> $b->channel)
-                ?: ($b->counter <=> $a->counter)
-                ?: ((int) $a->key <=> (int) $b->key),
-        );
+        usort($affected, static function (PendingKey $a, PendingKey $b): int {
+            $projectionOrder = $a->channel <=> $b->channel;
+            if (0 !== $projectionOrder) {
+                return $projectionOrder;
+            }
+            $counterOrder = $b->counter <=> $a->counter;
+            if (0 !== $counterOrder) {
+                return $counterOrder;
+            }
+
+            return (int) $a->key <=> (int) $b->key;
+        });
 
         return array_slice($affected, 0, $limit);
     }
@@ -66,10 +74,14 @@ final readonly class ProjectionActivity
             $pending[] = $pendingKey;
         }
 
-        usort(
-            $pending,
-            static fn (PendingKey $a, PendingKey $b): int => ($b->counter <=> $a->counter) ?: ((int) $a->key <=> (int) $b->key),
-        );
+        usort($pending, static function (PendingKey $a, PendingKey $b): int {
+            $counterOrder = $b->counter <=> $a->counter;
+            if (0 !== $counterOrder) {
+                return $counterOrder;
+            }
+
+            return (int) $a->key <=> (int) $b->key;
+        });
 
         return $pending;
     }

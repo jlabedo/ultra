@@ -28,7 +28,10 @@ final readonly class RunCommand
 
     public function __invoke(InputInterface $input, OutputInterface $output): int
     {
-        $output->writeln(sprintf('ultra/message-handling-compiler : %s', class_exists(MessageRouterCompilerPass::class) ? 'Yes' : 'No'));
+        $output->writeln(sprintf(
+            'ultra/message-handling-compiler : %s',
+            class_exists(MessageRouterCompilerPass::class) ? 'Yes' : 'No',
+        ));
         $output->writeln('');
 
         $eventBus = $this->runEventBus($input, $output);

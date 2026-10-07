@@ -20,7 +20,10 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         private array $columnTypes = [],
         private ?MappedKey $configuredScope = null,
     ) {
-        if ([] === $configuredKeyColumns || count($configuredKeyColumns) !== count(array_unique($configuredKeyColumns))) {
+        if (
+            [] === $configuredKeyColumns
+            || count($configuredKeyColumns) !== count(array_unique($configuredKeyColumns))
+        ) {
             throw new \InvalidArgumentException('Mapped row-set key columns must be non-empty and unique.');
         }
         foreach ($configuredKeyColumns as $column) {
@@ -53,12 +56,15 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
             ? ['*']
             : array_map($this->connection->quoteSingleIdentifier(...), array_values(array_unique($columns)));
 
-        $row = $this->connection->fetchAssociative(sprintf(
-            'SELECT %s FROM %s WHERE %s',
-            implode(', ', $quotedColumns),
-            $this->connection->quoteSingleIdentifier($this->tableName),
-            implode(' AND ', $this->keyWhereClauses()),
-        ), $this->encodedKeyValues($key));
+        $row = $this->connection->fetchAssociative(
+            sprintf(
+                'SELECT %s FROM %s WHERE %s',
+                implode(', ', $quotedColumns),
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                implode(' AND ', $this->keyWhereClauses()),
+            ),
+            $this->encodedKeyValues($key),
+        );
 
         return false === $row ? false : $this->decodeRow($row);
     }
@@ -66,17 +72,18 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
     public function rows(array $columns = []): array
     {
         $selected = [] === $columns ? ['*'] : array_values(array_unique([...$this->keyColumns(), ...$columns]));
-        $quoted = '*' === $selected[0]
-            ? ['*']
-            : array_map($this->connection->quoteSingleIdentifier(...), $selected);
+        $quoted = '*' === $selected[0] ? ['*'] : array_map($this->connection->quoteSingleIdentifier(...), $selected);
 
-        $rows = $this->connection->fetchAllAssociative(sprintf(
-            'SELECT %s FROM %s%s ORDER BY %s',
-            implode(', ', $quoted),
-            $this->connection->quoteSingleIdentifier($this->tableName),
-            $this->scopeWhereSql(),
-            implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $this->keyColumns())),
-        ), $this->scopeParams());
+        $rows = $this->connection->fetchAllAssociative(
+            sprintf(
+                'SELECT %s FROM %s%s ORDER BY %s',
+                implode(', ', $quoted),
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                $this->scopeWhereSql(),
+                implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $this->keyColumns())),
+            ),
+            $this->scopeParams(),
+        );
 
         $mapped = [];
         foreach ($rows as $row) {
@@ -85,7 +92,11 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
             foreach ($this->keyColumns() as $column) {
                 $value = $row[$column] ?? null;
                 if (!is_int($value) && !is_string($value)) {
-                    throw new \LogicException(sprintf('Table "%s" returned no scalar key column "%s".', $this->tableName, $column));
+                    throw new \LogicException(sprintf(
+                        'Table "%s" returned no scalar key column "%s".',
+                        $this->tableName,
+                        $column,
+                    ));
                 }
                 $keyValues[$column] = $value;
                 unset($row[$column]);
@@ -108,9 +119,10 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
             $this->assertKey($update->key);
             if ($update->writes()) {
                 $writes[] = $update;
-            } else {
-                $checks[] = $update;
+
+                continue;
             }
+            $checks[] = $update;
         }
 
         $this->lockAbsentKeys($checks, $writes);
@@ -144,25 +156,32 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         $params = $this->scopeParams();
         if (null !== $this->configuredScope) {
             foreach ($this->configuredScope->columns() as $column) {
-                $where[] = sprintf('%s = %s', $this->connection->quoteSingleIdentifier($column), $this->placeholder($column));
+                $where[] = sprintf(
+                    '%s = %s',
+                    $this->connection->quoteSingleIdentifier($column),
+                    $this->placeholder($column),
+                );
             }
         }
 
         $retained = [];
         foreach ($keys as $key) {
             $this->assertKey($key);
-            $retained[] = '('.implode(' AND ', $this->keyWhereClauses()).')';
+            $retained[] = '(' . implode(' AND ', $this->keyWhereClauses()) . ')';
             array_push($params, ...$this->encodedKeyValues($key));
         }
         if ([] !== $retained) {
-            $where[] = 'NOT ('.implode(' OR ', $retained).')';
+            $where[] = 'NOT (' . implode(' OR ', $retained) . ')';
         }
 
-        $this->connection->executeStatement(sprintf(
-            'DELETE FROM %s%s',
-            $this->connection->quoteSingleIdentifier($this->tableName),
-            [] === $where ? '' : ' WHERE '.implode(' AND ', $where),
-        ), $params);
+        $this->connection->executeStatement(
+            sprintf(
+                'DELETE FROM %s%s',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                [] === $where ? '' : ' WHERE ' . implode(' AND ', $where),
+            ),
+            $params,
+        );
     }
 
     private function flushOne(RowUpdatePlan $update): void
@@ -177,7 +196,10 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         };
     }
 
-    /** @param list<RowUpdatePlan> $updates @return list<list<RowUpdatePlan>> */
+    /**
+     * @param list<RowUpdatePlan> $updates
+     * @return list<list<RowUpdatePlan>>
+     */
     private function groupConsecutive(array $updates): array
     {
         $groups = [];
@@ -185,10 +207,16 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         $current = [];
         foreach ($updates as $update) {
             $key = match ($update->mode) {
-                RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_UPSERT => $update->mode.':'.implode(',', array_keys($update->setColumns)),
-                RowUpdatePlan::MODE_DELETE => [] === $update->expectedColumns ? 'delete' : 'delete:'.$update->key->fingerprint(),
-                RowUpdatePlan::MODE_REPLACE => [] === $update->expectedColumns ? 'replace:'.implode(',', array_keys($update->setColumns)) : 'replace:'.$update->key->fingerprint(),
-                default => $update->mode.':'.$update->key->fingerprint(),
+                RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_UPSERT => $update->mode
+                    . ':'
+                    . implode(',', array_keys($update->setColumns)),
+                RowUpdatePlan::MODE_DELETE => [] === $update->expectedColumns
+                    ? 'delete'
+                    : 'delete:' . $update->key->fingerprint(),
+                RowUpdatePlan::MODE_REPLACE => [] === $update->expectedColumns
+                    ? 'replace:' . implode(',', array_keys($update->setColumns))
+                    : 'replace:' . $update->key->fingerprint(),
+                default => $update->mode . ':' . $update->key->fingerprint(),
             };
             if ($key !== $currentKey) {
                 if ([] !== $current) {
@@ -212,16 +240,24 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         $branches = [];
         $params = [];
         foreach ($updates as $update) {
-            $branches[] = '('.implode(' AND ', $this->keyWhereClauses()).')';
+            $branches[] = '(' . implode(' AND ', $this->keyWhereClauses()) . ')';
             array_push($params, ...$this->encodedKeyValues($update->key));
         }
-        $affected = $this->connection->executeStatement(sprintf(
-            'DELETE FROM %s WHERE %s',
-            $this->connection->quoteSingleIdentifier($this->tableName),
-            implode(' OR ', $branches),
-        ), $params);
+        $affected = $this->connection->executeStatement(
+            sprintf(
+                'DELETE FROM %s WHERE %s',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                implode(' OR ', $branches),
+            ),
+            $params,
+        );
         if ($affected !== count($updates)) {
-            throw new ConcurrencyException(sprintf('Batch delete failed for table "%s": expected %d deletions, got %d.', $this->tableName, count($updates), $affected));
+            throw new ConcurrencyException(sprintf(
+                'Batch delete failed for table "%s": expected %d deletions, got %d.',
+                $this->tableName,
+                count($updates),
+                $affected,
+            ));
         }
     }
 
@@ -229,21 +265,28 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
     private function flushBatchInsert(array $updates): void
     {
         [$columns] = $this->insertValues($updates[0]);
-        $rowPlaceholder = '('.implode(', ', array_map($this->placeholder(...), $columns)).')';
+        $rowPlaceholder = '(' . implode(', ', array_map($this->placeholder(...), $columns)) . ')';
         $params = [];
         foreach ($updates as $update) {
             [, $rowParams] = $this->insertValues($update);
             array_push($params, ...$rowParams);
         }
-        $affected = $this->connection->executeStatement(sprintf(
-            'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO NOTHING',
-            $this->connection->quoteSingleIdentifier($this->tableName),
-            implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
-            implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
-            $this->conflictTargetSql(),
-        ), $params);
+        $affected = $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO NOTHING',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
+                implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
+                $this->conflictTargetSql(),
+            ),
+            $params,
+        );
         if ($affected !== count($updates)) {
-            throw new ConcurrencyException(sprintf('Batch insert failed for table "%s": %d rows already existed.', $this->tableName, count($updates) - $affected));
+            throw new ConcurrencyException(sprintf(
+                'Batch insert failed for table "%s": %d rows already existed.',
+                $this->tableName,
+                count($updates) - $affected,
+            ));
         }
     }
 
@@ -258,29 +301,31 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
     private function flushBatchUpsert(array $updates): void
     {
         [$columns] = $this->insertValues($updates[0]);
-        $rowPlaceholder = '('.implode(', ', array_map($this->placeholder(...), $columns)).')';
+        $rowPlaceholder = '(' . implode(', ', array_map($this->placeholder(...), $columns)) . ')';
         $params = [];
         foreach ($updates as $update) {
             [, $rowParams] = $this->insertValues($update);
             array_push($params, ...$rowParams);
         }
-        if ([] === $updates[0]->setColumns) {
-            $action = 'DO NOTHING';
-        } else {
-            $action = 'DO UPDATE SET '.implode(', ', array_map(function (string $column): string {
+        $action = 'DO NOTHING';
+        if ([] !== $updates[0]->setColumns) {
+            $action = 'DO UPDATE SET ' . implode(', ', array_map(function (string $column): string {
                 $quoted = $this->connection->quoteSingleIdentifier($column);
 
                 return sprintf('%1$s = EXCLUDED.%1$s', $quoted);
             }, array_keys($updates[0]->setColumns)));
         }
-        $this->connection->executeStatement(sprintf(
-            'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) %s',
-            $this->connection->quoteSingleIdentifier($this->tableName),
-            implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
-            implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
-            $this->conflictTargetSql(),
-            $action,
-        ), $params);
+        $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) %s',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
+                implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
+                $this->conflictTargetSql(),
+                $action,
+            ),
+            $params,
+        );
     }
 
     /**
@@ -295,15 +340,19 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
     {
         $lockKeys = [];
         foreach ($checks as $check) {
-            if (RowUpdatePlan::EXPECTED_ABSENT === $check->expectedPresence) {
-                $lockKeys[] = $check->key->fingerprint();
+            if (RowUpdatePlan::EXPECTED_ABSENT !== $check->expectedPresence) {
+                continue;
             }
+
+            $lockKeys[] = $check->key->fingerprint();
         }
         $absentChecks = count($lockKeys);
         foreach ($writes as $write) {
-            if (RowUpdatePlan::MODE_INSERT === $write->mode || RowUpdatePlan::MODE_UPSERT === $write->mode) {
-                $lockKeys[] = $write->key->fingerprint();
+            if (!(RowUpdatePlan::MODE_INSERT === $write->mode || RowUpdatePlan::MODE_UPSERT === $write->mode)) {
+                continue;
             }
+
+            $lockKeys[] = $write->key->fingerprint();
         }
 
         if ([] === $lockKeys) {
@@ -315,7 +364,10 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
                 return;
             }
 
-            throw new \LogicException(sprintf('Absent row expectations for table "%s" require an active transaction.', $this->tableName));
+            throw new \LogicException(sprintf(
+                'Absent row expectations for table "%s" require an active transaction.',
+                $this->tableName,
+            ));
         }
 
         $lockKeys = array_values(array_unique($lockKeys));
@@ -323,7 +375,7 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         // jsonb_array_elements_text() yields the keys in array order, so the locks are taken in sorted order.
         $this->connection->executeQuery(
             'SELECT count(pg_advisory_xact_lock(hashtext(?), hashtext(lock_key))) FROM jsonb_array_elements_text(?::jsonb) AS locks(lock_key)',
-            [$this->tableName.':row', json_encode($lockKeys, JSON_THROW_ON_ERROR)],
+            [$this->tableName . ':row', json_encode($lockKeys, JSON_THROW_ON_ERROR)],
         );
     }
 
@@ -335,38 +387,63 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
      */
     private function checkRows(array $checks): void
     {
-        $present = array_values(array_filter($checks, static fn (RowUpdatePlan $check): bool => RowUpdatePlan::EXPECTED_ABSENT !== $check->expectedPresence));
+        $present = array_values(array_filter(
+            $checks,
+            static fn(RowUpdatePlan $check): bool => RowUpdatePlan::EXPECTED_ABSENT !== $check->expectedPresence,
+        ));
         if ([] !== $present) {
             $branches = [];
             $params = [];
             foreach ($present as $check) {
                 [$where, $whereParams] = $this->conditionalWhere($check);
-                $branches[] = '('.implode(' AND ', $where).')';
+                $branches[] = '(' . implode(' AND ', $where) . ')';
                 array_push($params, ...$whereParams);
             }
-            $matched = $this->connection->fetchAllAssociative(sprintf(
-                'SELECT 1 FROM %s WHERE %s FOR SHARE',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(' OR ', $branches),
-            ), $params);
+            $matched = $this->connection->fetchAllAssociative(
+                sprintf(
+                    'SELECT 1 FROM %s WHERE %s FOR SHARE',
+                    $this->connection->quoteSingleIdentifier($this->tableName),
+                    implode(' OR ', $branches),
+                ),
+                $params,
+            );
             if (count($matched) !== count($present)) {
-                throw new ConcurrencyException(sprintf('Row expectation failed for table "%s": %d of %d expected rows changed.', $this->tableName, count($present) - count($matched), count($present)));
+                throw new ConcurrencyException(sprintf(
+                    'Row expectation failed for table "%s": %d of %d expected rows changed.',
+                    $this->tableName,
+                    count($present) - count($matched),
+                    count($present),
+                ));
             }
         }
 
-        $absent = array_values(array_filter($checks, static fn (RowUpdatePlan $check): bool => RowUpdatePlan::EXPECTED_ABSENT === $check->expectedPresence));
+        $absent = array_values(array_filter(
+            $checks,
+            static fn(RowUpdatePlan $check): bool => RowUpdatePlan::EXPECTED_ABSENT === $check->expectedPresence,
+        ));
         if ([] !== $absent) {
             $params = [];
             foreach ($absent as $check) {
                 array_push($params, ...$this->encodedKeyValues($check->key));
             }
-            $existing = (int) $this->connection->fetchOne(sprintf(
-                'SELECT count(*) FROM %s WHERE %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(' OR ', array_fill(0, count($absent), '('.implode(' AND ', $this->keyWhereClauses()).')')),
-            ), $params);
+            $existing = (int) $this->connection->fetchOne(
+                sprintf(
+                    'SELECT count(*) FROM %s WHERE %s',
+                    $this->connection->quoteSingleIdentifier($this->tableName),
+                    implode(' OR ', array_fill(
+                        0,
+                        count($absent),
+                        '(' . implode(' AND ', $this->keyWhereClauses()) . ')',
+                    )),
+                ),
+                $params,
+            );
             if (0 !== $existing) {
-                throw new ConcurrencyException(sprintf('Row expectation failed for table "%s": %d expected absent rows exist.', $this->tableName, $existing));
+                throw new ConcurrencyException(sprintf(
+                    'Row expectation failed for table "%s": %d expected absent rows exist.',
+                    $this->tableName,
+                    $existing,
+                ));
             }
         }
     }
@@ -381,33 +458,45 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
             return;
         }
         if (!$this->connection->isTransactionActive()) {
-            throw new \LogicException(sprintf('Row-set expectations for table "%s" require an active transaction.', $this->tableName));
+            throw new \LogicException(sprintf(
+                'Row-set expectations for table "%s" require an active transaction.',
+                $this->tableName,
+            ));
         }
 
-        $this->connection->executeStatement(
-            'SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))',
-            [$this->tableName, json_encode([$this->keyColumns(), $this->configuredScope?->values], JSON_THROW_ON_ERROR)],
-        );
+        $this->connection->executeStatement('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
+            $this->tableName,
+            json_encode([$this->keyColumns(), $this->configuredScope?->values], JSON_THROW_ON_ERROR),
+        ]);
 
-        $actual = array_map(static fn (MappedRow $row): string => $row->key->fingerprint(), $this->rows());
-        $expected = array_map(static fn (MappedKey $key): string => $key->fingerprint(), $expected);
-        $actual = array_values(array_diff($actual, array_map(static fn (MappedKey $key): string => $key->fingerprint(), $ignored)));
+        $actual = array_map(static fn(MappedRow $row): string => $row->key->fingerprint(), $this->rows());
+        $expected = array_map(static fn(MappedKey $key): string => $key->fingerprint(), $expected);
+        $actual = array_values(array_diff($actual, array_map(
+            static fn(MappedKey $key): string => $key->fingerprint(),
+            $ignored,
+        )));
         sort($actual, SORT_STRING);
         sort($expected, SORT_STRING);
 
         if ($actual !== $expected) {
-            throw new ConcurrencyException(sprintf('Row-set expectation failed for table "%s": row keys changed.', $this->tableName));
+            throw new ConcurrencyException(sprintf(
+                'Row-set expectation failed for table "%s": row keys changed.',
+                $this->tableName,
+            ));
         }
     }
 
     private function flushDelete(RowUpdatePlan $update): void
     {
         [$where, $params] = $this->conditionalWhere($update);
-        $affected = $this->connection->executeStatement(sprintf(
-            'DELETE FROM %s WHERE %s',
-            $this->connection->quoteSingleIdentifier($this->tableName),
-            implode(' AND ', $where),
-        ), $params);
+        $affected = $this->connection->executeStatement(
+            sprintf(
+                'DELETE FROM %s WHERE %s',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                implode(' AND ', $where),
+            ),
+            $params,
+        );
 
         if (1 !== $affected) {
             throw $this->concurrency('Conditional delete failed', $update);
@@ -417,13 +506,16 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
     private function flushInsert(RowUpdatePlan $update): void
     {
         [$columns, $params] = $this->insertValues($update);
-        $affected = $this->connection->executeStatement(sprintf(
-            'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
-            $this->connection->quoteSingleIdentifier($this->tableName),
-            implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
-            implode(', ', array_map($this->placeholder(...), $columns)),
-            $this->conflictTargetSql(),
-        ), $params);
+        $affected = $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
+                implode(', ', array_map($this->placeholder(...), $columns)),
+                $this->conflictTargetSql(),
+            ),
+            $params,
+        );
 
         if (1 !== $affected) {
             throw $this->concurrency('Insert failed because the row already exists', $update);
@@ -442,25 +534,27 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         $quotedColumns = implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns));
         $placeholders = implode(', ', array_map($this->placeholder(...), $columns));
 
-        if ([] === $update->setColumns) {
-            $action = 'DO NOTHING';
-        } else {
+        $action = 'DO NOTHING';
+        if ([] !== $update->setColumns) {
             $assignments = array_map(function (string $column): string {
                 $quoted = $this->connection->quoteSingleIdentifier($column);
 
                 return sprintf('%1$s = EXCLUDED.%1$s', $quoted);
             }, array_keys($update->setColumns));
-            $action = 'DO UPDATE SET '.implode(', ', $assignments);
+            $action = 'DO UPDATE SET ' . implode(', ', $assignments);
         }
 
-        $this->connection->executeStatement(sprintf(
-            'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) %s',
-            $this->connection->quoteSingleIdentifier($this->tableName),
-            $quotedColumns,
-            $placeholders,
-            $this->conflictTargetSql(),
-            $action,
-        ), $params);
+        $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) %s',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                $quotedColumns,
+                $placeholders,
+                $this->conflictTargetSql(),
+                $action,
+            ),
+            $params,
+        );
     }
 
     private function flushUpdate(RowUpdatePlan $update): void
@@ -474,12 +568,15 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         [$where, $whereParams] = $this->conditionalWhere($update);
         array_push($params, ...$whereParams);
 
-        $affected = $this->connection->executeStatement(sprintf(
-            'UPDATE %s SET %s WHERE %s',
-            $this->connection->quoteSingleIdentifier($this->tableName),
-            implode(', ', $set),
-            implode(' AND ', $where),
-        ), $params);
+        $affected = $this->connection->executeStatement(
+            sprintf(
+                'UPDATE %s SET %s WHERE %s',
+                $this->connection->quoteSingleIdentifier($this->tableName),
+                implode(', ', $set),
+                implode(' AND ', $where),
+            ),
+            $params,
+        );
 
         if (1 !== $affected) {
             throw $this->concurrency('Conditional update failed', $update);
@@ -492,7 +589,11 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         $where = $this->keyWhereClauses();
         $params = $this->encodedKeyValues($update->key);
         foreach ($update->expectedColumns as $column => $value) {
-            $where[] = sprintf('%s IS NOT DISTINCT FROM %s', $this->connection->quoteSingleIdentifier($column), $this->placeholder($column));
+            $where[] = sprintf(
+                '%s IS NOT DISTINCT FROM %s',
+                $this->connection->quoteSingleIdentifier($column),
+                $this->placeholder($column),
+            );
             $params[] = $this->encodeColumnValue($column, $value);
         }
 
@@ -515,16 +616,20 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
     /** @return list<string> */
     private function keyWhereClauses(): array
     {
-        return array_map(
-            fn (string $column): string => sprintf('%s = %s', $this->connection->quoteSingleIdentifier($column), $this->placeholder($column)),
-            $this->keyColumns(),
-        );
+        return array_map(fn(string $column): string => sprintf(
+            '%s = %s',
+            $this->connection->quoteSingleIdentifier($column),
+            $this->placeholder($column),
+        ), $this->keyColumns());
     }
 
     /** @return list<mixed> */
     private function encodedKeyValues(MappedKey $key): array
     {
-        return array_map(fn (string $column): mixed => $this->encodeColumnValue($column, $key->value($column)), $this->keyColumns());
+        return array_map(fn(string $column): mixed => $this->encodeColumnValue(
+            $column,
+            $key->value($column),
+        ), $this->keyColumns());
     }
 
     private function scopeWhereSql(): string
@@ -533,10 +638,12 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
             return '';
         }
 
-        return ' WHERE '.implode(' AND ', array_map(
-            fn (string $column): string => sprintf('%s = %s', $this->connection->quoteSingleIdentifier($column), $this->placeholder($column)),
-            $this->configuredScope->columns(),
-        ));
+        return ' WHERE '
+        . implode(' AND ', array_map(fn(string $column): string => sprintf(
+            '%s = %s',
+            $this->connection->quoteSingleIdentifier($column),
+            $this->placeholder($column),
+        ), $this->configuredScope->columns()));
     }
 
     /** @return list<mixed> */
@@ -546,10 +653,12 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
             return [];
         }
 
-        return array_map(
-            fn (string $column): mixed => $this->encodeColumnValue($column, $this->configuredScope->value($column)),
-            $this->configuredScope->columns(),
-        );
+        $scope = $this->configuredScope;
+
+        return array_map(fn(string $column): mixed => $this->encodeColumnValue(
+            $column,
+            $scope->value($column),
+        ), $scope->columns());
     }
 
     private function conflictTargetSql(): string
@@ -572,16 +681,25 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         }
 
         // PDO binds false as an empty string, which Postgres rejects for boolean columns.
-        return is_bool($value) ? ($value ? 'true' : 'false') : $value;
+        return match ($value) {
+            true => 'true',
+            false => 'false',
+            default => $value,
+        };
     }
 
-    /** @param array<string, mixed> $row @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
     private function decodeRow(array $row): array
     {
         foreach ($this->columnTypes as $column => $type) {
-            if (array_key_exists($column, $row)) {
-                $row[$column] = $type->decode($row[$column]);
+            if (!array_key_exists($column, $row)) {
+                continue;
             }
+
+            $row[$column] = $type->decode($row[$column]);
         }
 
         return $row;
@@ -597,6 +715,11 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
     private function concurrency(string $message, RowUpdatePlan $update): ConcurrencyException
     {
-        return new ConcurrencyException(sprintf('%s for table "%s" and key %s.', $message, $this->tableName, $update->key));
+        return new ConcurrencyException(sprintf(
+            '%s for table "%s" and key %s.',
+            $message,
+            $this->tableName,
+            $update->key,
+        ));
     }
 }

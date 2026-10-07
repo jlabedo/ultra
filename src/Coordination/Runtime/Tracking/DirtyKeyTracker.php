@@ -55,7 +55,7 @@ interface DirtyKeyTracker
      * Missing keys, already drained keys and non-positive observations do not
      * contribute to the count.
      *
-     * @param array<string, int> $seen
+     * @param array<array-key, int> $seen Numeric string keys are stored as integers by PHP.
      */
     public function drainSeen(string $channel, array $seen): int;
 }

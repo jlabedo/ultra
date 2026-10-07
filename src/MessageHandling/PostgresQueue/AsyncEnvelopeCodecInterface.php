@@ -12,7 +12,7 @@ interface AsyncEnvelopeCodecInterface
     public function encode(AsyncEnvelope $envelope): EncodedAsyncEnvelope;
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param array<array-key, mixed> $attributes
      */
     public function decode(string $body, AsyncHeaders $headers, array $attributes): AsyncEnvelope;
 }

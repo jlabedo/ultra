@@ -18,21 +18,29 @@ final class PageLifetimeEventStore implements EventStore
     /** @var list<\WeakReference<Event>> */
     private array $previousPage = [];
 
-    public function __construct(private readonly EventStore $inner) {}
+    public function __construct(
+        private readonly EventStore $inner,
+    ) {}
 
-    public function load(StreamQuery $query, ?Checkpoint $from = null, ?Checkpoint $to = null, int $batchSize = 1000): LoadResult
-    {
+    public function load(
+        StreamQuery $query,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
+        int $batchSize = 1000,
+    ): LoadResult {
         $retainedEvents = 0;
         foreach ($this->previousPage as $reference) {
-            if (null !== $reference->get()) {
-                ++$retainedEvents;
+            if (null === $reference->get()) {
+                continue;
             }
+
+            ++$retainedEvents;
         }
         $this->maxRetainedEvents = max($this->maxRetainedEvents, $retainedEvents);
 
         $result = $this->inner->load($query, $from, $to, $batchSize);
         // Memory storage owns its event objects; clones let us observe the reader's page lifetime independently.
-        $events = array_map(static fn (Event $event): Event => clone $event, $result->events);
+        $events = array_map(static fn(Event $event): Event => clone $event, $result->events);
         $this->previousPage = array_map(\WeakReference::create(...), $events);
 
         return new LoadResult($events, $result->checkpoint, $query, $result->hasMore);

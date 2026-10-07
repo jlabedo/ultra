@@ -18,9 +18,8 @@ final readonly class WhenStudentSubscribedThenSendNotification
     #[EventHandler]
     public function react(StudentSubscribedToCourse $event): void
     {
-        $this->notificationService->send(new Notification(
-            $event->studentId,
-            sprintf('You have subscribed to course %s.', $event->courseId),
-        ));
+        $this->notificationService->send(
+            new Notification($event->studentId, sprintf('You have subscribed to course %s.', $event->courseId)),
+        );
     }
 }

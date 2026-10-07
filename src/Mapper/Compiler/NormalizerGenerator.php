@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -11,13 +13,18 @@ use Ultra\Mapper\Path;
 class NormalizerGenerator
 {
     /**
+     * @param class-string $originClassname
      * @param array<class-string, true> $availableRuntimeNormalizer
      */
-    public static function for(string $originClassname, string $normalizerClass, array $availableRuntimeNormalizer): GeneratedNormalizerFile
-    {
-        $codeGen = new CodeGeneratorBuilderRegistry($availableRuntimeNormalizer)
-            ->getCodeGenerator(Type::object($originClassname), CodeGeneratorContext::new(inline: true, typeCheck: true))
-        ;
+    public static function for(
+        string $originClassname,
+        string $normalizerClass,
+        array $availableRuntimeNormalizer,
+    ): GeneratedNormalizerFile {
+        $codeGen = new CodeGeneratorBuilderRegistry($availableRuntimeNormalizer)->getCodeGenerator(
+            Type::object($originClassname),
+            CodeGeneratorContext::new(inline: true, typeCheck: true),
+        );
 
         return self::generate($codeGen, $normalizerClass);
     }
@@ -30,14 +37,14 @@ class NormalizerGenerator
     private static function generate(CodeGenerator $codeGen, string $normalizerClass): GeneratedNormalizerFile
     {
         $toScalarBody = self::encloseInReturnStatement($codeGen->generateNormalization('$value'));
-        $fromScalarBody = $codeGen->generateDenormalization('$value', $bodyBuilder = new MethodBodyBuilder(), Path::new());
+        $fromScalarBody = $codeGen->generateDenormalization(
+            '$value',
+            $bodyBuilder = new MethodBodyBuilder(),
+            Path::new(),
+        );
         $bodyBuilder->setReturn($fromScalarBody);
 
-        return new GeneratedNormalizerFile(
-            $normalizerClass,
-            $toScalarBody,
-            $bodyBuilder->getCode(),
-        );
+        return new GeneratedNormalizerFile($normalizerClass, $toScalarBody, $bodyBuilder->getCode());
     }
 
     private static function encloseInReturnStatement(string $code): string

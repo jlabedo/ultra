@@ -7,8 +7,8 @@ namespace Ultra\MessageHandling_PostgresQueue;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Ultra\MessageHandling\Async\AsyncDelivery;
-use Ultra\MessageHandling\Async\AsyncEnvelope;
 use Ultra\MessageHandling\Async\AsyncEnqueueOptions;
+use Ultra\MessageHandling\Async\AsyncEnvelope;
 use Ultra\MessageHandling\Async\AsyncHeaders;
 use Ultra\MessageHandling\Async\AsyncMessageId;
 use Ultra\MessageHandling\Async\AsyncMessageReceiver;
@@ -30,7 +30,7 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         private ClockInterface $clock = new SystemClock(),
         ?string $workerId = null,
     ) {
-        $this->workerId = $workerId ?? gethostname().'-'.bin2hex(random_bytes(8));
+        $this->workerId = $workerId ?? (string) gethostname() . '-' . bin2hex(random_bytes(8));
     }
 
     public function enqueue(AsyncEnvelope $envelope, ?AsyncEnqueueOptions $options = null): AsyncMessageId
@@ -39,7 +39,8 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         $messageId = $options->messageId ?? AsyncMessageId::generate();
         $encoded = $this->codec->encode($envelope);
         $now = $this->clock->now();
-        $availableAt = $options->availableAt ?? ($options->delay instanceof Duration ? $now->add($options->delay) : $now);
+        $availableAt =
+            $options->availableAt ?? ($options->delay instanceof Duration ? $now->add($options->delay) : $now);
 
         if ($options->replace && null !== $options->key) {
             $this->connection->executeStatement(
@@ -50,14 +51,11 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         }
 
         $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (
+            sprintf('INSERT INTO %s (
                     id, queue_name, body, headers, attributes, schedule_key, available_at, created_at, updated_at
                 ) VALUES (
                     ?, ?, ?, CAST(? AS JSONB), CAST(? AS JSONB), ?, CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ)
-                )',
-                $this->messagesTable(),
-            ),
+                )', $this->messagesTable()),
             [
                 $messageId->value,
                 $this->queueName,
@@ -91,9 +89,10 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         $leaseId = bin2hex(random_bytes(16));
         $leasedUntil = $now->add($leaseDuration);
 
-        $row = $this->connection->executeQuery(
-            sprintf(
-                'WITH next_message AS (
+        $row = $this->connection
+            ->executeQuery(
+                sprintf(
+                    'WITH next_message AS (
                     SELECT id
                     FROM %s
                     WHERE queue_name = ?
@@ -112,28 +111,29 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
                 FROM next_message
                 WHERE q.id = next_message.id
                 RETURNING q.id, q.body, q.headers, q.attributes, q.attempts, q.leased_until',
-                $this->messagesTable(),
-                $this->messagesTable(),
-            ),
-            [
-                $this->queueName,
-                $now,
-                $now,
-                $leaseId,
-                $leasedUntil,
-                $this->workerId,
-                $now,
-            ],
-            [
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-            ],
-        )->fetchAssociative();
+                    $this->messagesTable(),
+                    $this->messagesTable(),
+                ),
+                [
+                    $this->queueName,
+                    $now,
+                    $now,
+                    $leaseId,
+                    $leasedUntil,
+                    $this->workerId,
+                    $now,
+                ],
+                [
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                    ParameterType::STRING,
+                ],
+            )
+            ->fetchAssociative();
 
         if (false === $row) {
             return null;
@@ -154,10 +154,7 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
     public function acknowledge(AsyncDelivery $delivery): void
     {
         $this->connection->executeStatement(
-            sprintf(
-                'DELETE FROM %s WHERE id = ? AND queue_name = ? AND lease_id = ?',
-                $this->messagesTable(),
-            ),
+            sprintf('DELETE FROM %s WHERE id = ? AND queue_name = ? AND lease_id = ?', $this->messagesTable()),
             [$delivery->messageId->value, $this->queueName, $delivery->leaseId],
             [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
         );
@@ -169,18 +166,21 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         $availableAt = $delay instanceof Duration ? $now->add($delay) : $now;
 
         $this->connection->executeStatement(
-            sprintf(
-                'UPDATE %s
+            sprintf('UPDATE %s
                  SET lease_id = NULL,
                      leased_until = NULL,
                      leased_by = NULL,
                      available_at = CAST(? AS TIMESTAMPTZ),
                      updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE id = ? AND queue_name = ? AND lease_id = ?',
-                $this->messagesTable(),
-            ),
+                 WHERE id = ? AND queue_name = ? AND lease_id = ?', $this->messagesTable()),
             [$availableAt, $now, $delivery->messageId->value, $this->queueName, $delivery->leaseId],
-            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
+            [
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+            ],
         );
     }
 
@@ -189,25 +189,28 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         $now = $this->clock->now();
 
         $this->connection->executeStatement(
-            sprintf(
-                'UPDATE %s
+            sprintf('UPDATE %s
                  SET leased_until = CAST(? AS TIMESTAMPTZ),
                      updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE id = ? AND queue_name = ? AND lease_id = ?',
-                $this->messagesTable(),
-            ),
+                 WHERE id = ? AND queue_name = ? AND lease_id = ?', $this->messagesTable()),
             [$now->add($leaseDuration), $now, $delivery->messageId->value, $this->queueName, $delivery->leaseId],
-            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
+            [
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+            ],
         );
     }
 
     private function messagesTable(): string
     {
-        return $this->tablePrefix.'messages';
+        return $this->tablePrefix . 'messages';
     }
 
     /**
-     * @param array<string, mixed> $value
+     * @param array<array-key, mixed> $value
      */
     private function encodeJsonObject(array $value, string $description): string
     {
@@ -223,7 +226,7 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
     }
 
     /**
-     * @return array<string, mixed>
+     * @return array<array-key, mixed>
      */
     private function decodeJsonObject(mixed $json, string $description): array
     {

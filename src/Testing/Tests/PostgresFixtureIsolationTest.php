@@ -16,30 +16,30 @@ final class PostgresFixtureIsolationTest extends TestCase
     {
         $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
         if (false === $dsn || '' === $dsn) {
-            self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to verify Postgres fixture isolation.');
+            static::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to verify Postgres fixture isolation.');
         }
         $shared = PostgresConnectionSupport::sharedConnection($dsn);
         $other = PostgresConnectionSupport::sharedConnection($dsn, self::class);
         $lock = random_int(1, PHP_INT_MAX - 1);
         try {
             $otherPid = $other->fetchOne('SELECT pg_backend_pid()');
-            self::assertNotSame($shared->fetchOne('SELECT pg_backend_pid()'), $otherPid);
+            static::assertNotSame($shared->fetchOne('SELECT pg_backend_pid()'), $otherPid);
             $shared->beginTransaction();
             $shared->executeStatement('SELECT pg_advisory_xact_lock(?)', [$lock]);
             $other->beginTransaction();
             $other->beginTransaction();
             $other->executeStatement('SELECT pg_advisory_lock(?)', [$lock + 1]);
-            self::assertFalse((bool) $shared->fetchOne('SELECT pg_try_advisory_lock(?)', [$lock + 1]));
+            static::assertFalse((bool) $shared->fetchOne('SELECT pg_try_advisory_lock(?)', [$lock + 1]));
 
             PostgresConnectionSupport::resetSharedConnection($other);
 
-            self::assertSame($other, PostgresConnectionSupport::sharedConnection($dsn, self::class));
-            self::assertSame($otherPid, $other->fetchOne('SELECT pg_backend_pid()'));
-            self::assertSame(0, $other->getTransactionNestingLevel());
-            self::assertSame(1, $shared->getTransactionNestingLevel());
-            self::assertFalse((bool) $other->fetchOne('SELECT pg_try_advisory_lock(?)', [$lock]));
-            self::assertTrue((bool) $shared->fetchOne('SELECT pg_try_advisory_lock(?)', [$lock + 1]));
-            self::assertSame($shared, PostgresConnectionSupport::sharedConnection($dsn));
+            static::assertSame($other, PostgresConnectionSupport::sharedConnection($dsn, self::class));
+            static::assertSame($otherPid, $other->fetchOne('SELECT pg_backend_pid()'));
+            static::assertSame(0, $other->getTransactionNestingLevel());
+            static::assertSame(1, $shared->getTransactionNestingLevel());
+            static::assertFalse((bool) $other->fetchOne('SELECT pg_try_advisory_lock(?)', [$lock]));
+            static::assertTrue((bool) $shared->fetchOne('SELECT pg_try_advisory_lock(?)', [$lock + 1]));
+            static::assertSame($shared, PostgresConnectionSupport::sharedConnection($dsn));
         } finally {
             PostgresConnectionSupport::resetSharedConnection($other);
             PostgresConnectionSupport::resetSharedConnection($shared);
@@ -50,34 +50,37 @@ final class PostgresFixtureIsolationTest extends TestCase
     {
         $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
         if (false === $dsn || '' === $dsn) {
-            self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to verify Postgres fixture isolation.');
+            static::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to verify Postgres fixture isolation.');
         }
         $shared = PostgresConnectionSupport::sharedConnection($dsn);
         $other = PostgresConnectionSupport::connection($dsn);
-        $table = 'ultra_testing_'.bin2hex(random_bytes(8));
+        $table = 'ultra_testing_' . bin2hex(random_bytes(8));
         $lock = random_int(1, PHP_INT_MAX);
         try {
-            self::assertSame($shared, PostgresConnectionSupport::sharedConnection($dsn));
-            self::assertNotSame($shared->fetchOne('SELECT pg_backend_pid()'), $other->fetchOne('SELECT pg_backend_pid()'));
-            $shared->executeStatement('CREATE TEMPORARY TABLE '.$table.' (value INTEGER)');
+            static::assertSame($shared, PostgresConnectionSupport::sharedConnection($dsn));
+            static::assertNotSame(
+                $shared->fetchOne('SELECT pg_backend_pid()'),
+                $other->fetchOne('SELECT pg_backend_pid()'),
+            );
+            $shared->executeStatement('CREATE TEMPORARY TABLE ' . $table . ' (value INTEGER)');
             $shared->beginTransaction();
-            $shared->executeStatement('INSERT INTO '.$table.' VALUES (1)');
+            $shared->executeStatement('INSERT INTO ' . $table . ' VALUES (1)');
             $shared->beginTransaction();
-            $shared->executeStatement('INSERT INTO '.$table.' VALUES (2)');
+            $shared->executeStatement('INSERT INTO ' . $table . ' VALUES (2)');
             $shared->executeStatement('SELECT pg_advisory_lock(?)', [$lock]);
-            self::assertFalse((bool) $other->fetchOne('SELECT pg_try_advisory_lock(?)', [$lock]));
+            static::assertFalse((bool) $other->fetchOne('SELECT pg_try_advisory_lock(?)', [$lock]));
 
             PostgresConnectionSupport::resetSharedConnection($shared);
 
-            self::assertSame(0, $shared->getTransactionNestingLevel());
-            self::assertSame(0, (int) $shared->fetchOne('SELECT count(*) FROM '.$table));
-            self::assertTrue((bool) $other->fetchOne('SELECT pg_try_advisory_lock(?)', [$lock]));
-            self::assertSame($shared, PostgresConnectionSupport::sharedConnection($dsn));
+            static::assertSame(0, $shared->getTransactionNestingLevel());
+            static::assertSame(0, (int) $shared->fetchOne('SELECT count(*) FROM ' . $table));
+            static::assertTrue((bool) $other->fetchOne('SELECT pg_try_advisory_lock(?)', [$lock]));
+            static::assertSame($shared, PostgresConnectionSupport::sharedConnection($dsn));
         } finally {
             PostgresConnectionSupport::resetSharedConnection($shared);
             $other->executeStatement('SELECT pg_advisory_unlock_all()');
             $other->close();
-            $shared->executeStatement('DROP TABLE IF EXISTS '.$table);
+            $shared->executeStatement('DROP TABLE IF EXISTS ' . $table);
         }
     }
 }

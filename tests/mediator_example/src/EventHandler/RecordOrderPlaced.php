@@ -10,7 +10,9 @@ use Ultra\MessageHandling\Attribute\EventHandler;
 
 final class RecordOrderPlaced
 {
-    public function __construct(private readonly PublishedEvents $publishedEvents) {}
+    public function __construct(
+        private readonly PublishedEvents $publishedEvents,
+    ) {}
 
     #[EventHandler]
     public function record(OrderPlaced $event): void

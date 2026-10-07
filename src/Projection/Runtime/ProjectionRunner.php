@@ -27,8 +27,13 @@ final readonly class ProjectionRunner
         $this->segmentRepository->splitSegment($projectionId, $bucketFrom);
     }
 
-    public function mergeSegments(ProjectionRuntime $runtime, int $bucketFrom, int $bucketTo, string $ownerId, int $limit = 100): void
-    {
+    public function mergeSegments(
+        ProjectionRuntime $runtime,
+        int $bucketFrom,
+        int $bucketTo,
+        string $ownerId,
+        int $limit = 100,
+    ): void {
         $projectionId = $runtime->projectionId();
         $segments = $this->segmentRepository->takeSegmentsForRange($projectionId, $bucketFrom, $bucketTo, $ownerId);
         if ([] === $segments) {
@@ -40,7 +45,10 @@ final readonly class ProjectionRunner
             ));
         }
 
-        $targetCheckpoint = $this->mergeCheckpoint(...array_map(static fn (ProjectionSegment $segment): Checkpoint => $segment->checkpoint, $segments));
+        $targetCheckpoint = $this->mergeCheckpoint(...array_map(
+            static fn(ProjectionSegment $segment): Checkpoint => $segment->checkpoint,
+            $segments,
+        ));
 
         foreach ($segments as $segment) {
             $checkpoint = $segment->checkpoint;
@@ -48,7 +56,7 @@ final readonly class ProjectionRunner
 
             while ($checkpoint->serialize() !== $targetCheckpoint->serialize()) {
                 $result = $this->eventStore->load($query, $checkpoint, $targetCheckpoint, $limit);
-                $this->transactionManager->transactional(function () use ($runtime, $result): void {
+                $this->transactionManager->transactional(static function () use ($runtime, $result): void {
                     foreach ($result->events as $event) {
                         $runtime->apply($event);
                     }
@@ -71,7 +79,12 @@ final readonly class ProjectionRunner
             }
         }
 
-        $this->segmentRepository->replaceSegmentsWithMergedSegment($projectionId, $bucketFrom, $bucketTo, $targetCheckpoint);
+        $this->segmentRepository->replaceSegmentsWithMergedSegment(
+            $projectionId,
+            $bucketFrom,
+            $bucketTo,
+            $targetCheckpoint,
+        );
     }
 
     /** @return list<ProjectionSegment> */
@@ -127,11 +140,17 @@ final readonly class ProjectionRunner
 
         try {
             if (null === $this->activityRepository) {
-                throw new \LogicException('ProjectionRunner requires projection activity to run claimed projection work.');
+                throw new \LogicException(
+                    'ProjectionRunner requires projection activity to run claimed projection work.',
+                );
             }
 
             $seenCounters = [];
-            foreach ($this->activityRepository->pendingInSegment($segment->projectionId, $segment->bucketFrom, $segment->bucketTo) as $pendingKey) {
+            foreach ($this->activityRepository->pendingInSegment(
+                $segment->projectionId,
+                $segment->bucketFrom,
+                $segment->bucketTo,
+            ) as $pendingKey) {
                 $seenCounters[(int) $pendingKey->key] = $pendingKey->counter;
             }
 
@@ -139,7 +158,14 @@ final readonly class ProjectionRunner
             $result = $this->eventStore->load($query, $segment->checkpoint, null, $limit);
             $caughtUp = !$result->hasMore;
 
-            $this->transactionManager->transactional(function () use ($runtime, $segment, $result, $workerId, $caughtUp, $seenCounters): void {
+            $this->transactionManager->transactional(function () use (
+                $runtime,
+                $segment,
+                $result,
+                $workerId,
+                $caughtUp,
+                $seenCounters,
+            ): void {
                 foreach ($result->events as $event) {
                     $runtime->apply($event);
                 }
@@ -178,11 +204,8 @@ final readonly class ProjectionRunner
      *
      * Returns the total number of events processed.
      */
-    public function replayFromBeginning(
-        ProjectionRuntime $runtime,
-        string $workerId = 'replay',
-        int $limit = 100,
-    ): int {
+    public function replayFromBeginning(ProjectionRuntime $runtime, string $workerId = 'replay', int $limit = 100): int
+    {
         $projectionId = $runtime->projectionId();
 
         $this->deleteProjection($runtime);
@@ -244,7 +267,13 @@ final readonly class ProjectionRunner
             $result = $this->eventStore->load($query, $segment->checkpoint, null, $limit);
             $caughtUp = !$result->hasMore;
 
-            $this->transactionManager->transactional(function () use ($runtime, $segment, $result, $workerId, $caughtUp): void {
+            $this->transactionManager->transactional(function () use (
+                $runtime,
+                $segment,
+                $result,
+                $workerId,
+                $caughtUp,
+            ): void {
                 foreach ($result->events as $event) {
                     $runtime->apply($event);
                 }

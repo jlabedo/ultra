@@ -24,16 +24,18 @@ final readonly class CancelBooking
      */
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(
-        ?BookingState $booking,
-        ClockInterface $clock,
-    ): array {
+    public function decide(?BookingState $booking, ClockInterface $clock): array
+    {
         Violations::throwIfAny([
             null === $booking ? new Violation('booking.not_found', 'Booking does not exist.') : null,
         ]);
         Violations::throwIfAny([
-            $booking->memberId !== $this->memberId ? new Violation('booking.not_owner', 'Only the member who booked can cancel.') : null,
-            BookingState::CANCELLED === $booking->status ? new Violation('booking.already_cancelled', 'Booking is already cancelled.') : null,
+            $booking->memberId !== $this->memberId
+                ? new Violation('booking.not_owner', 'Only the member who booked can cancel.')
+                : null,
+            BookingState::CANCELLED === $booking->status
+                ? new Violation('booking.already_cancelled', 'Booking is already cancelled.')
+                : null,
         ]);
 
         return [$booking->cancelled(BookingPolicy::isRefundable($booking->slot(), $clock->now()))];

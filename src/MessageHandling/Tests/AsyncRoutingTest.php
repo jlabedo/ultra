@@ -39,26 +39,28 @@ final class AsyncRoutingTest extends MessageHandlingCompilerTestCase
     public function test_event_subscriptions_queue_their_own_routes_and_deliver_once_in_priority_order(bool $firstAsync): void
     {
         $log = new EventDeliveryLog();
-        $container = $this->ultraLight()
+        $container = $this
+            ->ultraLight()
             ->withEventClass(RecordedEvent::class)
             ->withService($firstAsync ? new FirstQueuedListener($log) : new InlineListener($log))
             ->withService(new SecondQueuedListener($log))
             ->boot();
         $container->eventBus()->publish(new RecordedEvent('payload'));
-        self::assertSame($firstAsync ? [] : ['first:payload'], $log->entries);
-        self::assertSame($firstAsync ? 2 : 1, $container->asyncQueue()->count());
-        self::assertSame($firstAsync ? 2 : 1, $container->queueWorker()->drain());
-        self::assertSame(['first:payload', 'second:payload'], $log->entries);
-        self::assertTrue($container->asyncQueue()->isEmpty());
-        self::assertFalse($container->queueWorker()->processOne());
-        self::assertSame(0, $container->queueWorker()->drain());
+        static::assertSame($firstAsync ? [] : ['first:payload'], $log->entries);
+        static::assertSame($firstAsync ? 2 : 1, $container->asyncQueue()->count());
+        static::assertSame($firstAsync ? 2 : 1, $container->queueWorker()->drain());
+        static::assertSame(['first:payload', 'second:payload'], $log->entries);
+        static::assertTrue($container->asyncQueue()->isEmpty());
+        static::assertFalse($container->queueWorker()->processOne());
+        static::assertSame(0, $container->queueWorker()->drain());
     }
 
     public function test_sync_and_async_handlers_on_different_messages(): void
     {
         $syncExecuted = false;
 
-        $container = $this->ultraLight()
+        $container = $this
+            ->ultraLight()
             ->withService(new class($syncExecuted) {
                 public bool $syncExecuted;
 
@@ -72,36 +74,36 @@ final class AsyncRoutingTest extends MessageHandlingCompilerTestCase
                 {
                     $this->syncExecuted = true;
 
-                    return 'Hello, '.$message->name.'!';
+                    return 'Hello, ' . $message->name . '!';
                 }
 
                 #[Handles]
                 #[Asynchronous]
                 public function farewell(FarewellMessage $message): string
                 {
-                    return 'Goodbye, '.$message->name.'!';
+                    return 'Goodbye, ' . $message->name . '!';
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
         // Sync handler returns result immediately
         $syncResult = $container->mediator()->send(new GreetingMessage('Alice'));
-        self::assertSame('Hello, Alice!', $syncResult);
-        self::assertTrue($syncExecuted);
-        self::assertSame(0, $container->asyncQueue()->count());
+        static::assertSame('Hello, Alice!', $syncResult);
+        static::assertTrue($syncExecuted);
+        static::assertSame(0, $container->asyncQueue()->count());
 
         // Async handler returns null and enqueues
         $asyncResult = $container->mediator()->send(new FarewellMessage('Bob'));
-        self::assertNull($asyncResult);
-        self::assertSame(1, $container->asyncQueue()->count());
+        static::assertNull($asyncResult);
+        static::assertSame(1, $container->asyncQueue()->count());
     }
 
     public function test_async_dispatch_context_can_schedule_async_handler(): void
     {
         $executed = false;
 
-        $container = $this->ultraLight()
+        $container = $this
+            ->ultraLight()
             ->withService(new class($executed) {
                 public bool $executed;
 
@@ -117,17 +119,16 @@ final class AsyncRoutingTest extends MessageHandlingCompilerTestCase
                     $this->executed = true;
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
         $container->mediator()->send(
             new EmptyMessage(),
             AsyncDispatch::scheduledAt(DatePoint::create(3000, 1, 1))->asContext(),
         );
 
-        self::assertSame(1, $container->asyncQueue()->count());
-        self::assertSame(0, $container->queueWorker()->drain());
-        self::assertFalse($executed);
+        static::assertSame(1, $container->asyncQueue()->count());
+        static::assertSame(0, $container->queueWorker()->drain());
+        static::assertFalse($executed);
     }
 
     public function test_async_handlers_are_routed_to_their_named_sender_channel(): void
@@ -135,14 +136,15 @@ final class AsyncRoutingTest extends MessageHandlingCompilerTestCase
         $sender = new RecordingAsyncSender();
         $executed = false;
 
-        $container = $this->ultraLight()
+        $container = $this
+            ->ultraLight()
             ->withService($sender, 'test.email_sender')
             ->withBundle(new class implements ContainerExtension {
                 public function build(ContainerBuilder $container): void
                 {
-                    $container->getDefinition('test.email_sender')
-                        ->addTag(TagNames::ASYNC_SENDER, ['channel' => 'emails'])
-                    ;
+                    $container->getDefinition('test.email_sender')->addTag(TagNames::ASYNC_SENDER, [
+                        'channel' => 'emails',
+                    ]);
                 }
             })
             ->withService(new class($executed) {
@@ -160,14 +162,13 @@ final class AsyncRoutingTest extends MessageHandlingCompilerTestCase
                     $this->executed = true;
                 }
             })
-            ->boot()
-        ;
+            ->boot();
 
         $container->mediator()->send(new GreetingMessage('Alice'));
 
-        self::assertFalse($executed);
-        self::assertCount(1, $sender->envelopes);
-        self::assertInstanceOf(GreetingMessage::class, $sender->envelopes[0]->message);
+        static::assertFalse($executed);
+        static::assertCount(1, $sender->envelopes);
+        static::assertInstanceOf(GreetingMessage::class, $sender->envelopes[0]->message);
     }
 }
 
@@ -179,36 +180,42 @@ final class EventDeliveryLog
 
 final readonly class InlineListener
 {
-    public function __construct(private EventDeliveryLog $log) {}
+    public function __construct(
+        private EventDeliveryLog $log,
+    ) {}
 
     #[EventHandler(priority: 20)]
     public function handle(RecordedEvent $event): void
     {
-        $this->log->entries[] = 'first:'.$event->payload;
+        $this->log->entries[] = 'first:' . $event->payload;
     }
 }
 
 final readonly class FirstQueuedListener
 {
-    public function __construct(private EventDeliveryLog $log) {}
+    public function __construct(
+        private EventDeliveryLog $log,
+    ) {}
 
     #[EventHandler(priority: 20)]
     #[Asynchronous]
     public function handle(RecordedEvent $event): void
     {
-        $this->log->entries[] = 'first:'.$event->payload;
+        $this->log->entries[] = 'first:' . $event->payload;
     }
 }
 
 final readonly class SecondQueuedListener
 {
-    public function __construct(private EventDeliveryLog $log) {}
+    public function __construct(
+        private EventDeliveryLog $log,
+    ) {}
 
     #[EventHandler(priority: 10)]
     #[Asynchronous]
     public function handle(RecordedEvent $event): void
     {
-        $this->log->entries[] = 'second:'.$event->payload;
+        $this->log->entries[] = 'second:' . $event->payload;
     }
 }
 
@@ -221,6 +228,6 @@ final class RecordingAsyncSender implements AsyncMessageSender
     {
         $this->envelopes[] = $envelope;
 
-        return $options?->messageId ?? AsyncMessageId::generate();
+        return $options->messageId ?? AsyncMessageId::generate();
     }
 }

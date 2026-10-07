@@ -4,12 +4,12 @@ declare(strict_types=1);
 
 namespace App\Tests\Driver;
 
+use App\Booking\Domain\Slot;
 use App\Booking\StateStoreDirect\BookingService;
+use App\Booking\StateStoreDirect\Repository\BookingRepository;
 use App\Booking\StateStoreDirect\State\Booking;
 use App\Booking\StateStoreDirect\State\Company;
 use App\Booking\StateStoreDirect\State\Room;
-use App\Booking\StateStoreDirect\Repository\BookingRepository;
-use App\Booking\Domain\Slot;
 use Ultra\StateStore\StateStore;
 
 final readonly class StateStoreDirectDriver implements BookingDriver
@@ -81,7 +81,6 @@ final readonly class StateStoreDirectDriver implements BookingDriver
 
     public function bookingStatus(string $bookingId): ?string
     {
-
         return $this->stateStore->load(Booking::class, $bookingId)?->status;
     }
 }

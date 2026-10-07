@@ -15,7 +15,9 @@ final class InMemoryProjectionCoordinatorLeaseRepository implements ProjectionCo
     /** @var array{workerId: null|string, leaseExpiresAt: null|DatePoint, wakeEnqueuedUntil: null|DatePoint} */
     private array $row = ['workerId' => null, 'leaseExpiresAt' => null, 'wakeEnqueuedUntil' => null];
 
-    public function __construct(private ClockInterface $clock = new SystemClock()) {}
+    public function __construct(
+        private ClockInterface $clock = new SystemClock(),
+    ) {}
 
     public function acquire(string $workerId, Duration $leaseDuration = new Duration(seconds: 60)): bool
     {
@@ -101,7 +103,7 @@ final class InMemoryProjectionCoordinatorLeaseRepository implements ProjectionCo
         return true;
     }
 
-    /** @param array{workerId: null|string, leaseExpiresAt: null|int, wakeEnqueuedUntil: null|int} $row */
+    /** @param array{workerId: null|string, leaseExpiresAt: null|DatePoint, wakeEnqueuedUntil: null|DatePoint} $row */
     private function isLeaseExpired(array $row): bool
     {
         return null !== $row['leaseExpiresAt'] && $row['leaseExpiresAt'] < $this->clock->now();

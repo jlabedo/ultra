@@ -12,7 +12,10 @@ use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStoreSchema;
 
-#[AsCommand(name: 'faculty:event-store:schema:create', description: 'Create the optional Postgres schema for the faculty example event store.')]
+#[AsCommand(
+    name: 'faculty:event-store:schema:create',
+    description: 'Create the optional Postgres schema for the faculty example event store.',
+)]
 final class FacultyEventStoreSchemaCreateCommand extends Command
 {
     public function __construct(
@@ -31,7 +34,9 @@ final class FacultyEventStoreSchemaCreateCommand extends Command
         }
 
         if (!$this->connection->getDatabasePlatform() instanceof PostgreSQLPlatform) {
-            $output->writeln('<error>The faculty event store schema command requires a PostgreSQL DATABASE_URL.</error>');
+            $output->writeln(
+                '<error>The faculty event store schema command requires a PostgreSQL DATABASE_URL.</error>',
+            );
 
             return self::FAILURE;
         }

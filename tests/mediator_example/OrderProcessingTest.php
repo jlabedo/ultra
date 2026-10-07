@@ -50,38 +50,38 @@ final class OrderProcessingTest extends TestCase
         $command = new PlaceOrder('order-1', 1500, 'user-1');
         $result = $mediator->send($command, ['traceId' => 't-1']);
 
-        $this->assertSame('order-1', $result);
+        static::assertSame('order-1', $result);
 
         /** @var OrderRepository $orders */
         $orders = $container->get(OrderRepository::class);
-        $this->assertCount(1, $orders->saved);
-        $this->assertSame('order-1', $orders->saved[0]->orderId);
+        static::assertCount(1, $orders->saved);
+        static::assertSame('order-1', $orders->saved[0]->orderId);
 
         /** @var PublishedEvents $publishedEvents */
         $publishedEvents = $container->get(PublishedEvents::class);
-        $this->assertCount(1, $publishedEvents->events);
-        $this->assertInstanceOf(OrderPlaced::class, $publishedEvents->events[0]);
+        static::assertCount(1, $publishedEvents->events);
+        static::assertInstanceOf(OrderPlaced::class, $publishedEvents->events[0]);
 
         /** @var TransactionManager $tx */
         $tx = $container->get(TransactionManager::class);
-        $this->assertContains('begin', $tx->log);
-        $this->assertContains('commit', $tx->log);
-        $this->assertNotContains('rollback', $tx->log);
+        static::assertContains('begin', $tx->log);
+        static::assertContains('commit', $tx->log);
+        static::assertNotContains('rollback', $tx->log);
 
         /** @var Metrics $metrics */
         $metrics = $container->get(Metrics::class);
-        $this->assertSame(1, $metrics->success);
-        $this->assertSame(0, $metrics->failure);
+        static::assertSame(1, $metrics->success);
+        static::assertSame(0, $metrics->failure);
 
         /** @var CleanupTracker $cleanup */
         $cleanup = $container->get(CleanupTracker::class);
-        $this->assertSame(1, $cleanup->calls);
+        static::assertSame(1, $cleanup->calls);
 
         /** @var AuditLog $audit */
         $audit = $container->get(AuditLog::class);
-        $this->assertCount(1, $audit->entries);
-        $this->assertSame(PlaceOrder::class, $audit->entries[0]['message']);
-        $this->assertSame('t-1', $audit->entries[0]['context']['traceId']);
+        static::assertCount(1, $audit->entries);
+        static::assertSame(PlaceOrder::class, $audit->entries[0]['message']);
+        static::assertSame('t-1', $audit->entries[0]['context']['traceId']);
     }
 
     public function test_order_processing_failure_rolls_back_and_records_metrics(): void
@@ -100,33 +100,33 @@ final class OrderProcessingTest extends TestCase
 
         try {
             $mediator->send($command);
-            $this->fail('Expected payment failure');
+            static::fail('Expected payment failure');
         } catch (\RuntimeException $e) {
-            $this->assertSame('payment failed', $e->getMessage());
+            static::assertSame('payment failed', $e->getMessage());
         }
 
         /** @var OrderRepository $orders */
         $orders = $container->get(OrderRepository::class);
-        $this->assertCount(0, $orders->saved);
+        static::assertCount(0, $orders->saved);
 
         /** @var TransactionManager $tx */
         $tx = $container->get(TransactionManager::class);
-        $this->assertContains('begin', $tx->log);
-        $this->assertContains('rollback', $tx->log);
+        static::assertContains('begin', $tx->log);
+        static::assertContains('rollback', $tx->log);
 
         /** @var Metrics $metrics */
         $metrics = $container->get(Metrics::class);
-        $this->assertSame(0, $metrics->success);
-        $this->assertSame(1, $metrics->failure);
+        static::assertSame(0, $metrics->success);
+        static::assertSame(1, $metrics->failure);
 
         /** @var CleanupTracker $cleanup */
         $cleanup = $container->get(CleanupTracker::class);
-        $this->assertSame(1, $cleanup->calls);
+        static::assertSame(1, $cleanup->calls);
 
         /** @var AuditLog $audit */
         $audit = $container->get(AuditLog::class);
-        $this->assertCount(1, $audit->entries);
-        $this->assertSame(PlaceOrder::class, $audit->entries[0]['message']);
+        static::assertCount(1, $audit->entries);
+        static::assertSame(PlaceOrder::class, $audit->entries[0]['message']);
     }
 
     public function test_self_handling_message_dispatches_through_mediator(): void
@@ -143,9 +143,9 @@ final class OrderProcessingTest extends TestCase
         $message = new SelfHandledPing('ping');
         $result = $mediator->send($message);
 
-        $this->assertSame('PING', $result);
-        $this->assertSame(1, $tracker->calls);
-        $this->assertSame(['ping'], $tracker->payloads);
+        static::assertSame('PING', $result);
+        static::assertSame(1, $tracker->calls);
+        static::assertSame(['ping'], $tracker->payloads);
     }
 
     protected static function bootKernel(array $options = []): void
@@ -160,9 +160,6 @@ final class OrderProcessingTest extends TestCase
 
     protected static function createKernel(array $options = []): Kernel
     {
-        return new Kernel(
-            $options['environment'] ?? 'test',
-            $options['debug'] ?? true,
-        );
+        return new Kernel($options['environment'] ?? 'test', $options['debug'] ?? true);
     }
 }

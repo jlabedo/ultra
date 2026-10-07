@@ -36,7 +36,10 @@ final class WorkerRuntime
             $line = fgets(STDIN);
 
             if (false === $line) {
-                fwrite(STDERR, sprintf("Unexpected EOF on stdin while waiting for release of checkpoint '%s'\n", $name));
+                fwrite(STDERR, sprintf(
+                    "Unexpected EOF on stdin while waiting for release of checkpoint '%s'\n",
+                    $name,
+                ));
 
                 exit(3);
             }

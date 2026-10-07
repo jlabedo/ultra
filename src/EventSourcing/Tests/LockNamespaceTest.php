@@ -19,10 +19,14 @@ final class LockNamespaceTest extends EventStoreTestCase
     {
         $locks = new StreamQueryLockKeys();
         $writeKeys = $locks->writeKeysForEvent('subscribed', ['student' => 's1', 'faculty' => 'f1', 'course' => 'c1']);
-        self::assertCount(14, $writeKeys);
+        static::assertCount(14, $writeKeys);
         foreach ([
-            ['course' => 'c1'], ['student' => 's1'], ['faculty' => 'f1'],
-            ['course' => 'c1', 'student' => 's1'], ['faculty' => 'f1', 'course' => 'c1'], ['student' => 's1', 'faculty' => 'f1'],
+            ['course' => 'c1'],
+            ['student' => 's1'],
+            ['faculty' => 'f1'],
+            ['course' => 'c1', 'student' => 's1'],
+            ['faculty' => 'f1', 'course' => 'c1'],
+            ['student' => 's1', 'faculty' => 'f1'],
             ['course' => 'c1', 'student' => 's1', 'faculty' => 'f1'],
         ] as $subset) {
             $identifiers = [];
@@ -32,26 +36,32 @@ final class LockNamespaceTest extends EventStoreTestCase
             $query = StreamQuery::forStream(...$identifiers);
             $typed = $locks->readKeys($query->ofTypes('subscribed'));
             $untyped = $locks->readKeys($query);
-            self::assertCount(1, $typed);
-            self::assertCount(1, $untyped);
-            self::assertNotSame($typed, $untyped);
-            self::assertContains($typed[0], $writeKeys);
-            self::assertContains($untyped[0], $writeKeys);
-            self::assertNotContains($locks->readKeys($query->ofTypes('other.type'))[0], $writeKeys);
+            static::assertCount(1, $typed);
+            static::assertCount(1, $untyped);
+            static::assertNotSame($typed, $untyped);
+            static::assertContains($typed[0], $writeKeys);
+            static::assertContains($untyped[0], $writeKeys);
+            static::assertNotContains($locks->readKeys($query->ofTypes('other.type'))[0], $writeKeys);
         }
     }
 
     public function test_overlapping_branches_share_keys_regardless_of_identifier_order(): void
     {
         $locks = new StreamQueryLockKeys();
-        $branch = StreamQuery::forStream(new DomainIdentifier('course', 'c1'), new DomainIdentifier('student', 's1'))->ofTypes('subscribed');
-        $reversed = StreamQuery::forStream(new DomainIdentifier('student', 's1'), new DomainIdentifier('course', 'c1'))->ofTypes('subscribed');
+        $branch = StreamQuery::forStream(
+            new DomainIdentifier('course', 'c1'),
+            new DomainIdentifier('student', 's1'),
+        )->ofTypes('subscribed');
+        $reversed = StreamQuery::forStream(
+            new DomainIdentifier('student', 's1'),
+            new DomainIdentifier('course', 'c1'),
+        )->ofTypes('subscribed');
 
-        self::assertSame(
+        static::assertSame(
             $locks->buildKey('subscribed', ['course' => 'c1', 'student' => 's1']),
             $locks->buildKey('subscribed', ['student' => 's1', 'course' => 'c1']),
         );
-        self::assertSame($locks->readKeys($branch), $locks->readKeys(StreamQuery::anyOf($branch, $reversed)));
-        self::assertCount(2, $locks->readKeys($branch->ofTypes('subscribed', 'unsubscribed')));
+        static::assertSame($locks->readKeys($branch), $locks->readKeys(StreamQuery::anyOf($branch, $reversed)));
+        static::assertCount(2, $locks->readKeys($branch->ofTypes('subscribed', 'unsubscribed')));
     }
 }

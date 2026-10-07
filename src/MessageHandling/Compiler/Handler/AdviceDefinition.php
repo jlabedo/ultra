@@ -9,7 +9,7 @@ use Ultra\MessageHandling\Attribute\MatchResult;
 readonly class AdviceDefinition
 {
     /**
-     * @param \Closure(\ReflectionMethod): ?MatchResult $matcher
+     * @param \Closure(\Ultra\MessageHandling\Attribute\HandlerMatchContext): ?MatchResult $matcher
      */
     public function __construct(
         public AdviceType $type,

@@ -1,9 +1,12 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 readonly class CodeGeneratorContext
 {
+    /** @param array<array-key, array<array-key, mixed>> $attributes */
     public function __construct(
         public bool $isRoot,
         public bool $inline,
@@ -13,18 +16,11 @@ readonly class CodeGeneratorContext
 
     public static function new(bool $inline = true, bool $typeCheck = true): self
     {
-        return new self(
-            isRoot: true,
-            inline: $inline,
-            typeCheck: $typeCheck,
-        );
+        return new self(isRoot: true, inline: $inline, typeCheck: $typeCheck);
     }
 
-    public function with(
-        ?bool $isRoot = null,
-        ?bool $inline = null,
-        ?array $runtimeNormalizers = null,
-    ): self {
+    public function with(?bool $isRoot = null, ?bool $inline = null, ?array $runtimeNormalizers = null): self
+    {
         return new self(
             isRoot: $isRoot ?? $this->isRoot,
             inline: $inline ?? $this->inline,

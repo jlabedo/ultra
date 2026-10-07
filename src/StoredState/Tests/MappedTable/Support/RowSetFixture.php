@@ -33,16 +33,32 @@ final class RowSetFixture
     ) {
         if ($storage instanceof Connection) {
             $columns = array_fill_keys($keyColumns, 'TEXT NOT NULL');
-            $columns += ['status' => 'TEXT', 'note' => 'TEXT', 'version_a' => 'TEXT', 'version_b' => 'TEXT', 'tags' => 'TEXT[]', 'payload' => 'JSONB', 'expires_on' => 'DATE', 'active' => 'BOOLEAN'];
+            $columns += [
+                'status' => 'TEXT',
+                'note' => 'TEXT',
+                'version_a' => 'TEXT',
+                'version_b' => 'TEXT',
+                'tags' => 'TEXT[]',
+                'payload' => 'JSONB',
+                'expires_on' => 'DATE',
+                'active' => 'BOOLEAN',
+            ];
             foreach ($columnTypes as $column => $type) {
                 $columns[$column] = $type->sqlType;
             }
             $definitions = [];
             foreach ($columns as $column => $type) {
-                $definitions[] = $storage->quoteSingleIdentifier($column).' '.$type;
+                $definitions[] = $storage->quoteSingleIdentifier($column) . ' ' . $type;
             }
-            $definitions[] = 'PRIMARY KEY ('.implode(', ', array_map($storage->quoteSingleIdentifier(...), $keyColumns)).')';
-            $storage->executeStatement('CREATE TABLE '.$storage->quoteSingleIdentifier($tableName).' ('.implode(', ', $definitions).')');
+            $definitions[] =
+                'PRIMARY KEY (' . implode(', ', array_map($storage->quoteSingleIdentifier(...), $keyColumns)) . ')';
+            $storage->executeStatement(
+                'CREATE TABLE '
+                . $storage->quoteSingleIdentifier($tableName)
+                . ' ('
+                . implode(', ', $definitions)
+                . ')',
+            );
             $this->factory = new PostgresMappedRowSetAdapterFactory($storage, [$tableName => $columnTypes]);
         } else {
             $this->factory = new InMemoryMappedRowSetAdapterFactory($storage);
@@ -52,9 +68,11 @@ final class RowSetFixture
 
     public function view(?MappedKey $scope = null): MappedRowSet
     {
-        return new MappedRowSet(null === $scope
-            ? $this->factory->create($this->tableName, $this->keyColumns)
-            : $this->factory->createScoped($this->tableName, $this->keyColumns, $scope));
+        return new MappedRowSet(
+            null === $scope
+                ? $this->factory->create($this->tableName, $this->keyColumns)
+                : $this->factory->createScoped($this->tableName, $this->keyColumns, $scope),
+        );
     }
 
     /** @param array<string, mixed> $row */
@@ -80,22 +98,34 @@ final class RowSetFixture
     }
 
     /** @param list<string> $columns @return array<string, mixed>|false */
-    public function stored(int|string|MappedKey $key, array $columns = ['status', 'note', 'version_a', 'version_b']): array|false
-    {
+    public function stored(
+        int|string|MappedKey $key,
+        array $columns = ['status', 'note', 'version_a', 'version_b'],
+    ): array|false {
         $key = $key instanceof MappedKey ? $key : new MappedKey(['id' => $key]);
         if ($this->storage instanceof InMemoryRowDatabase) {
             return $this->storage->rowByKey($this->tableName, $key, $columns);
         }
-        $where = array_map(fn (string $column): string => $this->storage->quoteSingleIdentifier($column).' = ?', $key->columns());
+        $where = array_map(
+            fn(string $column): string => $this->storage->quoteSingleIdentifier($column) . ' = ?',
+            $key->columns(),
+        );
         $row = $this->storage->fetchAssociative(
-            'SELECT '.implode(', ', array_map($this->storage->quoteSingleIdentifier(...), $columns)).' FROM '.$this->storage->quoteSingleIdentifier($this->tableName).' WHERE '.implode(' AND ', $where),
+            'SELECT '
+                . implode(', ', array_map($this->storage->quoteSingleIdentifier(...), $columns))
+                . ' FROM '
+                . $this->storage->quoteSingleIdentifier($this->tableName)
+                . ' WHERE '
+                . implode(' AND ', $where),
             array_values($key->values),
         );
         if (false !== $row) {
             foreach ($this->columnTypes as $column => $type) {
-                if (array_key_exists($column, $row)) {
-                    $row[$column] = $type->decode($row[$column]);
+                if (!array_key_exists($column, $row)) {
+                    continue;
                 }
+
+                $row[$column] = $type->decode($row[$column]);
             }
         }
         return $row;
@@ -125,7 +155,9 @@ final class RowSetFixture
     {
         if ($this->storage instanceof Connection) {
             PostgresConnectionSupport::resetSharedConnection($this->storage);
-            $this->storage->executeStatement('DROP TABLE IF EXISTS '.$this->storage->quoteSingleIdentifier($this->tableName));
+            $this->storage->executeStatement(
+                'DROP TABLE IF EXISTS ' . $this->storage->quoteSingleIdentifier($this->tableName),
+            );
         } else {
             while ($this->storage->isTransactionActive()) {
                 $this->storage->rollBack();

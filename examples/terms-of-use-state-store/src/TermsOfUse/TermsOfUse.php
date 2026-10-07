@@ -13,9 +13,7 @@ final readonly class TermsOfUse implements \JsonSerializable
 
     public function equals(?self $other): bool
     {
-        return null !== $other
-            && $this->id === $other->id
-            && $this->url === $other->url;
+        return null !== $other && $this->id === $other->id && $this->url === $other->url;
     }
 
     public function jsonSerialize(): array

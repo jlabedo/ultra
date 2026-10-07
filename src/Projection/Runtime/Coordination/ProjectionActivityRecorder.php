@@ -16,7 +16,7 @@ final readonly class ProjectionActivityRecorder
         private ProjectionActivity $activity,
         private CoordinatorLease $leaseRepository,
         private ProjectionActivatorInterface $activator,
-        private Duration $wakeDebounceSeconds = new Duration(seconds: 30)
+        private Duration $wakeDebounceSeconds = new Duration(seconds: 30),
     ) {}
 
     /** @param list<Event> $events */
@@ -48,7 +48,13 @@ final readonly class ProjectionActivityRecorder
             }
         }
 
-        if ($recordedAnyBucket && $this->leaseRepository->markWakeEnqueued(ProjectionCoordinator::COORDINATOR_KEY, $this->wakeDebounceSeconds)) {
+        if (
+            $recordedAnyBucket
+            && $this->leaseRepository->markWakeEnqueued(
+                ProjectionCoordinator::COORDINATOR_KEY,
+                $this->wakeDebounceSeconds,
+            )
+        ) {
             $this->activator->signalWorkAvailable();
         }
     }

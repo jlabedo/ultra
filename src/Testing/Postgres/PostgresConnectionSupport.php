@@ -16,12 +16,10 @@ final class PostgresConnectionSupport
 
     public static function connection(string $dsn): Connection
     {
-        return DriverManager::getConnection(
-            new DsnParser([
-                'postgres' => 'pgsql',
-                'postgresql' => 'pgsql',
-            ])->parse($dsn),
-        );
+        return DriverManager::getConnection(new DsnParser([
+            'postgres' => 'pgsql',
+            'postgresql' => 'pgsql',
+        ])->parse($dsn));
     }
 
     /** Callers reset borrowed connections; shutdown closes each named session. */

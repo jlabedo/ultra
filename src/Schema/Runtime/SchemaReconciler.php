@@ -102,7 +102,8 @@ final class SchemaReconciler
                     defaultExpression: $currentColumn->defaultExpression !== $targetColumn->defaultExpression
                         ? $targetColumn->defaultExpression
                         : null,
-                    dropDefault: null !== $currentColumn->defaultExpression && null === $targetColumn->defaultExpression,
+                    dropDefault: null !== $currentColumn->defaultExpression
+                    && null === $targetColumn->defaultExpression,
                 );
             }
         }

@@ -12,7 +12,8 @@ use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
 
-final readonly class PostgresProjectionCoordinatorLeaseRepository implements ProjectionCoordinatorLeaseRepositoryInterface
+final readonly class PostgresProjectionCoordinatorLeaseRepository implements
+    ProjectionCoordinatorLeaseRepositoryInterface
 {
     private const string COORDINATOR_KEY = 'global';
 
@@ -30,7 +31,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
             $row = $this->lockRow();
             $now = $this->clock->now();
             if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
-                $leaseExpiresAt = new DatePoint((string) $row['lease_expires_at']);
+                $leaseExpiresAt = new DatePoint($row['lease_expires_at']);
                 if ($leaseExpiresAt >= $now) {
                     $this->connection->rollBack();
 
@@ -40,13 +41,10 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
 
             $this->upsertRow($now);
             $this->connection->executeStatement(
-                sprintf(
-                    'UPDATE %s
+                sprintf('UPDATE %s
                      SET worker_id = ?, lease_expires_at = CAST(? AS TIMESTAMPTZ),
                          wake_enqueued_until = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE coordinator_key = ?',
-                    $this->coordinatorsTable(),
-                ),
+                     WHERE coordinator_key = ?', $this->coordinatorsTable()),
                 [$workerId, $now->add($leaseDuration), $now, self::COORDINATOR_KEY],
                 [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
             );
@@ -68,12 +66,9 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
         $now = $this->clock->now();
 
         $this->connection->executeStatement(
-            sprintf(
-                'UPDATE %s
+            sprintf('UPDATE %s
                  SET lease_expires_at = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE coordinator_key = ? AND worker_id = ?',
-                $this->coordinatorsTable(),
-            ),
+                 WHERE coordinator_key = ? AND worker_id = ?', $this->coordinatorsTable()),
             [$now->add($leaseDuration), $now, self::COORDINATOR_KEY, $workerId],
             [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
         );
@@ -84,12 +79,9 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
         $now = $this->clock->now();
 
         $this->connection->executeStatement(
-            sprintf(
-                'UPDATE %s
+            sprintf('UPDATE %s
                  SET worker_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE coordinator_key = ? AND worker_id = ?',
-                $this->coordinatorsTable(),
-            ),
+                 WHERE coordinator_key = ? AND worker_id = ?', $this->coordinatorsTable()),
             [$now, self::COORDINATOR_KEY, $workerId],
             [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
         );
@@ -97,20 +89,23 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
 
     public function hasLiveCoordinator(): bool
     {
-        $row = $this->connection->executeQuery(
-            sprintf(
-                'SELECT worker_id, lease_expires_at FROM %s WHERE coordinator_key = ?',
-                $this->coordinatorsTable(),
-            ),
-            [self::COORDINATOR_KEY],
-            [ParameterType::STRING],
-        )->fetchAssociative();
+        /** @var array{worker_id: ?string, lease_expires_at: ?string, wake_enqueued_until: ?string}|false $row */
+        $row = $this->connection
+            ->executeQuery(
+                sprintf(
+                    'SELECT worker_id, lease_expires_at FROM %s WHERE coordinator_key = ?',
+                    $this->coordinatorsTable(),
+                ),
+                [self::COORDINATOR_KEY],
+                [ParameterType::STRING],
+            )
+            ->fetchAssociative();
 
         if (false === $row || null === $row['worker_id'] || null === $row['lease_expires_at']) {
             return false;
         }
 
-        return new \DateTimeImmutable((string) $row['lease_expires_at']) >= $this->clock->now();
+        return new \DateTimeImmutable($row['lease_expires_at']) >= $this->clock->now();
     }
 
     public function markWakeEnqueued(Duration $ttl = new Duration(seconds: 30)): bool
@@ -123,7 +118,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
             $this->upsertRow($now);
 
             if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
-                $leaseExpiresAt = new DatePoint((string) $row['lease_expires_at']);
+                $leaseExpiresAt = new DatePoint($row['lease_expires_at']);
                 if ($leaseExpiresAt >= $now) {
                     $this->connection->commit();
 
@@ -132,7 +127,7 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
             }
 
             if (null !== $row && null !== $row['wake_enqueued_until']) {
-                $wakeEnqueuedUntil = new DatePoint((string) $row['wake_enqueued_until']);
+                $wakeEnqueuedUntil = new DatePoint($row['wake_enqueued_until']);
                 if ($wakeEnqueuedUntil >= $now) {
                     $this->connection->commit();
 
@@ -141,12 +136,9 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
             }
 
             $this->connection->executeStatement(
-                sprintf(
-                    'UPDATE %s
+                sprintf('UPDATE %s
                      SET wake_enqueued_until = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE coordinator_key = ?',
-                    $this->coordinatorsTable(),
-                ),
+                     WHERE coordinator_key = ?', $this->coordinatorsTable()),
                 [$now->add($ttl), $now, self::COORDINATOR_KEY],
                 [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
             );
@@ -166,14 +158,17 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
     /** @return null|array{worker_id: null|string, lease_expires_at: null|string, wake_enqueued_until: null|string} */
     private function lockRow(): ?array
     {
-        $row = $this->connection->executeQuery(
-            sprintf(
-                'SELECT worker_id, lease_expires_at, wake_enqueued_until FROM %s WHERE coordinator_key = ? FOR UPDATE',
-                $this->coordinatorsTable(),
-            ),
-            [self::COORDINATOR_KEY],
-            [ParameterType::STRING],
-        )->fetchAssociative();
+        /** @var array{worker_id: ?string, lease_expires_at: ?string, wake_enqueued_until: ?string}|false $row */
+        $row = $this->connection
+            ->executeQuery(
+                sprintf(
+                    'SELECT worker_id, lease_expires_at, wake_enqueued_until FROM %s WHERE coordinator_key = ? FOR UPDATE',
+                    $this->coordinatorsTable(),
+                ),
+                [self::COORDINATOR_KEY],
+                [ParameterType::STRING],
+            )
+            ->fetchAssociative();
 
         return false === $row ? null : $row;
     }
@@ -192,6 +187,6 @@ final readonly class PostgresProjectionCoordinatorLeaseRepository implements Pro
 
     private function coordinatorsTable(): string
     {
-        return $this->tablePrefix.'coordinators';
+        return $this->tablePrefix . 'coordinators';
     }
 }

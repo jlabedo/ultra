@@ -77,7 +77,7 @@ final readonly class StateEmbeddedMetadata
     }
 
     /**
-     * @param array<string, mixed> $normalizedState
+     * @param array<array-key, mixed> $normalizedState
      *
      * @return array<string, mixed>
      */
@@ -94,7 +94,7 @@ final readonly class StateEmbeddedMetadata
     }
 
     /**
-     * @param array<string, mixed> $normalizedState
+     * @param array<array-key, mixed> $normalizedState
      *
      * @return array<string, mixed>
      */
@@ -111,9 +111,9 @@ final readonly class StateEmbeddedMetadata
     }
 
     /**
-     * @param array<string, mixed> $normalizedState
+     * @param array<array-key, mixed> $normalizedState
      *
-     * @return array<string, mixed>
+     * @return array<array-key, mixed>
      */
     private function requireNormalizedEmbedded(array $normalizedState): array
     {
@@ -130,7 +130,7 @@ final readonly class StateEmbeddedMetadata
     }
 
     /**
-     * @param array<string, mixed> $normalizedEmbedded
+     * @param array<array-key, mixed> $normalizedEmbedded
      */
     private function requireNormalizedProperty(array $normalizedEmbedded, string $property): mixed
     {

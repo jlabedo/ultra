@@ -23,16 +23,22 @@ final class WriteSemanticsTest extends RowSetTestCase
         $rows->withKey('upserted')->setColumn('status', 'new')->upsert();
         $rows->withKey('absent')->expectAbsent()->setColumn('status', 'created');
         $fixture->flush();
-        self::assertSame(['status' => 'first', 'note' => 'preserved'], $fixture->stored('inserted', ['status', 'note']));
-        self::assertSame(['status' => 'new'], $fixture->stored('upserted', ['status']));
-        self::assertSame(['status' => 'created'], $fixture->stored('absent', ['status']));
+        static::assertSame(
+            ['status' => 'first', 'note' => 'preserved'],
+            $fixture->stored('inserted', ['status', 'note']),
+        );
+        static::assertSame(['status' => 'new'], $fixture->stored('upserted', ['status']));
+        static::assertSame(['status' => 'created'], $fixture->stored('absent', ['status']));
         $rows->clear();
 
         $rows->withKey('inserted')->expectColumnValue('status', 'first')->setColumn('status', 'second');
         $rows->withKey('upserted')->upsert()->setColumn('note', 'added');
         $fixture->flush();
-        self::assertSame(['status' => 'second', 'note' => 'preserved'], $fixture->stored('inserted', ['status', 'note']));
-        self::assertSame(['status' => 'new', 'note' => 'added'], $fixture->stored('upserted', ['status', 'note']));
+        static::assertSame(
+            ['status' => 'second', 'note' => 'preserved'],
+            $fixture->stored('inserted', ['status', 'note']),
+        );
+        static::assertSame(['status' => 'new', 'note' => 'added'], $fixture->stored('upserted', ['status', 'note']));
     }
 
     #[DataProvider('backends')]
@@ -45,7 +51,7 @@ final class WriteSemanticsTest extends RowSetTestCase
         try {
             $fixture->flush();
         } finally {
-            self::assertSame(['status' => 'original'], $fixture->stored('existing', ['status']));
+            static::assertSame(['status' => 'original'], $fixture->stored('existing', ['status']));
         }
     }
 
@@ -59,9 +65,9 @@ final class WriteSemanticsTest extends RowSetTestCase
         $fixture->rows->withKey('first')->delete();
         $fixture->rows->withKey('second')->delete();
         $fixture->flush();
-        self::assertFalse($fixture->stored('first'));
-        self::assertFalse($fixture->stored('second'));
-        self::assertSame(['status' => 'pending'], $fixture->stored('untouched', ['status']));
+        static::assertFalse($fixture->stored('first'));
+        static::assertFalse($fixture->stored('second'));
+        static::assertSame(['status' => 'pending'], $fixture->stored('untouched', ['status']));
         $fixture->rows->clear();
         $fixture->rows->withKey('untouched')->delete();
         $fixture->rows->withKey('missing')->delete();
@@ -69,7 +75,7 @@ final class WriteSemanticsTest extends RowSetTestCase
         try {
             $fixture->flush();
         } finally {
-            self::assertSame(['status' => 'pending'], $fixture->stored('untouched', ['status']));
+            static::assertSame(['status' => 'pending'], $fixture->stored('untouched', ['status']));
         }
     }
 
@@ -78,21 +84,23 @@ final class WriteSemanticsTest extends RowSetTestCase
     {
         foreach (['memory', 'postgres'] as $backend) {
             foreach (['insert', 'upsert'] as $operation) {
-                yield $backend.' '.$operation => [$backend, $operation];
+                yield $backend . ' ' . $operation => [$backend, $operation];
             }
         }
     }
 
     #[DataProvider('replacements')]
-    public function test_replacement_discards_old_columns_and_preserves_the_original_expectation(string $backend, string $operation): void
-    {
+    public function test_replacement_discards_old_columns_and_preserves_the_original_expectation(
+        string $backend,
+        string $operation,
+    ): void {
         $fixture = $this->fixture($backend);
         $fixture->seed(['id' => 'row', 'status' => 'old', 'note' => 'discarded']);
         $rows = $fixture->rows;
         $rows->withKey('row')->expectColumnValue('status', 'old')->delete();
         $rows->withKey('row')->{$operation}()->setColumn('status', 'new');
         $fixture->flush();
-        self::assertSame(['status' => 'new', 'note' => null], $fixture->stored('row', ['status', 'note']));
+        static::assertSame(['status' => 'new', 'note' => null], $fixture->stored('row', ['status', 'note']));
         $rows->clear();
 
         $rows->withKey('row')->expectColumnValue('status', 'new')->delete();
@@ -102,7 +110,7 @@ final class WriteSemanticsTest extends RowSetTestCase
         try {
             $fixture->flush();
         } finally {
-            self::assertSame(['status' => 'concurrent'], $fixture->stored('row', ['status']));
+            static::assertSame(['status' => 'concurrent'], $fixture->stored('row', ['status']));
         }
     }
 
@@ -116,8 +124,8 @@ final class WriteSemanticsTest extends RowSetTestCase
         $rows->withKey('cancelled')->insert()->setColumn('status', 'new');
         $rows->withKey('cancelled')->delete();
         $fixture->flush();
-        self::assertFalse($fixture->stored('row'));
-        self::assertFalse($fixture->stored('cancelled'));
+        static::assertFalse($fixture->stored('row'));
+        static::assertFalse($fixture->stored('cancelled'));
     }
 
     #[DataProvider('backends')]
@@ -126,14 +134,14 @@ final class WriteSemanticsTest extends RowSetTestCase
         $fixture = $this->fixture($backend);
         $fixture->rows->withKey('absent')->expectAbsent()->delete();
         $fixture->flush();
-        self::assertFalse($fixture->stored('absent'));
+        static::assertFalse($fixture->stored('absent'));
 
         $fixture->seed(['id' => 'absent', 'status' => 'competing']);
         $this->expectException(ConcurrencyException::class);
         try {
             $fixture->flush();
         } finally {
-            self::assertSame(['status' => 'competing'], $fixture->stored('absent', ['status']));
+            static::assertSame(['status' => 'competing'], $fixture->stored('absent', ['status']));
         }
     }
 }

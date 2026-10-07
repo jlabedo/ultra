@@ -9,7 +9,7 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
 {
     /**
-     * @param list<string> $keyColumns
+     * @param list<string> $configuredKeyColumns
      */
     public function __construct(
         private InMemoryRowDatabase $database,
@@ -42,12 +42,7 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
 
     public function rows(array $columns = []): array
     {
-        return $this->database->rowsByKey(
-            $this->tableName,
-            $this->keyColumns(),
-            $columns,
-            $this->configuredScope,
-        );
+        return $this->database->rowsByKey($this->tableName, $this->keyColumns(), $columns, $this->configuredScope);
     }
 
     public function apply(RowSetUpdatePlan $plan): void
@@ -59,9 +54,11 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
         $this->assertExpectedRowKeys($plan->expectedRowKeys, $plan->ignoredRowKeys);
 
         foreach ($plan->rowUpdates as $update) {
-            if (!$update->writes()) {
-                $this->checkRow($update);
+            if ($update->writes()) {
+                continue;
             }
+
+            $this->checkRow($update);
         }
 
         foreach ($plan->rowUpdates as $update) {
@@ -86,9 +83,11 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
                 $retained[$key->fingerprint()] = true;
             }
             foreach ($this->rows() as $row) {
-                if (!isset($retained[$row->key->fingerprint()])) {
-                    $this->database->deleteRowByKey($this->tableName, $row->key);
+                if (isset($retained[$row->key->fingerprint()])) {
+                    continue;
                 }
+
+                $this->database->deleteRowByKey($this->tableName, $row->key);
             }
         }
     }
@@ -103,17 +102,20 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
             return;
         }
 
-        $actual = array_map(
-            static fn (MappedRow $row): string => $row->key->fingerprint(),
-            $this->rows(),
-        );
-        $expected = array_map(static fn (MappedKey $key): string => $key->fingerprint(), $expected);
-        $actual = array_values(array_diff($actual, array_map(static fn (MappedKey $key): string => $key->fingerprint(), $ignored)));
+        $actual = array_map(static fn(MappedRow $row): string => $row->key->fingerprint(), $this->rows());
+        $expected = array_map(static fn(MappedKey $key): string => $key->fingerprint(), $expected);
+        $actual = array_values(array_diff($actual, array_map(
+            static fn(MappedKey $key): string => $key->fingerprint(),
+            $ignored,
+        )));
         sort($actual, SORT_STRING);
         sort($expected, SORT_STRING);
 
         if ($actual !== $expected) {
-            throw new ConcurrencyException(sprintf('Row-set expectation failed for table "%s": row keys changed.', $this->tableName));
+            throw new ConcurrencyException(sprintf(
+                'Row-set expectation failed for table "%s": row keys changed.',
+                $this->tableName,
+            ));
         }
     }
 
@@ -183,7 +185,12 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
 
     private function concurrency(string $message, RowUpdatePlan $update): ConcurrencyException
     {
-        return new ConcurrencyException(sprintf('%s for table "%s" and key %s.', $message, $this->tableName, $update->key));
+        return new ConcurrencyException(sprintf(
+            '%s for table "%s" and key %s.',
+            $message,
+            $this->tableName,
+            $update->key,
+        ));
     }
 
     private function assertKey(MappedKey $key): void

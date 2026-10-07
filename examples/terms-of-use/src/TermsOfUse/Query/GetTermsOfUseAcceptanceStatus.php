@@ -28,15 +28,8 @@ final readonly class GetTermsOfUseAcceptanceStatus
         );
 
         /** @var UserTermsOfUseAcceptanceState $user */
-        $user = $stateStore->load(
-            UserTermsOfUseAcceptanceState::class,
-            new DomainIdentifier('user', $this->userId),
-        );
+        $user = $stateStore->load(UserTermsOfUseAcceptanceState::class, new DomainIdentifier('user', $this->userId));
 
-        return new TermsOfUseAcceptanceStatus(
-            $this->userId,
-            $terms->currentTermsOfUse(),
-            $user->acceptedTermsOfUse(),
-        );
+        return new TermsOfUseAcceptanceStatus($this->userId, $terms->currentTermsOfUse(), $user->acceptedTermsOfUse());
     }
 }

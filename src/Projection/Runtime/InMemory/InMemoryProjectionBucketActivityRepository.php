@@ -25,12 +25,18 @@ final class InMemoryProjectionBucketActivityRepository implements ProjectionBuck
             array_push($affected, ...$this->pendingBucketsForSegment($projectionId, 0, 255));
         }
 
-        usort(
-            $affected,
-            static fn (ProjectionBucketActivity $a, ProjectionBucketActivity $b): int => ($a->projectionId <=> $b->projectionId)
-                ?: ($b->counter <=> $a->counter)
-                ?: ($a->bucket <=> $b->bucket),
-        );
+        usort($affected, static function (ProjectionBucketActivity $a, ProjectionBucketActivity $b): int {
+            $projectionOrder = $a->projectionId <=> $b->projectionId;
+            if (0 !== $projectionOrder) {
+                return $projectionOrder;
+            }
+            $counterOrder = $b->counter <=> $a->counter;
+            if (0 !== $counterOrder) {
+                return $counterOrder;
+            }
+
+            return $a->bucket <=> $b->bucket;
+        });
 
         return array_slice($affected, 0, $limit);
     }
@@ -47,10 +53,14 @@ final class InMemoryProjectionBucketActivityRepository implements ProjectionBuck
             $pending[] = new ProjectionBucketActivity($projectionId, (int) $bucket, $counter);
         }
 
-        usort(
-            $pending,
-            static fn (ProjectionBucketActivity $a, ProjectionBucketActivity $b): int => ($b->counter <=> $a->counter) ?: ($a->bucket <=> $b->bucket),
-        );
+        usort($pending, static function (ProjectionBucketActivity $a, ProjectionBucketActivity $b): int {
+            $counterOrder = $b->counter <=> $a->counter;
+            if (0 !== $counterOrder) {
+                return $counterOrder;
+            }
+
+            return $a->bucket <=> $b->bucket;
+        });
 
         return $pending;
     }

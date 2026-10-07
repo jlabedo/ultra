@@ -25,14 +25,12 @@ final class ApiExceptionSubscriber implements EventSubscriberInterface
         $throwable = $event->getThrowable();
 
         if ($throwable instanceof InvariantViolation) {
-            $violations = array_map(
-                static fn (Violation $violation): array => [
-                    'code' => $violation->code,
-                    'message' => $violation->message,
-                ],
-                $throwable->violations,
-            );
-            $statusCode = 1 === count($throwable->violations) && str_ends_with($throwable->violations[0]->code, '.not_found')
+            $violations = array_map(static fn(Violation $violation): array => [
+                'code' => $violation->code,
+                'message' => $violation->message,
+            ], $throwable->violations);
+            $statusCode = 1 === count($throwable->violations)
+            && str_ends_with($throwable->violations[0]->code, '.not_found')
                 ? JsonResponse::HTTP_NOT_FOUND
                 : JsonResponse::HTTP_UNPROCESSABLE_ENTITY;
 

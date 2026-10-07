@@ -22,7 +22,9 @@ use Ultra\MessageHandling_Compiler\HandlerDependencyExpressionResolverInterface;
 final readonly class ContextualRouterDependencyResolver implements HandlerDependencyExpressionResolverInterface
 {
     /** @param array<string, string> $wrapperClassByServiceId Maps router service ID to generated wrapper class name */
-    public function __construct(private array $wrapperClassByServiceId) {}
+    public function __construct(
+        private array $wrapperClassByServiceId,
+    ) {}
 
     public function resolve(string $serviceId, string $contextVar): ?string
     {
@@ -41,8 +43,6 @@ final readonly class ContextualRouterDependencyResolver implements HandlerDepend
 
     public function extraServiceIds(string $serviceId): array
     {
-        return isset($this->wrapperClassByServiceId[$serviceId])
-            ? [MessageContextPropagatorInterface::class]
-            : [];
+        return isset($this->wrapperClassByServiceId[$serviceId]) ? [MessageContextPropagatorInterface::class] : [];
     }
 }

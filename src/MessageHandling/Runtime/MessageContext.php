@@ -40,9 +40,7 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
      */
     public static function coerce(array|self $values): self
     {
-        return $values instanceof self
-            ? $values
-            : self::fromArray($values);
+        return $values instanceof self ? $values : self::fromArray($values);
     }
 
     public static function empty(): self
@@ -65,9 +63,7 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
 
     public function get(int|string $key, mixed $default = null): mixed
     {
-        return array_key_exists($key, $this->values)
-            ? $this->values[$key]
-            : $default;
+        return array_key_exists($key, $this->values) ? $this->values[$key] : $default;
     }
 
     public function with(int|string $key, mixed $value): self
@@ -110,9 +106,7 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
      */
     public function merge(array|self $values): self
     {
-        $values = $values instanceof self
-            ? $values->all()
-            : $values;
+        $values = $values instanceof self ? $values->all() : $values;
 
         if ([] === $values) {
             return $this;
@@ -148,25 +142,27 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
         return new \ArrayIterator($this->values);
     }
 
+    /** @param mixed $offset ArrayAccess also receives invalid offsets that must be rejected. */
     public function offsetExists(mixed $offset): bool
     {
         return (is_string($offset) || is_int($offset)) && array_key_exists($offset, $this->values);
     }
 
+    /** @param mixed $offset ArrayAccess also receives invalid offsets that must be rejected. */
     public function offsetGet(mixed $offset): mixed
     {
         if (!is_string($offset) && !is_int($offset)) {
             return null;
         }
 
-        return array_key_exists($offset, $this->values)
-            ? $this->values[$offset]
-            : null;
+        return array_key_exists($offset, $this->values) ? $this->values[$offset] : null;
     }
 
     public function offsetSet(mixed $offset, mixed $value): void
     {
-        throw new \BadMethodCallException('MessageContext is immutable; use with() or merge() to derive a new context.');
+        throw new \BadMethodCallException(
+            'MessageContext is immutable; use with() or merge() to derive a new context.',
+        );
     }
 
     public function offsetUnset(mixed $offset): void
@@ -185,9 +181,7 @@ final readonly class MessageContext implements \ArrayAccess, \Countable, \Iterat
             throw new \InvalidArgumentException('Local message context keys must be non-empty strings.');
         }
 
-        return str_starts_with($key, self::LOCAL_PREFIX)
-            ? $key
-            : self::LOCAL_PREFIX.$key;
+        return str_starts_with($key, self::LOCAL_PREFIX) ? $key : self::LOCAL_PREFIX . $key;
     }
 
     /**

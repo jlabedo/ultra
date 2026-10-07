@@ -16,11 +16,11 @@ use App\Faculty\Write\CreateCourseCommand;
 use App\Faculty\Write\EnrollStudentInFacultyCommand;
 use App\Faculty\Write\SubscribeStudentToCourseCommand;
 use App\Faculty\Write\UnsubscribeStudentFromCourseCommand;
-use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\MessageHandling\Async\QueueWorker;
 use Ultra\MessageHandling\MediatorInterface;
+use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
 use Ultra\UnitOfWork\UnitOfWork;
 
 /**
@@ -103,8 +103,10 @@ final class FacultyFlowTest extends FacultyKernelTestCase
         self::assertCount(3, $notifications->sent());
         self::assertTrue(array_any(
             $notifications->sent(),
-            static fn ($notification): bool => 'admin' === $notification->recipientId
-                && 'All courses are fully booked now.' === $notification->message,
+            static fn($notification): bool => (
+                'admin' === $notification->recipientId
+                && 'All courses are fully booked now.' === $notification->message
+            ),
         ));
     }
 
@@ -139,30 +141,27 @@ final class FacultyFlowTest extends FacultyKernelTestCase
         $students = $mediator->send(new ListStudentProfilesQuery());
         $overview = $mediator->send(new GetFacultyOverviewQuery());
 
-        self::assertSame(['course-a', 'course-b'], array_map(
-            static fn ($course): string => $course->courseId,
-            $courses,
-        ));
-        self::assertSame([1, 0], array_map(
-            static fn ($course): int => $course->subscribedStudents,
-            $courses,
-        ));
-        self::assertSame(['student-a', 'student-b'], array_map(
-            static fn ($student): string => $student->studentId,
-            $students,
-        ));
-        self::assertSame([['course-a'], []], array_map(
-            static fn ($student): array => $student->subscribedCourseIds,
-            $students,
-        ));
-        self::assertSame(['course-a', 'course-b'], array_map(
-            static fn ($course): string => $course->courseId,
-            $overview->courses,
-        ));
-        self::assertSame(['student-a', 'student-b'], array_map(
-            static fn ($student): string => $student->studentId,
-            $overview->students,
-        ));
+        self::assertSame(
+            ['course-a', 'course-b'],
+            array_map(static fn($course): string => $course->courseId, $courses),
+        );
+        self::assertSame([1, 0], array_map(static fn($course): int => $course->subscribedStudents, $courses));
+        self::assertSame(
+            ['student-a', 'student-b'],
+            array_map(static fn($student): string => $student->studentId, $students),
+        );
+        self::assertSame(
+            [['course-a'], []],
+            array_map(static fn($student): array => $student->subscribedCourseIds, $students),
+        );
+        self::assertSame(
+            ['course-a', 'course-b'],
+            array_map(static fn($course): string => $course->courseId, $overview->courses),
+        );
+        self::assertSame(
+            ['student-a', 'student-b'],
+            array_map(static fn($student): string => $student->studentId, $overview->students),
+        );
     }
 
     public function test_it_preserves_tracked_subscriptions_when_student_enrollment_replays(): void

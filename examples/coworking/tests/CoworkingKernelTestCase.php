@@ -7,8 +7,8 @@ namespace App\Tests;
 use App\Infrastructure\CoworkingSchema;
 use App\Kernel;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
-use Ultra\Time\StatickClock;
 use Ultra\Time\ClockInterface;
+use Ultra\Time\StatickClock;
 
 abstract class CoworkingKernelTestCase extends KernelTestCase
 {

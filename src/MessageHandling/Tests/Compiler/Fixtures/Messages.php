@@ -8,24 +8,32 @@ use Ultra\MessageHandling\Attribute\SelfHandler;
 
 final readonly class GreetingMessage
 {
-    public function __construct(public string $name) {}
+    public function __construct(
+        public string $name,
+    ) {}
 }
 
 final readonly class FarewellMessage
 {
-    public function __construct(public string $name) {}
+    public function __construct(
+        public string $name,
+    ) {}
 }
 
 final readonly class EmptyMessage {}
 
 final readonly class RecordedEvent
 {
-    public function __construct(public string $payload) {}
+    public function __construct(
+        public string $payload,
+    ) {}
 }
 
 final readonly class ProcessEntityMessage
 {
-    public function __construct(public string $entityId) {}
+    public function __construct(
+        public string $entityId,
+    ) {}
 }
 
 final readonly class ProcessPairMessage
@@ -38,11 +46,13 @@ final readonly class ProcessPairMessage
 
 final readonly class SelfGreetingMessage
 {
-    public function __construct(public string $name) {}
+    public function __construct(
+        public string $name,
+    ) {}
 
     #[SelfHandler]
     public function greet(): string
     {
-        return 'Hello, '.$this->name.'!';
+        return 'Hello, ' . $this->name . '!';
     }
 }

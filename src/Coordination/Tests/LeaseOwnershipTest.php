@@ -20,20 +20,20 @@ final class LeaseOwnershipTest extends CoordinationTestCase
     {
         $clock = new StatickClock(new \DateTimeImmutable('2026-01-01T00:00:00Z'));
         $lease = $this->lease($backend, $clock);
-        self::assertFalse($lease->hasLiveCoordinator('a'));
+        static::assertFalse($lease->hasLiveCoordinator('a'));
         $lease->renew('missing', 'w1');
         $lease->release('missing', 'w1');
-        self::assertFalse($lease->hasLiveCoordinator('missing'));
-        self::assertTrue($lease->acquire('a', 'w1'));
-        self::assertTrue($lease->acquire('b', 'w1'));
-        self::assertFalse($lease->acquire('a', 'w1'));
-        self::assertFalse($lease->acquire('a', 'w2'));
+        static::assertFalse($lease->hasLiveCoordinator('missing'));
+        static::assertTrue($lease->acquire('a', 'w1'));
+        static::assertTrue($lease->acquire('b', 'w1'));
+        static::assertFalse($lease->acquire('a', 'w1'));
+        static::assertFalse($lease->acquire('a', 'w2'));
         $lease->release('a', 'w2');
-        self::assertTrue($lease->hasLiveCoordinator('a'));
+        static::assertTrue($lease->hasLiveCoordinator('a'));
         $lease->release('a', 'w1');
-        self::assertFalse($lease->hasLiveCoordinator('a'));
-        self::assertTrue($lease->acquire('a', 'w2'));
-        self::assertFalse($lease->acquire('b', 'w2'));
+        static::assertFalse($lease->hasLiveCoordinator('a'));
+        static::assertTrue($lease->acquire('a', 'w2'));
+        static::assertFalse($lease->acquire('b', 'w2'));
     }
 
     #[DataProvider('backends')]
@@ -41,25 +41,25 @@ final class LeaseOwnershipTest extends CoordinationTestCase
     {
         $clock = new StatickClock(new \DateTimeImmutable('2026-01-01T00:00:00Z'));
         $lease = $this->lease($backend, $clock);
-        self::assertTrue($lease->acquire('a', 'w1'));
-        self::assertTrue($lease->acquire('unrenewed', 'w1'));
+        static::assertTrue($lease->acquire('a', 'w1'));
+        static::assertTrue($lease->acquire('unrenewed', 'w1'));
         $clock->sleep(new Duration(seconds: 60));
-        self::assertTrue($lease->hasLiveCoordinator('a'));
-        self::assertFalse($lease->acquire('a', 'w2'));
+        static::assertTrue($lease->hasLiveCoordinator('a'));
+        static::assertFalse($lease->acquire('a', 'w2'));
         $lease->renew('a', 'w1');
         $clock->sleep(new Duration(seconds: 1));
-        self::assertFalse($lease->hasLiveCoordinator('unrenewed'));
+        static::assertFalse($lease->hasLiveCoordinator('unrenewed'));
         $clock->sleep(new Duration(seconds: 59));
-        self::assertTrue($lease->hasLiveCoordinator('a'));
+        static::assertTrue($lease->hasLiveCoordinator('a'));
         $clock->sleep(new Duration(seconds: 1));
-        self::assertTrue($lease->acquire('a', 'w2', new Duration(seconds: 10)));
+        static::assertTrue($lease->acquire('a', 'w2', new Duration(seconds: 10)));
         $clock->sleep(new Duration(seconds: 5));
         $lease->renew('a', 'w2', new Duration(seconds: 10));
         $lease->release('a', 'w1');
         $lease->renew('a', 'w1', new Duration(seconds: 100));
-        self::assertTrue($lease->hasLiveCoordinator('a'));
+        static::assertTrue($lease->hasLiveCoordinator('a'));
         $clock->sleep(new Duration(seconds: 11));
-        self::assertFalse($lease->hasLiveCoordinator('a'));
-        self::assertTrue($lease->acquire('a', 'w3'));
+        static::assertFalse($lease->hasLiveCoordinator('a'));
+        static::assertTrue($lease->acquire('a', 'w3'));
     }
 }

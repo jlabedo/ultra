@@ -16,7 +16,9 @@ final class AsyncQueueUnitOfWork implements AsyncMessageSender, UnitOfWork
      */
     private array $pendingEnqueues = [];
 
-    public function __construct(private readonly AsyncMessageSender $inner) {}
+    public function __construct(
+        private readonly AsyncMessageSender $inner,
+    ) {}
 
     public function enqueue(AsyncEnvelope $envelope, ?AsyncEnqueueOptions $options = null): AsyncMessageId
     {

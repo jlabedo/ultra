@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper;
 
 class DenormalizationContext
@@ -11,11 +13,8 @@ class DenormalizationContext
         $this->path = $path ?? Path::new();
     }
 
-    public function with(
-        ?Path $path = null,
-    ): self {
-        return new self(
-            path: $path ?? $this->path,
-        );
+    public function with(?Path $path = null): self
+    {
+        return new self(path: $path ?? $this->path);
     }
 }

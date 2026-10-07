@@ -20,16 +20,19 @@ final class BufferedViewTest extends RowSetTestCase
         $fixture->seed(['id' => 'first', 'status' => 'pending', 'note' => 'draft']);
         $rows = $fixture->rows;
 
-        self::assertSame(['status' => 'pending'], $rows->row('first', ['status']));
-        self::assertSame('first', $rows->row('first')['id']);
-        self::assertSame('draft', $rows->row('first')['note']);
-        self::assertFalse($rows->row('missing'));
+        static::assertSame(['status' => 'pending'], $rows->row('first', ['status']));
+        static::assertSame('first', $rows->row('first')['id']);
+        static::assertSame('draft', $rows->row('first')['note']);
+        static::assertFalse($rows->row('missing'));
         $all = $rows->rows(['status', 'note']);
-        self::assertSame(['first', 'second'], array_map(static fn ($row) => $row->key->value('id'), $all));
-        self::assertSame([['status' => 'pending', 'note' => 'draft'], ['status' => 'active', 'note' => 'published']], array_column($all, 'columns'));
-        self::assertSame('draft', $rows->rows()[0]->columns['note']);
-        self::assertArrayNotHasKey('id', $rows->rows()[0]->columns);
-        self::assertFalse($rows->hasPendingChanges());
+        static::assertSame(['first', 'second'], array_map(static fn($row) => $row->key->value('id'), $all));
+        static::assertSame(
+            [['status' => 'pending', 'note' => 'draft'], ['status' => 'active', 'note' => 'published']],
+            array_column($all, 'columns'),
+        );
+        static::assertSame('draft', $rows->rows()[0]->columns['note']);
+        static::assertArrayNotHasKey('id', $rows->rows()[0]->columns);
+        static::assertFalse($rows->hasPendingChanges());
     }
 
     public function test_reads_overlay_updates_creations_and_deletions_without_writing_storage(): void
@@ -42,15 +45,18 @@ final class BufferedViewTest extends RowSetTestCase
         $rows->withKey('remove')->delete();
         $rows->withKey('added')->insert()->setColumns(['status' => 'new', 'note' => 'fresh']);
 
-        self::assertSame(['status' => 'active', 'note' => 'draft'], $rows->row('keep', ['status', 'note']));
-        self::assertSame(['status' => 'new', 'version_a' => null], $rows->row('added', ['status', 'version_a']));
-        self::assertFalse($rows->row('remove'));
+        static::assertSame(['status' => 'active', 'note' => 'draft'], $rows->row('keep', ['status', 'note']));
+        static::assertSame(['status' => 'new', 'version_a' => null], $rows->row('added', ['status', 'version_a']));
+        static::assertFalse($rows->row('remove'));
         $all = $rows->rows(['status', 'note']);
-        self::assertSame(['added', 'keep'], array_map(static fn ($row) => $row->key->value('id'), $all));
-        self::assertSame([['status' => 'new', 'note' => 'fresh'], ['status' => 'active', 'note' => 'draft']], array_column($all, 'columns'));
-        self::assertSame(['status' => 'pending'], $fixture->stored('keep', ['status']));
-        self::assertNotFalse($fixture->stored('remove'));
-        self::assertFalse($fixture->stored('added'));
+        static::assertSame(['added', 'keep'], array_map(static fn($row) => $row->key->value('id'), $all));
+        static::assertSame(
+            [['status' => 'new', 'note' => 'fresh'], ['status' => 'active', 'note' => 'draft']],
+            array_column($all, 'columns'),
+        );
+        static::assertSame(['status' => 'pending'], $fixture->stored('keep', ['status']));
+        static::assertNotFalse($fixture->stored('remove'));
+        static::assertFalse($fixture->stored('added'));
     }
 
     public function test_check_only_expectations_do_not_change_the_read_view(): void
@@ -61,9 +67,9 @@ final class BufferedViewTest extends RowSetTestCase
         $rows->withKey('present')->expectColumnValue('status', 'pending');
         $rows->withKey('missing')->expectAbsent();
 
-        self::assertSame(['status' => 'pending'], $rows->row('present', ['status']));
-        self::assertFalse($rows->row('missing'));
-        self::assertSame(['present'], array_map(static fn ($row) => $row->key->value('id'), $rows->rows()));
+        static::assertSame(['status' => 'pending'], $rows->row('present', ['status']));
+        static::assertFalse($rows->row('missing'));
+        static::assertSame(['present'], array_map(static fn($row) => $row->key->value('id'), $rows->rows()));
         $rows->expectSameRowKeys(['present']);
     }
 }

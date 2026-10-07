@@ -21,10 +21,7 @@ final class PostgresTestSupport
 {
     public static function store(Connection $connection, string $tablePrefix): PostgresEventStoreHStore
     {
-        return new PostgresEventStoreHStore(
-            connection: $connection,
-            tablePrefix: $tablePrefix,
-        );
+        return new PostgresEventStoreHStore(connection: $connection, tablePrefix: $tablePrefix);
     }
 
     public static function schema(string $tablePrefix): PostgresEventStoreHStoreSchema
@@ -112,6 +109,6 @@ final class PostgresTestSupport
 
     public static function uniquePrefix(): string
     {
-        return 'ultra_event_store_'.bin2hex(random_bytes(4)).'_';
+        return 'ultra_event_store_' . bin2hex(random_bytes(4)) . '_';
     }
 }

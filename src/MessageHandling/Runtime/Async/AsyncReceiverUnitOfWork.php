@@ -15,7 +15,9 @@ final class AsyncReceiverUnitOfWork implements AsyncMessageReceiver, UnitOfWork
     /** @var list<AsyncDelivery> */
     private array $pendingAcknowledgements = [];
 
-    public function __construct(private readonly AsyncMessageReceiver $inner) {}
+    public function __construct(
+        private readonly AsyncMessageReceiver $inner,
+    ) {}
 
     public function reserve(Duration $leaseDuration = new Duration(seconds: 30)): ?AsyncDelivery
     {

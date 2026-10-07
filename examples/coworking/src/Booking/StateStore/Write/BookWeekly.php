@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace App\Booking\StateStore\Write;
 
-use App\Booking\Domain\Slot;
 use App\Booking\Domain\BookingIds;
+use App\Booking\Domain\Slot;
 use App\Booking\StateStore\BookingPlanner;
 use App\Booking\StateStore\State\BookingState;
 use App\Booking\StateStore\State\CompanyState;
@@ -32,11 +32,18 @@ final readonly class BookWeekly
     /** @return list<BookingState> */
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(?RoomState $room, ?MemberState $member, ?CompanyState $company, BookingPlanner $planner): array
-    {
+    public function decide(
+        ?RoomState $room,
+        ?MemberState $member,
+        ?CompanyState $company,
+        BookingPlanner $planner,
+    ): array {
         $occurrences = [];
         for ($week = 0; $week < $this->weeks; ++$week) {
-            $occurrences[] = ['id' => BookingIds::occurrence($this->seriesId, $week), 'slot' => $this->firstSlot->shiftedByWeeks($week)];
+            $occurrences[] = [
+                'id' => BookingIds::occurrence($this->seriesId, $week),
+                'slot' => $this->firstSlot->shiftedByWeeks($week),
+            ];
         }
 
         return $planner->plan($occurrences, $room, $member, $company);

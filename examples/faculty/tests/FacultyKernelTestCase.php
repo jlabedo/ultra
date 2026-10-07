@@ -46,14 +46,14 @@ abstract class FacultyKernelTestCase extends KernelTestCase
         $token = (string) ($_SERVER['TEST_TOKEN'] ?? $_ENV['TEST_TOKEN'] ?? 'default');
         $token = preg_replace('/[^a-z0-9_]+/i', '_', $token) ?: 'default';
         $token = substr(strtolower($token), 0, 12);
-        $hash = substr(hash('sha1', static::class.'::'.$this->name()), 0, 12);
+        $hash = substr(hash('sha1', static::class . '::' . $this->name()), 0, 12);
 
         return sprintf('faculty_%s_%s_', $token, $hash);
     }
 
     private function setTablePrefixEnv(string $tablePrefix): void
     {
-        putenv('FACULTY_EVENT_STORE_TABLE_PREFIX='.$tablePrefix);
+        putenv('FACULTY_EVENT_STORE_TABLE_PREFIX=' . $tablePrefix);
         $_ENV['FACULTY_EVENT_STORE_TABLE_PREFIX'] = $tablePrefix;
         $_SERVER['FACULTY_EVENT_STORE_TABLE_PREFIX'] = $tablePrefix;
     }
@@ -105,11 +105,9 @@ abstract class FacultyKernelTestCase extends KernelTestCase
             return null;
         }
 
-        return DriverManager::getConnection(
-            new DsnParser([
-                'pgsql' => 'pdo_pgsql',
-                'postgresql' => 'pdo_pgsql',
-            ])->parse((string) ($_SERVER['DATABASE_URL'] ?? $_ENV['DATABASE_URL'] ?? '')),
-        );
+        return DriverManager::getConnection(new DsnParser([
+            'pgsql' => 'pdo_pgsql',
+            'postgresql' => 'pdo_pgsql',
+        ])->parse((string) ($_SERVER['DATABASE_URL'] ?? $_ENV['DATABASE_URL'] ?? '')));
     }
 }

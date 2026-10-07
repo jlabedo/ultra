@@ -6,6 +6,44 @@ Read root [composer.json](../composer.json) for runtime requirements and scripts
 
 For Postgres integration, start the database defined by [docker-compose.yml](../docker-compose.yml) with `docker compose up -d`.
 
+## Mago
+
+The repository's [Mago binary](../bin/mago) uses [mago.toml](../mago.toml). Run it from the repository root:
+
+```bash
+bin/mago lint
+bin/mago analyze
+bin/mago lint src/StoredState/StateStore/StateStore.php
+bin/mago config --show linter
+bin/mago list-files --command analyzer
+```
+
+Source selection covers `src/`, `tests/`, `examples/*/src/**/*.php` and `examples/*/tests/**/*.php`.
+Analysis loads dependency metadata from `vendor/` and `tools/vendor/phpunit/`, where the tooling bootstrap
+installs PHPUnit. For progressive adoption, the analyzer excludes `src/*/Tests/**`, `tests/**` and `examples/**`.
+The linter excludes test scenarios, fixtures and integration applications under `src/*/Tests/**`, `tests/**`
+and `examples/*/tests/**`; example sources remain linted. All selected files remain formatted. Shared
+infrastructure in `src/Testing/` outside its `Tests/` directory remains analyzed and linted.
+The configuration disables selected stylistic rules and the linter's `cyclomatic-complexity`, `kan-defect`,
+`too-many-methods`, `excessive-parameter-list` and `halstead` metrics to avoid broad structural refactoring during
+adoption. The `no-else-clause` and `no-boolean-flag-parameter` rules are disabled: alternatives with shared
+continuation and boolean domain facts do not require structural changes solely to satisfy lint advice.
+Analyzer checks such as unused definitions, dead code and exception declarations are disabled as well.
+The analyzer ignores `mixed-assignment` because validation and dynamic dispatch
+boundaries legitimately assign values before their types are known. Other diagnostics involving `mixed`,
+concrete type errors and unresolved symbols remain reported. There is no baseline suppressing existing issues,
+so remaining analysis errors still fail the command.
+
+Example applications have overlapping `App` namespaces and separate dependency sets; their type analysis
+requires an application-specific configuration.
+
+PHPDoc must describe stored values as well as accepted inputs. PHP converts numeric string array keys to integers;
+use `array-key` for maps that can contain such keys so analysis preserves necessary string conversions.
+Validation boundaries take unvalidated inputs and describe the narrower type only after validation. Review automatic
+analysis fixes against the guarantee suites before retaining them.
+
+The existing Composer formatting script is still defined in [composer.json](../composer.json).
+
 ## Tests
 
 Run [PHPUnit](../bin/phpunit) from the repository root ([configuration](../phpunit.xml)):

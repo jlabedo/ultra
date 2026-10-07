@@ -11,7 +11,10 @@ final class RecordingUnitOfWork implements UnitOfWork
     public bool $pending = false;
     public ?\Throwable $flushFailure = null;
 
-    public function __construct(private CallLog $log, private string $name = 'unit_of_work') {}
+    public function __construct(
+        private CallLog $log,
+        private string $name = 'unit_of_work',
+    ) {}
 
     public function hasPendingChanges(): bool
     {
@@ -20,7 +23,7 @@ final class RecordingUnitOfWork implements UnitOfWork
 
     public function flush(): void
     {
-        $this->log->entries[] = $this->name.':flush';
+        $this->log->entries[] = $this->name . ':flush';
         if (null !== $this->flushFailure) {
             throw $this->flushFailure;
         }
@@ -29,7 +32,7 @@ final class RecordingUnitOfWork implements UnitOfWork
 
     public function clear(): void
     {
-        $this->log->entries[] = $this->name.':clear';
+        $this->log->entries[] = $this->name . ':clear';
         $this->pending = false;
     }
 }

@@ -16,7 +16,7 @@ interface EventRegistryInterface
     public function getDomainIdentifiers(object $event): array;
 
     /**
-     * @return array<string, class-string>
+     * @return array<array-key, class-string>
      */
     public function all(): array;
 }

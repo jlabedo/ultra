@@ -66,10 +66,19 @@ final readonly class BookRoom
         ]);
         Violations::throwIfAny([
             ...BookingPolicy::slotViolations($this->slot, $clock->now()),
-            !$schedule->isFree($this->slot) ? new Violation('slot.unavailable', 'Room is already booked for this slot.') : null,
+            !$schedule->isFree($this->slot)
+                ? new Violation('slot.unavailable', 'Room is already booked for this slot.')
+                : null,
             BookingPolicy::quotaExceeded($company->monthlyMinutes, $usage->usedMinutes(), $this->slot->minutes()),
         ]);
 
-        return new RoomBooked($this->bookingId, $this->roomId, $this->memberId, $member->companyId, $this->slot->start, $this->slot->end);
+        return new RoomBooked(
+            $this->bookingId,
+            $this->roomId,
+            $this->memberId,
+            $member->companyId,
+            $this->slot->start,
+            $this->slot->end,
+        );
     }
 }

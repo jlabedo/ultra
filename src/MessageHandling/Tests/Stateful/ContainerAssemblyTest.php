@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
-use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventStore\InMemoryEventStore;
@@ -26,7 +26,11 @@ final class ContainerAssemblyTest extends DecisionTestCase
         $builder->setAlias('test.mediator', \Ultra\MessageHandling\MediatorInterface::class)->setPublic(true);
         $builder->register(DecisionService::class, DecisionService::class);
         $builder->register(EventBusInterface::class, DecisionEventBus::class)->setSynthetic(true)->setPublic(true);
-        $extensions = [new \Ultra\MessageHandling\MessageHandlingExtension(), $this->mapperExtension(), new \Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension()];
+        $extensions = [
+            new \Ultra\MessageHandling\MessageHandlingExtension(),
+            $this->mapperExtension(),
+            new \Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension(),
+        ];
         $classes = [];
         if ('stored' !== $family) {
             $classes = [CourseCreated::class, \Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState::class];
@@ -38,8 +42,13 @@ final class ContainerAssemblyTest extends DecisionTestCase
         if ('events' !== $family) {
             $classes[] = DecisionOrderState::class;
             $builder->register(InMemoryRowDatabase::class, InMemoryRowDatabase::class)->setPublic(true);
-            $builder->register(InMemoryMappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)->setArguments([new Reference(InMemoryRowDatabase::class)]);
-            $builder->setAlias(\Ultra\MappedTable\MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class);
+            $builder
+                ->register(InMemoryMappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
+                ->setArguments([new Reference(InMemoryRowDatabase::class)]);
+            $builder->setAlias(
+                \Ultra\MappedTable\MappedRowSetAdapterFactory::class,
+                InMemoryMappedRowSetAdapterFactory::class,
+            );
             $builder->setAlias('test.state_store', \Ultra\StateStore\StateStore::class)->setPublic(true);
             $extensions[] = new \Ultra\StateStore_Bundle\StateStoreExtension();
         }
@@ -59,9 +68,9 @@ final class ContainerAssemblyTest extends DecisionTestCase
             $extension->build($builder);
         }
         $builder->compile();
-        $class = 'StatefulContainer_'.bin2hex(random_bytes(8));
-        $file = $builder->getParameter('kernel.build_dir').'/container.php';
-        file_put_contents($file, (new PhpDumper($builder))->dump(['class' => $class]));
+        $class = 'StatefulContainer_' . bin2hex(random_bytes(8));
+        $file = $builder->getParameter('kernel.build_dir') . '/container.php';
+        file_put_contents($file, new PhpDumper($builder)->dump(['class' => $class]));
         require $file;
         $container = new $class();
         $container->set(EventBusInterface::class, new DecisionEventBus());
@@ -72,22 +81,30 @@ final class ContainerAssemblyTest extends DecisionTestCase
             'stored' => new InspectDecisionOrder('order', $state),
             'mixed' => new InspectMixedDecision('course', 'order', [$event, $state]),
         };
-        self::assertEquals('mixed' === $family ? [$event, $state] : ('events' === $family ? $event : $state), $container->get('test.mediator')->send($command));
+        static::assertEquals(
+            'mixed' === $family ? [$event, $state] : ('events' === $family ? $event : $state),
+            $container->get('test.mediator')->send($command),
+        );
         if ('stored' !== $family) {
-            self::assertCount(1, $container->get(InMemoryEventStore::class)->load(StreamQuery::all())->events);
+            static::assertCount(1, $container->get(InMemoryEventStore::class)->load(StreamQuery::all())->events);
         }
         if ('events' !== $family) {
-            self::assertEquals($state, $container->get('test.state_store')->load(DecisionOrderState::class, 'order'));
+            static::assertEquals($state, $container->get('test.state_store')->load(DecisionOrderState::class, 'order'));
         }
         if ('mixed' === $family) {
             $foreignState = new DecisionOrderState('foreign', 'ignored');
-            self::assertSame($foreignState, $container->get('test.mediator')->send(new InspectDecisionCourse('course', $foreignState)));
-            self::assertNull($container->get('test.state_store')->load(DecisionOrderState::class, 'foreign'));
+            static::assertSame(
+                $foreignState,
+                $container->get('test.mediator')->send(new InspectDecisionCourse('course', $foreignState)),
+            );
+            static::assertNull($container->get('test.state_store')->load(DecisionOrderState::class, 'foreign'));
             $foreignEvent = new CourseCreated('foreign', 'Ignored', 1);
-            self::assertSame($foreignEvent, $container->get('test.mediator')->send(new InspectDecisionOrder('order', $foreignEvent)));
-            self::assertCount(1, $container->get(InMemoryEventStore::class)->load(StreamQuery::all())->events);
+            static::assertSame(
+                $foreignEvent,
+                $container->get('test.mediator')->send(new InspectDecisionOrder('order', $foreignEvent)),
+            );
+            static::assertCount(1, $container->get(InMemoryEventStore::class)->load(StreamQuery::all())->events);
         }
-
     }
 
     public static function families(): iterable

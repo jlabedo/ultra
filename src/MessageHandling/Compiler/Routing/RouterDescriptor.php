@@ -11,6 +11,9 @@ namespace Ultra\MessageHandling_Compiler\Routing;
  */
 final readonly class RouterDescriptor
 {
+    /**
+     * @param \Closure(\ReflectionMethod): ?\Ultra\MessageHandling\Attribute\RouteMatch $matcher
+     */
     public function __construct(
         /** FQCN of the router interface, e.g. EventBusInterface::class */
         public string $interfaceName,

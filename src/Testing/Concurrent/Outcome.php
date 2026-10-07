@@ -24,11 +24,8 @@ final class Outcome
         return new self(false, null, $exception, $exception::class, $exception->getMessage());
     }
 
-    public static function failureFromDescription(
-        string $class,
-        string $message,
-        ?\Throwable $exception = null,
-    ): self {
+    public static function failureFromDescription(string $class, string $message, ?\Throwable $exception = null): self
+    {
         return new self(false, null, $exception, $class, $message);
     }
 

@@ -8,15 +8,18 @@ use Ultra\EventStore\Checkpoint;
 use Ultra\Projection\ProjectionSegment;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
 use Ultra\Time\ClockInterface;
+use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
 
 final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepositoryInterface
 {
-    /** @var array<string, array<int, array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|int}>> */
+    /** @var array<string, array<int, array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|DatePoint}>> */
     private array $segments = [];
 
-    public function __construct(private ClockInterface $clock = new SystemClock()) {}
+    public function __construct(
+        private ClockInterface $clock = new SystemClock(),
+    ) {}
 
     public function ensureInitialized(string $projectionId): bool
     {
@@ -42,11 +45,15 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         unset($this->segments[$projectionId]);
     }
 
-    public function claimSegment(string $projectionId, int $bucketFrom, string $workerId, ?Duration $leaseDuration = null): ?ProjectionSegment
-    {
+    public function claimSegment(
+        string $projectionId,
+        int $bucketFrom,
+        string $workerId,
+        ?Duration $leaseDuration = null,
+    ): ?ProjectionSegment {
         $leaseDuration ??= Duration::seconds(60);
         $row = $this->segments[$projectionId][$bucketFrom] ?? null;
-        if (null === $row || (null !== $row['workerId'] && $row['workerId'] !== $workerId)) {
+        if (null === $row || null !== $row['workerId'] && $row['workerId'] !== $workerId) {
             return null;
         }
 
@@ -71,11 +78,9 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         }
 
         $row['checkpoint'] = $checkpoint;
+        $row['leaseExpiresAt'] = $caughtUp ? null : $this->clock->now()->add($leaseDuration);
         if ($caughtUp) {
             $row['workerId'] = null;
-            $row['leaseExpiresAt'] = null;
-        } else {
-            $row['leaseExpiresAt'] = $this->clock->now()->add($leaseDuration);
         }
 
         $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
@@ -135,7 +140,10 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         $rows = $this->segments[$projectionId] ?? [];
         ksort($rows);
 
-        return array_map(fn (array $row): ProjectionSegment => $this->toSegment($projectionId, $row), array_values($rows));
+        return array_map(fn(array $row): ProjectionSegment => $this->toSegment(
+            $projectionId,
+            $row,
+        ), array_values($rows));
     }
 
     public function takeSegmentsForRange(
@@ -159,8 +167,12 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return $segments;
     }
 
-    public function replaceSegmentsWithMergedSegment(string $projectionId, int $bucketFrom, int $bucketTo, Checkpoint $checkpoint): void
-    {
+    public function replaceSegmentsWithMergedSegment(
+        string $projectionId,
+        int $bucketFrom,
+        int $bucketTo,
+        Checkpoint $checkpoint,
+    ): void {
         $segments = $this->segmentsForRange($projectionId, $bucketFrom, $bucketTo);
         if ([] === $segments) {
             throw new \LogicException(sprintf(
@@ -191,7 +203,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     {
         return array_values(array_filter(
             $this->listSegments($projectionId),
-            static fn (ProjectionSegment $segment): bool => null === $segment->workerId,
+            static fn(ProjectionSegment $segment): bool => null === $segment->workerId,
         ));
     }
 
@@ -226,13 +238,14 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         ksort($this->segments[$segment->projectionId]);
     }
 
+    /** @return list<ProjectionSegment> */
     private function segmentsForRange(string $projectionId, int $bucketFrom, int $bucketTo): array
     {
         return array_values(array_map(
-            fn (array $row): ProjectionSegment => $this->toSegment($projectionId, $row),
+            fn(array $row): ProjectionSegment => $this->toSegment($projectionId, $row),
             array_filter(
                 $this->segments[$projectionId] ?? [],
-                static fn (array $row): bool => $row['bucketFrom'] >= $bucketFrom && $row['bucketTo'] <= $bucketTo,
+                static fn(array $row): bool => $row['bucketFrom'] >= $bucketFrom && $row['bucketTo'] <= $bucketTo,
             ),
         ));
     }
@@ -240,26 +253,45 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     /**
      * @param list<ProjectionSegment> $segments
      */
-    private function assertSegmentsExactlyCoverRange(string $projectionId, array $segments, int $bucketFrom, int $bucketTo): void
-    {
-        usort($segments, static fn (ProjectionSegment $left, ProjectionSegment $right): int => $left->bucketFrom <=> $right->bucketFrom);
+    private function assertSegmentsExactlyCoverRange(
+        string $projectionId,
+        array $segments,
+        int $bucketFrom,
+        int $bucketTo,
+    ): void {
+        usort(
+            $segments,
+            static fn(ProjectionSegment $left, ProjectionSegment $right): int => (
+                $left->bucketFrom <=> $right->bucketFrom
+            ),
+        );
 
         $next = $bucketFrom;
         foreach ($segments as $segment) {
             if ($segment->bucketFrom !== $next) {
-                throw new \LogicException(sprintf('Cannot merge [%d-%d] for projection "%s": segments do not cover the range.', $bucketFrom, $bucketTo, $projectionId));
+                throw new \LogicException(sprintf(
+                    'Cannot merge [%d-%d] for projection "%s": segments do not cover the range.',
+                    $bucketFrom,
+                    $bucketTo,
+                    $projectionId,
+                ));
             }
 
             $next = $segment->bucketTo + 1;
         }
 
-        if ($next !== $bucketTo + 1) {
-            throw new \LogicException(sprintf('Cannot merge [%d-%d] for projection "%s": segments do not cover the range.', $bucketFrom, $bucketTo, $projectionId));
+        if ($next !== ($bucketTo + 1)) {
+            throw new \LogicException(sprintf(
+                'Cannot merge [%d-%d] for projection "%s": segments do not cover the range.',
+                $bucketFrom,
+                $bucketTo,
+                $projectionId,
+            ));
         }
     }
 
     /**
-     * @param array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|int} $row
+     * @param array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|DatePoint} $row
      */
     private function toSegment(string $projectionId, array $row): ProjectionSegment
     {

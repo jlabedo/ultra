@@ -17,14 +17,14 @@ use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\InMemoryGuardLockAdapter;
 use Ultra\StateStore\PostgresGuardLockAdapter;
+use Ultra\StateStore\StateCollectionMetadata;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
-use Ultra\StateStore\StateCollectionMetadata;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
 use Ultra\Testing\PostgresConnectionSupport;
 
-require_once __DIR__.'/States.php';
+require_once __DIR__ . '/States.php';
 
 /** Shared object mappings over memory or an isolated Postgres schema, with immediate foreign keys. */
 final class StateStoreFixture
@@ -53,13 +53,15 @@ final class StateStoreFixture
     }
 
     /** @param list<class-string> $stateClasses */
-    public function __construct(public readonly Connection|InMemoryRowDatabase $storage, array $stateClasses)
-    {
+    public function __construct(
+        public readonly Connection|InMemoryRowDatabase $storage,
+        array $stateClasses,
+    ) {
         if ($storage instanceof Connection) {
-            $this->schema = 'ultra_state_store_'.bin2hex(random_bytes(4));
+            $this->schema = 'ultra_state_store_' . bin2hex(random_bytes(4));
             $this->previousSearchPath = $storage->fetchOne('SHOW search_path');
-            $storage->executeStatement('CREATE SCHEMA '.$this->schema);
-            $storage->executeStatement('SET search_path TO '.$this->schema);
+            $storage->executeStatement('CREATE SCHEMA ' . $this->schema);
+            $storage->executeStatement('SET search_path TO ' . $this->schema);
             $this->adapters = new PostgresMappedRowSetAdapterFactory($storage);
         } else {
             $this->adapters = new InMemoryMappedRowSetAdapterFactory($storage);
@@ -73,7 +75,7 @@ final class StateStoreFixture
             if (isset($shapes[$class])) {
                 continue;
             }
-            foreach ((new \ReflectionClass($class))->getProperties() as $property) {
+            foreach (new \ReflectionClass($class)->getProperties() as $property) {
                 if ([] !== $property->getAttributes(StateId::class)) {
                     $shapes[$class] = $analyzer->forProperty($property);
                 }
@@ -84,7 +86,7 @@ final class StateStoreFixture
         }
         $factory = new StateMetadataFactory($shapes);
         $this->metadata = new StateMetadataRegistry(array_combine($stateClasses, array_map(
-            static fn (string $class): array => $factory->create($class)->toArray(),
+            static fn(string $class): array => $factory->create($class)->toArray(),
             $stateClasses,
         )));
         if ($storage instanceof Connection) {
@@ -115,12 +117,19 @@ final class StateStoreFixture
      * @param array<string, list<array{tableKey: string, keyBy: string, columns: list<string>|null}>> $definitions
      * @return array{StateStore, StateTableRegistry}
      */
-    public function newStore(array $stateClasses, array $definitions = [], Connection|InMemoryRowDatabase|null $storage = null): array
-    {
+    public function newStore(
+        array $stateClasses,
+        array $definitions = [],
+        Connection|InMemoryRowDatabase|null $storage = null,
+    ): array {
         $storage ??= $this->storage;
-        $adapters = $storage === $this->storage ? $this->adapters : ($storage instanceof Connection
-            ? new PostgresMappedRowSetAdapterFactory($storage)
-            : new InMemoryMappedRowSetAdapterFactory($storage));
+        $adapters = $storage === $this->storage
+            ? $this->adapters
+            : (
+                $storage instanceof Connection
+                    ? new PostgresMappedRowSetAdapterFactory($storage)
+                    : new InMemoryMappedRowSetAdapterFactory($storage)
+            );
         $tables = [];
         foreach ($stateClasses as $class) {
             $state = $this->metadata->metadataFor($class);
@@ -149,7 +158,9 @@ final class StateStoreFixture
     /** @return list<\Ultra\MappedTable\MappedRow> */
     public function collectionRows(StateCollectionMetadata $collection, mixed $normalizedId): array
     {
-        return $this->adapters->createScoped($collection->tableName, $collection->keyColumns(), $collection->ownerKey($normalizedId))->rows();
+        return $this->adapters
+            ->createScoped($collection->tableName, $collection->keyColumns(), $collection->ownerKey($normalizedId))
+            ->rows();
     }
 
     public function close(): void
@@ -157,7 +168,7 @@ final class StateStoreFixture
         if ($this->storage instanceof Connection) {
             PostgresConnectionSupport::resetSharedConnection($this->storage);
             $this->storage->executeStatement("SELECT set_config('search_path', ?, false)", [$this->previousSearchPath]);
-            $this->storage->executeStatement('DROP SCHEMA '.$this->schema.' CASCADE');
+            $this->storage->executeStatement('DROP SCHEMA ' . $this->schema . ' CASCADE');
         } elseif ($this->storage->isTransactionActive()) {
             $this->storage->rollBack();
         }

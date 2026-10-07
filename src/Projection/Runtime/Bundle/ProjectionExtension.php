@@ -17,10 +17,10 @@ use Ultra\Projection\Bundle\Command\ProjectionWorkerCommand;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\MessageHandlingProjectionActivatorPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
 use Ultra\Projection\Coordination\DefaultProjectionScalingPolicy;
+use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionActivityEventStore;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
-use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
@@ -40,70 +40,71 @@ final class ProjectionExtension implements ContainerExtension
 
     public function build(ContainerBuilder $container): void
     {
-
-        $container->registerAttributeForAutoconfiguration(
-            Projection::class,
-            static function (ChildDefinition $definition, Projection $attribute, \ReflectionClass $reflector): void {
-                $definition->addTag(TagNames::PROJECTION);
-            }
-        );
+        $container->registerAttributeForAutoconfiguration(Projection::class, static function (
+            ChildDefinition $definition,
+            Projection $attribute,
+            \Reflector $reflector,
+        ): void {
+            $definition->addTag(TagNames::PROJECTION);
+        });
 
         $factory = new Reference(ProjectionImplementationInterface::class);
 
-        $container->register(ProjectionSegmentRepositoryInterface::class)
-            ->setFactory([$factory, 'createSegmentRepository'])
-        ;
+        $container
+            ->register(ProjectionSegmentRepositoryInterface::class)
+            ->setFactory([$factory, 'createSegmentRepository']);
 
         // Registered under projection-private ids (not the generic interface
         // ids) so an application can bind its own DirtyKeyTracker /
         // CoordinatorLease for unrelated derived read models without colliding
         // with the projection coordinator's instances.
-        $container->register(self::DIRTY_KEY_TRACKER_ID, DirtyKeyTracker::class)
-            ->setFactory([$factory, 'createDirtyKeyTracker'])
-        ;
+        $container
+            ->register(self::DIRTY_KEY_TRACKER_ID, DirtyKeyTracker::class)
+            ->setFactory([$factory, 'createDirtyKeyTracker']);
 
-        $container->register(self::COORDINATOR_LEASE_ID, CoordinatorLease::class)
-            ->setFactory([$factory, 'createCoordinatorLease'])
-        ;
+        $container
+            ->register(self::COORDINATOR_LEASE_ID, CoordinatorLease::class)
+            ->setFactory([$factory, 'createCoordinatorLease']);
 
-        $container->register(ProjectionActivity::class, ProjectionActivity::class)
-            ->setArguments([new Reference(self::DIRTY_KEY_TRACKER_ID)])
-        ;
+        $container
+            ->register(ProjectionActivity::class, ProjectionActivity::class)
+            ->setArguments([new Reference(self::DIRTY_KEY_TRACKER_ID)]);
 
-        $container->register(ProjectionTransactionManagerInterface::class)
-            ->setFactory([$factory, 'createTransactionManager'])
-        ;
+        $container
+            ->register(ProjectionTransactionManagerInterface::class)
+            ->setFactory([$factory, 'createTransactionManager']);
 
         $container->register(ProjectionActivatorInterface::class, InMemoryProjectionActivator::class);
         $container->register(ProjectionScalingPolicyInterface::class, DefaultProjectionScalingPolicy::class);
 
-        $container->register(ProjectionActivityRecorder::class, ProjectionActivityRecorder::class)
+        $container
+            ->register(ProjectionActivityRecorder::class, ProjectionActivityRecorder::class)
             ->setArguments([
                 new Reference(ProjectionCatalog::class),
                 new Reference(ProjectionActivity::class),
                 new Reference(self::COORDINATOR_LEASE_ID),
                 new Reference(ProjectionActivatorInterface::class),
-            ])
-        ;
+            ]);
 
-        $container->register(ProjectionActivityEventStore::class, ProjectionActivityEventStore::class)
+        $container
+            ->register(ProjectionActivityEventStore::class, ProjectionActivityEventStore::class)
             ->setDecoratedService(EventStore::class, null, 100)
             ->setArguments([
-                new Reference(ProjectionActivityEventStore::class.'.inner'),
+                new Reference(ProjectionActivityEventStore::class . '.inner'),
                 new Reference(ProjectionActivityRecorder::class),
-            ])
-        ;
+            ]);
 
-        $container->register(ProjectionRunner::class, ProjectionRunner::class)
+        $container
+            ->register(ProjectionRunner::class, ProjectionRunner::class)
             ->setArguments([
                 new Reference(EventStore::class),
                 new Reference(ProjectionSegmentRepositoryInterface::class),
                 new Reference(ProjectionTransactionManagerInterface::class),
                 new Reference(ProjectionActivity::class),
-            ])
-        ;
+            ]);
 
-        $container->register(ProjectionCoordinator::class, ProjectionCoordinator::class)
+        $container
+            ->register(ProjectionCoordinator::class, ProjectionCoordinator::class)
             ->setArguments([
                 new Reference(ProjectionCatalog::class),
                 new Reference(ProjectionRunner::class),
@@ -111,18 +112,17 @@ final class ProjectionExtension implements ContainerExtension
                 new Reference(self::COORDINATOR_LEASE_ID),
                 new Reference(ProjectionActivatorInterface::class),
                 new Reference(ProjectionScalingPolicyInterface::class),
-            ])
-        ;
+            ]);
 
-        $container->register(ProjectionWorkerCommand::class, ProjectionWorkerCommand::class)
+        $container
+            ->register(ProjectionWorkerCommand::class, ProjectionWorkerCommand::class)
             ->setArguments([new Reference(ProjectionCoordinator::class)])
-            ->addTag('console.command')
-        ;
+            ->addTag('console.command');
 
-        $container->register(ListSegmentsCommand::class, ListSegmentsCommand::class)
+        $container
+            ->register(ListSegmentsCommand::class, ListSegmentsCommand::class)
             ->setArguments([new Reference(ProjectionSegmentRepositoryInterface::class)])
-            ->addTag('console.command')
-        ;
+            ->addTag('console.command');
 
         $this->registerMessageHandlingIntegration($container);
 
@@ -136,14 +136,14 @@ final class ProjectionExtension implements ContainerExtension
             return;
         }
 
-        $container->register(ProjectionMessageHandler::class, ProjectionMessageHandler::class)
+        $container
+            ->register(ProjectionMessageHandler::class, ProjectionMessageHandler::class)
             ->setArguments([
                 new Reference(ProjectionCatalog::class),
                 new Reference(ProjectionRunner::class),
                 new Reference(ProjectionCoordinator::class),
             ])
             ->addTag('ultra.message_handler', ['method' => 'handleWakeProjectionCoordinator'])
-            ->addTag('ultra.message_handler', ['method' => 'handleRunProjectionSegment'])
-        ;
+            ->addTag('ultra.message_handler', ['method' => 'handleRunProjectionSegment']);
     }
 }

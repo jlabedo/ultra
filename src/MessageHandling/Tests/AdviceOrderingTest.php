@@ -19,7 +19,9 @@ use Ultra\MessageHandling_Compiler\Tests\Support\MessageHandlingCompilerTestCase
 
 final class AdviceOrderingAlphabeticalBeforeA
 {
-    public function __construct(private readonly AdviceOrderingLog $log) {}
+    public function __construct(
+        private readonly AdviceOrderingLog $log,
+    ) {}
 
     #[Before(priority: 10)]
     public function before(object $message, MessageContext $context): void
@@ -30,7 +32,9 @@ final class AdviceOrderingAlphabeticalBeforeA
 
 final class AdviceOrderingAlphabeticalBeforeB
 {
-    public function __construct(private readonly AdviceOrderingLog $log) {}
+    public function __construct(
+        private readonly AdviceOrderingLog $log,
+    ) {}
 
     #[Before(priority: 10)]
     public function before(object $message, MessageContext $context): void
@@ -48,11 +52,14 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
     {
         $log = new AdviceOrderingLog();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($log)
             ->withService(new OrderedHandler($log))
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[Before(priority: 20)]
                 public function before(object $message, MessageContext $context): void
@@ -76,28 +83,34 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
                     $this->log->entries[] = 'after:5';
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
-        self::assertSame([
-            'around:10:before',
-            'before:20',
-            'handler:ok',
-            'around:10:after',
-            'after:5',
-        ], $log->entries);
+        static::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
+        static::assertSame(
+            [
+                'around:10:before',
+                'before:20',
+                'handler:ok',
+                'around:10:after',
+                'after:5',
+            ],
+            $log->entries,
+        );
     }
 
     public function test_it_orders_same_priority_advice_as_before_around_handler_after_returning_after(): void
     {
         $log = new AdviceOrderingLog();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($log)
             ->withService(new OrderedHandler($log))
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[Before(priority: 10)]
                 public function before(object $message, MessageContext $context): void
@@ -118,7 +131,7 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
                 #[AfterReturning(priority: 10)]
                 public function afterReturning(object $message, MessageContext $context, mixed $result): void
                 {
-                    $this->log->entries[] = 'afterReturning:10:'.$result;
+                    $this->log->entries[] = 'afterReturning:10:' . $result;
                 }
 
                 #[After(priority: 10)]
@@ -127,29 +140,35 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
                     $this->log->entries[] = 'after:10';
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
-        self::assertSame([
-            'before:10',
-            'around:10:before',
-            'handler:ok',
-            'around:10:after',
-            'afterReturning:10:ok',
-            'after:10',
-        ], $log->entries);
+        static::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
+        static::assertSame(
+            [
+                'before:10',
+                'around:10:before',
+                'handler:ok',
+                'around:10:after',
+                'afterReturning:10:ok',
+                'after:10',
+            ],
+            $log->entries,
+        );
     }
 
     public function test_it_runs_same_priority_after_throwing_before_after_on_failures(): void
     {
         $log = new AdviceOrderingLog();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($log)
             ->withService(new OrderedHandler($log, fail: true))
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[Before(priority: 10)]
                 public function before(object $message, MessageContext $context): void
@@ -168,7 +187,7 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
                 #[AfterThrowing(priority: 10)]
                 public function afterThrowing(object $message, MessageContext $context, \Throwable $throwable): void
                 {
-                    $this->log->entries[] = 'afterThrowing:10:'.$throwable->getMessage();
+                    $this->log->entries[] = 'afterThrowing:10:' . $throwable->getMessage();
                 }
 
                 #[After(priority: 10)]
@@ -177,34 +196,40 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
                     $this->log->entries[] = 'after:10';
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
         try {
             $mediator->send(new GreetingMessage('fail'));
-            self::fail('Expected handler exception to be rethrown.');
+            static::fail('Expected handler exception to be rethrown.');
         } catch (\RuntimeException $exception) {
-            self::assertSame('boom', $exception->getMessage());
+            static::assertSame('boom', $exception->getMessage());
         }
 
-        self::assertSame([
-            'before:10',
-            'around:10:before',
-            'handler:fail',
-            'afterThrowing:10:boom',
-            'after:10',
-        ], $log->entries);
+        static::assertSame(
+            [
+                'before:10',
+                'around:10:before',
+                'handler:fail',
+                'afterThrowing:10:boom',
+                'after:10',
+            ],
+            $log->entries,
+        );
     }
 
     public function test_it_nests_interleaved_priorities_correctly(): void
     {
         $log = new AdviceOrderingLog();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($log)
             ->withService(new OrderedHandler($log))
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[Around(priority: 0)]
                 public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
@@ -217,7 +242,9 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
                 }
             })
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[Before(priority: 10)]
                 public function before(object $message, MessageContext $context): void
@@ -226,7 +253,9 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
                 }
             })
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[Around(priority: 20)]
                 public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
@@ -239,7 +268,9 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
                 }
             })
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[After(priority: -5)]
                 public function after(object $message, MessageContext $context): void
@@ -247,50 +278,60 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
                     $this->log->entries[] = 'after:-5';
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
-        self::assertSame([
-            'around:0:before',
-            'before:10',
-            'around:20:before',
-            'handler:ok',
-            'around:20:after',
-            'around:0:after',
-            'after:-5',
-        ], $log->entries);
+        static::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
+        static::assertSame(
+            [
+                'around:0:before',
+                'before:10',
+                'around:20:before',
+                'handler:ok',
+                'around:20:after',
+                'around:0:after',
+                'after:-5',
+            ],
+            $log->entries,
+        );
     }
 
     public function test_it_breaks_same_type_same_priority_ties_by_class_name(): void
     {
         $log = new AdviceOrderingLog();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($log)
             ->withService(new OrderedHandler($log))
             ->withService(new AdviceOrderingAlphabeticalBeforeB($log))
             ->withService(new AdviceOrderingAlphabeticalBeforeA($log))
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
-        self::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
-        self::assertSame([
-            'before:A',
-            'before:B',
-            'handler:ok',
-        ], $log->entries);
+        static::assertSame('ok', $mediator->send(new GreetingMessage('ok')));
+        static::assertSame(
+            [
+                'before:A',
+                'before:B',
+                'handler:ok',
+            ],
+            $log->entries,
+        );
     }
 
     public function test_it_places_interleaved_after_throwing_inside_outer_after_handling(): void
     {
         $log = new AdviceOrderingLog();
 
-        $mediator = $this->ultraLight()
+        $mediator = $this
+            ->ultraLight()
             ->withService($log)
             ->withService(new OrderedHandler($log, fail: true))
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[Around(priority: 0)]
                 public function around(callable $proceed, object $message, MessageContext $context): ProceedResult
@@ -301,16 +342,20 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
                 }
             })
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[AfterThrowing(priority: 10)]
                 public function afterThrowing(object $message, MessageContext $context, \Throwable $throwable): void
                 {
-                    $this->log->entries[] = 'afterThrowing:10:'.$throwable->getMessage();
+                    $this->log->entries[] = 'afterThrowing:10:' . $throwable->getMessage();
                 }
             })
             ->withService(new class($log) {
-                public function __construct(private readonly AdviceOrderingLog $log) {}
+                public function __construct(
+                    private readonly AdviceOrderingLog $log,
+                ) {}
 
                 #[After(priority: -5)]
                 public function after(object $message, MessageContext $context): void
@@ -318,21 +363,24 @@ final class AdviceOrderingTest extends MessageHandlingCompilerTestCase
                     $this->log->entries[] = 'after:-5';
                 }
             })
-            ->boot()->mediator()
-        ;
+            ->boot()
+            ->mediator();
 
         try {
             $mediator->send(new GreetingMessage('fail'));
-            self::fail('Expected handler exception to be rethrown.');
+            static::fail('Expected handler exception to be rethrown.');
         } catch (\RuntimeException $exception) {
-            self::assertSame('boom', $exception->getMessage());
+            static::assertSame('boom', $exception->getMessage());
         }
 
-        self::assertSame([
-            'around:0:before',
-            'handler:fail',
-            'afterThrowing:10:boom',
-            'after:-5',
-        ], $log->entries);
+        static::assertSame(
+            [
+                'around:0:before',
+                'handler:fail',
+                'afterThrowing:10:boom',
+                'after:-5',
+            ],
+            $log->entries,
+        );
     }
 }

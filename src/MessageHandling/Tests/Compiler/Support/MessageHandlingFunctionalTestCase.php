@@ -30,13 +30,12 @@ abstract class MessageHandlingFunctionalTestCase extends TestCase
         };
 
         return new UltraLight()
-            ->withBuildDir(dirname(__DIR__, 5).'/var/message_handling_compiler_tests')
+            ->withBuildDir(dirname(__DIR__, 5) . '/var/message_handling_compiler_tests')
             ->withContainerFactory($containerFactory)
             ->withBundle(new MessageHandlingExtension())
             ->withAlias('test.event_bus', EventBusInterface::class)
             ->withAlias('test.mediator', MediatorInterface::class)
             ->withAlias('test.async_queue', InMemoryQueue::class)
-            ->withAlias('test.queue_worker', QueueWorker::class)
-        ;
+            ->withAlias('test.queue_worker', QueueWorker::class);
     }
 }

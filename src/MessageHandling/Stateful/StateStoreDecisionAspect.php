@@ -4,18 +4,19 @@ declare(strict_types=1);
 
 namespace Ultra\StatefulMessageHandling;
 
-use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\ProceedResult;
+use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\Exception\StateNotFoundException;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateStore;
 
+/** @phpstan-import-type Plan from StateBindings */
 final readonly class StateStoreDecisionAspect
 {
     public function __construct(
@@ -23,6 +24,10 @@ final readonly class StateStoreDecisionAspect
         private StateMetadataRegistry $metadataRegistry,
     ) {}
 
+    /**
+     * @param Plan $config
+     * @param callable(...): \Ultra\MessageHandling\ProceedResult $proceed
+     */
     #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
         if ([] === $ctx->method()->getAttributes(DecisionHandler::class)) {
             return null;
@@ -66,7 +71,7 @@ final readonly class StateStoreDecisionAspect
         });
 
         if (DecisionMode::isCheck($context)) {
-            return DecisionMode::check(static fn (): ProceedResult => $proceed(provided: $states), $context);
+            return DecisionMode::check(static fn(): ProceedResult => $proceed(provided: $states), $context);
         }
 
         $proceedResult = $proceed(provided: $states);
@@ -85,9 +90,11 @@ final readonly class StateStoreDecisionAspect
     {
         $effects = [];
         foreach ($this->objectsFrom($value) as $object) {
-            if ($this->metadataRegistry->has($object::class)) {
-                $effects[] = $object;
+            if (!$this->metadataRegistry->has($object::class)) {
+                continue;
             }
+
+            $effects[] = $object;
         }
 
         return $effects;
@@ -112,9 +119,11 @@ final readonly class StateStoreDecisionAspect
 
         $objects = [];
         foreach ($value as $item) {
-            if (is_object($item)) {
-                $objects[] = $item;
+            if (!is_object($item)) {
+                continue;
             }
+
+            $objects[] = $item;
         }
 
         return $objects;
@@ -123,7 +132,11 @@ final readonly class StateStoreDecisionAspect
     private static function stateId(string $parameterName, mixed $id): int|string|object
     {
         if (!is_string($id) && !is_int($id) && !is_object($id)) {
-            throw new \LogicException(sprintf('Id of state parameter "%s" must be string, int, or object, got %s.', $parameterName, get_debug_type($id)));
+            throw new \LogicException(sprintf(
+                'Id of state parameter "%s" must be string, int, or object, got %s.',
+                $parameterName,
+                get_debug_type($id),
+            ));
         }
 
         return $id;
@@ -150,9 +163,6 @@ final readonly class StateStoreDecisionAspect
             }
         }
 
-        throw new \LogicException(sprintf(
-            'State class %s has no property marked with #[StateId].',
-            $stateClass,
-        ));
+        throw new \LogicException(sprintf('State class %s has no property marked with #[StateId].', $stateClass));
     }
 }

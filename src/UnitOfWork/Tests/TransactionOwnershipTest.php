@@ -25,8 +25,10 @@ final class TransactionOwnershipTest extends TestCase
     }
 
     #[DataProvider('ownedTransactions')]
-    public function test_owned_transactions_commit_or_rollback_and_restore_the_connection(bool $fails, ?TransactionIsolationLevel $override): void
-    {
+    public function test_owned_transactions_commit_or_rollback_and_restore_the_connection(
+        bool $fails,
+        ?TransactionIsolationLevel $override,
+    ): void {
         $this->connect();
         $previous = TransactionIsolationLevel::REPEATABLE_READ;
         $this->connection->setTransactionIsolation($previous);
@@ -34,9 +36,18 @@ final class TransactionOwnershipTest extends TestCase
         $result = null;
         $caught = null;
         try {
-            $result = new DoctrineTransactionManager($this->connection, $override)->transactional(function () use ($fails, $override, $failure): int {
+            $result = new DoctrineTransactionManager($this->connection, $override)->transactional(function () use (
+                $fails,
+                $override,
+                $failure,
+            ): int {
                 self::assertTrue($this->connection->isTransactionActive());
-                self::assertSame(null === $override || TransactionIsolationLevel::REPEATABLE_READ === $override ? 'repeatable read' : 'read committed', $this->connection->fetchOne('SHOW transaction_isolation'));
+                self::assertSame(
+                    null === $override || TransactionIsolationLevel::REPEATABLE_READ === $override
+                        ? 'repeatable read'
+                        : 'read committed',
+                    $this->connection->fetchOne('SHOW transaction_isolation'),
+                );
                 $this->connection->insert('unit_of_work_values', ['value' => 'work']);
                 if ($fails) {
                     throw $failure;
@@ -48,21 +59,24 @@ final class TransactionOwnershipTest extends TestCase
             $caught = $exception;
         }
 
-        self::assertSame($fails ? $failure : null, $caught);
-        self::assertSame($fails ? null : 42, $result);
-        self::assertFalse($this->connection->isTransactionActive());
-        self::assertSame($fails ? [] : ['work'], $this->connection->fetchFirstColumn('SELECT value FROM unit_of_work_values'));
-        self::assertSame($previous, $this->connection->getTransactionIsolation());
-        self::assertSame('repeatable read', $this->connection->fetchOne('SHOW transaction_isolation'));
+        static::assertSame($fails ? $failure : null, $caught);
+        static::assertSame($fails ? null : 42, $result);
+        static::assertFalse($this->connection->isTransactionActive());
+        static::assertSame(
+            $fails ? [] : ['work'],
+            $this->connection->fetchFirstColumn('SELECT value FROM unit_of_work_values'),
+        );
+        static::assertSame($previous, $this->connection->getTransactionIsolation());
+        static::assertSame('repeatable read', $this->connection->fetchOne('SHOW transaction_isolation'));
     }
 
     /** @return iterable<string, array{bool, ?TransactionIsolationLevel}> */
     public static function ownedTransactions(): iterable
     {
         foreach (['commit' => false, 'rollback' => true] as $outcome => $fails) {
-            yield $outcome.' with connection isolation' => [$fails, null];
-            yield $outcome.' with overridden isolation' => [$fails, TransactionIsolationLevel::READ_COMMITTED];
-            yield $outcome.' with identical isolation' => [$fails, TransactionIsolationLevel::REPEATABLE_READ];
+            yield $outcome . ' with connection isolation' => [$fails, null];
+            yield $outcome . ' with overridden isolation' => [$fails, TransactionIsolationLevel::READ_COMMITTED];
+            yield $outcome . ' with identical isolation' => [$fails, TransactionIsolationLevel::REPEATABLE_READ];
         }
     }
 
@@ -74,15 +88,21 @@ final class TransactionOwnershipTest extends TestCase
         $this->connection->insert('unit_of_work_values', ['value' => 'external']);
         $called = false;
         try {
-            new DoctrineTransactionManager($this->connection, TransactionIsolationLevel::READ_COMMITTED)->transactional(static function () use (&$called): void {
+            new DoctrineTransactionManager(
+                $this->connection,
+                TransactionIsolationLevel::READ_COMMITTED,
+            )->transactional(static function () use (&$called): void {
                 $called = true;
             });
-            self::fail('An external transaction must be rejected.');
+            static::fail('An external transaction must be rejected.');
         } catch (\LogicException) {
-            self::assertFalse($called);
-            self::assertTrue($this->connection->isTransactionActive());
-            self::assertSame('serializable', $this->connection->fetchOne('SHOW transaction_isolation'));
-            self::assertSame(['external'], $this->connection->fetchFirstColumn('SELECT value FROM unit_of_work_values'));
+            static::assertFalse($called);
+            static::assertTrue($this->connection->isTransactionActive());
+            static::assertSame('serializable', $this->connection->fetchOne('SHOW transaction_isolation'));
+            static::assertSame(
+                ['external'],
+                $this->connection->fetchFirstColumn('SELECT value FROM unit_of_work_values'),
+            );
         } finally {
             $this->connection->rollBack();
         }
@@ -91,17 +111,19 @@ final class TransactionOwnershipTest extends TestCase
     public function test_a_noop_manager_preserves_callback_results_and_failures(): void
     {
         $manager = new NoTransactionManager();
-        $invoke = static fn (TransactionManager $transactions, callable $work): mixed => $transactions->transactional($work);
+        $invoke = static fn(TransactionManager $transactions, callable $work): mixed => $transactions->transactional(
+            $work,
+        );
         $result = new \stdClass();
-        self::assertSame($result, $invoke($manager, static fn (): object => $result));
+        static::assertSame($result, $invoke($manager, static fn(): object => $result));
         $failure = new \RuntimeException('failed work');
         try {
             $invoke($manager, static function () use ($failure): never {
                 throw $failure;
             });
-            self::fail('The original exception must propagate.');
+            static::fail('The original exception must propagate.');
         } catch (\RuntimeException $exception) {
-            self::assertSame($failure, $exception);
+            static::assertSame($failure, $exception);
         }
     }
 

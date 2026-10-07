@@ -6,8 +6,8 @@ namespace Ultra\MappedTable\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
+use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
@@ -28,8 +28,8 @@ final class KeyAndScopeIsolationTest extends RowSetTestCase
         $rows->withKey('row')->insert()->setColumn('status', 'saved');
         $fixture->flush($rows);
         $rows->clear();
-        self::assertSame(['status' => 'saved'], $rows->row('row', ['status']));
-        self::assertSame(['id' => 'row'], $rows->rows()[0]->key->values);
+        static::assertSame(['status' => 'saved'], $rows->row('row', ['status']));
+        static::assertSame(['id' => 'row'], $rows->rows()[0]->key->values);
     }
 
     #[DataProvider('backends')]
@@ -40,26 +40,29 @@ final class KeyAndScopeIsolationTest extends RowSetTestCase
         $two = $fixture->view(new MappedKey(['owner' => 'two', 'env' => 'prod']));
         $dev = $fixture->view(new MappedKey(['owner' => 'one', 'env' => 'dev']));
         foreach ([$one, $two, $dev] as $index => $rows) {
-            $rows->withKey('same')->insert()->setColumn('status', 'value-'.$index);
+            $rows
+                ->withKey('same')
+                ->insert()
+                ->setColumn('status', 'value-' . $index);
             $fixture->flush($rows);
             $rows->clear();
         }
         $key = new MappedKey(['id' => 'same', 'env' => 'prod', 'owner' => 'one']);
-        self::assertSame(['status' => 'value-0'], $fixture->rows->row($key, ['status']));
-        self::assertSame($key->values, $one->rows(['status'])[0]->key->values);
-        self::assertCount(1, $one->rows());
+        static::assertSame(['status' => 'value-0'], $fixture->rows->row($key, ['status']));
+        static::assertSame($key->values, $one->rows(['status'])[0]->key->values);
+        static::assertCount(1, $one->rows());
         $one->withKey('same')->setColumn('status', 'updated');
         $fixture->flush($one);
         $one->clear();
-        self::assertSame(['status' => 'updated'], $one->row('same', ['status']));
-        self::assertSame(['status' => 'value-1'], $two->row('same', ['status']));
-        self::assertSame(['status' => 'value-2'], $dev->row('same', ['status']));
+        static::assertSame(['status' => 'updated'], $one->row('same', ['status']));
+        static::assertSame(['status' => 'value-1'], $two->row('same', ['status']));
+        static::assertSame(['status' => 'value-2'], $dev->row('same', ['status']));
         $one->withKey('same')->delete();
         $fixture->flush($one);
         $one->clear();
-        self::assertFalse($one->row('same'));
-        self::assertNotFalse($two->row('same'));
-        self::assertNotFalse($dev->row('same'));
+        static::assertFalse($one->row('same'));
+        static::assertNotFalse($two->row('same'));
+        static::assertNotFalse($dev->row('same'));
     }
 
     /** @return iterable<string, array{string}> */
@@ -89,16 +92,23 @@ final class KeyAndScopeIsolationTest extends RowSetTestCase
         $database->writeRow('rows', 'id', ['id' => 'same', 'owner' => 'one', 'status' => 'first'], ['owner' => 'one']);
         $database->writeRow('rows', 'id', ['id' => 'same', 'owner' => 'two', 'status' => 'second'], ['owner' => 'two']);
         $database->writeRow('rows', 'id', ['id' => 'other', 'owner' => 'one'], ['owner' => 'one']);
-        $database->writeRow('rows', 'id', ['id' => 'same', 'owner' => 'one', 'status' => 'updated'], ['owner' => 'one']);
-        self::assertSame('updated', $database->row('rows', 'id', 'same', scopeColumns: ['owner' => 'one'])['status']);
-        self::assertSame('second', $database->row('rows', 'id', 'same', scopeColumns: ['owner' => 'two'])['status']);
-        self::assertSame(['other', 'same'], array_keys($database->rows('rows', 'id', scopeColumns: ['owner' => 'one'])));
+        $database->writeRow(
+            'rows',
+            'id',
+            ['id' => 'same', 'owner' => 'one', 'status' => 'updated'],
+            ['owner' => 'one'],
+        );
+        static::assertSame('updated', $database->row('rows', 'id', 'same', scopeColumns: ['owner' => 'one'])['status']);
+        static::assertSame('second', $database->row('rows', 'id', 'same', scopeColumns: ['owner' => 'two'])['status']);
+        static::assertSame(['other', 'same'], array_keys($database->rows('rows', 'id', scopeColumns: [
+            'owner' => 'one',
+        ])));
         $database->deleteRow('rows', 'id', 'same', ['owner' => 'one']);
-        self::assertFalse($database->row('rows', 'id', 'same', scopeColumns: ['owner' => 'one']));
-        self::assertSame('second', $database->row('rows', 'id', 'same', scopeColumns: ['owner' => 'two'])['status']);
+        static::assertFalse($database->row('rows', 'id', 'same', scopeColumns: ['owner' => 'one']));
+        static::assertSame('second', $database->row('rows', 'id', 'same', scopeColumns: ['owner' => 'two'])['status']);
         $database->writeRow('unscoped', 'id', ['id' => 'same', 'status' => 'first']);
         $database->writeRow('unscoped', 'id', ['id' => 'same', 'status' => 'last']);
-        self::assertSame('last', $database->row('unscoped', 'id', 'same')['status']);
-        self::assertCount(1, $database->rows('unscoped', 'id'));
+        static::assertSame('last', $database->row('unscoped', 'id', 'same')['status']);
+        static::assertCount(1, $database->rows('unscoped', 'id'));
     }
 }

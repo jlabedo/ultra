@@ -34,7 +34,8 @@ final class BufferedRowUpdate
      */
     public function toPlan(): ?RowUpdatePlan
     {
-        $writes = null !== $this->mode && (RowUpdatePlan::MODE_UPDATE !== $this->mode || !$this->updatesOnlyExpectedValues());
+        $writes =
+            null !== $this->mode && (RowUpdatePlan::MODE_UPDATE !== $this->mode || !$this->updatesOnlyExpectedValues());
         if (!$writes && null === $this->expectedPresence) {
             return null;
         }

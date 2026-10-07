@@ -9,9 +9,9 @@ use Symfony\Component\DependencyInjection\Kernel\KernelTrait;
 use Symfony\Component\DependencyInjection\Kernel\ServicesBundle;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Ultra\Mapper_Bundle\MapperExtension;
-use Ultra\SymfonyBundle\UltraBundle;
 use Ultra\Mapper_Bundle\TagNames;
 use Ultra\Mapper_Example\Domain\UserRegistered;
+use Ultra\SymfonyBundle\UltraBundle;
 
 final class Kernel extends AbstractKernel
 {
@@ -30,24 +30,21 @@ final class Kernel extends AbstractKernel
     {
         $services = $container->services();
 
-        $services->defaults()
-            ->autowire()
-            ->autoconfigure()
-        ;
+        $services->defaults()->autowire()->autoconfigure();
 
-        $services->load(__NAMESPACE__.'\\', __DIR__.'/')
+        $services
+            ->load(__NAMESPACE__ . '\\', __DIR__ . '/')
             ->exclude([
-                __DIR__.'/Kernel.php',
-                __DIR__.'/Domain/RuntimeEmail.php',
-                __DIR__.'/Domain/UserRegistered.php',
-            ])
-        ;
+                __DIR__ . '/Kernel.php',
+                __DIR__ . '/Domain/RuntimeEmail.php',
+                __DIR__ . '/Domain/UserRegistered.php',
+            ]);
 
-        $services->set(UserRegistered::class)
+        $services
+            ->set(UserRegistered::class)
             ->autowire(false)
             ->autoconfigure(false)
             ->tag(TagNames::NORMALIZABLE)
-            ->tag('container.excluded')
-        ;
+            ->tag('container.excluded');
     }
 }

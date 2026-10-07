@@ -26,11 +26,6 @@ abstract class EventStoreTestCase extends TestCase
         array $payload = [],
         array $metadata = [],
     ): Event {
-        return new Event(
-            eventType: $eventType,
-            payload: $payload,
-            domainIds: $domainIds,
-            metadata: $metadata,
-        );
+        return new Event(eventType: $eventType, payload: $payload, domainIds: $domainIds, metadata: $metadata);
     }
 }

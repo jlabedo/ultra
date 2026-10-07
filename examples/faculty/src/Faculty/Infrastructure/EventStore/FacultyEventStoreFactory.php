@@ -25,10 +25,7 @@ final readonly class FacultyEventStoreFactory
             return new InMemoryEventStore();
         }
 
-        return new PostgresEventStoreHStore(
-            $this->connection,
-            $this->tablePrefix,
-        );
+        return new PostgresEventStoreHStore($this->connection, $this->tablePrefix);
     }
 
     private function shouldUsePostgres(): bool

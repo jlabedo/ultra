@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 class MethodBodyBuilder
@@ -20,7 +22,7 @@ class MethodBodyBuilder
      */
     public function addStatement(string $code): void
     {
-        $this->statements[] = rtrim($code, '; ').';';
+        $this->statements[] = rtrim($code, '; ') . ';';
     }
 
     public function newVariable(): string
@@ -41,7 +43,7 @@ class MethodBodyBuilder
      */
     public function addComment(string $comment): void
     {
-        $this->statements[] = '// '.$comment;
+        $this->statements[] = '// ' . $comment;
     }
 
     /**
@@ -59,10 +61,10 @@ class MethodBodyBuilder
     {
         $lines = $this->statements;
         if (null !== $this->returnExpr) {
-            if (!empty($lines) && '' !== end($lines)) {
+            if ([] !== $lines && '' !== end($lines)) {
                 $lines[] = '';
             }
-            $lines[] = 'return '.rtrim($this->returnExpr, '; ').';';
+            $lines[] = 'return ' . rtrim($this->returnExpr, '; ') . ';';
         }
 
         return implode("\n", $lines);

@@ -40,7 +40,12 @@ abstract class PostgresStorageTestCase extends TestCase
                 $connection->executeStatement($statement);
             }
 
-            $store = PostgresTestSupport::storeForImplementation($connection, $prefix, $implementation, lockStrategy: $lockStrategy);
+            $store = PostgresTestSupport::storeForImplementation(
+                $connection,
+                $prefix,
+                $implementation,
+                lockStrategy: $lockStrategy,
+            );
 
             $callback($store, $connection, $prefix);
         } finally {
@@ -57,13 +62,12 @@ abstract class PostgresStorageTestCase extends TestCase
      * @param array<string, string> $domainIds
      * @param array<string, mixed>  $metadata
      */
-    protected static function event(string $eventType, array $payload = [], array $domainIds = [], array $metadata = []): Event
-    {
-        return new Event(
-            eventType: $eventType,
-            payload: $payload,
-            domainIds: $domainIds,
-            metadata: $metadata,
-        );
+    protected static function event(
+        string $eventType,
+        array $payload = [],
+        array $domainIds = [],
+        array $metadata = [],
+    ): Event {
+        return new Event(eventType: $eventType, payload: $payload, domainIds: $domainIds, metadata: $metadata);
     }
 }

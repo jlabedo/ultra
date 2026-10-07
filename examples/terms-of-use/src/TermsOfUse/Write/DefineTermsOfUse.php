@@ -37,9 +37,11 @@ final readonly class DefineTermsOfUse
         }
 
         $currentTermsOfUse = $terms->currentTermsOfUse();
-        if (null !== $currentTermsOfUse
+        if (
+            null !== $currentTermsOfUse
             && $currentTermsOfUse->id === $termsOfUseId
-            && $currentTermsOfUse->url === $url) {
+            && $currentTermsOfUse->url === $url
+        ) {
             return [];
         }
 

@@ -13,7 +13,6 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Bundle\MapperExtension;
-use Ultra\Coordination\Lease\CoordinatorLease;
 use Ultra\Projection\Bundle\ProjectionExtension;
 use Ultra\Projection\Bundle\ProjectionImplementationInterface;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
@@ -44,23 +43,27 @@ abstract class ProjectionFunctionalTestCase extends TestCase
         };
 
         return new UltraLight()
-            ->withBuildDir(dirname(__DIR__, 4).'/var/projection_tests')
+            ->withBuildDir(dirname(__DIR__, 4) . '/var/projection_tests')
             ->withContainerFactory($containerFactory)
-            ->withBundle(new class ($eventStore ?? new InMemoryEventStore()) implements ContainerExtension {
-                public function __construct(private EventStore $eventStore){}
+            ->withBundle(new class($eventStore ?? new InMemoryEventStore()) implements ContainerExtension {
+                public function __construct(
+                    private EventStore $eventStore,
+                ) {}
+
                 public function build(ContainerBuilder $container): void
                 {
-                    $container->register(ProjectionTestEventStoreFactory::class)
-                        ->setArguments([$this->eventStore])
-                    ;
-                    $container->register(EventStore::class, $this->eventStore::class)
-                        ->setFactory([new Reference(ProjectionTestEventStoreFactory::class), 'create'])
-                    ;
+                    $container->register(ProjectionTestEventStoreFactory::class)->setArguments([$this->eventStore]);
+                    $container
+                        ->register(EventStore::class, $this->eventStore::class)
+                        ->setFactory([new Reference(ProjectionTestEventStoreFactory::class), 'create']);
                 }
             })
             ->withBundle(new MapperExtension())
             ->withBundle(new ProjectionExtension())
-            ->withService($implementation ?? new InMemoryProjectionImplementation(), ProjectionImplementationInterface::class)
+            ->withService(
+                $implementation ?? new InMemoryProjectionImplementation(),
+                ProjectionImplementationInterface::class,
+            )
             ->withAlias('test.event_store', EventStore::class)
             ->withAlias('test.normalizer', UltraNormalizer::class)
             ->withAlias('test.projection_catalog', ProjectionCatalog::class)
@@ -69,8 +72,7 @@ abstract class ProjectionFunctionalTestCase extends TestCase
             ->withAlias('test.projection_segments', ProjectionSegmentRepositoryInterface::class)
             ->withAlias('test.projection_activity', ProjectionActivity::class)
             ->withAlias('test.projection_leases', ProjectionExtension::COORDINATOR_LEASE_ID)
-            ->withAlias('test.projection_activator', ProjectionActivatorInterface::class)
-        ;
+            ->withAlias('test.projection_activator', ProjectionActivatorInterface::class);
     }
 }
 

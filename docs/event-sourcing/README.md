@@ -7,6 +7,11 @@ This context spans Events, EventStore, EventStore_Postgres, EventSourcedState an
 - [Postgres persistence](postgres.md)
 - [Decision-specific states: architectural rationale](../adr/0001-decision-specific-states.md)
 
+Event resource tags must resolve to an existing class and a string event name. Invalid declarations fail
+during container compilation with `LogicException`; names default to the event class when omitted.
+Registry lookups preserve every string event name, including empty strings and numeric strings.
+PHP converts numeric string keys in the registry's `all()` map to integers; reverse lookup returns the string name.
+
 ## Test ownership
 
 The context's suites live in `src/EventSourcing/Tests`, including its compiler and Postgres guarantees.

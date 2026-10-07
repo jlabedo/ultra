@@ -1,5 +1,7 @@
 <?php
 
+declare(strict_types=1);
+
 namespace Ultra\Mapper_Compiler;
 
 use Symfony\Component\TypeInfo\Type;
@@ -10,8 +12,11 @@ class ValueObjectPropertyCodeGenerator implements CodeGenerator
     private string $valueProperty;
     private string $className;
 
-    public function __construct(string $className, string $valueProperty, private CodeGenerator $next)
-    {
+    public function __construct(
+        string $className,
+        string $valueProperty,
+        private CodeGenerator $next,
+    ) {
         $this->className = $className;
         $this->valueProperty = $valueProperty;
     }

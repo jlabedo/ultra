@@ -6,7 +6,10 @@ namespace IamExample\Domain;
 
 final readonly class Scope
 {
-    private function __construct(public string $type, public string $id) {}
+    private function __construct(
+        public string $type,
+        public string $id,
+    ) {}
 
     public static function tenant(): self
     {

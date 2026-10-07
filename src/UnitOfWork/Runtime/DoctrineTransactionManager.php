@@ -28,7 +28,7 @@ final readonly class DoctrineTransactionManager implements TransactionManager
                 $this->connection->setTransactionIsolation($this->isolationLevel);
             }
 
-            return $this->connection->transactional(static fn (): mixed => $callback());
+            return $this->connection->transactional(static fn(): mixed => $callback());
         } finally {
             if ($overrideIsolation) {
                 $this->connection->setTransactionIsolation($previousIsolation);

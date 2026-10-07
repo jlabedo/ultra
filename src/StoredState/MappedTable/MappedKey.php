@@ -12,7 +12,7 @@ final readonly class MappedKey implements \Stringable
     /** @var array<string, int|string> */
     public array $values;
 
-    /** @param array<string, int|string> $values */
+    /** @param array<array-key, mixed> $values Validated column names and scalar values are stored below. */
     public function __construct(array $values)
     {
         if ([] === $values) {
@@ -34,6 +34,7 @@ final readonly class MappedKey implements \Stringable
         }
 
         ksort($values, SORT_STRING);
+        /** @var array<non-empty-string, int|string> $values */
         $this->values = $values;
     }
 
@@ -95,7 +96,10 @@ final readonly class MappedKey implements \Stringable
 
     public function fingerprint(): string
     {
-        return json_encode(array_map(static fn (int|string $value): string => (string) $value, $this->values), JSON_THROW_ON_ERROR);
+        return json_encode(
+            array_map(static fn(int|string $value): string => (string) $value, $this->values),
+            JSON_THROW_ON_ERROR,
+        );
     }
 
     public function __toString(): string

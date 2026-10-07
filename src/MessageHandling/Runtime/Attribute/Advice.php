@@ -23,6 +23,9 @@ namespace Ultra\MessageHandling\Attribute;
  */
 abstract class Advice
 {
+    /**
+     * @param \Closure(HandlerMatchContext): ?MatchResult $matcher
+     */
     public function __construct(
         public readonly \Closure $matcher = Pointcut::all(...),
         public readonly int $priority = 0,

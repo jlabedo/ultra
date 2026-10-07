@@ -4,10 +4,9 @@ declare(strict_types=1);
 
 namespace IamExample\State;
 
+use IamExample\Domain\MembershipId;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateId;
-use Ultra\StateStore\Attribute\StateColumn;
-use IamExample\Domain\MembershipId;
 
 #[State(table: 'iam_memberships')]
 final readonly class MembershipState

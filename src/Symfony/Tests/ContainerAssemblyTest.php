@@ -26,14 +26,17 @@ final class ContainerAssemblyTest extends TestCase
     public function test_explicit_extensions_build_the_supplied_container_in_order(array $names): void
     {
         $container = new ContainerBuilder();
-        $bundle = new UltraBundle(array_map(static fn (string $name) => new RegisteringExtension($name), $names));
+        $bundle = new UltraBundle(array_map(static fn(string $name) => new RegisteringExtension($name), $names));
 
         $bundle->build($container);
 
-        self::assertSame($names, $container->getParameter('extensions'));
-        self::assertFalse($container->has(UltraNormalizer::class));
+        static::assertSame($names, $container->getParameter('extensions'));
+        static::assertFalse($container->has(UltraNormalizer::class));
         $container->compile();
-        self::assertSame(['extension' => $names[array_key_last($names)]], $container->get('extension.result')->getArrayCopy());
+        static::assertSame(
+            ['extension' => $names[array_key_last($names)]],
+            $container->get('extension.result')->getArrayCopy(),
+        );
     }
 
     /** @return iterable<string, array{list<string>}> */
@@ -48,15 +51,15 @@ final class ContainerAssemblyTest extends TestCase
     public function test_empty_extension_selection_registers_installed_package_services(bool $explicitEmptyList): void
     {
         $container = new ContainerBuilder();
-        $container->setParameter('kernel.build_dir', __DIR__.'/../../../var/container-assembly');
+        $container->setParameter('kernel.build_dir', __DIR__ . '/../../../var/container-assembly');
         $bundle = $explicitEmptyList ? new UltraBundle([]) : new UltraBundle();
 
         $bundle->build($container);
 
-        self::assertTrue($container->hasDefinition(UltraNormalizer::class));
-        self::assertTrue($container->hasDefinition(MediatorInterface::class));
-        self::assertTrue($container->hasDefinition(StateStore::class));
-        self::assertTrue($container->hasAlias(UnitOfWorkRunner::class));
+        static::assertTrue($container->hasDefinition(UltraNormalizer::class));
+        static::assertTrue($container->hasDefinition(MediatorInterface::class));
+        static::assertTrue($container->hasDefinition(StateStore::class));
+        static::assertTrue($container->hasAlias(UnitOfWorkRunner::class));
     }
 
     /** @return iterable<string, array{bool}> */

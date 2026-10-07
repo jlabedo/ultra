@@ -6,8 +6,8 @@ namespace Ultra\Projection\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Ultra\Mapper\UltraNormalizer;
 use Ultra\EventStore\Event;
+use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
@@ -38,16 +38,19 @@ final class CheckpointProgressTest extends ProjectionTestCase
         $firstResult = $runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
         $secondResult = $runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
 
-        self::assertSame(1, $firstResult->processedEvents);
-        self::assertFalse($firstResult->caughtUp);
-        self::assertSame(1, $secondResult->processedEvents);
-        self::assertTrue($secondResult->caughtUp);
-        self::assertSame([
-            'course-1' => 'Math',
-            'course-2' => 'Science',
-        ], $projection->names);
-        self::assertSame([], $activity->affected());
-        self::assertNull($segments->listSegments('tracking_projection')[0]->workerId);
+        static::assertSame(1, $firstResult->processedEvents);
+        static::assertFalse($firstResult->caughtUp);
+        static::assertSame(1, $secondResult->processedEvents);
+        static::assertTrue($secondResult->caughtUp);
+        static::assertSame(
+            [
+                'course-1' => 'Math',
+                'course-2' => 'Science',
+            ],
+            $projection->names,
+        );
+        static::assertSame([], $activity->affected());
+        static::assertNull($segments->listSegments('tracking_projection')[0]->workerId);
     }
 
     #[DataProvider('backends')]
@@ -70,7 +73,7 @@ final class CheckpointProgressTest extends ProjectionTestCase
         // checkpoint to wipe.
         $runner->ensureInitialized($runtime);
         $runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 100);
-        self::assertSame(
+        static::assertSame(
             ['course-1' => 'Math', 'course-2' => 'Science', 'course-3' => 'History'],
             $projection->names,
         );
@@ -79,18 +82,21 @@ final class CheckpointProgressTest extends ProjectionTestCase
         // Replay from event 0.
         $processed = $runner->replayFromBeginning($runtime, limit: 2);
 
-        self::assertSame(3, $processed);
-        self::assertSame($resetsBefore + 1, $projection->resets, 'replay must reset projection state');
-        self::assertSame(
+        static::assertSame(3, $processed);
+        static::assertSame($resetsBefore + 1, $projection->resets, 'replay must reset projection state');
+        static::assertSame(
             ['course-1' => 'Math', 'course-2' => 'Science', 'course-3' => 'History'],
             $projection->names,
         );
-        self::assertSame(3, $runner->replayFromBeginning($runtime, limit: 2));
-        self::assertSame(['course-1' => 'Math', 'course-2' => 'Science', 'course-3' => 'History'], $projection->names);
+        static::assertSame(3, $runner->replayFromBeginning($runtime, limit: 2));
+        static::assertSame(
+            ['course-1' => 'Math', 'course-2' => 'Science', 'course-3' => 'History'],
+            $projection->names,
+        );
 
         // Every segment should be caught up (no claims left over).
         foreach ($segments->listSegments('tracking_projection') as $segment) {
-            self::assertNull($segment->workerId);
+            static::assertNull($segment->workerId);
         }
     }
 
@@ -101,9 +107,9 @@ final class CheckpointProgressTest extends ProjectionTestCase
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $runner = $this->fixture($backend)->runner;
 
-        self::assertSame(0, $runner->replayFromBeginning($runtime));
-        self::assertSame([], $projection->names);
-        self::assertSame(1, $projection->initialized);
+        static::assertSame(0, $runner->replayFromBeginning($runtime));
+        static::assertSame([], $projection->names);
+        static::assertSame(1, $projection->initialized);
     }
 
     #[DataProvider('backends')]
@@ -115,21 +121,26 @@ final class CheckpointProgressTest extends ProjectionTestCase
         $fixture->store->append([self::courseCreatedEvent('projection-resume-course', 'First')]);
 
         $first = $fixture->runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'first-worker');
-        self::assertSame(1, $first->processedEvents);
-        self::assertSame(1, $fixture->segments->listSegments('tracking_projection')[0]->checkpoint->gapFloor->value);
+        static::assertSame(1, $first->processedEvents);
+        static::assertSame(1, $fixture->segments->listSegments('tracking_projection')[0]->checkpoint->gapFloor->value);
         $fixture->store->append([self::courseCreatedEvent('projection-resume-course', 'Second')]);
-        $restarted = new ProjectionRunner($fixture->store, $fixture->segments, $fixture->transactions, $fixture->activity);
+        $restarted = new ProjectionRunner(
+            $fixture->store,
+            $fixture->segments,
+            $fixture->transactions,
+            $fixture->activity,
+        );
 
         $second = $restarted->runClaimedOnce($runtime, 'tracking_projection', 0, 'second-worker');
 
-        self::assertSame(1, $second->processedEvents);
-        self::assertTrue($second->caughtUp);
-        self::assertSame(['First', 'Second'], $projection->applied);
-        self::assertSame(['projection-resume-course' => 'Second'], $projection->names);
-        self::assertSame(2, $projection->flushes);
+        static::assertSame(1, $second->processedEvents);
+        static::assertTrue($second->caughtUp);
+        static::assertSame(['First', 'Second'], $projection->applied);
+        static::assertSame(['projection-resume-course' => 'Second'], $projection->names);
+        static::assertSame(2, $projection->flushes);
         $segment = $fixture->segments->listSegments('tracking_projection')[0];
-        self::assertSame(2, $segment->checkpoint->gapFloor->value);
-        self::assertNull($segment->workerId);
+        static::assertSame(2, $segment->checkpoint->gapFloor->value);
+        static::assertNull($segment->workerId);
     }
 
     #[DataProvider('backends')]
@@ -151,10 +162,9 @@ final class CheckpointProgressTest extends ProjectionTestCase
 
         $result = $fixture->runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'left-worker');
 
-        self::assertSame(2, $result->processedEvents);
-        self::assertSame(['First', 'Second'], $projection->applied);
-        self::assertSame([$left => 'Second'], $projection->names);
-        self::assertSame(0, $fixture->segments->listSegments('tracking_projection')[1]->checkpoint->gapFloor->value);
+        static::assertSame(2, $result->processedEvents);
+        static::assertSame(['First', 'Second'], $projection->applied);
+        static::assertSame([$left => 'Second'], $projection->names);
+        static::assertSame(0, $fixture->segments->listSegments('tracking_projection')[1]->checkpoint->gapFloor->value);
     }
-
 }

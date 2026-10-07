@@ -112,7 +112,9 @@ readonly class Foo
 #[AsValue]
 readonly class InnerValue
 {
-    public function __construct(public int $inner) {}
+    public function __construct(
+        public int $inner,
+    ) {}
 }
 
 readonly class MaybeEmail
@@ -125,7 +127,9 @@ readonly class MaybeEmail
 #[AsValue]
 readonly class OuterValue
 {
-    public function __construct(public InnerValue $outer) {}
+    public function __construct(
+        public InnerValue $outer,
+    ) {}
 }
 
 class PromotedAndNonPromoted
@@ -158,13 +162,17 @@ class RuntimeEmailNormalizer implements RuntimeNormalizerInterface
 
     public function toScalar(mixed $value, UltraNormalizer $normalizer): array|bool|float|int|string|null
     {
-        return 'runtime-email:'.$value->value;
+        return 'runtime-email:' . $value->value;
     }
 
-    public function fromScalar(array|bool|float|int|string|null $value, string $type, UltraNormalizer $normalizer, DenormalizationContext $context): mixed
-    {
+    public function fromScalar(
+        array|bool|float|int|string|null $value,
+        string $type,
+        UltraNormalizer $normalizer,
+        DenormalizationContext $context,
+    ): mixed {
         if (!is_string($value) || !str_starts_with($value, 'runtime-email:')) {
-            throw new DenormalizationException('expected runtime email at path '.$context->path);
+            throw new DenormalizationException('expected runtime email at path ' . $context->path);
         }
 
         return new RuntimeEmail(substr($value, strlen('runtime-email:')));
@@ -187,12 +195,16 @@ readonly class User
 
 class CircularA
 {
-    public function __construct(public ?CircularB $b = null) {}
+    public function __construct(
+        public ?CircularB $b = null,
+    ) {}
 }
 
 class CircularB
 {
-    public function __construct(public ?CircularA $a = null) {}
+    public function __construct(
+        public ?CircularA $a = null,
+    ) {}
 }
 
 class MultiUnion
@@ -213,9 +225,11 @@ readonly class CustomerWithRuntimeEmail
 
 readonly class SharedRuntimeEmails
 {
-    public function __construct(public RuntimeEmail $primary, public RuntimeEmail $secondary) {}
+    public function __construct(
+        public RuntimeEmail $primary,
+        public RuntimeEmail $secondary,
+    ) {}
 }
-
 
 #[AsValue]
 final class HookedEmail
@@ -224,7 +238,9 @@ final class HookedEmail
         get => substr($this->value, (int) strpos($this->value, '@') + 1);
     }
 
-    public function __construct(public readonly string $value) {}
+    public function __construct(
+        public readonly string $value,
+    ) {}
 }
 
 final class HookedSlot
@@ -239,10 +255,10 @@ final class HookedSlot
     ) {}
 }
 
-
 final class CompoundId
 {
     public static int $version = 1;
+
     public function __construct(
         public int $right,
         public string $left,
@@ -252,7 +268,7 @@ final class CompoundId
 final class HookedId
 {
     public string $label {
-        get => $this->left.'-'.$this->right;
+        get => $this->left . '-' . $this->right;
     }
 
     public function __construct(
@@ -275,8 +291,12 @@ final class ExternalIdNormalizer implements RuntimeNormalizerInterface
         return 'external';
     }
 
-    public function fromScalar(array|bool|float|int|string|null $value, string $type, UltraNormalizer $normalizer, DenormalizationContext $context): mixed
-    {
+    public function fromScalar(
+        array|bool|float|int|string|null $value,
+        string $type,
+        UltraNormalizer $normalizer,
+        DenormalizationContext $context,
+    ): mixed {
         return new ExternalId();
     }
 }
@@ -299,8 +319,12 @@ final class CompoundIdNormalizer implements RuntimeNormalizerInterface
         return ['left' => 'left', 'right' => 1];
     }
 
-    public function fromScalar(array|bool|float|int|string|null $value, string $type, UltraNormalizer $normalizer, DenormalizationContext $context): mixed
-    {
+    public function fromScalar(
+        array|bool|float|int|string|null $value,
+        string $type,
+        UltraNormalizer $normalizer,
+        DenormalizationContext $context,
+    ): mixed {
         return new CompoundId(1, 'left');
     }
 }
@@ -317,8 +341,12 @@ final class ImpreciseIdNormalizer implements RuntimeNormalizerInterface
         return 'external';
     }
 
-    public function fromScalar(array|bool|float|int|string|null $value, string $type, UltraNormalizer $normalizer, DenormalizationContext $context): mixed
-    {
+    public function fromScalar(
+        array|bool|float|int|string|null $value,
+        string $type,
+        UltraNormalizer $normalizer,
+        DenormalizationContext $context,
+    ): mixed {
         return new ExternalId();
     }
 }
@@ -329,7 +357,10 @@ readonly class SecondaryRuntimeEmail extends RuntimeEmail {}
 
 readonly class AssemblyRecord
 {
-    public function __construct(public RuntimeEmail $primary, public SecondaryRuntimeEmail $secondary) {}
+    public function __construct(
+        public RuntimeEmail $primary,
+        public SecondaryRuntimeEmail $secondary,
+    ) {}
 }
 
 class MultiTypeRuntimeEmailNormalizer extends RuntimeEmailNormalizer
@@ -339,8 +370,12 @@ class MultiTypeRuntimeEmailNormalizer extends RuntimeEmailNormalizer
         return [RuntimeEmail::class, SecondaryRuntimeEmail::class];
     }
 
-    public function fromScalar(array|bool|float|int|string|null $value, string $type, UltraNormalizer $normalizer, DenormalizationContext $context): mixed
-    {
+    public function fromScalar(
+        array|bool|float|int|string|null $value,
+        string $type,
+        UltraNormalizer $normalizer,
+        DenormalizationContext $context,
+    ): mixed {
         return new $type(substr((string) $value, strlen('runtime-email:')));
     }
 }
@@ -379,8 +414,12 @@ abstract class ArrayShapeNormalizer implements RuntimeNormalizerInterface
         return [ExternalId::class];
     }
 
-    public function fromScalar(array|bool|float|int|string|null $value, string $type, UltraNormalizer $normalizer, DenormalizationContext $context): mixed
-    {
+    public function fromScalar(
+        array|bool|float|int|string|null $value,
+        string $type,
+        UltraNormalizer $normalizer,
+        DenormalizationContext $context,
+    ): mixed {
         return new ExternalId();
     }
 }
@@ -406,24 +445,32 @@ namespace Ultra\Mapper\Tests\Fixtures\Collision;
 
 readonly class A_B
 {
-    public function __construct(public int $id) {}
+    public function __construct(
+        public int $id,
+    ) {}
 }
 
 readonly class A_sB
 {
-    public function __construct(public int $id) {}
+    public function __construct(
+        public int $id,
+    ) {}
 }
 
 namespace Ultra\Mapper\Tests\Fixtures\Collision\A;
 
 readonly class B
 {
-    public function __construct(public string $name) {}
+    public function __construct(
+        public string $name,
+    ) {}
 }
 
 namespace Ultra\Mapper\Tests\Fixtures\Collision_A;
 
 readonly class B
 {
-    public function __construct(public string $name) {}
+    public function __construct(
+        public string $name,
+    ) {}
 }

@@ -5,17 +5,17 @@ declare(strict_types=1);
 namespace Ultra\StateStore\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
-use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\StateStore\Exception\PendingQueryChangesException;
 use Ultra\StateStore\Exception\UnknownQueryGuardException;
-use Ultra\StateStore\InMemoryGuardLockAdapter;
 use Ultra\StateStore\GuardLockMode;
+use Ultra\StateStore\InMemoryGuardLockAdapter;
 use Ultra\StateStore\QueryGuard;
 use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\StateStore\StateTableRegistry;
+use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 
 /** @internal */
 final class QueryReadOrderingTest extends StateStoreTestCase
@@ -25,21 +25,28 @@ final class QueryReadOrderingTest extends StateStoreTestCase
         yield 'direct registry shared guard' => ['registryShared', 'unknown', []];
         yield 'direct registry exclusive guard' => ['registryExclusive', 'unknown', []];
         foreach (['lock', 'observe'] as $operation) {
-            yield $operation.' with missing definition' => [$operation, 'company_usgae', []];
-            yield $operation.' with empty definition' => [$operation, 'empty', ['empty' => []]];
-            yield $operation.' with empty name' => [$operation, '', []];
+            yield $operation . ' with missing definition' => [$operation, 'company_usgae', []];
+            yield $operation . ' with empty definition' => [$operation, 'empty', ['empty' => []]];
+            yield $operation . ' with empty name' => [$operation, '', []];
         }
     }
 
     #[DataProvider('unknownGuards')]
-    public function test_unknown_guards_are_rejected_without_reading_or_queuing_work(string $operation, string $name, array $definitions): void
-    {
+    public function test_unknown_guards_are_rejected_without_reading_or_queuing_work(
+        string $operation,
+        string $name,
+        array $definitions,
+    ): void {
         $registry = new StateTableRegistry([], queryGuardDefinitions: $definitions);
         $guard = new QueryGuard($registry, $name);
         $called = false;
         try {
             if (str_starts_with($operation, 'registry')) {
-                $registry->guard($name, 'acme', 'registryShared' === $operation ? GuardLockMode::SHARED : GuardLockMode::EXCLUSIVE);
+                $registry->guard(
+                    $name,
+                    'acme',
+                    'registryShared' === $operation ? GuardLockMode::SHARED : GuardLockMode::EXCLUSIVE,
+                );
             } elseif ('lock' === $operation) {
                 $guard->lock('acme');
             } else {
@@ -49,14 +56,14 @@ final class QueryReadOrderingTest extends StateStoreTestCase
                     return 42;
                 });
             }
-            self::fail('A guard without watched-state metadata must not be usable.');
+            static::fail('A guard without watched-state metadata must not be usable.');
         } catch (UnknownQueryGuardException $exception) {
-            self::assertSame($name, $exception->guardName);
-            self::assertStringContainsString('registered for "'.$name.'"', $exception->getMessage());
-            self::assertStringContainsString('#[DefineQueryGuard]', $exception->getMessage());
+            static::assertSame($name, $exception->guardName);
+            static::assertStringContainsString('registered for "' . $name . '"', $exception->getMessage());
+            static::assertStringContainsString('#[DefineQueryGuard]', $exception->getMessage());
         }
-        self::assertFalse($called);
-        self::assertFalse($registry->hasPendingChanges());
+        static::assertFalse($called);
+        static::assertFalse($registry->hasPendingChanges());
     }
 
     public static function impactingMutations(): iterable
@@ -71,8 +78,10 @@ final class QueryReadOrderingTest extends StateStoreTestCase
     }
 
     #[DataProvider('impactingMutations')]
-    public function test_affected_reads_are_rejected_before_executing_or_registering_the_query(string $mutation, string $scope): void
-    {
+    public function test_affected_reads_are_rejected_before_executing_or_registering_the_query(
+        string $mutation,
+        string $scope,
+    ): void {
         [, $table, , $registry, $guard] = $this->fixture();
         if ('update_after_check' === $mutation) {
             $table->withKey('a-check-only')->expectColumnValue('company_id', 'acme');
@@ -95,19 +104,19 @@ final class QueryReadOrderingTest extends StateStoreTestCase
 
                 return 0;
             });
-            self::fail('An affected query must not execute against committed rows alone.');
+            static::fail('An affected query must not execute against committed rows alone.');
         } catch (PendingQueryChangesException $exception) {
-            self::assertSame('company_usage', $exception->guardName);
-            self::assertSame($scope, $exception->guardValue);
-            self::assertSame('bookings', $exception->tableKey);
-            self::assertSame('booking-1', $exception->key->value('id'));
-            self::assertStringContainsString('before preparing affected writes', $exception->getMessage());
+            static::assertSame('company_usage', $exception->guardName);
+            static::assertSame($scope, $exception->guardValue);
+            static::assertSame('bookings', $exception->tableKey);
+            static::assertSame('booking-1', $exception->key->value('id'));
+            static::assertStringContainsString('before preparing affected writes', $exception->getMessage());
         }
-        self::assertFalse($called);
+        static::assertFalse($called);
         // Rejecting a read must add neither a shared guard nor a query expectation.
         $table->clear();
-        self::assertFalse($registry->hasPendingChanges());
-        self::assertSame(0, $guard->observe($scope, static fn (): int => 0));
+        static::assertFalse($registry->hasPendingChanges());
+        static::assertSame(0, $guard->observe($scope, static fn(): int => 0));
     }
 
     public static function unrelatedChanges(): iterable
@@ -134,11 +143,14 @@ final class QueryReadOrderingTest extends StateStoreTestCase
             'guard' => $row->expectColumnValue('room_id', 'blue')->setColumn('status', 'cancelled'),
             'table' => $otherTable->withKey('note-1')->insert()->setColumn('text', 'hello'),
             'expectation' => $row->expectColumnValue('company_id', 'acme'),
-            'unchanged' => $row->expectColumnValues(['company_id' => 'acme', 'minutes' => 60])->setColumn('minutes', 60),
+            'unchanged' => $row->expectColumnValues(['company_id' => 'acme', 'minutes' => 60])->setColumn(
+                'minutes',
+                60,
+            ),
             'lock' => $registry->lock('bookings', new \Ultra\MappedTable\MappedKey(['id' => 'booking-1'])),
         };
 
-        self::assertSame(42, $guard->observe('acme', static fn (): int => 42));
+        static::assertSame(42, $guard->observe('acme', static fn(): int => 42));
     }
 
     public function test_unknown_previous_scope_is_rejected_without_executing_the_query(): void
@@ -152,11 +164,11 @@ final class QueryReadOrderingTest extends StateStoreTestCase
 
                 return 0;
             });
-            self::fail('An unknown old scope cannot be assumed unrelated.');
+            static::fail('An unknown old scope cannot be assumed unrelated.');
         } catch (\LogicException $exception) {
-            self::assertStringContainsString('requires observing column "company_id"', $exception->getMessage());
+            static::assertStringContainsString('requires observing column "company_id"', $exception->getMessage());
         }
-        self::assertFalse($called);
+        static::assertFalse($called);
     }
 
     public function test_flush_replays_an_earlier_observation_even_with_subsequent_affected_writes(): void
@@ -168,7 +180,10 @@ final class QueryReadOrderingTest extends StateStoreTestCase
 
             return false !== $database->row('bookings', 'id', 'booking-1');
         });
-        $table->withKey('booking-1')->insert()->setColumns(['company_id' => 'acme', 'room_id' => 'blue', 'minutes' => 60]);
+        $table
+            ->withKey('booking-1')
+            ->insert()
+            ->setColumns(['company_id' => 'acme', 'room_id' => 'blue', 'minutes' => 60]);
         $database->beginTransaction();
         try {
             $registry->flush();
@@ -178,10 +193,10 @@ final class QueryReadOrderingTest extends StateStoreTestCase
                 $database->rollBack();
             }
         }
-        self::assertSame([false, true], $phases);
-        self::assertSame(60, $database->row('bookings', 'id', 'booking-1')['minutes']);
+        static::assertSame([false, true], $phases);
+        static::assertSame(60, $database->row('bookings', 'id', 'booking-1')['minutes']);
         $registry->clear();
-        self::assertSame(true, $guard->observe('acme', static fn (): bool => true));
+        static::assertTrue($guard->observe('acme', static fn(): bool => true));
     }
 
     /** @return array{InMemoryRowDatabase, MappedRowSet, MappedRowSet, StateTableRegistry, QueryGuard} */
@@ -190,10 +205,18 @@ final class QueryReadOrderingTest extends StateStoreTestCase
         $database = new InMemoryRowDatabase();
         $table = new MappedRowSet(new InMemoryMappedRowSetAdapter($database, 'bookings'));
         $otherTable = new MappedRowSet(new InMemoryMappedRowSetAdapter($database, 'notes'));
-        $registry = new StateTableRegistry(['bookings' => $table, 'notes' => $otherTable], queryGuardDefinitions: [
-            'company_usage' => [['tableKey' => 'bookings', 'keyBy' => 'company_id', 'columns' => ['charged', 'minutes']]],
-            'room_bookings' => [['tableKey' => 'bookings', 'keyBy' => 'room_id', 'columns' => ['status']]],
-        ], guardLockAdapter: new InMemoryGuardLockAdapter($database));
+        $registry = new StateTableRegistry(
+            ['bookings' => $table, 'notes' => $otherTable],
+            queryGuardDefinitions: [
+                'company_usage' => [[
+                    'tableKey' => 'bookings',
+                    'keyBy' => 'company_id',
+                    'columns' => ['charged', 'minutes'],
+                ]],
+                'room_bookings' => [['tableKey' => 'bookings', 'keyBy' => 'room_id', 'columns' => ['status']]],
+            ],
+            guardLockAdapter: new InMemoryGuardLockAdapter($database),
+        );
 
         return [$database, $table, $otherTable, $registry, new QueryGuard($registry, 'company_usage')];
     }
@@ -207,11 +230,13 @@ final class QueryReadOrderingTest extends StateStoreTestCase
         $fixture->registry->clear();
         $definition = new QueryGuardDefinition();
         $definition->watch(OrderWithLinesState::class, scopeBy: 'orderId')->whenPropertiesChange('lines');
-        [$store, $registry] = $fixture->newStore([OrderWithLinesState::class], ['usage' => $definition->compile($fixture->metadata)]);
+        [$store, $registry] = $fixture->newStore([OrderWithLinesState::class], [
+            'usage' => $definition->compile($fixture->metadata),
+        ]);
         $guard = new QueryGuard($registry, 'usage');
         $scope = 'one';
         $reads = [];
-        $guard->observe($scope, function () use ($fixture, &$reads): int {
+        $guard->observe($scope, static function () use ($fixture, &$reads): int {
             $count = count($fixture->store->load(OrderWithLinesState::class, 'one')->lines);
             $reads[] = $count;
 
@@ -220,15 +245,18 @@ final class QueryReadOrderingTest extends StateStoreTestCase
         $store->observe(OrderWithLinesState::class, 'one');
         $store->delete(OrderWithLinesState::class, 'one');
         try {
-            $guard->observe($scope, static fn (): int => throw new \RuntimeException('Must not read pending deletions.'));
-            self::fail('An affected query must be rejected before reading storage.');
+            $guard->observe(
+                $scope,
+                static fn(): int => throw new \RuntimeException('Must not read pending deletions.'),
+            );
+            static::fail('An affected query must be rejected before reading storage.');
         } catch (PendingQueryChangesException $exception) {
-            self::assertSame($scope, $exception->guardValue);
+            static::assertSame($scope, $exception->guardValue);
         }
-        self::assertSame(1, $guard->observe('unrelated', static fn (): int => 1));
+        static::assertSame(1, $guard->observe('unrelated', static fn(): int => 1));
         $fixture->flush($registry);
-        self::assertSame([1, 1], $reads);
+        static::assertSame([1, 1], $reads);
         $registry->clear();
-        self::assertNull($store->load(OrderWithLinesState::class, 'one'));
+        static::assertNull($store->load(OrderWithLinesState::class, 'one'));
     }
 }

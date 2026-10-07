@@ -6,7 +6,6 @@ namespace Ultra\StateStore\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\StateStore\Tests\Support\StateStoreTestCase;
-use Ultra\StateStore\StateStore;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /** @internal */
@@ -28,12 +27,12 @@ final class CollectionOwnershipTest extends StateStoreTestCase
             'line_sku' => 'sku-1',
             'line_variant' => 'blue',
         ]);
-        self::assertSame(['quantity' => 2], $database->rowByKey('composite_order_lines', $lineKey, ['quantity']));
+        static::assertSame(['quantity' => 2], $database->rowByKey('composite_order_lines', $lineKey, ['quantity']));
 
         $loaded = $store->load(CompositeOrderState::class, new CompositeOrderId('tenant-1', 'order-42'));
-        self::assertInstanceOf(CompositeOrderState::class, $loaded);
-        self::assertCount(1, $loaded->lines);
-        self::assertSame('blue', $loaded->lines[0]->lineId->variant);
+        static::assertInstanceOf(CompositeOrderState::class, $loaded);
+        static::assertCount(1, $loaded->lines);
+        static::assertSame('blue', $loaded->lines[0]->lineId->variant);
     }
 
     public function test_load_hydrates_state_collection_from_scoped_row_set(): void
@@ -64,13 +63,13 @@ final class CollectionOwnershipTest extends StateStoreTestCase
 
         $state = $store->load(OrderWithLinesState::class, 'order-123');
 
-        self::assertInstanceOf(OrderWithLinesState::class, $state);
-        self::assertSame('pending', $state->status);
-        self::assertContainsOnlyInstancesOf(OrderLineState::class, $state->lines);
-        self::assertSame(['line-1', 'line-2'], array_map(
-            static fn (OrderLineState $line): string => $line->lineId,
-            $state->lines,
-        ));
+        static::assertInstanceOf(OrderWithLinesState::class, $state);
+        static::assertSame('pending', $state->status);
+        static::assertContainsOnlyInstancesOf(OrderLineState::class, $state->lines);
+        static::assertSame(
+            ['line-1', 'line-2'],
+            array_map(static fn(OrderLineState $line): string => $line->lineId, $state->lines),
+        );
     }
 
     public function test_save_persists_collection_rows_and_deletes_removed_rows(): void
@@ -100,21 +99,36 @@ final class CollectionOwnershipTest extends StateStoreTestCase
 
         $this->flush($database, $registry);
 
-        self::assertSame([
-            'order_id' => 'order-123',
-            'sku' => 'SKU-1',
-            'quantity' => 3,
-        ], $database->row('order_lines', 'line_id', 'line-1', ['order_id', 'sku', 'quantity'], ['order_id' => 'order-123']));
-        self::assertFalse($database->row('order_lines', 'line_id', 'line-2'));
-        self::assertSame([
-            'order_id' => 'order-123',
-            'sku' => 'SKU-3',
-            'quantity' => 1,
-        ], $database->row('order_lines', 'line_id', 'line-3', ['order_id', 'sku', 'quantity'], ['order_id' => 'order-123']));
+        static::assertSame(
+            [
+                'order_id' => 'order-123',
+                'sku' => 'SKU-1',
+                'quantity' => 3,
+            ],
+            $database->row(
+                'order_lines',
+                'line_id',
+                'line-1',
+                ['order_id', 'sku', 'quantity'],
+                ['order_id' => 'order-123'],
+            ),
+        );
+        static::assertFalse($database->row('order_lines', 'line_id', 'line-2'));
+        static::assertSame(
+            [
+                'order_id' => 'order-123',
+                'sku' => 'SKU-3',
+                'quantity' => 1,
+            ],
+            $database->row(
+                'order_lines',
+                'line_id',
+                'line-3',
+                ['order_id', 'sku', 'quantity'],
+                ['order_id' => 'order-123'],
+            ),
+        );
     }
-
-
-
 
     public static function membershipDecisions(): iterable
     {
@@ -126,15 +140,26 @@ final class CollectionOwnershipTest extends StateStoreTestCase
     }
 
     #[DataProvider('membershipDecisions')]
-    public function test_collection_decisions_preserve_owner_membership(string $read, string $change, bool $save, bool $conflict): void
-    {
+    public function test_collection_decisions_preserve_owner_membership(
+        string $read,
+        string $change,
+        bool $save,
+        bool $conflict,
+    ): void {
         [$database, , $store, $registry] = $this->newStore([OrderWithLinesState::class]);
         $database->seedRow('orders', 'order_id', ['order_id' => 'order-123', 'status' => 'pending']);
         if ('delete' === $change) {
-            $database->seedRow('order_lines', 'line_id', ['order_id' => 'order-123', 'line_id' => 'old', 'sku' => 'SKU', 'quantity' => 1]);
+            $database->seedRow('order_lines', 'line_id', [
+                'order_id' => 'order-123',
+                'line_id' => 'old',
+                'sku' => 'SKU',
+                'quantity' => 1,
+            ]);
         }
-        $state = 'observe' === $read ? $store->observe(OrderWithLinesState::class, 'order-123') : $store->load(OrderWithLinesState::class, 'order-123');
-        self::assertInstanceOf(OrderWithLinesState::class, $state);
+        $state = 'observe' === $read
+            ? $store->observe(OrderWithLinesState::class, 'order-123')
+            : $store->load(OrderWithLinesState::class, 'order-123');
+        static::assertInstanceOf(OrderWithLinesState::class, $state);
         if ('expect' === $read) {
             $store->expect($state);
         }
@@ -142,42 +167,64 @@ final class CollectionOwnershipTest extends StateStoreTestCase
             $store->save($state);
         }
         if ('insert' === $change) {
-            $database->seedRow('order_lines', 'line_id', ['order_id' => 'order-123', 'line_id' => 'late', 'sku' => 'SKU', 'quantity' => 1]);
+            $database->seedRow('order_lines', 'line_id', [
+                'order_id' => 'order-123',
+                'line_id' => 'late',
+                'sku' => 'SKU',
+                'quantity' => 1,
+            ]);
         } else {
-            $database->deleteRowByKey('order_lines', new \Ultra\MappedTable\MappedKey(['order_id' => 'order-123', 'line_id' => 'old']));
+            $database->deleteRowByKey('order_lines', new \Ultra\MappedTable\MappedKey([
+                'order_id' => 'order-123',
+                'line_id' => 'old',
+            ]));
         }
         if ($conflict) {
             $this->expectException(ConcurrencyException::class);
         }
         $this->flush($database, $registry);
         $registry->clear();
-        self::assertSame([], $store->load(OrderWithLinesState::class, 'order-123')->lines);
+        static::assertSame([], $store->load(OrderWithLinesState::class, 'order-123')->lines);
     }
 
     public static function identifiers(): iterable
     {
         foreach (self::backends() as $name => [$backend]) {
             foreach (['string', 'integer', 'composite'] as $idType) {
-                yield $name.' '.$idType => [$backend, $idType];
+                yield $name . ' ' . $idType => [$backend, $idType];
             }
         }
     }
 
     #[DataProvider('identifiers')]
-    public function test_deletion_removes_only_the_owner_and_its_declared_collections(string $backend, string $idType): void
-    {
-        $fixture = $this->stateFixture($backend, [OrderWithLinesState::class, CompositeOrderState::class, CounterState::class]);
+    public function test_deletion_removes_only_the_owner_and_its_declared_collections(
+        string $backend,
+        string $idType,
+    ): void {
+        $fixture = $this->stateFixture($backend, [
+            OrderWithLinesState::class,
+            CompositeOrderState::class,
+            CounterState::class,
+        ]);
         [$state, $other, $id, $otherId] = match ($idType) {
             'string' => [
                 new OrderWithLinesState('one', 'pending', [new OrderLineState('same', 'SKU', 1)]),
                 new OrderWithLinesState('two', 'pending', [new OrderLineState('same', 'OTHER', 2)]),
-                'one', 'two',
+                'one',
+                'two',
             ],
             'integer' => [new CounterState(1, 3), new CounterState(2, 4), 1, 2],
             'composite' => [
-                new CompositeOrderState(new CompositeOrderId('acme', 'one'), [new CompositeLineState(new CompositeLineId('SKU', 'blue'), 1)]),
-                new CompositeOrderState(new CompositeOrderId('globex', 'one'), [new CompositeLineState(new CompositeLineId('SKU', 'blue'), 2)]),
-                new CompositeOrderId('acme', 'one'), new CompositeOrderId('globex', 'one'),
+                new CompositeOrderState(new CompositeOrderId('acme', 'one'), [new CompositeLineState(
+                    new CompositeLineId('SKU', 'blue'),
+                    1,
+                )]),
+                new CompositeOrderState(new CompositeOrderId('globex', 'one'), [new CompositeLineState(
+                    new CompositeLineId('SKU', 'blue'),
+                    2,
+                )]),
+                new CompositeOrderId('acme', 'one'),
+                new CompositeOrderId('globex', 'one'),
             ],
         };
         $store = $fixture->store;
@@ -189,39 +236,62 @@ final class CollectionOwnershipTest extends StateStoreTestCase
 
         $store->delete($state::class, $id);
         $store->delete($state::class, $id);
-        self::assertNull($store->load($state::class, $id));
-        self::assertNull($store->observe($state::class, $id));
-        self::assertFalse($store->observeExists($state::class, $id));
-        self::assertTrue($fixture->registry->hasPendingChanges());
-        self::assertEquals($state, $committed->load($state::class, $id));
+        static::assertNull($store->load($state::class, $id));
+        static::assertNull($store->observe($state::class, $id));
+        static::assertFalse($store->observeExists($state::class, $id));
+        static::assertTrue($fixture->registry->hasPendingChanges());
+        static::assertEquals($state, $committed->load($state::class, $id));
 
         $fixture->flush();
         $fixture->registry->clear();
-        self::assertNull($store->load($state::class, $id));
-        self::assertEquals($other, $store->load($state::class, $otherId));
+        static::assertNull($store->load($state::class, $id));
+        static::assertEquals($other, $store->load($state::class, $otherId));
         $normalizedId = is_object($id) ? ['tenantId' => $id->tenantId, 'orderNumber' => $id->orderNumber] : $id;
         foreach ($fixture->metadata->metadataFor($state::class)->collections as $collection) {
-            self::assertSame([], $fixture->collectionRows($collection, $normalizedId));
+            static::assertSame([], $fixture->collectionRows($collection, $normalizedId));
         }
     }
 
     public static function deletionDecisions(): iterable
     {
         foreach (self::backends() as $name => [$backend]) {
-            foreach (['root value', 'root value after buffered save', 'root deletion', 'collection addition', 'empty collection addition', 'collection removal', 'missing row'] as $change) {
-                yield $name.' '.$change => [$backend, 'observe', $change, true];
+            foreach ([
+                'root value',
+                'root value after buffered save',
+                'root deletion',
+                'collection addition',
+                'empty collection addition',
+                'collection removal',
+                'missing row',
+            ] as $change) {
+                yield $name . ' ' . $change => [$backend, 'observe', $change, true];
             }
-            yield $name.' blind deletion imposes membership' => [$backend, null, 'blind additions', false];
-            yield $name.' presence only ignores values and membership' => [$backend, 'observeExists', 'root and collection change', false];
-            yield $name.' membership ignores item values' => [$backend, 'observe', 'item value change', false];
+            yield $name . ' blind deletion imposes membership' => [$backend, null, 'blind additions', false];
+            yield $name . ' presence only ignores values and membership' => [
+                $backend,
+                'observeExists',
+                'root and collection change',
+                false,
+            ];
+            yield $name . ' membership ignores item values' => [$backend, 'observe', 'item value change', false];
         }
     }
 
     #[DataProvider('deletionDecisions')]
-    public function test_owner_deletion_protects_only_observed_dependencies_and_rolls_back_conflicts(string $backend, ?string $read, string $change, bool $conflict): void
-    {
+    public function test_owner_deletion_protects_only_observed_dependencies_and_rolls_back_conflicts(
+        string $backend,
+        ?string $read,
+        string $change,
+        bool $conflict,
+    ): void {
         $fixture = $this->stateFixture($backend, [OrderWithLinesState::class]);
-        $initial = new OrderWithLinesState('one', 'pending', in_array($change, ['empty collection addition', 'blind additions'], true) ? [] : [new OrderLineState('line', 'SKU', 1)]);
+        $initial = new OrderWithLinesState(
+            'one',
+            'pending',
+            in_array($change, ['empty collection addition', 'blind additions'], true)
+                ? []
+                : [new OrderLineState('line', 'SKU', 1)],
+        );
         if ('missing row' !== $change) {
             $fixture->store->save($initial);
             $fixture->flush();
@@ -237,12 +307,26 @@ final class CollectionOwnershipTest extends StateStoreTestCase
         [$competitor, $registry] = $fixture->newStore([OrderWithLinesState::class]);
         $competitor->observe(OrderWithLinesState::class, 'one');
         match ($change) {
-            'root value', 'root value after buffered save' => $competitor->save(new OrderWithLinesState('one', 'paid', $initial->lines)),
+            'root value', 'root value after buffered save' => $competitor->save(
+                new OrderWithLinesState('one', 'paid', $initial->lines),
+            ),
             'root deletion' => $competitor->delete(OrderWithLinesState::class, 'one'),
-            'collection addition', 'empty collection addition' => $competitor->save(new OrderWithLinesState('one', 'pending', [...$initial->lines, new OrderLineState('late', 'LATE', 2)])),
+            'collection addition', 'empty collection addition' => $competitor->save(new OrderWithLinesState(
+                'one',
+                'pending',
+                [...$initial->lines, new OrderLineState('late', 'LATE', 2)],
+            )),
             'collection removal' => $competitor->save(new OrderWithLinesState('one', 'pending', [])),
-            'blind additions', 'root and collection change' => $competitor->save(new OrderWithLinesState('one', 'changed', [new OrderLineState('late', 'LATE', 2)])),
-            'item value change' => $competitor->save(new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'CHANGED', 2)])),
+            'blind additions', 'root and collection change' => $competitor->save(new OrderWithLinesState(
+                'one',
+                'changed',
+                [new OrderLineState('late', 'LATE', 2)],
+            )),
+            'item value change' => $competitor->save(new OrderWithLinesState('one', 'pending', [new OrderLineState(
+                'line',
+                'CHANGED',
+                2,
+            )])),
             default => null,
         };
         $fixture->flush($registry);
@@ -255,9 +339,18 @@ final class CollectionOwnershipTest extends StateStoreTestCase
             $fixture->flush();
         } finally {
             $fixture->registry->clear();
-            self::assertEquals($conflict ? $expected : null, $fixture->store->load(OrderWithLinesState::class, 'one'));
+            static::assertEquals(
+                $conflict ? $expected : null,
+                $fixture->store->load(OrderWithLinesState::class, 'one'),
+            );
             if (!$conflict) {
-                self::assertSame([], $fixture->collectionRows($fixture->metadata->metadataFor(OrderWithLinesState::class)->collections['lines'], 'one'));
+                static::assertSame(
+                    [],
+                    $fixture->collectionRows(
+                        $fixture->metadata->metadataFor(OrderWithLinesState::class)->collections['lines'],
+                        'one',
+                    ),
+                );
             }
         }
     }

@@ -29,18 +29,27 @@ final class EventValuePersistenceTest extends StorageTestCase
         ], $store->load($query)->appendCondition());
 
         $events = $store->load($query)->events;
-        self::assertSame(['unregistered.created', 'unregistered.updated'], array_column($events, 'eventType'));
-        self::assertSame(self::sortAssociativeKeys($domainIds), self::sortAssociativeKeys($events[0]->domainIds));
-        self::assertSame(self::sortAssociativeKeys($payload), self::sortAssociativeKeys($events[0]->payload));
-        self::assertSame(self::sortAssociativeKeys($metadata), self::sortAssociativeKeys($events[0]->metadata));
-        self::assertSame([], $events[1]->metadata);
+        static::assertSame(['unregistered.created', 'unregistered.updated'], array_column($events, 'eventType'));
+        static::assertSame(self::sortAssociativeKeys($domainIds), self::sortAssociativeKeys($events[0]->domainIds));
+        static::assertSame(self::sortAssociativeKeys($payload), self::sortAssociativeKeys($events[0]->payload));
+        static::assertSame(self::sortAssociativeKeys($metadata), self::sortAssociativeKeys($events[0]->metadata));
+        static::assertSame([], $events[1]->metadata);
         foreach ($events as $event) {
-            self::assertInstanceOf(\DateTimeImmutable::class, $event->recordedAt);
+            static::assertInstanceOf(\DateTimeImmutable::class, $event->recordedAt);
         }
-        self::assertSame([2], array_column(array_column($store->load(StreamQuery::forStream(
-            new DomainIdentifier('course', $domainIds['course']),
-            new DomainIdentifier('student', 's2'),
-        ))->events, 'payload'), 'slot'));
+        static::assertSame(
+            [2],
+            array_column(
+                array_column(
+                    $store->load(StreamQuery::forStream(
+                        new DomainIdentifier('course', $domainIds['course']),
+                        new DomainIdentifier('student', 's2'),
+                    ))->events,
+                    'payload',
+                ),
+                'slot',
+            ),
+        );
     }
 
     /**
@@ -52,9 +61,11 @@ final class EventValuePersistenceTest extends StorageTestCase
     private static function sortAssociativeKeys(array $values): array
     {
         foreach ($values as $key => $value) {
-            if (is_array($value)) {
-                $values[$key] = self::sortAssociativeKeys($value);
+            if (!is_array($value)) {
+                continue;
             }
+
+            $values[$key] = self::sortAssociativeKeys($value);
         }
         if (!array_is_list($values)) {
             ksort($values);

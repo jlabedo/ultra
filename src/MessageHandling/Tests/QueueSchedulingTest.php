@@ -19,26 +19,28 @@ final class QueueSchedulingTest extends QueueTestCase
     public static function schedules(): iterable
     {
         foreach (self::backends() as $backend => [$implementation]) {
-            yield $backend.' relative' => [$implementation, false];
-            yield $backend.' absolute' => [$implementation, true];
+            yield $backend . ' relative' => [$implementation, false];
+            yield $backend . ' absolute' => [$implementation, true];
         }
     }
 
     #[DataProvider('schedules')]
-    public function test_scheduled_messages_become_available_at_the_requested_time(string $backend, bool $absolute): void
-    {
+    public function test_scheduled_messages_become_available_at_the_requested_time(
+        string $backend,
+        bool $absolute,
+    ): void {
         $f = $this->fixture($backend);
         $options = $absolute
             ? new AsyncEnqueueOptions(availableAt: DatePoint::create(2026, 1, 1, 0, 0, 10))
             : new AsyncEnqueueOptions(delay: Duration::seconds(10));
         $f->queue->enqueue($this->envelope('scheduled'), $options);
-        self::assertNull($f->queue->reserve());
+        static::assertNull($f->queue->reserve());
         $f->clock->sleep(Duration::seconds(9));
-        self::assertNull($f->queue->reserve());
+        static::assertNull($f->queue->reserve());
         $f->clock->sleep(Duration::seconds(1));
         $delivery = $f->queue->reserve();
-        self::assertNotNull($delivery);
-        self::assertSame('scheduled', $delivery->envelope->message->value);
+        static::assertNotNull($delivery);
+        static::assertSame('scheduled', $delivery->envelope->message->value);
     }
 
     #[DataProvider('backends')]
@@ -47,20 +49,23 @@ final class QueueSchedulingTest extends QueueTestCase
         $f = $this->fixture($backend);
         $f->queue->enqueue($this->envelope('retry'));
         $delivery = $f->queue->reserve();
-        self::assertNotNull($delivery);
+        static::assertNotNull($delivery);
         $f->queue->release($delivery, Duration::seconds(20));
-        self::assertNull($f->queue->reserve());
+        static::assertNull($f->queue->reserve());
         $f->clock->sleep(Duration::seconds(20));
         $retry = $f->queue->reserve();
-        self::assertNotNull($retry);
-        self::assertSame($delivery->messageId->value, $retry->messageId->value);
-        self::assertSame(2, $retry->attempts);
+        static::assertNotNull($retry);
+        static::assertSame($delivery->messageId->value, $retry->messageId->value);
+        static::assertSame(2, $retry->attempts);
     }
 
     /** @return iterable<string, array{array<string, mixed>, string}> */
     public static function invalidOptions(): iterable
     {
-        yield 'relative and absolute' => [['delay' => Duration::seconds(10), 'availableAt' => DatePoint::create(2026, 1, 1)], 'cannot define both delay and availableAt'];
+        yield 'relative and absolute' => [
+            ['delay' => Duration::seconds(10), 'availableAt' => DatePoint::create(2026, 1, 1)],
+            'cannot define both delay and availableAt',
+        ];
         yield 'empty key' => [['key' => ''], 'key must be null or a non-empty string'];
         yield 'replacement without key' => [['replace' => true], 'replacement requires a key'];
     }

@@ -9,11 +9,13 @@ readonly class Path
     /**
      * @param list<int|string|Variable> $segments
      */
-    private function __construct(private array $segments) {}
+    private function __construct(
+        private array $segments,
+    ) {}
 
     public function __toString(): string
     {
-        if (empty($this->segments)) {
+        if ([] === $this->segments) {
             return '';
         }
 
@@ -44,11 +46,11 @@ readonly class Path
 
     public function toArrayAccess(string $prefix = ''): string
     {
-        if (empty($this->segments)) {
+        if ([] === $this->segments) {
             return $prefix;
         }
 
-        $path = $prefix.implode('][', $this->toCodeSegments());
+        $path = $prefix . implode('][', $this->toCodeSegments());
 
         return "[{$path}]";
     }
@@ -58,7 +60,7 @@ readonly class Path
      */
     public function toArrayString(array $rawSegments = []): string
     {
-        return '['.$this->toList($rawSegments).']';
+        return '[' . $this->toList($rawSegments) . ']';
     }
 
     /**
@@ -69,33 +71,17 @@ readonly class Path
         return implode(', ', [...$this->toCodeSegments(), ...$rawSegments]);
     }
 
+    /** @param string[] $rawSegments */
     public function generateRuntimeContextCall(array $rawSegments = []): string
     {
         return "\$context->path->add({$this->toList($rawSegments)})";
     }
 
     /**
-     * @return array<int|string>
+     * @return list<int|string|Variable>
      */
     private function toCodeSegments(): array
     {
-        return array_map(fn ($s) => (\is_int($s) || $s instanceof Variable) ? $s : "'{$s}'", $this->segments);
-    }
-}
-
-/**
- * @internal
- */
-readonly class Variable
-{
-    public function __construct(private string $name) {}
-
-    public function __toString(): string
-    {
-        if (str_starts_with($this->name, '$')) {
-            return $this->name;
-        }
-
-        return '$'.$this->name;
+        return array_map(static fn($s) => \is_int($s) || $s instanceof Variable ? $s : "'{$s}'", $this->segments);
     }
 }

@@ -135,20 +135,17 @@ readonly class StreamQuery
     public function describe(): string
     {
         $description = json_encode([
-            'branches' => array_map(
-                static fn (StreamQueryBranch $branch): array => [
-                    'domainIdentifiers' => $branch->domainIdentifiers,
-                    'eventTypes' => $branch->eventTypes,
-                ],
-                $this->branches,
-            ),
+            'branches' => array_map(static fn(StreamQueryBranch $branch): array => [
+                'domainIdentifiers' => $branch->domainIdentifiers,
+                'eventTypes' => $branch->eventTypes,
+            ], $this->branches),
         ]);
 
         return is_string($description) ? $description : 'query';
     }
 
     /**
-     * @param list<DomainIdentifier> $identifiers
+     * @param array<array-key, DomainIdentifier> $identifiers
      *
      * @return array<string, string>
      */

@@ -15,14 +15,13 @@ final class UltraBundle extends AbstractBundle
      */
     public function __construct(
         private readonly array $extensions = [],
-    ) {
-    }
+    ) {}
 
     public function build(ContainerBuilder $container): void
     {
         parent::build($container);
 
-        foreach ($this->extensions ?: self::defaultExtensions() as $extension) {
+        foreach ([] === $this->extensions ? self::defaultExtensions() : $this->extensions as $extension) {
             $extension->build($container);
         }
     }
@@ -49,7 +48,9 @@ final class UltraBundle extends AbstractBundle
                 continue;
             }
 
+            // @mago-expect analysis:ambiguous-instantiation-target
             $extension = new $extensionClass();
+            // @mago-expect analysis:impossible-condition
             if (!$extension instanceof ContainerExtension) {
                 throw new \LogicException(sprintf(
                     'Ultra extension "%s" must implement "%s".',

@@ -21,7 +21,11 @@ use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
 /** Trusted provisioning port, kept separate from the authenticated administration API. */
 final readonly class Provisioning
 {
-    public function __construct(private StateStore $states, private TransactionalUnitOfWorkRunner $runner, private ClockInterface $clock) {}
+    public function __construct(
+        private StateStore $states,
+        private TransactionalUnitOfWorkRunner $runner,
+        private ClockInterface $clock,
+    ) {}
 
     public function createTenant(LocalId $initialAdministrator): void
     {
@@ -37,13 +41,30 @@ final readonly class Provisioning
             $this->states->save($tenant);
             $this->states->save(new SubjectState($initialAdministrator));
             $this->states->save(new RoleState(
-                new LocalId($tenantId, 'administrator'), 'IAM administrator',
+                new LocalId($tenantId, 'administrator'),
+                'IAM administrator',
                 [new PermissionState(Permission::ManageIam->value)],
             ));
-            $this->states->save(new BindingState(BindingId::forPrincipal($initialAdministrator, 'subject', 'administrator', Scope::tenant()), true));
-            $this->states->save(new AuditEntry(bin2hex(random_bytes(16)), $tenantId, $initialAdministrator->localId,
-                'tenant.provisioned', json_encode($initialAdministrator, JSON_THROW_ON_ERROR), $this->clock->now()->getTimestamp(),
-                json_encode(['administrator' => $initialAdministrator, 'permission' => Permission::ManageIam->value], JSON_THROW_ON_ERROR)));
+            $this->states->save(
+                new BindingState(
+                    BindingId::forPrincipal($initialAdministrator, 'subject', 'administrator', Scope::tenant()),
+                    true,
+                ),
+            );
+            $this->states->save(
+                new AuditEntry(
+                    bin2hex(random_bytes(16)),
+                    $tenantId,
+                    $initialAdministrator->localId,
+                    'tenant.provisioned',
+                    json_encode($initialAdministrator, JSON_THROW_ON_ERROR),
+                    $this->clock->now()->getTimestamp(),
+                    json_encode([
+                        'administrator' => $initialAdministrator,
+                        'permission' => Permission::ManageIam->value,
+                    ], JSON_THROW_ON_ERROR),
+                ),
+            );
         });
     }
 }

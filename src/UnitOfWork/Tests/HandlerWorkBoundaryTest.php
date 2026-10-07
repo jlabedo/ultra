@@ -15,25 +15,31 @@ use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\MessageHandlingExtension;
-use Ultra\UnitOfWork\TransactionManager;
-use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
-use Ultra\UnitOfWork\UnitOfWork;
 use Ultra\UnitOfWork\Tests\Support\CallLog;
 use Ultra\UnitOfWork\Tests\Support\ContainerTestCase;
 use Ultra\UnitOfWork\Tests\Support\RecordingTransactionManager;
 use Ultra\UnitOfWork\Tests\Support\RecordingUnitOfWork;
+use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
+use Ultra\UnitOfWork\TransactionManager;
+use Ultra\UnitOfWork\UnitOfWork;
 
 final class HandlerWorkBoundaryTest extends ContainerTestCase
 {
     #[DataProvider('handlerWork')]
-    public function test_compiled_handlers_and_hooks_share_one_work_boundary(string $route, bool $writes, bool $hookWrites, ?string $failureStage): void
-    {
+    public function test_compiled_handlers_and_hooks_share_one_work_boundary(
+        string $route,
+        bool $writes,
+        bool $hookWrites,
+        ?string $failureStage,
+    ): void {
         $log = new CallLog();
         $unitOfWork = new RecordingUnitOfWork($log);
-        $failure = new \RuntimeException('failed '.$failureStage);
+        $failure = new \RuntimeException('failed ' . $failureStage);
         $unitOfWork->flushFailure = 'flush' === $failureStage ? $failure : null;
-        $container = $this->ultraLight()
-            ->withService($log)->withService($unitOfWork)
+        $container = $this
+            ->ultraLight()
+            ->withService($log)
+            ->withService($unitOfWork)
             ->withService(new RecordingTransactionManager($log), TransactionManager::class)
             ->withClass(WorkHandlers::class, WorkHooks::class)
             ->withEventClass(BoundaryEvent::class)
@@ -64,25 +70,33 @@ final class HandlerWorkBoundaryTest extends ContainerTestCase
                 $log->entries = [];
                 /** @var QueueWorker $worker */
                 $worker = $container->get('test.worker');
-                self::assertSame(1, $worker->drain());
+                static::assertSame(1, $worker->drain());
             } else {
-                $result = $mediator->send('query' === $route ? new ReadQuery() : new WriteCommand('work' === $failureStage ? $failure : null), $context);
+                $result = $mediator->send(
+                    'query' === $route ? new ReadQuery() : new WriteCommand('work' === $failureStage ? $failure : null),
+                    $context,
+                );
             }
         } catch (\RuntimeException $exception) {
             $caught = $exception;
         }
 
-        $expected = ['before:active:boundary', 'handler:'.$route.':boundary'];
+        $expected = ['before:active:boundary', 'handler:' . $route . ':boundary'];
         if ('work' !== $failureStage) {
             $expected[] = 'after:active:boundary';
             if ($writes || $hookWrites) {
-                $expected = [...$expected, 'transaction:begin', 'unit_of_work:flush', 'transaction:'.(null === $failureStage ? 'commit' : 'rollback')];
+                $expected = [
+                    ...$expected,
+                    'transaction:begin',
+                    'unit_of_work:flush',
+                    'transaction:' . (null === $failureStage ? 'commit' : 'rollback'),
+                ];
             }
         }
-        self::assertSame([...$expected, 'unit_of_work:clear'], $log->entries);
-        self::assertSame(null === $failureStage ? null : $failure, $caught);
-        self::assertSame('query' === $route ? 'answer' : null, $result);
-        self::assertFalse($unitOfWork->hasPendingChanges());
+        static::assertSame([...$expected, 'unit_of_work:clear'], $log->entries);
+        static::assertSame(null === $failureStage ? null : $failure, $caught);
+        static::assertSame('query' === $route ? 'answer' : null, $result);
+        static::assertFalse($unitOfWork->hasPendingChanges());
     }
 
     /** @return iterable<string, array{string, bool, bool, ?string}> */
@@ -100,7 +114,10 @@ final class HandlerWorkBoundaryTest extends ContainerTestCase
 
 final readonly class WorkHandlers
 {
-    public function __construct(private CallLog $log, private RecordingUnitOfWork $unitOfWork) {}
+    public function __construct(
+        private CallLog $log,
+        private RecordingUnitOfWork $unitOfWork,
+    ) {}
 
     #[Handles]
     public function write(WriteCommand $command, MessageContext $context): void
@@ -134,7 +151,7 @@ final readonly class WorkHandlers
 
     private function record(string $route, MessageContext $context, bool $writes = false): void
     {
-        $this->log->entries[] = 'handler:'.$route.':'.$context->get('trace');
+        $this->log->entries[] = 'handler:' . $route . ':' . $context->get('trace');
         $this->unitOfWork->pending = $writes;
     }
 }
@@ -143,25 +160,33 @@ final class WorkHooks
 {
     public bool $writes = false;
 
-    public function __construct(private CallLog $log, private RecordingUnitOfWork $unitOfWork, private TransactionalUnitOfWorkRunner $runner) {}
+    public function __construct(
+        private CallLog $log,
+        private RecordingUnitOfWork $unitOfWork,
+        private TransactionalUnitOfWorkRunner $runner,
+    ) {}
 
     #[Before]
     public function before(object $message, MessageContext $context): void
     {
-        $this->log->entries[] = 'before:'.($this->runner->hasActiveTransaction() ? 'active' : 'idle').':'.$context->get('trace');
+        $this->log->entries[] =
+            'before:' . ($this->runner->hasActiveTransaction() ? 'active' : 'idle') . ':' . $context->get('trace');
     }
 
     #[AfterReturning]
     public function after(object $message, MessageContext $context, mixed $returnValue): void
     {
-        $this->log->entries[] = 'after:'.($this->runner->hasActiveTransaction() ? 'active' : 'idle').':'.$context->get('trace');
+        $this->log->entries[] =
+            'after:' . ($this->runner->hasActiveTransaction() ? 'active' : 'idle') . ':' . $context->get('trace');
         $this->unitOfWork->pending = $this->unitOfWork->pending || $this->writes;
     }
 }
 
 final readonly class WriteCommand
 {
-    public function __construct(public ?\Throwable $failure = null) {}
+    public function __construct(
+        public ?\Throwable $failure = null,
+    ) {}
 }
 
 final readonly class ReadQuery {}

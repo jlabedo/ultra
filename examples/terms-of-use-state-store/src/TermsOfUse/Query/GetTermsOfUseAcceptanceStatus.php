@@ -23,12 +23,7 @@ final readonly class GetTermsOfUseAcceptanceStatus
     public function handle(
         ?CurrentTermsOfUseState $terms,
         ?UserTermsOfUseAcceptanceState $user,
-    ): TermsOfUseAcceptanceStatus
-    {
-        return new TermsOfUseAcceptanceStatus(
-            $this->userId,
-            $terms?->termsOfUse,
-            $user?->acceptedTermsOfUse,
-        );
+    ): TermsOfUseAcceptanceStatus {
+        return new TermsOfUseAcceptanceStatus($this->userId, $terms?->termsOfUse, $user?->acceptedTermsOfUse);
     }
 }

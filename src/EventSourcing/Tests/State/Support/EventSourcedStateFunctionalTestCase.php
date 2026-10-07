@@ -6,11 +6,11 @@ namespace Ultra\EventSourcedState\Tests\Support;
 
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\DependencyInjection\Container;
-use Ultra\EventSourcedState\EventSourcedStateExtension;
 use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\Events\CompiledEventRegistry;
 use Ultra\Events\EventRegistryInterface;
+use Ultra\EventSourcedState\EventSourcedStateExtension;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\Mapper_Bundle\MapperExtension;
@@ -26,7 +26,7 @@ abstract class EventSourcedStateFunctionalTestCase extends TestCase
      */
     protected function eventSourcedStateUltraLight(array $eventClasses): UltraLight
     {
-        $buildDir = dirname(__DIR__, 5).'/var/event_sourced_state_compiler_tests';
+        $buildDir = dirname(__DIR__, 5) . '/var/event_sourced_state_compiler_tests';
 
         /** @var UltraLightContainerFactoryInterface<EventSourcedStateTestContainer> $containerFactory */
         $containerFactory = new class implements UltraLightContainerFactoryInterface {
@@ -43,11 +43,13 @@ abstract class EventSourcedStateFunctionalTestCase extends TestCase
             ->withBundle(new MapperExtension())
             ->withService(new InMemoryEventStore(), InMemoryEventStore::class)
             ->withAlias(EventStore::class, InMemoryEventStore::class)
-            ->withService(new CompiledEventRegistry(
-                self::eventClassMap($eventClasses),
-                self::eventDomainIdentifierMap($eventClasses),
-            ), EventRegistryInterface::class)
-        ;
+            ->withService(
+                new CompiledEventRegistry(
+                    self::eventClassMap($eventClasses),
+                    self::eventDomainIdentifierMap($eventClasses),
+                ),
+                EventRegistryInterface::class,
+            );
     }
 
     /**

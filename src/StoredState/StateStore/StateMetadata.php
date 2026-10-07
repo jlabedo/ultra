@@ -7,18 +7,21 @@ namespace Ultra\StateStore;
 use Ultra\MappedTable\MappedKey;
 
 /**
+ * @phpstan-import-type StateEmbeddedMetadataDefinition from StateEmbeddedMetadata
+ * @phpstan-import-type StateCollectionMetadataDefinition from StateCollectionMetadata
+ *
  * @phpstan-type StateMetadataDefinition array{
  *     stateClass: class-string,
  *     tableName: string,
  *     tableKey: string,
  *     idProperty: string,
- *     idType: string,
+ *     idType: 'int'|'string'|class-string,
  *     idScalar: bool,
  *     idPropertyColumns: array<string, string>,
  *     propertyColumns: array<string, string>,
  *     optimisticPropertyColumns: array<string, string>,
- *     embedded: array<string, StateEmbeddedMetadataDefinition>,
- *     collections: array<string, StateCollectionMetadataDefinition>
+ *     embedded?: array<string, StateEmbeddedMetadataDefinition>,
+ *     collections?: array<string, StateCollectionMetadataDefinition>
  * }
  */
 final readonly class StateMetadata
@@ -30,6 +33,7 @@ final readonly class StateMetadata
      * @param array<string, string>                   $optimisticPropertyColumns
      * @param array<string, StateEmbeddedMetadata>    $embedded
      * @param array<string, StateCollectionMetadata>  $collections
+     * @param 'int'|'string'|class-string $idType
      */
     public function __construct(
         public string $stateClass,
@@ -76,8 +80,14 @@ final readonly class StateMetadata
             'idPropertyColumns' => $this->idPropertyColumns,
             'propertyColumns' => $this->propertyColumns,
             'optimisticPropertyColumns' => $this->optimisticPropertyColumns,
-            'embedded' => array_map(static fn (StateEmbeddedMetadata $embedded): array => $embedded->toArray(), $this->embedded),
-            'collections' => array_map(static fn (StateCollectionMetadata $collection): array => $collection->toArray(), $this->collections),
+            'embedded' => array_map(
+                static fn(StateEmbeddedMetadata $embedded): array => $embedded->toArray(),
+                $this->embedded,
+            ),
+            'collections' => array_map(
+                static fn(StateCollectionMetadata $collection): array => $collection->toArray(),
+                $this->collections,
+            ),
         ];
     }
 
@@ -101,7 +111,10 @@ final readonly class StateMetadata
         return array_values(array_unique($columns));
     }
 
-    /** @param array<string, mixed> $row @return array<string, mixed> */
+    /**
+     * @param array<string, mixed> $row
+     * @return array<string, mixed>
+     */
     public function payloadFromRow(mixed $normalizedId, array $row): array
     {
         $payload = [$this->idProperty => $normalizedId];
@@ -115,7 +128,7 @@ final readonly class StateMetadata
         return $payload;
     }
 
-    /** @param array<string, mixed> $normalizedState */
+    /** @param array<array-key, mixed> $normalizedState */
     public function keyFromNormalizedState(array $normalizedState): MappedKey
     {
         return $this->keyFromNormalizedId($this->requireNormalizedValue($normalizedState, $this->idProperty));
@@ -125,28 +138,44 @@ final readonly class StateMetadata
     {
         if ($this->idScalar) {
             if (!is_int($normalizedId) && !is_string($normalizedId)) {
-                throw new \LogicException(sprintf('State "%s" id must normalize to int|string, got %s.', $this->stateClass, get_debug_type($normalizedId)));
+                throw new \LogicException(sprintf(
+                    'State "%s" id must normalize to int|string, got %s.',
+                    $this->stateClass,
+                    get_debug_type($normalizedId),
+                ));
             }
 
             return new MappedKey([array_values($this->idPropertyColumns)[0] => $normalizedId]);
         }
 
         if (!is_array($normalizedId)) {
-            throw new \LogicException(sprintf('State "%s" composite id must normalize to an array, got %s.', $this->stateClass, get_debug_type($normalizedId)));
+            throw new \LogicException(sprintf(
+                'State "%s" composite id must normalize to an array, got %s.',
+                $this->stateClass,
+                get_debug_type($normalizedId),
+            ));
         }
         $expectedFields = array_keys($this->idPropertyColumns);
         $actualFields = array_keys($normalizedId);
         sort($expectedFields, SORT_STRING);
         sort($actualFields, SORT_STRING);
         if ($expectedFields !== $actualFields) {
-            throw new \LogicException(sprintf('State "%s" composite id normalized fields do not match compiled fields.', $this->stateClass));
+            throw new \LogicException(sprintf(
+                'State "%s" composite id normalized fields do not match compiled fields.',
+                $this->stateClass,
+            ));
         }
 
         $values = [];
         foreach ($this->idPropertyColumns as $property => $column) {
             $value = $normalizedId[$property];
             if (!is_int($value) && !is_string($value)) {
-                throw new \LogicException(sprintf('State "%s" id component "%s" must normalize to int|string, got %s.', $this->stateClass, $property, get_debug_type($value)));
+                throw new \LogicException(sprintf(
+                    'State "%s" id component "%s" must normalize to int|string, got %s.',
+                    $this->stateClass,
+                    $property,
+                    get_debug_type($value),
+                ));
             }
             $values[$column] = $value;
         }
@@ -169,7 +198,10 @@ final readonly class StateMetadata
         return $normalized;
     }
 
-    /** @param array<string, mixed> $normalizedState @return array<string, mixed> */
+    /**
+     * @param array<array-key, mixed> $normalizedState
+     * @return array<string, mixed>
+     */
     public function columnsFromNormalized(array $normalizedState): array
     {
         $columns = [];
@@ -183,7 +215,10 @@ final readonly class StateMetadata
         return $columns;
     }
 
-    /** @param array<string, mixed> $normalizedState @return array<string, mixed> */
+    /**
+     * @param array<array-key, mixed> $normalizedState
+     * @return array<string, mixed>
+     */
     public function optimisticColumnsFromNormalized(array $normalizedState): array
     {
         $columns = [];
@@ -197,11 +232,15 @@ final readonly class StateMetadata
         return $columns;
     }
 
-    /** @param array<string, mixed> $normalizedState */
+    /** @param array<array-key, mixed> $normalizedState */
     private function requireNormalizedValue(array $normalizedState, string $property): mixed
     {
         if (!array_key_exists($property, $normalizedState)) {
-            throw new \LogicException(sprintf('State "%s" is missing normalized property "%s".', $this->stateClass, $property));
+            throw new \LogicException(sprintf(
+                'State "%s" is missing normalized property "%s".',
+                $this->stateClass,
+                $property,
+            ));
         }
 
         return $normalizedState[$property];

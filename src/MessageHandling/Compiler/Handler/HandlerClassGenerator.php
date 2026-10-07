@@ -43,7 +43,7 @@ final class HandlerClassGenerator
         return $this->classWriter->writeContentAddressed(
             $baseName,
             $outputDir,
-            fn (string $className): string => $this->buildCode($className, $handler, $wrappersFilePath),
+            fn(string $className): string => $this->buildCode($className, $handler, $wrappersFilePath),
             '__ULTRA_HANDLER_CLASS__',
         );
     }
@@ -64,7 +64,7 @@ final class HandlerClassGenerator
         $body = $this->renderer->renderBody($plan);
 
         $requireLine = null !== $wrappersFilePath
-            ? "\nrequire_once ".PhpCode::exportString($wrappersFilePath).";\n"
+            ? "\nrequire_once " . PhpCode::exportString($wrappersFilePath) . ";\n"
             : '';
 
         return <<<PHP

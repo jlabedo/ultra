@@ -53,7 +53,10 @@ final readonly class CoworkingSchema
         // SchemaTool::dropSchema() introspects the whole database and cannot read the event store column types.
         $metadata = $this->entityManager->getMetadataFactory()->getAllMetadata();
         foreach ($metadata as $classMetadata) {
-            $this->connection->executeStatement(sprintf('DROP TABLE IF EXISTS %s CASCADE', $classMetadata->getTableName()));
+            $this->connection->executeStatement(sprintf(
+                'DROP TABLE IF EXISTS %s CASCADE',
+                $classMetadata->getTableName(),
+            ));
         }
         new SchemaTool($this->entityManager)->createSchema($metadata);
     }

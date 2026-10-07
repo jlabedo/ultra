@@ -43,11 +43,8 @@ final readonly class MatchResult
      * @param list<int>         $provides dep-param indices this advice will inject at runtime
      * @param list<AdvicePhase> $phases   phases where this advice runs (default: [Execute])
      */
-    public static function apply(
-        array $config = [],
-        array $provides = [],
-        array $phases = [AdvicePhase::Execute],
-    ): self {
+    public static function apply(array $config = [], array $provides = [], array $phases = [AdvicePhase::Execute]): self
+    {
         return new self($config, $provides, $phases);
     }
 }

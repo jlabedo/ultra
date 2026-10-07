@@ -34,10 +34,18 @@ final readonly class NormalizationShapeAnalyzer
     {
         $type = $property->getType();
         if (null === $type) {
-            throw new \LogicException(sprintf('Property %s::$%s must declare a type to expose a normalization shape.', $property->getDeclaringClass()->getName(), $property->getName()));
+            throw new \LogicException(sprintf(
+                'Property %s::$%s must declare a type to expose a normalization shape.',
+                $property->getDeclaringClass()->getName(),
+                $property->getName(),
+            ));
         }
 
-        return $this->forReflectionType($type, sprintf('%s::$%s', $property->getDeclaringClass()->getName(), $property->getName()));
+        return $this->forReflectionType($type, sprintf(
+            '%s::$%s',
+            $property->getDeclaringClass()->getName(),
+            $property->getName(),
+        ));
     }
 
     /** @return Shape */
@@ -48,16 +56,21 @@ final readonly class NormalizationShapeAnalyzer
         }
 
         if ($type instanceof \ReflectionNamedType) {
-            return $type->isBuiltin()
-                ? ['kind' => 'scalar', 'types' => [$type->getName()]]
-                : $this->forNamedType($type->getName());
+            /** @var class-string $class */
+            $class = $type->getName();
+            return (
+                $type->isBuiltin() ? ['kind' => 'scalar', 'types' => [$type->getName()]] : $this->forNamedType($class)
+            );
         }
 
         if ($type instanceof \ReflectionUnionType) {
             $types = [];
             foreach ($type->getTypes() as $member) {
                 if (!$member instanceof \ReflectionNamedType || !$member->isBuiltin()) {
-                    throw new \LogicException(sprintf('Normalization shape for %s has an unsupported union.', $context));
+                    throw new \LogicException(sprintf(
+                        'Normalization shape for %s has an unsupported union.',
+                        $context,
+                    ));
                 }
                 $types[] = $member->getName();
             }
@@ -66,7 +79,10 @@ final readonly class NormalizationShapeAnalyzer
             return ['kind' => 'scalar', 'types' => array_values(array_unique($types))];
         }
 
-        throw new \LogicException(sprintf('Normalization shape for %s has an unsupported intersection type.', $context));
+        throw new \LogicException(sprintf(
+            'Normalization shape for %s has an unsupported intersection type.',
+            $context,
+        ));
     }
 
     /**
@@ -83,11 +99,12 @@ final readonly class NormalizationShapeAnalyzer
 
         if (enum_exists($class)) {
             $reflection = new \ReflectionEnum($class);
-            if (!$reflection->isBacked()) {
+            $backingType = $reflection->getBackingType();
+            if (null === $backingType) {
                 throw new \LogicException(sprintf('Non-backed enum %s has no scalar normalization shape.', $class));
             }
 
-            return ['kind' => 'scalar', 'types' => [$reflection->getBackingType()->getName()]];
+            return ['kind' => 'scalar', 'types' => [$backingType->getName()]];
         }
 
         $reflection = new \ReflectionClass($class);
@@ -121,30 +138,51 @@ final readonly class NormalizationShapeAnalyzer
         $method = new \ReflectionMethod($normalizer, 'toScalar');
         $type = $method->getReturnType();
         if ($type instanceof \ReflectionNamedType && 'array' === $type->getName()) {
-            return $this->arrayShapeFromDocComment($normalizer, $method->getDocComment() ?: '');
+            $docComment = $method->getDocComment();
+
+            return $this->arrayShapeFromDocComment($normalizer, false === $docComment ? '' : $docComment);
         }
         if (null === $type) {
-            throw new \LogicException(sprintf('Runtime normalizer %s::toScalar() must declare a precise return type.', $normalizer));
+            throw new \LogicException(sprintf(
+                'Runtime normalizer %s::toScalar() must declare a precise return type.',
+                $normalizer,
+            ));
         }
 
-        return $this->forReflectionType($type, $normalizer.'::toScalar()');
+        return $this->forReflectionType($type, $normalizer . '::toScalar()');
     }
 
     /** @return Shape */
     private function arrayShapeFromDocComment(string $normalizer, string $docComment): array
     {
+        $matches = [];
         if (1 !== preg_match('/@return\s+array\{([^}]+)\}/s', $docComment, $matches)) {
-            throw new \LogicException(sprintf('Runtime normalizer %s::toScalar() returning array must declare a closed PHPDoc array shape.', $normalizer));
+            throw new \LogicException(sprintf(
+                'Runtime normalizer %s::toScalar() returning array must declare a closed PHPDoc array shape.',
+                $normalizer,
+            ));
         }
 
         $shapeBody = preg_replace('/^\s*\*\s?/m', '', $matches[1]) ?? $matches[1];
         $fields = [];
-        foreach (preg_split('/\s*,\s*/', trim($shapeBody, " \t\n\r\0\x0B,")) ?: [] as $field) {
+        $shapeFields = preg_split('/\s*,\s*/', trim($shapeBody, " \t\n\r\0\x0B,"));
+        foreach (false === $shapeFields ? [] : $shapeFields as $field) {
             if ('' === trim($field)) {
                 continue;
             }
-            if (1 !== preg_match('/^([A-Za-z_][A-Za-z0-9_]*):\s*(int|string|int\|string|string\|int)$/', trim($field), $parts)) {
-                throw new \LogicException(sprintf('Runtime normalizer %s has unsupported array-shape field "%s".', $normalizer, trim($field)));
+            $parts = [];
+            if (
+                1 !== preg_match(
+                    '/^([A-Za-z_][A-Za-z0-9_]*):\s*(int|string|int\|string|string\|int)$/',
+                    trim($field),
+                    $parts,
+                )
+            ) {
+                throw new \LogicException(sprintf(
+                    'Runtime normalizer %s has unsupported array-shape field "%s".',
+                    $normalizer,
+                    trim($field),
+                ));
             }
             $types = explode('|', $parts[2]);
             sort($types, SORT_STRING);
@@ -165,9 +203,15 @@ final readonly class NormalizationShapeAnalyzer
     {
         $properties = array_values(array_filter(
             $reflection->getProperties(),
-            static fn (\ReflectionProperty $property): bool => !$property->isStatic() && !$property->isVirtual(),
+            static fn(\ReflectionProperty $property): bool => !$property->isStatic() && !$property->isVirtual(),
         ));
-        usort($properties, static fn (\ReflectionProperty $left, \ReflectionProperty $right): int => $left->getName() <=> $right->getName());
+        usort(
+            $properties,
+            static fn(
+                \ReflectionProperty $left,
+                \ReflectionProperty $right,
+            ): int => $left->getName() <=> $right->getName(),
+        );
 
         return $properties;
     }

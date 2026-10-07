@@ -19,14 +19,16 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
     {
         foreach (['memory', 'postgres'] as $backend) {
             foreach (['columns', 'present', 'absent'] as $expectation) {
-                yield $backend.' '.$expectation => [$backend, $expectation];
+                yield $backend . ' ' . $expectation => [$backend, $expectation];
             }
         }
     }
 
     #[DataProvider('observations')]
-    public function test_observations_without_writes_are_pending_and_reject_storage_changes(string $backend, string $expectation): void
-    {
+    public function test_observations_without_writes_are_pending_and_reject_storage_changes(
+        string $backend,
+        string $expectation,
+    ): void {
         $fixture = $this->fixture($backend);
         $rows = $fixture->rows;
         if ('absent' !== $expectation) {
@@ -37,15 +39,15 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
             'present' => $rows->withKey('row')->expectPresent(),
             'absent' => $rows->withKey('row')->expectAbsent(),
         };
-        self::assertTrue($rows->hasPendingChanges());
+        static::assertTrue($rows->hasPendingChanges());
         $fixture->flush();
         if ('absent' === $expectation) {
-            self::assertFalse($fixture->stored('row'));
+            static::assertFalse($fixture->stored('row'));
             $fixture->seed(['id' => 'row', 'status' => 'created']);
         } elseif ('present' === $expectation) {
             $fixture->seed(['id' => 'row', 'status' => 'value changes are allowed']);
             $fixture->flush();
-            self::assertSame(['status' => 'value changes are allowed'], $fixture->stored('row', ['status']));
+            static::assertSame(['status' => 'value changes are allowed'], $fixture->stored('row', ['status']));
             $fixture->delete('row');
         } else {
             $fixture->seed(['id' => 'row', 'status' => 'concurrent']);
@@ -59,21 +61,28 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
     {
         foreach (['memory', 'postgres'] as $backend) {
             foreach (['update', 'delete'] as $operation) {
-                yield $backend.' '.$operation => [$backend, $operation];
+                yield $backend . ' ' . $operation => [$backend, $operation];
             }
         }
     }
 
     #[DataProvider('conditionalWrites')]
-    public function test_conditional_writes_keep_the_original_expectation_and_merge_only_written_values(string $backend, string $operation): void
-    {
+    public function test_conditional_writes_keep_the_original_expectation_and_merge_only_written_values(
+        string $backend,
+        string $operation,
+    ): void {
         $fixture = $this->fixture($backend);
         $fixture->seed(['id' => 'row', 'status' => 'pending', 'note' => null]);
         $rows = $fixture->rows;
         $rows->withKey('row')->expectColumnValue('status', 'pending')->setColumn('status', 'paid');
-        $rows->withKey('row')->expectColumnValue('status', 'paid')->expectColumnValue('note', null)->setColumn('status', 'shipped')->upsert();
+        $rows
+            ->withKey('row')
+            ->expectColumnValue('status', 'paid')
+            ->expectColumnValue('note', null)
+            ->setColumn('status', 'shipped')
+            ->upsert();
         $fixture->flush();
-        self::assertSame(['status' => 'shipped', 'note' => null], $fixture->stored('row', ['status', 'note']));
+        static::assertSame(['status' => 'shipped', 'note' => null], $fixture->stored('row', ['status', 'note']));
         $rows->clear();
 
         $rows->withKey('row')->upsert()->setColumn('status', 'delivered');
@@ -86,7 +95,10 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         try {
             $fixture->flush();
         } finally {
-            self::assertSame(['status' => 'shipped', 'note' => 'concurrent'], $fixture->stored('row', ['status', 'note']));
+            static::assertSame(
+                ['status' => 'shipped', 'note' => 'concurrent'],
+                $fixture->stored('row', ['status', 'note']),
+            );
         }
     }
 
@@ -96,28 +108,66 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         $fixture->seed(['id' => 'deleted', 'status' => 'pending']);
         $rows = $fixture->rows;
         $rows->withKey('created')->expectAbsent()->setColumn('status', 'new');
-        $rows->withKey('created')->expectPresent()->expectColumnValue('status', 'new')->expectColumnValue('note', null)->setColumn('note', 'draft');
+        $rows
+            ->withKey('created')
+            ->expectPresent()
+            ->expectColumnValue('status', 'new')
+            ->expectColumnValue('note', null)
+            ->setColumn('note', 'draft');
         $rows->withKey('deleted')->expectColumnValue('status', 'pending')->delete();
         $rows->withKey('deleted')->expectAbsent();
         $fixture->flush();
-        self::assertSame(['status' => 'new', 'note' => 'draft'], $fixture->stored('created', ['status', 'note']));
-        self::assertFalse($fixture->stored('deleted'));
+        static::assertSame(['status' => 'new', 'note' => 'draft'], $fixture->stored('created', ['status', 'note']));
+        static::assertFalse($fixture->stored('deleted'));
     }
 
     /** @return iterable<string, array{\Closure(MappedRowSet): mixed}> */
     public static function localConflicts(): iterable
     {
-        yield 'stale buffered value' => [static fn (MappedRowSet $rows) => $rows->withKey('row')->expectColumnValue('status', 'old')->setColumn('status', 'new')->expectColumnValue('status', 'old')];
-        yield 'contradictory committed values' => [static fn (MappedRowSet $rows) => $rows->withKey('row')->expectColumnValue('status', 'old')->expectColumnValue('status', 'other')];
-        yield 'presence after deletion' => [static fn (MappedRowSet $rows) => $rows->withKey('row')->delete()->expectPresent()];
-        yield 'column after deletion' => [static fn (MappedRowSet $rows) => $rows->withKey('row')->delete()->expectColumnValue('status', 'old')];
-        yield 'write after deletion' => [static fn (MappedRowSet $rows) => $rows->withKey('row')->delete()->setColumn('status', 'new')];
-        yield 'absence after write' => [static fn (MappedRowSet $rows) => $rows->withKey('row')->upsert()->setColumn('status', 'new')->expectAbsent()];
-        yield 'presence after absence' => [static fn (MappedRowSet $rows) => $rows->withKey('row')->expectAbsent()->expectPresent()];
-        yield 'absence after presence' => [static fn (MappedRowSet $rows) => $rows->withKey('row')->expectPresent()->expectAbsent()];
-        yield 'column after absence' => [static fn (MappedRowSet $rows) => $rows->withKey('row')->expectAbsent()->expectColumnValue('status', 'old')];
-        yield 'insert after presence' => [static fn (MappedRowSet $rows) => $rows->withKey('row')->expectPresent()->insert()];
-        yield 'unwritten column on inserted row' => [static fn (MappedRowSet $rows) => $rows->withKey('row')->insert()->expectColumnValue('status', 'old')];
+        yield 'stale buffered value' => [
+            static fn(MappedRowSet $rows) => $rows
+                ->withKey('row')
+                ->expectColumnValue('status', 'old')
+                ->setColumn('status', 'new')
+                ->expectColumnValue('status', 'old'),
+        ];
+        yield 'contradictory committed values' => [
+            static fn(MappedRowSet $rows) => $rows
+                ->withKey('row')
+                ->expectColumnValue('status', 'old')
+                ->expectColumnValue('status', 'other'),
+        ];
+        yield 'presence after deletion' => [
+            static fn(MappedRowSet $rows) => $rows->withKey('row')->delete()->expectPresent(),
+        ];
+        yield 'column after deletion' => [
+            static fn(MappedRowSet $rows) => $rows->withKey('row')->delete()->expectColumnValue('status', 'old'),
+        ];
+        yield 'write after deletion' => [
+            static fn(MappedRowSet $rows) => $rows->withKey('row')->delete()->setColumn('status', 'new'),
+        ];
+        yield 'absence after write' => [
+            static fn(MappedRowSet $rows) => $rows
+                ->withKey('row')
+                ->upsert()
+                ->setColumn('status', 'new')
+                ->expectAbsent(),
+        ];
+        yield 'presence after absence' => [
+            static fn(MappedRowSet $rows) => $rows->withKey('row')->expectAbsent()->expectPresent(),
+        ];
+        yield 'absence after presence' => [
+            static fn(MappedRowSet $rows) => $rows->withKey('row')->expectPresent()->expectAbsent(),
+        ];
+        yield 'column after absence' => [
+            static fn(MappedRowSet $rows) => $rows->withKey('row')->expectAbsent()->expectColumnValue('status', 'old'),
+        ];
+        yield 'insert after presence' => [
+            static fn(MappedRowSet $rows) => $rows->withKey('row')->expectPresent()->insert(),
+        ];
+        yield 'unwritten column on inserted row' => [
+            static fn(MappedRowSet $rows) => $rows->withKey('row')->insert()->expectColumnValue('status', 'old'),
+        ];
     }
 
     #[DataProvider('localConflicts')]
@@ -128,7 +178,7 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         try {
             $prepare($fixture->rows);
         } finally {
-            self::assertFalse($fixture->stored('row'));
+            static::assertFalse($fixture->stored('row'));
         }
     }
 
@@ -137,19 +187,21 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
     {
         foreach (['memory', 'postgres'] as $backend) {
             foreach (['insertion', 'deletion'] as $change) {
-                yield $backend.' '.$change => [$backend, $change];
+                yield $backend . ' ' . $change => [$backend, $change];
             }
         }
     }
 
     #[DataProvider('membershipChanges')]
-    public function test_membership_expectations_detect_both_insertions_and_deletions(string $backend, string $change): void
-    {
+    public function test_membership_expectations_detect_both_insertions_and_deletions(
+        string $backend,
+        string $change,
+    ): void {
         $fixture = $this->fixture($backend);
         $fixture->seed(['id' => 'first']);
         $fixture->seed(['id' => 'second']);
         $fixture->rows->expectSameRowKeys(['second', 'first']);
-        self::assertTrue($fixture->rows->hasPendingChanges());
+        static::assertTrue($fixture->rows->hasPendingChanges());
         $fixture->flush();
         if ('insertion' === $change) {
             $fixture->seed(['id' => 'late']);
@@ -171,8 +223,8 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         $rows->withKey('added')->expectAbsent()->setColumn('status', 'new');
         $rows->expectSameRowKeys(['existing', 'added']);
         $fixture->flush();
-        self::assertSame(['status' => 'updated'], $fixture->stored('existing', ['status']));
-        self::assertSame(['status' => 'new'], $fixture->stored('added', ['status']));
+        static::assertSame(['status' => 'updated'], $fixture->stored('existing', ['status']));
+        static::assertSame(['status' => 'new'], $fixture->stored('added', ['status']));
         $rows->clear();
 
         $rows->withKey('another')->upsert()->setColumn('status', 'new');

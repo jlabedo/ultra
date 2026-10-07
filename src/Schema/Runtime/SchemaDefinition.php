@@ -68,7 +68,14 @@ final readonly class SchemaDefinition
 
     private static function mergeTable(TableDefinition $left, TableDefinition $right): TableDefinition
     {
-        $name = self::mergeName('table', $left->id, $left->name, $left->hasExplicitName, $right->name, $right->hasExplicitName);
+        $name = self::mergeName(
+            'table',
+            $left->id,
+            $left->name,
+            $left->hasExplicitName,
+            $right->name,
+            $right->hasExplicitName,
+        );
         $columns = self::mergeColumns($left, $right);
         $indexes = self::mergeIndexes($left, $right);
 

@@ -13,6 +13,6 @@ class VariableScope
 
     public function newVariable(): string
     {
-        return $this->variablePrefix.$this->variableCount++;
+        return $this->variablePrefix . $this->variableCount++;
     }
 }

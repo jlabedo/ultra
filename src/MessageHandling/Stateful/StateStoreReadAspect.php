@@ -9,18 +9,23 @@ use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\MatchResult;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\MessageHandling\ProceedResult;
+use Ultra\StatefulMessageHandling\Attribute\StateReader;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\Exception\StateNotFoundException;
 use Ultra\StateStore\StateStore;
-use Ultra\StatefulMessageHandling\Attribute\StateReader;
 
+/** @phpstan-import-type Plan from StateBindings */
 final readonly class StateStoreReadAspect
 {
     public function __construct(
         private StateStore $stateStore,
     ) {}
 
+    /**
+     * @param Plan $config
+     * @param callable(...): \Ultra\MessageHandling\ProceedResult $proceed
+     */
     #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
         if ([] === $ctx->method()->getAttributes(StateReader::class)) {
             return null;
@@ -33,9 +38,7 @@ final readonly class StateStoreReadAspect
             nullableStates: true,
         );
 
-        return null === $plan
-            ? null
-            : MatchResult::apply($plan, array_column($plan['bindings'], 'index'));
+        return null === $plan ? null : MatchResult::apply($plan, array_column($plan['bindings'], 'index'));
     })]
     public function around(callable $proceed, object $message, MessageContext $context, array $config): ProceedResult
     {
@@ -44,7 +47,11 @@ final readonly class StateStoreReadAspect
             foreach ($ids as $position => $id) {
                 $binding = $config['bindings'][$position];
                 if (!is_string($id) && !is_int($id) && !is_object($id)) {
-                    throw new \LogicException(sprintf('Id of state parameter "%s" must be string, int, or object, got %s.', $binding['parameterName'], get_debug_type($id)));
+                    throw new \LogicException(sprintf(
+                        'Id of state parameter "%s" must be string, int, or object, got %s.',
+                        $binding['parameterName'],
+                        get_debug_type($id),
+                    ));
                 }
 
                 $state = $this->stateStore->load($binding['stateClass'], $id);
@@ -71,7 +78,7 @@ final readonly class StateStoreReadAspect
      */
     private static function getStateIdProperty(string $stateClass): string
     {
-        foreach ((new \ReflectionClass($stateClass))->getProperties() as $property) {
+        foreach (new \ReflectionClass($stateClass)->getProperties() as $property) {
             if ([] !== $property->getAttributes(StateId::class)) {
                 return $property->getName();
             }
