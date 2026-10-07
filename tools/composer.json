@@ -15,7 +15,7 @@
     },
     "require-dev": {
         "friendsofphp/php-cs-fixer": "^3.0",
-        "infection/infection": "^0.33.1",
+        "infection/infection": "^0.35.6",
         "laravel/pao": "^1.0",
         "phpunit/phpunit": "^13.1",
         "symfony/console": "7.*|8.*",
