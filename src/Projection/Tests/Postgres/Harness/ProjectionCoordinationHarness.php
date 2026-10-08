@@ -20,6 +20,7 @@ use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTrackerSchema;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
+use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
 use Ultra\MappedTable\MappedRowSet;
@@ -140,7 +141,14 @@ final class ProjectionCoordinationHarness
 
         $application->addCommands([
             new CreateProjectionHarnessSchemaCommand($connection, $eventStorePrefix, $projectionPrefix),
-            new SeedProjectionEventsCommand($eventStore, $activity),
+            new SeedProjectionEventsCommand(
+                new PostgresEventStoreQueryStreams(
+                    $connection,
+                    $eventStorePrefix,
+                    lockStrategy: new NoopLockStrategy(),
+                ),
+                $activity,
+            ),
             new BackfillProjectionCommand($catalog, $runner, $processActivator),
             new ResetProjectionCommand($catalog, $runner),
             new RunProjectionHarnessCommand($connection, $eventStorePrefix, $projectionPrefix),
@@ -230,6 +238,32 @@ final class CreateProjectionHarnessSchemaCommand extends Command
 
         return Command::SUCCESS;
     }
+}
+
+/** Seed-only strategy: harness data loading must not overlap conditional event-store writers. */
+final readonly class NoopLockStrategy implements LockStrategy
+{
+    public function name(): string
+    {
+        return 'noop';
+    }
+
+    public function createStatements(string $tablePrefix): array
+    {
+        return [];
+    }
+
+    public function dropStatements(string $tablePrefix): array
+    {
+        return [];
+    }
+
+    public function acquire(
+        Connection $connection,
+        string $tablePrefix,
+        array $readQueries,
+        array $writeEvents,
+    ): void {}
 }
 
 final class SeedProjectionEventsCommand extends Command
