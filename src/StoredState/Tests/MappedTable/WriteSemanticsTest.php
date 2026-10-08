@@ -13,15 +13,26 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 #[CoversNamespace('Ultra\MappedTable')]
 final class WriteSemanticsTest extends RowSetTestCase
 {
-    #[DataProvider('backends')]
-    public function test_insert_and_upsert_create_rows_and_updates_preserve_unspecified_columns(string $backend): void
+    /** @return iterable<string, array{string, bool}> */
+    public static function creationBackends(): iterable
     {
-        $fixture = $this->fixture($backend);
+        yield 'in memory' => ['memory', true];
+        yield 'in memory without absence protection' => ['memory', false];
+        yield 'Postgres' => ['postgres', true];
+        yield 'Postgres without absence protection' => ['postgres', false];
+    }
+
+    #[DataProvider('creationBackends')]
+    public function test_insert_and_upsert_create_rows_and_updates_preserve_unspecified_columns(
+        string $backend,
+        bool $allowAbsentObservations,
+    ): void {
+        $fixture = $this->fixture($backend, allowAbsentObservations: $allowAbsentObservations);
         $rows = $fixture->rows;
         $rows->withKey('inserted')->insert()->setColumn('status', 'first');
         $rows->withKey('inserted')->setColumn('note', 'preserved');
         $rows->withKey('upserted')->setColumn('status', 'new')->upsert();
-        $rows->withKey('absent')->expectAbsent()->setColumn('status', 'created');
+        $rows->withKey('absent')->expectAbsent()->insert()->setColumn('status', 'created');
         $fixture->flush();
         static::assertSame(
             ['status' => 'first', 'note' => 'preserved'],
@@ -41,10 +52,12 @@ final class WriteSemanticsTest extends RowSetTestCase
         static::assertSame(['status' => 'new', 'note' => 'added'], $fixture->stored('upserted', ['status', 'note']));
     }
 
-    #[DataProvider('backends')]
-    public function test_insert_rejects_an_existing_row_without_overwriting_it(string $backend): void
-    {
-        $fixture = $this->fixture($backend);
+    #[DataProvider('creationBackends')]
+    public function test_insert_rejects_an_existing_row_without_overwriting_it(
+        string $backend,
+        bool $allowAbsentObservations,
+    ): void {
+        $fixture = $this->fixture($backend, allowAbsentObservations: $allowAbsentObservations);
         $fixture->seed(['id' => 'existing', 'status' => 'original']);
         $fixture->rows->withKey('existing')->insert()->setColumn('status', 'replacement');
         $this->expectException(ConcurrencyException::class);

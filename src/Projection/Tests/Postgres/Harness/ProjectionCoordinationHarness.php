@@ -23,6 +23,7 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
@@ -61,7 +62,12 @@ final readonly class HarnessCourseNamesProjection
         private string $tableName,
     ) {
         $this->table = new MappedRowSet(
-            new PostgresMappedRowSetAdapter($this->connection, $this->tableName, ['course_id']),
+            new PostgresMappedRowSetAdapter(
+                $this->connection,
+                $this->tableName,
+                ['course_id'],
+                policy: new MappedTablePolicy(allowAbsentObservations: false),
+            ),
         );
     }
 

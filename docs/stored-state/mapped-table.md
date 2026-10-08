@@ -98,6 +98,37 @@ Adapters implement `Ultra\MappedTable\MappedRowSetAdapter`:
 
 `MappedRowSet` itself does not open transactions. If you need atomicity across a flush, open the surrounding transaction on the underlying storage before calling `flush()`.
 
+### Table policy
+
+`MappedTablePolicy` defines the operations a table supports, independently of its storage backend.
+Both included adapters accept a `policy`; their factories accept `tablePolicies`, keyed by table name,
+and apply each policy to both `create()` and `createScoped()`. Unspecified tables use the default policy,
+which allows check-only absence observations.
+
+```php
+use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
+use Ultra\MappedTable\MappedTablePolicy;
+use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
+
+$tablePolicies = [
+    'course_names' => new MappedTablePolicy(allowAbsentObservations: false),
+];
+$postgresFactory = new PostgresMappedRowSetAdapterFactory($connection, tablePolicies: $tablePolicies);
+$memoryFactory = new InMemoryMappedRowSetAdapterFactory($database, tablePolicies: $tablePolicies);
+```
+
+Only the adapters receive the policy. `MappedRowSet` buffers expectations and mutations, and `updatePlan()`
+remains an inspectable snapshot without lock instructions or policy validation. At `apply()`, both adapters
+validate the final plan through the policy before checking storage or applying writes. When absence observations
+are disabled, a check-only absence plan throws `LogicException`. `expectAbsent()->insert()` remains allowed;
+`expectAbsent()->insert()->delete()` becomes a check-only absence plan and is rejected. Contradictions with
+buffered operations or expectations can still fail immediately when registered.
+
+All adapters accessing the same physical table must use the same policy, including scoped views and other
+processes. An adapter's concurrency protocol relies on every writer participating when absence observations
+are allowed. The policy is configured by the application; factories do not coordinate independent configurations.
+Each backend owns the mechanisms needed to enforce the permitted expectations and writes.
+
 ## Included In-Memory Adapter
 
 `Ultra\MappedTable\InMemoryMappedRowSetAdapter` provides a lightweight adapter for tests and local execution.
@@ -127,6 +158,10 @@ Row-set key expectations use a transaction-scoped advisory lock and therefore re
 
 Check-only rows are checked in one `SELECT ... FOR SHARE` per table, so they stay locked against concurrent writers until the transaction ends. An absent row cannot be locked, so rows expected absent, and rows an insert or upsert may create, take a transaction-scoped advisory lock on their key (one statement, keys in sorted order): an absent check holds back a concurrent creation of the row until its transaction ends, and the other way around. Absent checks require an active transaction; an insert outside a transaction takes no lock.
 
+When the table policy disables [absence observations](#table-policy), inserts and upserts skip these per-key
+advisory locks. SQL constraints, affected-row checks, present-row locks, row-set expectations and caller-owned
+transactions remain in force.
+
 `MappedRowSet` buffers row mutations and optimistic expectations. `updatePlan()` exposes an immutable snapshot
 for inspection; `flush()` applies its own plan through the adapter. Cooperative decision guards and query replay
 belong to `StateStore`'s coordinating unit of work and its dedicated guard adapter. They are acquired before the
@@ -151,12 +186,12 @@ same scenario exercises the in-memory and Postgres adapters, including their fac
 | --- | --- | --- |
 | Reads expose the unit-of-work view without changing storage | [BufferedViewTest](../../src/StoredState/Tests/MappedTable/BufferedViewTest.php) | Committed projections and structured rows, overlays of updates/inserts/deletes, check-only observations. |
 | Writes have distinct insert, update, upsert, replacement and deletion semantics | [WriteSemanticsTest](../../src/StoredState/Tests/MappedTable/WriteSemanticsTest.php) | Preservation of unspecified values, conflicts, multiple deletions, replacement expectations, cancellation and merging. |
-| Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/StoredState/Tests/MappedTable/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, concurrent insertions/deletions and first-expectation retention. |
+| Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/StoredState/Tests/MappedTable/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, final-plan table policies, concurrent insertions/deletions and first-expectation retention. |
 | Saved membership supersedes earlier membership within its scope | [MembershipReconciliationTest](../../src/StoredState/Tests/MappedTable/MembershipReconciliationTest.php) | Late rows, empty and successive sets, duplicate keys, retained columns, earlier expectations and later explicit operations. |
 | Preparation, flush, clear and transactions retain their separate responsibilities | [FlushLifecycleTest](../../src/StoredState/Tests/MappedTable/FlushLifecycleTest.php) | Preparation without I/O, sorted immutable snapshots, check-only writes, complete cleanup, external rollback and in-memory transaction snapshots. |
 | Keys and scopes address independent rows | [KeyAndScopeIsolationTest](../../src/StoredState/Tests/MappedTable/KeyAndScopeIsolationTest.php) | Composite keys, scalar shortcuts, colliding IDs, multiple scope columns and invalid addresses. |
 | Persisted column values survive encoding and decoding | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | Text/UUID/integer arrays, escaping and nulls, JSON, dates, booleans, single and multiple writes and optimistic typed comparisons. |
-| Persistence observations hold competing writers until their transaction ends | [PersistenceLockingTest](../../src/StoredState/Tests/MappedTable/PersistenceLockingTest.php) | Two real Postgres connections, present/absent checks, insert/upsert/update contention, release and transaction requirements. |
+| Persistence observations hold competing writers until their transaction ends | [PersistenceLockingTest](../../src/StoredState/Tests/MappedTable/PersistenceLockingTest.php) | Two real Postgres connections, present/absent checks, insert/upsert/update contention, release, transaction requirements and table-wide absence protection. |
 | Standalone inspection preserves pending plans and distinguishes actual SQL, failures and fixture work | [SqlInspectionTest](../../src/StoredState/Tests/MappedTable/SqlInspectionTest.php) | Merged batches, reads before transactions, checks without writes, executed prefixes, rollback, setup/work failures, cleanup, repeated runs and CLI status. |
 
 Add or change a case in the suite owning its guarantee. A new file needs a distinct guarantee, rather than a

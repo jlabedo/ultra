@@ -10,6 +10,7 @@ use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
+use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
 use Ultra\Testing\PostgresConnectionSupport;
@@ -30,7 +31,9 @@ final class RowSetFixture
         private readonly array $keyColumns = ['id'],
         ?MappedKey $scope = null,
         private readonly array $columnTypes = [],
+        bool $allowAbsentObservations = true,
     ) {
+        $tablePolicies = [$tableName => new MappedTablePolicy($allowAbsentObservations)];
         if ($storage instanceof Connection) {
             $columns = array_fill_keys($keyColumns, 'TEXT NOT NULL');
             $columns += [
@@ -59,9 +62,13 @@ final class RowSetFixture
                 . implode(', ', $definitions)
                 . ')',
             );
-            $this->factory = new PostgresMappedRowSetAdapterFactory($storage, [$tableName => $columnTypes]);
+            $this->factory = new PostgresMappedRowSetAdapterFactory(
+                $storage,
+                [$tableName => $columnTypes],
+                $tablePolicies,
+            );
         } else {
-            $this->factory = new InMemoryMappedRowSetAdapterFactory($storage);
+            $this->factory = new InMemoryMappedRowSetAdapterFactory($storage, $tablePolicies);
         }
         $this->rows = $this->view($scope);
     }

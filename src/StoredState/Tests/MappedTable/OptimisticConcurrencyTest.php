@@ -6,6 +6,7 @@ namespace Ultra\MappedTable\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
@@ -14,6 +15,56 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 #[CoversNamespace('Ultra\MappedTable')]
 final class OptimisticConcurrencyTest extends RowSetTestCase
 {
+    /** @return iterable<string, array{string, bool, string}> */
+    public static function unsupportedAbsenceChecks(): iterable
+    {
+        foreach (['memory', 'postgres'] as $backend) {
+            foreach ([false, true] as $scoped) {
+                foreach (['expectAbsent', 'delete', 'cancel'] as $operation) {
+                    yield $backend . ' ' . ($scoped ? 'scoped' : 'unscoped') . ' ' . $operation => [
+                        $backend,
+                        $scoped,
+                        $operation,
+                    ];
+                }
+            }
+        }
+    }
+
+    #[DataProvider('unsupportedAbsenceChecks')]
+    public function test_table_policy_rejects_final_absence_observations_before_writing(
+        string $backend,
+        bool $scoped,
+        string $operation,
+    ): void {
+        $fixture = $this->fixture(
+            $backend,
+            $scoped ? ['tenant', 'id'] : ['id'],
+            $scoped ? new MappedKey(['tenant' => 'tenant-1']) : null,
+            allowAbsentObservations: false,
+        );
+        $fixture->rows->withKey('first')->insert()->setColumn('status', 'new');
+        $row = $fixture->rows->withKey('absent')->expectAbsent();
+        if ('cancel' === $operation) {
+            $row->insert()->setColumn('status', 'cancelled');
+        }
+        if ('expectAbsent' !== $operation) {
+            $row->delete();
+        }
+
+        static::assertCount(2, $fixture->rows->updatePlan()->rowUpdates);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Check-only absence observations are disabled');
+        try {
+            $fixture->rows->flush();
+        } finally {
+            static::assertFalse($fixture->stored(
+                $scoped ? new MappedKey(['tenant' => 'tenant-1', 'id' => 'first']) : 'first',
+            ));
+        }
+    }
+
     /** @return iterable<string, array{string, string}> */
     public static function observations(): iterable
     {

@@ -28,6 +28,7 @@ abstract class RowSetTestCase extends TestCase
         array $keyColumns = ['id'],
         ?MappedKey $scope = null,
         array $columnTypes = [],
+        bool $allowAbsentObservations = true,
     ): RowSetFixture {
         if ('postgres' === $backend) {
             $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
@@ -44,6 +45,7 @@ abstract class RowSetTestCase extends TestCase
             $keyColumns,
             $scope,
             $columnTypes,
+            $allowAbsentObservations,
         );
         $this->fixtures[] = $fixture;
         return $fixture;

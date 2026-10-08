@@ -10,10 +10,12 @@ final readonly class PostgresMappedRowSetAdapterFactory implements MappedRowSetA
 {
     /**
      * @param array<string, array<string, PostgresMappedColumnType>> $columnTypesByTable
+     * @param array<string, MappedTablePolicy> $tablePolicies Policies shared by scoped and unscoped adapters.
      */
     public function __construct(
         private Connection $connection,
         private array $columnTypesByTable = [],
+        private array $tablePolicies = [],
     ) {}
 
     public function create(string $tableName, array $keyColumns = ['id']): MappedRowSetAdapter
@@ -23,6 +25,7 @@ final readonly class PostgresMappedRowSetAdapterFactory implements MappedRowSetA
             $tableName,
             $keyColumns,
             $this->columnTypesByTable[$tableName] ?? [],
+            policy: $this->tablePolicies[$tableName] ?? new MappedTablePolicy(),
         );
     }
 
@@ -34,6 +37,7 @@ final readonly class PostgresMappedRowSetAdapterFactory implements MappedRowSetA
             $keyColumns,
             $this->columnTypesByTable[$tableName] ?? [],
             $scope,
+            $this->tablePolicies[$tableName] ?? new MappedTablePolicy(),
         );
     }
 }

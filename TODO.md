@@ -24,16 +24,3 @@
   des index, contraintes uniques et références. Les exemples coworking et IAM
   maintiennent actuellement le DDL à la main, en parallèle des attributs PHP.
   Ne pas déduire automatiquement les index métier depuis les requêtes SQL.
-
-- [ ] Configurer par table la protection d'absence de l'adaptateur PostgreSQL
-  de MappedTable, notamment pour les tables dédiées aux projections sans
-  attentes d'absence. Exposer la politique via la factory, activée par défaut
-  et cohérente pour tous les adaptateurs d'une même table. Sa désactivation
-  doit retirer les verrous advisory sur les clés des inserts et upserts,
-  préserver les contraintes SQL, les contrôles de lignes affectées et les
-  autres protections, et rejeter les attentes d'absence seules (`MODE_EXPECT`
-  avec `expectedPresence = absent`). Les inserts restent autorisés malgré
-  leur attente d'absence implicite. Vérifier le SQL émis et la concurrence
-  sur PostgreSQL ; conserver l'atomicité des écritures de projection et de
-  leur checkpoint. Voir [MappedTable](docs/stored-state/mapped-table.md#postgresql-adapter)
-  et [projections](docs/projections/README.md).

@@ -16,6 +16,7 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
         private string $tableName,
         private array $configuredKeyColumns = ['id'],
         private ?MappedKey $configuredScope = null,
+        private MappedTablePolicy $policy = new MappedTablePolicy(),
     ) {
         self::assertSchema($configuredKeyColumns, $configuredScope);
     }
@@ -47,6 +48,8 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
 
     public function apply(RowSetUpdatePlan $plan): void
     {
+        $this->policy->assertSupported($plan, $this->tableName);
+
         foreach ($plan->rowUpdates as $update) {
             $this->assertKey($update->key);
         }

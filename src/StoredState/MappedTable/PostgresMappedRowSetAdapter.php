@@ -19,6 +19,7 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         private array $configuredKeyColumns = ['id'],
         private array $columnTypes = [],
         private ?MappedKey $configuredScope = null,
+        private MappedTablePolicy $policy = new MappedTablePolicy(),
     ) {
         if (
             [] === $configuredKeyColumns
@@ -108,11 +109,13 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
     }
 
     /**
-     * Flushes the plan inside the caller's transaction: locks the keys of rows expected absent or possibly created,
+     * Flushes the plan inside the caller's transaction: protects absent keys when configured,
      * checks the row-key expectations and check-only rows, then applies the writes.
      */
     public function apply(RowSetUpdatePlan $plan): void
     {
+        $this->policy->assertSupported($plan, $this->tableName);
+
         $writes = [];
         $checks = [];
         foreach ($plan->rowUpdates as $update) {
@@ -338,6 +341,10 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
      */
     private function lockAbsentKeys(array $checks, array $writes): void
     {
+        if (!$this->policy->allowAbsentObservations) {
+            return;
+        }
+
         $lockKeys = [];
         foreach ($checks as $check) {
             if (RowUpdatePlan::EXPECTED_ABSENT !== $check->expectedPresence) {
