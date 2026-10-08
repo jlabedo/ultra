@@ -6,6 +6,13 @@ Read root [composer.json](../composer.json) for runtime requirements and scripts
 
 For Postgres integration, start the database defined by [docker-compose.yml](../docker-compose.yml) with `docker compose up -d`.
 
+## Continuous integration
+
+[GitHub Actions](../.github/workflows/checks.yml) runs Mago's formatting, lint and
+analysis checks, plus the default PHPUnit suites and the `slow` group, on pushes
+and pull requests. Test runs use PHP 8.5 and PostgreSQL 18, with the test DSN set
+explicitly; skipped tests fail the job.
+
 ## Mago
 
 The repository's [Mago wrapper](../bin/mago) uses [mago.toml](../mago.toml). Run it from the repository root:
@@ -120,7 +127,7 @@ Report skipped coverage when the change requires database verification. Example 
 
 Use the owning context's guarantees to organize suites and name cases by observable outcomes. For each change, find the existing scenario protecting its guarantee. Extend that case or its data provider when the arrangement and assertions fit; add a case or suite for a distinct guarantee that remains unprotected. When a feature spans guarantees, distribute its cases among their existing owners: deletion can affect buffering, observations, collection ownership and query guards. Review nearby cases for duplication as part of the same change, and extend their shared fixture instead of creating a parallel setup path.
 
-Exercise behavior through the caller's interface. Reserve implementation-detail coverage for complex logic or hard-to-reproduce failures. Share setup and cleanup, keeping assertions in the suites. Verify simple fixture changes through the functional suites or a disposable probe; PostgreSQL's own DDL atomicity does not need a context guarantee suite.
+Exercise behavior through the caller's interface. Reserve implementation-detail coverage for complex logic or hard-to-reproduce failures. Share setup and cleanup, keeping assertions in the suites. Verify simple fixture changes and performance-only refactors through existing functional suites or a disposable probe; PostgreSQL's own DDL atomicity does not need a context guarantee suite.
 
 For concurrency, establish the critical state before releasing the competitor. An exclusion test can acquire the holder's lock, check a bounded `lock_timeout` in the competing transaction, then retry after commit. To verify that an in-flight request resumes correctly, observe it waiting on the held lock and check that same request after release. Name the case for the guarantee it demonstrates; a readiness barrier alone can still allow sequential execution.
 
@@ -128,6 +135,12 @@ Before deleting a case, identify the remaining scenario protecting its guarantee
 
 Give independent generated compilations distinct class identities; reserve method-level process isolation for cases that need a fresh interpreter. Use concurrent workers only when the scenario requires requests in flight together, and keep these cases in the `slow` group.
 
+## Reviewing changes
+
+Review against the [contributor rules](../AGENTS.md) and the affected [context contracts](README.md#task-routing). Assess supporting edits using the [test workflow](#refactoring-tests) and [documentation rules](#documentation-changes); retain changes that make the requested behavior easier to understand or verify.
+
 ## Documentation changes
+
+Update the owning context page when a guarantee or caller responsibility changes. Keep local fixture and harness implementation details in code when they do not change that contract.
 
 Verify relative file links and section anchors in changed pages and their incoming references. Run `git diff --check`. A documentation-only change does not require executing the application suite unless it changes executable examples or claims that need runtime verification.

@@ -23,6 +23,7 @@ Source code and documentation follow functional contexts. Use the task table to 
 | Symfony assembly or extension registration | [UltraBundle](../src/Symfony/Bundle/UltraBundle.php), [ContainerExtension](../src/Symfony/Container/ContainerExtension.php), then the affected context's integration page | [Symfony](../src/Symfony) | SymfonyBundle, Container |
 | Shared compiler helpers or clock primitives | Current contracts and tests in [CodeGeneration](../src/CodeGeneration) or [Time](../src/Time) | [CodeGeneration](../src/CodeGeneration), [Time](../src/Time) | CodeGeneration, Time |
 | Setup, tooling or test execution | [Development](development.md) | [Testing](../src/Testing) | Root tooling, Testing, ultra/testing-postgres |
+| Reviewing changes | [Review workflow](development.md#reviewing-changes), then the affected context contract | Affected context | Affected packages |
 
 ## Source layout
 
@@ -45,6 +46,7 @@ Guarantee suites and fixtures live outside package directories. A context can us
 ## Reference ownership
 
 - [AGENTS.md](../AGENTS.md) owns contributor rules.
+- [Development](development.md) owns setup, verification and review workflows.
 - Context pages own current behavior and caller responsibilities; implementation and tests resolve discrepancies.
 - [GLOSSARY.md](../GLOSSARY.md) owns canonical vocabulary.
 - [ADRs](adr/README.md) own architectural rationale. Read them when changing the relevant boundary, especially [compilation versus runtime](adr/0002-prefer-compiled-runtime-code.md).

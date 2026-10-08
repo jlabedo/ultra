@@ -1,0 +1,62 @@
+name: Checks
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Format, lint and analyze
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          coverage: none
+          tools: composer:v2
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - run: bin/mago format --check
+      - run: bin/mago lint
+      - run: bin/mago analyze
+
+  tests:
+    name: PHPUnit with PostgreSQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      ULTRA_TEST_POSTGRES_DSN: pdo-pgsql://ultra:ultra@127.0.0.1:55432/ultra_test
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_DB: ultra_test
+          POSTGRES_USER: ultra
+          POSTGRES_PASSWORD: ultra
+        ports:
+          - 55432:5432
+        options: >-
+          --shm-size=1g
+          --health-cmd="pg_isready -U ultra -d ultra_test"
+          --health-interval=2s
+          --health-timeout=5s
+          --health-retries=30
+    steps:
+      - uses: actions/checkout@v7
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.5'
+          extensions: pdo_pgsql, pgsql, mbstring, dom, pcntl, posix
+          coverage: none
+          tools: composer:v2
+      - run: composer install --no-interaction --no-progress --prefer-dist
+      - run: bin/phpunit --fail-on-skipped
+      - run: bin/phpunit --group slow --fail-on-skipped

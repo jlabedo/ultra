@@ -11,6 +11,12 @@ if (!isset($toolName) || !is_string($toolName) || $toolName === '') {
 $toolsDir = dirname(__DIR__);
 $toolBinary = $toolsDir . '/vendor/bin/' . $toolName;
 
+if ($toolName === 'phpunit' && !is_file(dirname($toolsDir) . '/vendor/autoload.php')) {
+    fwrite(STDERR, "Run composer install before running PHPUnit.\n");
+
+    exit(1);
+}
+
 if (!is_file($toolBinary)) {
     fwrite(STDERR, sprintf("Installing development tools before running %s...\n", $toolName));
 
