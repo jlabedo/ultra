@@ -8,6 +8,7 @@
 | [ToolExecutionTest](ToolExecutionTest.php) | The PHPUnit proxy preserves interpreter options, arguments, output and passing or failing exit status. |
 | [ContainerSetupTest](ContainerSetupTest.php) | Derived UltraLight setup preserves registration, leaves the base setup reusable, selects the requested container factory, and rejects duplicate service identities. |
 | [PostgresFixtureIsolationTest](PostgresFixtureIsolationTest.php) | Shared connections retain identity while reset rolls back every nested transaction and releases session advisory locks. Named sessions and fresh connections use independent backends; resetting one session preserves another's transaction and locks. |
+| [SqlTraceTest](SqlTraceTest.php) | Real PDO and native PostgreSQL calls preserve results, affected rows and exceptions while exposing parameters, types, phases, transaction events and failing SQL. |
 
 The process suites belong to the `slow` group. The PID observations require the POSIX extension. Deadline checks begin after the child reaches a checkpoint, so startup time does not determine the asserted deadline.
 

@@ -74,6 +74,12 @@ Shared connections close at process shutdown. `CooperativeLockingTest` reuses a 
 bounds expected lock waits with a transaction-local `lock_timeout` of 10 ms, after the holder has acquired its locks.
 For isolated-schema setup with two shared sessions, see [IAM example verification](../examples/iam/README.md#exécution).
 
+For opt-in SQL observations, `PostgresConnectionSupport::connection($dsn, $configuration)` accepts DBAL
+configuration before the driver is created. `SqlTrace` and `SqlTraceMiddleware` collect driver SQL,
+parameters, types, durations, transaction calls and failures. See the
+[standalone SQL inspection example](../examples/mapped-table-sql/README.md#reuse-the-collector) for setup and
+measurement limits. Shared connections retain their existing assembly and are not retroactively instrumented.
+
 ### Timing audit
 
 After setup, run the executable audit from any directory:

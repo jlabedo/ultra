@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Testing;
 
+use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Tools\DsnParser;
@@ -14,12 +15,15 @@ final class PostgresConnectionSupport
     /** @var array<string, array<string, Connection>> */
     private static array $connections = [];
 
-    public static function connection(string $dsn): Connection
+    public static function connection(string $dsn, ?Configuration $configuration = null): Connection
     {
-        return DriverManager::getConnection(new DsnParser([
-            'postgres' => 'pgsql',
-            'postgresql' => 'pgsql',
-        ])->parse($dsn));
+        return DriverManager::getConnection(
+            new DsnParser([
+                'postgres' => 'pgsql',
+                'postgresql' => 'pgsql',
+            ])->parse($dsn),
+            $configuration,
+        );
     }
 
     /** Callers reset borrowed connections; shutdown closes each named session. */

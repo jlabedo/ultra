@@ -11,6 +11,7 @@ Source code and documentation follow functional contexts. Use the task table to 
 | Async dispatch, queue delivery, outbox or deployment compatibility | [Async delivery](message-handling/async.md) | [MessageHandling](../src/MessageHandling) | MessageHandling, MessageHandling_PostgresQueue |
 | Event queries, checkpoints, append conditions or state replay | [Event sourcing](event-sourcing/README.md) | [EventSourcing](../src/EventSourcing) | Events, EventStore, EventStore_Postgres, EventSourcedState, EventSourcedState_Compiler |
 | Row buffering, row-set reconciliation, mapped keys or storage adapters | [Mapped Table](stored-state/mapped-table.md) | [StoredState](../src/StoredState) | MappedTable |
+| Inspecting a row-set plan and its executed PostgreSQL queries | [SQL inspection](stored-state/mapped-table.md#sql-inspection), then [standalone scenarios](../examples/mapped-table-sql/README.md) | [StoredState](../src/StoredState), [Testing](../src/Testing) | MappedTable, ultra/testing-postgres |
 | State mapping, collections or optimistic row expectations | [Stored-state contracts](stored-state/README.md), then [mapping](stored-state/mapping.md) | [StoredState](../src/StoredState) | StateStore, StateStore_Bundle, MappedTable |
 | Set-based invariants, query observations or cooperative locking | [Query guards](stored-state/query-guards.md) | [StoredState](../src/StoredState) | StateStore, MappedTable |
 | Manual SQL expectations or explicit guards | [Manual queries](stored-state/manual-queries.md) | [StoredState](../src/StoredState) | StateStore |

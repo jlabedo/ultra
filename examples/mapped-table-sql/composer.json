@@ -1,0 +1,29 @@
+{
+    "name": "ultra/mapped-table-sql-example",
+    "type": "project",
+    "license": "proprietary",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../src/*/*",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "require": {
+        "php": ">=8.5",
+        "doctrine/dbal": "^4.0",
+        "symfony/console": "7.*|8.*",
+        "ultra/mapped-table": "dev-main",
+        "ultra/testing-postgres": "dev-main",
+        "ultra/unit-of-work": "dev-main"
+    },
+    "autoload": {
+        "psr-4": {
+            "MappedTableSqlExample\\": "src/"
+        }
+    }
+}

@@ -132,6 +132,14 @@ for inspection; `flush()` applies its own plan through the adapter. Cooperative 
 belong to `StateStore`'s coordinating unit of work and its dedicated guard adapter. They are acquired before the
 mapped row sets are flushed. The persistence locks described above stay local to each mapped adapter.
 
+## SQL inspection
+
+The [standalone SQL inspection example](../../examples/mapped-table-sql/README.md) builds a `MappedRowSet`,
+captures its pending plan and traces the real PostgreSQL execution through an opt-in DBAL middleware. It
+includes scenarios for grouped writes, check-only observations and optimistic conflicts, with isolated
+temporary data and automatic cleanup. The example owns setup, authoring and report instructions; the storage
+and transaction contracts remain unchanged.
+
 ## Test ownership and maintenance
 
 Each suite owns one guarantee and its cases. Tests are not grouped by implementation class or physical table.
@@ -149,6 +157,7 @@ same scenario exercises the in-memory and Postgres adapters, including their fac
 | Keys and scopes address independent rows | [KeyAndScopeIsolationTest](../../src/StoredState/Tests/MappedTable/KeyAndScopeIsolationTest.php) | Composite keys, scalar shortcuts, colliding IDs, multiple scope columns and invalid addresses. |
 | Persisted column values survive encoding and decoding | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | Text/UUID/integer arrays, escaping and nulls, JSON, dates, booleans, single and multiple writes and optimistic typed comparisons. |
 | Persistence observations hold competing writers until their transaction ends | [PersistenceLockingTest](../../src/StoredState/Tests/MappedTable/PersistenceLockingTest.php) | Two real Postgres connections, present/absent checks, insert/upsert/update contention, release and transaction requirements. |
+| Standalone inspection preserves pending plans and distinguishes actual SQL, failures and fixture work | [SqlInspectionTest](../../src/StoredState/Tests/MappedTable/SqlInspectionTest.php) | Merged batches, reads before transactions, checks without writes, executed prefixes, rollback, setup/work failures, cleanup, repeated runs and CLI status. |
 
 Add or change a case in the suite owning its guarantee. A new file needs a distinct guarantee, rather than a
 new implementation class. Use another dataset for a different input or failure mode of the same guarantee;
