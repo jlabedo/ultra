@@ -43,12 +43,7 @@ jobs:
           POSTGRES_PASSWORD: ultra
         ports:
           - 55432:5432
-        options: >-
-          --shm-size=1g
-          --health-cmd="pg_isready -U ultra -d ultra_test"
-          --health-interval=2s
-          --health-timeout=5s
-          --health-retries=30
+        options: --shm-size=1g
     steps:
       - uses: actions/checkout@v7
       - uses: shivammathur/setup-php@v2
@@ -58,5 +53,15 @@ jobs:
           coverage: none
           tools: composer:v2
       - run: composer install --no-interaction --no-progress --prefer-dist
+      - name: Wait for PostgreSQL
+        run: |
+          for attempt in {1..30}; do
+            if docker exec ${{ job.services.postgres.id }} pg_isready -h 127.0.0.1 -U ultra -d ultra_test -t 5; then
+              exit 0
+            fi
+            sleep 2
+          done
+          docker logs ${{ job.services.postgres.id }}
+          exit 1
       - run: bin/phpunit --fail-on-skipped
       - run: bin/phpunit --group slow --fail-on-skipped
