@@ -37,8 +37,6 @@ branches use a wildcard event-type namespace, and writes lock every non-empty do
 the concrete event type and the wildcard. Global queries such as `StreamQuery::all()` are read-only; creating an
 append condition for one is rejected before a lock strategy is involved.
 
-The Postgres benchmark script accepts `--lock-strategy=shared-exclusive` or `--lock-strategy=bucket`.
-
 ## Transactions
 
 Both implementations join an existing transaction when one is already active. If no transaction is open, they open and manage their own transaction around the append.
@@ -54,3 +52,32 @@ This makes them work naturally with:
 Use `PostgresEventStoreHStore` when you want the simpler storage model based on direct event-table queries.
 
 Use `PostgresEventStoreQueryStreams` when you want a normalized domain-identifier index instead of the `hstore` extension.
+
+## Benchmarks
+
+[PostgresEventStoreBench](../../src/EventSourcing/Tests/Benchmark/PostgresEventStoreBench.php) exercises the public
+EventStore API against a real database, with both implementations and both lock strategies.
+Use [benchmark tooling](../development.md#benchmarks) to run and compare results, and the
+[test connection setup](../development.md#tests) to select the database or driver.
+
+| Subject | One timed revolution |
+| --- | --- |
+| `benchReadPage` | Load the first page of hot/warm subscriptions, course lifecycle, course/student pair or dashboard changes |
+| `benchReplay` | Load the complete hot subscription history, following `hasMore` and checkpoints across pages |
+| `benchAppend` | Construct and append a batch of one or 100 subscription events, with its own committed transaction |
+| `benchGuardedSubscription` | Load the complete course history, derive enrollment state and append one subscription guarded by the final checkpoint |
+
+Each iteration creates and removes its own tables. [CourseDataset](../../src/EventSourcing/Tests/Benchmark/CourseDataset.php)
+provides deterministic, skewed course histories. Reads are checked against an in-memory reference; writes are
+checked against expected persisted events and enrollment statuses. [BenchmarkTest](../../src/EventSourcing/Tests/BenchmarkTest.php)
+protects these workloads. The benchmark's `variants()` provider owns dataset defaults and environment overrides.
+
+For GIN maintenance comparisons, set `ULTRA_BENCH_INDEX_STATE` to `maintained` for `VACUUM (ANALYZE)` after
+seeding, or `post-ingest` for `ANALYZE` alone. Preparation runs outside measurement and covers both the events
+table and QueryStreams' identifier table. Autovacuum remains governed by server configuration: establish the
+pending-list state before attributing a timing difference to GIN cleanup.
+
+Read subjects warm the cache. Write subjects advance through streams round-robin and retain their writes
+until the next iteration; a stream is revisited only after a full round. Use more revolutions than streams to
+exercise growing guarded histories. Write warmup also adds events to that history. These sequential measurements
+cover lock overhead; measuring contention requires concurrent producers.

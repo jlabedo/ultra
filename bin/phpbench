@@ -1,0 +1,14 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+chdir(dirname(__DIR__));
+
+if (false === getenv('ULTRA_TEST_POSTGRES_DSN')) {
+    putenv('ULTRA_TEST_POSTGRES_DSN=pdo-pgsql://ultra:ultra@127.0.0.1:55432/ultra_test');
+}
+
+$toolName = 'phpbench';
+
+require dirname(__DIR__) . '/tools/bootstrap/tool-proxy.php';

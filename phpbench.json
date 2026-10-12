@@ -1,0 +1,17 @@
+{
+    "$schema": "./tools/vendor/phpbench/phpbench/phpbench.schema.json",
+    "runner.bootstrap": "tools/bootstrap/benchmarks.php",
+    "runner.path": "src/EventSourcing/Tests/Benchmark",
+    "runner.file_pattern": "*Bench.php",
+    "runner.annotations": false,
+    "runner.iterations": 5,
+    "runner.revs": 10,
+    "runner.php_config": {
+        "xdebug.mode": "off",
+        "pcov.enabled": "0",
+        "opcache.enable_cli": "0"
+    },
+    "core.extensions": ["UltraDev\\Tools\\Benchmarks\\PostgresExtension"],
+    "runner.env_enabled_providers": ["git", "php", "opcache", "uname", "unix_sysload", "postgres"],
+    "storage.xml_storage_path": "var/phpbench/storage"
+}

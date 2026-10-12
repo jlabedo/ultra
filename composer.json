@@ -117,7 +117,7 @@
         "sort-packages": true
     },
     "scripts": {
-        "bench:event-store-postgres": "php benchmark_event_store_postgres.php",
+        "bench": "bin/phpbench run --report=aggregate",
         "install-tools": "php tools/bootstrap/install.php",
         "post-install-cmd": "@install-tools",
         "post-update-cmd": "@install-tools",

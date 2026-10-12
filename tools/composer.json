@@ -17,6 +17,7 @@
         "carthage-software/mago": "1.52.0",
         "infection/infection": "^0.35.6",
         "laravel/pao": "^1.0",
+        "phpbench/phpbench": "^1.7",
         "phpunit/phpunit": "^13.1",
         "symfony/console": "7.*|8.*",
         "symfony/process": "7.*|8.*"

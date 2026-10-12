@@ -13,6 +13,31 @@ analysis checks, plus the default PHPUnit suites and the `slow` group, on pushes
 and pull requests. Test runs use PHP 8.5 and PostgreSQL 18, with the test DSN set
 explicitly; skipped tests fail the job.
 
+## Benchmarks
+
+After setup, run [bin/phpbench](../bin/phpbench). [phpbench.json](../phpbench.json) owns runner settings;
+`bin/phpbench run --help` lists selection and reporting options. For EventStore scenarios, dataset overrides
+and GIN maintenance comparisons, read [Postgres workloads](event-sourcing/postgres.md#benchmarks).
+
+```bash
+docker compose up -d
+bin/phpbench run --report=aggregate
+bin/phpbench run --filter=benchReplay --variant='^hstore/shared-exclusive/' --report=aggregate
+bin/phpbench run --report=aggregate --tag=baseline
+bin/phpbench run --report=aggregate --ref=baseline
+```
+
+For a baseline comparison, keep workload, warmup, revolutions and environment identical. Tags use letters,
+digits, dots or underscores. Parameter-set names include a configuration fingerprint: changed datasets or
+drivers produce separate variants. Check PHP, DBAL and PostgreSQL environment metadata in the saved results;
+server settings and repetition counts are outside that fingerprint. Validate every selected subject before
+interpreting its timing, and inspect individual iterations when dispersion is large relative to the difference.
+
+The aggregate report's `mode` estimates the mode of iteration averages; `rstdev` describes their dispersion.
+For operation latency percentiles, collect many iterations with `--revs=1`. Memory peaks include setup and
+reference data; timed calls exclude setup, validation and cleanup. Use a stable measurement host for performance
+budgets and the context's guarantee suites for correctness.
+
 ## Mago
 
 The repository's [Mago wrapper](../bin/mago) uses [mago.toml](../mago.toml). Run it from the repository root:
