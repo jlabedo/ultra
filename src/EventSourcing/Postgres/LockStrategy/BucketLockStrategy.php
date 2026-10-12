@@ -132,34 +132,8 @@ final readonly class BucketLockStrategy implements LockStrategy
                 RETURNS void
                 LANGUAGE plpgsql
                 AS $$
-                DECLARE
-                    b         char := {$tablePrefix}_normalize_bucket(bucket);
-                    other     char := {$tablePrefix}_other_bucket(b);
-                    my_key    integer := {$tablePrefix}_lock_key(ns, b);
-                    other_key integer := {$tablePrefix}_lock_key(ns, other);
-                    acquired  boolean;
-                    retries   integer := 0;
-                    max_retries integer := 1000;
                 BEGIN
-                    LOOP
-                        PERFORM pg_advisory_lock(other_key);
-
-                        acquired := pg_try_advisory_xact_lock_shared(my_key);
-
-                        PERFORM pg_advisory_unlock(other_key);
-
-                        IF acquired THEN
-                            RETURN;
-                        END IF;
-
-                        retries := retries + 1;
-                        IF retries >= max_retries THEN
-                            RAISE EXCEPTION 'pg_bucket_lock: acquire_xact(%, %) failed after % retries',
-                                ns, b, max_retries;
-                        END IF;
-
-                        PERFORM pg_sleep(0.001 + random() * 0.049);
-                    END LOOP;
+                    PERFORM {$tablePrefix}acquire_multi_xact(ARRAY[ns], ARRAY[bucket]);
                 END;
                 $$;
                 SQL,
@@ -197,6 +171,11 @@ final readonly class BucketLockStrategy implements LockStrategy
                 AS $$
                 DECLARE
                     r record;
+                    b char;
+                    my_key integer;
+                    other_key integer;
+                    acquired boolean;
+                    retries integer;
                 BEGIN
                     IF array_length(namespaces, 1) IS DISTINCT FROM array_length(buckets, 1) THEN
                         RAISE EXCEPTION 'pg_bucket_lock: namespaces and buckets arrays must have the same length';
@@ -207,7 +186,33 @@ final readonly class BucketLockStrategy implements LockStrategy
                         FROM unnest(namespaces, buckets) AS t(ns, bk)
                         ORDER BY ns, bk
                     LOOP
-                        PERFORM {$tablePrefix}acquire_xact(r.ns, r.bk);
+                        IF upper(r.bk) NOT IN ('A', 'B') THEN
+                            RAISE EXCEPTION 'bucket must be ''A'' or ''B'', got ''%''', r.bk;
+                        END IF;
+
+                        b := upper(r.bk)::char;
+                        my_key := hashtext('pg_bucket_lock:' || r.ns || ':' || b);
+                        other_key := hashtext('pg_bucket_lock:' || r.ns || ':' || CASE b WHEN 'A' THEN 'B' WHEN 'B' THEN 'A' END);
+                        retries := 0;
+
+                        -- Execute the protocol here to avoid nested helper calls for every key.
+                        LOOP
+                            PERFORM pg_advisory_lock(other_key);
+                            acquired := pg_try_advisory_xact_lock_shared(my_key);
+                            PERFORM pg_advisory_unlock(other_key);
+
+                            IF acquired THEN
+                                EXIT;
+                            END IF;
+
+                            retries := retries + 1;
+                            IF retries >= 1000 THEN
+                                RAISE EXCEPTION 'pg_bucket_lock: acquire_xact(%, %) failed after % retries',
+                                    r.ns, b, 1000;
+                            END IF;
+
+                            PERFORM pg_sleep(0.001 + random() * 0.049);
+                        END LOOP;
                     END LOOP;
                 END;
                 $$;
