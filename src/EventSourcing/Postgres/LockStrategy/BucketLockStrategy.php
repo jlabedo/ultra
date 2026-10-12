@@ -9,11 +9,11 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore\StreamQuery;
 
 /**
- * Two-bucket strategy: operations in the same bucket can run together, opposite buckets serialize.
+ * Same-side operations share a bucket; opposing sides exclude each other.
  *
- * Read keys acquire bucket A. Write keys acquire bucket B. A guarded append that reads and writes the
- * same key acquires both buckets for that key, which preserves optimistic concurrency validation while
- * still allowing unguarded writes for the same key to run concurrently.
+ * Each namespace maps to two adjacent advisory keys: even for reads, odd for writes.
+ * A read/write operation takes both keys exclusively, while a one-sided operation
+ * briefly locks the opposite key before taking its own shared transaction lock.
  */
 final readonly class BucketLockStrategy implements LockStrategy
 {
@@ -26,176 +26,42 @@ final readonly class BucketLockStrategy implements LockStrategy
     {
         return [
             <<<SQL
-                CREATE FUNCTION {$tablePrefix}_lock_key(ns text, bucket char)
-                RETURNS integer
-                LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
-                AS $$
-                    SELECT hashtext('pg_bucket_lock:' || ns || ':' || bucket);
-                $$;
-                SQL,
-            <<<SQL
-                CREATE FUNCTION {$tablePrefix}_normalize_bucket(bucket text)
-                RETURNS char
-                LANGUAGE plpgsql IMMUTABLE STRICT PARALLEL SAFE
-                AS $$
-                BEGIN
-                    IF upper(bucket) NOT IN ('A', 'B') THEN
-                        RAISE EXCEPTION 'bucket must be ''A'' or ''B'', got ''%''', bucket;
-                    END IF;
-                    RETURN upper(bucket)::char;
-                END;
-                $$;
-                SQL,
-            <<<SQL
-                CREATE FUNCTION {$tablePrefix}_other_bucket(bucket char)
-                RETURNS char
-                LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE
-                AS $$
-                    SELECT CASE bucket WHEN 'A' THEN 'B'::char ELSE 'A'::char END;
-                $$;
-                SQL,
-            <<<SQL
-                CREATE FUNCTION {$tablePrefix}acquire(ns text, bucket text)
+                CREATE FUNCTION {$tablePrefix}acquire_multi_xact(lock_ids bigint[], modes smallint[])
                 RETURNS void
                 LANGUAGE plpgsql
                 AS $$
                 DECLARE
-                    b         char := {$tablePrefix}_normalize_bucket(bucket);
-                    other     char := {$tablePrefix}_other_bucket(b);
-                    my_key    integer := {$tablePrefix}_lock_key(ns, b);
-                    other_key integer := {$tablePrefix}_lock_key(ns, other);
-                    acquired  boolean;
-                    retries   integer := 0;
-                    max_retries integer := 1000;
-                BEGIN
-                    LOOP
-                        PERFORM pg_advisory_lock(other_key);
-
-                        acquired := pg_try_advisory_lock_shared(my_key);
-
-                        PERFORM pg_advisory_unlock(other_key);
-
-                        IF acquired THEN
-                            RETURN;
-                        END IF;
-
-                        retries := retries + 1;
-                        IF retries >= max_retries THEN
-                            RAISE EXCEPTION 'pg_bucket_lock: acquire(%, %) failed after % retries',
-                                ns, b, max_retries;
-                        END IF;
-
-                        PERFORM pg_sleep(0.001 + random() * 0.049);
-                    END LOOP;
-                END;
-                $$;
-                SQL,
-            <<<SQL
-                CREATE FUNCTION {$tablePrefix}try_acquire(ns text, bucket text)
-                RETURNS boolean
-                LANGUAGE plpgsql
-                AS $$
-                DECLARE
-                    b         char := {$tablePrefix}_normalize_bucket(bucket);
-                    other     char := {$tablePrefix}_other_bucket(b);
-                    my_key    integer := {$tablePrefix}_lock_key(ns, b);
-                    other_key integer := {$tablePrefix}_lock_key(ns, other);
-                    acquired  boolean;
-                BEGIN
-                    IF NOT pg_try_advisory_lock(other_key) THEN
-                        RETURN false;
-                    END IF;
-
-                    acquired := pg_try_advisory_lock_shared(my_key);
-
-                    PERFORM pg_advisory_unlock(other_key);
-
-                    RETURN acquired;
-                END;
-                $$;
-                SQL,
-            <<<SQL
-                CREATE FUNCTION {$tablePrefix}release(ns text, bucket text)
-                RETURNS boolean
-                LANGUAGE plpgsql
-                AS $$
-                DECLARE
-                    b      char := {$tablePrefix}_normalize_bucket(bucket);
-                    my_key integer := {$tablePrefix}_lock_key(ns, b);
-                BEGIN
-                    RETURN pg_advisory_unlock_shared(my_key);
-                END;
-                $$;
-                SQL,
-            <<<SQL
-                CREATE FUNCTION {$tablePrefix}acquire_xact(ns text, bucket text)
-                RETURNS void
-                LANGUAGE plpgsql
-                AS $$
-                BEGIN
-                    PERFORM {$tablePrefix}acquire_multi_xact(ARRAY[ns], ARRAY[bucket]);
-                END;
-                $$;
-                SQL,
-            <<<SQL
-                CREATE FUNCTION {$tablePrefix}try_acquire_xact(ns text, bucket text)
-                RETURNS boolean
-                LANGUAGE plpgsql
-                AS $$
-                DECLARE
-                    b         char := {$tablePrefix}_normalize_bucket(bucket);
-                    other     char := {$tablePrefix}_other_bucket(b);
-                    my_key    integer := {$tablePrefix}_lock_key(ns, b);
-                    other_key integer := {$tablePrefix}_lock_key(ns, other);
-                    acquired  boolean;
-                BEGIN
-                    IF NOT pg_try_advisory_lock(other_key) THEN
-                        RETURN false;
-                    END IF;
-
-                    acquired := pg_try_advisory_xact_lock_shared(my_key);
-
-                    PERFORM pg_advisory_unlock(other_key);
-
-                    RETURN acquired;
-                END;
-                $$;
-                SQL,
-            <<<SQL
-                CREATE FUNCTION {$tablePrefix}acquire_multi_xact(
-                    namespaces text[],
-                    buckets    text[]
-                )
-                RETURNS void
-                LANGUAGE plpgsql
-                AS $$
-                DECLARE
-                    r record;
-                    b char;
-                    my_key integer;
-                    other_key integer;
+                    position integer;
+                    read_key bigint;
+                    my_key bigint;
+                    other_key bigint;
                     acquired boolean;
                     retries integer;
                 BEGIN
-                    IF array_length(namespaces, 1) IS DISTINCT FROM array_length(buckets, 1) THEN
-                        RAISE EXCEPTION 'pg_bucket_lock: namespaces and buckets arrays must have the same length';
+                    IF cardinality(lock_ids) IS DISTINCT FROM cardinality(modes) THEN
+                        RAISE EXCEPTION 'Lock id and mode array lengths must match';
                     END IF;
 
-                    FOR r IN
-                        SELECT DISTINCT ns, bk
-                        FROM unnest(namespaces, buckets) AS t(ns, bk)
-                        ORDER BY ns, bk
+                    -- The caller supplies deduplicated, numerically sorted namespace keys.
+                    FOR position IN 1..COALESCE(cardinality(lock_ids), 0)
                     LOOP
-                        IF upper(r.bk) NOT IN ('A', 'B') THEN
-                            RAISE EXCEPTION 'bucket must be ''A'' or ''B'', got ''%''', r.bk;
+                        read_key := lock_ids[position];
+                        IF modes[position] = 3 THEN
+                            -- Exclude both existing readers and existing writers.
+                            PERFORM pg_advisory_xact_lock(read_key);
+                            PERFORM pg_advisory_xact_lock(read_key + 1);
+                            CONTINUE;
+                        ELSIF modes[position] = 1 THEN
+                            my_key := read_key;
+                            other_key := read_key + 1;
+                        ELSIF modes[position] = 2 THEN
+                            my_key := read_key + 1;
+                            other_key := read_key;
+                        ELSE
+                            RAISE EXCEPTION 'Invalid bucket mode: %', modes[position];
                         END IF;
 
-                        b := upper(r.bk)::char;
-                        my_key := hashtext('pg_bucket_lock:' || r.ns || ':' || b);
-                        other_key := hashtext('pg_bucket_lock:' || r.ns || ':' || CASE b WHEN 'A' THEN 'B' WHEN 'B' THEN 'A' END);
                         retries := 0;
-
-                        -- Execute the protocol here to avoid nested helper calls for every key.
                         LOOP
                             PERFORM pg_advisory_lock(other_key);
                             acquired := pg_try_advisory_xact_lock_shared(my_key);
@@ -207,8 +73,8 @@ final readonly class BucketLockStrategy implements LockStrategy
 
                             retries := retries + 1;
                             IF retries >= 1000 THEN
-                                RAISE EXCEPTION 'pg_bucket_lock: acquire_xact(%, %) failed after % retries',
-                                    r.ns, b, 1000;
+                                RAISE EXCEPTION 'Bucket lock % (mode %) failed after % retries',
+                                    read_key, modes[position], retries;
                             END IF;
 
                             PERFORM pg_sleep(0.001 + random() * 0.049);
@@ -222,99 +88,43 @@ final readonly class BucketLockStrategy implements LockStrategy
 
     public function dropStatements(string $tablePrefix): array
     {
-        return [
-            sprintf('DROP FUNCTION IF EXISTS %sacquire_multi_xact(text[], text[])', $tablePrefix),
-            sprintf('DROP FUNCTION IF EXISTS %stry_acquire_xact(text, text)', $tablePrefix),
-            sprintf('DROP FUNCTION IF EXISTS %sacquire_xact(text, text)', $tablePrefix),
-            sprintf('DROP FUNCTION IF EXISTS %srelease(text, text)', $tablePrefix),
-            sprintf('DROP FUNCTION IF EXISTS %stry_acquire(text, text)', $tablePrefix),
-            sprintf('DROP FUNCTION IF EXISTS %sacquire(text, text)', $tablePrefix),
-            sprintf('DROP FUNCTION IF EXISTS %s_other_bucket(char)', $tablePrefix),
-            sprintf('DROP FUNCTION IF EXISTS %s_normalize_bucket(text)', $tablePrefix),
-            sprintf('DROP FUNCTION IF EXISTS %s_lock_key(text, char)', $tablePrefix),
-        ];
-    }
-
-    public function acquire(Connection $connection, string $tablePrefix, array $readQueries, array $writeEvents): void
-    {
-        [$readKeys, $writeKeys] = $this->lockKeys($readQueries, $writeEvents);
-        $lockInstructions = [];
-        foreach ($readKeys as $readKey) {
-            $lockInstructions[$readKey . "\0A"] = [$readKey, 'A'];
-        }
-        foreach ($writeKeys as $writeKey) {
-            $lockInstructions[$writeKey . "\0B"] = [$writeKey, 'B'];
-        }
-
-        if ([] === $lockInstructions) {
-            return;
-        }
-
-        ksort($lockInstructions, SORT_STRING);
-
-        $namespaces = [];
-        $buckets = [];
-        foreach ($lockInstructions as [$namespace, $bucket]) {
-            $namespaces[] = $namespace;
-            $buckets[] = $bucket;
-        }
-
-        $connection
-            ->executeQuery(sprintf('SELECT %s(?::text[], ?::text[])', $this->acquireMultiXactFunction($tablePrefix)), [
-                $this->postgresStringArrayLiteral($namespaces),
-                $this->postgresStringArrayLiteral($buckets),
-            ])
-            ->free();
+        return [sprintf('DROP FUNCTION IF EXISTS %sacquire_multi_xact(bigint[], smallint[])', $tablePrefix)];
     }
 
     /**
      * @param list<StreamQuery> $readQueries
-     * @param list<Event>       $writeEvents
-     *
-     * @return array{0: list<string>, 1: list<string>}
+     * @param list<Event> $writeEvents
      */
-    private function lockKeys(array $readQueries, array $writeEvents): array
+    public function acquire(Connection $connection, string $tablePrefix, array $readQueries, array $writeEvents): void
     {
-        $lockKeys = new StreamQueryLockKeys();
-        $readKeys = [];
+        $keys = new StreamQueryLockKeys();
+        $modeByKey = [];
         foreach ($readQueries as $query) {
-            foreach ($lockKeys->readKeys($query) as $readKey) {
-                $readKeys[$readKey] = true;
+            foreach ($keys->readKeys($query) as $key) {
+                $modeByKey[$key] = 1;
             }
         }
-
-        $writeKeys = [];
         foreach ($writeEvents as $event) {
-            foreach ($lockKeys->writeKeysForEvent($event->eventType, $event->domainIds) as $writeKey) {
-                $writeKeys[$writeKey] = true;
+            foreach ($keys->writeKeysForEvent($event->eventType, $event->domainIds) as $key) {
+                $modeByKey[$key] = ($modeByKey[$key] ?? 0) | 2;
             }
         }
 
-        return [array_keys($readKeys), array_keys($writeKeys)];
-    }
+        if ([] === $modeByKey) {
+            return;
+        }
 
-    private function acquireMultiXactFunction(string $tablePrefix): string
-    {
-        return $tablePrefix . 'acquire_multi_xact';
-    }
+        $instructions = [];
+        foreach ($modeByKey as $key => $mode) {
+            // Reserve the low bit for the side. A hash collision merges modes conservatively.
+            $id = unpack('J', hash('xxh3', 'pg_bucket_lock:' . $key, true))[1] & ~1;
+            $instructions[$id] = ($instructions[$id] ?? 0) | $mode;
+        }
+        ksort($instructions, SORT_REGULAR);
 
-    /**
-     * @param list<string> $values
-     */
-    private function postgresStringArrayLiteral(array $values): string
-    {
-        $encoded = array_map(
-            static fn(string $value): string => (
-                '"'
-                . strtr($value, [
-                    '\\' => '\\\\',
-                    '"' => '\"',
-                ])
-                . '"'
-            ),
-            $values,
-        );
-
-        return '{' . implode(',', $encoded) . '}';
+        $connection->executeQuery(sprintf('SELECT %sacquire_multi_xact(?::bigint[], ?::smallint[])', $tablePrefix), [
+            '{' . implode(',', array_keys($instructions)) . '}',
+            '{' . implode(',', array_values($instructions)) . '}',
+        ])->free();
     }
 }

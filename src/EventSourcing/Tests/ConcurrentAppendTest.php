@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\EventStore\Tests;
 
+use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 use PHPUnit\Framework\Attributes\CoversNothing;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
@@ -27,6 +29,89 @@ use Ultra\Testing\PostgresTestSupport;
 #[Group('event-store-concurrency')]
 final class ConcurrentAppendTest extends PostgresStorageTestCase
 {
+    #[DataProvider('bucketCompatibilityCases')]
+    public function test_bucket_compatibility_is_preserved_until_the_holder_rolls_back(
+        string $implementation,
+        string $heldMode,
+        string $requestedMode,
+        bool $compatible,
+    ): void {
+        $this->withPostgresStore(
+            function (EventStore $store, Connection $connection, string $prefix) use (
+                $implementation,
+                $heldMode,
+                $requestedMode,
+                $compatible,
+            ): void {
+                $other = PostgresConnectionSupport::connection($this->postgresDsn());
+                $otherStore = PostgresTestSupport::storeForImplementation(
+                    $other,
+                    $prefix,
+                    $implementation,
+                    lockStrategy: 'bucket',
+                );
+                $query = StreamQuery::forStream(new DomainIdentifier('courseId', 'course-123'))->ofTypes('subscribed');
+                $append = static function (EventStore $target, string $mode, string $actor) use ($query): void {
+                    $conditions = 'write' === $mode ? [] : [$target->load($query)->appendCondition()];
+                    $event = 'read' === $mode
+                        ? new Event('decided', [], ['decisionId' => $actor])
+                        : new Event('subscribed', [], ['courseId' => 'course-123']);
+                    $target->append([$event], ...$conditions);
+                };
+
+                try {
+                    $connection->beginTransaction();
+                    $append($store, $heldMode, 'holder');
+                    $other->beginTransaction();
+                    $other->executeStatement("SET LOCAL lock_timeout = '10ms'");
+                    $other->executeStatement("SET LOCAL statement_timeout = '1s'");
+                    $blocked = false;
+                    try {
+                        $append($otherStore, $requestedMode, 'competitor');
+                    } catch (DriverException $exception) {
+                        self::assertSame('55P03', $exception->getSQLState());
+                        $blocked = true;
+                    } finally {
+                        $other->rollBack();
+                    }
+                    self::assertSame(!$compatible, $blocked);
+                    self::assertSame(
+                        0,
+                        (int) $other->fetchOne(
+                            "SELECT count(*) FROM pg_locks WHERE pid = pg_backend_pid() AND locktype = 'advisory'",
+                        ),
+                    );
+
+                    $connection->rollBack();
+                    $append($otherStore, $requestedMode, 'competitor');
+                    self::assertCount(1, $store->load(StreamQuery::all())->events);
+                } finally {
+                    PostgresConnectionSupport::resetSharedConnection($other);
+                    $other->close();
+                }
+            },
+            $implementation,
+            'bucket',
+        );
+    }
+
+    /** @return iterable<string, array{string, string, string, bool}> */
+    public static function bucketCompatibilityCases(): iterable
+    {
+        foreach (PostgresTestSupport::supportedImplementations() as $implementation) {
+            foreach (['read', 'write', 'both'] as $held) {
+                foreach (['read', 'write', 'both'] as $requested) {
+                    yield $implementation . '/' . $held . '/' . $requested => [
+                        $implementation,
+                        $held,
+                        $requested,
+                        $held === $requested && 'both' !== $held,
+                    ];
+                }
+            }
+        }
+    }
+
     #[DataProvider('implementationAndLockStrategyProvider')]
     public function test_concurrent_append_from_another_process_waits_for_the_lock_and_then_fails_with_concurrency_exception(
         string $implementation,

@@ -32,6 +32,10 @@ The lock mechanism is selected through `PostgresEventStoreLockStrategy` and must
 - `shared-exclusive` is the former strategy: read namespaces take shared advisory locks and write namespaces take exclusive advisory locks.
 - `bucket` uses separate read/write buckets per namespace. Same-bucket operations can run together, so unguarded writes to the same namespace can overlap, while guarded read/write conflicts still serialize.
 
+For `bucket`, a namespace used on both sides of an append excludes both existing readers and writers.
+One-sided operations on the same side remain compatible. PHP deduplicates and orders numeric lock pairs
+before acquisition; all retained locks last until the surrounding transaction ends.
+
 The current strategies support typed and untyped query branches with any number of domain identifiers. Untyped
 branches use a wildcard event-type namespace, and writes lock every non-empty domain-identifier subset for both
 the concrete event type and the wildcard. Global queries such as `StreamQuery::all()` are read-only; creating an
