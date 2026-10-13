@@ -1,5 +1,7 @@
 # Asynchronous delivery
 
+For schema setup, sender/receiver wiring and a runnable producer and worker, follow [async setup](async-setup.md).
+
 An asynchronous handler is queued instead of executed inline. AsyncHandlerProxy records the original handler route in the envelope; QueueWorker resolves that route directly rather than sending the message through the mediator again.
 
 The worker reserves a delivery, executes the handler and acknowledges it. Failures release the delivery and propagate; drain stops at the first failure. Postgres reservations use leases and SKIP LOCKED. Expired deliveries can be reserved again. The current worker does not automatically renew leases, apply backoff or cap attempts.
