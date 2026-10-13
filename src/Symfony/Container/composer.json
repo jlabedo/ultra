@@ -2,7 +2,7 @@
     "name": "ultra/container",
     "description": "Ultra Framework - Container extension contract",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

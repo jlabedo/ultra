@@ -2,7 +2,7 @@
     "name": "ultra/message-handling",
     "description": "Ultra Framework - Message Context and Advice Attributes",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

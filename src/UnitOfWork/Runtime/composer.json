@@ -2,7 +2,7 @@
     "name": "ultra/unit-of-work",
     "description": "Ultra Framework - Unit Of Work",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

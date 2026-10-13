@@ -2,7 +2,7 @@
     "name": "ultra/symfony-bundle",
     "description": "Ultra Framework - Symfony bundle adapter",
     "type": "symfony-bundle",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",
@@ -11,6 +11,7 @@
     ],
     "require": {
         "php": ">=8.5",
+        "symfony/config": "7.*|8.*",
         "symfony/http-kernel": "7.*|8.*",
         "ultra/container": "self.version"
     },

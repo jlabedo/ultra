@@ -23,7 +23,7 @@ Source code and documentation follow functional contexts. Use the task table to 
 | Flush ordering, transaction boundaries or nested work | [Transactions](transactions/README.md) | [UnitOfWork](../src/UnitOfWork) | UnitOfWork |
 | Symfony assembly or extension registration | [UltraBundle](../src/Symfony/Bundle/UltraBundle.php), [ContainerExtension](../src/Symfony/Container/ContainerExtension.php), then the affected context's integration page | [Symfony](../src/Symfony) | SymfonyBundle, Container |
 | Shared compiler helpers or clock primitives | Current contracts and tests in [CodeGeneration](../src/CodeGeneration) or [Time](../src/Time) | [CodeGeneration](../src/CodeGeneration), [Time](../src/Time) | CodeGeneration, Time |
-| Setup, tooling or test execution | [Development](development.md) | [Testing](../src/Testing) | Root tooling, Testing, ultra/testing-postgres |
+| Installing Ultra, setup, tooling or test execution | [Development](development.md) | [Testing](../src/Testing) | Root package, root tooling, Testing, ultra/testing-postgres |
 | Running or comparing benchmarks | [Benchmark tooling](development.md#benchmarks); for EventStore scenarios or GIN maintenance, [Postgres workloads](event-sourcing/postgres.md#benchmarks) | [Testing](../src/Testing), [EventSourcing](../src/EventSourcing) | Root tooling, EventStore_Postgres |
 | CI workflows or service startup | [Continuous integration](development.md#continuous-integration), then [documentation changes](development.md#documentation-changes) | [Testing](../src/Testing) | Root tooling |
 | Reviewing changes | [Review workflow](development.md#reviewing-changes), then the affected context contract | Affected context | Affected packages |

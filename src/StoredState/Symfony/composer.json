@@ -2,7 +2,7 @@
     "name": "ultra/state-store-bundle",
     "description": "Ultra Framework - State Store Symfony Bundle",
     "type": "symfony-bundle",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

@@ -2,7 +2,7 @@
     "name": "ultra/mapper-bundle",
     "description": "Ultra Framework - Mapper Symfony Bundle",
     "type": "symfony-bundle",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bedoyere",

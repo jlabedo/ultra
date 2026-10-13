@@ -1,5 +1,31 @@
 # Development and verification
 
+## Installing in an application
+
+Ultra requires PHP 8.5 or later when installed as the complete monorepo. Add its GitHub repository to the consuming application's root `composer.json`:
+
+```json
+{
+    "repositories": [
+        {
+            "type": "vcs",
+            "url": "https://github.com/jlabedo/ultra"
+        }
+    ],
+    "require": {
+        "ultra/ultra": "dev-main"
+    }
+}
+```
+
+Merge these entries into the application's existing configuration, then run `composer update ultra/ultra --with-all-dependencies`. Commit the application's `composer.lock` to pin the installed commit. Review updates against the affected context contracts: the development branch has no backward compatibility guarantee.
+
+This installs the root package, including all building blocks and their runtime dependencies. Composer reads the repository's root manifest; it does not discover the packages under `src/` as separate VCS packages. The root package replaces their Composer names so other dependencies can require those components without installing duplicate copies. Individual package distribution and versioned releases are future work.
+
+Declare the VCS repository in each consuming application's root manifest. It takes precedence over Packagist by default, where the name `ultra/ultra` is already used by an unrelated project. Composer does not inherit repository declarations from dependencies. See [Composer's VCS repository documentation](https://getcomposer.org/doc/05-repositories.md#vcs).
+
+Use HTTPS to fetch the public repository without a key granting access to a private repository. GitHub API rate limits may still require authentication. Ultra's development dependencies and development autoload mappings are not enabled, and its Composer scripts are not executed, when it is installed as an application dependency.
+
 ## Setup
 
 Read root [composer.json](../composer.json) for runtime requirements and scripts. Run `composer install`; its tooling bootstrap installs the development tools used by the wrappers in `bin/`.
@@ -90,6 +116,8 @@ bin/phpunit
 bin/phpunit --coverage-text
 bin/phpunit src/StoredState/Tests
 ```
+
+The complete package's installation guarantee is owned by [ComposerConsumerTest](../src/Testing/Tests/ComposerConsumerTest.php). It installs Ultra in a separate application without development dependencies and exercises mapper compilation, Symfony assembly, stores, projection commands and coordination. The test belongs to `slow`, requires Composer on `PATH` and network access to resolve its public dependencies. Run it with `bin/phpunit --group slow src/Testing/Tests/ComposerConsumerTest.php`.
 
 Postgres tests use the local database through DBAL's `pdo_pgsql` driver by default; PHP must have `pdo_pgsql` enabled.
 Set `ULTRA_TEST_POSTGRES_DSN` to use another database or driver. An explicit `pgsql://` DSN keeps the native `pgsql` driver.

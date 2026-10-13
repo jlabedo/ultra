@@ -2,7 +2,7 @@
     "name": "ultra/coordination",
     "description": "Ultra Framework - Background-work Coordination (dirty-key tracking, singleton lease, wake)",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

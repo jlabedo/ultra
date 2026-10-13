@@ -2,7 +2,7 @@
     "name": "ultra/schema",
     "description": "Ultra Framework - Schema",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",
