@@ -29,17 +29,23 @@ abstract class ContainerTestCase extends TestCase
     }
 
     /** @return UltraLight<UltraLightContainer> */
-    protected function ultraLight(): UltraLight
+    protected function ultraLight(bool $withEventStore = true): UltraLight
     {
-        return new UltraLight()
+        $application = new UltraLight()
             ->withBuildDir($this->buildDir)
             ->withBundle(new UnitOfWorkExtension())
-            ->withClass(RecordingEventStore::class)
-            ->withAlias(EventStore::class, RecordingEventStore::class)
-            ->withAlias('test.event_store', EventStore::class)
-            ->withAlias('test.inner_event_store', RecordingEventStore::class)
             ->withAlias('test.unit_of_work', UnitOfWork::class)
             ->withAlias('test.transactions', TransactionManager::class)
             ->withAlias('test.runner', UnitOfWorkRunner::class);
+
+        if (!$withEventStore) {
+            return $application;
+        }
+
+        return $application
+            ->withClass(RecordingEventStore::class)
+            ->withAlias(EventStore::class, RecordingEventStore::class)
+            ->withAlias('test.event_store', EventStore::class)
+            ->withAlias('test.inner_event_store', RecordingEventStore::class);
     }
 }

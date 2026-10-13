@@ -20,7 +20,7 @@ final class UnitOfWorkExtension implements ContainerExtension
         if (interface_exists(EventStore::class) && class_exists(EventStoreUnitOfWork::class)) {
             $container
                 ->register(EventStoreUnitOfWork::class, EventStoreUnitOfWork::class)
-                ->setDecoratedService(EventStore::class)
+                ->setDecoratedService(EventStore::class, invalidBehavior: ContainerBuilder::IGNORE_ON_INVALID_REFERENCE)
                 ->setArguments([
                     new Reference(EventStoreUnitOfWork::class . '.inner'),
                 ])
