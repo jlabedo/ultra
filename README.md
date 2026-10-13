@@ -15,4 +15,4 @@ Runtime requirements and tooling are defined in [composer.json](composer.json).
 
 Ultra is experimental. APIs and behavior can change without backward compatibility guarantees. It is a personal project maintained as time permits; contributions are welcome, with acceptance based on their fit and maintenance cost.
 
-The repository is available under the [MIT license](LICENSE). Packagist publication and versioned releases are planned separately from opening the source repository.
+Ultra's original source code, including its Git history, is available under the [MIT license](LICENSE). Third-party tools retained in earlier revisions keep their original licenses; see [third-party notices](THIRD_PARTY_NOTICES). Packagist publication and versioned releases are planned separately from opening the source repository.
