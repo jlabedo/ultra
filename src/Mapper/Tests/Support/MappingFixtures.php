@@ -61,6 +61,20 @@ readonly class Customer
     ) {}
 }
 
+readonly class MutableTemporalValue
+{
+    public function __construct(
+        public \DateTime $date,
+    ) {}
+}
+
+readonly class TemporalValue
+{
+    public function __construct(
+        public ?\DateTimeInterface $date,
+    ) {}
+}
+
 readonly class DeepNest
 {
     public function __construct(

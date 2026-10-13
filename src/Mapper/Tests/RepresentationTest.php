@@ -21,9 +21,11 @@ use Ultra\Mapper\Tests\Fixtures\HookedSlot;
 use Ultra\Mapper\Tests\Fixtures\InnerValue;
 use Ultra\Mapper\Tests\Fixtures\MaybeEmail;
 use Ultra\Mapper\Tests\Fixtures\MultiUnion;
+use Ultra\Mapper\Tests\Fixtures\MutableTemporalValue;
 use Ultra\Mapper\Tests\Fixtures\OuterValue;
 use Ultra\Mapper\Tests\Fixtures\PromotedAndNonPromoted;
 use Ultra\Mapper\Tests\Fixtures\Status;
+use Ultra\Mapper\Tests\Fixtures\TemporalValue;
 use Ultra\Mapper\Tests\Fixtures\User;
 use Ultra\Mapper\Tests\Support\MapperTestCase;
 
@@ -96,7 +98,7 @@ final class RepresentationTest extends MapperTestCase
                 true,
                 new Address('Main', 'Paris', '75000'),
                 [1, 2],
-                new \DateTimeImmutable('2024-06-01T12:34:56+02:00'),
+                new \DateTimeImmutable('2024-06-01T12:34:56.123456+02:00'),
             ),
             [
                 'name' => 'Alice',
@@ -105,9 +107,18 @@ final class RepresentationTest extends MapperTestCase
                 'active' => true,
                 'address' => ['street' => 'Main', 'city' => 'Paris', 'zip' => '75000'],
                 'tags' => [1, 2],
-                'createdAt' => '2024-06-01T12:34:56+02:00',
+                'createdAt' => '2024-06-01T12:34:56.123456+02:00',
             ],
         ];
+        yield 'mutable date' => [
+            new MutableTemporalValue(new \DateTime('2024-06-01T12:34:56.654321+02:00')),
+            ['date' => '2024-06-01T12:34:56.654321+02:00'],
+        ];
+        yield 'date interface' => [
+            new TemporalValue(new \DateTimeImmutable('2024-06-01T12:34:56.654321-03:00')),
+            ['date' => '2024-06-01T12:34:56.654321-03:00'],
+        ];
+        yield 'nullable date absent' => [new TemporalValue(null), ['date' => null]];
         yield 'nested AsValue wrappers' => [new OuterValue(new InnerValue(42)), 42];
         yield 'backed enum and nullable enum absent' => [
             new EnumHolder(Status::ACTIVE),

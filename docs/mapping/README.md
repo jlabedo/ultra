@@ -19,6 +19,14 @@ names such as `Acme\A_sB` also remain distinct from `Acme\A\B`. Precompiled arti
 the naming scheme of the runtime version loading them.
 
 
+## Dates
+
+Properties declared as `DateTime`, `DateTimeImmutable` or `DateTimeInterface` normalize to RFC 3339 strings
+with six fractional digits and a numeric UTC offset, such as `2026-05-25T12:34:56.123456+02:00`.
+Denormalization preserves the instant and microseconds; `DateTimeInterface` properties hydrate as
+`DateTimeImmutable`. Nullable date properties preserve null. The representation preserves the offset,
+but does not store a named timezone's identity or daylight-saving rules.
+
 ## Custom normalizers
 
 Register RuntimeNormalizerInterface implementations during configuration, before normalization or code generation. Registration uses exact handled types. Already generated normalizers take precedence in the in-memory cache, and registered runtime types influence generated code for nested values.

@@ -35,7 +35,11 @@ class DateTimeCodeGeneratorBuilder implements CodeGeneratorBuilder
             throw new \InvalidArgumentException('Type must be ObjectType');
         }
 
-        return new class($type->getClassName(), $type->isNullable()) implements CodeGenerator {
+        $class = \DateTimeInterface::class === $type->getClassName()
+            ? \DateTimeImmutable::class
+            : $type->getClassName();
+
+        return new class($class, $type->isNullable()) implements CodeGenerator {
             public function __construct(
                 private string $class,
                 private bool $isNullable,
@@ -44,10 +48,10 @@ class DateTimeCodeGeneratorBuilder implements CodeGeneratorBuilder
             public function generateNormalization(string $objectVar): string
             {
                 if ($this->isNullable) {
-                    return "{$objectVar}?->format('c')";
+                    return "{$objectVar}?->format('Y-m-d\\TH:i:s.uP')";
                 }
 
-                return "{$objectVar}->format('c')";
+                return "{$objectVar}->format('Y-m-d\\TH:i:s.uP')";
             }
 
             public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
