@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use PHPUnit\Framework\Attributes\Group;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\Tests\Benchmark\CourseDataset;
@@ -12,6 +13,7 @@ use Ultra\EventStore\Tests\Benchmark\PostgresEventStoreBench;
 use Ultra\EventStore\Tests\Support\PostgresStorageTestCase;
 
 /** @internal Correctness of benchmark workloads; elapsed times are deliberately not asserted. */
+#[Group('slow')]
 final class BenchmarkTest extends PostgresStorageTestCase
 {
     public function test_the_default_dataset_preserves_the_original_workload_and_hot_replay_exceeds_one_page(): void

@@ -74,7 +74,9 @@ Use [benchmark tooling](../development.md#benchmarks) to run and compare results
 Each iteration creates and removes its own tables. [CourseDataset](../../src/EventSourcing/Tests/Benchmark/CourseDataset.php)
 provides deterministic, skewed course histories. Reads are checked against an in-memory reference; writes are
 checked against expected persisted events and enrollment statuses. [BenchmarkTest](../../src/EventSourcing/Tests/BenchmarkTest.php)
-protects these workloads. The benchmark's `variants()` provider owns dataset defaults and environment overrides.
+protects these workloads in the `slow` group; run it with
+`bin/phpunit --group=slow src/EventSourcing/Tests/BenchmarkTest.php`.
+The benchmark's `variants()` provider owns dataset defaults and environment overrides.
 
 For GIN maintenance comparisons, set `ULTRA_BENCH_INDEX_STATE` to `maintained` for `VACUUM (ANALYZE)` after
 seeding, or `post-ingest` for `ANALYZE` alone. Preparation runs outside measurement and covers both the events
