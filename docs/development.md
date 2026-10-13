@@ -2,14 +2,14 @@
 
 ## Installing in an application
 
-Ultra requires PHP 8.5 or later when installed as the complete monorepo. Add its GitHub repository to the consuming application's root `composer.json`:
+Ultra requires PHP 8.5 or later when installed as the complete monorepo. Git must be available during dependency installation. Add its GitHub repository to the consuming application's root `composer.json`:
 
 ```json
 {
     "repositories": [
         {
-            "type": "vcs",
-            "url": "https://github.com/jlabedo/ultra"
+            "type": "git",
+            "url": "https://github.com/jlabedo/ultra.git"
         }
     ],
     "require": {
@@ -24,7 +24,7 @@ This installs the root package, including all building blocks and their runtime 
 
 Declare the VCS repository in each consuming application's root manifest. It takes precedence over Packagist by default, where the name `ultra/ultra` is already used by an unrelated project. Composer does not inherit repository declarations from dependencies. See [Composer's VCS repository documentation](https://getcomposer.org/doc/05-repositories.md#vcs).
 
-Use HTTPS to fetch the public repository without a key granting access to a private repository. GitHub API rate limits may still require authentication. Ultra's development dependencies and development autoload mappings are not enabled, and its Composer scripts are not executed, when it is installed as an application dependency.
+The explicit `git` driver fetches the public repository over HTTPS without GitHub credentials or API metadata requests. Composer's automatic `vcs` driver uses the GitHub API and can request authentication when its rate limit is reached. This setting applies to Ultra; other dependencies keep their own download mechanisms. Ultra's development dependencies and development autoload mappings are not enabled, and its Composer scripts are not executed, when it is installed as an application dependency.
 
 ## Setup
 
