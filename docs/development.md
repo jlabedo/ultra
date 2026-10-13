@@ -158,8 +158,6 @@ The audit uses Symfony Process to run the existing `bin/phpunit` wrapper from th
 
 Symfony Console renders the report on stdout with styled summaries and aligned tables of runs, slowest methods and functional contexts. Long method names and source locations wrap to fit the terminal. Use `--no-ansi` to save plain text as shown above. Progress goes to stderr; raw PHPUnit/PAO output is streamed there with `-v` and shown on unsuccessful runs. Symfony Console also provides `--help`, verbosity and color options.
 
-The audit's subprocess-based functional tests belong to `slow`; verify them explicitly with `bin/phpunit --group=slow src/Testing/Tests/PhpunitAuditTest.php`.
-
 Each passage writes a temporary JUnit report, removed after collection. Command durations include process startup, test discovery and JUnit logging; dependency installation is excluded by requiring installed dependencies before starting. PHPUnit's individual case durations include `setUp` and `tearDown`, but exclude work such as data-provider evaluation and class-level hooks. The report also shows the median difference between command duration and summed case durations.
 
 The top 20 methods are ranked by the median of their total case duration per passage, combining all datasets before taking the median. The report includes the case count, the median of each passage's slowest case, failures/skips and variation. A spread greater than 20% of the median is flagged; it is a noise indicator, not a performance budget. Nonzero PHPUnit exit statuses are retained, and changes to the case selection between passages stop the audit rather than producing an inconsistent ranking.
