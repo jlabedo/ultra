@@ -2,6 +2,7 @@
 **/var/
 **/config/reference.php
 composer.lock
+!/tools/composer.lock
 .phpunit.result.cache
 .idea/
 .vscode/

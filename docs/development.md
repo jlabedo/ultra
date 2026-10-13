@@ -30,6 +30,8 @@ The explicit `git` driver fetches the public repository over HTTPS without GitHu
 
 Read root [composer.json](../composer.json) for runtime requirements and scripts. Run `composer install`; its tooling bootstrap installs the development tools used by the wrappers in `bin/`.
 
+The versioned [tools/composer.lock](../tools/composer.lock) pins development tools and their dependencies for local and CI installations. To update them, run `composer update --working-dir=tools` and commit the updated lock file.
+
 For Postgres integration, start the database defined by [docker-compose.yml](../docker-compose.yml) with `docker compose up -d`.
 
 ## Continuous integration
