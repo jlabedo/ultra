@@ -121,9 +121,10 @@ final class BenchmarkTest extends PostgresStorageTestCase
             'implementation' => $implementation,
             'lockStrategy' => $lockStrategy,
             'indexState' => 'maintained',
-            'seedEvents' => 1000,
+            // Small histories still cover every query shape and both single-page and paginated reads.
+            'seedEvents' => 100,
             'seedBatchSize' => 100,
-            'pageSize' => 7,
+            'pageSize' => 2,
             'streamCount' => 3,
             'writeBatchSize' => 2,
             'driver' => 'pdo_pgsql',

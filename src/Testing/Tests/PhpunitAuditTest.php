@@ -7,9 +7,11 @@ namespace Ultra\Testing\Tests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Tester\CommandTester;
 use Symfony\Component\Process\Process;
+use UltraDev\Tools\PhpunitAudit;
 
-/** @internal Functional audit tests spawn multiple PHP processes per scenario. */
+/** @internal Audit behavior through Console, with one subprocess check of the executable. */
 #[Group('slow')]
 final class PhpunitAuditTest extends TestCase
 {
@@ -19,7 +21,7 @@ final class PhpunitAuditTest extends TestCase
     public function test_default_audit_combines_datasets_before_taking_medians_and_groups_functional_contexts(): void
     {
         $root = $this->fixture($this->timings());
-        $process = $this->audit($root);
+        $process = $this->cliAudit($root, ['--', '--filter=Fixture']);
         $exitCode = $process->run();
         $output = $process->getOutput();
         $diagnostics = $process->getErrorOutput();
@@ -48,16 +50,19 @@ final class PhpunitAuditTest extends TestCase
         static::assertStringContainsString('Run 2/3', $diagnostics);
         static::assertStringContainsString('Run 3/3', $diagnostics);
         static::assertCount(3, $this->invocations($root));
+        foreach ($this->invocations($root) as $arguments) {
+            static::assertContains('--filter=Fixture', $arguments);
+        }
         $this->assertReportsWereRemoved($root);
     }
 
     public function test_run_count_top_limit_and_phpunit_arguments_are_configurable(): void
     {
         $root = $this->fixture($this->timings());
-        $process = $this->audit($root, ['--runs', '2', '--top=1', '--', '--filter=Fixture']);
+        $audit = $this->audit($root, ['--runs' => '2', '--top' => '1', 'phpunit-arguments' => ['--filter=Fixture']]);
 
-        static::assertSame(0, $process->run(), $process->getOutput() . $process->getErrorOutput());
-        $output = $process->getOutput();
+        static::assertSame(0, $audit->getStatusCode(), $audit->getDisplay() . $audit->getErrorOutput());
+        $output = $audit->getDisplay();
         static::assertStringContainsString('3 methods; 4 cases per run; 2 runs', $output);
         static::assertMatchesRegularExpression(
             '/EventTest::test_rows[^\n]*\n\s+1\s+15\.000\s+2\s+13\.500\s+/m',
@@ -80,14 +85,14 @@ final class PhpunitAuditTest extends TestCase
                 'exit' => 2,
             ],
         ]);
-        $process = $this->audit($root, ['--runs=1']);
+        $audit = $this->audit($root, ['--runs' => '1']);
 
-        static::assertSame(2, $process->run());
-        static::assertStringContainsString('[WARNING] PHPUnit returned a nonzero exit status', $process->getOutput());
-        static::assertMatchesRegularExpression('/FailedTest::test_failure[^\n]*\n[^\n]+FAILED/', $process->getOutput());
-        static::assertMatchesRegularExpression('/SkippedTest::test_skip[^\n]*\n[^\n]+SKIPPED/', $process->getOutput());
-        static::assertMatchesRegularExpression('/^\s+1\s+[0-9.]+\s+1\s+1\s*$/m', $process->getOutput());
-        static::assertStringContainsString('agent-facing PHPUnit output', $process->getErrorOutput());
+        static::assertSame(2, $audit->getStatusCode());
+        static::assertStringContainsString('[WARNING] PHPUnit returned a nonzero exit status', $audit->getDisplay());
+        static::assertMatchesRegularExpression('/FailedTest::test_failure[^\n]*\n[^\n]+FAILED/', $audit->getDisplay());
+        static::assertMatchesRegularExpression('/SkippedTest::test_skip[^\n]*\n[^\n]+SKIPPED/', $audit->getDisplay());
+        static::assertMatchesRegularExpression('/^\s+1\s+[0-9.]+\s+1\s+1\s*$/m', $audit->getDisplay());
+        static::assertStringContainsString('agent-facing PHPUnit output', $audit->getErrorOutput());
         $this->assertReportsWereRemoved($root);
     }
 
@@ -96,34 +101,34 @@ final class PhpunitAuditTest extends TestCase
         $passages = $this->timings();
         $passages[1]['xml'] = str_replace('test_rows', 'test_other', $passages[1]['xml']);
         $root = $this->fixture($passages);
-        $process = $this->audit($root);
+        $audit = $this->audit($root);
 
-        static::assertSame(1, $process->run());
-        static::assertStringContainsString('test cases changed between runs', $process->getErrorOutput());
-        static::assertStringNotContainsString('Slowest methods', $process->getOutput());
+        static::assertSame(1, $audit->getStatusCode());
+        static::assertStringContainsString('test cases changed between runs', $audit->getErrorOutput());
+        static::assertStringNotContainsString('Slowest methods', $audit->getDisplay());
         $this->assertReportsWereRemoved($root);
     }
 
-    /** @return iterable<string, array{list<string>}> */
+    /** @return iterable<string, array{array<string, string|null>}> */
     public static function invalidOptions(): iterable
     {
-        yield 'zero runs' => [['--runs=0']];
-        yield 'negative top' => [['--top=-1']];
-        yield 'missing value' => [['--runs']];
-        yield 'noninteger' => [['--runs=1.5']];
-        yield 'overflow' => [['--runs=999999999999999999999']];
-        yield 'unknown option' => [['--filter=Fixture']];
+        yield 'zero runs' => [['--runs' => '0']];
+        yield 'negative top' => [['--top' => '-1']];
+        yield 'missing value' => [['--runs' => null]];
+        yield 'noninteger' => [['--runs' => '1.5']];
+        yield 'overflow' => [['--runs' => '999999999999999999999']];
+        yield 'unknown option' => [['--filter' => 'Fixture']];
     }
 
-    /** @param list<string> $arguments */
+    /** @param array<string, string|null> $arguments */
     #[DataProvider('invalidOptions')]
     public function test_invalid_options_fail_before_launching_phpunit(array $arguments): void
     {
         $root = $this->fixture($this->timings());
-        $process = $this->audit($root, $arguments);
+        $audit = $this->audit($root, $arguments);
 
-        static::assertSame(1, $process->run());
-        static::assertNotSame('', trim($process->getErrorOutput()));
+        static::assertSame(1, $audit->getStatusCode());
+        static::assertNotSame('', trim($audit->getErrorOutput()));
         static::assertFileDoesNotExist($root . '/invocations.json');
     }
 
@@ -140,10 +145,10 @@ final class PhpunitAuditTest extends TestCase
     public function test_unusable_junit_reports_fail_without_an_audit_ranking(?string $xml): void
     {
         $root = $this->fixture([['xml' => $xml, 'exit' => 0]]);
-        $process = $this->audit($root, ['--runs=1']);
+        $audit = $this->audit($root, ['--runs' => '1']);
 
-        static::assertSame(1, $process->run());
-        static::assertStringNotContainsString('Slowest methods', $process->getOutput());
+        static::assertSame(1, $audit->getStatusCode());
+        static::assertStringNotContainsString('Slowest methods', $audit->getDisplay());
         $this->assertReportsWereRemoved($root);
     }
 
@@ -151,15 +156,15 @@ final class PhpunitAuditTest extends TestCase
     {
         $root = $this->fixture($this->timings());
         unlink($root . '/tools/vendor/bin/phpunit');
-        $help = $this->audit($root, ['--help']);
-        static::assertSame(0, $help->run());
-        static::assertStringContainsString('--runs=RUNS', $help->getOutput());
-        static::assertStringContainsString('--top=TOP', $help->getOutput());
-        static::assertStringContainsString('[default: "3"]', $help->getOutput());
-        static::assertStringContainsString('[default: "20"]', $help->getOutput());
+        $help = $this->audit($root, ['--help' => true]);
+        static::assertSame(0, $help->getStatusCode());
+        static::assertStringContainsString('--runs=RUNS', $help->getDisplay());
+        static::assertStringContainsString('--top=TOP', $help->getDisplay());
+        static::assertStringContainsString('[default: "3"]', $help->getDisplay());
+        static::assertStringContainsString('[default: "20"]', $help->getDisplay());
 
         $audit = $this->audit($root);
-        static::assertSame(1, $audit->run());
+        static::assertSame(1, $audit->getStatusCode());
         static::assertStringContainsString('Run composer install before auditing', $audit->getErrorOutput());
         static::assertFileDoesNotExist($root . '/invocations.json');
     }
@@ -172,35 +177,34 @@ final class PhpunitAuditTest extends TestCase
                 'exit' => 0,
             ],
         ]);
-        $process = $this->audit($root, ['--runs=1', '--ansi']);
+        $audit = $this->audit($root, ['--runs' => '1', '--ansi' => true]);
 
-        static::assertSame(0, $process->run(), $process->getOutput() . $process->getErrorOutput());
-        static::assertStringContainsString("\033[", $process->getOutput());
-        $plain = preg_replace('/\033\[[0-9;]*m/', '', $process->getOutput());
+        static::assertSame(0, $audit->getStatusCode(), $audit->getDisplay() . $audit->getErrorOutput());
+        static::assertStringContainsString("\033[", $audit->getDisplay());
+        $plain = preg_replace('/\033\[[0-9;]*m/', '', $audit->getDisplay());
         static::assertStringContainsString('CaseTest::test_one', $plain);
         static::assertStringContainsString('src/Package<info>/Tests/My (test) #1.php:12', $plain);
         static::assertMatchesRegularExpression('/Unmapped \(Package<info>\)\s+0\.050\s+100\.0%/', $plain);
-        static::assertStringNotContainsString('agent-facing PHPUnit output', $process->getOutput());
+        static::assertStringNotContainsString('agent-facing PHPUnit output', $audit->getDisplay());
     }
 
     public function test_verbose_mode_streams_phpunit_output_to_stderr(): void
     {
         $root = $this->fixture($this->timings());
-        $process = $this->audit($root, ['--runs=1', '-v']);
+        $audit = $this->audit($root, ['--runs' => '1', '-v' => true]);
 
-        static::assertSame(0, $process->run(), $process->getOutput() . $process->getErrorOutput());
-        static::assertStringNotContainsString('agent-facing PHPUnit output', $process->getOutput());
-        static::assertStringContainsString('agent-facing PHPUnit output', $process->getErrorOutput());
+        static::assertSame(0, $audit->getStatusCode(), $audit->getDisplay() . $audit->getErrorOutput());
+        static::assertStringNotContainsString('agent-facing PHPUnit output', $audit->getDisplay());
+        static::assertStringContainsString('agent-facing PHPUnit output', $audit->getErrorOutput());
     }
 
     public function test_ranking_table_fits_an_eighty_column_terminal(): void
     {
         $root = $this->fixture($this->timings());
-        $process = $this->audit($root, ['--runs=1', '--top=1']);
-        $process->setEnv(['PAO_FORCE' => '1', 'COLUMNS' => '80']);
+        $audit = $this->audit($root, ['--runs' => '1', '--top' => '1'], columns: 80);
 
-        static::assertSame(0, $process->run(), $process->getOutput() . $process->getErrorOutput());
-        $ranking = explode("Slowest methods\n", $process->getOutput())[1];
+        static::assertSame(0, $audit->getStatusCode(), $audit->getDisplay() . $audit->getErrorOutput());
+        $ranking = explode("Slowest methods\n", $audit->getDisplay())[1];
         $inTable = false;
         foreach (explode("\n", $ranking) as $line) {
             if (str_starts_with($line, ' ---')) {
@@ -259,19 +263,15 @@ final class PhpunitAuditTest extends TestCase
     {
         $root = sys_get_temp_dir() . '/ultra_phpunit_audit_fixture_' . bin2hex(random_bytes(8));
         $this->directories[] = $root;
-        foreach (['bin', 'tools/src', 'tools/vendor/bin', 'vendor'] as $directory) {
+        foreach (['bin', 'tools/vendor/bin', 'vendor'] as $directory) {
             mkdir($root . '/' . $directory, 0o777, true);
         }
+        $root = realpath($root);
         $repository = dirname(__DIR__, 3);
         copy($repository . '/bin/phpunit-audit', $root . '/bin/phpunit-audit');
-        copy($repository . '/tools/src/PhpunitAudit.php', $root . '/tools/src/PhpunitAudit.php');
         file_put_contents(
             $root . '/tools/vendor/autoload.php',
-            '<?php require '
-            . var_export($repository . '/tools/vendor/autoload.php', true)
-            . '; require '
-            . var_export($root . '/tools/src/PhpunitAudit.php', true)
-            . ';',
+            '<?php require ' . var_export($repository . '/tools/vendor/autoload.php', true) . ';',
         );
         touch($root . '/vendor/autoload.php');
         touch($root . '/tools/vendor/bin/phpunit');
@@ -298,8 +298,38 @@ final class PhpunitAuditTest extends TestCase
         return $root;
     }
 
+    /** @param array<string, string|bool|null|list<string>> $arguments */
+    private function audit(string $root, array $arguments = [], int $columns = 200): CommandTester
+    {
+        $application = new PhpunitAudit($root);
+        $application->setAutoExit(false);
+        $tester = new CommandTester($application);
+        $environment = [];
+        foreach (['PAO_FORCE' => '1', 'COLUMNS' => (string) $columns] as $name => $value) {
+            $environment[$name] = [getenv($name), $_ENV[$name] ?? null, $_SERVER[$name] ?? null];
+            putenv($name . '=' . $value);
+            $_ENV[$name] = $_SERVER[$name] = $value;
+        }
+        try {
+            $tester->execute($arguments, ['capture_stderr_separately' => true, 'decorated' => false]);
+        } finally {
+            foreach ($environment as $name => [$value, $env, $server]) {
+                putenv(false === $value ? $name : $name . '=' . $value);
+                unset($_ENV[$name], $_SERVER[$name]);
+                if (null !== $env) {
+                    $_ENV[$name] = $env;
+                }
+                if (null !== $server) {
+                    $_SERVER[$name] = $server;
+                }
+            }
+        }
+
+        return $tester;
+    }
+
     /** @param list<string> $arguments */
-    private function audit(string $root, array $arguments = []): Process
+    private function cliAudit(string $root, array $arguments = []): Process
     {
         $color = in_array('--ansi', $arguments, true) ? '--ansi' : '--no-ansi';
 
