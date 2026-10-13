@@ -34,6 +34,24 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
         yield 'nested JSON' => ['payload', 'jsonb', $json, $json];
         yield 'ISO date' => ['expires_on', 'date', '2026-05-25', '2026-05-25'];
         yield 'date object' => ['expires_on', 'date', new \DateTimeImmutable('2026-05-25'), '2026-05-25'];
+        yield 'wall-clock timestamp' => [
+            'expires_on',
+            'timestamp',
+            new \DateTimeImmutable('2026-05-25T12:34:56.123456+02:00'),
+            '2026-05-25T12:34:56.123456+00:00',
+        ];
+        yield 'timestamp instant with offset' => [
+            'expires_on',
+            'timestampWithTimeZone',
+            '2026-05-25T12:34:56.654321+02:00',
+            '2026-05-25T10:34:56.654321+00:00',
+        ];
+        yield 'timestamp instant object' => [
+            'expires_on',
+            'timestampWithTimeZone',
+            new \DateTimeImmutable('2026-05-25T12:34:56.123456-03:00'),
+            '2026-05-25T15:34:56.123456+00:00',
+        ];
         yield 'integer stored as text' => ['note', 'text', 42, '42'];
     }
 

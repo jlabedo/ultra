@@ -11,6 +11,7 @@ final readonly class PostgresMappedColumnType
     private const ARRAY_INT = 'array_int';
     private const JSON = 'json';
     private const DATE = 'date';
+    private const TIMESTAMP = 'timestamp';
 
     private function __construct(
         public string $sqlType,
@@ -52,6 +53,16 @@ final readonly class PostgresMappedColumnType
         return new self('DATE', self::DATE);
     }
 
+    public static function timestamp(): self
+    {
+        return new self('TIMESTAMP(6) WITHOUT TIME ZONE', self::TIMESTAMP);
+    }
+
+    public static function timestampWithTimeZone(): self
+    {
+        return new self('TIMESTAMP(6) WITH TIME ZONE', self::TIMESTAMP);
+    }
+
     public function encode(mixed $value): mixed
     {
         if (null === $value) {
@@ -64,6 +75,10 @@ final readonly class PostgresMappedColumnType
 
         if (self::DATE === $this->kind) {
             return self::encodeDate($value);
+        }
+
+        if (self::TIMESTAMP === $this->kind) {
+            return self::encodeTimestamp($value);
         }
 
         if (self::JSON === $this->kind) {
@@ -96,6 +111,12 @@ final readonly class PostgresMappedColumnType
 
         if (self::DATE === $this->kind) {
             return self::decodeDate($value);
+        }
+
+        if (self::TIMESTAMP === $this->kind) {
+            return new \DateTimeImmutable(self::encodeTimestamp($value), new \DateTimeZone('UTC'))->format(
+                'Y-m-d\TH:i:s.uP',
+            );
         }
 
         if (!is_string($value)) {
@@ -151,6 +172,9 @@ final readonly class PostgresMappedColumnType
             self::DATE => self::encodeTextArray(array_map(static fn(mixed $value): ?string => null === $value
                 ? null
                 : self::encodeDate($value), $values)),
+            self::TIMESTAMP => self::encodeTextArray(array_map(static fn(mixed $value): ?string => null === $value
+                ? null
+                : self::encodeTimestamp($value), $values)),
             self::JSON => self::encodeTextArray(array_map(static fn(mixed $value): ?string => null === $value
                 ? null
                 : self::encodeJson($value), $values)),
@@ -179,6 +203,21 @@ final readonly class PostgresMappedColumnType
         if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
             throw new \InvalidArgumentException(
                 'Postgres DATE column value must be a YYYY-MM-DD string, DateTimeInterface, or null.',
+            );
+        }
+
+        return $value;
+    }
+
+    private static function encodeTimestamp(mixed $value): string
+    {
+        if ($value instanceof \DateTimeInterface) {
+            return $value->format('Y-m-d\TH:i:s.uP');
+        }
+
+        if (!is_string($value)) {
+            throw new \InvalidArgumentException(
+                'Postgres TIMESTAMP column value must be a string, DateTimeInterface, or null.',
             );
         }
 

@@ -167,6 +167,26 @@ for inspection; `flush()` applies its own plan through the adapter. Cooperative 
 belong to `StateStore`'s coordinating unit of work and its dedicated guard adapter. They are acquired before the
 mapped row sets are flushed. The persistence locks described above stay local to each mapped adapter.
 
+### Column types
+
+Pass `PostgresMappedColumnType` instances by physical column name to `PostgresMappedRowSetAdapter`, or by
+table and column name in `PostgresMappedRowSetAdapterFactory::columnTypesByTable`. The default is text;
+configured types provide encoding, decoding and SQL casts for single writes, bulk writes and optimistic comparisons.
+
+`timestamp()` targets `TIMESTAMP(6) WITHOUT TIME ZONE`: it preserves wall-clock values and returns them
+as RFC 3339 strings with a UTC offset. `timestampWithTimeZone()` targets `TIMESTAMP(6) WITH TIME ZONE`:
+it preserves instants and microseconds, while returned offsets follow the database session's timezone.
+Both accept date strings, `DateTimeInterface` objects and null. PostgreSQL validates string timestamp values;
+its timezone-aware storage does not retain the original textual offset or named timezone.
+
+```php
+$factory = new PostgresMappedRowSetAdapterFactory($connection, [
+    'acceptances' => ['accepted_at' => PostgresMappedColumnType::timestampWithTimeZone()],
+]);
+```
+
+Other available types include `text()`, `date()`, `jsonb()`, `textArray()`, `uuidArray()` and `intArray()`.
+
 ## SQL inspection
 
 The [standalone SQL inspection example](../../examples/mapped-table-sql/README.md) builds a `MappedRowSet`,
