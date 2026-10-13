@@ -14,16 +14,14 @@ use Ultra\EventStore\EventStore;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Bundle\Command\ListSegmentsCommand;
 use Ultra\Projection\Bundle\Command\ProjectionWorkerCommand;
-use Ultra\Projection\Bundle\DependencyInjection\Compiler\MessageHandlingProjectionActivatorPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
-use Ultra\Projection\Coordination\DefaultProjectionScalingPolicy;
+use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionDefaultsCompilerPass;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionActivityEventStore;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
-use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\MessageHandling\ProjectionMessageHandler;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
@@ -73,9 +71,6 @@ final class ProjectionExtension implements ContainerExtension
         $container
             ->register(ProjectionTransactionManagerInterface::class)
             ->setFactory([$factory, 'createTransactionManager']);
-
-        $container->register(ProjectionActivatorInterface::class, InMemoryProjectionActivator::class);
-        $container->register(ProjectionScalingPolicyInterface::class, DefaultProjectionScalingPolicy::class);
 
         $container
             ->register(ProjectionActivityRecorder::class, ProjectionActivityRecorder::class)
@@ -127,7 +122,7 @@ final class ProjectionExtension implements ContainerExtension
         $this->registerMessageHandlingIntegration($container);
 
         $container->addCompilerPass(new ProjectionCompilerPass());
-        $container->addCompilerPass(new MessageHandlingProjectionActivatorPass());
+        $container->addCompilerPass(new ProjectionDefaultsCompilerPass());
     }
 
     private function registerMessageHandlingIntegration(ContainerBuilder $container): void

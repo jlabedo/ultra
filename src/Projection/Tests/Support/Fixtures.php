@@ -21,7 +21,9 @@ use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Attribute\ProjectionResetter;
+use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionActivity;
+use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Time\Duration;
 
 #[EventAttribute('student.subscribed')]
@@ -395,6 +397,26 @@ final class RecordingMediator implements MediatorInterface
         $this->messages[] = $message;
 
         return null;
+    }
+}
+
+final class ConfiguredProjectionActivator implements ProjectionActivatorInterface
+{
+    public int $workSignals = 0;
+
+    public function signalWorkAvailable(): void
+    {
+        ++$this->workSignals;
+    }
+
+    public function activateWorker(string $projectionId, int $bucketFrom, string $workerId): void {}
+}
+
+final class ConfiguredProjectionScalingPolicy implements ProjectionScalingPolicyInterface
+{
+    public function additionalWorkersRequested(array $affectedBuckets): int
+    {
+        return 3;
     }
 }
 

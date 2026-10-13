@@ -200,6 +200,17 @@ That means:
 - the leader worker still processes work itself
 - no follower workers are spawned unless a custom policy says so
 
+## Symfony integration
+
+`ProjectionExtension` selects the default `ProjectionActivatorInterface` and `ProjectionScalingPolicyInterface`
+services during compilation. Application definitions and aliases take precedence, whether registered before
+or after the extension is built. Without an explicit activator, a declared `MediatorInterface` service selects
+`MessageHandlingProjectionActivator`; otherwise the extension uses `InMemoryProjectionActivator`, even if the
+MessageHandling package is installed. The default scaling policy requests no additional workers.
+
+Supply the application's `EventStore` and `ProjectionImplementationInterface` services. The projection
+implementation creates its persistence and coordination adapters; declared projection handlers also require Mapper.
+
 ## In-Memory Implementations
 
 The current adapters include:
@@ -245,7 +256,7 @@ All projection suites live in [src/Projection/Runtime/Tests](../../src/Projectio
 | Leader processing, worker scaling, fairness and loop termination | [CoordinationSchedulingTest](../../src/Projection/Tests/CoordinationSchedulingTest.php) |
 | Standalone projection lease expiry and wake debounce | [LeaderLivenessTest](../../src/Projection/Tests/LeaderLivenessTest.php) |
 | Concurrent leader/follower execution across independent segments | [ConcurrentExecutionTest](../../src/Projection/Tests/ConcurrentExecutionTest.php) |
-| Catalog lookup, Symfony discovery and activity-enabled append | [ProjectionRegistrationTest](../../src/Projection/Tests/ProjectionRegistrationTest.php) |
+| Catalog lookup, Symfony discovery, application activation/scaling overrides and activity-enabled append | [ProjectionRegistrationTest](../../src/Projection/Tests/ProjectionRegistrationTest.php) |
 | Delivery of coordinator wakeups and durable worker claims | [ActivationDeliveryTest](../../src/Projection/Tests/ActivationDeliveryTest.php) |
 | Segment listing, process backfill and reset commands | [OperatorCommandsTest](../../src/Projection/Tests/OperatorCommandsTest.php) |
 

@@ -6,16 +6,26 @@ namespace Ultra\Projection\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Ultra\Container\ContainerExtension;
 use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\EventStore;
 use Ultra\Mapper\UltraNormalizer;
+use Ultra\MessageHandling\MediatorInterface;
+use Ultra\Projection\Coordination\ProjectionActivatorInterface;
+use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\InMemory\InMemoryProjectionImplementation;
+use Ultra\Projection\MessageHandling\MessageHandlingProjectionActivator;
+use Ultra\Projection\MessageHandling\WakeProjectionCoordinator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionDefinition;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\Tests\Support\ConfiguredProjectionActivator;
+use Ultra\Projection\Tests\Support\ConfiguredProjectionScalingPolicy;
 use Ultra\Projection\Tests\Support\OtherStubProjection;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
+use Ultra\Projection\Tests\Support\RecordingMediator;
 use Ultra\Projection\Tests\Support\RuntimeProjection;
 use Ultra\Projection\Tests\Support\SecondaryRuntimeProjection;
 use Ultra\Projection\Tests\Support\StubProjection;
@@ -27,6 +37,83 @@ use Ultra\Projection_Postgres\PostgresProjectionImplementation;
 #[CoversNamespace('Ultra\\Projection_Postgres')]
 final class ProjectionRegistrationTest extends ProjectionTestCase
 {
+    public function test_a_mediator_registered_after_the_extension_receives_projection_wakeups(): void
+    {
+        $mediator = new RecordingMediator();
+        $container = $this
+            ->projectionUltraLight()
+            ->withClass(StubProjection::class)
+            ->withService($mediator)
+            ->withExtension(new class implements ContainerExtension {
+                public function build(ContainerBuilder $container): void
+                {
+                    $container->setAlias(MediatorInterface::class, RecordingMediator::class);
+                }
+            })
+            ->boot();
+
+        static::assertInstanceOf(MessageHandlingProjectionActivator::class, $container->projectionActivator());
+        $container->eventStore()->append([new StoredEvent('projection.stubbed', [], ['id' => 'one'])]);
+
+        static::assertCount(1, $mediator->messages);
+        static::assertInstanceOf(WakeProjectionCoordinator::class, $mediator->messages[0]);
+    }
+
+    #[DataProvider('applicationConfigurationOrders')]
+    public function test_application_activation_and_scaling_are_preserved_when_a_mediator_is_available(
+        bool $before,
+        bool $aliases,
+    ): void {
+        $configuration = new class($aliases) implements ContainerExtension {
+            public function __construct(
+                private bool $aliases,
+            ) {}
+
+            public function build(ContainerBuilder $container): void
+            {
+                foreach ([
+                    ProjectionActivatorInterface::class => ConfiguredProjectionActivator::class,
+                    ProjectionScalingPolicyInterface::class => ConfiguredProjectionScalingPolicy::class,
+                ] as $interface => $class) {
+                    if ($this->aliases) {
+                        $container->register($class, $class);
+                        $container->setAlias($interface, $class);
+                    } else {
+                        $container->register($interface, $class);
+                    }
+                }
+            }
+        };
+        $mediator = new RecordingMediator();
+        $application = $this
+            ->projectionUltraLight(extensionsBefore: $before ? [$configuration] : [])
+            ->withClass(StubProjection::class)
+            ->withService($mediator, MediatorInterface::class)
+            ->withAlias('test.scaling_policy', ProjectionScalingPolicyInterface::class);
+        if (!$before) {
+            $application = $application->withExtension($configuration);
+        }
+        $container = $application->boot();
+        /** @var ProjectionScalingPolicyInterface $scaling */
+        $scaling = $container->get('test.scaling_policy');
+
+        static::assertSame(3, $scaling->additionalWorkersRequested([]));
+        $activator = $container->projectionActivator();
+        static::assertInstanceOf(ConfiguredProjectionActivator::class, $activator);
+        $container->eventStore()->append([new StoredEvent('projection.stubbed', [], ['id' => 'one'])]);
+        static::assertSame(1, $activator->workSignals);
+        static::assertSame([], $mediator->messages);
+    }
+
+    /** @return iterable<string, array{bool, bool}> */
+    public static function applicationConfigurationOrders(): iterable
+    {
+        yield 'definitions before the extension' => [true, false];
+        yield 'aliases before the extension' => [true, true];
+        yield 'definitions after the extension' => [false, false];
+        yield 'aliases after the extension' => [false, true];
+    }
+
     public function test_registered_runtimes_and_definitions_are_addressable_by_projection_id(): void
     {
         $runtime = new ProjectionRuntime(new RuntimeProjection(), new UltraNormalizer());

@@ -28,11 +28,13 @@ use Ultra\Testing\UltraLightContainerFactoryInterface;
 abstract class ProjectionFunctionalTestCase extends TestCase
 {
     /**
+     * @param list<ContainerExtension> $extensionsBefore
      * @return UltraLight<ProjectionTestContainer>
      */
     protected function projectionUltraLight(
         ?EventStore $eventStore = null,
         ?ProjectionImplementationInterface $implementation = null,
+        array $extensionsBefore = [],
     ): UltraLight {
         /** @var UltraLightContainerFactoryInterface<ProjectionTestContainer> $containerFactory */
         $containerFactory = new class implements UltraLightContainerFactoryInterface {
@@ -45,6 +47,7 @@ abstract class ProjectionFunctionalTestCase extends TestCase
         return new UltraLight()
             ->withBuildDir(dirname(__DIR__, 4) . '/var/projection_tests')
             ->withContainerFactory($containerFactory)
+            ->withExtension(...$extensionsBefore)
             ->withBundle(new class($eventStore ?? new InMemoryEventStore()) implements ContainerExtension {
                 public function __construct(
                     private EventStore $eventStore,
