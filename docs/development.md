@@ -9,9 +9,10 @@ For Postgres integration, start the database defined by [docker-compose.yml](../
 ## Continuous integration
 
 [GitHub Actions](../.github/workflows/checks.yml) runs Mago's formatting, lint and
-analysis checks, plus the default PHPUnit suites and the `slow` group, on pushes
-and pull requests. Test runs use PHP 8.5 and PostgreSQL 18, with the test DSN set
-explicitly; skipped tests fail the job.
+analysis checks on pushes to `main` and on pull requests. PHPUnit runs all tests,
+including the `slow` group, in a single invocation with `bin/phpunit --all --fail-on-skipped`.
+Test runs use PHP 8.5 and PostgreSQL 18, with the test DSN set explicitly; skipped
+tests fail the job.
 
 ## Benchmarks
 
@@ -87,9 +88,12 @@ Run [PHPUnit](../bin/phpunit) from the repository root ([configuration](../phpun
 
 ```bash
 bin/phpunit
+bin/phpunit --all
 bin/phpunit --coverage-text
 bin/phpunit src/StoredState/Tests
 ```
+
+The default run excludes the `slow` group; `--all` includes it.
 
 Postgres tests use the local database through DBAL's `pdo_pgsql` driver by default; PHP must have `pdo_pgsql` enabled.
 Set `ULTRA_TEST_POSTGRES_DSN` to use another database or driver. An explicit `pgsql://` DSN keeps the native `pgsql` driver.

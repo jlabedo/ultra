@@ -2,6 +2,8 @@ name: Checks
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 permissions:
@@ -63,5 +65,4 @@ jobs:
           done
           docker logs ${{ job.services.postgres.id }}
           exit 1
-      - run: bin/phpunit --fail-on-skipped
-      - run: bin/phpunit --group slow --fail-on-skipped
+      - run: bin/phpunit --all --fail-on-skipped
