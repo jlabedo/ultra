@@ -11,6 +11,26 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 /** @internal */
 final class StateObservationTest extends StateStoreTestCase
 {
+    #[DataProvider('backends')]
+    public function test_exists_reads_only_presence_without_hydration_or_expectations(string $backend): void
+    {
+        $fixture = $this->stateFixture($backend, [OrderIdentityState::class, OrderWithLinesState::class]);
+        $fixture->store->save(new OrderIdentityState('one'));
+        $fixture->flush();
+        $fixture->registry->clear();
+
+        // The root is present, but its missing status prevents state hydration.
+        static::assertTrue($fixture->store->exists(OrderWithLinesState::class, 'one'));
+        static::assertFalse($fixture->store->exists(OrderWithLinesState::class, 'missing'));
+        static::assertFalse($fixture->registry->hasPendingChanges());
+
+        [$competitor, $registry] = $fixture->newStore([OrderIdentityState::class]);
+        $competitor->delete(OrderIdentityState::class, 'one');
+        $fixture->flush($registry);
+        $fixture->flush();
+        static::assertFalse($fixture->store->exists(OrderWithLinesState::class, 'one'));
+    }
+
     public function test_expectation_from_one_state_class_can_guard_save_of_another_on_same_row(): void
     {
         [$database, $table, $store] = $this->newStore([OrderState::class, OrderStatusView::class]);

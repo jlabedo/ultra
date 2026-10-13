@@ -29,6 +29,9 @@ The package owns:
 ## Reads and observations
 
 `load(StateClass::class, $id)` returns the unit of work's current view without registering expectations.
+`exists(StateClass::class, $id)` checks only the root row's presence in that view, without expectations,
+hydration or collection reads. It selects identifier columns and sees buffered inserts and deletions.
+Use it for informational reads; use an observation when the result must protect a later decision.
 `observe(StateClass::class, $id)` returns the same typed state or null and automatically registers:
 
 - `expect($state)` when the state exists: its row must remain present, its optimistic columns must match, and

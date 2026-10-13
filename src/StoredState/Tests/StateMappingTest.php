@@ -143,10 +143,12 @@ final class StateMappingTest extends StateStoreTestCase
     ): void {
         [$database, , $store, $registry] = $this->newStore([$state::class]);
         static::assertNull($store->load($state::class, $id));
+        static::assertFalse($store->exists($state::class, $id));
         static::assertFalse($registry->hasPendingChanges());
         static::assertFalse($store->observeExists($state::class, $id));
         static::assertNull($store->observe($state::class, $id));
         $store->save($state);
+        static::assertTrue($store->exists($state::class, $id));
         static::assertEquals($state, $store->load($state::class, $id));
         $mappedKey = new \Ultra\MappedTable\MappedKey($key);
         static::assertFalse($database->rowByKey($table, $mappedKey));
@@ -154,9 +156,12 @@ final class StateMappingTest extends StateStoreTestCase
         $registry->clear();
         static::assertSame($columns, $database->rowByKey($table, $mappedKey, array_keys($columns)));
         static::assertEquals($state, $store->load($state::class, $id));
+        static::assertTrue($store->exists($state::class, $id));
+        static::assertFalse($registry->hasPendingChanges());
         static::assertTrue($store->observeExists($state::class, $id));
         static::assertEquals($state, $store->observe($state::class, $id));
         if ($id instanceof AcceptanceId) {
+            static::assertFalse($store->exists($state::class, new AcceptanceId('identity-2', $id->termsId)));
             static::assertFalse($store->observeExists($state::class, new AcceptanceId('identity-2', $id->termsId)));
         }
     }
@@ -249,10 +254,12 @@ final class StateMappingTest extends StateStoreTestCase
             [CounterState::class, '1'],
             [\stdClass::class, 'one'],
         ] as [$class, $id]) {
-            try {
-                $fixture->store->delete($class, $id);
-                static::fail('Invalid state identities must be rejected.');
-            } catch (\InvalidArgumentException|\Ultra\StateStore\Exception\UnknownStateException) {
+            foreach (['delete', 'exists'] as $operation) {
+                try {
+                    $fixture->store->$operation($class, $id);
+                    static::fail('Invalid state identities must be rejected.');
+                } catch (\InvalidArgumentException|\Ultra\StateStore\Exception\UnknownStateException) {
+                }
             }
         }
         static::assertFalse($fixture->registry->hasPendingChanges());

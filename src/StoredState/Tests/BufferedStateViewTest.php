@@ -190,8 +190,10 @@ final class BufferedStateViewTest extends StateStoreTestCase
         $fixture->store->observe(OrderWithLinesState::class, 'one');
         $fixture->store->save(new OrderWithLinesState('one', 'paid', [new OrderLineState('new', 'NEW', 3)]));
         $fixture->store->delete(OrderWithLinesState::class, 'one');
+        static::assertFalse($fixture->store->exists(OrderWithLinesState::class, 'one'));
         $other = new OrderWithLinesState('two', 'pending', [new OrderLineState('line', 'OTHER', 2)]);
         $fixture->store->save($other);
+        static::assertTrue($fixture->store->exists(OrderWithLinesState::class, 'two'));
 
         $fixture->flush();
         $fixture->registry->clear();

@@ -64,6 +64,25 @@ final readonly class StateStore
     }
 
     /**
+     * Read only the root row's presence, without hydration, collections or optimistic expectations.
+     * Includes this unit of work's buffered inserts and deletions.
+     *
+     * @param class-string $stateClass
+     */
+    public function exists(string $stateClass, int|string|object $id): bool
+    {
+        $metadata = $this->metadataRegistry->metadataFor($stateClass);
+        $this->assertIdentifierType($metadata, $id);
+        $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
+        $key = $metadata->keyFromNormalizedId($normalizedId);
+
+        return false !== $this->tableRegistry->tableFor($metadata)->row(
+            $key,
+            array_values($metadata->idPropertyColumns),
+        );
+    }
+
+    /**
      * Observe only the root row's presence in this unit of work's view.
      * Selects identifier columns without hydrating the state or loading its collections.
      * Presence or absence is checked at flush; column values and collections are not expected.
