@@ -24,8 +24,8 @@ final class StateMappingTest extends StateStoreTestCase
 
         static::assertSame(
             [
-                'identityId' => 'identityId',
-                'termsId' => 'terms_id',
+                'identityId' => 'identity_id',
+                'termsId' => 'DocumentVersion',
             ],
             $factory->create(ConventionTermsAcceptanceState::class)->idPropertyColumns,
         );
@@ -106,7 +106,19 @@ final class StateMappingTest extends StateStoreTestCase
             new AcceptanceId('identity-1', 'terms-2026'),
             'terms_acceptances',
             ['identity_id' => 'identity-1', 'terms_id' => 'terms-2026'],
-            ['acceptedAt' => '2026-07-10T10:00:00Z'],
+            ['accepted_at' => '2026-07-10T10:00:00Z'],
+        ];
+        yield 'conventional scalar identity, acronyms and embedded fields with explicit override' => [
+            new ConventionState('one', 'ok', 'Display', new ConventionAddress('75001', 'Home')),
+            'one',
+            'conventional_names',
+            ['record_id' => 'one'],
+            [
+                'http_status' => 'ok',
+                'DisplayName' => 'Display',
+                'shipping_postal_code' => '75001',
+                'shipping_url_label' => 'Home',
+            ],
         ];
         yield 'flattened embedded value with prefix and column rename' => [
             new OrderWithShippingAddressState('order-123', new ShippingAddress('1 Main Street', '75001')),

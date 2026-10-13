@@ -120,7 +120,7 @@ final readonly class StateMetadataFactory
             }
 
             $column = [] === $columnAttributes ? new StateColumn() : $columnAttributes[0]->newInstance();
-            $columnName = $column->name ?? $property->getName();
+            $columnName = $column->name ?? self::columnName($property->getName());
             $this->assertColumnAvailable($stateClass, $property->getName(), $columnName, $mappedColumns);
             $propertyColumns[$property->getName()] = $columnName;
             if ($column->optimistic) {
@@ -170,7 +170,7 @@ final readonly class StateMetadataFactory
                 ));
             }
 
-            $column = $attribute->column ?? $property->getName();
+            $column = $attribute->column ?? self::columnName($property->getName());
             if ('' === $column) {
                 throw new InvalidStateConfigurationException(sprintf(
                     'State id %s::$%s maps an empty column name.',
@@ -206,7 +206,7 @@ final readonly class StateMetadataFactory
                 ));
             }
             $this->assertScalarShape($stateClass, $property->getName() . '.' . $field, $fieldShape);
-            $mapping[$field] = $attribute->columns[$field] ?? $field;
+            $mapping[$field] = $attribute->columns[$field] ?? self::columnName($field);
             if ('' === $mapping[$field]) {
                 throw new InvalidStateConfigurationException(sprintf(
                     'State id %s::$%s component "%s" maps an empty column name.',
@@ -418,7 +418,7 @@ final readonly class StateMetadataFactory
             }
             $columnAttributes = $embeddedProperty->getAttributes(StateColumn::class);
             $column = [] === $columnAttributes ? new StateColumn() : $columnAttributes[0]->newInstance();
-            $columnName = $embedded->prefix . ($column->name ?? $embeddedProperty->getName());
+            $columnName = $embedded->prefix . ($column->name ?? self::columnName($embeddedProperty->getName()));
             $propertyColumns[$embeddedProperty->getName()] = $columnName;
             if ($embedded->optimistic && $column->optimistic) {
                 $optimisticPropertyColumns[$embeddedProperty->getName()] = $columnName;
@@ -431,5 +431,15 @@ final readonly class StateMetadataFactory
             $propertyColumns,
             $optimisticPropertyColumns,
         );
+    }
+
+    private static function columnName(string $property): string
+    {
+        $words = preg_replace('/([A-Z]+)([A-Z][a-z])/', '$1_$2', $property);
+        assert(null !== $words, 'The column naming expression is valid.');
+        $words = preg_replace('/([a-z0-9])([A-Z])/', '$1_$2', $words);
+        assert(null !== $words, 'The column naming expression is valid.');
+
+        return strtolower($words);
     }
 }

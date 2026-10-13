@@ -6,7 +6,11 @@ Read when changing state attributes, identifiers, embedded values or collections
 
 Mark state classes with `#[Ultra\StateStore\Attribute\State(...)]` and one identifier property with `#[Ultra\StateStore\Attribute\StateId]`.
 
-Other instance properties map by property name by default. Use `#[Ultra\StateStore\Attribute\StateColumn('column_name')]` when a property should target a different column name.
+Column names default to snake_case: `acceptedAt` becomes `accepted_at`, and `HTTPStatus` becomes `http_status`.
+This applies to scalar identifiers, composite identifier components, ordinary properties and embedded fields,
+including collection items. Existing snake_case names are retained. Explicit `StateColumn`, `StateId::column`
+and `StateId::columns` overrides retain their spelling; embedded prefixes are prepended literally.
+Use `#[Ultra\StateStore\Attribute\StateColumn('column_name')]` when a property should target a different column name.
 
 ```php
 use Ultra\StateStore\Attribute\State;
@@ -17,7 +21,7 @@ use Ultra\StateStore\Attribute\StateId;
 final readonly class OrderState
 {
     public function __construct(
-        #[StateId(column: 'order_id')]
+        #[StateId]
         public string $orderId,
         #[StateColumn('status')]
         public string $orderStatus,
@@ -42,11 +46,9 @@ use Ultra\StateStore\Attribute\StateCollection;
 final readonly class OrderLineState
 {
     public function __construct(
-        #[StateId(column: 'line_id')]
+        #[StateId]
         public string $lineId,
-        #[StateColumn]
         public string $sku,
-        #[StateColumn]
         public int $quantity,
     ) {}
 }
@@ -58,9 +60,8 @@ final readonly class OrderWithLinesState
      * @param list<OrderLineState> $lines
      */
     public function __construct(
-        #[StateId(column: 'order_id')]
+        #[StateId]
         public string $orderId,
-        #[StateColumn('status')]
         public string $status,
         #[StateCollection(
             itemClass: OrderLineState::class,
@@ -85,17 +86,17 @@ final readonly class AcceptanceId
 final readonly class AcceptanceState
 {
     public function __construct(
-        #[StateId(columns: [
-            'identityId' => 'identity_id',
-            'termsId' => 'terms_id',
-        ])]
+        #[StateId]
         public AcceptanceId $id,
-        public string $acceptedAt,
+        public \DateTimeImmutable $acceptedAt,
     ) {}
 }
 ```
 
 Mapper Compiler resolves whether the identifier normalizes to one scalar or a flat object shape. `column` and `columns` only override conventional column names. Composite components must normalize to `int|string`.
+
+Date properties use [Mapper's date representation](../mapping/README.md#dates). For native PostgreSQL timestamp
+columns, configure the matching [mapped column type](mapped-table.md#column-types), including for bulk writes.
 
 The [Symfony integration](symfony.md#services-and-state-discovery) requires one complete key mapping per
 physical table. Manually assembled metadata and row sets can address a table through different unique candidate
@@ -123,7 +124,7 @@ final readonly class Address
 final readonly class OrderState
 {
     public function __construct(
-        #[StateId(column: 'order_id')]
+        #[StateId]
         public string $orderId,
         #[StateEmbedded(prefix: 'shipping_')]
         public Address $shippingAddress,
@@ -132,5 +133,5 @@ final readonly class OrderState
 ```
 
 This maps `shippingAddress` to `shipping_street` and
-`shipping_postalCode`. Embedded columns participate in the usual optimistic
+`shipping_postal_code`. Embedded columns participate in the usual optimistic
 expectations.

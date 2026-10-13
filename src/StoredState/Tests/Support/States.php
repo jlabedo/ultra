@@ -68,7 +68,7 @@ final readonly class OrderStatusView
 final readonly class OrderLineState
 {
     public function __construct(
-        #[StateId(column: 'line_id')]
+        #[StateId]
         public string $lineId,
         #[StateColumn]
         public string $sku,
@@ -84,11 +84,11 @@ final readonly class OrderWithLinesState
      * @param list<OrderLineState> $lines
      */
     public function __construct(
-        #[StateId(column: 'order_id')]
+        #[StateId]
         public string $orderId,
         #[StateColumn('status')]
         public string $status,
-        #[StateCollection(itemClass: OrderLineState::class, ownerColumns: ['orderId' => 'order_id'])]
+        #[StateCollection(itemClass: OrderLineState::class)]
         public array $lines,
     ) {}
 }
@@ -114,7 +114,7 @@ final readonly class AcceptanceId
 final readonly class TermsAcceptanceState
 {
     public function __construct(
-        #[StateId(columns: ['identityId' => 'identity_id', 'termsId' => 'terms_id'])]
+        #[StateId]
         public AcceptanceId $acceptanceId,
         public string $acceptedAt,
     ) {}
@@ -124,8 +124,30 @@ final readonly class TermsAcceptanceState
 final readonly class ConventionTermsAcceptanceState
 {
     public function __construct(
-        #[StateId(columns: ['termsId' => 'terms_id'])]
+        #[StateId(columns: ['termsId' => 'DocumentVersion'])]
         public AcceptanceId $acceptanceId,
+    ) {}
+}
+
+final readonly class ConventionAddress
+{
+    public function __construct(
+        public string $postalCode,
+        public string $URLLabel,
+    ) {}
+}
+
+#[State(table: 'conventional_names')]
+final readonly class ConventionState
+{
+    public function __construct(
+        #[StateId]
+        public string $recordId,
+        public string $HTTPStatus,
+        #[StateColumn('DisplayName')]
+        public string $displayName,
+        #[StateEmbedded(prefix: 'shipping_')]
+        public ConventionAddress $address,
     ) {}
 }
 
