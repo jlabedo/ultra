@@ -1,7 +1,7 @@
 {
     "name": "ultra/coworking-example",
     "type": "project",
-    "license": "proprietary",
+    "license": "MIT",
     "description": "DX stress test: coworking room booking with event-sourced, state-store and classic Doctrine ORM implementations",
     "repositories": [
         {

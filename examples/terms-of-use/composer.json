@@ -1,7 +1,7 @@
 {
     "name": "ultra/terms-of-use-example",
     "type": "project",
-    "license": "proprietary",
+    "license": "MIT",
     "repositories": [
         {
             "type": "path",

@@ -1,7 +1,7 @@
 {
     "name": "ultra-dev/tools",
     "type": "project",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

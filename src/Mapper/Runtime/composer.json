@@ -2,7 +2,7 @@
     "name": "ultra/mapper",
     "description": "Normalizer made fast",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

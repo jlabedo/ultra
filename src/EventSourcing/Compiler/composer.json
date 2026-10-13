@@ -2,7 +2,7 @@
     "name": "ultra/event-sourced-state-compiler",
     "description": "Ultra Framework - Event-sourced state compiled loaders",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

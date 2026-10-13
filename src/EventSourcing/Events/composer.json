@@ -2,7 +2,7 @@
     "name": "ultra/events",
     "description": "Ultra Framework - Events package",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

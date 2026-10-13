@@ -2,7 +2,7 @@
     "name": "ultra/message-handling-postgres-queue",
     "description": "Ultra Framework - Postgres async queue for message handling",
     "type": "library",
-    "license": "proprietary",
+    "license": "MIT",
     "authors": [
         {
             "name": "Jean de La Bédoyère",

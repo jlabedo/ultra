@@ -1,8 +1,8 @@
 {
     "name": "ultra/ultra",
-    "description": "Ultra Framework - A modern PHP framework",
-    "license": "proprietary",
-    "type": "project",
+    "description": "Composable PHP application building blocks designed for runtime performance",
+    "license": "MIT",
+    "type": "library",
     "authors": [
         {
             "name": "Jean de La Bédoyère",
@@ -11,22 +11,25 @@
     ],
     "require": {
         "php": ">=8.5",
+        "doctrine/dbal": "^4.0",
         "phpstan/phpdoc-parser": "^2.0",
         "psr/clock": "^1.0",
         "psr/container": "^2.0",
+        "symfony/config": "7.*|8.*",
+        "symfony/console": "7.*|8.*",
         "symfony/dependency-injection": "7.*|8.*",
+        "symfony/http-kernel": "7.*|8.*",
         "symfony/type-info": "7.*|8.*"
     },
     "require-dev": {
-        "doctrine/dbal": "^4.0",
         "opis/closure": "^4.0",
-        "symfony/config": "7.*|8.*",
-        "symfony/console": "7.*|8.*",
         "symfony/process": "7.*|8.*"
     },
     "replace": {
         "ultra/code-generation": "self.version",
         "ultra/container": "self.version",
+        "ultra/coordination": "self.version",
+        "ultra/coordination-postgres": "self.version",
         "ultra/event-sourced-state": "self.version",
         "ultra/event-sourced-state-compiler": "self.version",
         "ultra/event-store": "self.version",
