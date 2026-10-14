@@ -51,6 +51,9 @@ final class MessagePropertyPath
                 ));
             }
 
+            // Closure::call binds $this to the current object and its property scope.
+            // @mago-expect analysis:undefined-variable
+            // @mago-expect analysis:mixed-property-access
             // @mago-expect analysis:string-member-selector
             $getter = fn(string $property): mixed => $this->{$property};
             $value = $getter->call($value, $segment);
