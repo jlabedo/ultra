@@ -1,5 +1,7 @@
 # Projection
 
+For a complete PostgreSQL read model, activity recording, worker and offline rebuild, follow [getting started](getting-started.md).
+
 The `Projection` package defines how read models are described, replayed, and coordinated.
 
 Projection authors must keep read-model writes within the configured projection

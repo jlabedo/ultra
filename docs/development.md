@@ -121,6 +121,8 @@ bin/phpunit src/StoredState/Tests
 
 The complete package's installation guarantee is owned by [ComposerConsumerTest](../src/Testing/Tests/ComposerConsumerTest.php). It installs Ultra in a separate application without development dependencies and exercises mapper compilation, Symfony assembly, stores, projection commands and coordination. The test belongs to `slow`, requires Composer on `PATH` and network access to resolve its public dependencies. Run it with `bin/phpunit --group slow src/Testing/Tests/ComposerConsumerTest.php`.
 
+The [getting-started application's verification](../examples/getting-started/README.md#verification) is owned by [GettingStartedExampleTest](../src/Testing/Tests/GettingStartedExampleTest.php). It installs a fresh consumer and executes the documented journeys across separate PHP processes, inspecting persisted states, queue delivery and projection rebuilds. It belongs to `slow`, requires Composer and network access, and creates/removes an isolated PostgreSQL schema with `PGOPTIONS` selecting that schema in subprocesses.
+
 Postgres tests use the local database through DBAL's `pdo_pgsql` driver by default; PHP must have `pdo_pgsql` enabled.
 Set `ULTRA_TEST_POSTGRES_DSN` to use another database or driver. An explicit `pgsql://` DSN keeps the native `pgsql` driver.
 
