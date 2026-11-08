@@ -34,7 +34,7 @@ final readonly class StateStoreReadAspect
         $plan = StateBindings::analyze(
             $ctx,
             self::isStateClass(...),
-            self::getStateIdProperty(...),
+            self::getStateIdProperties(...),
             nullableStates: true,
         );
 
@@ -44,7 +44,8 @@ final readonly class StateStoreReadAspect
     {
         $states = StateBindings::load($config, $message, function (array $ids) use ($config): array {
             $states = [];
-            foreach ($ids as $position => $id) {
+            foreach ($ids as $position => $values) {
+                $id = $values[''];
                 $binding = $config['bindings'][$position];
                 if (!is_string($id) && !is_int($id) && !is_object($id)) {
                     throw new \LogicException(sprintf(
@@ -75,12 +76,13 @@ final readonly class StateStoreReadAspect
 
     /**
      * @param class-string $stateClass
+     * @return array{'': string}
      */
-    private static function getStateIdProperty(string $stateClass): string
+    private static function getStateIdProperties(string $stateClass): array
     {
         foreach (new \ReflectionClass($stateClass)->getProperties() as $property) {
             if ([] !== $property->getAttributes(StateId::class)) {
-                return $property->getName();
+                return ['' => $property->getName()];
             }
         }
 

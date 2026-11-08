@@ -24,6 +24,7 @@ use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
 
 require_once __DIR__ . '/DecisionFixtures.php';
+require_once __DIR__ . '/MultiTagDecisionFixtures.php';
 
 /** Assembles actual extensions and owns generated files; assertions stay in guarantee suites. */
 abstract class DecisionTestCase extends TestCase
@@ -131,6 +132,25 @@ abstract class DecisionTestCase extends TestCase
         ], [
             \Ultra\StatefulMessageHandling\Tests\DependentMemberJoined::class,
             \Ultra\StatefulMessageHandling\Tests\DependentSeatTaken::class,
+        ]);
+    }
+
+    /** @return UltraLight<UltraLightContainer> */
+    protected function multiTagApplication(string ...$commands): UltraLight
+    {
+        return $this->application([
+            \Ultra\EventSourcedState\Tests\Example\State\CourseStudentActivityState::class,
+            \Ultra\StatefulMessageHandling\Tests\CourseStudentPairState::class,
+            \Ultra\StatefulMessageHandling\Tests\DependentMemberState::class,
+            ...$commands,
+        ], [
+            \Ultra\EventSourcedState\Tests\Example\Event\CourseCreated::class,
+            \Ultra\EventSourcedState\Tests\Example\Event\CourseCapacityChanged::class,
+            \Ultra\EventSourcedState\Tests\Example\Event\StudentEnrolled::class,
+            \Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed::class,
+            \Ultra\EventSourcedState\Tests\Example\Event\StudentUnsubscribed::class,
+            \Ultra\EventSourcedState\Tests\Example\Event\StudentTransferred::class,
+            \Ultra\StatefulMessageHandling\Tests\DependentMemberJoined::class,
         ]);
     }
 

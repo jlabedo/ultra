@@ -19,6 +19,54 @@ use Ultra\StateStore\Exception\StateNotFoundException;
 
 final class StateInjectionTest extends DecisionTestCase
 {
+    #[DataProvider('multiTagHandlerOrganizations')]
+    public function test_multi_tag_states_replay_independent_combined_and_alias_groups_from_the_shared_round(string $commandClass): void
+    {
+        $container = $this->multiTagApplication(InspectMultiTagActivity::class, InspectSeparateMultiTagActivity::class, InspectSeparateMultiTagActivityHandler::class, InspectPartiallyBoundMultiTagActivity::class)->boot();
+        $mediator = $container->get('test.mediator');
+        static::assertSame([0, false, 0, 0, 0], $mediator->send(new $commandClass('course', 'ada')));
+        $container->get(InMemoryEventStore::class)->append([
+            new \Ultra\EventStore\Event('course.created', ['courseId' => 'course', 'name' => 'Math', 'maxCapacity' => 12], ['course' => 'course']),
+            new \Ultra\EventStore\Event('course.created', ['courseId' => 'other', 'name' => 'Other', 'maxCapacity' => 99], ['course' => 'other']),
+            new \Ultra\EventStore\Event('student.enrolled', ['studentId' => 'ada'], ['student' => 'ada']),
+            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'course', 'studentId' => 'ada'], ['course' => 'course', 'student' => 'ada']),
+            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'course', 'studentId' => 'grace'], ['course' => 'course', 'student' => 'grace']),
+            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'other', 'studentId' => 'ada'], ['course' => 'other', 'student' => 'ada']),
+            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'other', 'studentId' => 'grace'], ['course' => 'other', 'student' => 'grace']),
+            new \Ultra\EventStore\Event('student.transferred', ['studentId' => 'ada', 'previousCourseId' => 'course', 'courseId' => 'other'], ['student' => 'ada', 'previousCourse' => 'course', 'course' => 'other']),
+        ]);
+
+        static::assertSame([12, true, 3, 1, 1], $mediator->send(new $commandClass('course', 'ada')));
+        static::assertSame(1, $mediator->send(new InspectPartiallyBoundMultiTagActivity(
+            new NestedCourseReference(new MutableDomainId('course')),
+            new MutableDomainId('ada'),
+        )));
+    }
+
+    public static function multiTagHandlerOrganizations(): iterable
+    {
+        yield 'self handler' => [InspectMultiTagActivity::class];
+        yield 'separate handler' => [InspectSeparateMultiTagActivity::class];
+    }
+
+    #[DataProvider('invalidMultiTagIds')]
+    public function test_each_multi_tag_identifier_is_validated_before_loading(string $tag): void
+    {
+        $container = $this->multiTagApplication(InspectMultiTagActivity::class)->boot();
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage(sprintf('Id of state parameter "activity" for tag "%s" must be string or Stringable, got int.', $tag));
+        $container->get('test.mediator')->send(new InspectMultiTagActivity(
+            'course' === $tag ? 42 : 'course',
+            'student' === $tag ? 42 : 'ada',
+        ));
+    }
+
+    public static function invalidMultiTagIds(): iterable
+    {
+        yield 'first tag' => ['course'];
+        yield 'second tag' => ['student'];
+    }
+
     public function test_uuid_identifiers_route_events_and_replay_states_through_properties_and_methods(): void
     {
         $container = $this->application([
@@ -64,7 +112,7 @@ final class StateInjectionTest extends DecisionTestCase
         $container = $this->inspectedApplication('events')->boot();
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage(sprintf(
-            'Id of state parameter "course" must be string or Stringable, got %s.',
+            'Id of state parameter "course" for tag "course" must be string or Stringable, got %s.',
             get_debug_type($id),
         ));
         $container->get('test.mediator')->send(new InspectDecisionCourse($id, null));

@@ -16,6 +16,43 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 final class ReadConsistencyTest extends DecisionTestCase
 {
+    public function test_a_change_to_a_multi_tag_identity_source_invalidates_the_final_append(): void
+    {
+        $container = $this->multiTagApplication(SubscribeDependentPairWhileMemberMoves::class)->boot();
+        $store = $container->get(InMemoryEventStore::class);
+        $store->append([new \Ultra\EventStore\Event('dependent_binding.member_joined', ['memberId' => 'member', 'companyId' => 'ada'], ['member' => 'member'])]);
+        try {
+            $container->get('test.mediator')->send(new SubscribeDependentPairWhileMemberMoves('course', 'member'));
+            static::fail('A concurrent source change must invalidate the derived pair identity.');
+        } catch (EventConcurrencyException) {
+            static::assertSame([], $store->load(StreamQuery::forStream(new DomainIdentifier('course', 'course')))->events);
+        }
+    }
+
+    #[DataProvider('multiTagChanges')]
+    public function test_every_multi_tag_query_branch_guards_the_final_append(\Ultra\EventStore\Event $concurrent, bool $conflicts): void
+    {
+        $container = $this->multiTagApplication(SubscribeWhileMultiTagHistoryChanges::class)->boot();
+        $store = $container->get(InMemoryEventStore::class);
+        try {
+            $result = $container->get('test.mediator')->send(new SubscribeWhileMultiTagHistoryChanges('course', 'ada', $concurrent));
+            static::assertFalse($conflicts, 'A change selected by either state must invalidate the decision.');
+            static::assertEquals(new \Ultra\EventSourcedState\Tests\Example\Event\StudentSubscribed('course', 'ada'), $result);
+        } catch (EventConcurrencyException) {
+            static::assertTrue($conflicts, 'A change outside both states must allow the append.');
+        }
+        static::assertCount($conflicts ? 1 : 2, $store->load(StreamQuery::all())->events);
+    }
+
+    public static function multiTagChanges(): iterable
+    {
+        yield 'course branch' => [new \Ultra\EventStore\Event('course.capacity_changed', ['courseId' => 'course', 'maxCapacity' => 5], ['course' => 'course']), true];
+        yield 'student branch' => [new \Ultra\EventStore\Event('student.enrolled', ['studentId' => 'ada'], ['student' => 'ada']), true];
+        yield 'combined branch' => [new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'course', 'studentId' => 'ada'], ['course' => 'course', 'student' => 'ada']), true];
+        yield 'combined alias branch' => [new \Ultra\EventStore\Event('student.transferred', ['studentId' => 'ada', 'previousCourseId' => 'course', 'courseId' => 'other'], ['student' => 'ada', 'previousCourse' => 'course', 'course' => 'other']), true];
+        yield 'outside combined alias branch' => [new \Ultra\EventStore\Event('student.transferred', ['studentId' => 'grace', 'previousCourseId' => 'course', 'courseId' => 'other'], ['student' => 'grace', 'previousCourse' => 'course', 'course' => 'other']), false];
+    }
+
     public function test_all_event_loading_rounds_guard_the_final_append(): void
     {
         $container = $this->dependentApplication(

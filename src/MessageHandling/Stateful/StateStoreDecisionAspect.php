@@ -36,7 +36,7 @@ final readonly class StateStoreDecisionAspect
         $plan = StateBindings::analyze(
             $ctx,
             StateStoreDecisionAspect::isStateClass(...),
-            StateStoreDecisionAspect::getStateIdProperty(...),
+            StateStoreDecisionAspect::getStateIdProperties(...),
             nullableStates: true,
         );
 
@@ -48,7 +48,8 @@ final readonly class StateStoreDecisionAspect
     {
         $states = StateBindings::load($config, $message, function (array $ids) use ($config): array {
             $states = [];
-            foreach ($ids as $position => $id) {
+            foreach ($ids as $position => $values) {
+                $id = $values[''];
                 $binding = $config['bindings'][$position];
                 $stateClass = $binding['stateClass'];
                 $id = self::stateId($binding['parameterName'], $id);
@@ -153,13 +154,14 @@ final readonly class StateStoreDecisionAspect
 
     /**
      * @param class-string $stateClass
+     * @return array{'': string}
      */
-    private static function getStateIdProperty(string $stateClass): string
+    private static function getStateIdProperties(string $stateClass): array
     {
         $reflection = new \ReflectionClass($stateClass);
         foreach ($reflection->getProperties() as $property) {
             if ([] !== $property->getAttributes(StateId::class)) {
-                return $property->getName();
+                return ['' => $property->getName()];
             }
         }
 

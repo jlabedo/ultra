@@ -9,7 +9,7 @@ See the [shared concepts and consistency responsibilities](stateful.md). The eve
 - **Decision handlers**: Decision logic can live on a self-handling command or a separate handler. A method marked with `#[DecisionHandler]` declares the state dependencies that the compiler analyzes for loading and injection.
 - **States are event-sourced entities**: State classes come from `ultra/event-sourced-state` and use `#[EventSourcedEntity]` plus public `#[EventSourcingHandler]` methods (one typed event parameter) to fold the events selected by their loader. No aggregate root is required.
 - **Consistency by signature**: Parameters of the decision handler are either **state** (hydrated from the event store by stream) or **services** (resolved from the container). The aspect infers which is which and loads only the streams needed for that command.
-- **Identity by convention**: A state’s stream dimension comes from its single `#[EventSourcedEntity(tags: ['name'])]` tag; the engine reads the value from the command’s `{name}Id` property or, if there is none, its public `{name}Id()` method. A name matching both is a compile-time error; `#[BindTo]` chooses explicitly.
+- **Identity by convention**: For every tag declared by `#[EventSourcedEntity(tags: ['course', 'student'])]`, the engine reads a value from the command’s `{tag}Id` property or, if there is none, its public `{tag}Id()` method. A name matching both is a compile-time error; `#[BindTo]` chooses explicitly.
 - **Events are DTOs**: Events are plain classes with `#[Event('type.name')]` and `#[DomainIdentifier]` on properties. Stream routing is derived from those attributes when appending.
 
 Event-sourced state bindings accept `string|\Stringable` identifiers from properties or methods,
@@ -23,12 +23,13 @@ Other value types fail with `LogicException` identifying the state parameter and
 |-----------|--------|---------|
 | `#[DecisionHandler]` | Method | Marks a method as a decision handler for the aspect. |
 | `#[SelfHandler]` | Method | Mediator self-handler marker for commands that handle themselves. |
-| `#[EventSourcedEntity(tags: ['name'])]` | Class | Marks a decision state / entity and declares the stream tags it can be loaded from. Decision handlers currently require exactly one tag; `aliases: ['otherRole' => 'name']` also loads events whose `otherRole` identifier equals the state's id (see the event-sourced state README). |
+| `#[EventSourcedEntity(tags: ['course', 'student'])]` | Class | Marks a decision state and declares its identity tags. Decision handlers require at least one tag and bind one value per tag. Aliases reuse their target tag’s value; see [state matching and aliases](../event-sourcing/states.md). |
 | `#[EventSourcingHandler]` | Method | Marks a public event replay handler on a state / entity. |
 | `#[Event('type.name')]` | Class | Event type name for storage and routing. |
 | `#[DomainIdentifier('name')]` | Property | Marks an event DTO identifier used for routing and query matching. |
 | `#[BindTo('property.path')]` | Parameter | Override convention: use this message property path for the state’s id. |
 | `#[BindTo(method: 'name')]` | Parameter | Override convention: call this public message method for the state’s id. Its parameters are other states of the same handler, matched by name (see [Dependent states](#dependent-states)). |
+| `#[BindTo('property.path', tag: 'course')]` / `#[BindTo(method: 'name', tag: 'student')]` | Parameter | Override one event-sourced identity tag. Repeat for different tags; tags without overrides keep their convention. |
 
 ## Core types
 
@@ -73,12 +74,41 @@ final class CreateCourseCommand
 5. Call the decision handler and route returned events to `Event`.
 6. Append with an append condition (optimistic concurrency).
 
+### Multi-tag states
+
+Each event-sourced tag has its own binding. For a state declaring `tags: ['course', 'student']`,
+`courseId` and `studentId` resolve independently by convention. Use a tag-specific override when the
+message exposes a different property path or method:
+
+```php
+#[SelfHandler]
+#[DecisionHandler]
+public function decide(
+    #[BindTo('reference.courseId', tag: 'course')]
+    #[BindTo(method: 'selectedStudent', tag: 'student')]
+    CourseStudentActivityState $activity,
+): array {
+    // return events
+}
+```
+
+`BindTo` requires `tag` for a multi-tag state; single-tag event-sourced states and stored states
+continue to accept an override without it. Unknown tags, alias names used as identity tags, and
+duplicate overrides for the same tag fail during compilation. Each resolved event-sourced value
+must be `string|\Stringable`; invalid values identify the state parameter and tag in the error.
+
+The state’s [matching groups](../event-sourcing/states.md#matching-event-tags) determine whether events
+match individual tags or a combination. Binding multiple tags does not change those groups. The aspect
+passes all identifiers to both query construction and hydration; the resulting query, including alias
+branches, participates in optimistic concurrency protection.
+
 ### Dependent states
 
-A state’s id can depend on another loaded state: compute it with a public method of the message whose parameters are
+A state’s id, or any individual event-sourced tag value, can depend on another loaded state: compute it with a public method of the message whose parameters are
 other state parameters of the same handler, **matched by name** and typed with the same state class. The method is
 found by convention (a method with the conventional id name, such as `companyMonthId()` for the `companyMonth` tag) or
-named with `#[BindTo(method: 'name')]`.
+named with `#[BindTo(method: 'name')]` (add `tag` for a multi-tag state). A state loads only after
+all dependencies from all of its tag bindings are available; a cycle through any tag fails compilation.
 
 ```php
 final readonly class BookRoom

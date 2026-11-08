@@ -16,6 +16,31 @@ use Ultra\StatefulMessageHandling\Violation;
 
 final class DependentStateLoadingTest extends DecisionTestCase
 {
+    #[DataProvider('multiTagBindings')]
+    public function test_each_tag_can_depend_on_a_loaded_state_even_when_parameters_are_reversed(string $commandClass): void
+    {
+        $container = $this->multiTagApplication($commandClass)->boot();
+        $store = $container->get(InMemoryEventStore::class);
+        $store->append([
+            new \Ultra\EventStore\Event('dependent_binding.member_joined', ['memberId' => 'member', 'companyId' => 'ada'], ['member' => 'member']),
+            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'course', 'studentId' => 'ada'], ['course' => 'course', 'student' => 'ada']),
+            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'other', 'studentId' => 'ada'], ['course' => 'other', 'student' => 'ada']),
+        ]);
+        $command = InspectBoundMultiTagActivity::class === $commandClass
+            ? new $commandClass(new NestedCourseReference('course'), 'member')
+            : new $commandClass('course', 'member');
+        static::assertSame(1, $container->get('test.mediator')->send($command));
+
+        $store->append([new \Ultra\EventStore\Event('dependent_binding.member_joined', ['memberId' => 'member', 'companyId' => 'grace'], ['member' => 'member'])]);
+        static::assertSame(0, $container->get('test.mediator')->send($command));
+    }
+
+    public static function multiTagBindings(): iterable
+    {
+        yield 'method by convention on second tag' => [InspectDependentMultiTagActivity::class];
+        yield 'tag-specific property and dependent method' => [InspectBoundMultiTagActivity::class];
+    }
+
     public function test_independent_states_replay_the_shared_round_and_observe_prior_decisions(): void
     {
         $container = $this->courseApplication()->boot();

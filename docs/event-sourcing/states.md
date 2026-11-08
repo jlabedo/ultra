@@ -113,9 +113,9 @@ Loading the schedule of `room-1@2026-09-28` queries `roomDay = room-1@2026-09-28
   group may combine a tag and an alias: `#[MatchTag('roomDay', 'previousRoomDay')]` only loads
   events whose two values are both the entity's id.
 - Aliases do not identify the entity. The loader, `EventSourcedStateStore::load()` and decision
-  handlers still take one value per tag; passing an alias name is rejected. A single-tag entity with
-  aliases is still a valid decision state, and its append condition covers the alias branches, so a
-  concurrent event tagged only with the alias fails the append.
+  handlers still take one value per tag; passing an alias name is rejected. Decision handlers support
+  [single- and multi-tag bindings](../message-handling/decisions.md#multi-tag-states). Their append conditions
+  cover the alias branches: a concurrent event selected through an alias fails the append.
 
 ## Symfony
 

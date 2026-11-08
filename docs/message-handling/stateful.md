@@ -60,7 +60,7 @@ The guarantee suites live in `src/MessageHandling/Tests/Stateful`; persistence p
 
 | Guarantee | Suite |
 | --- | --- |
-| Self and separate handlers receive the requested state, including nested and composite identities, nullable stored states and read-only handlers; independent compilations retain their own services and states after generated-file cleanup | [StateInjectionTest](../../src/MessageHandling/Tests/Stateful/StateInjectionTest.php) |
+| Self and separate handlers receive the requested state, including nested and composite identities, multi-tag event-sourced states and nullable stored states and read-only handlers; independent compilations retain their own services and states after generated-file cleanup | [StateInjectionTest](../../src/MessageHandling/Tests/Stateful/StateInjectionTest.php) |
 | Independent and dependent states load in the right rounds, observe prior decisions and propagate missing source states | [DependentStateLoadingTest](../../src/MessageHandling/Tests/Stateful/DependentStateLoadingTest.php) |
 | Ambiguous, missing, cyclic or incompatible bindings fail during compilation | [BindingDeclarationTest](../../src/MessageHandling/Tests/Stateful/BindingDeclarationTest.php) |
 | Loaded dependencies guard append or flush, even when they produce no returned save and during CHECK | [ReadConsistencyTest](../../src/MessageHandling/Tests/Stateful/ReadConsistencyTest.php) |

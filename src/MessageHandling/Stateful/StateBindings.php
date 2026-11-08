@@ -12,19 +12,19 @@ use Ultra\StatefulMessageHandling\Attribute\BindTo;
  *
  * A state id comes from a message property path or from a message method whose parameters are other states of the
  * same handler, matched by name. Without #[BindTo], the conventional name targets a property, or else a public method
- * of that name; #[BindTo('path')] and #[BindTo(method: 'name')] choose explicitly. Those
- * dependencies are resolved at compile time into loading rounds: round 0 holds states that depend on no other
+ * of that name; #[BindTo('path')] and #[BindTo(method: 'name')] choose explicitly. Multi-tag event-sourced
+ * states resolve one id per tag, with tag-specific overrides. The union of all id method sources determines when
+ * a state can load. Dependencies are resolved at compile time into loading rounds: round 0 holds states that depend on no other
  * state, round n the states whose sources are all loaded in earlier rounds.
  *
+ * @phpstan-type IdBinding array{property: ?string, method: ?string, sources: list<string>}
  * @phpstan-type Binding array{
  *     index: int,
  *     parameterName: string,
  *     stateClass: class-string,
  *     allowsNull: bool,
- *     property: ?string,
- *     method: ?string,
- *     sources: list<string>,
- *     ...
+ *     ids: array<array-key, IdBinding>,
+ *     sources: list<string>
  * }
  * @phpstan-type Plan array{bindings: list<Binding>, rounds: list<list<int>>}
  */
@@ -34,7 +34,8 @@ final class StateBindings
      * Compile time: analyzes the state parameters of a handler. Throws when a binding cannot be resolved.
      *
      * @param callable(class-string): bool   $isState              whether a parameter class is a state of this flavor
-     * @param callable(class-string): string $conventionalProperty message property path used without #[BindTo]
+     * @param callable(class-string): array<array-key, string> $conventionalProperties identity names to message property paths;
+     *                                                                           stored states use the empty identity name
      * @param bool                           $nullableStates       whether missing states are passed as null; a state
      *                                                             depending on a nullable state is then null too, so
      *                                                             it must be nullable itself
@@ -44,7 +45,7 @@ final class StateBindings
     public static function analyze(
         HandlerMatchContext $ctx,
         callable $isState,
-        callable $conventionalProperty,
+        callable $conventionalProperties,
         bool $nullableStates,
     ): ?array {
         $method = $ctx->method();
@@ -53,7 +54,7 @@ final class StateBindings
         /** @var list<\ReflectionParameter> $parameters */
         $parameters = $ctx->isSelfHandler() ? $method->getParameters() : array_slice($method->getParameters(), 1);
 
-        /** @var array<string, array{index: int, parameterName: string, stateClass: class-string, allowsNull: bool, bindTo: ?BindTo}> $states */
+        /** @var array<string, array{index: int, parameterName: string, stateClass: class-string, allowsNull: bool, bindTo: list<BindTo>}> $states */
         $states = [];
         foreach ($parameters as $index => $parameter) {
             $type = $parameter->getType();
@@ -66,7 +67,10 @@ final class StateBindings
                 continue;
             }
 
-            $bindTo = ($parameter->getAttributes(BindTo::class)[0] ?? null)?->newInstance();
+            $bindTo = [];
+            foreach ($parameter->getAttributes(BindTo::class) as $attribute) {
+                $bindTo[] = $attribute->newInstance();
+            }
             $states[$parameter->getName()] = [
                 'index' => $index,
                 'parameterName' => $parameter->getName(),
@@ -87,46 +91,73 @@ final class StateBindings
                 'parameterName' => $state['parameterName'],
                 'stateClass' => $state['stateClass'],
                 'allowsNull' => $state['allowsNull'],
-                'property' => null,
-                'method' => null,
+                'ids' => [],
                 'sources' => [],
             ];
-
-            if (null !== $state['bindTo']?->method) {
-                $binding['method'] = $state['bindTo']->method;
-            } elseif (null !== $state['bindTo']?->property) {
-                $binding['property'] = $state['bindTo']->property;
-            } else {
-                [$binding['property'], $binding['method']] = self::conventionalBinding(
-                    $messageRef,
-                    $method,
-                    $state,
-                    $conventionalProperty($state['stateClass']),
-                );
+            $properties = $conventionalProperties($state['stateClass']);
+            $overrides = [];
+            foreach ($state['bindTo'] as $bindTo) {
+                $tag = $bindTo->tag;
+                if (null === $tag) {
+                    if (1 !== count($properties)) {
+                        throw new \LogicException(sprintf(
+                            'Binding state parameter "%s" of %s::%s() requires an explicit tag in #[BindTo] for a multi-tag state.',
+                            $state['parameterName'],
+                            $method->getDeclaringClass()->getName(),
+                            $method->getName(),
+                        ));
+                    }
+                    $tag = array_key_first($properties);
+                }
+                if (!array_key_exists($tag, $properties)) {
+                    throw new \LogicException(sprintf(
+                        'Unknown tag "%s" in #[BindTo] for state parameter "%s" of %s::%s().',
+                        $tag,
+                        $state['parameterName'],
+                        $method->getDeclaringClass()->getName(),
+                        $method->getName(),
+                    ));
+                }
+                if (isset($overrides[$tag])) {
+                    throw new \LogicException(sprintf(
+                        'Duplicate #[BindTo] for tag "%s" of state parameter "%s" of %s::%s().',
+                        $tag,
+                        $state['parameterName'],
+                        $method->getDeclaringClass()->getName(),
+                        $method->getName(),
+                    ));
+                }
+                $overrides[$tag] = $bindTo;
             }
 
-            if (null !== $binding['method']) {
-                $binding['sources'] = self::methodSources(
-                    $messageRef,
-                    $method,
-                    $state,
-                    $states,
-                    $nullableStates,
-                    $binding['method'],
-                );
-            } elseif (
-                null === $binding['property']
-                || !MessagePropertyPath::exists($messageRef, $binding['property'])
-            ) {
-                throw new \LogicException(sprintf(
-                    'Message %s has no property path "%s" required for state parameter "%s" of %s::%s(). '
-                    . 'Either add the property path, or use #[BindTo("property.path")] to bind to a different message property path.',
-                    $messageClass,
-                    $binding['property'],
-                    $state['parameterName'],
-                    $method->getDeclaringClass()->getName(),
-                    $method->getName(),
-                ));
+            foreach ($properties as $tag => $property) {
+                $override = $overrides[$tag] ?? null;
+                $id = ['property' => $override?->property, 'method' => $override?->method, 'sources' => []];
+                if (null === $override) {
+                    [$id['property'], $id['method']] = self::conventionalBinding($messageRef, $method, $state, $property);
+                }
+                if (null !== $id['method']) {
+                    $id['sources'] = self::methodSources(
+                        $messageRef,
+                        $method,
+                        $state,
+                        $states,
+                        $nullableStates,
+                        $id['method'],
+                    );
+                } elseif (null === $id['property'] || !MessagePropertyPath::exists($messageRef, $id['property'])) {
+                    throw new \LogicException(sprintf(
+                        'Message %s has no property path "%s" required for state parameter "%s" of %s::%s(). '
+                        . 'Either add the property path, or use #[BindTo("property.path")] to bind to a different message property path.',
+                        $messageClass,
+                        $id['property'],
+                        $state['parameterName'],
+                        $method->getDeclaringClass()->getName(),
+                        $method->getName(),
+                    ));
+                }
+                $binding['ids'][$tag] = $id;
+                $binding['sources'] = array_values(array_unique([...$binding['sources'], ...$id['sources']]));
             }
 
             $bindings[] = $binding;
@@ -141,11 +172,11 @@ final class StateBindings
     /**
      * Runtime: resolves ids round by round and loads the states.
      *
-     * `$loadRound` receives the ids of one round, keyed by binding position in `$plan['bindings']`, and returns the
+     * `$loadRound` receives each state's identity map for one round, keyed by binding position in `$plan['bindings']`, and returns the
      * loaded states under the same keys. A state whose source state is null is not requested and is null itself.
      *
      * @param Plan                                               $plan
-     * @param callable(array<int, mixed>): array<int, ?object> $loadRound
+     * @param callable(array<int, array<array-key, mixed>>): array<int, ?object> $loadRound
      *
      * @return list<?object> states in binding order, ready for `$proceed(provided: ...)`
      */
@@ -163,7 +194,7 @@ final class StateBindings
                     continue;
                 }
 
-                $ids[$position] = self::id($message, $binding, $loaded);
+                $ids[$position] = array_map(static fn(array $id): mixed => self::id($message, $id, $loaded), $binding['ids']);
             }
 
             foreach ($loadRound($ids) as $position => $state) {
@@ -175,7 +206,7 @@ final class StateBindings
     }
 
     /**
-     * @param Binding                $binding
+     * @param IdBinding              $binding
      * @param array<string, ?object> $loaded
      */
     private static function id(object $message, array $binding, array $loaded): mixed
@@ -215,7 +246,7 @@ final class StateBindings
      * Without #[BindTo], the conventional name targets a message property or, failing that, a public message method.
      * A name matching both is ambiguous: adding one of them later would silently change which id is loaded.
      *
-     * @param array{index: int, parameterName: string, stateClass: class-string, allowsNull: bool, bindTo: ?BindTo} $state
+     * @param array{index: int, parameterName: string, stateClass: class-string, allowsNull: bool, bindTo: list<BindTo>} $state
      *
      * @return array{?string, ?string} property path or method name
      */
@@ -262,8 +293,8 @@ final class StateBindings
     }
 
     /**
-     * @param array{index: int, parameterName: string, stateClass: class-string, allowsNull: bool, bindTo: ?BindTo}                $state
-     * @param array<string, array{index: int, parameterName: string, stateClass: class-string, allowsNull: bool, bindTo: ?BindTo}> $states
+     * @param array{index: int, parameterName: string, stateClass: class-string, allowsNull: bool, bindTo: list<BindTo>}                $state
+     * @param array<string, array{index: int, parameterName: string, stateClass: class-string, allowsNull: bool, bindTo: list<BindTo>}> $states
      *
      * @return list<string>
      */

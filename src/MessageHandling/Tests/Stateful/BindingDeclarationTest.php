@@ -21,6 +21,25 @@ final class BindingDeclarationTest extends DecisionTestCase
         $application->withService(new \DateTimeImmutable(), \DateTimeImmutable::class)->boot();
     }
 
+    #[DataProvider('invalidMultiTagBindings')]
+    public function test_invalid_multi_tag_bindings_fail_during_compilation(string $command, string $message): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage($message);
+        $this->multiTagApplication($command, UntaggedDecisionState::class)->boot();
+    }
+
+    public static function invalidMultiTagBindings(): iterable
+    {
+        yield 'ambiguous override' => [MultiTagBindingWithoutTag::class, 'requires an explicit tag in #[BindTo]'];
+        yield 'unknown tag' => [MultiTagBindingUnknownTag::class, 'Unknown tag "faculty" in #[BindTo]'];
+        yield 'alias cannot identify state' => [MultiTagBindingAliasTag::class, 'Unknown tag "previousCourse" in #[BindTo]'];
+        yield 'duplicate override' => [MultiTagBindingDuplicateTag::class, 'Duplicate #[BindTo] for tag "course"'];
+        yield 'missing second tag' => [MultiTagBindingMissingValue::class, 'has no property path or method "studentId"'];
+        yield 'cycle through second tag' => [MultiTagBindingCycle::class, 'cyclic method binding dependency: pair -> member -> pair'];
+        yield 'no identity tags' => [InspectUntaggedDecisionState::class, 'must declare at least one event-sourced tag'];
+    }
+
     public static function invalidBindings(): iterable
     {
         yield 'ambiguous convention' => [
