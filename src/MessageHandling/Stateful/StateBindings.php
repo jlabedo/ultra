@@ -11,8 +11,9 @@ use Ultra\StatefulMessageHandling\Attribute\BindTo;
  * How the state parameters of one handler get their ids, shared by the state-loading aspects.
  *
  * A state id comes from a message property path or from a message method whose parameters are other states of the
- * same handler, matched by name. Without #[BindTo], the conventional name targets a property, or else a public method
- * of that name; #[BindTo('path')] and #[BindTo(method: 'name')] choose explicitly. Multi-tag event-sourced
+ * same handler, matched by name. Without #[BindTo], the conventional name targets a property or a public method.
+ * Event-sourced tags also accept a property named exactly like the tag. Multiple candidates are ambiguous;
+ * #[BindTo('path')] and #[BindTo(method: 'name')] choose explicitly. Multi-tag event-sourced
  * states resolve one id per tag, with tag-specific overrides. The union of all id method sources determines when
  * a state can load. Dependencies are resolved at compile time into loading rounds: round 0 holds states that depend on no other
  * state, round n the states whose sources are all loaded in earlier rounds.
@@ -134,7 +135,13 @@ final class StateBindings
                 $override = $overrides[$tag] ?? null;
                 $id = ['property' => $override?->property, 'method' => $override?->method, 'sources' => []];
                 if (null === $override) {
-                    [$id['property'], $id['method']] = self::conventionalBinding($messageRef, $method, $state, $property);
+                    [$id['property'], $id['method']] = self::conventionalBinding(
+                        $messageRef,
+                        $method,
+                        $state,
+                        $property,
+                        '' === $tag ? null : (string) $tag,
+                    );
                 }
                 if (null !== $id['method']) {
                     $id['sources'] = self::methodSources(
@@ -243,8 +250,9 @@ final class StateBindings
     }
 
     /**
-     * Without #[BindTo], the conventional name targets a message property or, failing that, a public message method.
-     * A name matching both is ambiguous: adding one of them later would silently change which id is loaded.
+     * Without #[BindTo], choose exactly one conventional property or public instance method.
+     * Event-sourced tags also accept their own name as a property. Stored states have no tag.
+     * Reject multiple candidates so adding a property cannot silently change the loaded identity.
      *
      * @param array{index: int, parameterName: string, stateClass: class-string, allowsNull: bool, bindTo: list<BindTo>} $state
      *
@@ -255,41 +263,58 @@ final class StateBindings
         \ReflectionMethod $handler,
         array $state,
         string $name,
+        ?string $tag,
     ): array {
-        $hasProperty = $messageRef->hasProperty($name);
-        $hasMethod =
+        $propertyNames = null === $tag ? [$name] : array_values(array_unique([$name, $tag]));
+        /** @var list<array{?string, ?string}> $candidates */
+        $candidates = [];
+        $expected = [];
+        foreach ($propertyNames as $property) {
+            $expected[] = sprintf('property "%s"', $property);
+            if ($messageRef->hasProperty($property)) {
+                $candidates[] = [$property, null];
+            }
+        }
+        $expected[] = sprintf('method "%s()"', $name);
+        if (
             $messageRef->hasMethod($name)
             && $messageRef->getMethod($name)->isPublic()
-            && !$messageRef->getMethod($name)->isStatic();
+            && !$messageRef->getMethod($name)->isStatic()
+        ) {
+            $candidates[] = [null, $name];
+        }
 
-        if ($hasProperty && $hasMethod) {
+        if (count($candidates) > 1) {
+            $descriptions = array_map(
+                static fn(array $candidate): string => null !== $candidate[0]
+                    ? sprintf('property "%s"', $candidate[0])
+                    : sprintf('method "%s()"', $candidate[1]),
+                $candidates,
+            );
             throw new \LogicException(sprintf(
-                'Message %s has both a property and a method named "%s", conventionally bound to state parameter "%s" of %s::%s(). '
-                . 'Use #[BindTo("%s")] or #[BindTo(method: "%s")] to choose one.',
+                'Message %s has ambiguous conventional bindings (%s) for state parameter "%s" of %s::%s(). '
+                . 'Use #[BindTo] to choose a source explicitly.',
                 $messageRef->getName(),
-                $name,
+                implode(', ', $descriptions),
                 $state['parameterName'],
                 $handler->getDeclaringClass()->getName(),
                 $handler->getName(),
-                $name,
-                $name,
             ));
         }
 
-        if (!$hasProperty && !$hasMethod) {
+        if ([] === $candidates) {
             throw new \LogicException(sprintf(
-                'Message %s has no property path or method "%s" required for state parameter "%s" of %s::%s(). '
-                . 'Either add a property or a public method named "%s", or use #[BindTo("property.path")] or #[BindTo(method: "name")].',
+                'Message %s has no conventional binding for state parameter "%s" of %s::%s(). '
+                . 'Expected %s. Use #[BindTo] to choose a source explicitly.',
                 $messageRef->getName(),
-                $name,
                 $state['parameterName'],
                 $handler->getDeclaringClass()->getName(),
                 $handler->getName(),
-                $name,
+                implode(', ', $expected),
             ));
         }
 
-        return $hasProperty ? [$name, null] : [null, $name];
+        return $candidates[0];
     }
 
     /**

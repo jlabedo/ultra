@@ -22,7 +22,11 @@ final class StateInjectionTest extends DecisionTestCase
     #[DataProvider('multiTagHandlerOrganizations')]
     public function test_multi_tag_states_replay_independent_combined_and_alias_groups_from_the_shared_round(string $commandClass): void
     {
-        $container = $this->multiTagApplication(InspectMultiTagActivity::class, InspectSeparateMultiTagActivity::class, InspectSeparateMultiTagActivityHandler::class, InspectPartiallyBoundMultiTagActivity::class)->boot();
+        $commands = [$commandClass, InspectPartiallyBoundMultiTagActivity::class];
+        if (InspectSeparateMultiTagActivity::class === $commandClass) {
+            $commands[] = InspectSeparateMultiTagActivityHandler::class;
+        }
+        $container = $this->multiTagApplication(...$commands)->boot();
         $mediator = $container->get('test.mediator');
         static::assertSame([0, false, 0, 0, 0], $mediator->send(new $commandClass('course', 'ada')));
         $container->get(InMemoryEventStore::class)->append([
@@ -46,7 +50,34 @@ final class StateInjectionTest extends DecisionTestCase
     public static function multiTagHandlerOrganizations(): iterable
     {
         yield 'self handler' => [InspectMultiTagActivity::class];
+        yield 'bare tag properties on self handler' => [InspectBareTagActivity::class];
         yield 'separate handler' => [InspectSeparateMultiTagActivity::class];
+    }
+
+    #[DataProvider('explicitConventionBindings')]
+    public function test_explicit_bindings_select_among_all_conventional_candidates(string $commandClass, int $expected): void
+    {
+        $container = $this->multiTagApplication($commandClass)->boot();
+        $events = [];
+        foreach (['bare' => 2, 'suffix' => 1, 'method' => 3] as $courseId => $count) {
+            for ($index = 0; $index < $count; ++$index) {
+                $events[] = new \Ultra\EventStore\Event(
+                    'student.subscribed',
+                    ['courseId' => $courseId, 'studentId' => 'ada'],
+                    ['course' => $courseId, 'student' => 'ada'],
+                );
+            }
+        }
+        $container->get(InMemoryEventStore::class)->append($events);
+
+        static::assertSame($expected, $container->get('test.mediator')->send(new $commandClass()));
+    }
+
+    public static function explicitConventionBindings(): iterable
+    {
+        yield 'bare property' => [BindBareTagProperty::class, 2];
+        yield 'suffixed property' => [BindSuffixedTagProperty::class, 1];
+        yield 'method' => [BindTagMethod::class, 3];
     }
 
     #[DataProvider('invalidMultiTagIds')]
@@ -72,12 +103,14 @@ final class StateInjectionTest extends DecisionTestCase
         $container = $this->application([
             CreateUuidCourse::class,
             InspectUuidCourse::class,
+            InspectBareUuidCourse::class,
             UuidCourseState::class,
         ], [UuidCourseCreated::class])->boot();
         $mediator = $container->get('test.mediator');
         $id = Uuid::fromString('12345678-1234-4234-8234-123456789abc');
 
         static::assertNull($mediator->send(new InspectUuidCourse($id)));
+        static::assertNull($mediator->send(new InspectBareUuidCourse($id)));
         static::assertEquals(new UuidCourseCreated($id, 'Math'), $mediator->send(new CreateUuidCourse($id, 'Math')));
         $events = $container->get(InMemoryEventStore::class)->load(StreamQuery::forStream(new DomainIdentifier(
             'course',
@@ -87,6 +120,7 @@ final class StateInjectionTest extends DecisionTestCase
         static::assertSame(['course' => (string) $id], $events[0]->domainIds);
         static::assertSame(['courseId' => (string) $id, 'name' => 'Math'], $events[0]->payload);
         static::assertSame('Math', $mediator->send(new InspectUuidCourse(Uuid::fromString((string) $id))));
+        static::assertSame('Math', $mediator->send(new InspectBareUuidCourse(Uuid::fromString((string) $id))));
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('Course already exists.');
@@ -249,6 +283,18 @@ final class StateInjectionTest extends DecisionTestCase
         $this->flush($container);
         static::assertSame('pending', $mediator->send(new GetDecisionOrderStatusQuery('order')));
         static::assertFalse($container->get('test.state_tables')->hasPendingChanges());
+    }
+
+    public function test_stored_states_bind_by_state_id_without_considering_the_bare_property(): void
+    {
+        $container = $this->storedApplication(ReadOrderByStateIdConvention::class)->boot();
+        $database = $container->get(InMemoryRowDatabase::class);
+        $database->seedRow('decision_orders', 'order_id', ['order_id' => 'selected', 'status' => 'paid']);
+        $database->seedRow('decision_orders', 'order_id', ['order_id' => 'other', 'status' => 'shipped']);
+
+        static::assertSame('paid', $container->get('test.mediator')->send(
+            new ReadOrderByStateIdConvention('selected', 'other'),
+        ));
     }
 
     public function test_missing_required_stored_states_fail_before_the_decision(): void

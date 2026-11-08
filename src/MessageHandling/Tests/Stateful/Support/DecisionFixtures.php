@@ -840,6 +840,30 @@ final readonly class InspectUuidCourse
     }
 }
 
+final readonly class InspectBareUuidCourse
+{
+    public function __construct(public Uuid $course) {}
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(UuidCourseState $state): ?string
+    {
+        return $state->name;
+    }
+}
+
+final readonly class ReadOrderByStateIdConvention
+{
+    public function __construct(public string $orderId, public string $order) {}
+
+    #[SelfHandler]
+    #[StateReader]
+    public function read(?DecisionOrderState $state): ?string
+    {
+        return $state?->status;
+    }
+}
+
 final class DecisionService
 {
     public int $calls = 0;

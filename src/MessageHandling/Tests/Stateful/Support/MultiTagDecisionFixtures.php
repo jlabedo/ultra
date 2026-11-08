@@ -73,11 +73,11 @@ final readonly class InspectBoundMultiTagActivity
 
 final readonly class InspectPartiallyBoundMultiTagActivity
 {
-    public function __construct(public NestedCourseReference $reference, private string|\Stringable $student) {}
+    public function __construct(public NestedCourseReference $reference, private string|\Stringable $selectedStudent) {}
 
     public function studentId(): string|\Stringable
     {
-        return $this->student;
+        return $this->selectedStudent;
     }
 
     #[SelfHandler]
@@ -191,7 +191,7 @@ final class InspectUntaggedDecisionState
 
 final readonly class InspectSeparateMultiTagActivity
 {
-    public function __construct(public mixed $courseId, public mixed $studentId) {}
+    public function __construct(public mixed $course, public mixed $student) {}
 }
 
 final class InspectSeparateMultiTagActivityHandler
@@ -220,5 +220,98 @@ final readonly class SubscribeDependentPairWhileMemberMoves
         $store->append([new Event('dependent_binding.member_joined', ['memberId' => $this->memberId, 'companyId' => 'grace'], ['member' => $this->memberId])]);
 
         return new StudentSubscribed($this->courseId, $member->companyId);
+    }
+}
+
+final readonly class InspectBareTagActivity
+{
+    public function __construct(public string $course, public string $student) {}
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(CourseStudentActivityState $activity, CourseStudentPairState $pair): array
+    {
+        return [
+            $activity->maxCapacity,
+            $activity->studentKnown,
+            $activity->subscriptionDelta,
+            $pair->subscriptions,
+            $pair->departures,
+        ];
+    }
+}
+
+class ClashingTagProperties
+{
+    public string $course = 'same';
+    public string $courseId = 'same';
+    public string $studentId = 'ada';
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(CourseStudentPairState $pair): void {}
+}
+
+final class ClashingTagPropertyAndMethod
+{
+    public string $course = 'same';
+    public string $studentId = 'ada';
+
+    public function courseId(): string
+    {
+        return 'same';
+    }
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(CourseStudentPairState $pair): void {}
+}
+
+class ClashingTagCandidates
+{
+    public string $course = 'bare';
+    public string $courseId = 'suffix';
+    public string $studentId = 'ada';
+
+    public function courseId(): string
+    {
+        return 'method';
+    }
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(CourseStudentPairState $pair): int
+    {
+        return $pair->subscriptions;
+    }
+}
+
+final class BindBareTagProperty extends ClashingTagCandidates
+{
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(#[BindTo('course', tag: 'course')] CourseStudentPairState $pair): int
+    {
+        return $pair->subscriptions;
+    }
+}
+
+final class BindSuffixedTagProperty extends ClashingTagCandidates
+{
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(#[BindTo('courseId', tag: 'course')] CourseStudentPairState $pair): int
+    {
+        return $pair->subscriptions;
+    }
+}
+
+final class BindTagMethod extends ClashingTagCandidates
+{
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(#[BindTo(method: 'courseId', tag: 'course')] CourseStudentPairState $pair): int
+    {
+        return $pair->subscriptions;
     }
 }

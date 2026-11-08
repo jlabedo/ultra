@@ -9,7 +9,7 @@ See the [shared concepts and consistency responsibilities](stateful.md). The eve
 - **Decision handlers**: Decision logic can live on a self-handling command or a separate handler. A method marked with `#[DecisionHandler]` declares the state dependencies that the compiler analyzes for loading and injection.
 - **States are event-sourced entities**: State classes come from `ultra/event-sourced-state` and use `#[EventSourcedEntity]` plus public `#[EventSourcingHandler]` methods (one typed event parameter) to fold the events selected by their loader. No aggregate root is required.
 - **Consistency by signature**: Parameters of the decision handler are either **state** (hydrated from the event store by stream) or **services** (resolved from the container). The aspect infers which is which and loads only the streams needed for that command.
-- **Identity by convention**: For every tag declared by `#[EventSourcedEntity(tags: ['course', 'student'])]`, the engine reads a value from the command’s `{tag}Id` property or, if there is none, its public `{tag}Id()` method. A name matching both is a compile-time error; `#[BindTo]` chooses explicitly.
+- **Identity by convention**: For every tag declared by `#[EventSourcedEntity(tags: ['course', 'student'])]`, the engine accepts the command’s `{tag}Id` property, its `{tag}` property, or its public instance `{tag}Id()` method. Exactly one candidate must exist; multiple candidates are a compile-time error; `#[BindTo]` chooses explicitly.
 - **Events are DTOs**: Events are plain classes with `#[Event('type.name')]` and `#[DomainIdentifier]` on properties. Stream routing is derived from those attributes when appending.
 
 Event-sourced state bindings accept `string|\Stringable` identifiers from properties or methods,
@@ -77,8 +77,16 @@ final class CreateCourseCommand
 ### Multi-tag states
 
 Each event-sourced tag has its own binding. For a state declaring `tags: ['course', 'student']`,
-`courseId` and `studentId` resolve independently by convention. Use a tag-specific override when the
-message exposes a different property path or method:
+each tag resolves independently by convention: properties `courseId` or `course` for the first tag,
+properties `studentId` or `student` for the second, or public instance methods `courseId()` and
+`studentId()`. Bare tag names apply only to properties; a `course()` method is not a conventional source.
+
+Exactly one candidate must exist per tag. Declaring both `course` and `courseId`, or either property
+alongside `courseId()`, fails during compilation, even if they would return equal values. The error
+lists the competing sources. `#[BindTo]` selects explicitly and bypasses conventional ambiguity for
+that tag. Stored states continue to use their `#[StateId]` property name as their convention.
+
+Use a tag-specific override when the message exposes a different property path or method:
 
 ```php
 #[SelfHandler]
@@ -106,7 +114,7 @@ branches, participates in optimistic concurrency protection.
 
 A state’s id, or any individual event-sourced tag value, can depend on another loaded state: compute it with a public method of the message whose parameters are
 other state parameters of the same handler, **matched by name** and typed with the same state class. The method is
-found by convention (a method with the conventional id name, such as `companyMonthId()` for the `companyMonth` tag) or
+found by convention (a method with the conventional id name, such as `companyMonthId()` for the `companyMonth` tag, provided neither conventional property exists) or
 named with `#[BindTo(method: 'name')]` (add `tag` for a multi-tag state). A state loads only after
 all dependencies from all of its tag bindings are available; a cycle through any tag fails compilation.
 

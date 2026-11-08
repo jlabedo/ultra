@@ -31,11 +31,23 @@ final class BindingDeclarationTest extends DecisionTestCase
 
     public static function invalidMultiTagBindings(): iterable
     {
+        yield 'both property names even with equal values' => [
+            ClashingTagProperties::class,
+            'ambiguous conventional bindings (property "courseId", property "course")',
+        ];
+        yield 'bare property and suffixed method' => [
+            ClashingTagPropertyAndMethod::class,
+            'ambiguous conventional bindings (property "course", method "courseId()")',
+        ];
+        yield 'all three candidates' => [
+            ClashingTagCandidates::class,
+            'ambiguous conventional bindings (property "courseId", property "course", method "courseId()")',
+        ];
         yield 'ambiguous override' => [MultiTagBindingWithoutTag::class, 'requires an explicit tag in #[BindTo]'];
         yield 'unknown tag' => [MultiTagBindingUnknownTag::class, 'Unknown tag "faculty" in #[BindTo]'];
         yield 'alias cannot identify state' => [MultiTagBindingAliasTag::class, 'Unknown tag "previousCourse" in #[BindTo]'];
         yield 'duplicate override' => [MultiTagBindingDuplicateTag::class, 'Duplicate #[BindTo] for tag "course"'];
-        yield 'missing second tag' => [MultiTagBindingMissingValue::class, 'has no property path or method "studentId"'];
+        yield 'missing second tag' => [MultiTagBindingMissingValue::class, 'Expected property "studentId", property "student", method "studentId()"'];
         yield 'cycle through second tag' => [MultiTagBindingCycle::class, 'cyclic method binding dependency: pair -> member -> pair'];
         yield 'no identity tags' => [InspectUntaggedDecisionState::class, 'must declare at least one event-sourced tag'];
     }
@@ -44,11 +56,11 @@ final class BindingDeclarationTest extends DecisionTestCase
     {
         yield 'ambiguous convention' => [
             DependentBindingConventionClashCommand::class,
-            'has both a property and a method named "companyMonthId"',
+            'ambiguous conventional bindings (property "companyMonthId", method "companyMonthId()")',
         ];
         yield 'missing convention' => [
             DependentBindingConventionMissingCommand::class,
-            'has no property path or method "companyMonthId"',
+            'Expected property "companyMonthId", property "companyMonth", method "companyMonthId()"',
         ];
         yield 'unknown source name' => [
             DependentBindingUnknownParameterCommand::class,
