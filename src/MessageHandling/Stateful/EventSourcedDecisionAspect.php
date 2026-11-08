@@ -87,9 +87,9 @@ final class EventSourcedDecisionAspect
             $prepared = [];
             foreach ($ids as $position => $id) {
                 $binding = $config['bindings'][$position];
-                if (!is_string($id)) {
+                if (!is_string($id) && !$id instanceof \Stringable) {
                     throw new \LogicException(sprintf(
-                        'Id of state parameter "%s" must be string, got %s.',
+                        'Id of state parameter "%s" must be string or Stringable, got %s.',
                         $binding['parameterName'],
                         get_debug_type($id),
                     ));

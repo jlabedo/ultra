@@ -10,10 +10,14 @@ namespace Ultra\EventStore;
  */
 final readonly class DomainIdentifier
 {
+    public string $value;
+
     public function __construct(
         public string $dimension,
-        public string $value,
-    ) {}
+        string|\Stringable $value,
+    ) {
+        $this->value = (string) $value;
+    }
 
     /** @return array<string, string> */
     public function toMap(): array

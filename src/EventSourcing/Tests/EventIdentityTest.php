@@ -11,10 +11,12 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\Uid\Uuid;
 use Ultra\Events\EventRegistryCompilerPass;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\Events\EventsExtension;
 use Ultra\EventStore\Tests\Support\MetadataNamedEvent;
+use Ultra\EventStore\Tests\Support\MutableDomainId;
 use Ultra\EventStore\Tests\Support\PrivateIdentifiedEvent;
 use Ultra\EventStore\Tests\Support\ProtectedIdentifiedEvent;
 use Ultra\EventStore\Tests\Support\PublicIdentifiedEvent;
@@ -52,8 +54,11 @@ final class EventIdentityTest extends TestCase
         yield 'numeric string' => ['17'];
     }
 
-    public function test_autoconfiguration_compiles_names_and_identifiers_for_all_property_visibilities(): void
-    {
+    #[DataProvider('identifierValues')]
+    public function test_autoconfiguration_compiles_names_and_string_identifiers_for_all_property_visibilities(
+        string|\Stringable $value,
+        string $expected,
+    ): void {
         $container = new ContainerBuilder();
         new EventsExtension()->build($container);
         foreach ([
@@ -74,13 +79,13 @@ final class EventIdentityTest extends TestCase
             $registry->all(),
         );
         foreach ([
-            ['course.created', new PublicIdentifiedEvent('public'), ['course' => 'public', 'faculty' => 'f1']],
-            ['course.archived', new PrivateIdentifiedEvent('private'), ['course' => 'private']],
-            ['course.renamed', new ProtectedIdentifiedEvent('protected'), ['course' => 'protected', 'faculty' => 'f1']],
+            ['course.created', new PublicIdentifiedEvent($value), ['course' => $expected, 'faculty' => 'f1']],
+            ['course.archived', new PrivateIdentifiedEvent($value), ['course' => $expected]],
+            ['course.renamed', new ProtectedIdentifiedEvent($value), ['course' => $expected, 'faculty' => 'f1']],
         ] as [$name, $event, $identifiers]) {
             static::assertSame($event::class, $registry->getClass($name));
             static::assertSame($name, $registry->getName($event::class));
-            static::assertEquals($identifiers, $registry->getDomainIdentifiers($event));
+            static::assertSame($identifiers, $registry->getDomainIdentifiers($event));
         }
     }
 
@@ -102,6 +107,58 @@ final class EventIdentityTest extends TestCase
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('Duplicate #[Event] name "explicit.event"');
         new EventRegistryCompilerPass()->process($conflict);
+    }
+
+    /** @return iterable<string, array{string|\Stringable, string}> */
+    public static function identifierValues(): iterable
+    {
+        yield 'text' => ['course-1', 'course-1'];
+        yield 'empty string' => ['', ''];
+        yield 'numeric string' => ['0', '0'];
+        yield 'UUID' => [
+            Uuid::fromString('12345678-1234-4234-8234-123456789abc'),
+            '12345678-1234-4234-8234-123456789abc',
+        ];
+        yield 'custom Stringable' => [new MutableDomainId('course-1'), 'course-1'];
+    }
+
+    #[DataProvider('invalidIdentifierValues')]
+    public function test_non_string_identifiers_fail_with_the_event_property_and_type(mixed $value): void
+    {
+        $container = new ContainerBuilder();
+        new EventsExtension()->build($container);
+        $classes = [PublicIdentifiedEvent::class, ProtectedIdentifiedEvent::class, PrivateIdentifiedEvent::class];
+        foreach ($classes as $class) {
+            $container->register($class, $class)->setAutoconfigured(true)->setAutowired(false);
+        }
+        $registry = $this->compileRegistry($container);
+
+        foreach ($classes as $class) {
+            try {
+                $registry->getDomainIdentifiers(new $class($value));
+                static::fail('An invalid domain identifier must be rejected.');
+            } catch (\LogicException $exception) {
+                static::assertSame(
+                    sprintf(
+                        'Domain identifier property %s::$courseId must be string or Stringable, got %s.',
+                        $class,
+                        get_debug_type($value),
+                    ),
+                    $exception->getMessage(),
+                );
+            }
+        }
+    }
+
+    /** @return iterable<string, array{mixed}> */
+    public static function invalidIdentifierValues(): iterable
+    {
+        yield 'null' => [null];
+        yield 'integer' => [42];
+        yield 'boolean' => [false];
+        yield 'float' => [1.5];
+        yield 'array' => [['course-1']];
+        yield 'object without Stringable' => [new \stdClass()];
     }
 
     /** @param array<string, mixed> $tag */

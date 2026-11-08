@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\StatefulMessageHandling\Tests;
 
+use Symfony\Component\Uid\Uuid;
 use Ultra\Events\Attribute\DomainIdentifier as DomainIdentifierAttribute;
 use Ultra\Events\Attribute\Event;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
@@ -734,7 +735,7 @@ final readonly class GetDecisionTermsStatusQuery
 final readonly class NestedCourseReference
 {
     public function __construct(
-        public string $courseId,
+        public string|\Stringable $courseId,
     ) {}
 }
 
@@ -754,7 +755,7 @@ final readonly class CreateNestedCourseCommand
             throw new \InvalidArgumentException('Course already exists');
         }
 
-        return [new CourseCreated($this->reference->courseId, $this->name, $this->maxCapacity)];
+        return [new CourseCreated((string) $this->reference->courseId, $this->name, $this->maxCapacity)];
     }
 }
 
@@ -777,6 +778,68 @@ final readonly class CreateCourseWithSeparateHandler
     }
 }
 
+#[Event('uuid_course.created')]
+final readonly class UuidCourseCreated
+{
+    public function __construct(
+        #[DomainIdentifierAttribute('course')]
+        public Uuid $courseId,
+        public string $name,
+    ) {}
+}
+
+#[EventSourcedEntity(tags: ['course'])]
+final class UuidCourseState
+{
+    public ?Uuid $courseId = null;
+    public ?string $name = null;
+
+    #[EventSourcingHandler]
+    public function onCreated(UuidCourseCreated $event): void
+    {
+        $this->courseId = $event->courseId;
+        $this->name = $event->name;
+    }
+}
+
+final readonly class CreateUuidCourse
+{
+    public function __construct(
+        public Uuid $courseId,
+        public string $name,
+    ) {}
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(UuidCourseState $course): UuidCourseCreated
+    {
+        if (null !== $course->courseId) {
+            throw new \LogicException('Course already exists.');
+        }
+
+        return new UuidCourseCreated($this->courseId, $this->name);
+    }
+}
+
+final readonly class InspectUuidCourse
+{
+    public function __construct(
+        private Uuid $id,
+    ) {}
+
+    public function courseId(): Uuid
+    {
+        return $this->id;
+    }
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(UuidCourseState $course): ?string
+    {
+        return $course->name;
+    }
+}
+
 final class DecisionService
 {
     public int $calls = 0;
@@ -790,7 +853,7 @@ final class DecisionService
 final readonly class InspectDecisionCourse
 {
     public function __construct(
-        public string $courseId,
+        public mixed $courseId,
         public mixed $result,
         public ?\Throwable $failure = null,
     ) {}

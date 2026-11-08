@@ -15,6 +15,23 @@ a stream does not require exclusive ownership by a domain entity.
 - **LoadResult** – Result of `load()`: visible `Event` objects, the base `StreamQuery`, the next `Checkpoint`, `hasMore` for pagination, and `appendCondition()` for optimistic writes.
 - **AppendCondition** – Optimistic-concurrency expectation tied to one exact `StreamQuery` and the checkpoint that was loaded for it.
 
+## Domain identifier values
+
+`DomainIdentifier` accepts a `string|\Stringable` value, including UUID objects. It immediately
+captures `(string) $value`; its `value` property and `toMap()` result always contain strings.
+Changing the input object later cannot change an existing identifier or query.
+
+Properties marked with `#[DomainIdentifier]` on event DTOs follow the same rule when the event registry
+extracts them, regardless of property visibility. Other value types are rejected with `LogicException`
+identifying the event class, property and actual type. Low-level `Event::domainIds` and
+`StreamQueryBranch::domainIdentifiers` remain maps of strings.
+
+Callers must provide a stable, canonical `__toString()` representation: equivalent identifiers must
+produce exactly the same string for event routing, query matching and concurrency protection.
+Identifier conversion uses `__toString()` independently of Mapper payload normalization. A custom
+payload normalizer does not change the identifier used for routing; replaying an event must preserve
+that identifier's canonical representation.
+
 ## EventStore Interface
 
 ```php

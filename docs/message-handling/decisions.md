@@ -12,6 +12,11 @@ See the [shared concepts and consistency responsibilities](stateful.md). The eve
 - **Identity by convention**: A state’s stream dimension comes from its single `#[EventSourcedEntity(tags: ['name'])]` tag; the engine reads the value from the command’s `{name}Id` property or, if there is none, its public `{name}Id()` method. A name matching both is a compile-time error; `#[BindTo]` chooses explicitly.
 - **Events are DTOs**: Events are plain classes with `#[Event('type.name')]` and `#[DomainIdentifier]` on properties. Stream routing is derived from those attributes when appending.
 
+Event-sourced state bindings accept `string|\Stringable` identifiers from properties or methods,
+including dependent methods. Values are converted before loading under the
+[domain identifier contract](../event-sourcing/event-store.md#domain-identifier-values).
+Other value types fail with `LogicException` identifying the state parameter and actual type.
+
 ## Attributes
 
 | Attribute | Target | Purpose |

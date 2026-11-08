@@ -6,9 +6,11 @@ namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Uid\Uuid;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\StreamQueryBranch;
+use Ultra\EventStore\Tests\Support\MutableDomainId;
 use Ultra\EventStore\Tests\Support\StorageTestCase;
 
 /** @internal */
@@ -16,6 +18,34 @@ use Ultra\EventStore\Tests\Support\StorageTestCase;
 #[CoversNamespace('Ultra\EventStore_Postgres')]
 final class EventSelectionTest extends StorageTestCase
 {
+    #[DataProvider('backends')]
+    public function test_stringable_identifiers_capture_strings_and_select_the_same_stream(string $backend): void
+    {
+        $store = $this->fixture($backend)->store;
+        $uuid = Uuid::fromString('12345678-1234-4234-8234-123456789abc');
+        $studentId = new MutableDomainId('student-1');
+        $identifier = new DomainIdentifier('student', $studentId);
+        $query = StreamQuery::forStream(new DomainIdentifier('course', $uuid), $identifier);
+        $studentId->value = 'student-2';
+        $store->append([
+            self::event('subscribed', ['course' => (string) $uuid, 'student' => 'student-1']),
+            self::event('subscribed', ['course' => (string) $uuid, 'student' => 'student-2']),
+        ]);
+
+        static::assertSame('student-1', $identifier->value);
+        static::assertSame(['student' => 'student-1'], $identifier->toMap());
+        static::assertSame(
+            [
+                'course' => (string) $uuid,
+                'student' => 'student-1',
+            ],
+            $query->branches[0]->domainIdentifiers,
+        );
+        $events = $store->load($query)->events;
+        static::assertCount(1, $events);
+        static::assertSame(['course' => (string) $uuid, 'student' => 'student-1'], $events[0]->domainIds);
+    }
+
     #[DataProvider('backends')]
     public function test_empty_and_global_queries_keep_their_distinct_meanings(string $backend): void
     {

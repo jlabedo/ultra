@@ -46,26 +46,39 @@ final readonly class CompiledEventRegistry implements EventRegistryInterface
                 // @mago-expect analysis:ambiguous-object-property-access
                 $identifiers[$name] = $event->{$propertyName};
             }
+        } else {
+            /** @var array<string, mixed> $identifiers */
+            $identifiers = \Closure::bind(
+                static function () use ($event, $eventClassIdentifiers): array {
+                    $identifiers = [];
+                    foreach ($eventClassIdentifiers as $name => $propertyName) {
+                        // @mago-expect analysis:string-member-selector
+                        // @mago-expect analysis:ambiguous-object-property-access
+                        $identifiers[$name] = $event->{$propertyName};
+                    }
 
-            // @mago-expect analysis:less-specific-nested-return-statement
-            return $identifiers;
+                    return $identifiers;
+                },
+                null,
+                $event::class,
+            )();
         }
 
-        // @mago-expect analysis:mixed-return-statement
-        return \Closure::bind(
-            static function () use ($event, $eventClassIdentifiers): array {
-                $identifiers = [];
-                foreach ($eventClassIdentifiers as $name => $propertyName) {
-                    // @mago-expect analysis:string-member-selector
-                    // @mago-expect analysis:ambiguous-object-property-access
-                    $identifiers[$name] = $event->{$propertyName};
-                }
+        $values = [];
+        foreach ($eventClassIdentifiers as $name => $propertyName) {
+            $value = $identifiers[$name];
+            if (!is_string($value) && !$value instanceof \Stringable) {
+                throw new \LogicException(sprintf(
+                    'Domain identifier property %s::$%s must be string or Stringable, got %s.',
+                    $event::class,
+                    $propertyName,
+                    get_debug_type($value),
+                ));
+            }
+            $values[$name] = (string) $value;
+        }
 
-                return $identifiers;
-            },
-            null,
-            $event::class,
-        )();
+        return $values;
     }
 
     public function all(): array

@@ -14,7 +14,7 @@ final readonly class PublicIdentifiedEvent
 {
     public function __construct(
         #[DomainIdentifier('course')]
-        public string $courseId,
+        public mixed $courseId,
         #[DomainIdentifier('faculty')]
         public string $facultyId = 'f1',
     ) {}
@@ -24,9 +24,9 @@ final readonly class PublicIdentifiedEvent
 final class PrivateIdentifiedEvent
 {
     #[DomainIdentifier('course')]
-    private string $courseId;
+    private mixed $courseId;
 
-    public function __construct(string $courseId)
+    public function __construct(mixed $courseId)
     {
         $this->courseId = $courseId;
     }
@@ -36,10 +36,10 @@ final class PrivateIdentifiedEvent
 final class ProtectedIdentifiedEvent
 {
     #[DomainIdentifier('course')]
-    private string $courseId;
+    protected mixed $courseId;
 
     public function __construct(
-        string $courseId,
+        mixed $courseId,
         #[DomainIdentifier('faculty')]
         public string $facultyId = 'f1',
     ) {

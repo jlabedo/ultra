@@ -11,6 +11,8 @@ interface EventRegistryInterface
     public function getName(string $eventClass): ?string;
 
     /**
+     * Capture string or Stringable property values as canonical strings, independently of payload normalization.
+     *
      * @return array<string, string>
      */
     public function getDomainIdentifiers(object $event): array;

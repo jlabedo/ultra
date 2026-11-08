@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Uid\Uuid;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\Tests\Support\MutableDomainId;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\StatefulMessageHandling\Tests\Example\Command\CreateCourseCommand;
@@ -17,6 +19,68 @@ use Ultra\StateStore\Exception\StateNotFoundException;
 
 final class StateInjectionTest extends DecisionTestCase
 {
+    public function test_uuid_identifiers_route_events_and_replay_states_through_properties_and_methods(): void
+    {
+        $container = $this->application([
+            CreateUuidCourse::class,
+            InspectUuidCourse::class,
+            UuidCourseState::class,
+        ], [UuidCourseCreated::class])->boot();
+        $mediator = $container->get('test.mediator');
+        $id = Uuid::fromString('12345678-1234-4234-8234-123456789abc');
+
+        static::assertNull($mediator->send(new InspectUuidCourse($id)));
+        static::assertEquals(new UuidCourseCreated($id, 'Math'), $mediator->send(new CreateUuidCourse($id, 'Math')));
+        $events = $container->get(InMemoryEventStore::class)->load(StreamQuery::forStream(new DomainIdentifier(
+            'course',
+            $id,
+        )))->events;
+        static::assertCount(1, $events);
+        static::assertSame(['course' => (string) $id], $events[0]->domainIds);
+        static::assertSame(['courseId' => (string) $id, 'name' => 'Math'], $events[0]->payload);
+        static::assertSame('Math', $mediator->send(new InspectUuidCourse(Uuid::fromString((string) $id))));
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Course already exists.');
+        $mediator->send(new CreateUuidCourse($id, 'Other'));
+    }
+
+    public function test_custom_stringable_bindings_select_the_same_state_as_strings(): void
+    {
+        $container = $this->courseApplication(CreateNestedCourseCommand::class)->boot();
+        $mediator = $container->get('test.mediator');
+        $mediator->send(new CreateCourseCommand('course', 'Math', 12));
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Course already exists');
+        $mediator->send(
+            new CreateNestedCourseCommand(new NestedCourseReference(new MutableDomainId('course')), 'Other', 5),
+        );
+    }
+
+    #[DataProvider('invalidEventStateIds')]
+    public function test_non_string_event_state_bindings_fail_with_the_parameter_and_type(mixed $id): void
+    {
+        $container = $this->inspectedApplication('events')->boot();
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage(sprintf(
+            'Id of state parameter "course" must be string or Stringable, got %s.',
+            get_debug_type($id),
+        ));
+        $container->get('test.mediator')->send(new InspectDecisionCourse($id, null));
+    }
+
+    /** @return iterable<string, array{mixed}> */
+    public static function invalidEventStateIds(): iterable
+    {
+        yield 'null' => [null];
+        yield 'integer' => [42];
+        yield 'boolean' => [false];
+        yield 'float' => [1.5];
+        yield 'array' => [['course']];
+        yield 'object without Stringable' => [new \stdClass()];
+    }
+
     #[DataProvider('handlerOrganizations')]
     public function test_loaded_states_are_injected_into_self_and_separate_handlers(
         string $family,
