@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Mapper_Compiler;
 
+use Symfony\Component\Uid\Uuid;
 use Ultra\Mapper\Attribute\AsValue;
 use Ultra\Mapper\RuntimeNormalizerInterface;
 
@@ -95,6 +96,10 @@ final readonly class NormalizationShapeAnalyzer
         $runtimeNormalizer = $this->runtimeNormalizersByType[$class] ?? null;
         if (null !== $runtimeNormalizer) {
             return $this->forRuntimeNormalizer($runtimeNormalizer);
+        }
+
+        if (class_exists(Uuid::class) && is_a($class, Uuid::class, true)) {
+            return ['kind' => 'scalar', 'types' => ['string']];
         }
 
         if (enum_exists($class)) {

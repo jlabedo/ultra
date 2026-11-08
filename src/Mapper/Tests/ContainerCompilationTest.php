@@ -8,12 +8,14 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
+use Symfony\Component\Uid\UuidV4;
 use Ultra\Mapper\RuntimeNormalizerInterface;
 use Ultra\Mapper\Tests\Fixtures\AssemblyRecord;
 use Ultra\Mapper\Tests\Fixtures\InnerValue;
 use Ultra\Mapper\Tests\Fixtures\MultiTypeRuntimeEmailNormalizer;
 use Ultra\Mapper\Tests\Fixtures\RuntimeEmail;
 use Ultra\Mapper\Tests\Fixtures\SecondaryRuntimeEmail;
+use Ultra\Mapper\Tests\Fixtures\UuidRecord;
 use Ultra\Mapper\Tests\Support\MapperTestCase;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Bundle\MapperCompilerPass;
@@ -35,6 +37,11 @@ final class ContainerCompilationTest extends MapperTestCase
         $container->getDefinition(UltraNormalizer::class)->setPublic(true);
         $container->setDefinition('record', new Definition(\stdClass::class)->addResourceTag(TagNames::NORMALIZABLE, [
             'class' => AssemblyRecord::class,
+        ]));
+        $container->setDefinition('uuid_record', new Definition(
+            \stdClass::class,
+        )->addResourceTag(TagNames::NORMALIZABLE, [
+            'class' => UuidRecord::class,
         ]));
         $container->setDefinition(
             InnerValue::class,
@@ -70,6 +77,10 @@ final class ContainerCompilationTest extends MapperTestCase
         static::assertEquals($record, $normalizer->fromScalar($representation, AssemblyRecord::class));
         static::assertSame(42, $normalizer->toScalar(new InnerValue(42)));
         static::assertEquals(new InnerValue(42), $normalizer->fromScalar(42, InnerValue::class));
+        $uuidRecord = new UuidRecord(new UuidV4('12345678-1234-4234-8234-123456789abc'));
+        $uuidRepresentation = ['id' => '12345678-1234-4234-8234-123456789abc', 'optional' => null];
+        static::assertSame($uuidRepresentation, $normalizer->toScalar($uuidRecord));
+        static::assertEquals($uuidRecord, $normalizer->fromScalar($uuidRepresentation, UuidRecord::class));
         static::assertSame($compiled, $this->generatedFiles($cache));
     }
 

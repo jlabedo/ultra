@@ -6,6 +6,9 @@ namespace Ultra\Mapper\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Uid\MaxUuid;
+use Symfony\Component\Uid\NilUuid;
+use Symfony\Component\Uid\UuidV4;
 use Ultra\Mapper\DenormalizationContext;
 use Ultra\Mapper\Exception\DenormalizationException;
 use Ultra\Mapper\Path;
@@ -16,6 +19,8 @@ use Ultra\Mapper\Tests\Fixtures\Foo;
 use Ultra\Mapper\Tests\Fixtures\MultiUnion;
 use Ultra\Mapper\Tests\Fixtures\RuntimeEmailNormalizer;
 use Ultra\Mapper\Tests\Fixtures\User;
+use Ultra\Mapper\Tests\Fixtures\UuidList;
+use Ultra\Mapper\Tests\Fixtures\UuidRecord;
 use Ultra\Mapper\Tests\Support\MapperTestCase;
 
 /** @internal */
@@ -27,7 +32,7 @@ final class DenormalizationErrorsTest extends MapperTestCase
     #[DataProvider('invalidRepresentations')]
     public function test_invalid_representations_report_the_type_and_path(
         string $type,
-        array $data,
+        mixed $data,
         string $reason,
         string $path,
         bool $withPrefix = false,
@@ -45,10 +50,40 @@ final class DenormalizationErrorsTest extends MapperTestCase
         }
     }
 
-    /** @return iterable<string, array{class-string, array, string, string, bool?: bool}> */
+    /** @return iterable<string, array{class-string, mixed, string, string, bool?: bool}> */
     public static function invalidRepresentations(): iterable
     {
         yield 'scalar type' => [Foo::class, ['id' => '42', 'name' => 'bar'], 'expected int', '[id]'];
+        yield 'malformed UUID at root' => [UuidV4::class, 'invalid', 'Invalid UUID', '[payload]', true];
+        yield 'non-string UUID at root' => [UuidV4::class, 42, 'Invalid UUID', '[payload]', true];
+        yield 'nil UUID rejects another value' => [
+            NilUuid::class,
+            '12345678-1234-4234-8234-123456789abc',
+            'Invalid UUID',
+            '[payload]',
+            true,
+        ];
+        yield 'max UUID rejects another value' => [
+            MaxUuid::class,
+            '12345678-1234-4234-8234-123456789abc',
+            'Invalid UUID',
+            '[payload]',
+            true,
+        ];
+        yield 'malformed UUID property' => [
+            UuidRecord::class,
+            ['id' => 'invalid', 'optional' => null],
+            'Invalid UUID',
+            '[payload][id]',
+            true,
+        ];
+        yield 'UUID version mismatch' => [
+            UuidRecord::class,
+            ['id' => '12345678-1234-4234-8234-123456789abc', 'optional' => '12345678-1234-7234-8234-123456789abc'],
+            'Invalid UUID',
+            '[optional]',
+        ];
+        yield 'UUID collection element' => [UuidList::class, ['primary' => 'invalid'], 'Invalid UUID', '[primary]'];
         yield 'required property' => [Foo::class, ['name' => 'bar'], 'Missing required property', '[id]'];
         yield 'collection element' => [EmailList::class, ['a@example.test', 123], 'expected string', '[1]'];
         yield 'nested object' => [

@@ -6,6 +6,16 @@ namespace Ultra\Mapper\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Uid\MaxUuid;
+use Symfony\Component\Uid\NilUuid;
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV1;
+use Symfony\Component\Uid\UuidV3;
+use Symfony\Component\Uid\UuidV4;
+use Symfony\Component\Uid\UuidV5;
+use Symfony\Component\Uid\UuidV6;
+use Symfony\Component\Uid\UuidV7;
+use Symfony\Component\Uid\UuidV8;
 use Ultra\Mapper\Tests\Fixtures\Address;
 use Ultra\Mapper\Tests\Fixtures\ArrayOfArrayOfObject;
 use Ultra\Mapper\Tests\Fixtures\ArrayOfArrays;
@@ -27,6 +37,8 @@ use Ultra\Mapper\Tests\Fixtures\PromotedAndNonPromoted;
 use Ultra\Mapper\Tests\Fixtures\Status;
 use Ultra\Mapper\Tests\Fixtures\TemporalValue;
 use Ultra\Mapper\Tests\Fixtures\User;
+use Ultra\Mapper\Tests\Fixtures\UuidList;
+use Ultra\Mapper\Tests\Fixtures\UuidRecord;
 use Ultra\Mapper\Tests\Support\MapperTestCase;
 
 /** @internal */
@@ -119,6 +131,34 @@ final class RepresentationTest extends MapperTestCase
             ['date' => '2024-06-01T12:34:56.654321-03:00'],
         ];
         yield 'nullable date absent' => [new TemporalValue(null), ['date' => null]];
+        foreach ([
+            Uuid::class => 0,
+            UuidV1::class => 1,
+            UuidV3::class => 3,
+            UuidV4::class => 4,
+            UuidV5::class => 5,
+            UuidV6::class => 6,
+            UuidV7::class => 7,
+            UuidV8::class => 8,
+        ] as $class => $version) {
+            $uuid = "12345678-1234-{$version}234-8234-123456789abc";
+            yield $class => [new $class(strtoupper($uuid)), $uuid];
+        }
+        yield 'nil UUID' => [new NilUuid(), '00000000-0000-0000-0000-000000000000'];
+        yield 'max UUID' => [new MaxUuid(), 'ffffffff-ffff-ffff-ffff-ffffffffffff'];
+        $uuid = new UuidV4('12345678-1234-4234-8234-123456789abc');
+        yield 'UUID properties and nullable UUID present' => [
+            new UuidRecord($uuid, $uuid),
+            ['id' => '12345678-1234-4234-8234-123456789abc', 'optional' => '12345678-1234-4234-8234-123456789abc'],
+        ];
+        yield 'nullable UUID absent' => [
+            new UuidRecord($uuid),
+            ['id' => '12345678-1234-4234-8234-123456789abc', 'optional' => null],
+        ];
+        yield 'UUID collection preserves keys' => [
+            new UuidList(['primary' => $uuid, 7 => new NilUuid()]),
+            ['primary' => '12345678-1234-4234-8234-123456789abc', 7 => '00000000-0000-0000-0000-000000000000'],
+        ];
         yield 'nested AsValue wrappers' => [new OuterValue(new InnerValue(42)), 42];
         yield 'backed enum and nullable enum absent' => [
             new EnumHolder(Status::ACTIVE),

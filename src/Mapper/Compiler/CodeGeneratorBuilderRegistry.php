@@ -26,6 +26,7 @@ class CodeGeneratorBuilderRegistry
         // Register default builders in order of specificity
         $this->registerBuilder(new RuntimeNormalizerCallCodeGeneratorBuilder($runtimeNormalizers));
         $this->registerBuilder(new DateTimeCodeGeneratorBuilder());
+        $this->registerBuilder(new SymfonyUuidCodeGeneratorBuilder());
         $this->registerBuilder(new BackedEnumPropertyCodeGeneratorBuilder());
         $this->registerBuilder(new ValueObjectPropertyCodeGeneratorBuilder());
         $this->registerBuilder(new ObjectCodeGeneratorBuilder());

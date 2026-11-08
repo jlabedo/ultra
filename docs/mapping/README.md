@@ -27,6 +27,20 @@ Denormalization preserves the instant and microseconds; `DateTimeInterface` prop
 `DateTimeImmutable`. Nullable date properties preserve null. The representation preserves the offset,
 but does not store a named timezone's identity or daylight-saving rules.
 
+## Symfony UUIDs
+
+When `symfony/uid` is installed, `Symfony\Component\Uid\Uuid` and its UUID subclasses are supported
+automatically, both at the root and in properties and collections. They normalize to lowercase,
+hyphenated UUID strings, such as `12345678-1234-4234-8234-123456789abc`.
+Denormalization accepts canonical UUID strings and reconstructs the declared type; a property declared
+as `Uuid` resolves the concrete UUID version through Symfony's `Uuid::fromString()`.
+Nullable UUID properties preserve null. Invalid representations and version mismatches throw
+`DenormalizationException` with the affected path. Nil and Max UUIDs preserve their special values.
+
+UUID normalization shapes are scalar strings, including when used by storage compilers.
+Explicit runtime normalizers for an exact UUID type override this built-in behavior.
+The UID component is optional at runtime; it is a development dependency for the guarantee suites.
+
 ## Custom normalizers
 
 Register RuntimeNormalizerInterface implementations during configuration, before normalization or code generation. Registration uses exact handled types. Already generated normalizers take precedence in the in-memory cache, and registered runtime types influence generated code for nested values.
@@ -46,10 +60,10 @@ The context's runtime, compiler and Symfony guarantees are tested together in `s
 
 | Guarantee | Suite | Cases |
 | --- | --- | --- |
-| Representations preserve values in both directions | [RepresentationTest](../../src/Mapper/Tests/RepresentationTest.php) | Scalars, nested objects and value wrappers, keyed collections, unions, nulls, dates, enums, constructor and stored properties, virtual properties. |
-| Invalid data reports its origin | [DenormalizationErrorsTest](../../src/Mapper/Tests/DenormalizationErrorsTest.php) | Required properties, scalar types, collection indices, nested paths, unions, custom normalizers and caller context; path construction with runtime variables. |
+| Representations preserve values in both directions | [RepresentationTest](../../src/Mapper/Tests/RepresentationTest.php) | Scalars, nested objects and value wrappers, keyed collections, unions, nulls, dates, Symfony UUIDs, enums, constructor and stored properties, virtual properties. |
+| Invalid data reports its origin | [DenormalizationErrorsTest](../../src/Mapper/Tests/DenormalizationErrorsTest.php) | Required properties, scalar types, collection indices, nested paths, unions, invalid UUIDs and version mismatches, custom normalizers and caller context; path construction with runtime variables. |
 | Traversal rejects cycles and accepts shared objects | [NormalizationSafetyTest](../../src/Mapper/Tests/NormalizationSafetyTest.php) | A circular graph, shared runtime-normalized properties, recovery after failure and repeated calls. |
-| Normalizer resolution respects configuration and the generated cache | [NormalizerResolutionTest](../../src/Mapper/Tests/NormalizerResolutionTest.php) | Exact registered types at root and in nested generated code, subclasses and late registration. |
+| Normalizer resolution respects configuration and the generated cache | [NormalizerResolutionTest](../../src/Mapper/Tests/NormalizerResolutionTest.php) | Exact registered types at root and in nested generated code, built-in UUID overrides, optional UID component absence, subclasses and late registration. |
 | Generated files are usable runtime artifacts | [CompilationLifecycleTest](../../src/Mapper/Tests/CompilationLifecycleTest.php) | Standalone default cache, first-use generation, instance reuse, loading precompiled files without regeneration and generated class names. |
 | Compilation identities preserve independent configurations and types | [GenerationIdentityTest](../../src/Mapper/Tests/GenerationIdentityTest.php) | Different runtime configurations in one process and artifact directory; types with colliding flattened names or literal escape-like names through first-use generation and precompilation; moved precompiled artifacts retain their namespace. |
 | Shapes describe usable representations for storage compilation | [NormalizationShapeTest](../../src/Mapper/Tests/NormalizationShapeTest.php) | Stored fields, value wrappers, enums, property shapes, precise runtime return types and closed array shapes; rejection of ambiguous shapes. |

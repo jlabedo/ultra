@@ -23,7 +23,8 @@
     },
     "require-dev": {
         "opis/closure": "^4.0",
-        "symfony/process": "7.*|8.*"
+        "symfony/process": "7.*|8.*",
+        "symfony/uid": "7.*|8.*"
     },
     "replace": {
         "ultra/code-generation": "self.version",

@@ -6,6 +6,8 @@ namespace Ultra\Mapper\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV4;
 use Ultra\Mapper\Tests\Fixtures\BrokenValue;
 use Ultra\Mapper\Tests\Fixtures\CompoundId;
 use Ultra\Mapper\Tests\Fixtures\CompoundIdNormalizer;
@@ -69,6 +71,13 @@ final class NormalizationShapeTest extends MapperTestCase
         ];
         yield 'nested value wrappers' => [OuterValue::class, [], ['kind' => 'scalar', 'types' => ['int']]];
         yield 'backed enum' => [Status::class, [], ['kind' => 'scalar', 'types' => ['string']]];
+        yield 'Symfony UUID' => [Uuid::class, [], ['kind' => 'scalar', 'types' => ['string']]];
+        yield 'Symfony UUID version' => [UuidV4::class, [], ['kind' => 'scalar', 'types' => ['string']]];
+        yield 'Symfony UUID with runtime override' => [
+            UuidV4::class,
+            [UuidV4::class => ExternalIdNormalizer::class],
+            ['kind' => 'scalar', 'types' => ['int', 'string']],
+        ];
     }
 
     public function test_property_shapes_are_available_to_storage_compilers(): void

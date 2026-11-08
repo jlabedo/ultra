@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\Mapper\Tests\Fixtures;
 
+use Symfony\Component\Uid\Uuid;
+use Symfony\Component\Uid\UuidV4;
 use Ultra\Mapper\Attribute\AsValue;
 use Ultra\Mapper\DenormalizationContext;
 use Ultra\Mapper\Exception\DenormalizationException;
@@ -72,6 +74,31 @@ readonly class TemporalValue
 {
     public function __construct(
         public ?\DateTimeInterface $date,
+    ) {}
+}
+
+readonly class UuidRecord
+{
+    public function __construct(
+        public Uuid $id,
+        public ?UuidV4 $optional = null,
+    ) {}
+}
+
+readonly class UuidOverrideRecord
+{
+    public function __construct(
+        public Uuid $id,
+        public UuidV4 $custom,
+    ) {}
+}
+
+#[AsValue]
+readonly class UuidList
+{
+    /** @param array<array-key, Uuid> $ids */
+    public function __construct(
+        public array $ids,
     ) {}
 }
 
@@ -190,6 +217,28 @@ class RuntimeEmailNormalizer implements RuntimeNormalizerInterface
         }
 
         return new RuntimeEmail(substr($value, strlen('runtime-email:')));
+    }
+}
+
+class RuntimeUuidNormalizer implements RuntimeNormalizerInterface
+{
+    public static function handledTypes(): iterable
+    {
+        return [UuidV4::class];
+    }
+
+    public function toScalar(mixed $value, UltraNormalizer $normalizer): string
+    {
+        return 'uuid:' . $value->toRfc4122();
+    }
+
+    public function fromScalar(
+        array|bool|float|int|string|null $value,
+        string $type,
+        UltraNormalizer $normalizer,
+        DenormalizationContext $context,
+    ): UuidV4 {
+        return UuidV4::fromString(substr($value, strlen('uuid:')));
     }
 }
 
