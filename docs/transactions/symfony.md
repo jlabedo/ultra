@@ -11,3 +11,36 @@ or alias before or after the extension is built. Without that service, the decor
 unit-of-work participants still flush and clear normally.
 
 When MessageHandlingExtension is installed, the runner's around advice wraps compiled handlers. A read-only handler opens no transaction unless the unit of work reports pending work. The extension defaults to NoTransactionManager if no TransactionManager service exists. Configure a real transaction manager for the same connection as participating database resources.
+
+## Doctrine ORM
+
+ORM participation is opt-in. With DoctrineBundle and `doctrine/orm` installed, register the adapter
+as an autoconfigured service so UnitOfWorkExtension collects it in the composite:
+
+```yaml
+services:
+    Ultra\UnitOfWork\OrmUnitOfWork:
+        autoconfigure: true
+        arguments:
+            $registry: '@doctrine'
+            $managerName: null
+
+    Ultra\UnitOfWork\DbalTransactionManager:
+        arguments:
+            $connection: '@doctrine.dbal.default_connection'
+
+    Ultra\UnitOfWork\TransactionManager:
+        alias: Ultra\UnitOfWork\DbalTransactionManager
+```
+
+For a named ORM manager, set `$managerName` and select its matching DBAL connection. Use a normal
+service tag with a priority when its flush must precede or follow other participants:
+
+```yaml
+tags:
+    - { name: ultra_unit_of_work.unit_of_work, priority: 100 }
+```
+
+The adapter resolves the current manager through the registry on each flush and clear. It does
+not reset the manager itself. The [ORM participation contract](README.md#doctrine-orm-participation)
+defines transaction, cleanup, failure and manager-replacement responsibilities.

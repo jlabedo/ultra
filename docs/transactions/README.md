@@ -67,6 +67,55 @@ $runner->run(function () use ($mediator, $context): void {
 
 Nested calls join the active runner. A nested exception marks the active run rollback-only before rethrowing; if outer code catches that exception, the outer runner clears the unit of work instead of flushing.
 
+### Recommended ownership
+
+The outermost runner call defines which buffered changes must succeed or be abandoned together.
+With MessageHandling integration, this scope is established automatically around compiled handlers,
+including ordinary handlers and queries, not only decision handlers. Nested handlers using the same
+runner join the current scope. Wrap several message dispatches in an explicit `run()` to group them;
+successive top-level dispatches otherwise finish their work independently.
+
+The runner owns finalization and asks the configured `TransactionManager` to open the SQL transaction
+only for the final flush. Participants must use the same connection and must not commit independently.
+Application reads and decisions belong inside the work scope, before this SQL transaction.
+Transactions opened directly during that preparation are outside the runner's atomicity guarantee.
+Joining application-owned SQL transactions is not supported by `DbalTransactionManager`.
+
+The runner clears participants at the end of the outermost scope, including when preparation fails
+or nested work marks the scope rollback-only. A fresh scope must not reuse abandoned changes.
+
+## Doctrine ORM participation
+
+[`OrmUnitOfWork`](../../src/UnitOfWork/Runtime/OrmUnitOfWork.php) adapts Doctrine's current object manager
+to the existing unit-of-work contract. Install `doctrine/orm` and supply its `ManagerRegistry`:
+
+```php
+$orm = new OrmUnitOfWork($registry, managerName: null);
+$unitOfWork = new CompositeUnitOfWork([$orm, $eventStoreUnitOfWork]);
+$runner = new TransactionalUnitOfWorkRunner($unitOfWork, new DbalTransactionManager($connection));
+```
+
+The optional name selects a manager; `null` selects the registry's default manager. The selected ORM
+manager must use the exact DBAL connection managed by the transaction manager. Composite ordering
+determines when its flush runs relative to other participants.
+
+- `hasPendingChanges()` always returns `true`: ORM dirty checking happens during flush, including
+  modifications to already managed entities. Enrolling ORM therefore requests a flush transaction
+  even when the application work made no changes.
+- `flush()` resolves the current manager through the registry and calls its `flush()` inside the
+  runner's transaction. It does not own the final commit.
+- `clear()` resolves the current manager and calls its `clear()` after success or failure. Managed
+  entities become detached, including entities returned from the outermost work callback.
+
+Ultra neither closes nor resets the manager, including when another participant fails after the ORM
+flush. If Doctrine closes its manager on an ORM flush failure, the application remains responsible
+for replacing it before another run. The adapter follows registry replacements between runs and
+never caches the manager. Do not replace the selected manager during an active run.
+
+Prepare ORM changes inside the work callback and start runs with clean participant state. Cleanup
+does not restore PHP objects to their previous values; retry decisions with freshly loaded data.
+See [Symfony wiring](symfony.md#doctrine-orm) for explicit service registration.
+
 ## Ordering and limits
 
 Reads and decisions run before the flush transaction so transactions remain short and buffered work can be ordered together. CompositeUnitOfWork follows caller-provided component order; StateStore orders declared query guards and manual guards. Ordering reduces deadlock risks but does not eliminate conflicts with other writers or locks acquired in a different order. Read [query guards](../stored-state/query-guards.md) when changing those protocols and the [ADR](../adr/0003-defer-transactions-to-ordered-flush.md) for rationale.
@@ -128,5 +177,6 @@ The context's runtime and container guarantees live together under `src/UnitOfWo
 | Nested work shares the outer boundary; caught failures or explicit rollback-only prevent flushing; later runs start clean | [NestedWorkTest](../../src/UnitOfWork/Tests/NestedWorkTest.php): success, propagated/caught failures, active and idle rollback-only requests, runner reuse |
 | Compiled handlers and hooks share one work boundary and retain caller context | [HandlerWorkBoundaryTest](../../src/UnitOfWork/Tests/HandlerWorkBoundaryTest.php): commands, queries, synchronous events, asynchronous consumers, hook writes and handler/flush failures |
 | Container assembly collects participants in priority order, optionally decorates the event store and supplies the runner and default transaction manager | [ContainerCompositionTest](../../src/UnitOfWork/Tests/ContainerCompositionTest.php): autoconfiguration, explicit tags, priority, absence of an event store, early/late definitions and aliases, flush and clear |
+| ORM participates in the shared transaction and cleanup without owning manager renewal | [OrmParticipationTest](../../src/UnitOfWork/Tests/OrmParticipationTest.php): container enrollment, loaded-entity updates, nested work, preparation/participant/ORM failures, rollback and reuse, default/named manager replacement |
 
 [Local support](../../src/UnitOfWork/Tests/Support) shares call recording and container setup without moving assertions out of the suites. Compiled test artifacts use a separate directory per case; Postgres tables are temporary and scoped to each connection. Storage semantics remain owned by EventStore, MappedTable, StateStore and MessageHandling; these suites verify their coordination boundaries and assembly. Follow the shared [test-refactoring rules](../development.md#refactoring-tests) when changing this map.
