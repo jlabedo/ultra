@@ -13,7 +13,7 @@ use Doctrine\ORM\Tools\SchemaTool;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\UnitOfWork\CompositeUnitOfWork;
 use Ultra\UnitOfWork\DbalTransactionManager;
-use Ultra\UnitOfWork\OrmUnitOfWork;
+use Ultra\UnitOfWork\DoctrineUnitOfWork;
 use Ultra\UnitOfWork\Tests\Support\ContainerTestCase;
 use Ultra\UnitOfWork\Tests\Support\Orm\Record;
 use Ultra\UnitOfWork\Tests\Support\Orm\Registry;
@@ -52,9 +52,9 @@ final class OrmParticipationTest extends ContainerTestCase
             ->withService(new DbalTransactionManager($this->connection))
             ->withAlias(\Doctrine\Persistence\ManagerRegistry::class, Registry::class)
             ->withAlias(\Ultra\UnitOfWork\TransactionManager::class, DbalTransactionManager::class)
-            ->withClass(OrmUnitOfWork::class)
+            ->withClass(DoctrineUnitOfWork::class)
             ->withService($participant, 'test.ultra_participant')
-            ->withAlias('test.orm', OrmUnitOfWork::class)
+            ->withAlias('test.orm', DoctrineUnitOfWork::class)
             ->boot();
         /** @var UnitOfWorkRunner $runner */
         $runner = $container->get('test.runner');
@@ -98,7 +98,7 @@ final class OrmParticipationTest extends ContainerTestCase
     {
         $failure = new \RuntimeException('failed ' . $stage);
         $participant = $this->ultraParticipant('work' === $stage ? null : $failure);
-        $orm = new OrmUnitOfWork($this->registry);
+        $orm = new DoctrineUnitOfWork($this->registry);
         $participants = 'before orm' === $stage ? [$participant, $orm] : [$orm, $participant];
         $runner = new TransactionalUnitOfWorkRunner(
             new CompositeUnitOfWork($participants),
@@ -210,7 +210,7 @@ final class OrmParticipationTest extends ContainerTestCase
 
     private function runner(?string $managerName = null): TransactionalUnitOfWorkRunner
     {
-        $unitOfWork = new CompositeUnitOfWork([new OrmUnitOfWork($this->registry, $managerName)]);
+        $unitOfWork = new CompositeUnitOfWork([new DoctrineUnitOfWork($this->registry, $managerName)]);
 
         return new TransactionalUnitOfWorkRunner($unitOfWork, new DbalTransactionManager($this->connection));
     }

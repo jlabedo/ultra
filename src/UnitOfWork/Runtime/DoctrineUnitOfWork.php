@@ -7,7 +7,7 @@ namespace Ultra\UnitOfWork;
 use Doctrine\Persistence\ManagerRegistry;
 
 /** Participates in the caller's transaction without owning or renewing the Doctrine manager. */
-final readonly class OrmUnitOfWork implements UnitOfWork
+final readonly class DoctrineUnitOfWork implements UnitOfWork
 {
     public function __construct(
         private ManagerRegistry $registry,

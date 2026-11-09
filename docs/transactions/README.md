@@ -86,11 +86,13 @@ or nested work marks the scope rollback-only. A fresh scope must not reuse aband
 
 ## Doctrine ORM participation
 
-[`OrmUnitOfWork`](../../src/UnitOfWork/Runtime/OrmUnitOfWork.php) adapts Doctrine's current object manager
-to the existing unit-of-work contract. Install `doctrine/orm` and supply its `ManagerRegistry`:
+[`DoctrineUnitOfWork`](../../src/UnitOfWork/Runtime/DoctrineUnitOfWork.php) adapts Doctrine's current object manager
+to the existing unit-of-work contract. The adapter depends only on `doctrine/persistence` and its
+`ManagerRegistry`/`ObjectManager` interfaces. For ORM participation, install `doctrine/orm` and supply
+its registry:
 
 ```php
-$orm = new OrmUnitOfWork($registry, managerName: null);
+$orm = new DoctrineUnitOfWork($registry, managerName: null);
 $unitOfWork = new CompositeUnitOfWork([$orm, $eventStoreUnitOfWork]);
 $runner = new TransactionalUnitOfWorkRunner($unitOfWork, new DbalTransactionManager($connection));
 ```

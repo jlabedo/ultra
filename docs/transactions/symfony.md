@@ -19,7 +19,7 @@ as an autoconfigured service so UnitOfWorkExtension collects it in the composite
 
 ```yaml
 services:
-    Ultra\UnitOfWork\OrmUnitOfWork:
+    Ultra\UnitOfWork\DoctrineUnitOfWork:
         autoconfigure: true
         arguments:
             $registry: '@doctrine'
