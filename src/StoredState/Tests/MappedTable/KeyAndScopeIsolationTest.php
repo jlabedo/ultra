@@ -17,44 +17,68 @@ use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 #[CoversNamespace('Ultra\MappedTable')]
 final class KeyAndScopeIsolationTest extends RowSetTestCase
 {
-    #[DataProvider('backends')]
-    public function test_the_default_single_column_key_accepts_scalar_addresses(string $backend): void
+    /** @return iterable<string, array{string, string}> */
+    public static function singleColumnAddresses(): iterable
     {
+        foreach (self::backends() as $backendName => [$backend]) {
+            foreach (['scalar', 'Stringable', 'structured Stringable'] as $address) {
+                yield $backendName . ' ' . $address => [$backend, $address];
+            }
+        }
+    }
+
+    #[DataProvider('singleColumnAddresses')]
+    public function test_the_default_single_column_key_accepts_equivalent_addresses(
+        string $backend,
+        string $address,
+    ): void {
         $fixture = $this->fixture($backend);
         $adapter = 'memory' === $backend
             ? new InMemoryMappedRowSetAdapter($fixture->storage, $fixture->tableName)
             : new PostgresMappedRowSetAdapter($fixture->connection(), $fixture->tableName);
         $rows = new MappedRowSet($adapter);
-        $rows->withKey('row')->insert()->setColumn('status', 'saved');
+        $key = match ($address) {
+            'scalar' => 'row',
+            'Stringable' => self::stringable('row'),
+            'structured Stringable' => new MappedKey(['id' => self::stringable('row')]),
+        };
+        $rows->withKey($key)->insert()->setColumn('status', 'pending');
+        $rows->withKey('row')->setColumn('status', 'saved');
+        static::assertSame(['status' => 'saved'], $rows->row($key, ['status']));
+        $rows->expectSameRowKeys([$key]);
         $fixture->flush($rows);
         $rows->clear();
-        static::assertSame(['status' => 'saved'], $rows->row('row', ['status']));
+        static::assertSame(['status' => 'saved'], $rows->row($key, ['status']));
         static::assertSame(['id' => 'row'], $rows->rows()[0]->key->values);
+        $rows->expectSameRowKeys([$key]);
+        $fixture->flush($rows);
     }
 
     #[DataProvider('backends')]
     public function test_composite_keys_and_scoped_shortcuts_keep_colliding_ids_independent(string $backend): void
     {
         $fixture = $this->fixture($backend, ['owner', 'env', 'id']);
-        $one = $fixture->view(new MappedKey(['owner' => 'one', 'env' => 'prod']));
+        $one = $fixture->view(new MappedKey(['owner' => self::stringable('one'), 'env' => 'prod']));
         $two = $fixture->view(new MappedKey(['owner' => 'two', 'env' => 'prod']));
         $dev = $fixture->view(new MappedKey(['owner' => 'one', 'env' => 'dev']));
         foreach ([$one, $two, $dev] as $index => $rows) {
             $rows
-                ->withKey('same')
+                ->withKey(self::stringable('same'))
                 ->insert()
                 ->setColumn('status', 'value-' . $index);
             $fixture->flush($rows);
             $rows->clear();
         }
-        $key = new MappedKey(['id' => 'same', 'env' => 'prod', 'owner' => 'one']);
+        $key = new MappedKey(['id' => self::stringable('same'), 'env' => 'prod', 'owner' => 'one']);
+        static::assertSame(['env' => 'prod', 'id' => 'same', 'owner' => 'one'], $key->values);
         static::assertSame(['status' => 'value-0'], $fixture->rows->row($key, ['status']));
         static::assertSame($key->values, $one->rows(['status'])[0]->key->values);
         static::assertCount(1, $one->rows());
+        $one->expectSameRowKeys([self::stringable('same')]);
         $one->withKey('same')->setColumn('status', 'updated');
         $fixture->flush($one);
         $one->clear();
-        static::assertSame(['status' => 'updated'], $one->row('same', ['status']));
+        static::assertSame(['status' => 'updated'], $one->row(self::stringable('same'), ['status']));
         static::assertSame(['status' => 'value-1'], $two->row('same', ['status']));
         static::assertSame(['status' => 'value-2'], $dev->row('same', ['status']));
         $one->withKey('same')->delete();
@@ -110,5 +134,19 @@ final class KeyAndScopeIsolationTest extends RowSetTestCase
         $database->writeRow('unscoped', 'id', ['id' => 'same', 'status' => 'last']);
         static::assertSame('last', $database->row('unscoped', 'id', 'same')['status']);
         static::assertCount(1, $database->rows('unscoped', 'id'));
+    }
+
+    private static function stringable(string $value): \Stringable
+    {
+        return new readonly class($value) implements \Stringable {
+            public function __construct(
+                private string $value,
+            ) {}
+
+            public function __toString(): string
+            {
+                return $this->value;
+            }
+        };
     }
 }

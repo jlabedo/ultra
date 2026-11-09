@@ -12,7 +12,7 @@ final readonly class MappedKey implements \Stringable
     /** @var array<string, int|string> */
     public array $values;
 
-    /** @param array<array-key, mixed> $values Validated column names and scalar values are stored below. */
+    /** @param array<array-key, mixed> $values Stringable values are converted to strings; column names and scalar values are validated. */
     public function __construct(array $values)
     {
         if ([] === $values) {
@@ -24,9 +24,14 @@ final readonly class MappedKey implements \Stringable
                 throw new \InvalidArgumentException('Mapped key columns must be non-empty strings.');
             }
 
+            if ($value instanceof \Stringable) {
+                $value = (string) $value;
+                $values[$column] = $value;
+            }
+
             if (!is_int($value) && !is_string($value)) {
                 throw new \InvalidArgumentException(sprintf(
-                    'Mapped key column "%s" must be an int or string, got %s.',
+                    'Mapped key column "%s" must be an int, string or Stringable, got %s.',
                     $column,
                     get_debug_type($value),
                 ));

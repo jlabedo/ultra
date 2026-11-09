@@ -37,7 +37,17 @@ $table->withKey('user-1')
     ->setColumn('status', 'active');
 ```
 
-`withKey(...)` returns a fluent `PendingRowUpdate` handle for one row in the table. A scalar is accepted when exactly one key column remains unbound. Composite rows use `MappedKey`:
+`withKey(...)` returns a fluent `PendingRowUpdate` handle for one row in the table. An `int`, `string` or
+`Stringable` object is accepted when exactly one key column remains unbound. `row(...)` and
+`expectSameRowKeys(...)` accept the same key forms. Composite rows use `MappedKey`, whose column values
+also accept `int`, `string` or `Stringable`. Stringable values are converted to strings when the `MappedKey`
+is constructed; its stored values remain `int|string`. A `MappedKey` passed directly keeps its named columns.
+
+```php
+$table->withKey($userId)->setColumn('status', 'active'); // $userId implements Stringable.
+```
+
+For composite keys:
 
 ```php
 use Ultra\MappedTable\MappedKey;
@@ -209,7 +219,7 @@ same scenario exercises the in-memory and Postgres adapters, including their fac
 | Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/StoredState/Tests/MappedTable/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, final-plan table policies, concurrent insertions/deletions and first-expectation retention. |
 | Saved membership supersedes earlier membership within its scope | [MembershipReconciliationTest](../../src/StoredState/Tests/MappedTable/MembershipReconciliationTest.php) | Late rows, empty and successive sets, duplicate keys, retained columns, earlier expectations and later explicit operations. |
 | Preparation, flush, clear and transactions retain their separate responsibilities | [FlushLifecycleTest](../../src/StoredState/Tests/MappedTable/FlushLifecycleTest.php) | Preparation without I/O, sorted immutable snapshots, check-only writes, complete cleanup, external rollback and in-memory transaction snapshots. |
-| Keys and scopes address independent rows | [KeyAndScopeIsolationTest](../../src/StoredState/Tests/MappedTable/KeyAndScopeIsolationTest.php) | Composite keys, scalar shortcuts, colliding IDs, multiple scope columns and invalid addresses. |
+| Keys and scopes address independent rows | [KeyAndScopeIsolationTest](../../src/StoredState/Tests/MappedTable/KeyAndScopeIsolationTest.php) | Composite keys, scalar and Stringable shortcuts, colliding IDs, multiple scope columns and invalid addresses. |
 | Persisted column values survive encoding and decoding | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | Text/UUID/integer arrays, escaping and nulls, JSON, dates, booleans, single and multiple writes and optimistic typed comparisons. |
 | Persistence observations hold competing writers until their transaction ends | [PersistenceLockingTest](../../src/StoredState/Tests/MappedTable/PersistenceLockingTest.php) | Two real Postgres connections, present/absent checks, insert/upsert/update contention, release, transaction requirements and table-wide absence protection. |
 | Standalone inspection preserves pending plans and distinguishes actual SQL, failures and fixture work | [SqlInspectionTest](../../src/StoredState/Tests/MappedTable/SqlInspectionTest.php) | Merged batches, reads before transactions, checks without writes, executed prefixes, rollback, setup/work failures, cleanup, repeated runs and CLI status. |

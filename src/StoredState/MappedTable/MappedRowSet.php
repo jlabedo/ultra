@@ -28,7 +28,7 @@ final class MappedRowSet implements UnitOfWork
         private readonly MappedRowSetAdapter $adapter,
     ) {}
 
-    public function withKey(int|string|MappedKey $key): PendingRowUpdate
+    public function withKey(int|string|MappedKey|\Stringable $key): PendingRowUpdate
     {
         $key = $this->normalizeKey($key);
         $updateKey = $key->fingerprint();
@@ -87,7 +87,7 @@ final class MappedRowSet implements UnitOfWork
      *
      * @return array<string, mixed>|false
      */
-    public function row(int|string|MappedKey $key, array $columns = []): array|false
+    public function row(int|string|MappedKey|\Stringable $key, array $columns = []): array|false
     {
         $key = $this->normalizeKey($key);
         $retainedKeys = $this->retainedRowKeys();
@@ -150,7 +150,7 @@ final class MappedRowSet implements UnitOfWork
      * Expects the row keys this unit of work sees, the ones rows() returns. Keys whose presence is decided by a
      * buffered write are checked immediately; the other keys must match the committed rows at flush.
      *
-     * @param list<int|string|MappedKey> $keys
+     * @param list<int|string|MappedKey|\Stringable> $keys
      */
     public function expectSameRowKeys(array $keys): void
     {
@@ -257,7 +257,7 @@ final class MappedRowSet implements UnitOfWork
         return array_values($keys);
     }
 
-    private function normalizeKey(int|string|MappedKey $key): MappedKey
+    private function normalizeKey(int|string|MappedKey|\Stringable $key): MappedKey
     {
         $keyColumns = $this->adapter->keyColumns();
         $scope = $this->adapter->scope();
