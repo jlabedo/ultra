@@ -68,8 +68,9 @@ final class ProjectionFixture
             }
             $this->connection = PostgresConnectionSupport::sharedConnection($dsn);
             $eventPrefix = $this->prefix . 'event_';
+            $eventStoreImplementation = 'hstore' === $backend ? 'hstore' : 'query-streams';
             $this->schemas = [
-                PostgresTestSupport::schemaForImplementation($eventPrefix, 'query-streams'),
+                PostgresTestSupport::schemaForImplementation($eventPrefix, $eventStoreImplementation),
                 new PostgresProjectionSegmentSchema($this->prefix),
                 new PostgresDirtyKeyTrackerSchema($this->prefix . 'dirty_keys'),
                 new PostgresCoordinatorLeaseSchema($this->prefix . 'coordinator_lease'),
@@ -83,7 +84,7 @@ final class ProjectionFixture
             $this->store = PostgresTestSupport::storeForImplementation(
                 $this->connection,
                 $eventPrefix,
-                'query-streams',
+                $eventStoreImplementation,
             );
             $this->segments = $implementation->createSegmentRepository();
             $this->activity = new ProjectionActivity($implementation->createDirtyKeyTracker());
