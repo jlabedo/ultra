@@ -6,6 +6,7 @@ namespace Ultra\EventStore\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Sequence;
@@ -69,11 +70,17 @@ final class CheckpointReplayTest extends StorageTestCase
         $store->load(StreamQuery::none(), batchSize: 0);
     }
 
-    #[DataProvider('backends')]
-    public function test_catch_up_and_bounded_replay_paginate_without_repeating_or_leaking_events(string $backend): void
+    #[DataProvider('replayQueries')]
+    public function test_catch_up_and_bounded_replay_paginate_without_repeating_or_leaking_events(
+        string $backend,
+        bool $segmentQuery,
+    ): void
     {
         $store = $this->fixture($backend)->store;
-        $query = StreamQuery::forStream(new DomainIdentifier('course', 'c1'));
+        $bucket = BucketHasher::bucketFor('c1');
+        $query = $segmentQuery
+            ? StreamQuery::forSegment('course', $bucket, $bucket)
+            : StreamQuery::forStream(new DomainIdentifier('course', 'c1'));
         $empty = $store->load($query)->checkpoint;
         $store->append([
             self::event('created', ['course' => 'c1'], ['name' => 'first']),
@@ -124,6 +131,15 @@ final class CheckpointReplayTest extends StorageTestCase
         static::assertFalse($store->load($query, to: $empty)->hasMore);
         static::assertFalse($store->load(StreamQuery::none(), from: $empty, to: $saved)->hasMore);
         static::assertFalse($store->load(StreamQuery::none(), from: $saved)->hasMore);
+    }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function replayQueries(): iterable
+    {
+        foreach (self::backends() as $backend => [$implementation]) {
+            yield $backend . ' exact stream' => [$implementation, false];
+            yield $backend . ' segment' => [$implementation, true];
+        }
     }
 
     #[DataProvider('backends')]

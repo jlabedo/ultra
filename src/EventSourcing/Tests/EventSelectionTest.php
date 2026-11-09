@@ -7,6 +7,7 @@ namespace Ultra\EventStore\Tests;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\Uid\Uuid;
+use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore\StreamQueryBranch;
@@ -18,6 +19,87 @@ use Ultra\EventStore\Tests\Support\StorageTestCase;
 #[CoversNamespace('Ultra\EventStore_Postgres')]
 final class EventSelectionTest extends StorageTestCase
 {
+    /** @param list<int> $expectedSlots */
+    #[DataProvider('segmentRanges')]
+    public function test_segments_include_their_boundaries_and_exclude_missing_dimensions(
+        string $backend,
+        int $from,
+        int $to,
+        array $expectedSlots,
+    ): void {
+        $store = $this->fixture($backend)->store;
+        $store->append([
+            self::event('created', ['course' => 'course-484'], ['slot' => 0]),
+            self::event('created', ['course' => 'course-262'], ['slot' => 127]),
+            self::event('created', ['course' => 'course-161'], ['slot' => 128]),
+            self::event('created', ['course' => 'course-1198'], ['slot' => 255]),
+            self::event('created', ['student' => 'course-484'], ['slot' => 'missing']),
+            self::event('renamed', ['course' => 'course-484'], ['slot' => 'other type']),
+        ]);
+
+        $result = $store->load(StreamQuery::forSegment('course', $from, $to, 'created'));
+
+        static::assertSame($expectedSlots, array_column(array_column($result->events, 'payload'), 'slot'));
+        static::assertFalse($result->hasMore);
+    }
+
+    /** @return iterable<string, array{string, int, int, list<int>}> */
+    public static function segmentRanges(): iterable
+    {
+        foreach (self::backends() as $backend => [$implementation]) {
+            yield $backend . ' full range' => [$implementation, 0, 255, [0, 127, 128, 255]];
+            yield $backend . ' left segment' => [$implementation, 0, 127, [0, 127]];
+            yield $backend . ' right segment' => [$implementation, 128, 255, [128, 255]];
+            yield $backend . ' first bucket' => [$implementation, 0, 0, [0]];
+            yield $backend . ' last bucket' => [$implementation, 255, 255, [255]];
+        }
+    }
+
+    #[DataProvider('backends')]
+    public function test_segment_filters_compose_with_identifiers_and_branch_local_types(string $backend): void
+    {
+        $store = $this->fixture($backend)->store;
+        $store->append([
+            self::event('created', ['course' => 'course-484', 'tenant' => 'one'], ['slot' => 1]),
+            self::event('created', ['course' => 'course-484', 'tenant' => 'two'], ['slot' => 2]),
+            self::event('created', ['course' => 'course-1198', 'tenant' => 'one'], ['slot' => 3]),
+            self::event('renamed', ['course' => 'course-484', 'tenant' => 'one'], ['slot' => 4]),
+            self::event('renamed', ['course' => 'course-1198', 'tenant' => 'two'], ['slot' => 5]),
+        ]);
+        $query = StreamQuery::anyOf(
+            new StreamQuery([
+                new StreamQueryBranch(['tenant' => 'one'], ['created'])->withBucketRange('course', 0, 127),
+            ]),
+            StreamQuery::forSegment('course', 255, 255, 'renamed'),
+        );
+
+        static::assertSame([1, 5], array_column(array_column($store->load($query)->events, 'payload'), 'slot'));
+        static::assertSame(
+            [1, 2, 4],
+            array_column(array_column($store->load(StreamQuery::forSegment('course', 0, 127))->events, 'payload'), 'slot'),
+        );
+    }
+
+    #[DataProvider('backends')]
+    public function test_segment_hashing_preserves_empty_and_escaped_utf8_identifiers(string $backend): void
+    {
+        $store = $this->fixture($backend)->store;
+        $dimension = "coursé'\\";
+        $values = ['', "été'\\", '000123'];
+        $store->append(array_map(
+            static fn(string $value) => self::event(domainIds: [$dimension => $value], payload: ['id' => $value]),
+            $values,
+        ));
+        $store->append([self::event(domainIds: ['student' => 'one'], payload: ['id' => 'missing'])]);
+
+        foreach ($values as $value) {
+            $bucket = BucketHasher::bucketFor($value);
+            $result = $store->load(StreamQuery::forSegment($dimension, $bucket, $bucket));
+
+            static::assertSame([$value], array_column(array_column($result->events, 'payload'), 'id'));
+        }
+    }
+
     #[DataProvider('backends')]
     public function test_stringable_identifiers_capture_strings_and_select_the_same_stream(string $backend): void
     {

@@ -12,7 +12,7 @@ namespace Ultra\EventStore;
  *
  * When bucketRange is set, the branch matches events whose domain identifier value in the given
  * dimension hashes to a bucket within [bucketFrom, bucketTo]. Used for segment-scoped projection
- * queries; requires the bucket column in event_domain_ids.
+ * queries. Events without that dimension are excluded.
  */
 readonly class StreamQueryBranch
 {

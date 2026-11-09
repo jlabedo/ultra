@@ -246,28 +246,38 @@ final class PostgresEventStoreHStore implements EventStore
 
         foreach ($query->branches as $branch) {
             [$domainIdsSql, $domainIdsParams] = $this->hstoreValueExpression($branch->domainIdentifiers);
+            $identifierPredicate = sprintf('e.domain_ids @> %s', $domainIdsSql);
+            $identifierTypes = array_fill(0, count($domainIdsParams), ParameterType::STRING);
+
+            if (null !== $branch->bucketRange) {
+                // Match BucketHasher's first MD5 byte; a missing dimension produces NULL and is excluded.
+                $identifierPredicate .= " AND get_byte(decode(md5(e.domain_ids -> ?), 'hex'), 0) BETWEEN ? AND ?";
+                array_push(
+                    $domainIdsParams,
+                    $branch->bucketRange['dimension'],
+                    $branch->bucketRange['from'],
+                    $branch->bucketRange['to'],
+                );
+                array_push($identifierTypes, ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER);
+            }
 
             if ([] === $branch->eventTypes) {
-                $clauses[] = sprintf('(e.domain_ids @> %s)', $domainIdsSql);
+                $clauses[] = sprintf('(%s)', $identifierPredicate);
                 array_push($params, ...$domainIdsParams);
-                array_push($types, ...array_fill(0, count($domainIdsParams), ParameterType::STRING));
+                array_push($types, ...$identifierTypes);
 
                 continue;
             }
 
             $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
             $clauses[] = sprintf(
-                '(e.event_type IN (%s) AND e.domain_ids @> %s)',
+                '(e.event_type IN (%s) AND %s)',
                 $eventTypePlaceholders,
-                $domainIdsSql,
+                $identifierPredicate,
             );
 
             array_push($params, ...$branch->eventTypes, ...$domainIdsParams);
-            array_push($types, ...array_fill(
-                0,
-                count($branch->eventTypes) + count($domainIdsParams),
-                ParameterType::STRING,
-            ));
+            array_push($types, ...array_fill(0, count($branch->eventTypes), ParameterType::STRING), ...$identifierTypes);
         }
 
         return [implode(' OR ', $clauses), $params, $types];

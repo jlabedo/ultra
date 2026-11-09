@@ -57,6 +57,12 @@ Use `PostgresEventStoreHStore` when you want the simpler storage model based on 
 
 Use `PostgresEventStoreQueryStreams` when you want a normalized domain-identifier index instead of the `hstore` extension.
 
+Both implementations support segment-scoped projection queries. HStore computes the
+bucket from the first MD5 byte of the requested domain identifier in SQL, before
+pagination; QueryStreams filters its persisted bucket column. Events without the
+partition identifier are excluded. HStore's existing GIN index does not index this
+bucket calculation, so segment reads can scan events outside their bucket range.
+
 ## Benchmarks
 
 [PostgresEventStoreBench](../../src/EventSourcing/Tests/Benchmark/PostgresEventStoreBench.php) exercises the public

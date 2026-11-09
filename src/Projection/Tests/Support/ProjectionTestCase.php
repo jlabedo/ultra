@@ -19,6 +19,7 @@ abstract class ProjectionTestCase extends ProjectionFunctionalTestCase
     {
         yield 'memory' => ['memory'];
         yield 'postgres' => ['postgres'];
+        yield 'postgres-hstore' => ['hstore'];
     }
 
     protected function fixture(string $backend, ?ClockInterface $clock = null): ProjectionFixture

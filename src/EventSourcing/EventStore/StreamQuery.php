@@ -67,8 +67,8 @@ readonly class StreamQuery
 
     /**
      * Segment-scoped query: matches events whose domain identifier value in $identifierDimension
-     * hashes to a bucket within [$bucketFrom, $bucketTo]. Requires the bucket column in
-     * event_domain_ids (step 2 of the projection schema migration).
+     * hashes to a bucket within [$bucketFrom, $bucketTo], using BucketHasher.
+     * Events without that dimension are excluded.
      */
     public static function forSegment(
         string $identifierDimension,
