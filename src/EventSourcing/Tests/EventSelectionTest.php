@@ -76,7 +76,10 @@ final class EventSelectionTest extends StorageTestCase
         static::assertSame([1, 5], array_column(array_column($store->load($query)->events, 'payload'), 'slot'));
         static::assertSame(
             [1, 2, 4],
-            array_column(array_column($store->load(StreamQuery::forSegment('course', 0, 127))->events, 'payload'), 'slot'),
+            array_column(
+                array_column($store->load(StreamQuery::forSegment('course', 0, 127))->events, 'payload'),
+                'slot',
+            ),
         );
     }
 
@@ -86,10 +89,9 @@ final class EventSelectionTest extends StorageTestCase
         $store = $this->fixture($backend)->store;
         $dimension = "coursé'\\";
         $values = ['', "été'\\", '000123'];
-        $store->append(array_map(
-            static fn(string $value) => self::event(domainIds: [$dimension => $value], payload: ['id' => $value]),
-            $values,
-        ));
+        $store->append(array_map(static fn(string $value) => self::event(domainIds: [$dimension => $value], payload: [
+            'id' => $value,
+        ]), $values));
         $store->append([self::event(domainIds: ['student' => 'one'], payload: ['id' => 'missing'])]);
 
         foreach ($values as $value) {

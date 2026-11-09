@@ -270,14 +270,14 @@ final class PostgresEventStoreHStore implements EventStore
             }
 
             $eventTypePlaceholders = implode(', ', array_fill(0, count($branch->eventTypes), '?'));
-            $clauses[] = sprintf(
-                '(e.event_type IN (%s) AND %s)',
-                $eventTypePlaceholders,
-                $identifierPredicate,
-            );
+            $clauses[] = sprintf('(e.event_type IN (%s) AND %s)', $eventTypePlaceholders, $identifierPredicate);
 
             array_push($params, ...$branch->eventTypes, ...$domainIdsParams);
-            array_push($types, ...array_fill(0, count($branch->eventTypes), ParameterType::STRING), ...$identifierTypes);
+            array_push(
+                $types,
+                ...array_fill(0, count($branch->eventTypes), ParameterType::STRING),
+                ...$identifierTypes,
+            );
         }
 
         return [implode(' OR ', $clauses), $params, $types];

@@ -74,8 +74,7 @@ final class CheckpointReplayTest extends StorageTestCase
     public function test_catch_up_and_bounded_replay_paginate_without_repeating_or_leaking_events(
         string $backend,
         bool $segmentQuery,
-    ): void
-    {
+    ): void {
         $store = $this->fixture($backend)->store;
         $bucket = BucketHasher::bucketFor('c1');
         $query = $segmentQuery
