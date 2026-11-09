@@ -30,7 +30,7 @@ use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
-use Ultra\UnitOfWork\DoctrineTransactionManager;
+use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
 use Ultra\UnitOfWork\TransactionManager;
 
@@ -99,7 +99,7 @@ final readonly class Runtime
         $this->authorizationGuard = new QueryGuard($registry, 'iam_authorization');
         $this->runner = new TransactionalUnitOfWorkRunner(
             $registry,
-            $transactions ?? new DoctrineTransactionManager($connection, TransactionIsolationLevel::READ_COMMITTED),
+            $transactions ?? new DbalTransactionManager($connection, TransactionIsolationLevel::READ_COMMITTED),
         );
         $this->authorization = new Authorization($connection, $clock);
         $this->administration = new Administration(

@@ -9,7 +9,7 @@ use Doctrine\DBAL\TransactionIsolationLevel;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Ultra\Testing\PostgresConnectionSupport;
-use Ultra\UnitOfWork\DoctrineTransactionManager;
+use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\NoTransactionManager;
 use Ultra\UnitOfWork\TransactionManager;
 
@@ -36,7 +36,7 @@ final class TransactionOwnershipTest extends TestCase
         $result = null;
         $caught = null;
         try {
-            $result = new DoctrineTransactionManager($this->connection, $override)->transactional(function () use (
+            $result = new DbalTransactionManager($this->connection, $override)->transactional(function () use (
                 $fails,
                 $override,
                 $failure,
@@ -88,7 +88,7 @@ final class TransactionOwnershipTest extends TestCase
         $this->connection->insert('unit_of_work_values', ['value' => 'external']);
         $called = false;
         try {
-            new DoctrineTransactionManager(
+            new DbalTransactionManager(
                 $this->connection,
                 TransactionIsolationLevel::READ_COMMITTED,
             )->transactional(static function () use (&$called): void {

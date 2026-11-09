@@ -23,7 +23,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Time\StatickClock;
-use Ultra\UnitOfWork\DoctrineTransactionManager;
+use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\TransactionManager;
 
@@ -544,7 +544,7 @@ final class IamFlowTest extends TestCase
             public function transactional(callable $callback): mixed
             {
                 ($this->beforeFlush)();
-                return new DoctrineTransactionManager(
+                return new DbalTransactionManager(
                     $this->connection,
                     TransactionIsolationLevel::READ_COMMITTED,
                 )->transactional($callback);

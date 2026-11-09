@@ -8,7 +8,7 @@ use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
 use Ultra\Testing\SqlTrace;
-use Ultra\UnitOfWork\DoctrineTransactionManager;
+use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
 
 /** Runs one row-set scenario on a dedicated, already instrumented connection. */
@@ -25,7 +25,7 @@ final readonly class Inspector
         $tableName = 'ultra_sql_' . bin2hex(random_bytes(8));
         $quoted = $this->connection->quoteSingleIdentifier($tableName);
         $rows = new MappedRowSet(new PostgresMappedRowSetAdapter($this->connection, $tableName));
-        $runner = new TransactionalUnitOfWorkRunner($rows, new DoctrineTransactionManager($this->connection));
+        $runner = new TransactionalUnitOfWorkRunner($rows, new DbalTransactionManager($this->connection));
         $plan = null;
         $error = null;
         $cleanupError = null;

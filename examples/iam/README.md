@@ -147,7 +147,7 @@ déjà préparée sont rejetées. Les gardes restent **par tenant** : les mutati
 affectant l'autorisation d'un même tenant se sérialisent, les readers peuvent
 partager leur garde et les autres tenants restent indépendants. Les vérifications
 ordinaires via `Authorization::allows()` restent des lectures SQL sans garde. Le
-`Ultra\UnitOfWork\DoctrineTransactionManager` possède sa transaction et est
+`Ultra\UnitOfWork\DbalTransactionManager` possède sa transaction et est
 configuré ici à `READ COMMITTED`, afin que
 la relecture voie les révocations validées pendant l'attente de la garde. Les
 commandes ne peuvent pas être imbriquées dans un autre runner : une requête SQL

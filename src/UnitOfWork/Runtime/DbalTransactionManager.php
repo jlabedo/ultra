@@ -8,7 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\TransactionIsolationLevel;
 
 /** Owns the transaction boundary and optionally overrides the connection's isolation for its duration. */
-final readonly class DoctrineTransactionManager implements TransactionManager
+final readonly class DbalTransactionManager implements TransactionManager
 {
     public function __construct(
         private Connection $connection,

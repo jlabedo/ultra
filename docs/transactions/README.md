@@ -34,10 +34,10 @@ interface TransactionManager
 
 Implementations commit when the callback returns and roll back when it throws. `NoTransactionManager` is provided for packages that do not need a real transaction boundary.
 
-`DoctrineTransactionManager` is the optional Doctrine DBAL adapter (requires `doctrine/dbal`):
+`DbalTransactionManager` is the optional Doctrine DBAL adapter (requires `doctrine/dbal`):
 
 ```php
-$transactions = new DoctrineTransactionManager(
+$transactions = new DbalTransactionManager(
     $connection,
     isolationLevel: TransactionIsolationLevel::READ_COMMITTED,
 );
