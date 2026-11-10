@@ -179,7 +179,12 @@ final class ActivationConcurrencyTest extends PostgresProjectionTestCase
         $oldStore = new ProjectingEventStore(
             PostgresTestSupport::storeForImplementation($peer, $f->fixture->prefix . 'event_', 'query-streams'),
             $oldCatalog,
-            new ProjectionActivityRecorder($oldCatalog, new ProjectionActivity($implementation->createDirtyKeyTracker()), new \Ultra\Coordination\InMemory\InMemoryCoordinatorLease(), new InMemoryProjectionActivator()),
+            new ProjectionActivityRecorder(
+                $oldCatalog,
+                new ProjectionActivity($implementation->createDirtyKeyTracker()),
+                new \Ultra\Coordination\InMemory\InMemoryCoordinatorLease(),
+                new InMemoryProjectionActivator(),
+            ),
             $implementation->createTransactionManager(),
             $implementation->createStateRepository(),
         );
@@ -237,14 +242,21 @@ final class ActivationConcurrencyTest extends PostgresProjectionTestCase
 
     private function peerRuntime(ProjectionModeFixture $f, Connection $connection): ProjectionRuntime
     {
-        return new ProjectionRuntime(new ManagedBufferedModeProjection($connection, $f->projection->table), new UltraNormalizer());
+        return new ProjectionRuntime(
+            new ManagedBufferedModeProjection($connection, $f->projection->table),
+            new UltraNormalizer(),
+        );
     }
 
     /** @return array{ProjectingEventStore, ProjectionRebuilder} */
     private function actor(ProjectionModeFixture $f, Connection $connection): array
     {
         $implementation = new PostgresProjectionImplementation($connection, $f->fixture->prefix);
-        $store = PostgresTestSupport::storeForImplementation($connection, $f->fixture->prefix . 'event_', 'query-streams');
+        $store = PostgresTestSupport::storeForImplementation(
+            $connection,
+            $f->fixture->prefix . 'event_',
+            'query-streams',
+        );
         $runtime = $this->peerRuntime($f, $connection);
         $catalog = new ProjectionCatalog($runtime);
         $states = $implementation->createStateRepository();
@@ -252,7 +264,12 @@ final class ActivationConcurrencyTest extends PostgresProjectionTestCase
         $segments = $implementation->createSegmentRepository();
         $activity = new ProjectionActivity($implementation->createDirtyKeyTracker());
         // Isolate projection barriers from the independent durable wake-debounce row.
-        $recorder = new ProjectionActivityRecorder($catalog, $activity, new \Ultra\Coordination\InMemory\InMemoryCoordinatorLease(), new InMemoryProjectionActivator());
+        $recorder = new ProjectionActivityRecorder(
+            $catalog,
+            $activity,
+            new \Ultra\Coordination\InMemory\InMemoryCoordinatorLease(),
+            new InMemoryProjectionActivator(),
+        );
         $runner = new ProjectionRunner($store, $segments, $transactions, $activity, $states);
 
         return [

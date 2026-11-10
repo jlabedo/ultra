@@ -9,10 +9,10 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\Mapper\UltraNormalizer;
+use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Bundle\TagNames;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRuntime;
-use Ultra\Projection\Attribute\Projection;
 use Ultra\UnitOfWork\UnitOfWork;
 
 final class ProjectionCompilerPass implements CompilerPassInterface

@@ -25,15 +25,22 @@ final class SynchronousExecutionTest extends ProjectionTestCase
         foreach (['memory', 'postgres'] as $backend) {
             foreach ([false, true] as $applicationBuffer) {
                 foreach ([false, true] as $projectionBuffer) {
-                    yield "$backend/app=$applicationBuffer/projection=$projectionBuffer" => [$backend, $applicationBuffer, $projectionBuffer];
+                    yield "$backend/app=$applicationBuffer/projection=$projectionBuffer" => [
+                        $backend,
+                        $applicationBuffer,
+                        $projectionBuffer,
+                    ];
                 }
             }
         }
     }
 
     #[DataProvider('immediateConfigurations')]
-    public function test_direct_and_buffered_appends_share_immediate_projection_execution(string $backend, bool $applicationBuffer, bool $projectionBuffer): void
-    {
+    public function test_direct_and_buffered_appends_share_immediate_projection_execution(
+        string $backend,
+        bool $applicationBuffer,
+        bool $projectionBuffer,
+    ): void {
         $f = new ProjectionModeFixture($this->fixture($backend), ProjectionMode::SynchronousFromNow, $projectionBuffer);
         $f->fixture->store->append([self::courseCreatedEvent('c', 'historical')]);
         $store = $applicationBuffer ? new EventStoreUnitOfWork($f->store) : $f->store;
@@ -62,16 +69,27 @@ final class SynchronousExecutionTest extends ProjectionTestCase
                     if (!$projectionBuffer && 'persistence' === $stage) {
                         continue;
                     }
-                    yield "app=$applicationBuffer/projection=$projectionBuffer/$stage" => [$applicationBuffer, $stage, $projectionBuffer];
+                    yield "app=$applicationBuffer/projection=$projectionBuffer/$stage" => [
+                        $applicationBuffer,
+                        $stage,
+                        $projectionBuffer,
+                    ];
                 }
             }
         }
     }
 
     #[DataProvider('failures')]
-    public function test_projection_failures_roll_back_events_and_private_writes_and_allow_clean_retry(bool $applicationBuffer, string $stage, bool $projectionBuffer): void
-    {
-        $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::SynchronousFromNow, $projectionBuffer);
+    public function test_projection_failures_roll_back_events_and_private_writes_and_allow_clean_retry(
+        bool $applicationBuffer,
+        string $stage,
+        bool $projectionBuffer,
+    ): void {
+        $f = new ProjectionModeFixture(
+            $this->fixture('postgres'),
+            ProjectionMode::SynchronousFromNow,
+            $projectionBuffer,
+        );
         $store = $applicationBuffer ? new EventStoreUnitOfWork($f->store) : $f->store;
         $f->projection->failAt = $stage;
         try {
@@ -117,14 +135,20 @@ final class SynchronousExecutionTest extends ProjectionTestCase
     public function test_an_outer_transaction_controls_visibility_of_events_and_projection(): void
     {
         $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::SynchronousFromNow, true);
-        $observer = PostgresConnectionSupport::sharedConnection(getenv('ULTRA_TEST_POSTGRES_DSN'), 'projection-observer');
+        $observer = PostgresConnectionSupport::sharedConnection(
+            getenv('ULTRA_TEST_POSTGRES_DSN'),
+            'projection-observer',
+        );
         $connection = $f->fixture->connection;
         $connection->beginTransaction();
         try {
             $f->store->append([self::courseCreatedEvent('c', 'pending')]);
             static::assertSame(['pending'], $f->projection->names());
             static::assertSame(0, (int) $observer->fetchOne('SELECT count(*) FROM ' . $f->projection->table));
-            static::assertSame(0, (int) $observer->fetchOne('SELECT count(*) FROM ' . $f->fixture->prefix . 'event_events'));
+            static::assertSame(
+                0,
+                (int) $observer->fetchOne('SELECT count(*) FROM ' . $f->fixture->prefix . 'event_events'),
+            );
         } finally {
             $connection->rollBack();
         }

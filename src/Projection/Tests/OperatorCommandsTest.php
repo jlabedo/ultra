@@ -31,15 +31,29 @@ final class OperatorCommandsTest extends PostgresProjectionTestCase
     public function test_rebuild_command_resumes_without_activity_and_activates_a_managed_projection(): void
     {
         require_once __DIR__ . '/Support/ProjectionModes.php';
-        $f = new \Ultra\Projection\Tests\Support\ProjectionModeFixture($this->fixture('memory'), \Ultra\Projection\ProjectionMode::Synchronous, true);
+        $f = new \Ultra\Projection\Tests\Support\ProjectionModeFixture(
+            $this->fixture('memory'),
+            \Ultra\Projection\ProjectionMode::Synchronous,
+            true,
+        );
         $f->fixture->store->append([self::courseCreatedEvent('c', 'history')]);
-        $tester = new CommandTester(new \Ultra\Projection\Bundle\Command\RebuildProjectionCommand($f->catalog, $f->rebuilder, $f->runner));
-        static::assertSame(0, $tester->execute(['projection-id' => 'mode_projection', '--activate' => true, '--batch-size' => '1']));
+        $tester = new CommandTester(
+            new \Ultra\Projection\Bundle\Command\RebuildProjectionCommand($f->catalog, $f->rebuilder, $f->runner),
+        );
+        static::assertSame(0, $tester->execute([
+            'projection-id' => 'mode_projection',
+            '--activate' => true,
+            '--batch-size' => '1',
+        ]));
         static::assertStringContainsString('processed 1 events, live', $tester->getDisplay());
         static::assertSame(['history'], $f->projection->names());
         static::assertSame(0, $tester->execute(['projection-id' => 'mode_projection', '--activate' => true]));
         static::assertStringContainsString('processed 0 events, live', $tester->getDisplay());
-        static::assertSame(0, $tester->execute(['projection-id' => 'mode_projection', '--reset' => true, '--activate' => true]));
+        static::assertSame(0, $tester->execute([
+            'projection-id' => 'mode_projection',
+            '--reset' => true,
+            '--activate' => true,
+        ]));
         static::assertSame(['history'], $f->projection->names());
         static::assertSame(2, $f->states->find('mode_projection')->generation);
     }

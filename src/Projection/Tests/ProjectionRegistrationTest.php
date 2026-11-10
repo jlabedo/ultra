@@ -40,9 +40,13 @@ final class ProjectionRegistrationTest extends ProjectionTestCase
     public function test_projection_owned_repositories_are_not_flushed_by_the_parent_composite(): void
     {
         require_once __DIR__ . '/Support/ProjectionModes.php';
-        $container = $this->projectionUltraLight()
+        $container = $this
+            ->projectionUltraLight()
             ->withExtension(new \Ultra\UnitOfWork\UnitOfWorkExtension())
-            ->withClass(\Ultra\Projection\Tests\Support\OwnedProjectionRows::class, \Ultra\Projection\Tests\Support\OwnedPersistenceProjection::class)
+            ->withClass(
+                \Ultra\Projection\Tests\Support\OwnedProjectionRows::class,
+                \Ultra\Projection\Tests\Support\OwnedPersistenceProjection::class,
+            )
             ->withAlias('test.rows', \Ultra\Projection\Tests\Support\OwnedProjectionRows::class)
             ->withAlias('test.uow_runner', \Ultra\UnitOfWork\UnitOfWorkRunner::class)
             ->boot();
@@ -64,7 +68,8 @@ final class ProjectionRegistrationTest extends ProjectionTestCase
     public function test_a_projection_implementing_unit_of_work_is_privately_owned(): void
     {
         require_once __DIR__ . '/Support/ProjectionModes.php';
-        $container = $this->projectionUltraLight()
+        $container = $this
+            ->projectionUltraLight()
             ->withExtension(new \Ultra\UnitOfWork\UnitOfWorkExtension())
             ->withClass(\Ultra\Projection\Tests\Support\ImmediateBufferedModeProjection::class)
             ->withAlias('test.model', \Ultra\Projection\Tests\Support\ImmediateBufferedModeProjection::class)
@@ -83,11 +88,14 @@ final class ProjectionRegistrationTest extends ProjectionTestCase
         require_once __DIR__ . '/Support/ProjectionModes.php';
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('single owner');
-        $this->projectionUltraLight()->withClass(
-            \Ultra\Projection\Tests\Support\OwnedProjectionRows::class,
-            \Ultra\Projection\Tests\Support\OwnedPersistenceProjection::class,
-            \Ultra\Projection\Tests\Support\ConflictingPersistenceProjection::class,
-        )->boot();
+        $this
+            ->projectionUltraLight()
+            ->withClass(
+                \Ultra\Projection\Tests\Support\OwnedProjectionRows::class,
+                \Ultra\Projection\Tests\Support\OwnedPersistenceProjection::class,
+                \Ultra\Projection\Tests\Support\ConflictingPersistenceProjection::class,
+            )
+            ->boot();
     }
 
     public function test_a_mediator_registered_after_the_extension_receives_projection_wakeups(): void

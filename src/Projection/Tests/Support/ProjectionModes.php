@@ -30,7 +30,10 @@ abstract class ModeProjection
     /** @var list<array{courseId: string, name: string}> */
     public array $stored = [];
 
-    public function __construct(public ?Connection $connection = null, public string $table = '') {}
+    public function __construct(
+        public ?Connection $connection = null,
+        public string $table = '',
+    ) {}
 
     #[ProjectionInitializer]
     public function initialize(): void
@@ -74,7 +77,10 @@ abstract class ModeProjection
         if (null === $this->connection) {
             $this->stored[] = $row;
         } else {
-            $this->connection->executeStatement('INSERT INTO ' . $this->table . ' (course_id, name) VALUES (?, ?)', array_values($row));
+            $this->connection->executeStatement(
+                'INSERT INTO ' . $this->table . ' (course_id, name) VALUES (?, ?)',
+                array_values($row),
+            );
         }
     }
 
@@ -149,17 +155,26 @@ final readonly class ProjectionModeFixture
     public ProjectionRunner $runner;
     public ProjectionRebuilder $rebuilder;
 
-    public function __construct(public ProjectionFixture $fixture, ProjectionMode $mode, bool $buffered = false)
-    {
+    public function __construct(
+        public ProjectionFixture $fixture,
+        ProjectionMode $mode,
+        bool $buffered = false,
+    ) {
         $class = match ($mode) {
             ProjectionMode::Asynchronous => $buffered ? AsyncBufferedModeProjection::class : AsyncModeProjection::class,
-            ProjectionMode::Synchronous => $buffered ? ManagedBufferedModeProjection::class : ManagedModeProjection::class,
-            ProjectionMode::SynchronousFromNow => $buffered ? ImmediateBufferedModeProjection::class : ImmediateModeProjection::class,
+            ProjectionMode::Synchronous => $buffered
+                ? ManagedBufferedModeProjection::class
+                : ManagedModeProjection::class,
+            ProjectionMode::SynchronousFromNow => $buffered
+                ? ImmediateBufferedModeProjection::class
+                : ImmediateModeProjection::class,
         };
         $table = $fixture->prefix . 'mode_model';
         if (null !== $fixture->connection) {
             $fixture->registerReadModel($table);
-            $fixture->connection->executeStatement('CREATE TABLE ' . $table . ' (position BIGSERIAL PRIMARY KEY, course_id TEXT, name TEXT)');
+            $fixture->connection->executeStatement(
+                'CREATE TABLE ' . $table . ' (position BIGSERIAL PRIMARY KEY, course_id TEXT, name TEXT)',
+            );
         }
         $this->projection = new $class($fixture->connection, $table);
         $this->runtime = new ProjectionRuntime($this->projection, new UltraNormalizer());
@@ -167,10 +182,33 @@ final readonly class ProjectionModeFixture
         $this->states = null === $fixture->connection
             ? new InMemoryProjectionStateRepository()
             : new PostgresProjectionStateRepository($fixture->connection, $fixture->prefix);
-        $recorder = new ProjectionActivityRecorder($this->catalog, $fixture->activity, $fixture->leases, $fixture->activator);
-        $this->store = new ProjectingEventStore($fixture->store, $this->catalog, $recorder, $fixture->transactions, $this->states);
-        $this->runner = new ProjectionRunner($fixture->store, $fixture->segments, $fixture->transactions, $fixture->activity, $this->states);
-        $this->rebuilder = new ProjectionRebuilder($fixture->store, $fixture->segments, $this->states, $fixture->transactions, $this->runner);
+        $recorder = new ProjectionActivityRecorder(
+            $this->catalog,
+            $fixture->activity,
+            $fixture->leases,
+            $fixture->activator,
+        );
+        $this->store = new ProjectingEventStore(
+            $fixture->store,
+            $this->catalog,
+            $recorder,
+            $fixture->transactions,
+            $this->states,
+        );
+        $this->runner = new ProjectionRunner(
+            $fixture->store,
+            $fixture->segments,
+            $fixture->transactions,
+            $fixture->activity,
+            $this->states,
+        );
+        $this->rebuilder = new ProjectionRebuilder(
+            $fixture->store,
+            $fixture->segments,
+            $this->states,
+            $fixture->transactions,
+            $this->runner,
+        );
     }
 }
 
@@ -197,10 +235,16 @@ final class OwnedProjectionRows implements UnitOfWork
     }
 }
 
-#[Projection(name: 'owned_projection', mode: ProjectionMode::SynchronousFromNow, unitOfWork: [OwnedProjectionRows::class])]
+#[Projection(
+    name: 'owned_projection',
+    mode: ProjectionMode::SynchronousFromNow,
+    unitOfWork: [OwnedProjectionRows::class],
+)]
 final readonly class OwnedPersistenceProjection
 {
-    public function __construct(public OwnedProjectionRows $rows) {}
+    public function __construct(
+        public OwnedProjectionRows $rows,
+    ) {}
 
     #[ProjectionHandler]
     public function apply(RunnerCourseCreated $event): void
@@ -209,7 +253,11 @@ final readonly class OwnedPersistenceProjection
     }
 }
 
-#[Projection(name: 'second_owned_projection', mode: ProjectionMode::SynchronousFromNow, unitOfWork: [OwnedProjectionRows::class])]
+#[Projection(
+    name: 'second_owned_projection',
+    mode: ProjectionMode::SynchronousFromNow,
+    unitOfWork: [OwnedProjectionRows::class],
+)]
 final readonly class ConflictingPersistenceProjection
 {
     #[ProjectionHandler]

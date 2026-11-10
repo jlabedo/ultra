@@ -11,7 +11,10 @@ use Ultra\Projection\ProjectionStateRepository;
 
 final readonly class PostgresProjectionStateRepository implements ProjectionStateRepository
 {
-    public function __construct(private Connection $connection, private string $tablePrefix = 'projection_') {}
+    public function __construct(
+        private Connection $connection,
+        private string $tablePrefix = 'projection_',
+    ) {}
 
     public function lockRegistrationShared(): void
     {
@@ -36,7 +39,9 @@ final readonly class PostgresProjectionStateRepository implements ProjectionStat
     public function find(string $projectionId): ?ProjectionState
     {
         $row = $this->connection->fetchAssociative(
-            'SELECT projection_id, generation, phase, fingerprint FROM ' . $this->tablePrefix . 'states WHERE projection_id = ?',
+            'SELECT projection_id, generation, phase, fingerprint FROM '
+            . $this->tablePrefix
+            . 'states WHERE projection_id = ?',
             [$projectionId],
         );
 
@@ -45,15 +50,22 @@ final readonly class PostgresProjectionStateRepository implements ProjectionStat
 
     public function all(): array
     {
-        return array_map($this->hydrate(...), $this->connection->fetchAllAssociative(
-            'SELECT projection_id, generation, phase, fingerprint FROM ' . $this->tablePrefix . 'states ORDER BY projection_id',
-        ));
+        return array_map(
+            $this->hydrate(...),
+            $this->connection->fetchAllAssociative(
+                'SELECT projection_id, generation, phase, fingerprint FROM '
+                . $this->tablePrefix
+                . 'states ORDER BY projection_id',
+            ),
+        );
     }
 
     public function save(ProjectionState $state): void
     {
         $this->connection->executeStatement(
-            'INSERT INTO ' . $this->tablePrefix . 'states (projection_id, generation, phase, fingerprint) VALUES (?, ?, ?, ?) '
+            'INSERT INTO '
+            . $this->tablePrefix
+            . 'states (projection_id, generation, phase, fingerprint) VALUES (?, ?, ?, ?) '
             . 'ON CONFLICT (projection_id) DO UPDATE SET generation = EXCLUDED.generation, phase = EXCLUDED.phase, fingerprint = EXCLUDED.fingerprint',
             [$state->projectionId, $state->generation, $state->phase->value, $state->fingerprint],
         );
@@ -67,10 +79,11 @@ final readonly class PostgresProjectionStateRepository implements ProjectionStat
         if (\Doctrine\DBAL\TransactionIsolationLevel::READ_COMMITTED !== $this->connection->getTransactionIsolation()) {
             throw new \LogicException('Managed projections require READ COMMITTED isolation.');
         }
-        $this->connection->executeQuery(
-            'SELECT ' . $function . '(hashtextextended(?, 0))',
-            ['ultra.projection:' . $this->tablePrefix . ':' . $projectionId],
-        )->free();
+        $this->connection
+            ->executeQuery('SELECT ' . $function . '(hashtextextended(?, 0))', [
+                'ultra.projection:' . $this->tablePrefix . ':' . $projectionId,
+            ])
+            ->free();
     }
 
     /** @param array<string, mixed> $row */

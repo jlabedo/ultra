@@ -14,7 +14,10 @@ use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRebuilder;
 use Ultra\Projection\ProjectionRunner;
 
-#[AsCommand(name: 'ultra:projection:rebuild', description: 'Resume a managed synchronous projection reconstruction and optionally activate it.')]
+#[AsCommand(
+    name: 'ultra:projection:rebuild',
+    description: 'Resume a managed synchronous projection reconstruction and optionally activate it.',
+)]
 final class RebuildProjectionCommand extends Command
 {
     public function __construct(
@@ -32,7 +35,12 @@ final class RebuildProjectionCommand extends Command
             ->addOption('batch-size', null, InputOption::VALUE_REQUIRED, 'Events per replay batch', 100)
             ->addOption('worker-id', null, InputOption::VALUE_REQUIRED, 'Replay worker identifier', 'rebuild')
             ->addOption('reset', null, InputOption::VALUE_NONE, 'Reset the read model and start a new generation')
-            ->addOption('activate', null, InputOption::VALUE_NONE, 'Drain the remaining history under the barrier and activate');
+            ->addOption(
+                'activate',
+                null,
+                InputOption::VALUE_NONE,
+                'Drain the remaining history under the barrier and activate',
+            );
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -52,7 +60,12 @@ final class RebuildProjectionCommand extends Command
         if ($input->getOption('activate')) {
             $processed += $this->rebuilder->activate($runtime, $batchSize);
         }
-        $output->writeln(sprintf('Projection "%s": processed %d events%s.', $runtime->projectionId(), $processed, $input->getOption('activate') ? ', live' : ''));
+        $output->writeln(sprintf(
+            'Projection "%s": processed %d events%s.',
+            $runtime->projectionId(),
+            $processed,
+            $input->getOption('activate') ? ', live' : '',
+        ));
 
         return Command::SUCCESS;
     }

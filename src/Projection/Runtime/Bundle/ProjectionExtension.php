@@ -19,17 +19,17 @@ use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionDefaultsCompilerPass;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionActivity;
-use Ultra\Projection\ProjectingEventStore;
-use Ultra\Projection\ProjectionStateRepository;
-use Ultra\Projection\ProjectionBatchExecutor;
-use Ultra\Projection\ProjectionRebuilder;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\MessageHandling\ProjectionMessageHandler;
+use Ultra\Projection\ProjectingEventStore;
+use Ultra\Projection\ProjectionBatchExecutor;
 use Ultra\Projection\ProjectionCatalog;
+use Ultra\Projection\ProjectionRebuilder;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
+use Ultra\Projection\ProjectionStateRepository;
 use Ultra\Projection\ProjectionTransactionManagerInterface;
 
 final class ProjectionExtension implements ContainerExtension
@@ -111,14 +111,16 @@ final class ProjectionExtension implements ContainerExtension
                 new Reference(ProjectionBatchExecutor::class),
             ]);
 
-        $container->register(ProjectionRebuilder::class)->setArguments([
-            new Reference(ProjectingEventStore::class . '.inner'),
-            new Reference(ProjectionSegmentRepositoryInterface::class),
-            new Reference(ProjectionStateRepository::class),
-            new Reference(ProjectionTransactionManagerInterface::class),
-            new Reference(ProjectionRunner::class),
-            new Reference(ProjectionBatchExecutor::class),
-        ]);
+        $container
+            ->register(ProjectionRebuilder::class)
+            ->setArguments([
+                new Reference(ProjectingEventStore::class . '.inner'),
+                new Reference(ProjectionSegmentRepositoryInterface::class),
+                new Reference(ProjectionStateRepository::class),
+                new Reference(ProjectionTransactionManagerInterface::class),
+                new Reference(ProjectionRunner::class),
+                new Reference(ProjectionBatchExecutor::class),
+            ]);
 
         $container
             ->register(ProjectionCoordinator::class, ProjectionCoordinator::class)
@@ -141,11 +143,14 @@ final class ProjectionExtension implements ContainerExtension
             ->setArguments([new Reference(ProjectionSegmentRepositoryInterface::class)])
             ->addTag('console.command');
 
-        $container->register(RebuildProjectionCommand::class)->setArguments([
-            new Reference(ProjectionCatalog::class),
-            new Reference(ProjectionRebuilder::class),
-            new Reference(ProjectionRunner::class),
-        ])->addTag('console.command');
+        $container
+            ->register(RebuildProjectionCommand::class)
+            ->setArguments([
+                new Reference(ProjectionCatalog::class),
+                new Reference(ProjectionRebuilder::class),
+                new Reference(ProjectionRunner::class),
+            ])
+            ->addTag('console.command');
 
         $this->registerMessageHandlingIntegration($container);
 

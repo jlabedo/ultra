@@ -28,7 +28,13 @@ final readonly class ProjectionRebuilder
         $processed = 0;
         foreach ($this->segments->listSegments($runtime->projectionId()) as $segment) {
             do {
-                $result = $this->runner->backfillClaimedOnce($runtime, $runtime->projectionId(), $segment->bucketFrom, $workerId, $batchSize);
+                $result = $this->runner->backfillClaimedOnce(
+                    $runtime,
+                    $runtime->projectionId(),
+                    $segment->bucketFrom,
+                    $workerId,
+                    $batchSize,
+                );
                 $processed += $result->processedEvents;
             } while ($result->claimedSegment && !$result->caughtUp);
         }
@@ -48,7 +54,9 @@ final readonly class ProjectionRebuilder
         return $this->transactions->transactional(function () use ($runtime, $batchSize): int {
             $projectionId = $runtime->projectionId();
             $this->states->lockExclusive($projectionId);
-            $state = $this->states->find($projectionId) ?? throw new \LogicException('Projection has not been initialized.');
+            $state = $this->states->find($projectionId) ?? throw new \LogicException(
+                'Projection has not been initialized.',
+            );
             if (ProjectionPhase::Live === $state->phase) {
                 return 0;
             }
@@ -64,7 +72,9 @@ final readonly class ProjectionRebuilder
                 do {
                     $result = $this->eventStore->load(
                         $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo),
-                        $checkpoint, null, $batchSize,
+                        $checkpoint,
+                        null,
+                        $batchSize,
                     );
                     $this->batches->execute($runtime, $result->events);
                     $processed += count($result->events);
@@ -72,7 +82,9 @@ final readonly class ProjectionRebuilder
                 } while ($result->hasMore);
                 $this->segments->completeClaimedSegment($segment, $checkpoint, 'activation', true);
             }
-            $this->states->save(new ProjectionState($projectionId, $state->generation, ProjectionPhase::Live, $state->fingerprint));
+            $this->states->save(
+                new ProjectionState($projectionId, $state->generation, ProjectionPhase::Live, $state->fingerprint),
+            );
 
             return $processed;
         });

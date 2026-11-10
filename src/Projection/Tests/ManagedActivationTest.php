@@ -52,17 +52,27 @@ final class ManagedActivationTest extends ProjectionTestCase
         $f->fixture->transactions->transactional($pending->flush(...));
         $pending->clear();
         static::assertSame(['history', 'tail', 'live'], $f->projection->names());
-        static::assertSame($checkpoint, $f->fixture->segments->listSegments('mode_projection')[0]->checkpoint->serialize());
+        static::assertSame(
+            $checkpoint,
+            $f->fixture->segments->listSegments('mode_projection')[0]->checkpoint->serialize(),
+        );
         static::assertSame(0, $f->rebuilder->activate($f->runtime));
         static::assertSame(0, $f->rebuilder->catchUp($f->runtime));
-        static::assertFalse($f->runner->backfillClaimedOnce($f->runtime, 'mode_projection', 0, 'old-worker')->claimedSegment);
+        static::assertFalse($f->runner->backfillClaimedOnce(
+            $f->runtime,
+            'mode_projection',
+            0,
+            'old-worker',
+        )->claimedSegment);
         static::assertSame(['history', 'tail', 'live'], $f->projection->names());
         static::assertSame(1, $f->projection->initialized);
     }
 
     #[DataProvider('configurations')]
-    public function test_async_batches_use_the_same_private_persistence_without_inline_execution(string $backend, bool $buffered): void
-    {
+    public function test_async_batches_use_the_same_private_persistence_without_inline_execution(
+        string $backend,
+        bool $buffered,
+    ): void {
         $f = new ProjectionModeFixture($this->fixture($backend), ProjectionMode::Asynchronous, $buffered);
         $f->store->append([self::courseCreatedEvent('c', 'one'), self::courseCreatedEvent('c', 'two')]);
         static::assertSame([], $f->projection->names());
@@ -164,7 +174,11 @@ final class ManagedActivationTest extends ProjectionTestCase
         static::assertSame(['building', 'live'], $f->projection->names());
         static::assertSame([], $async->names());
         $coordinator = new \Ultra\Projection\Coordination\ProjectionCoordinator(
-            $f->catalog, $f->runner, $f->fixture->activity, $f->fixture->leases, $f->fixture->activator,
+            $f->catalog,
+            $f->runner,
+            $f->fixture->activity,
+            $f->fixture->leases,
+            $f->fixture->activator,
         );
         $coordinator->run('coordinator');
         static::assertSame(['building', 'live'], $async->names());
@@ -175,7 +189,10 @@ final class ManagedActivationTest extends ProjectionTestCase
     public function test_buffered_reset_and_initialization_are_flushed_once_each(): void
     {
         $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous, true);
-        $projection = new \Ultra\Projection\Tests\Support\BufferedLifecycleProjection($f->fixture->connection, $f->projection->table);
+        $projection = new \Ultra\Projection\Tests\Support\BufferedLifecycleProjection(
+            $f->fixture->connection,
+            $f->projection->table,
+        );
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $f->runner->ensureInitialized($runtime);
         static::assertSame(['initialize'], $projection->names());
@@ -187,7 +204,10 @@ final class ManagedActivationTest extends ProjectionTestCase
     public function test_buffered_initialization_failure_rolls_back_state_and_releases_its_buffer(): void
     {
         $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous, true);
-        $projection = new \Ultra\Projection\Tests\Support\BufferedLifecycleProjection($f->fixture->connection, $f->projection->table);
+        $projection = new \Ultra\Projection\Tests\Support\BufferedLifecycleProjection(
+            $f->fixture->connection,
+            $f->projection->table,
+        );
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $projection->failAt = 'initialize';
         try {
@@ -208,11 +228,23 @@ final class ManagedActivationTest extends ProjectionTestCase
     {
         $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous, true);
         $f->store->append([self::courseCreatedEvent('c', 'history')]);
-        $obsolete = new ProjectionRuntime(new \Ultra\Projection\Tests\Support\AsyncBufferedModeProjection($f->fixture->connection, $f->projection->table), new UltraNormalizer());
+        $obsolete = new ProjectionRuntime(
+            new \Ultra\Projection\Tests\Support\AsyncBufferedModeProjection(
+                $f->fixture->connection,
+                $f->projection->table,
+            ),
+            new UltraNormalizer(),
+        );
         $store = new \Ultra\Projection\Tests\Support\CallbackEventStore($f->fixture->store, function () use ($f): void {
             $f->rebuilder->activate($f->runtime);
         });
-        $runner = new \Ultra\Projection\ProjectionRunner($store, $f->fixture->segments, $f->fixture->transactions, $f->fixture->activity, $f->states);
+        $runner = new \Ultra\Projection\ProjectionRunner(
+            $store,
+            $f->fixture->segments,
+            $f->fixture->transactions,
+            $f->fixture->activity,
+            $f->states,
+        );
         try {
             $runner->backfillClaimedOnce($obsolete, 'mode_projection', 0, 'old-worker');
             static::fail('The loaded batch must not be applied after activation.');
@@ -228,7 +260,13 @@ final class ManagedActivationTest extends ProjectionTestCase
         $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous, true);
         $f->rebuilder->activate($f->runtime);
         $f->store->append([self::courseCreatedEvent('c', 'live')]);
-        $obsolete = new ProjectionRuntime(new \Ultra\Projection\Tests\Support\AsyncBufferedModeProjection($f->fixture->connection, $f->projection->table), new UltraNormalizer());
+        $obsolete = new ProjectionRuntime(
+            new \Ultra\Projection\Tests\Support\AsyncBufferedModeProjection(
+                $f->fixture->connection,
+                $f->projection->table,
+            ),
+            new UltraNormalizer(),
+        );
         foreach (['backfill', 'reset'] as $operation) {
             try {
                 if ('backfill' === $operation) {

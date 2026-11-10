@@ -6,7 +6,9 @@ namespace Ultra\Projection_Postgres;
 
 final readonly class PostgresProjectionStateSchema
 {
-    public function __construct(private string $tablePrefix = 'projection_') {}
+    public function __construct(
+        private string $tablePrefix = 'projection_',
+    ) {}
 
     /** @return list<string> */
     public function createStatements(): array

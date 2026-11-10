@@ -93,7 +93,7 @@ final readonly class ProjectionDefinition
 
     public function bucketFor(Event $event): ?int
     {
-        $value = null === $this->partitionDimension ? null : ($event->domainIds[$this->partitionDimension] ?? null);
+        $value = null === $this->partitionDimension ? null : $event->domainIds[$this->partitionDimension] ?? null;
         if (null === $value) {
             return null;
         }

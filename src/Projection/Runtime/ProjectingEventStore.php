@@ -24,8 +24,12 @@ final readonly class ProjectingEventStore implements EventStore
         private ProjectionBatchExecutor $batches = new ProjectionBatchExecutor(),
     ) {}
 
-    public function load(StreamQuery $query, ?Checkpoint $from = null, ?Checkpoint $to = null, int $batchSize = 1000): LoadResult
-    {
+    public function load(
+        StreamQuery $query,
+        ?Checkpoint $from = null,
+        ?Checkpoint $to = null,
+        int $batchSize = 1000,
+    ): LoadResult {
         return $this->inner->load($query, $from, $to, $batchSize);
     }
 
@@ -40,7 +44,10 @@ final readonly class ProjectingEventStore implements EventStore
         $this->transactions->transactional(function () use ($events, $appendConditions): void {
             $this->states->lockRegistrationShared();
             $definitions = $this->catalog->definitions();
-            usort($definitions, static fn(ProjectionDefinition $a, ProjectionDefinition $b): int => strcmp($a->projectionId, $b->projectionId));
+            usort($definitions, static fn(ProjectionDefinition $a, ProjectionDefinition $b): int => strcmp(
+                $a->projectionId,
+                $b->projectionId,
+            ));
             $live = [];
             foreach ($definitions as $definition) {
                 if ([] === array_filter($events, $definition->handles(...))) {
@@ -51,7 +58,9 @@ final readonly class ProjectingEventStore implements EventStore
                 } elseif (ProjectionMode::Synchronous === $definition->mode) {
                     foreach ($events as $event) {
                         if ($definition->handles($event) && null === $definition->bucketFor($event)) {
-                            throw new \InvalidArgumentException('Managed projection events must carry their partition identifier.');
+                            throw new \InvalidArgumentException(
+                                'Managed projection events must carry their partition identifier.',
+                            );
                         }
                     }
                     // Lock even an uninitialized projection: registration must not race this append.
@@ -80,10 +89,18 @@ final readonly class ProjectingEventStore implements EventStore
             try {
                 $definition = $this->catalog->definition($state->projectionId);
             } catch (\InvalidArgumentException $e) {
-                throw new \LogicException('Writer is missing managed projection "' . $state->projectionId . '".', previous: $e);
+                throw new \LogicException(
+                    'Writer is missing managed projection "' . $state->projectionId . '".',
+                    previous: $e,
+                );
             }
-            if (ProjectionMode::Synchronous !== $definition->mode || ProjectionState::fingerprint($definition) !== $state->fingerprint) {
-                throw new \LogicException('Writer has an incompatible managed projection "' . $state->projectionId . '".');
+            if (
+                ProjectionMode::Synchronous !== $definition->mode
+                || ProjectionState::fingerprint($definition) !== $state->fingerprint
+            ) {
+                throw new \LogicException(
+                    'Writer has an incompatible managed projection "' . $state->projectionId . '".',
+                );
             }
         }
     }

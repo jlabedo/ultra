@@ -28,8 +28,10 @@ final readonly class ProjectionActivityRecorder
         $touchedBuckets = [];
 
         foreach ($this->catalog->definitions() as $definition) {
-            if (in_array($definition->projectionId, $excludedProjections, true)
-                || \Ultra\Projection\ProjectionMode::SynchronousFromNow === $definition->mode) {
+            if (
+                in_array($definition->projectionId, $excludedProjections, true)
+                || \Ultra\Projection\ProjectionMode::SynchronousFromNow === $definition->mode
+            ) {
                 continue;
             }
             foreach ($events as $event) {

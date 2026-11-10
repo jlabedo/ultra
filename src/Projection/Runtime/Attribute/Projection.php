@@ -20,7 +20,10 @@ final readonly class Projection
             throw new \InvalidArgumentException('Projection name must be a non-empty string.');
         }
 
-        if ('' === $this->partitionBy || (null === $this->partitionBy && ProjectionMode::SynchronousFromNow !== $this->mode)) {
+        if (
+            '' === $this->partitionBy
+            || null === $this->partitionBy && ProjectionMode::SynchronousFromNow !== $this->mode
+        ) {
             throw new \InvalidArgumentException('Projection partitionBy is required except for SynchronousFromNow.');
         }
     }
