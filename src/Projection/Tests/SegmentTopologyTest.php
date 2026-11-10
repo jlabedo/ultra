@@ -150,7 +150,7 @@ final class SegmentTopologyTest extends ProjectionTestCase
         static::assertSame(2, $merged->checkpoint->gapFloor->value);
     }
 
-    public function test_merge_invokes_projection_flush_for_local_tables_on_each_catch_up_batch(): void
+    public function test_merge_flushes_and_clears_projection_owned_tables_on_each_catch_up_batch(): void
     {
         $fixture = $this->fixture('postgres');
         $projection = $fixture->bufferedProjection();

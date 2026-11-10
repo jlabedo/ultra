@@ -71,7 +71,7 @@ final class BatchAtomicityTest extends ProjectionTestCase
     }
 
     #[DataProvider('bufferedBatches')]
-    public function test_projection_flush_persists_local_tables_atomically_and_clears_its_buffers(
+    public function test_projection_owned_unit_of_work_flushes_atomically_and_clears_after_failure(
         string $mode,
         ?string $stage,
     ): void {
@@ -112,8 +112,7 @@ final class BatchAtomicityTest extends ProjectionTestCase
                 $runner->{$mode}($runtime, 'buffered_projection', 0, 'worker');
                 static::fail('Expected batch failure.');
             } catch (\RuntimeException | \Doctrine\DBAL\Exception) {
-                // A failed handler never reaches ProjectionFlush: discard that projection before retrying.
-                static::assertSame('apply' === $stage, $projection->hasPendingChanges());
+                static::assertFalse($projection->hasPendingChanges());
                 static::assertSame(0, $runner->listSegments('buffered_projection')[0]->checkpoint->gapFloor->value);
                 foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
                     static::assertSame([['id' => 'init', 'name' => 'initialized']], $fixture->connection->fetchAllAssociative(
@@ -121,12 +120,7 @@ final class BatchAtomicityTest extends ProjectionTestCase
                     ));
                 }
             }
-            if ('apply' === $stage) {
-                $projection = $fixture->bufferedProjection();
-                $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
-            } else {
-                $projection->failAt = null;
-            }
+            $projection->failAt = null;
             $runner = $fixture->runner;
         }
 

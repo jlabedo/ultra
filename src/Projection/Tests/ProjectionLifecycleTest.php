@@ -89,7 +89,7 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
     }
 
     #[DataProvider('lifecycleFailures')]
-    public function test_lifecycle_hooks_can_flush_and_clear_local_tables_with_their_transaction(string $stage): void
+    public function test_projection_owned_unit_of_work_flushes_lifecycle_changes_and_clears_after_rollback(string $stage): void
     {
         $fixture = $this->fixture('postgres');
         $projection = $fixture->bufferedProjection();

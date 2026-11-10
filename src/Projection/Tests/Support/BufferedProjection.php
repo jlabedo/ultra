@@ -12,9 +12,10 @@ use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Attribute\ProjectionResetter;
+use Ultra\UnitOfWork\UnitOfWork;
 
 #[Projection(name: 'buffered_projection', partitionBy: 'courseId')]
-final class BufferedProjection
+final class BufferedProjection implements UnitOfWork
 {
     private readonly MappedRowSet $courses;
     private readonly MappedRowSet $index;
@@ -33,19 +34,14 @@ final class BufferedProjection
     #[ProjectionInitializer]
     public function initialize(): void
     {
-        try {
-            foreach ([$this->coursesTable, $this->indexTable] as $table) {
-                $this->connection->executeStatement(
-                    'CREATE TABLE ' . $table . " (id TEXT PRIMARY KEY, name TEXT NOT NULL CHECK (name <> 'rejected'))",
-                );
-            }
-            $this->courses->withKey('init')->insert()->setColumn('name', 'initialized');
-            $this->index->withKey('init')->insert()->setColumn('name', 'initialized');
-            $this->failIf('initialize');
-            $this->flushBuffers();
-        } finally {
-            $this->clearBuffers();
+        foreach ([$this->coursesTable, $this->indexTable] as $table) {
+            $this->connection->executeStatement(
+                'CREATE TABLE ' . $table . " (id TEXT PRIMARY KEY, name TEXT NOT NULL CHECK (name <> 'rejected'))",
+            );
         }
+        $this->courses->withKey('init')->insert()->setColumn('name', 'initialized');
+        $this->index->withKey('init')->insert()->setColumn('name', 'initialized');
+        $this->failIf('initialize');
     }
 
     #[ProjectionHandler]
@@ -60,28 +56,18 @@ final class BufferedProjection
     }
 
     #[ProjectionFlush]
-    public function flush(): void
+    public function prepareFlush(): void
     {
-        try {
-            $this->courses->withKey('init')->setColumn('name', 'flushed');
-            $this->failIf('hook');
-            $this->flushBuffers();
-        } finally {
-            $this->clearBuffers();
-        }
+        $this->courses->withKey('init')->setColumn('name', 'flushed');
+        $this->failIf('hook');
     }
 
     #[ProjectionResetter]
     public function reset(): void
     {
-        try {
-            $this->courses->reconcileRows([]);
-            $this->index->reconcileRows([]);
-            $this->failIf('reset');
-            $this->flushBuffers();
-        } finally {
-            $this->clearBuffers();
-        }
+        $this->courses->reconcileRows([]);
+        $this->index->reconcileRows([]);
+        $this->failIf('reset');
     }
 
     public function hasPendingChanges(): bool
@@ -89,13 +75,13 @@ final class BufferedProjection
         return $this->courses->hasPendingChanges() || $this->index->hasPendingChanges();
     }
 
-    private function flushBuffers(): void
+    public function flush(): void
     {
         $this->courses->flush();
         $this->index->flush();
     }
 
-    private function clearBuffers(): void
+    public function clear(): void
     {
         $this->courses->clear();
         $this->index->clear();

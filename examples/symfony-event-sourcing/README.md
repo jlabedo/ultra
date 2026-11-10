@@ -89,19 +89,22 @@ et la même connexion DBAL, fournie par DoctrineBundle et configurée dans
 son constructeur à partir de la connexion DBAL. Plusieurs tables peuvent être
 construites de la même façon ; elles ne deviennent pas des services Symfony.
 
-Les handlers traitent `OrderPlaced` et `OrderShipped` dans l'ordre de chaque commande
-grâce à `partitionBy: 'order'`. Le hook `#[ProjectionFlush]` appelle `flush()`, puis
-`clear()` dans un `finally`. Un flush réussi consomme déjà les opérations bufferisées ;
-un nouvel appel sans nouvelles mutations ne répète pas les écritures. Le `finally`
-abandonne les mutations restantes si le flush échoue. Les écritures et le checkpoint
-partagent la même transaction. Le resetter vide la table par réconciliation puis
-appelle ce même flush. Aucun décorateur transactionnel applicatif n'est nécessaire.
+[OrderSummary](src/Projection/OrderSummary.php) implémente `UnitOfWork` et délègue
+`hasPendingChanges()`, `flush()` et `clear()` à sa table locale. Les handlers traitent
+`OrderPlaced` et `OrderShipped` dans l'ordre de chaque commande grâce à
+`partitionBy: 'order'`.
 
-Si un handler échoue avant le hook de flush, son buffer n'est pas nettoyé par ce
-hook. Le worker propage l'erreur et s'arrête ; le redémarrer recrée la projection.
-Un appelant qui réessaie dans le même processus doit recréer la projection ou
-nettoyer explicitement ses buffers. Voir le contrat des
-[modèles de lecture bufferisés](../../docs/projections/README.md#buffered-read-models)
+Le moteur de projection appelle le flush de cette Unit of Work dans la transaction
+du checkpoint et assure son nettoyage après chaque lot, y compris si un handler
+échoue avant le flush. La même projection peut donc être réutilisée après échec.
+Un flush réussi consomme déjà les opérations bufferisées ; un nouvel appel sans
+nouvelles mutations ne répète pas les écritures.
+
+Symfony exclut automatiquement la projection de l'Unit of Work des commandes.
+Aucun service par table, hook `#[ProjectionFlush]` ou décorateur transactionnel
+applicatif n'est nécessaire ici. Le resetter prépare simplement une réconciliation
+vide ; le moteur assure également le flush et le nettoyage de cette opération.
+Voir le contrat de [persistance propre aux projections](../../docs/projections/README.md#projection-owned-persistence)
 et celui de [Mapped Table](../../docs/stored-state/mapped-table.md).
 
 [Schema](src/Schema.php) assemble les DDL fournis par les packages et la table de

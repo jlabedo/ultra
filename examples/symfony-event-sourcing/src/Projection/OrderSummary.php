@@ -12,10 +12,10 @@ use Ultra\MappedTable\PostgresMappedRowSetAdapter;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionResetter;
-use Ultra\Projection\Attribute\ProjectionFlush;
+use Ultra\UnitOfWork\UnitOfWork;
 
 #[Projection(name: 'order_summary', partitionBy: 'order')]
-final readonly class OrderSummary
+final readonly class OrderSummary implements UnitOfWork
 {
     private MappedRowSet $rows;
 
@@ -40,20 +40,24 @@ final readonly class OrderSummary
         $this->rows->withKey($event->orderId)->setColumn('status', 'shipped');
     }
 
-    #[ProjectionFlush]
+    public function hasPendingChanges(): bool
+    {
+        return $this->rows->hasPendingChanges();
+    }
+
+    public function clear(): void
+    {
+        $this->rows->clear();
+    }
+
     public function flush(): void
     {
-        try {
-            $this->rows->flush();
-        } finally {
-            $this->rows->clear();
-        }
+        $this->rows->flush();
     }
 
     #[ProjectionResetter]
     public function reset(): void
     {
         $this->rows->reconcileRows([]);
-        $this->flush();
     }
 }

@@ -114,7 +114,7 @@ overlay; register fresh expectations for a new decision. An empty flush does not
 `MappedRowSet` itself does not open transactions. If you need atomicity across a flush, open the surrounding transaction on the underlying storage before calling `flush()`.
 
 For locally constructed projection row sets, see the
-[buffered read-model lifecycle](../projections/README.md#buffered-read-models).
+[projection-owned persistence](../projections/README.md#projection-owned-persistence).
 
 ### Table policy
 
