@@ -216,6 +216,43 @@ Rule of thumb:
 - use `ProjectionDefinition` when you need metadata
 - use `ProjectionRuntime` when you need to execute projection code
 
+### Buffered read models
+
+A projection can construct its own `MappedRowSet` instances, directly or through
+`MappedRowSetAdapterFactory`. Tables do not need individual Symfony services.
+Use the existing `#[ProjectionFlush]` hook to persist and clear these buffers:
+
+```php
+#[ProjectionFlush]
+public function flush(): void
+{
+    try {
+        $this->courses->flush();
+        $this->courseIndex->flush();
+    } finally {
+        $this->courses->clear();
+        $this->courseIndex->clear();
+    }
+}
+```
+
+Both tables must use the same connection as the projection transaction manager
+and checkpoint repository. The runner invokes this hook before advancing the
+checkpoint, in the same transaction. Clearing in `finally` also discards pending
+work when a table flush fails; a later checkpoint failure rolls back the database
+writes while the buffers are already empty.
+
+If a handler fails before the flush hook, that hook is not called. Discard the
+projection instance and create a fresh projection/runtime before retrying, or
+explicitly clear its application-owned buffers. The console worker propagates
+failures and exits; restarting it creates fresh instances. Database rollback does
+not restore or clear PHP object state.
+
+Initialization and reset have their own hooks and transactions; they do not invoke
+`#[ProjectionFlush]`. A hook that buffers lifecycle writes must flush and clear
+those writes itself. The [Symfony example](../../examples/symfony-event-sourcing/README.md)
+uses a local table and calls its flush method from its resetter.
+
 ### `ProjectionCatalog`
 
 [ProjectionCatalog.php](../../src/Projection/Runtime/ProjectionCatalog.php) is a registry of runtimes and definitions keyed by projection id.

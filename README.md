@@ -7,6 +7,7 @@ Ultra is a collection of composable PHP application building blocks. Each buildi
 - [Documentation by context and task](docs/README.md): contracts, usage and package ownership.
 - [Installation from GitHub](docs/development.md#installing-in-an-application): use Ultra in another application with Composer.
 - [Contributor instructions](AGENTS.md): change rules and verification requirements.
+- [Symfony event sourcing example](examples/symfony-event-sourcing/README.md): Unit of Work, PostgreSQL events and a Mapped Table projection.
 - [IAM example](examples/iam/README.md): tenant-scoped RBAC with StateStore writes, direct SQL authorization reads and transactional auditing.
 
 Runtime requirements and tooling are defined in [composer.json](composer.json).

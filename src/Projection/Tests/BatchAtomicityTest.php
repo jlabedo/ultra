@@ -10,6 +10,8 @@ use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Checkpoint;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionTransactionManagerInterface;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Testing\PostgresConnectionSupport;
 
@@ -66,6 +68,88 @@ final class BatchAtomicityTest extends ProjectionTestCase
             'runClaimedOnce' === $mode ? 0 : 1,
             $fixture->activity->pendingInSegment('durable_projection', 0, 255),
         );
+    }
+
+    #[DataProvider('bufferedBatches')]
+    public function test_projection_flush_persists_local_tables_atomically_and_clears_its_buffers(
+        string $mode,
+        ?string $stage,
+    ): void {
+        $fixture = $this->fixture('postgres');
+        $projection = $fixture->bufferedProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $fixture->runner->ensureInitialized($runtime);
+        $projection->failAt = $stage;
+        $id = 'buffered-course';
+        $fixture->store->append([self::courseCreatedEvent($id, 'Math')]);
+        $fixture->activity->bump('buffered_projection', BucketHasher::bucketFor($id));
+
+        $runner = $fixture->runner;
+        if ('transaction' === $stage) {
+            $transactions = new class($fixture->transactions) implements ProjectionTransactionManagerInterface {
+                private int $calls = 0;
+
+                public function __construct(private ProjectionTransactionManagerInterface $inner) {}
+
+                public function transactional(callable $operation): mixed
+                {
+                    ++$this->calls;
+                    return $this->inner->transactional(function () use ($operation): mixed {
+                        $result = $operation();
+                        // The first transaction only checks initialization; the second commits the batch.
+                        if (2 === $this->calls) {
+                            throw new \RuntimeException('Failed transaction.');
+                        }
+                        return $result;
+                    });
+                }
+            };
+            $runner = new ProjectionRunner($fixture->store, $fixture->segments, $transactions, $fixture->activity);
+        }
+
+        if (null !== $stage) {
+            try {
+                $runner->{$mode}($runtime, 'buffered_projection', 0, 'worker');
+                static::fail('Expected batch failure.');
+            } catch (\RuntimeException | \Doctrine\DBAL\Exception) {
+                // A failed handler never reaches ProjectionFlush: discard that projection before retrying.
+                static::assertSame('apply' === $stage, $projection->hasPendingChanges());
+                static::assertSame(0, $runner->listSegments('buffered_projection')[0]->checkpoint->gapFloor->value);
+                foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
+                    static::assertSame([['id' => 'init', 'name' => 'initialized']], $fixture->connection->fetchAllAssociative(
+                        'SELECT * FROM ' . $table,
+                    ));
+                }
+            }
+            if ('apply' === $stage) {
+                $projection = $fixture->bufferedProjection();
+                $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+            } else {
+                $projection->failAt = null;
+            }
+            $runner = $fixture->runner;
+        }
+
+        $result = $runner->{$mode}($runtime, 'buffered_projection', 0, 'worker');
+        static::assertSame(1, $result->processedEvents);
+        static::assertFalse($projection->hasPendingChanges());
+        static::assertSame(
+            [['id' => $id, 'name' => 'Math'], ['id' => 'init', 'name' => 'flushed']],
+            $fixture->connection->fetchAllAssociative('SELECT * FROM ' . $projection->coursesTable . ' ORDER BY id'),
+        );
+        static::assertSame(
+            [['id' => $id, 'name' => 'Math'], ['id' => 'init', 'name' => 'initialized']],
+            $fixture->connection->fetchAllAssociative('SELECT * FROM ' . $projection->indexTable . ' ORDER BY id'),
+        );
+    }
+
+    public static function bufferedBatches(): iterable
+    {
+        foreach (['runClaimedOnce', 'backfillClaimedOnce'] as $mode) {
+            foreach ([null, 'apply', 'hook', 'buffer', 'transaction'] as $stage) {
+                yield $mode . ' ' . ($stage ?? 'success') => [$mode, $stage];
+            }
+        }
     }
 
     public function test_an_outer_transaction_owns_read_model_and_checkpoint_visibility(): void

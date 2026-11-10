@@ -12,6 +12,10 @@ unit-of-work participants still flush and clear normally.
 
 When MessageHandlingExtension is installed, the runner's around advice wraps compiled handlers. A read-only handler opens no transaction unless the unit of work reports pending work. The extension defaults to NoTransactionManager if no TransactionManager service exists. Configure a real transaction manager for the same connection as participating database resources.
 
+For a runnable application using PostgreSQL event sourcing and a Mapped Table projection,
+see the [Symfony event sourcing example](../../examples/symfony-event-sourcing/README.md).
+It illustrates command work boundaries, separate projection batches and buffer cleanup after failures.
+
 ## Doctrine ORM
 
 ORM participation is opt-in. With DoctrineBundle and `doctrine/orm` installed, register the adapter

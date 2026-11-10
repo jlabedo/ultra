@@ -119,6 +119,20 @@ final class ProjectionFixture
         );
     }
 
+    public function bufferedProjection(): BufferedProjection
+    {
+        $courses = $this->prefix . 'buffered_courses';
+        $index = $this->prefix . 'buffered_index';
+        $this->registerReadModel($courses);
+        $this->registerReadModel($index);
+
+        return new BufferedProjection(
+            $this->connection ?? throw new \LogicException('A buffered projection needs Postgres.'),
+            $courses,
+            $index,
+        );
+    }
+
     public function registerReadModel(string $table): void
     {
         $this->readModels[] = $table;

@@ -150,6 +150,32 @@ final class SegmentTopologyTest extends ProjectionTestCase
         static::assertSame(2, $merged->checkpoint->gapFloor->value);
     }
 
+    public function test_merge_invokes_projection_flush_for_local_tables_on_each_catch_up_batch(): void
+    {
+        $fixture = $this->fixture('postgres');
+        $projection = $fixture->bufferedProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $left = self::courseIdInBucketRange(0, 127);
+        $right = self::courseIdInBucketRange(128, 255);
+        $fixture->store->append([
+            self::courseCreatedEvent($left, 'Math'),
+            self::courseCreatedEvent($right, 'Science'),
+        ]);
+        $runner = $fixture->runner;
+        $runner->ensureInitialized($runtime);
+        $runner->splitSegment('buffered_projection', 0);
+        $runner->backfillClaimedOnce($runtime, 'buffered_projection', 128, 'worker-right');
+
+        $runner->mergeSegments($runtime, 0, 255, 'coordinator', limit: 1);
+
+        static::assertFalse($projection->hasPendingChanges());
+        foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
+            static::assertSame(3, (int) $fixture->connection->fetchOne('SELECT COUNT(*) FROM ' . $table));
+        }
+        static::assertCount(1, $runner->listSegments('buffered_projection'));
+        static::assertSame(2, $runner->listSegments('buffered_projection')[0]->checkpoint->gapFloor->value);
+    }
+
     #[DataProvider('backends')]
     public function test_merge_preserves_known_sequence_gaps_at_equal_checkpoint_floors(string $backend): void
     {

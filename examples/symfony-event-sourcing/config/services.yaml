@@ -1,0 +1,31 @@
+parameters:
+    env(DATABASE_URL): 'pdo-pgsql://ultra:ultra@127.0.0.1:55432/ultra_test'
+
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    App\:
+        resource: '../src/'
+        exclude:
+            - '../src/Kernel.php'
+            - '../src/Event/'
+            - '../src/Command/'
+
+    App\Event\:
+        resource: '../src/Event/'
+        autowire: false
+
+    Ultra\EventStore\EventStore:
+        class: Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams
+
+    Ultra\UnitOfWork\TransactionManager:
+        class: Ultra\UnitOfWork\DoctrineTransactionManager
+
+    Ultra\Projection\Bundle\ProjectionImplementationInterface:
+        class: Ultra\Projection_Postgres\PostgresProjectionImplementation
+
+    # The worker polls durable activity; command dispatch must not run projections.
+    Ultra\Projection\Coordination\ProjectionActivatorInterface:
+        class: Ultra\Projection\InMemory\InMemoryProjectionActivator
