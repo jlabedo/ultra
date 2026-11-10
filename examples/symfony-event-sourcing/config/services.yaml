@@ -21,7 +21,7 @@ services:
         class: Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams
 
     Ultra\UnitOfWork\TransactionManager:
-        class: Ultra\UnitOfWork\DoctrineTransactionManager
+        class: Ultra\UnitOfWork\DbalTransactionManager
 
     Ultra\Projection\Bundle\ProjectionImplementationInterface:
         class: Ultra\Projection_Postgres\PostgresProjectionImplementation

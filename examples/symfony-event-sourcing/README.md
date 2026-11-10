@@ -79,7 +79,7 @@ $work->run(function () use ($mediator): void {
 ```
 
 Les appels imbriqués partagent les événements en attente. Le flush persiste les
-événements et leur activité de projection avec le même `DoctrineTransactionManager`
+événements et leur activité de projection avec le même `DbalTransactionManager`
 et la même connexion DBAL, fournie par DoctrineBundle et configurée dans
 [doctrine.yaml](config/packages/doctrine.yaml). Voir les contrats de
 [l'Unit of Work](../../docs/transactions/README.md) et de son
@@ -91,9 +91,11 @@ construites de la même façon ; elles ne deviennent pas des services Symfony.
 
 Les handlers traitent `OrderPlaced` et `OrderShipped` dans l'ordre de chaque commande
 grâce à `partitionBy: 'order'`. Le hook `#[ProjectionFlush]` appelle `flush()`, puis
-`clear()` dans un `finally`. Les écritures et le checkpoint partagent la même
-transaction. Le resetter vide la table par réconciliation puis appelle ce même
-flush. Aucun décorateur transactionnel applicatif n'est nécessaire.
+`clear()` dans un `finally`. Un flush réussi consomme déjà les opérations bufferisées ;
+un nouvel appel sans nouvelles mutations ne répète pas les écritures. Le `finally`
+abandonne les mutations restantes si le flush échoue. Les écritures et le checkpoint
+partagent la même transaction. Le resetter vide la table par réconciliation puis
+appelle ce même flush. Aucun décorateur transactionnel applicatif n'est nécessaire.
 
 Si un handler échoue avant le hook de flush, son buffer n'est pas nettoyé par ce
 hook. Le worker propage l'erreur et s'arrête ; le redémarrer recrée la projection.

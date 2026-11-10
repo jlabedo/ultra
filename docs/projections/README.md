@@ -239,8 +239,10 @@ public function flush(): void
 Both tables must use the same connection as the projection transaction manager
 and checkpoint repository. The runner invokes this hook before advancing the
 checkpoint, in the same transaction. Clearing in `finally` also discards pending
-work when a table flush fails; a later checkpoint failure rolls back the database
-writes while the buffers are already empty.
+work when a table flush fails. Successful table flushes already consume completed
+operations, so repeating a flush without new changes performs no writes. The
+`finally` handles any work left pending by a failed flush; a later checkpoint
+failure rolls back the database writes without restoring consumed buffers.
 
 If a handler fails before the flush hook, that hook is not called. Discard the
 projection instance and create a fresh projection/runtime before retrying, or
