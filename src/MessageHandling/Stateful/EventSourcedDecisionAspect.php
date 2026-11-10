@@ -236,7 +236,10 @@ final class EventSourcedDecisionAspect
 
         $entity = $attributes[0]->newInstance();
         if ([] === $entity->tags) {
-            throw new \LogicException(sprintf('Decision handler state class %s must declare at least one event-sourced tag.', $stateClass));
+            throw new \LogicException(sprintf(
+                'Decision handler state class %s must declare at least one event-sourced tag.',
+                $stateClass,
+            ));
         }
         $properties = [];
         foreach ($entity->tags as $tag) {

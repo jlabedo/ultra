@@ -842,7 +842,9 @@ final readonly class InspectUuidCourse
 
 final readonly class InspectBareUuidCourse
 {
-    public function __construct(public Uuid $course) {}
+    public function __construct(
+        public Uuid $course,
+    ) {}
 
     #[SelfHandler]
     #[DecisionHandler]
@@ -854,7 +856,10 @@ final readonly class InspectBareUuidCourse
 
 final readonly class ReadOrderByStateIdConvention
 {
-    public function __construct(public string $orderId, public string $order) {}
+    public function __construct(
+        public string $orderId,
+        public string $order,
+    ) {}
 
     #[SelfHandler]
     #[StateReader]

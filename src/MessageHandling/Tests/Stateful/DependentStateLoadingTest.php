@@ -22,16 +22,32 @@ final class DependentStateLoadingTest extends DecisionTestCase
         $container = $this->multiTagApplication($commandClass)->boot();
         $store = $container->get(InMemoryEventStore::class);
         $store->append([
-            new \Ultra\EventStore\Event('dependent_binding.member_joined', ['memberId' => 'member', 'companyId' => 'ada'], ['member' => 'member']),
-            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'course', 'studentId' => 'ada'], ['course' => 'course', 'student' => 'ada']),
-            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'other', 'studentId' => 'ada'], ['course' => 'other', 'student' => 'ada']),
+            new \Ultra\EventStore\Event(
+                'dependent_binding.member_joined',
+                ['memberId' => 'member', 'companyId' => 'ada'],
+                ['member' => 'member'],
+            ),
+            new \Ultra\EventStore\Event(
+                'student.subscribed',
+                ['courseId' => 'course', 'studentId' => 'ada'],
+                ['course' => 'course', 'student' => 'ada'],
+            ),
+            new \Ultra\EventStore\Event(
+                'student.subscribed',
+                ['courseId' => 'other', 'studentId' => 'ada'],
+                ['course' => 'other', 'student' => 'ada'],
+            ),
         ]);
         $command = InspectBoundMultiTagActivity::class === $commandClass
             ? new $commandClass(new NestedCourseReference('course'), 'member')
             : new $commandClass('course', 'member');
         static::assertSame(1, $container->get('test.mediator')->send($command));
 
-        $store->append([new \Ultra\EventStore\Event('dependent_binding.member_joined', ['memberId' => 'member', 'companyId' => 'grace'], ['member' => 'member'])]);
+        $store->append([new \Ultra\EventStore\Event(
+            'dependent_binding.member_joined',
+            ['memberId' => 'member', 'companyId' => 'grace'],
+            ['member' => 'member'],
+        )]);
         static::assertSame(0, $container->get('test.mediator')->send($command));
     }
 

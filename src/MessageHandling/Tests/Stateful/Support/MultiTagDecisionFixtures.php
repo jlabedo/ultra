@@ -40,19 +40,31 @@ final class CourseStudentPairState
 
 final readonly class InspectMultiTagActivity
 {
-    public function __construct(public mixed $courseId, public mixed $studentId) {}
+    public function __construct(
+        public mixed $courseId,
+        public mixed $studentId,
+    ) {}
 
     #[SelfHandler]
     #[DecisionHandler]
     public function decide(CourseStudentActivityState $activity, CourseStudentPairState $pair): array
     {
-        return [$activity->maxCapacity, $activity->studentKnown, $activity->subscriptionDelta, $pair->subscriptions, $pair->departures];
+        return [
+            $activity->maxCapacity,
+            $activity->studentKnown,
+            $activity->subscriptionDelta,
+            $pair->subscriptions,
+            $pair->departures,
+        ];
     }
 }
 
 final readonly class InspectBoundMultiTagActivity
 {
-    public function __construct(public NestedCourseReference $reference, public string $memberId) {}
+    public function __construct(
+        public NestedCourseReference $reference,
+        public string $memberId,
+    ) {}
 
     public function selectedStudent(DependentMemberState $member): string
     {
@@ -61,19 +73,22 @@ final readonly class InspectBoundMultiTagActivity
 
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(
-        #[BindTo('reference.courseId', tag: 'course')]
-        #[BindTo(method: 'selectedStudent', tag: 'student')]
-        CourseStudentPairState $pair,
-        DependentMemberState $member,
-    ): int {
+    public function decide(#[BindTo('reference.courseId', tag: 'course')]
+        #[BindTo(
+            method: 'selectedStudent',
+            tag: 'student',
+        )] CourseStudentPairState $pair, DependentMemberState $member): int
+    {
         return $pair->subscriptions;
     }
 }
 
 final readonly class InspectPartiallyBoundMultiTagActivity
 {
-    public function __construct(public NestedCourseReference $reference, private string|\Stringable $selectedStudent) {}
+    public function __construct(
+        public NestedCourseReference $reference,
+        private string|\Stringable $selectedStudent,
+    ) {}
 
     public function studentId(): string|\Stringable
     {
@@ -90,7 +105,10 @@ final readonly class InspectPartiallyBoundMultiTagActivity
 
 final readonly class InspectDependentMultiTagActivity
 {
-    public function __construct(public string $courseId, public string $memberId) {}
+    public function __construct(
+        public string $courseId,
+        public string $memberId,
+    ) {}
 
     public function studentId(DependentMemberState $member): string
     {
@@ -107,12 +125,19 @@ final readonly class InspectDependentMultiTagActivity
 
 final readonly class SubscribeWhileMultiTagHistoryChanges
 {
-    public function __construct(public string $courseId, public string $studentId, public Event $concurrent) {}
+    public function __construct(
+        public string $courseId,
+        public string $studentId,
+        public Event $concurrent,
+    ) {}
 
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(CourseStudentActivityState $activity, CourseStudentPairState $pair, EventStore $store): StudentSubscribed
-    {
+    public function decide(
+        CourseStudentActivityState $activity,
+        CourseStudentPairState $pair,
+        EventStore $store,
+    ): StudentSubscribed {
         $store->append([$this->concurrent]);
 
         return new StudentSubscribed($this->courseId, $this->studentId);
@@ -144,11 +169,8 @@ final class MultiTagBindingDuplicateTag
 {
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(
-        #[BindTo('courseId', tag: 'course')]
-        #[BindTo(method: 'otherCourse', tag: 'course')]
-        CourseStudentPairState $pair,
-    ): void {}
+    public function decide(#[BindTo('courseId', tag: 'course')]
+        #[BindTo(method: 'otherCourse', tag: 'course')] CourseStudentPairState $pair): void {}
 }
 
 final class MultiTagBindingMissingValue
@@ -191,22 +213,37 @@ final class InspectUntaggedDecisionState
 
 final readonly class InspectSeparateMultiTagActivity
 {
-    public function __construct(public mixed $course, public mixed $student) {}
+    public function __construct(
+        public mixed $course,
+        public mixed $student,
+    ) {}
 }
 
 final class InspectSeparateMultiTagActivityHandler
 {
     #[Handles]
     #[DecisionHandler]
-    public function handle(InspectSeparateMultiTagActivity $command, CourseStudentActivityState $activity, CourseStudentPairState $pair): array
-    {
-        return [$activity->maxCapacity, $activity->studentKnown, $activity->subscriptionDelta, $pair->subscriptions, $pair->departures];
+    public function handle(
+        InspectSeparateMultiTagActivity $command,
+        CourseStudentActivityState $activity,
+        CourseStudentPairState $pair,
+    ): array {
+        return [
+            $activity->maxCapacity,
+            $activity->studentKnown,
+            $activity->subscriptionDelta,
+            $pair->subscriptions,
+            $pair->departures,
+        ];
     }
 }
 
 final readonly class SubscribeDependentPairWhileMemberMoves
 {
-    public function __construct(public string $courseId, public string $memberId) {}
+    public function __construct(
+        public string $courseId,
+        public string $memberId,
+    ) {}
 
     public function studentId(DependentMemberState $member): string
     {
@@ -215,9 +252,16 @@ final readonly class SubscribeDependentPairWhileMemberMoves
 
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(CourseStudentPairState $pair, DependentMemberState $member, EventStore $store): StudentSubscribed
-    {
-        $store->append([new Event('dependent_binding.member_joined', ['memberId' => $this->memberId, 'companyId' => 'grace'], ['member' => $this->memberId])]);
+    public function decide(
+        CourseStudentPairState $pair,
+        DependentMemberState $member,
+        EventStore $store,
+    ): StudentSubscribed {
+        $store->append([new Event(
+            'dependent_binding.member_joined',
+            ['memberId' => $this->memberId, 'companyId' => 'grace'],
+            ['member' => $this->memberId],
+        )]);
 
         return new StudentSubscribed($this->courseId, $member->companyId);
     }
@@ -225,7 +269,10 @@ final readonly class SubscribeDependentPairWhileMemberMoves
 
 final readonly class InspectBareTagActivity
 {
-    public function __construct(public string $course, public string $student) {}
+    public function __construct(
+        public string $course,
+        public string $student,
+    ) {}
 
     #[SelfHandler]
     #[DecisionHandler]

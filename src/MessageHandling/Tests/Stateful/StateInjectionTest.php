@@ -30,21 +30,54 @@ final class StateInjectionTest extends DecisionTestCase
         $mediator = $container->get('test.mediator');
         static::assertSame([0, false, 0, 0, 0], $mediator->send(new $commandClass('course', 'ada')));
         $container->get(InMemoryEventStore::class)->append([
-            new \Ultra\EventStore\Event('course.created', ['courseId' => 'course', 'name' => 'Math', 'maxCapacity' => 12], ['course' => 'course']),
-            new \Ultra\EventStore\Event('course.created', ['courseId' => 'other', 'name' => 'Other', 'maxCapacity' => 99], ['course' => 'other']),
+            new \Ultra\EventStore\Event(
+                'course.created',
+                ['courseId' => 'course', 'name' => 'Math', 'maxCapacity' => 12],
+                ['course' => 'course'],
+            ),
+            new \Ultra\EventStore\Event(
+                'course.created',
+                ['courseId' => 'other', 'name' => 'Other', 'maxCapacity' => 99],
+                ['course' => 'other'],
+            ),
             new \Ultra\EventStore\Event('student.enrolled', ['studentId' => 'ada'], ['student' => 'ada']),
-            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'course', 'studentId' => 'ada'], ['course' => 'course', 'student' => 'ada']),
-            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'course', 'studentId' => 'grace'], ['course' => 'course', 'student' => 'grace']),
-            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'other', 'studentId' => 'ada'], ['course' => 'other', 'student' => 'ada']),
-            new \Ultra\EventStore\Event('student.subscribed', ['courseId' => 'other', 'studentId' => 'grace'], ['course' => 'other', 'student' => 'grace']),
-            new \Ultra\EventStore\Event('student.transferred', ['studentId' => 'ada', 'previousCourseId' => 'course', 'courseId' => 'other'], ['student' => 'ada', 'previousCourse' => 'course', 'course' => 'other']),
+            new \Ultra\EventStore\Event(
+                'student.subscribed',
+                ['courseId' => 'course', 'studentId' => 'ada'],
+                ['course' => 'course', 'student' => 'ada'],
+            ),
+            new \Ultra\EventStore\Event(
+                'student.subscribed',
+                ['courseId' => 'course', 'studentId' => 'grace'],
+                ['course' => 'course', 'student' => 'grace'],
+            ),
+            new \Ultra\EventStore\Event(
+                'student.subscribed',
+                ['courseId' => 'other', 'studentId' => 'ada'],
+                ['course' => 'other', 'student' => 'ada'],
+            ),
+            new \Ultra\EventStore\Event(
+                'student.subscribed',
+                ['courseId' => 'other', 'studentId' => 'grace'],
+                ['course' => 'other', 'student' => 'grace'],
+            ),
+            new \Ultra\EventStore\Event(
+                'student.transferred',
+                ['studentId' => 'ada', 'previousCourseId' => 'course', 'courseId' => 'other'],
+                ['student' => 'ada', 'previousCourse' => 'course', 'course' => 'other'],
+            ),
         ]);
 
         static::assertSame([12, true, 3, 1, 1], $mediator->send(new $commandClass('course', 'ada')));
-        static::assertSame(1, $mediator->send(new InspectPartiallyBoundMultiTagActivity(
-            new NestedCourseReference(new MutableDomainId('course')),
-            new MutableDomainId('ada'),
-        )));
+        static::assertSame(
+            1,
+            $mediator->send(
+                new InspectPartiallyBoundMultiTagActivity(
+                    new NestedCourseReference(new MutableDomainId('course')),
+                    new MutableDomainId('ada'),
+                ),
+            ),
+        );
     }
 
     public static function multiTagHandlerOrganizations(): iterable
@@ -55,8 +88,10 @@ final class StateInjectionTest extends DecisionTestCase
     }
 
     #[DataProvider('explicitConventionBindings')]
-    public function test_explicit_bindings_select_among_all_conventional_candidates(string $commandClass, int $expected): void
-    {
+    public function test_explicit_bindings_select_among_all_conventional_candidates(
+        string $commandClass,
+        int $expected,
+    ): void {
         $container = $this->multiTagApplication($commandClass)->boot();
         $events = [];
         foreach (['bare' => 2, 'suffix' => 1, 'method' => 3] as $courseId => $count) {
@@ -85,11 +120,13 @@ final class StateInjectionTest extends DecisionTestCase
     {
         $container = $this->multiTagApplication(InspectMultiTagActivity::class)->boot();
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage(sprintf('Id of state parameter "activity" for tag "%s" must be string or Stringable, got int.', $tag));
-        $container->get('test.mediator')->send(new InspectMultiTagActivity(
-            'course' === $tag ? 42 : 'course',
-            'student' === $tag ? 42 : 'ada',
+        $this->expectExceptionMessage(sprintf(
+            'Id of state parameter "activity" for tag "%s" must be string or Stringable, got int.',
+            $tag,
         ));
+        $container->get('test.mediator')->send(
+            new InspectMultiTagActivity('course' === $tag ? 42 : 'course', 'student' === $tag ? 42 : 'ada'),
+        );
     }
 
     public static function invalidMultiTagIds(): iterable
@@ -292,9 +329,10 @@ final class StateInjectionTest extends DecisionTestCase
         $database->seedRow('decision_orders', 'order_id', ['order_id' => 'selected', 'status' => 'paid']);
         $database->seedRow('decision_orders', 'order_id', ['order_id' => 'other', 'status' => 'shipped']);
 
-        static::assertSame('paid', $container->get('test.mediator')->send(
-            new ReadOrderByStateIdConvention('selected', 'other'),
-        ));
+        static::assertSame(
+            'paid',
+            $container->get('test.mediator')->send(new ReadOrderByStateIdConvention('selected', 'other')),
+        );
     }
 
     public function test_missing_required_stored_states_fail_before_the_decision(): void

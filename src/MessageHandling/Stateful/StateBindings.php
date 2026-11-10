@@ -201,7 +201,11 @@ final class StateBindings
                     continue;
                 }
 
-                $ids[$position] = array_map(static fn(array $id): mixed => self::id($message, $id, $loaded), $binding['ids']);
+                $ids[$position] = array_map(static fn(array $id): mixed => self::id(
+                    $message,
+                    $id,
+                    $loaded,
+                ), $binding['ids']);
             }
 
             foreach ($loadRound($ids) as $position => $state) {
@@ -285,12 +289,9 @@ final class StateBindings
         }
 
         if (count($candidates) > 1) {
-            $descriptions = array_map(
-                static fn(array $candidate): string => null !== $candidate[0]
-                    ? sprintf('property "%s"', $candidate[0])
-                    : sprintf('method "%s()"', $candidate[1]),
-                $candidates,
-            );
+            $descriptions = array_map(static fn(array $candidate): string => null !== $candidate[0]
+                ? sprintf('property "%s"', $candidate[0])
+                : sprintf('method "%s()"', $candidate[1]), $candidates);
             throw new \LogicException(sprintf(
                 'Message %s has ambiguous conventional bindings (%s) for state parameter "%s" of %s::%s(). '
                 . 'Use #[BindTo] to choose a source explicitly.',

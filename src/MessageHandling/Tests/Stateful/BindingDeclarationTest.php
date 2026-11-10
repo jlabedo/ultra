@@ -45,11 +45,23 @@ final class BindingDeclarationTest extends DecisionTestCase
         ];
         yield 'ambiguous override' => [MultiTagBindingWithoutTag::class, 'requires an explicit tag in #[BindTo]'];
         yield 'unknown tag' => [MultiTagBindingUnknownTag::class, 'Unknown tag "faculty" in #[BindTo]'];
-        yield 'alias cannot identify state' => [MultiTagBindingAliasTag::class, 'Unknown tag "previousCourse" in #[BindTo]'];
+        yield 'alias cannot identify state' => [
+            MultiTagBindingAliasTag::class,
+            'Unknown tag "previousCourse" in #[BindTo]',
+        ];
         yield 'duplicate override' => [MultiTagBindingDuplicateTag::class, 'Duplicate #[BindTo] for tag "course"'];
-        yield 'missing second tag' => [MultiTagBindingMissingValue::class, 'Expected property "studentId", property "student", method "studentId()"'];
-        yield 'cycle through second tag' => [MultiTagBindingCycle::class, 'cyclic method binding dependency: pair -> member -> pair'];
-        yield 'no identity tags' => [InspectUntaggedDecisionState::class, 'must declare at least one event-sourced tag'];
+        yield 'missing second tag' => [
+            MultiTagBindingMissingValue::class,
+            'Expected property "studentId", property "student", method "studentId()"',
+        ];
+        yield 'cycle through second tag' => [
+            MultiTagBindingCycle::class,
+            'cyclic method binding dependency: pair -> member -> pair',
+        ];
+        yield 'no identity tags' => [
+            InspectUntaggedDecisionState::class,
+            'must declare at least one event-sourced tag',
+        ];
     }
 
     public static function invalidBindings(): iterable

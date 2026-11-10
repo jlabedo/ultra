@@ -20,8 +20,7 @@ final readonly class Authorization
 
     public function allows(LocalId $subject, Permission $permission, Scope $resource): bool
     {
-        return 1
-        === (int) $this->connection->fetchOne(
+        return 1 === (int) $this->connection->fetchOne(
             <<<'SQL'
                 WITH principals AS (
                     SELECT 'subject' AS type, subject_id AS id
