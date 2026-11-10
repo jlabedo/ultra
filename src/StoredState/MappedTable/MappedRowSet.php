@@ -230,7 +230,17 @@ final class MappedRowSet implements UnitOfWork
 
     public function hasPendingChanges(): bool
     {
-        return null !== $this->reconciledKeys || null !== $this->expectedRowKeys || [] !== $this->sortedPlans();
+        if (null !== $this->reconciledKeys || null !== $this->expectedRowKeys) {
+            return true;
+        }
+
+        foreach ($this->updates as $update) {
+            if (null !== $update->toPlan()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     public function clear(): void
