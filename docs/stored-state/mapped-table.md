@@ -42,6 +42,7 @@ $table->withKey('user-1')
 `expectSameRowKeys(...)` accept the same key forms. Composite rows use `MappedKey`, whose column values
 also accept `int`, `string` or `Stringable`. Stringable values are converted to strings when the `MappedKey`
 is constructed; its stored values remain `int|string`. A `MappedKey` passed directly keeps its named columns.
+Obtain a new `withKey()` handle after a successful flush or `clear()`; earlier handles refer to discarded buffers.
 
 ```php
 $table->withKey($userId)->setColumn('status', 'active'); // $userId implements Stringable.
@@ -105,6 +106,10 @@ Adapters implement `Ultra\MappedTable\MappedRowSetAdapter`:
 - `row(MappedKey $key, array $columns = [])` reads one row, optionally projecting columns
 - `rows(array $columns = [])` reads all rows as `MappedRow` values
 - `apply(RowSetUpdatePlan $plan)` receives optional row-set key expectations (plus the keys to leave out of that comparison) the sorted batch of immutable row plans and optional retained row keys; it checks the key expectations and the check-only plans against committed rows before applying the writes, then removes rows outside the retained set within its scope
+
+`flush()` consumes applied row plans, checked expectations and membership reconciliation after success, following
+the [unit-of-work contract](../transactions/README.md#core-contract). Later reads use storage without the consumed
+overlay; register fresh expectations for a new decision. An empty flush does not call the adapter.
 
 `MappedRowSet` itself does not open transactions. If you need atomicity across a flush, open the surrounding transaction on the underlying storage before calling `flush()`.
 
@@ -218,7 +223,7 @@ same scenario exercises the in-memory and Postgres adapters, including their fac
 | Writes have distinct insert, update, upsert, replacement and deletion semantics | [WriteSemanticsTest](../../src/StoredState/Tests/MappedTable/WriteSemanticsTest.php) | Preservation of unspecified values, conflicts, multiple deletions, replacement expectations, cancellation and merging. |
 | Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/StoredState/Tests/MappedTable/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, final-plan table policies, concurrent insertions/deletions and first-expectation retention. |
 | Saved membership supersedes earlier membership within its scope | [MembershipReconciliationTest](../../src/StoredState/Tests/MappedTable/MembershipReconciliationTest.php) | Late rows, empty and successive sets, duplicate keys, retained columns, earlier expectations and later explicit operations. |
-| Preparation, flush, clear and transactions retain their separate responsibilities | [FlushLifecycleTest](../../src/StoredState/Tests/MappedTable/FlushLifecycleTest.php) | Preparation without I/O, sorted immutable snapshots, check-only writes, complete cleanup, external rollback and in-memory transaction snapshots. |
+| Preparation, flush, clear and transactions retain their separate responsibilities | [FlushLifecycleTest](../../src/StoredState/Tests/MappedTable/FlushLifecycleTest.php) | Preparation without I/O, sorted immutable snapshots, check-only writes, successive flushes consuming completed work, complete cleanup, external rollback and in-memory transaction snapshots. |
 | Keys and scopes address independent rows | [KeyAndScopeIsolationTest](../../src/StoredState/Tests/MappedTable/KeyAndScopeIsolationTest.php) | Composite keys, scalar and Stringable shortcuts, colliding IDs, multiple scope columns and invalid addresses. |
 | Persisted column values survive encoding and decoding | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | Text/UUID/integer arrays, escaping and nulls, JSON, dates, booleans, single and multiple writes and optimistic typed comparisons. |
 | Persistence observations hold competing writers until their transaction ends | [PersistenceLockingTest](../../src/StoredState/Tests/MappedTable/PersistenceLockingTest.php) | Two real Postgres connections, present/absent checks, insert/upsert/update contention, release, transaction requirements and table-wide absence protection. |

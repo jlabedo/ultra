@@ -52,8 +52,9 @@ Columns marked `optimistic: false` remain excluded from value comparisons. Scala
 the same mapping and validation as `load()`.
 
 Observation acquires no database lock during the read and writes nothing by itself. Its expectations count as
-pending work, are checked at flush even without a save, and are discarded by `clear()`. Repeated observations see
-buffered inserts and updates while retaining the original expectations against storage. The caller still handles
+pending work, are checked at flush even without a save, and are consumed by a successful flush or discarded by
+`clear()`. Before flush, repeated observations see buffered inserts and updates while retaining the original
+expectations against storage. The caller still handles
 a null result and chooses any manual guards required for set-based rules.
 
 ## Save Semantics
@@ -93,8 +94,9 @@ after that expectation while retaining the check against competing creation.
 `load()` and presence observations immediately see the buffered deletion, while storage changes only at flush.
 Deletion supersedes buffered updates and collection saves for that owner. Repeating deletion is allowed. A later
 `save()` of the deleted row, including through another view sharing its mapped key, throws `ConcurrencyException`
-until `clear()`; deletion is the final mutation of that owner in this unit of work. `clear()` discards both deletion
-and its expectations, allowing a fresh decision and save.
+until that deletion is successfully flushed or discarded by `clear()`. A successful flush consumes the deletion
+and its expectations, allowing a fresh decision and save, including new collections. See the
+[unit-of-work lifecycle](../transactions/README.md#core-contract).
 
 Flush acquires query guards and replays queries before applying any deletion. It checks and empties the deleted
 owners' collection scopes before deleting root rows, then saves other owners' collections after their roots.

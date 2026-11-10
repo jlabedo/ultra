@@ -124,6 +124,7 @@ final class BufferedEventsTest extends StorageTestCase
 
         $fixture->connection?->beginTransaction();
         $uow->flush();
+        $uow->flush();
         $fixture->connection?->commit();
 
         static::assertSame(
@@ -134,16 +135,15 @@ final class BufferedEventsTest extends StorageTestCase
             ['first', 'second'],
             array_column(array_column($fixture->store->load($query)->events, 'payload'), 'name'),
         );
-        static::assertTrue($uow->hasPendingChanges());
-        $uow->clear();
         static::assertFalse($uow->hasPendingChanges());
         $uow->flush();
         static::assertCount(1, $recording->appendCalls);
-        // Clear must discard conditions as well as events, including stale snapshots.
+        // Successful flush consumes conditions as well as events, including stale snapshots.
         $uow->append([self::event('archived', ['course' => 'c1'])]);
         $uow->flush();
         static::assertSame([], $recording->appendCalls[1]['appendConditions']);
-        static::assertCount(3, $fixture->store->load($query)->events);
+        static::assertCount(3, $uow->load($query)->events);
+        static::assertFalse($uow->hasPendingChanges());
     }
 
     public function test_clear_discards_buffered_work_after_a_failed_flush(): void

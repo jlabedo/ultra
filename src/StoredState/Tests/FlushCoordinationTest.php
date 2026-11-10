@@ -23,7 +23,9 @@ final class FlushCoordinationTest extends StateStoreTestCase
         $trace = new \ArrayObject();
         $first = new MappedRowSet(new RegistryRecordingAdapter('a', $trace));
         $sameTable = new MappedRowSet(new RegistryRecordingAdapter('a', $trace));
+        $sameTable->withKey('same')->expectPresent();
         $last = new MappedRowSet(new RegistryRecordingAdapter('z', $trace));
+        $last->withKey('last')->expectPresent();
         $first->withKey('new')->insert()->setColumn('status', 'pending');
         $registry = new StateTableRegistry(
             ['first' => $first, 'last' => $last, 'same' => $sameTable],
@@ -65,6 +67,13 @@ final class FlushCoordinationTest extends StateStoreTestCase
             ],
             $trace->getArrayCopy(),
         );
+        static::assertFalse($registry->hasPendingChanges());
+        $trace->exchangeArray([]);
+        $registry->flush();
+        static::assertSame([], $trace->getArrayCopy());
+        $registry->lock('a', new MappedKey(['id' => 'next']));
+        $registry->flush();
+        static::assertSame(['lock:a:next'], $trace->getArrayCopy());
     }
 
     public function test_manual_guards_belong_to_the_registry_without_creating_a_row_set(): void
@@ -77,7 +86,6 @@ final class FlushCoordinationTest extends StateStoreTestCase
         $registry->flush();
 
         static::assertSame(['lock:companies:company'], $trace->getArrayCopy());
-        $registry->clear();
         static::assertFalse($registry->hasPendingChanges());
         $trace->exchangeArray([]);
         $registry->flush();

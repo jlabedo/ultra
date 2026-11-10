@@ -78,7 +78,12 @@ final class QueueTransactionTest extends QueueTestCase
         static::assertSame(0, $inner->count());
         $queue->flush();
 
+        static::assertFalse($queue->hasPendingChanges());
+        $queue->flush();
         static::assertSame(1, $inner->count());
+        $queue->enqueue($this->envelope('second'));
+        $queue->flush();
+        static::assertSame(2, $inner->count());
 
         $delivery = $inner->reserve();
         static::assertNotNull($delivery);
@@ -114,6 +119,14 @@ final class QueueTransactionTest extends QueueTestCase
 
         $receiver->flush();
 
+        static::assertFalse($receiver->hasPendingChanges());
+        $receiver->flush();
+        static::assertSame(0, $inner->count());
+        $inner->enqueue($this->envelope('second'));
+        $next = $receiver->reserve();
+        static::assertNotNull($next);
+        $receiver->acknowledge($next);
+        $receiver->flush();
         static::assertFalse($receiver->hasPendingChanges());
         static::assertSame(0, $inner->count());
         static::assertSame($messageId->value, $delivery->messageId->value);

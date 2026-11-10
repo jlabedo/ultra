@@ -126,13 +126,15 @@ adapters and query callbacks. `InMemoryGuardLockAdapter` requires an active tran
 contention. The bundle wires the adapter when registered and rejects compiled guards if it is missing.
 Mapped row sets know neither decision guards nor query replay; their adapters retain only intrinsic persistence
 locks (row checks, absent keys and row-set expectations).
-Commit or rollback releases database locks; unit-of-work `clear()` removes queued guards and expectations.
+A successful flush consumes queued guards and query expectations; `clear()` abandons pending requests.
+Commit or rollback releases database locks. Consuming a request does not release a lock already acquired.
 
 Use `TransactionalUnitOfWorkRunner` with a transaction manager for the same connection. It prepares the decision
 before opening the flush transaction and clears the unit of work after success or failure. When calling `flush()`
 directly, the caller owns the transaction, its rollback on failure and the final `clear()`. `flush()` itself neither
-starts a transaction nor clears pending work. On PostgreSQL, use `READ COMMITTED` so each replay sees commits made
-before acquiring its guards; advisory locks do not refresh an earlier transaction snapshot. The adapter does not
+starts nor commits a transaction. Successful flushes consume completed work according to the
+[unit-of-work lifecycle](../transactions/README.md#core-contract). On PostgreSQL, use `READ COMMITTED` so each replay
+sees commits made before acquiring its guards; advisory locks do not refresh an earlier transaction snapshot. The adapter does not
 validate the isolation level.
 
 ## Errors

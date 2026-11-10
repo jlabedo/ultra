@@ -92,6 +92,12 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         };
         static::assertTrue($rows->hasPendingChanges());
         $fixture->flush();
+        static::assertFalse($rows->hasPendingChanges());
+        match ($expectation) {
+            'columns' => $rows->withKey('row')->expectColumnValues(['status' => 'pending', 'note' => null]),
+            'present' => $rows->withKey('row')->expectPresent(),
+            'absent' => $rows->withKey('row')->expectAbsent(),
+        };
         if ('absent' === $expectation) {
             static::assertFalse($fixture->stored('row'));
             $fixture->seed(['id' => 'row', 'status' => 'created']);
@@ -99,6 +105,7 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
             $fixture->seed(['id' => 'row', 'status' => 'value changes are allowed']);
             $fixture->flush();
             static::assertSame(['status' => 'value changes are allowed'], $fixture->stored('row', ['status']));
+            $rows->withKey('row')->expectPresent();
             $fixture->delete('row');
         } else {
             $fixture->seed(['id' => 'row', 'status' => 'concurrent']);
@@ -254,6 +261,8 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         $fixture->rows->expectSameRowKeys(['second', 'first']);
         static::assertTrue($fixture->rows->hasPendingChanges());
         $fixture->flush();
+        static::assertFalse($fixture->rows->hasPendingChanges());
+        $fixture->rows->expectSameRowKeys(['second', 'first']);
         if ('insertion' === $change) {
             $fixture->seed(['id' => 'late']);
         } else {

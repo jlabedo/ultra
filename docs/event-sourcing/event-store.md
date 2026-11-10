@@ -86,6 +86,9 @@ It gives read-your-own-writes semantics while still keeping optimistic concurren
 - `load()->checkpoint` stays the checkpoint from the wrapped store.
 - `flush()` forwards all buffered events in a single inner `append(...)` call.
 - Buffered append conditions are passed through unchanged.
+- After a successful flush, events and append conditions leave the pending overlay. Reads then obtain those
+  events from the wrapped store, without adding them a second time. Subsequent appends use new conditions.
+  See the [flush lifecycle contract](../transactions/README.md#core-contract).
 
 So the visible event list can include pending writes, while `Checkpoint` continues to mean “persisted store position”.
 

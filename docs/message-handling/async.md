@@ -7,6 +7,8 @@ The worker reserves a delivery, executes the handler and acknowledges it. Failur
 ## Outbox and external effects
 
 AsyncQueueUnitOfWork buffers enqueues and AsyncReceiverUnitOfWork buffers acknowledgements. Compose them with application writes in the same unit of work and transaction connection. With PostgresAsyncQueue, enqueues commit atomically with those writes and become visible to workers after commit. Declaring a handler with `#[Asynchronous]` alone does not establish this configuration.
+Both buffers consume completed operations after a successful flush, following the
+[unit-of-work lifecycle](../transactions/README.md#core-contract).
 
 An external action can succeed before queue acknowledgement fails. An outbox does not make that action atomic with acknowledgement. Use a stable idempotency key or reliable reconciliation when the external service supports it. Without that support, retrying an ambiguous outcome can duplicate the action, while avoiding retry can lose it.
 

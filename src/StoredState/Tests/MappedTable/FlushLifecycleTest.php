@@ -40,13 +40,44 @@ final class FlushLifecycleTest extends RowSetTestCase
             array_map(static fn($plan) => $plan->key->value('id'), $adapter->batches[0]->rowUpdates),
         );
         static::assertSame(['status' => 'changed'], $adapter->batches[0]->rowUpdates[0]->setColumns);
-        static::assertTrue($rows->hasPendingChanges());
-        $rows->clear();
+        static::assertFalse($rows->hasPendingChanges());
+        $rows->flush();
+        static::assertCount(1, $adapter->batches);
         static::assertSame(['status' => 'first'], $snapshot->rowUpdates[0]->setColumns);
         static::assertSame(
             ['first', 'second'],
             array_map(static fn($key) => $key->value('id'), $snapshot->retainedRowKeys),
         );
+        static::assertFalse($rows->hasPendingChanges());
+    }
+
+    #[DataProvider('backends')]
+    public function test_successive_flushes_consume_writes_membership_and_expectations(string $backend): void
+    {
+        $fixture = $this->fixture($backend);
+        $rows = $fixture->rows;
+        $rows->expectSameRowKeys([]);
+        $rows->withKey('first')->expectAbsent()->insert()->setColumn('status', 'new');
+        $rows->reconcileRows([new MappedRow(new MappedKey(['id' => 'first']), ['status' => 'new'])]);
+
+        $fixture->storage->beginTransaction();
+        $rows->flush();
+        static::assertTrue($fixture->storage->isTransactionActive());
+        static::assertFalse($rows->hasPendingChanges());
+        static::assertSame(['status' => 'new'], $rows->row('first', ['status']));
+        // A second flush must neither replay the insert nor reconcile away a later row.
+        $fixture->seed(['id' => 'later', 'status' => 'untouched']);
+        $rows->flush();
+        static::assertSame(['status' => 'untouched'], $fixture->stored('later', ['status']));
+
+        $rows->withKey('first')->expectColumnValue('status', 'new')->setColumn('status', 'changed');
+        $rows->flush();
+        $rows->flush();
+        static::assertFalse($rows->hasPendingChanges());
+        static::assertSame(['status' => 'changed'], $rows->row('first', ['status']));
+        $fixture->storage->rollBack();
+        static::assertFalse($fixture->stored('first'));
+        static::assertFalse($fixture->stored('later'));
         static::assertFalse($rows->hasPendingChanges());
     }
 

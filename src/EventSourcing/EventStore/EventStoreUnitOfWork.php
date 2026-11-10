@@ -59,6 +59,7 @@ final class EventStoreUnitOfWork implements EventStore, UnitOfWork
         }
 
         $this->inner->append($this->bufferedEvents, ...$this->appendConditions);
+        $this->clear();
     }
 
     public function hasPendingChanges(): bool

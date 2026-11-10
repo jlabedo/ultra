@@ -27,7 +27,15 @@ final class QueryReplayTest extends StateStoreTestCase
 
         static::assertSame([false, true], $transactions);
         static::assertSame('confirmed', $store->load(OrderState::class, 'order-1')->orderStatus);
-        $registry->clear();
+        static::assertFalse($registry->hasPendingChanges());
+        $this->flush($database, $registry);
+        static::assertSame([false, true], $transactions);
+
+        static::assertSame('confirmed', $store->observeQuery($query, 'next order status'));
+        $store->save(new OrderState('order-1', 'shipped', null));
+        $this->flush($database, $registry);
+        static::assertSame([false, true, false, true], $transactions);
+        static::assertSame('shipped', $store->load(OrderState::class, 'order-1')->orderStatus);
         static::assertFalse($registry->hasPendingChanges());
     }
 

@@ -19,7 +19,13 @@ interface UnitOfWork
 
 - `hasPendingChanges()` returns true only when flushing would perform transactional work.
 - `flush()` assumes the caller has already opened the surrounding transaction, if one is needed.
-- `clear()` drops in-memory buffered work after commit or rollback.
+- A successful `flush()` consumes completed buffered operations, including checked expectations. Without new
+  changes, another flush performs no new writes and does not repeat completed checks. New changes can be
+  buffered and flushed without calling `clear()` between flushes.
+- Flushing does not commit the surrounding transaction. A later rollback still undoes its writes, but does
+  not restore consumed buffers. On flush or commit failure, roll back and clear before starting fresh work.
+- `clear()` abandons pending work and clears in-memory tracking, without rolling back executed writes.
+  The runner calls it after commit or rollback to finish the work scope.
 
 ## Transaction Manager
 
@@ -158,9 +164,9 @@ try {
         $connection->rollBack();
     }
 
-    $unitOfWork->clear();
-
     throw $exception;
+} finally {
+    $unitOfWork->clear();
 }
 ```
 

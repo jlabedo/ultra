@@ -149,6 +149,8 @@ final class WriteSemanticsTest extends RowSetTestCase
         $fixture->flush();
         static::assertFalse($fixture->stored('absent'));
 
+        static::assertFalse($fixture->rows->hasPendingChanges());
+        $fixture->rows->withKey('absent')->expectAbsent()->delete();
         $fixture->seed(['id' => 'absent', 'status' => 'competing']);
         $this->expectException(ConcurrencyException::class);
         try {

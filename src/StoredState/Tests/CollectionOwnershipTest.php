@@ -11,6 +11,38 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 /** @internal */
 final class CollectionOwnershipTest extends StateStoreTestCase
 {
+    #[DataProvider('backends')]
+    public function test_successful_flush_consumes_owned_changes_and_allows_a_new_decision(string $backend): void
+    {
+        $fixture = $this->stateFixture($backend, [OrderWithLinesState::class]);
+        $store = $fixture->store;
+        $registry = $fixture->registry;
+        $initial = new OrderWithLinesState('one', 'pending', [new OrderLineState('first', 'SKU', 1)]);
+        $store->observe(OrderWithLinesState::class, 'one');
+        $store->save($initial);
+        $fixture->flush();
+        static::assertFalse($registry->hasPendingChanges());
+        static::assertEquals($initial, $store->observe(OrderWithLinesState::class, 'one'));
+
+        $changed = new OrderWithLinesState('one', 'paid', [new OrderLineState('second', 'NEW', 2)]);
+        $store->save($changed);
+        $fixture->flush();
+        $fixture->flush();
+        static::assertFalse($registry->hasPendingChanges());
+        static::assertEquals($changed, $store->load(OrderWithLinesState::class, 'one'));
+
+        $store->delete(OrderWithLinesState::class, 'one');
+        $fixture->flush();
+        $fixture->flush();
+        static::assertFalse($registry->hasPendingChanges());
+        static::assertNull($store->observe(OrderWithLinesState::class, 'one'));
+        // A completed deletion must not reject a new save or retain collection deletion ordering.
+        $store->save($initial);
+        $fixture->flush();
+        static::assertFalse($registry->hasPendingChanges());
+        static::assertEquals($initial, $store->load(OrderWithLinesState::class, 'one'));
+    }
+
     public function test_collection_combines_composite_owner_and_item_keys(): void
     {
         [$database, , $store, $registry] = $this->newStore([CompositeOrderState::class]);

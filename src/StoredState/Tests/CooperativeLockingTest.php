@@ -382,6 +382,8 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
 
                 $connection->beginTransaction();
                 $registry->flush();
+                self::assertFalse($registry->hasPendingChanges());
+                $otherRegistry->lock($tableName, new MappedKey(['id' => 'anchor']));
                 $other->beginTransaction();
                 $other->executeStatement("SET LOCAL lock_timeout = '10ms'");
                 try {

@@ -79,6 +79,8 @@ final class StateObservationTest extends StateStoreTestCase
         static::assertTrue($registry->hasPendingChanges());
         $this->flush($database, $registry);
         static::assertSame('pending', $database->row('orders', 'order_id', 'order-123')['status']);
+        static::assertFalse($registry->hasPendingChanges());
+        $store->expect($state);
         if ($save) {
             $store->save($state->withOrderStatus('shipped'));
         }
@@ -106,6 +108,8 @@ final class StateObservationTest extends StateStoreTestCase
         static::assertTrue($registry->hasPendingChanges());
         $this->flush($database, $registry);
         static::assertNull($store->load(OrderState::class, 'order-123'));
+        static::assertFalse($registry->hasPendingChanges());
+        $store->$read(OrderState::class, 'order-123');
         if ($save) {
             $store->save(new OrderState('order-123', 'pending', null));
             static::assertTrue($store->observeExists(OrderState::class, 'order-123'));
@@ -152,6 +156,8 @@ final class StateObservationTest extends StateStoreTestCase
         ]);
         $this->flush($database, $registry);
         static::assertSame('paid', $database->row('orders', 'order_id', 'order-123')['status']);
+        static::assertFalse($registry->hasPendingChanges());
+        $store->$read($class, 'order-123');
         $database->deleteRowByKey('orders', new \Ultra\MappedTable\MappedKey(['order_id' => 'order-123']));
         $this->expectException(ConcurrencyException::class);
         $this->flush($database, $registry);
@@ -210,6 +216,9 @@ final class StateObservationTest extends StateStoreTestCase
             ),
         );
 
+        static::assertFalse($fixture->registry->hasPendingChanges());
+        $fixture->store->observe(OrderWithLinesState::class, 'one');
+        $fixture->store->delete(OrderWithLinesState::class, 'one');
         [$competitor, $registry] = $fixture->newStore([OrderWithLinesState::class]);
         $competitor->save(new OrderWithLinesState('one', 'competing', []));
         $fixture->flush($registry);

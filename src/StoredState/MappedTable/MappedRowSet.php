@@ -220,7 +220,12 @@ final class MappedRowSet implements UnitOfWork
 
     public function flush(): void
     {
+        if (!$this->hasPendingChanges()) {
+            return;
+        }
+
         $this->adapter->apply($this->updatePlan());
+        $this->clear();
     }
 
     public function hasPendingChanges(): bool

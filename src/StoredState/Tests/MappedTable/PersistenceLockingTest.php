@@ -154,6 +154,8 @@ final class PersistenceLockingTest extends RowSetTestCase
         } finally {
             $fixture->connection()->rollBack();
         }
+        $fixture->rows->clear();
+        $fixture->rows->expectSameRowKeys([]);
         $fixture->seed(['id' => 'concurrent']);
         $this->expectException(ConcurrencyException::class);
         $fixture->flush();

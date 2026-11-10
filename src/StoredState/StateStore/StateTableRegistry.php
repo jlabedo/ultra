@@ -98,7 +98,7 @@ final class StateTableRegistry implements UnitOfWork
         }
     }
 
-    /** A deleted owner cannot be saved again until this unit of work is cleared. */
+    /** A deleted owner cannot be saved again until its pending deletion is flushed or cleared. */
     public function assertCanSave(StateMetadata $metadata, MappedKey $key): void
     {
         if (isset($this->deletedStates[$metadata->tableKey][$key->fingerprint()])) {
@@ -137,6 +137,7 @@ final class StateTableRegistry implements UnitOfWork
         ] as $table) {
             $table->flush();
         }
+        $this->clear();
     }
 
     /** Check only the initial decision read. Flush replays the recorded callback before applying local writes. */
