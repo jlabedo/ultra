@@ -15,8 +15,14 @@ use Ultra\Projection\ProjectionTransactionManagerInterface;
 
 final class InMemoryProjectionImplementation implements ProjectionImplementationInterface
 {
+    private ?InMemoryProjectionStateRepository $states = null;
     private ?DirtyKeyTracker $tracker = null;
     private ?CoordinatorLease $lease = null;
+
+    public function createStateRepository(): InMemoryProjectionStateRepository
+    {
+        return $this->states ??= new InMemoryProjectionStateRepository();
+    }
 
     public function createSegmentRepository(): ProjectionSegmentRepositoryInterface
     {

@@ -22,6 +22,11 @@ final class PostgresProjectionImplementation implements ProjectionImplementation
         private readonly ClockInterface $clock = new SystemClock(),
     ) {}
 
+    public function createStateRepository(): PostgresProjectionStateRepository
+    {
+        return new PostgresProjectionStateRepository($this->connection, $this->tablePrefix);
+    }
+
     public function createSegmentRepository(): PostgresProjectionSegmentRepository
     {
         return new PostgresProjectionSegmentRepository($this->connection, $this->tablePrefix, $this->clock);

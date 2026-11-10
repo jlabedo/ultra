@@ -53,6 +53,15 @@ final readonly class ProjectionCoordinator
 
                 foreach ($this->groupByProjection($affectedBuckets) as $projectionId => $_projectionBuckets) {
                     $runtime = $this->catalog->runtime($projectionId);
+                    if (!$this->runner->isReplayable($runtime)) {
+                        $seen = [];
+                        foreach ($_projectionBuckets as $activity) {
+                            $seen[(int) $activity->key] = $activity->counter;
+                        }
+                        $this->activity->drainSeen($projectionId, $seen);
+
+                        continue;
+                    }
 
                     $this->runner->ensureInitialized($runtime);
                     $this->runner->recoverExpiredClaims($projectionId);

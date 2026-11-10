@@ -18,6 +18,18 @@ final class ProjectionCatalog
 
     public function add(ProjectionRuntime $runtime): void
     {
+        foreach ($this->runtimes as $registered) {
+            if ($registered->projectionId() === $runtime->projectionId()) {
+                continue;
+            }
+            foreach ($registered->persistenceParticipants() as $existing) {
+                foreach ($runtime->persistenceParticipants() as $participant) {
+                    if ($existing === $participant) {
+                        throw new \LogicException('Projection persistence participants must have a single owner.');
+                    }
+                }
+            }
+        }
         $this->runtimes[$runtime->projectionId()] = $runtime;
     }
 

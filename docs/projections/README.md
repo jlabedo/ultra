@@ -15,9 +15,158 @@ It is intentionally split into two layers:
 
 Postgres-specific persistence lives in `src/Projection/Postgres`. This package keeps the runtime algorithm storage-agnostic and ships in-memory implementations for tests and local wiring.
 
+## Execution modes
+
+```php
+use Ultra\Projection\Attribute\Projection;
+use Ultra\Projection\ProjectionMode;
+
+#[Projection(
+    name: 'account_balance',
+    partitionBy: 'accountId',
+    mode: ProjectionMode::Synchronous,
+)]
+final class AccountBalanceProjection
+{
+    // ProjectionHandler methods update projection-owned tables.
+}
+```
+
+| Mode | Application | History and activation |
+| --- | --- | --- |
+| `Asynchronous` (default) | Workers apply persisted batches | Segment checkpoints track progress |
+| `Synchronous` | Append transactions apply events once the projection is live | Reconstruct in `building`, then explicitly activate |
+| `SynchronousFromNow` | Append transactions immediately apply new events | No automatic replay, activation state or per-projection activation barrier |
+
+`partitionBy` is required except for `SynchronousFromNow`. Managed synchronous
+appends reject handled events missing that identifier; historical events must
+also carry it to participate in partitioned reconstruction. Immediate projections
+may omit the dimension entirely.
+
+Synchronous execution inherits the event store's concurrency guarantees. It does
+not serialize writers by projection partition, bucket or checkpoint. Concurrent
+handlers updating the same row must use appropriate atomic operations or storage
+locking. Replay can choose a different order between independent events; reproducible
+read models need commutative effects or a deterministic conflict rule.
+
+`SynchronousFromNow` does not run initializer/resetter hooks automatically. Its
+tables must already exist, supplied through migrations or explicit initialization.
+It does not promise historical completeness or a globally persisted start instant.
+All writers must run the new configuration before relying on its completeness.
+
+## Transactional append integration
+
+[ProjectingEventStore](../../src/Projection/Runtime/ProjectingEventStore.php) is the
+single append integration, replacing the activity-only decorator. The composition is:
+
+```text
+Direct application -> ProjectingEventStore -> persistent EventStore
+Buffered application -> EventStoreUnitOfWork -> ProjectingEventStore -> persistent EventStore
+```
+
+It opens or joins a projection transaction, acquires managed activation barriers,
+persists the events under their original append conditions, applies live synchronous
+projections and flushes their private persistence participants, then records activity
+for asynchronous/building projections. An inner store's standalone append transaction
+must not commit before projection writes: use the same connection for all adapters.
+Synchronous projection failure aborts the append. PostgreSQL marks a joined transaction
+rollback-only on failure, even if a caller catches the exception.
+
+The ordinary application `UnitOfWorkRunner` stays unchanged. No global preparation
+phase or dependency on parent composite participant order is introduced.
+
+## Projection-owned persistence
+
+[ProjectionBatchExecutor](../../src/Projection/Runtime/ProjectionBatchExecutor.php)
+shares batch application between append, worker execution and activation. It calls
+`apply()` for each event, the optional `ProjectionFlush` hook, and then the projection's
+persistence participants. Buffers are cleared on both success and failure. All writes
+remain in the enclosing transaction; an outer rollback undoes successful batch writes too.
+
+A projection can write SQL directly through the transaction's connection. For buffering,
+it can implement `Ultra\UnitOfWork\UnitOfWork` itself, or declare private repository
+service IDs:
+
+```php
+#[Projection(
+    name: 'account_balance',
+    mode: ProjectionMode::SynchronousFromNow,
+    unitOfWork: [AccountBalanceRepository::class],
+)]
+```
+
+The hook may finalize accumulated operations; repositories perform the actual persistence.
+Symfony removes owned participants from the parent composite collection. A participant
+cannot be shared between projections. Without Symfony, pass participants as the fourth
+argument to `ProjectionRuntime`; a projection implementing `UnitOfWork` is included
+automatically. Do not also put them in the application composite. They must be dedicated
+to projection writes and must not feed work into other independently flushed participants.
+Projection handlers must not append new domain events or perform irreversible external effects.
+
+## Managed reconstruction
+
+[ProjectionRebuilder](../../src/Projection/Runtime/ProjectionRebuilder.php) operates
+on `Synchronous` projections:
+
+```php
+$rebuilder->catchUp($runtime, workerId: 'rebuild-1', batchSize: 100);
+$rebuilder->activate($runtime, batchSize: 100);
+```
+
+`catchUp()` initializes or resumes segment progress without requiring activity hints.
+It leaves the projection in `building`; new appends keep accumulating in the event store.
+A segment already claimed by another worker is skipped and may be resumed later.
+
+`activate()` holds an exclusive transaction-scoped barrier for the whole projection,
+waits for writers and worker application transactions, takes over scheduling claims,
+rereads segment checkpoints, drains the remaining history, and persists `live` in the
+same transaction. A rollback restores both model contents and building progress.
+Call it after reducing the backlog because the final drain temporarily blocks writers.
+
+Workers hold a shared barrier before claiming/loading/applying a managed batch and
+until the transaction ends. They read current phase and definition under the barrier;
+queued work after activation does not replay events. Ordinary writers use compatible
+shared barriers, so they remain concurrent. Live synchronous appends never advance
+segment checkpoints. Remaining activity after activation is discarded as obsolete.
+
+`ProjectionRunner::deleteProjection()` resets a managed projection under the exclusive
+barrier, increments its generation, and initializes new building segments. Readers may
+observe the incomplete read model until reactivation. Serving an older generation during
+reconstruction is not supported. `SynchronousFromNow` rejects replay/reset through this runner.
+
+Symfony supplies `ultra:projection:rebuild <projection-id>` to resume reconstruction.
+Use `--activate` to drain and activate, `--reset` to start a new generation, and
+`--batch-size` / `--worker-id` to configure replay.
+
+### Storage and deployment
+
+`ProjectionStateRepository` stores the managed generation, phase, and structural
+fingerprint. PostgreSQL uses `READ COMMITTED`, transaction-scoped advisory barriers,
+and the `states` table, included in `PostgresProjectionSegmentSchema::createStatements()`.
+Apply the schema update before using the new append integration, even in an app containing
+only asynchronous or immediately active projections.
+
+Appends and worker application transactions take a shared registration barrier and checks the managed registry.
+First registration takes its exclusive counterpart so older appends finish before
+registration commits. Writers missing a registered managed projection, changing its
+mode, or changing its partition/handled event types are rejected. Workers recheck their
+definition inside application transactions, including after asynchronous prefetch, so
+obsolete asynchronous workers cannot replay or reset a managed projection. This check requires
+all writers to use `ProjectingEventStore`; direct writes to its underlying store bypass it.
+The fingerprint does not detect handler-body changes: coordinate code deployments and
+explicitly rebuild when semantics change. Managed definitions are not silently unregistered.
+
+`SynchronousFromNow` creates no activation row and takes no per-projection barrier;
+the common registry compatibility check still applies to the enclosing append integration.
+The in-memory state repository and no-op transaction manager provide single-process
+test/local composition, not database rollback or cross-process concurrency guarantees.
+
+The architecture and rejected alternatives are recorded in
+[ADR 0004](../adr/0004-synchronous-projections.md).
+
 ## Partition ordering
 
-The partition dimension declares which events require ordered processing. Events
+For worker execution, the partition dimension declares which events require ordered processing. Events
 sharing the same value of that dimension are processed in event-store order;
 there is no processing-order guarantee across different partition values.
 Projection authors must choose a dimension that covers their ordering dependencies.
@@ -55,12 +204,12 @@ It also knows how to:
 
 [ProjectionRuntime.php](../../src/Projection/Runtime/ProjectionRuntime.php) binds a concrete projection object to its definition and an `UltraNormalizer`.
 
-It is the execution-facing object used by workers:
+It is the execution-facing object shared by workers and synchronous append execution:
 
-- `initialize()` runs the `#[ProjectionInitializer]` method once when the projection is first created
+- `initialize()` runs the `#[ProjectionInitializer]` method once when a worker-managed projection is first created
 - `reset()` runs the `#[ProjectionResetter]` method when projection state is deleted
 - `apply(Event $event)` resolves the matching handler, deserializes the payload, and invokes the projection method
-- `flush()` runs the `#[ProjectionFlush]` method at the end of each claimed batch
+- `flush()` runs the `#[ProjectionFlush]` method before batch persistence
 
 Rule of thumb:
 
@@ -129,7 +278,7 @@ The coordination model is intentionally separate from segment execution.
 
 ### Activity Recording
 
-[ProjectionActivityRecorder.php](../../src/Projection/Runtime/Coordination/ProjectionActivityRecorder.php) runs after events have been appended successfully.
+[ProjectionActivityRecorder.php](../../src/Projection/Runtime/Coordination/ProjectionActivityRecorder.php) runs inside the append transaction after event insertion and synchronous application. Live synchronous projections are excluded.
 
 It:
 
@@ -237,15 +386,18 @@ At a high level, the runtime works like this:
 
 The key design choice is:
 
-> checkpoints and segment state are the source of truth; bucket activity and queue messages are liveness hints.
+> For worker processing, checkpoints and segment state are the source of truth; bucket activity and queue messages are liveness hints. Live synchronous projections use the append transaction instead.
 
 
 ## Guarantee suites
 
-All projection suites live in [src/Projection/Runtime/Tests](../../src/Projection/Tests), including Postgres and Symfony integration. Memory and Postgres share scenarios where their checkpoint and segment behavior can diverge. See the shared [test-refactoring convention](../development.md#refactoring-tests).
+All projection suites live in [src/Projection/Tests](../../src/Projection/Tests), including Postgres and Symfony integration. Memory and Postgres share scenarios where their checkpoint and segment behavior can diverge. See the shared [test-refactoring convention](../development.md#refactoring-tests).
 
 | Guarantee | Suite |
 | --- | --- |
+| Direct/buffered synchronous appends, private persistence, append conditions and rollback | [SynchronousExecutionTest](../../src/Projection/Tests/SynchronousExecutionTest.php) |
+| Reconstruction, generation reset, activation and worker fencing | [ManagedActivationTest](../../src/Projection/Tests/ManagedActivationTest.php) |
+| Activation barriers, concurrent writers and late committed lower sequences | [ActivationConcurrencyTest](../../src/Projection/Tests/ActivationConcurrencyTest.php) |
 | Valid declarations, event routing and optional hooks | [DefinitionContractTest](../../src/Projection/Tests/DefinitionContractTest.php) |
 | Initial creation, reset and lifecycle rollback | [ProjectionLifecycleTest](../../src/Projection/Tests/ProjectionLifecycleTest.php) |
 | Ordered partition batches, checkpoint resume and replay | [CheckpointProgressTest](../../src/Projection/Tests/CheckpointProgressTest.php) |

@@ -6,17 +6,36 @@ namespace Ultra\Projection;
 
 use Ultra\EventStore\Event;
 use Ultra\Mapper\UltraNormalizer;
+use Ultra\UnitOfWork\UnitOfWork;
 
 final readonly class ProjectionRuntime
 {
     private ProjectionDefinition $definition;
 
+    /** @param list<UnitOfWork> $unitOfWork */
     public function __construct(
         private object $projection,
         private UltraNormalizer $normalizer,
         ?ProjectionDefinition $definition = null,
+        private array $unitOfWork = [],
     ) {
         $this->definition = $definition ?? ProjectionDefinition::fromProjection($projection);
+    }
+
+    /** @return list<UnitOfWork> */
+    public function persistenceParticipants(): array
+    {
+        $participants = $this->unitOfWork;
+        if ($this->projection instanceof UnitOfWork) {
+            $participants[] = $this->projection;
+        }
+
+        $unique = [];
+        foreach ($participants as $participant) {
+            $unique[spl_object_id($participant)] = $participant;
+        }
+
+        return array_values($unique);
     }
 
     public function projectionId(): string

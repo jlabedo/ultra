@@ -31,6 +31,8 @@ final readonly class PostgresProjectionTransactionManager implements ProjectionT
         } catch (\Throwable $exception) {
             if ($ownsTransaction && $this->connection->isTransactionActive()) {
                 $this->connection->rollBack();
+            } elseif ($this->connection->isTransactionActive()) {
+                $this->connection->setRollbackOnly();
             }
 
             throw $exception;

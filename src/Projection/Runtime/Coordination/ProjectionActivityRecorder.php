@@ -19,12 +19,19 @@ final readonly class ProjectionActivityRecorder
         private Duration $wakeDebounceSeconds = new Duration(seconds: 30),
     ) {}
 
-    /** @param list<Event> $events */
-    public function record(array $events): void
+    /**
+     * @param list<Event> $events
+     * @param list<string> $excludedProjections Already applied synchronously.
+     */
+    public function record(array $events, array $excludedProjections = []): void
     {
         $touchedBuckets = [];
 
         foreach ($this->catalog->definitions() as $definition) {
+            if (in_array($definition->projectionId, $excludedProjections, true)
+                || \Ultra\Projection\ProjectionMode::SynchronousFromNow === $definition->mode) {
+                continue;
+            }
             foreach ($events as $event) {
                 if (!$definition->handles($event)) {
                     continue;

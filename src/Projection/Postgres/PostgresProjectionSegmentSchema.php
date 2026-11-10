@@ -14,6 +14,7 @@ final readonly class PostgresProjectionSegmentSchema
     public function createStatements(): array
     {
         return [
+            ...(new PostgresProjectionStateSchema($this->tablePrefix))->createStatements(),
             sprintf("CREATE TABLE IF NOT EXISTS %s (
                     projection_id     TEXT        NOT NULL,
                     bucket_from       SMALLINT    NOT NULL,
@@ -32,6 +33,7 @@ final readonly class PostgresProjectionSegmentSchema
     {
         return [
             sprintf('DROP TABLE IF EXISTS %s', $this->segmentsTable()),
+            ...(new PostgresProjectionStateSchema($this->tablePrefix))->dropStatements(),
         ];
     }
 

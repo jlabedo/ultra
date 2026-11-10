@@ -19,7 +19,8 @@ final readonly class ProjectionDefinition
     /** @param array<string, ProjectionHandlerDefinition> $handlers */
     private function __construct(
         public string $projectionId,
-        public string $partitionDimension,
+        public ?string $partitionDimension,
+        public ProjectionMode $mode,
         public ?string $initializerMethod,
         public ?string $resetterMethod,
         public ?string $flushMethod,
@@ -47,6 +48,7 @@ final readonly class ProjectionDefinition
         return new self(
             projectionId: $attribute->name,
             partitionDimension: $attribute->partitionBy,
+            mode: $attribute->mode,
             initializerMethod: self::resolveInitializerMethod($reflection),
             resetterMethod: self::resolveResetterMethod($reflection),
             flushMethod: self::resolveFlushMethod($reflection),
@@ -72,6 +74,10 @@ final readonly class ProjectionDefinition
 
     public function streamQueryForSegment(int $bucketFrom, int $bucketTo): StreamQuery
     {
+        if (null === $this->partitionDimension) {
+            throw new \LogicException('This projection has no replay partition.');
+        }
+
         return StreamQuery::forSegment(
             $this->partitionDimension,
             $bucketFrom,
@@ -87,7 +93,7 @@ final readonly class ProjectionDefinition
 
     public function bucketFor(Event $event): ?int
     {
-        $value = $event->domainIds[$this->partitionDimension] ?? null;
+        $value = null === $this->partitionDimension ? null : ($event->domainIds[$this->partitionDimension] ?? null);
         if (null === $value) {
             return null;
         }

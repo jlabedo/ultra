@@ -14,11 +14,15 @@ use Ultra\EventStore\EventStore;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Bundle\Command\ListSegmentsCommand;
 use Ultra\Projection\Bundle\Command\ProjectionWorkerCommand;
+use Ultra\Projection\Bundle\Command\RebuildProjectionCommand;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionDefaultsCompilerPass;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionActivity;
-use Ultra\Projection\Coordination\ProjectionActivityEventStore;
+use Ultra\Projection\ProjectingEventStore;
+use Ultra\Projection\ProjectionStateRepository;
+use Ultra\Projection\ProjectionBatchExecutor;
+use Ultra\Projection\ProjectionRebuilder;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
@@ -47,6 +51,9 @@ final class ProjectionExtension implements ContainerExtension
         });
 
         $factory = new Reference(ProjectionImplementationInterface::class);
+
+        $container->register(ProjectionBatchExecutor::class);
+        $container->register(ProjectionStateRepository::class)->setFactory([$factory, 'createStateRepository']);
 
         $container
             ->register(ProjectionSegmentRepositoryInterface::class)
@@ -82,21 +89,36 @@ final class ProjectionExtension implements ContainerExtension
             ]);
 
         $container
-            ->register(ProjectionActivityEventStore::class, ProjectionActivityEventStore::class)
+            ->register(ProjectingEventStore::class, ProjectingEventStore::class)
             ->setDecoratedService(EventStore::class, null, 100)
             ->setArguments([
-                new Reference(ProjectionActivityEventStore::class . '.inner'),
+                new Reference(ProjectingEventStore::class . '.inner'),
+                new Reference(ProjectionCatalog::class),
                 new Reference(ProjectionActivityRecorder::class),
+                new Reference(ProjectionTransactionManagerInterface::class),
+                new Reference(ProjectionStateRepository::class),
+                new Reference(ProjectionBatchExecutor::class),
             ]);
 
         $container
             ->register(ProjectionRunner::class, ProjectionRunner::class)
             ->setArguments([
-                new Reference(EventStore::class),
+                new Reference(ProjectingEventStore::class . '.inner'),
                 new Reference(ProjectionSegmentRepositoryInterface::class),
                 new Reference(ProjectionTransactionManagerInterface::class),
                 new Reference(ProjectionActivity::class),
+                new Reference(ProjectionStateRepository::class),
+                new Reference(ProjectionBatchExecutor::class),
             ]);
+
+        $container->register(ProjectionRebuilder::class)->setArguments([
+            new Reference(ProjectingEventStore::class . '.inner'),
+            new Reference(ProjectionSegmentRepositoryInterface::class),
+            new Reference(ProjectionStateRepository::class),
+            new Reference(ProjectionTransactionManagerInterface::class),
+            new Reference(ProjectionRunner::class),
+            new Reference(ProjectionBatchExecutor::class),
+        ]);
 
         $container
             ->register(ProjectionCoordinator::class, ProjectionCoordinator::class)
@@ -118,6 +140,12 @@ final class ProjectionExtension implements ContainerExtension
             ->register(ListSegmentsCommand::class, ListSegmentsCommand::class)
             ->setArguments([new Reference(ProjectionSegmentRepositoryInterface::class)])
             ->addTag('console.command');
+
+        $container->register(RebuildProjectionCommand::class)->setArguments([
+            new Reference(ProjectionCatalog::class),
+            new Reference(ProjectionRebuilder::class),
+            new Reference(ProjectionRunner::class),
+        ])->addTag('console.command');
 
         $this->registerMessageHandlingIntegration($container);
 

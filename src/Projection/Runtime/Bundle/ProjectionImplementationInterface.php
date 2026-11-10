@@ -11,6 +11,8 @@ use Ultra\Projection\ProjectionTransactionManagerInterface;
 
 interface ProjectionImplementationInterface
 {
+    public function createStateRepository(): \Ultra\Projection\ProjectionStateRepository;
+
     public function createSegmentRepository(): ProjectionSegmentRepositoryInterface;
 
     public function createDirtyKeyTracker(): DirtyKeyTracker;

@@ -93,7 +93,7 @@ So the visible event list can include pending writes, while `Checkpoint` continu
 
 `sequence` is intentionally not part of the write-side `Event` model.
 
-The projection runtime consumes `Ultra\EventStore\Event` through the same EventStore API. Projection progress is tracked by segment checkpoints rather than a separate event DTO carrying a sequence number.
+The projection runtime consumes `Ultra\EventStore\Event` through the same EventStore API. Worker projection progress is tracked by segment checkpoints rather than a separate event DTO carrying a sequence number. Synchronous projections consume the appended batch in the write transaction without advancing a checkpoint; see [projection modes](../projections/README.md#execution-modes).
 
 ## Example
 

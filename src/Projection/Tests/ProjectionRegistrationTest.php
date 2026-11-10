@@ -37,6 +37,59 @@ use Ultra\Projection_Postgres\PostgresProjectionImplementation;
 #[CoversNamespace('Ultra\\Projection_Postgres')]
 final class ProjectionRegistrationTest extends ProjectionTestCase
 {
+    public function test_projection_owned_repositories_are_not_flushed_by_the_parent_composite(): void
+    {
+        require_once __DIR__ . '/Support/ProjectionModes.php';
+        $container = $this->projectionUltraLight()
+            ->withExtension(new \Ultra\UnitOfWork\UnitOfWorkExtension())
+            ->withClass(\Ultra\Projection\Tests\Support\OwnedProjectionRows::class, \Ultra\Projection\Tests\Support\OwnedPersistenceProjection::class)
+            ->withAlias('test.rows', \Ultra\Projection\Tests\Support\OwnedProjectionRows::class)
+            ->withAlias('test.uow_runner', \Ultra\UnitOfWork\UnitOfWorkRunner::class)
+            ->boot();
+        $runner = $container->get('test.uow_runner');
+        $rows = $container->get('test.rows');
+        $store = $container->eventStore();
+        static::assertInstanceOf(\Ultra\EventStore\EventStoreUnitOfWork::class, $store);
+        $runner->run(function () use ($store, $rows): void {
+            $store->append([self::courseCreatedEvent('c', 'projected')]);
+            static::assertSame([], $rows->stored);
+        });
+        static::assertSame(['projected'], $rows->stored);
+        static::assertSame([], $rows->pending);
+        static::assertSame(1, $rows->flushes);
+        $runner->run(static function (): void {});
+        static::assertSame(1, $rows->flushes);
+    }
+
+    public function test_a_projection_implementing_unit_of_work_is_privately_owned(): void
+    {
+        require_once __DIR__ . '/Support/ProjectionModes.php';
+        $container = $this->projectionUltraLight()
+            ->withExtension(new \Ultra\UnitOfWork\UnitOfWorkExtension())
+            ->withClass(\Ultra\Projection\Tests\Support\ImmediateBufferedModeProjection::class)
+            ->withAlias('test.model', \Ultra\Projection\Tests\Support\ImmediateBufferedModeProjection::class)
+            ->withAlias('test.uow_runner', \Ultra\UnitOfWork\UnitOfWorkRunner::class)
+            ->boot();
+        $model = $container->get('test.model');
+        $container->get('test.uow_runner')->run(function () use ($container): void {
+            $container->eventStore()->append([self::courseCreatedEvent('c', 'projected')]);
+        });
+        static::assertSame(['projected'], $model->names());
+        static::assertSame(1, $model->clears);
+    }
+
+    public function test_two_projections_cannot_own_the_same_persistence_participant(): void
+    {
+        require_once __DIR__ . '/Support/ProjectionModes.php';
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('single owner');
+        $this->projectionUltraLight()->withClass(
+            \Ultra\Projection\Tests\Support\OwnedProjectionRows::class,
+            \Ultra\Projection\Tests\Support\OwnedPersistenceProjection::class,
+            \Ultra\Projection\Tests\Support\ConflictingPersistenceProjection::class,
+        )->boot();
+    }
+
     public function test_a_mediator_registered_after_the_extension_receives_projection_wakeups(): void
     {
         $mediator = new RecordingMediator();
