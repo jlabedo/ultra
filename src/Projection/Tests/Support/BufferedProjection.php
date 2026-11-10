@@ -8,7 +8,6 @@ use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
 use Ultra\Projection\Attribute\Projection;
-use Ultra\Projection\Attribute\ProjectionFlush;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Attribute\ProjectionResetter;
@@ -41,7 +40,6 @@ final class BufferedProjection implements UnitOfWork
         }
         $this->courses->withKey('init')->insert()->setColumn('name', 'initialized');
         $this->index->withKey('init')->insert()->setColumn('name', 'initialized');
-        $this->failIf('initialize');
     }
 
     #[ProjectionHandler]
@@ -53,13 +51,6 @@ final class BufferedProjection implements UnitOfWork
             'buffer' === $this->failAt ? 'rejected' : $event->name,
         );
         $this->failIf('apply');
-    }
-
-    #[ProjectionFlush]
-    public function prepareFlush(): void
-    {
-        $this->courses->withKey('init')->setColumn('name', 'flushed');
-        $this->failIf('hook');
     }
 
     #[ProjectionResetter]

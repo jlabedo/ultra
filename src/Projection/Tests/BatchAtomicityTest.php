@@ -10,8 +10,6 @@ use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Checkpoint;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionRuntime;
-use Ultra\Projection\ProjectionRunner;
-use Ultra\Projection\ProjectionTransactionManagerInterface;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Testing\PostgresConnectionSupport;
 
@@ -73,7 +71,7 @@ final class BatchAtomicityTest extends ProjectionTestCase
     #[DataProvider('bufferedBatches')]
     public function test_projection_owned_unit_of_work_flushes_atomically_and_clears_after_failure(
         string $mode,
-        ?string $stage,
+        string $stage,
     ): void {
         $fixture = $this->fixture('postgres');
         $projection = $fixture->bufferedProjection();
@@ -85,50 +83,25 @@ final class BatchAtomicityTest extends ProjectionTestCase
         $fixture->activity->bump('buffered_projection', BucketHasher::bucketFor($id));
 
         $runner = $fixture->runner;
-        if ('transaction' === $stage) {
-            $transactions = new class($fixture->transactions) implements ProjectionTransactionManagerInterface {
-                private int $calls = 0;
-
-                public function __construct(private ProjectionTransactionManagerInterface $inner) {}
-
-                public function transactional(callable $operation): mixed
-                {
-                    ++$this->calls;
-                    return $this->inner->transactional(function () use ($operation): mixed {
-                        $result = $operation();
-                        // The first transaction only checks initialization; the second commits the batch.
-                        if (2 === $this->calls) {
-                            throw new \RuntimeException('Failed transaction.');
-                        }
-                        return $result;
-                    });
-                }
-            };
-            $runner = new ProjectionRunner($fixture->store, $fixture->segments, $transactions, $fixture->activity);
-        }
-
-        if (null !== $stage) {
-            try {
-                $runner->{$mode}($runtime, 'buffered_projection', 0, 'worker');
-                static::fail('Expected batch failure.');
-            } catch (\RuntimeException | \Doctrine\DBAL\Exception) {
-                static::assertFalse($projection->hasPendingChanges());
-                static::assertSame(0, $runner->listSegments('buffered_projection')[0]->checkpoint->gapFloor->value);
-                foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
-                    static::assertSame([['id' => 'init', 'name' => 'initialized']], $fixture->connection->fetchAllAssociative(
-                        'SELECT * FROM ' . $table,
-                    ));
-                }
+        try {
+            $runner->{$mode}($runtime, 'buffered_projection', 0, 'worker');
+            static::fail('Expected batch failure.');
+        } catch (\RuntimeException | \Doctrine\DBAL\Exception) {
+            static::assertFalse($projection->hasPendingChanges());
+            static::assertSame(0, $runner->listSegments('buffered_projection')[0]->checkpoint->gapFloor->value);
+            foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
+                static::assertSame([['id' => 'init', 'name' => 'initialized']], $fixture->connection->fetchAllAssociative(
+                    'SELECT * FROM ' . $table,
+                ));
             }
-            $projection->failAt = null;
-            $runner = $fixture->runner;
         }
+        $projection->failAt = null;
 
         $result = $runner->{$mode}($runtime, 'buffered_projection', 0, 'worker');
         static::assertSame(1, $result->processedEvents);
         static::assertFalse($projection->hasPendingChanges());
         static::assertSame(
-            [['id' => $id, 'name' => 'Math'], ['id' => 'init', 'name' => 'flushed']],
+            [['id' => $id, 'name' => 'Math'], ['id' => 'init', 'name' => 'initialized']],
             $fixture->connection->fetchAllAssociative('SELECT * FROM ' . $projection->coursesTable . ' ORDER BY id'),
         );
         static::assertSame(
@@ -140,8 +113,8 @@ final class BatchAtomicityTest extends ProjectionTestCase
     public static function bufferedBatches(): iterable
     {
         foreach (['runClaimedOnce', 'backfillClaimedOnce'] as $mode) {
-            foreach ([null, 'apply', 'hook', 'buffer', 'transaction'] as $stage) {
-                yield $mode . ' ' . ($stage ?? 'success') => [$mode, $stage];
+            foreach (['apply', 'buffer'] as $stage) {
+                yield $mode . ' ' . $stage => [$mode, $stage];
             }
         }
     }

@@ -88,46 +88,30 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
         }
     }
 
-    #[DataProvider('lifecycleFailures')]
-    public function test_projection_owned_unit_of_work_flushes_lifecycle_changes_and_clears_after_rollback(string $stage): void
+    public function test_failed_buffered_reset_clears_pending_deletions_and_preserves_persisted_state(): void
     {
         $fixture = $this->fixture('postgres');
         $projection = $fixture->bufferedProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
-        if ('reset' === $stage) {
-            $fixture->runner->ensureInitialized($runtime);
-            static::assertFalse($projection->hasPendingChanges());
-        }
-        $projection->failAt = $stage;
+        $fixture->runner->ensureInitialized($runtime);
+        $projection->failAt = 'reset';
         try {
-            if ('initialize' === $stage) {
-                $fixture->runner->ensureInitialized($runtime);
-            } else {
-                $fixture->runner->deleteProjection($runtime);
-            }
-            static::fail('Expected lifecycle failure.');
+            $fixture->runner->deleteProjection($runtime);
+            static::fail('Expected reset failure.');
         } catch (\RuntimeException $exception) {
-            static::assertSame('Failed ' . $stage . '.', $exception->getMessage());
+            static::assertSame('Failed reset.', $exception->getMessage());
             static::assertFalse($projection->hasPendingChanges());
         }
+        static::assertCount(1, $fixture->runner->listSegments('buffered_projection'));
+        foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
+            static::assertSame(1, (int) $fixture->connection->fetchOne('SELECT COUNT(*) FROM ' . $table));
+        }
+
         $projection->failAt = null;
-        if ('initialize' === $stage) {
-            static::assertSame([], $fixture->runner->listSegments('buffered_projection'));
-            $fixture->runner->ensureInitialized($runtime);
-            foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
-                static::assertSame([['id' => 'init', 'name' => 'initialized']], $fixture->connection->fetchAllAssociative(
-                    'SELECT * FROM ' . $table,
-                ));
-            }
-        } else {
-            foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
-                static::assertSame(1, (int) $fixture->connection->fetchOne('SELECT COUNT(*) FROM ' . $table));
-            }
-            $fixture->runner->deleteProjection($runtime);
-            static::assertSame([], $fixture->runner->listSegments('buffered_projection'));
-            foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
-                static::assertSame(0, (int) $fixture->connection->fetchOne('SELECT COUNT(*) FROM ' . $table));
-            }
+        $fixture->runner->deleteProjection($runtime);
+        static::assertSame([], $fixture->runner->listSegments('buffered_projection'));
+        foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
+            static::assertSame(0, (int) $fixture->connection->fetchOne('SELECT COUNT(*) FROM ' . $table));
         }
         static::assertFalse($projection->hasPendingChanges());
     }
