@@ -6,6 +6,14 @@ Source code and documentation follow functional contexts. Use the task table to 
 
 | When working on | Read | Source context | Owning packages |
 | --- | --- | --- | --- |
+| Integrating Ultra in an application | [Application integration](application-integration.md), then the relevant context below | Affected context | Installed Ultra dependency |
+| Running a first integration journey | [Getting-started application](../examples/getting-started/README.md), then its task-specific guide | Affected context, [Testing](../src/Testing) | Root package, application example |
+| Persisting a first state through Symfony and PostgreSQL | [StateStore getting started](stored-state/getting-started.md), then [StateStore contracts](stored-state/README.md) | [StoredState](../src/StoredState), [UnitOfWork](../src/UnitOfWork) | StateStore, StateStore_Bundle, MappedTable, UnitOfWork |
+| Normalizing a first value or precompiling its normalizer | [Mapper getting started](mapping/getting-started.md), then [Mapper contracts](mapping/README.md) | [Mapper](../src/Mapper) | Mapper, Mapper_Compiler, Mapper_Bundle |
+| Declaring a first message handler and advice | [MessageHandling getting started](message-handling/getting-started.md) | [MessageHandling](../src/MessageHandling) | MessageHandling, MessageHandling_Compiler |
+| Setting up a PostgreSQL event store | [EventStore getting started](event-sourcing/getting-started.md), then [PostgreSQL contracts](event-sourcing/postgres.md) | [EventSourcing](../src/EventSourcing) | EventStore, EventStore_Postgres |
+| Configuring an outbox and running its worker | [Async setup](message-handling/async-setup.md), then [delivery contracts](message-handling/async.md) | [MessageHandling](../src/MessageHandling) | MessageHandling, MessageHandling_PostgresQueue |
+| Building and rebuilding a first persisted projection | [Projection getting started](projections/getting-started.md), then [projection contracts](projections/README.md) | [Projection](../src/Projection) | Projection, Projection_Postgres, Coordination_Postgres |
 | Routing, advice, handlers or message context | [Message handling](message-handling/README.md) | [MessageHandling](../src/MessageHandling) | MessageHandling, MessageHandling_Compiler |
 | Decision state injection, derived IDs or CHECK | [Stateful contracts](message-handling/stateful.md), then [bindings and examples](message-handling/decisions.md) | [MessageHandling](../src/MessageHandling) | StatefulMessageHandling |
 | Async dispatch, queue delivery, outbox or deployment compatibility | [Async delivery](message-handling/async.md) | [MessageHandling](../src/MessageHandling) | MessageHandling, MessageHandling_PostgresQueue |
@@ -21,7 +29,7 @@ Source code and documentation follow functional contexts. Use the task table to 
 | Schema comparison, renames or SQL generation | [Schema](schema/README.md) | [Schema](../src/Schema) | Schema |
 | Dirty-key tracking, coordinator leases or wake signals | [Coordination](coordination/README.md) | [Coordination](../src/Coordination) | Coordination, Coordination_Postgres |
 | Flush ordering, transaction boundaries or nested work | [Transactions](transactions/README.md) | [UnitOfWork](../src/UnitOfWork) | UnitOfWork |
-| Symfony assembly or extension registration | [UltraBundle](../src/Symfony/Bundle/UltraBundle.php), [ContainerExtension](../src/Symfony/Container/ContainerExtension.php), then the affected context's integration page | [Symfony](../src/Symfony) | SymfonyBundle, Container |
+| Symfony assembly or extension registration | [Symfony assembly](symfony.md), then the affected context's integration page | [Symfony](../src/Symfony) | SymfonyBundle, Container |
 | Shared compiler helpers or clock primitives | Current contracts and tests in [CodeGeneration](../src/CodeGeneration) or [Time](../src/Time) | [CodeGeneration](../src/CodeGeneration), [Time](../src/Time) | CodeGeneration, Time |
 | Installing Ultra, setup, tooling or test execution | [Development](development.md) | [Testing](../src/Testing) | Root package, root tooling, Testing, ultra/testing-postgres |
 | Running or comparing benchmarks | [Benchmark tooling](development.md#benchmarks); for EventStore scenarios or GIN maintenance, [Postgres workloads](event-sourcing/postgres.md#benchmarks) | [Testing](../src/Testing), [EventSourcing](../src/EventSourcing) | Root tooling, EventStore_Postgres |
@@ -50,6 +58,8 @@ Guarantee suites and fixtures live outside package directories. A context can us
 
 - [AGENTS.md](../AGENTS.md) owns contributor rules.
 - [Development](development.md) owns setup, verification and review workflows.
+- [Application integration](application-integration.md) owns documentation discovery in consuming applications, integration paths and optional agent instructions.
+- [Symfony assembly](symfony.md) owns application-wide extension selection and container setup. Context getting-started pages own their integration journeys; runnable example files own the executable recipe sources.
 - Context pages own current behavior and caller responsibilities; implementation and tests resolve discrepancies.
 - [GLOSSARY.md](../GLOSSARY.md) owns canonical vocabulary.
 - [ADRs](adr/README.md) own architectural rationale. Read them when changing the relevant boundary, especially [compilation versus runtime](adr/0002-prefer-compiled-runtime-code.md).

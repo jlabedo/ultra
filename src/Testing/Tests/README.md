@@ -2,6 +2,7 @@
 
 | Suite | Observable guarantee |
 | --- | --- |
+| [GettingStartedExampleTest](GettingStartedExampleTest.php) | A fresh Composer consumer executes documented journeys across separate PHP processes: Symfony state changes persist, queue consumption acknowledges delivery, and projection rebuild restores read-model rows. |
 | [WireProtocolTest](Concurrent/WireProtocolTest.php) | Known messages preserve their fields in one JSON frame; malformed frames and unsupported message classes report protocol errors. |
 | [CheckpointCoordinationTest](Concurrent/CheckpointCoordinationTest.php) | Workers wait at named checkpoints, exchange payloads and injected values, remain independent, and return outcomes in spawn order despite reverse completion. |
 | [WorkerLifecycleTest](Concurrent/WorkerLifecycleTest.php) | Real child processes return values or exception descriptions, report logs and stderr, respect waiting deadlines, and disappear after abort, stop or cluster destruction. |

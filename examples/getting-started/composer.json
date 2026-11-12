@@ -1,0 +1,29 @@
+{
+    "name": "ultra/getting-started-example",
+    "type": "project",
+    "license": "MIT",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../..",
+            "options": {
+                "symlink": true,
+                "versions": {"ultra/ultra": "dev-main"}
+            }
+        }
+    ],
+    "require": {
+        "php": ">=8.5",
+        "ext-pdo_pgsql": "*",
+        "symfony/framework-bundle": "^8.0",
+        "symfony/yaml": "^8.0",
+        "ultra/ultra": "dev-main"
+    },
+    "autoload": {
+        "psr-4": {"GettingStarted\\": "src/"}
+    },
+    "config": {
+        "allow-plugins": false,
+        "sort-packages": true
+    }
+}
