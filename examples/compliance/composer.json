@@ -1,0 +1,55 @@
+{
+    "name": "ultra/compliance-example",
+    "type": "project",
+    "license": "MIT",
+    "repositories": [
+        {
+            "type": "path",
+            "url": "../../src/*/*",
+            "options": {
+                "symlink": true
+            }
+        }
+    ],
+    "minimum-stability": "dev",
+    "prefer-stable": true,
+    "require": {
+        "php": ">=8.5",
+        "ext-pdo_pgsql": "*",
+        "doctrine/dbal": "^4.0",
+        "symfony/config": "^8.0",
+        "symfony/http-kernel": "^8.0",
+        "ultra/coordination": "dev-main",
+        "ultra/coordination-postgres": "dev-main",
+        "ultra/event-sourced-state": "dev-main",
+        "ultra/event-sourced-state-compiler": "dev-main",
+        "ultra/event-store": "dev-main",
+        "ultra/event-store-postgres": "dev-main",
+        "ultra/events": "dev-main",
+        "ultra/mapped-table": "dev-main",
+        "ultra/mapper": "dev-main",
+        "ultra/mapper-bundle": "dev-main",
+        "ultra/mapper-compiler": "dev-main",
+        "ultra/message-handling": "dev-main",
+        "ultra/message-handling-compiler": "dev-main",
+        "ultra/projection": "dev-main",
+        "ultra/projection-postgres": "dev-main",
+        "ultra/stateful-message-handling": "dev-main",
+        "ultra/symfony-bundle": "dev-main",
+        "ultra/time": "dev-main",
+        "ultra/unit-of-work": "dev-main"
+    },
+    "require-dev": {
+        "phpunit/phpunit": "^13.0",
+        "ultra/testing-postgres": "dev-main"
+    },
+    "autoload": {
+        "psr-4": {
+            "ComplianceExample\\": "src/"
+        }
+    },
+    "scripts": {
+        "test": "phpunit"
+    },
+    "description": "Symfony compliance application with event-sourced decisions and a materialized eligibility query"
+}

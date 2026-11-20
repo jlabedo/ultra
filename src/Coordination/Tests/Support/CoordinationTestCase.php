@@ -12,6 +12,7 @@ use Ultra\Coordination\Lease\CoordinatorLease;
 use Ultra\Coordination\Tracking\DirtyKeyTracker;
 use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease;
 use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLeaseSchema;
+use Ultra\Coordination_Postgres\Refresh\PostgresRefreshPublicationSchema;
 use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTracker;
 use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTrackerSchema;
 use Ultra\Testing\PostgresConnectionSupport;
@@ -19,7 +20,7 @@ use Ultra\Time\StatickClock;
 
 abstract class CoordinationTestCase extends TestCase
 {
-    /** @var list<array{Connection, PostgresCoordinatorLeaseSchema|PostgresDirtyKeyTrackerSchema}> */
+    /** @var list<array{Connection, PostgresCoordinatorLeaseSchema|PostgresDirtyKeyTrackerSchema|PostgresRefreshPublicationSchema}> */
     private array $tables = [];
 
     /** @return iterable<string, array{string}> */
@@ -54,9 +55,12 @@ abstract class CoordinationTestCase extends TestCase
         }
         $connection = PostgresConnectionSupport::connection($dsn);
         $table = 'coordination_guarantees_' . bin2hex(random_bytes(8));
-        $schema = 'leases' === $kind
-            ? new PostgresCoordinatorLeaseSchema($table)
-            : new PostgresDirtyKeyTrackerSchema($table);
+        $schema = match ($kind) {
+            'leases' => new PostgresCoordinatorLeaseSchema($table),
+            'dirty_keys' => new PostgresDirtyKeyTrackerSchema($table),
+            'refresh_revisions' => new PostgresRefreshPublicationSchema($table),
+            default => throw new \InvalidArgumentException('Unknown coordination table kind.'),
+        };
         $this->tables[] = [$connection, $schema];
         foreach ($schema->createStatements() as $statement) {
             $connection->executeStatement($statement);

@@ -19,6 +19,7 @@ Source code and documentation follow functional contexts. Use the task table to 
 | Projection ordering, claims, checkpoints or scaling | [Projections](projections/README.md) | [Projection](../src/Projection) | Projection, Projection_Postgres |
 | Normalization, custom types or generated normalizers | [Mapping](mapping/README.md) | [Mapper](../src/Mapper) | Mapper, Mapper_Compiler, Mapper_Bundle |
 | Schema comparison, renames or SQL generation | [Schema](schema/README.md) | [Schema](../src/Schema) | Schema |
+| Materialized query refresh, scoped invalidation or publication conflicts | [Materialized queries](coordination/refresh.md) | [Coordination](../src/Coordination) | Coordination, Coordination_Postgres |
 | Dirty-key tracking, coordinator leases or wake signals | [Coordination](coordination/README.md) | [Coordination](../src/Coordination) | Coordination, Coordination_Postgres |
 | Flush ordering, transaction boundaries or nested work | [Transactions](transactions/README.md) | [UnitOfWork](../src/UnitOfWork) | UnitOfWork |
 | Symfony assembly or extension registration | [UltraBundle](../src/Symfony/Bundle/UltraBundle.php), [ContainerExtension](../src/Symfony/Container/ContainerExtension.php), then the affected context's integration page | [Symfony](../src/Symfony) | SymfonyBundle, Container |

@@ -15,10 +15,6 @@
   Étudier séparément les nouvelles livraisons de messages : backoff, plafond
   de tentatives et renouvellement des leases pendant les traitements longs.
 
-- [ ] Reprendre l'expérimentation de mise à jour du cache de l'exemple compliance,
-  commencée sur une autre branche avec Coordination. Évaluer les primitives
-  manquantes à partir de ce cas d'usage et revoir le nom du module si nécessaire.
-
 - [ ] Relier les métadonnées StateStore à Schema pour dériver le schéma de base
   (identifiants composites, colonnes et tables des collections), avec déclaration
   des index, contraintes uniques et références. Les exemples coworking et IAM

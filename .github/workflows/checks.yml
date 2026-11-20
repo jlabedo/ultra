@@ -66,3 +66,4 @@ jobs:
           docker logs ${{ job.services.postgres.id }}
           exit 1
       - run: bin/phpunit --all --fail-on-skipped
+      - run: bin/phpunit -c examples/compliance/phpunit.xml.dist --fail-on-skipped

@@ -1,16 +1,9 @@
 # Ultra\Coordination
 
-This is an experimental, independently usable building block. Its current scope
-is the three primitives below. The original intent was to reuse part of the
-event-sourced projection execution machinery for other background tasks, such as
-cache refreshes. The current module is smaller than that ambition, and its name
-is provisional. Resuming the compliance example's cache-refresh experiment from
-another branch is tracked in [TODO](../../TODO.md).
-
-Generic primitives for coordinating background work: knowing *what* is pending,
-ensuring only *one* worker drives a job at a time, and *waking* that worker
-without a thundering herd. These were extracted from the projection runtime once
-a second consumer appeared; nothing here knows about projections.
+Coordination provides independently usable primitives for tracking pending work,
+coordinating workers and signaling work availability. Projections use these
+primitives for activity tracking and scheduling. [Materialized query refresh](refresh.md)
+uses them with a separate publication protocol for results derived from current state.
 
 ## Primitives
 
@@ -92,6 +85,7 @@ in the context's support fixture, with assertions in the suites.
 | Guarantee | Suite |
 | --- | --- |
 | Coalesced observations, busiest keys, limits, channel isolation, lost-update-safe acknowledgements and reduced-key counts | [PendingWorkTest](../../src/Coordination/Tests/PendingWorkTest.php) |
+| Optimistic refresh publication, overlapping workers, surviving invalidations and rollback | [RefreshPublicationTest](../../src/Coordination/Tests/RefreshPublicationTest.php) |
 | Exclusive ownership, holder-only release and renewal, independent keys and expiration | [LeaseOwnershipTest](../../src/Coordination/Tests/LeaseOwnershipTest.php) |
 | Wake debounce, live-holder suppression, expiry and recorded work signals | [WakeSignalsTest](../../src/Coordination/Tests/WakeSignalsTest.php) |
 | Postgres contention on absent and existing keys, exclusive lease and wake reservations, live-holder suppression, transaction visibility and rollback | [LeasePersistenceTest](../../src/Coordination/Tests/LeasePersistenceTest.php) |
