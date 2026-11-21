@@ -58,6 +58,9 @@ static SQL fragments for the table, columns, keys and owner. Defaults supplied b
 are resolved when that factory creates the adapter. For standalone assembly, pass the mapping and an adapter
 for its complete key to `MappedRowSet`.
 
+The [Symfony workshop example](../../examples/mapped-table-symfony/README.md) assembles and runs defined row
+sets, owner collections and query guards on PostgreSQL.
+
 The owner columns, when present, identify one collection for each complete owner key in the child table's
 column names. They leave at least one further key column for the item. Table reads, reads by owner and direct
 writes by complete row key all use the same buffer.
