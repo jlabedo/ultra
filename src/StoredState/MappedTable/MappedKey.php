@@ -81,8 +81,10 @@ final readonly class MappedKey implements \Stringable
         }
     }
 
-    public function mergedWith(self $other): self
+    /** @param self|array<string, int|string|\Stringable> $other */
+    public function mergedWith(self|array $other): self
     {
+        $other = is_array($other) ? new self($other) : $other;
         $overlap = array_intersect_key($this->values, $other->values);
         foreach ($overlap as $column => $value) {
             if ($other->values[$column] !== $value) {
@@ -93,8 +95,10 @@ final readonly class MappedKey implements \Stringable
         return new self([...$this->values, ...$other->values]);
     }
 
-    public function matches(self $partial): bool
+    /** @param self|array<string, int|string|\Stringable> $partial */
+    public function matches(self|array $partial): bool
     {
+        $partial = is_array($partial) ? new self($partial) : $partial;
         foreach ($partial->values as $column => $value) {
             if (!array_key_exists($column, $this->values) || $this->values[$column] !== $value) {
                 return false;

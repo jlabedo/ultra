@@ -71,7 +71,7 @@ final class StateMappingTest extends StateStoreTestCase
                 'shipping_street' => '2 Main Street',
                 'shipping_zip' => '75001',
             ],
-            $table->row('order-123', ['shipping_street', 'shipping_zip']),
+            $table->withKey('order-123')->get(['shipping_street', 'shipping_zip']),
         );
 
         $database->writeRow('orders', 'order_id', [

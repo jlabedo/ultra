@@ -22,10 +22,12 @@ final class BufferedViewTest extends RowSetTestCase
         $fixture->seed(['id' => 'first', 'status' => 'pending', 'note' => 'draft']);
         $rows = $fixture->rows;
 
-        static::assertSame(['status' => 'pending'], $rows->row('first', ['status']));
-        static::assertSame('first', $rows->row('first')['id']);
-        static::assertSame('draft', $rows->row('first')['note']);
-        static::assertFalse($rows->row('missing'));
+        $first = $rows->withKey('first');
+        static::assertSame(['status' => 'pending'], $first->get(['status']));
+        static::assertSame(['id' => 'first'], $first->get([]));
+        static::assertSame('first', $first->get()['id']);
+        static::assertSame('draft', $first->get()['note']);
+        static::assertNull($rows->withKey('missing')->get([]));
         $all = $rows->rows(['status', 'note']);
         static::assertSame(['first', 'second'], array_map(static fn($row) => $row->key->value('id'), $all));
         static::assertSame(
@@ -47,9 +49,11 @@ final class BufferedViewTest extends RowSetTestCase
         $rows->withKey('remove')->delete();
         $rows->withKey('added')->insert()->setColumns(['status' => 'new', 'note' => 'fresh']);
 
-        static::assertSame(['status' => 'active', 'note' => 'draft'], $rows->row('keep', ['status', 'note']));
-        static::assertSame(['status' => 'new', 'version_a' => null], $rows->row('added', ['status', 'version_a']));
-        static::assertFalse($rows->row('remove'));
+        static::assertSame(['status' => 'active', 'note' => 'draft'], $rows->withKey('keep')->get(['status', 'note']));
+        static::assertSame(['status' => 'new'], $rows->withKey('added')->get(['status', 'version_a']));
+        static::assertNull($rows->withKey('remove')->get([]));
+        static::assertSame(['id' => 'added'], $rows->withKey('added')->get([]));
+        static::assertSame('added', $rows->withKey('added')->get()['id']);
         $all = $rows->rows(['status', 'note']);
         static::assertSame(['added', 'keep'], array_map(static fn($row) => $row->key->value('id'), $all));
         static::assertSame(
@@ -69,8 +73,8 @@ final class BufferedViewTest extends RowSetTestCase
         $rows->withKey('present')->expectColumnValue('status', 'pending');
         $rows->withKey('missing')->expectAbsent();
 
-        static::assertSame(['status' => 'pending'], $rows->row('present', ['status']));
-        static::assertFalse($rows->row('missing'));
+        static::assertSame(['status' => 'pending'], $rows->withKey('present')->get(['status']));
+        static::assertNull($rows->withKey('missing')->get());
         static::assertSame(['present'], array_map(static fn($row) => $row->key->value('id'), $rows->rows()));
         $rows->expectSameRowKeys(['present']);
     }
@@ -87,15 +91,15 @@ final class BufferedViewTest extends RowSetTestCase
         $fixture->seed([...$twoLine->values, 'status' => 'other']);
 
         $rows->withKey($oneLine)->setColumn('status', 'direct');
-        static::assertSame(['status' => 'direct'], $rows->rowsForOwner($one, ['status'])[0]->columns);
+        static::assertSame(['status' => 'direct'], $rows->rowsForOwner($one->values, ['status'])[0]->columns);
 
         $newLine = $one->mergedWith(new MappedKey(['id' => 'new']));
-        $rows->reconcileForOwner($one, [new MappedRow($newLine, ['status' => 'from collection'])]);
+        $rows->reconcileForOwner($one->values, [new MappedRow($newLine->values, ['status' => 'from collection'])]);
         $rows->withKey($newLine)->setColumn('note', 'direct again');
-        static::assertFalse($rows->row($oneLine));
+        static::assertNull($rows->withKey($oneLine)->get());
         static::assertSame(
             ['status' => 'from collection', 'note' => 'direct again'],
-            $rows->row($newLine, ['status', 'note']),
+            $rows->withKey($newLine)->get(['status', 'note']),
         );
         static::assertSame(
             [$twoLine->values, $newLine->values],

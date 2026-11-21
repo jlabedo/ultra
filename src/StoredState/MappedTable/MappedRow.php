@@ -6,9 +6,16 @@ namespace Ultra\MappedTable;
 
 final readonly class MappedRow
 {
-    /** @param array<string, mixed> $columns */
+    public MappedKey $key;
+
+    /**
+     * @param MappedKey|array<string, int|string|\Stringable> $key
+     * @param array<string, mixed> $columns
+     */
     public function __construct(
-        public MappedKey $key,
+        MappedKey|array $key,
         public array $columns,
-    ) {}
+    ) {
+        $this->key = $key instanceof MappedKey ? $key : new MappedKey($key);
+    }
 }

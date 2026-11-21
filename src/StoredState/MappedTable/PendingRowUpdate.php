@@ -7,22 +7,79 @@ namespace Ultra\MappedTable;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /**
- * Fluent handle used to configure the pending row change buffered by the table unit of work.
+ * Fluent handle for reading, observing and buffering changes to one mapped row.
  */
 final readonly class PendingRowUpdate
 {
+    /** @internal Obtain through MappedRowSet::withKey(). */
     public function __construct(
-        private BufferedRowUpdate $update,
-        private string $tableName = 'mapped row set',
+        private MappedRowSet $rowSet,
+        private MappedKey $key,
+        private int $generation,
+        private string $tableName,
         private ?MappedRowSetMetadata $mapping = null,
     ) {}
 
+    /**
+     * Reads this unit of work's view. A null projection selects all columns, and an empty list selects only the key.
+     * Unknown values are omitted from the result.
+     *
+     * @param list<string>|null $columns
+     * @return array<string, mixed>|null
+     */
+    public function get(?array $columns = null): ?array
+    {
+        return $this->rowSet->readForHandle($this->key, $this->generation, $columns)['values'] ?? null;
+    }
+
+    /**
+     * Reads the same projection as get(). Observes presence or absence and the returned non-key values from storage.
+     *
+     * @param list<string>|null $columns
+     * @return array<string, mixed>|null
+     */
+    public function observe(?array $columns = null): ?array
+    {
+        $row = $this->rowSet->readForHandle($this->key, $this->generation, $columns);
+        if (null === $row) {
+            $this->expectAbsent();
+
+            return null;
+        }
+
+        $values = $row['storedValues'];
+        if ([] === $values) {
+            $this->expectPresent();
+
+            return $row['values'];
+        }
+
+        $update = $this->update();
+        $observation = clone $update;
+        $this->expectPresence($observation);
+        foreach ($values as $column => $value) {
+            $this->expectValue($observation, $column, $value);
+        }
+
+        $update->expectedPresence = $observation->expectedPresence;
+        $update->expectedColumns = $observation->expectedColumns;
+        $update->mode = $observation->mode;
+
+        return $row['values'];
+    }
+
+    private function update(): BufferedRowUpdate
+    {
+        return $this->rowSet->updateForHandle($this->key, $this->generation);
+    }
+
     public function insert(): self
     {
-        if (RowUpdatePlan::EXPECTED_PRESENT === $this->update->expectedPresence) {
-            if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
-                $this->update->mode = RowUpdatePlan::MODE_REPLACE;
-                $this->update->removedByReconciliation = false;
+        $update = $this->update();
+        if (RowUpdatePlan::EXPECTED_PRESENT === $update->expectedPresence) {
+            if ($update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update->mode) {
+                $update->mode = RowUpdatePlan::MODE_REPLACE;
+                $update->removedByReconciliation = false;
 
                 return $this;
             }
@@ -30,13 +87,13 @@ final readonly class PendingRowUpdate
             throw new ConcurrencyException(sprintf(
                 'Cannot mark table "%s", row "%s" for insert because the row is already expected to exist.',
                 $this->tableName,
-                (string) $this->update->key,
+                (string) $update->key,
             ));
         }
 
-        $this->update->expectedPresence = RowUpdatePlan::EXPECTED_ABSENT;
-        $this->update->mode = RowUpdatePlan::MODE_INSERT;
-        $this->update->removedByReconciliation = false;
+        $update->expectedPresence = RowUpdatePlan::EXPECTED_ABSENT;
+        $update->mode = RowUpdatePlan::MODE_INSERT;
+        $update->removedByReconciliation = false;
 
         return $this;
     }
@@ -47,27 +104,28 @@ final readonly class PendingRowUpdate
      */
     public function expectAbsent(): self
     {
-        if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+        $update = $this->update();
+        if ($update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update->mode) {
             return $this;
         }
 
-        if (true === $this->update->toPlan()?->writes()) {
+        if (true === $update->toPlan()?->writes()) {
             throw new ConcurrencyException(sprintf(
                 'Cannot mark table "%s", row "%s" as expected absent because it is written in this unit of work.',
                 $this->tableName,
-                (string) $this->update->key,
+                (string) $update->key,
             ));
         }
 
-        if (RowUpdatePlan::EXPECTED_PRESENT === $this->update->expectedPresence) {
+        if (RowUpdatePlan::EXPECTED_PRESENT === $update->expectedPresence) {
             throw new ConcurrencyException(sprintf(
                 'Cannot mark table "%s", row "%s" as expected absent because it is already expected to exist.',
                 $this->tableName,
-                (string) $this->update->key,
+                (string) $update->key,
             ));
         }
 
-        $this->update->expectedPresence = RowUpdatePlan::EXPECTED_ABSENT;
+        $update->expectedPresence = RowUpdatePlan::EXPECTED_ABSENT;
 
         return $this;
     }
@@ -78,147 +136,157 @@ final readonly class PendingRowUpdate
      */
     public function expectPresent(): self
     {
-        if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
-            throw new ConcurrencyException(sprintf(
-                'Cannot expect table "%s", row "%s" to be present because it is deleted in this unit of work.',
-                $this->tableName,
-                (string) $this->update->key,
-            ));
-        }
-        if (true === $this->update->toPlan()?->writes()) {
-            return $this;
-        }
-        if (RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence) {
-            throw new ConcurrencyException(sprintf(
-                'Cannot expect table "%s", row "%s" to be present because it is already expected absent.',
-                $this->tableName,
-                (string) $this->update->key,
-            ));
-        }
-
-        $this->update->expectedPresence = RowUpdatePlan::EXPECTED_PRESENT;
+        $this->expectPresence($this->update());
 
         return $this;
     }
 
+    private function expectPresence(BufferedRowUpdate $update): void
+    {
+        if ($update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update->mode) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot expect table "%s", row "%s" to be present because it is deleted in this unit of work.',
+                $this->tableName,
+                (string) $update->key,
+            ));
+        }
+        if (true === $update->toPlan()?->writes()) {
+            return;
+        }
+        if (RowUpdatePlan::EXPECTED_ABSENT === $update->expectedPresence) {
+            throw new ConcurrencyException(sprintf(
+                'Cannot expect table "%s", row "%s" to be present because it is already expected absent.',
+                $this->tableName,
+                (string) $update->key,
+            ));
+        }
+
+        $update->expectedPresence = RowUpdatePlan::EXPECTED_PRESENT;
+    }
+
     public function upsert(): self
     {
-        $this->update->removedByReconciliation = false;
-        if (RowUpdatePlan::EXPECTED_PRESENT === $this->update->expectedPresence) {
-            if (RowUpdatePlan::MODE_DELETE === $this->update->mode) {
-                $this->update->mode = RowUpdatePlan::MODE_REPLACE;
+        $update = $this->update();
+        $update->removedByReconciliation = false;
+        if (RowUpdatePlan::EXPECTED_PRESENT === $update->expectedPresence) {
+            if (RowUpdatePlan::MODE_DELETE === $update->mode) {
+                $update->mode = RowUpdatePlan::MODE_REPLACE;
 
                 return $this;
             }
 
-            $this->update->mode ??= RowUpdatePlan::MODE_UPDATE;
+            $update->mode ??= RowUpdatePlan::MODE_UPDATE;
 
             return $this;
         }
 
-        if (RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence) {
-            $this->update->mode ??= RowUpdatePlan::MODE_INSERT;
-            if (RowUpdatePlan::MODE_UPDATE === $this->update->mode) {
-                $this->update->mode = RowUpdatePlan::MODE_INSERT;
+        if (RowUpdatePlan::EXPECTED_ABSENT === $update->expectedPresence) {
+            $update->mode ??= RowUpdatePlan::MODE_INSERT;
+            if (RowUpdatePlan::MODE_UPDATE === $update->mode) {
+                $update->mode = RowUpdatePlan::MODE_INSERT;
             }
 
             return $this;
         }
 
-        $this->update->mode = RowUpdatePlan::MODE_UPSERT;
+        $update->mode = RowUpdatePlan::MODE_UPSERT;
 
         return $this;
     }
 
     public function delete(): self
     {
-        if ($this->update->removedByReconciliation) {
+        $update = $this->update();
+        if ($update->removedByReconciliation) {
             return $this;
         }
-        if (RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence) {
+        if (RowUpdatePlan::EXPECTED_ABSENT === $update->expectedPresence) {
             // Deleting an expected-absent row only checks absence, including a cancelled insertion.
-            $this->update->mode = null;
-            $this->update->removedByReconciliation = true;
-            $this->update->expectedColumns = [];
-            $this->update->setColumns = [];
+            $update->mode = null;
+            $update->removedByReconciliation = true;
+            $update->expectedColumns = [];
+            $update->setColumns = [];
 
             return $this;
         }
 
-        $this->update->expectedPresence ??= RowUpdatePlan::EXPECTED_PRESENT;
-        $this->update->mode = RowUpdatePlan::MODE_DELETE;
-        $this->update->setColumns = [];
+        $update->expectedPresence ??= RowUpdatePlan::EXPECTED_PRESENT;
+        $update->mode = RowUpdatePlan::MODE_DELETE;
+        $update->setColumns = [];
 
         return $this;
     }
 
     /**
-     * Expects a column value in this unit of work's view, the one MappedRowSet::row() returns. A value written by
-     * this unit of work is checked immediately; a value coming from storage becomes a condition checked at flush.
+     * Expects a column value in this unit of work's view. Local values are checked immediately. Values from
+     * storage become conditions checked at flush.
      */
     public function expectColumnValue(string $column, mixed $value): self
     {
+        $this->expectValue($this->update(), $column, $value);
+
+        return $this;
+    }
+
+    private function expectValue(BufferedRowUpdate $update, string $column, mixed $value): void
+    {
         $this->mapping?->assertValue($column, $value);
-        if (null !== $this->mapping && $this->update->key->contains($column)) {
-            if ($this->update->key->value($column) !== $value) {
+        if (null !== $this->mapping && $update->key->contains($column)) {
+            if ($update->key->value($column) !== $value) {
                 throw new ConcurrencyException('Expected key column value differs from the mapped row key.');
             }
 
-            return $this->expectPresent();
+            $this->expectPresence($update);
+
+            return;
         }
 
-        if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+        if ($update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update->mode) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register expected column values for table "%s", row "%s" because it is deleted in this unit of work.',
                 $this->tableName,
-                (string) $this->update->key,
+                (string) $update->key,
             ));
         }
 
-        $rowIsWritten =
-            RowUpdatePlan::MODE_INSERT === $this->update->mode || RowUpdatePlan::MODE_REPLACE === $this->update->mode;
-        if (array_key_exists($column, $this->update->setColumns) || $rowIsWritten) {
+        $rowIsWritten = RowUpdatePlan::MODE_INSERT === $update->mode || RowUpdatePlan::MODE_REPLACE === $update->mode;
+        if (array_key_exists($column, $update->setColumns) || $rowIsWritten) {
             // Inserted and replaced rows are entirely written by this unit of work: unset columns are null.
-            if (($this->update->setColumns[$column] ?? null) !== $value) {
+            if (($update->setColumns[$column] ?? null) !== $value) {
                 throw new ConcurrencyException(sprintf(
                     'Expected value for table "%s", row "%s", column "%s" differs from the value written in this unit of work.',
                     $this->tableName,
-                    (string) $this->update->key,
+                    (string) $update->key,
                     $column,
                 ));
             }
 
-            return $this;
+            return;
         }
 
-        if (RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence) {
+        if (RowUpdatePlan::EXPECTED_ABSENT === $update->expectedPresence) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register expected column values for table "%s", row "%s" because it is already expected to be absent.',
                 $this->tableName,
-                (string) $this->update->key,
+                (string) $update->key,
             ));
         }
 
-        $this->update->expectedPresence = RowUpdatePlan::EXPECTED_PRESENT;
-        if (RowUpdatePlan::MODE_UPSERT === $this->update->mode) {
-            $this->update->mode = RowUpdatePlan::MODE_UPDATE;
+        $update->expectedPresence = RowUpdatePlan::EXPECTED_PRESENT;
+        if (RowUpdatePlan::MODE_UPSERT === $update->mode) {
+            $update->mode = RowUpdatePlan::MODE_UPDATE;
         }
 
-        if (
-            array_key_exists($column, $this->update->expectedColumns)
-            && $this->update->expectedColumns[$column] !== $value
-        ) {
+        if (array_key_exists($column, $update->expectedColumns) && $update->expectedColumns[$column] !== $value) {
             throw new ConcurrencyException(sprintf(
                 'Conflicting expected values were registered for table "%s", row "%s", column "%s".',
                 $this->tableName,
-                (string) $this->update->key,
+                (string) $update->key,
                 $column,
             ));
         }
 
-        $this->update->expectedColumns[$column] = $value;
-
-        return $this;
+        $update->expectedColumns[$column] = $value;
     }
 
     /**
@@ -226,8 +294,11 @@ final readonly class PendingRowUpdate
      */
     public function expectColumnValues(array $expectedValues): self
     {
-        foreach ($expectedValues as $column => $value) {
-            $this->expectColumnValue($column, $value);
+        if ([] !== $expectedValues) {
+            $update = $this->update();
+            foreach ($expectedValues as $column => $value) {
+                $this->expectValue($update, $column, $value);
+            }
         }
 
         return $this;
@@ -236,21 +307,22 @@ final readonly class PendingRowUpdate
     public function setColumn(string $column, mixed $value): self
     {
         $this->mapping?->assertWritableValue($column, $value);
-        if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
+        $update = $this->update();
+        if ($update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update->mode) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register column updates for table "%s", row "%s" because it is already marked for delete.',
                 $this->tableName,
-                (string) $this->update->key,
+                (string) $update->key,
             ));
         }
 
-        if (null === $this->update->mode) {
-            $this->update->mode = RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence
+        if (null === $update->mode) {
+            $update->mode = RowUpdatePlan::EXPECTED_ABSENT === $update->expectedPresence
                 ? RowUpdatePlan::MODE_INSERT
                 : RowUpdatePlan::MODE_UPDATE;
         }
 
-        $this->update->setColumns[$column] = $value;
+        $update->setColumns[$column] = $value;
 
         return $this;
     }

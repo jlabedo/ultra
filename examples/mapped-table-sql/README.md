@@ -61,13 +61,12 @@ use Ultra\MappedTable\MappedRowSet;
 
 return new Scenario(
     static function (MappedRowSet $rows): void {
-        $row = $rows->row('order-1', ['status']);
-        if (false === $row) {
+        $pending = $rows->withKey('order-1');
+        $row = $pending->observe(['status']);
+        if (null === $row) {
             throw new RuntimeException('Missing initial row.');
         }
-        $rows->withKey('order-1')
-            ->expectColumnValue('status', $row['status'])
-            ->setColumn('status', 'paid');
+        $pending->setColumn('status', 'paid');
     },
     initialRows: [['id' => 'order-1', 'status' => 'pending']],
 );

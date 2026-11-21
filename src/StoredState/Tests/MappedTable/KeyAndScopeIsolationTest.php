@@ -21,7 +21,7 @@ final class KeyAndScopeIsolationTest extends RowSetTestCase
     public static function singleColumnAddresses(): iterable
     {
         foreach (self::backends() as $backendName => [$backend]) {
-            foreach (['scalar', 'Stringable', 'structured Stringable'] as $address) {
+            foreach (['scalar', 'Stringable', 'structured Stringable', 'associative Stringable'] as $address) {
                 yield $backendName . ' ' . $address => [$backend, $address];
             }
         }
@@ -41,14 +41,15 @@ final class KeyAndScopeIsolationTest extends RowSetTestCase
             'scalar' => 'row',
             'Stringable' => self::stringable('row'),
             'structured Stringable' => new MappedKey(['id' => self::stringable('row')]),
+            'associative Stringable' => ['id' => self::stringable('row')],
         };
         $rows->withKey($key)->insert()->setColumn('status', 'pending');
         $rows->withKey('row')->setColumn('status', 'saved');
-        static::assertSame(['status' => 'saved'], $rows->row($key, ['status']));
+        static::assertSame(['status' => 'saved'], $rows->withKey($key)->get(['status']));
         $rows->expectSameRowKeys([$key]);
         $fixture->flush($rows);
         $rows->clear();
-        static::assertSame(['status' => 'saved'], $rows->row($key, ['status']));
+        static::assertSame(['status' => 'saved'], $rows->withKey($key)->get(['status']));
         static::assertSame(['id' => 'row'], $rows->rows()[0]->key->values);
         $rows->expectSameRowKeys([$key]);
         $fixture->flush($rows);
@@ -71,22 +72,25 @@ final class KeyAndScopeIsolationTest extends RowSetTestCase
         }
         $key = new MappedKey(['id' => self::stringable('same'), 'env' => 'prod', 'owner' => 'one']);
         static::assertSame(['env' => 'prod', 'id' => 'same', 'owner' => 'one'], $key->values);
-        static::assertSame(['status' => 'value-0'], $fixture->rows->row($key, ['status']));
+        static::assertTrue($key->matches(['env' => 'prod', 'owner' => 'one']));
+        static::assertEquals($key, new MappedKey(['env' => 'prod'])->mergedWith(['id' => 'same', 'owner' => 'one']));
+        static::assertSame(['status' => 'value-0'], $fixture->rows->withKey($key->values)->get(['status']));
+        static::assertSame($key->values, $one->withKey($key->values)->get([]));
         static::assertSame($key->values, $one->rows(['status'])[0]->key->values);
         static::assertCount(1, $one->rows());
         $one->expectSameRowKeys([self::stringable('same')]);
         $one->withKey('same')->setColumn('status', 'updated');
         $fixture->flush($one);
         $one->clear();
-        static::assertSame(['status' => 'updated'], $one->row(self::stringable('same'), ['status']));
-        static::assertSame(['status' => 'value-1'], $two->row('same', ['status']));
-        static::assertSame(['status' => 'value-2'], $dev->row('same', ['status']));
+        static::assertSame(['status' => 'updated'], $one->withKey(self::stringable('same'))->get(['status']));
+        static::assertSame(['status' => 'value-1'], $two->withKey('same')->get(['status']));
+        static::assertSame(['status' => 'value-2'], $dev->withKey('same')->get(['status']));
         $one->withKey('same')->delete();
         $fixture->flush($one);
         $one->clear();
-        static::assertFalse($one->row('same'));
-        static::assertNotFalse($two->row('same'));
-        static::assertNotFalse($dev->row('same'));
+        static::assertNull($one->withKey('same')->get());
+        static::assertNotNull($two->withKey('same')->get());
+        static::assertNotNull($dev->withKey('same')->get());
     }
 
     /** @return iterable<string, array{string}> */
@@ -95,6 +99,8 @@ final class KeyAndScopeIsolationTest extends RowSetTestCase
         yield 'scalar for multiple unbound columns' => ['scalar'];
         yield 'missing key column' => ['missing'];
         yield 'key outside scope' => ['outside'];
+        yield 'positional key array' => ['positional'];
+        yield 'associative key outside scope' => ['associative outside'];
     }
 
     #[DataProvider('invalidAddresses')]
@@ -104,9 +110,11 @@ final class KeyAndScopeIsolationTest extends RowSetTestCase
         $rows = $fixture->view(new MappedKey(['owner' => 'one']));
         $this->expectException(\InvalidArgumentException::class);
         match ($case) {
-            'scalar' => $fixture->rows->row('id'),
-            'missing' => $rows->row(new MappedKey(['id' => 'id'])),
-            'outside' => $rows->row(new MappedKey(['owner' => 'two', 'id' => 'id'])),
+            'scalar' => $fixture->rows->withKey('id')->get(),
+            'missing' => $rows->withKey(new MappedKey(['id' => 'id']))->get(),
+            'outside' => $rows->withKey(new MappedKey(['owner' => 'two', 'id' => 'id']))->get(),
+            'positional' => $rows->withKey(['one', 'id']),
+            'associative outside' => $rows->withKey(['owner' => 'two', 'id' => 'id']),
         };
     }
 

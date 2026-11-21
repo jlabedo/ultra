@@ -18,6 +18,8 @@ final class MappedRowSet implements UnitOfWork
 
     private bool $coordinated = false;
 
+    private int $generation = 0;
+
     /** @var array<string, BufferedRowMembership> */
     private array $collections = [];
 
@@ -36,9 +38,22 @@ final class MappedRowSet implements UnitOfWork
         $this->membership = new BufferedRowMembership();
     }
 
-    public function withKey(int|string|MappedKey|\Stringable $key): PendingRowUpdate
+    /** @param int|string|MappedKey|\Stringable|array<string, int|string|\Stringable> $key */
+    public function withKey(int|string|MappedKey|\Stringable|array $key): PendingRowUpdate
     {
-        $key = $this->normalizeKey($key);
+        return new PendingRowUpdate(
+            $this,
+            $this->normalizeKey($key),
+            $this->generation,
+            $this->mapping->table ?? 'mapped row set',
+            $this->mapping,
+        );
+    }
+
+    /** @internal */
+    public function updateForHandle(MappedKey $key, int $generation): BufferedRowUpdate
+    {
+        $this->assertHandleGeneration($generation);
         $fingerprint = $key->fingerprint();
         if (!isset($this->updates[$fingerprint])) {
             $update = new BufferedRowUpdate($key);
@@ -47,11 +62,7 @@ final class MappedRowSet implements UnitOfWork
             $this->updates[$fingerprint] = $update;
         }
 
-        return new PendingRowUpdate(
-            $this->updates[$fingerprint],
-            $this->mapping->table ?? 'mapped row set',
-            $this->mapping,
-        );
+        return $this->updates[$fingerprint];
     }
 
     /** @param iterable<MappedRow> $rows */
@@ -61,9 +72,13 @@ final class MappedRowSet implements UnitOfWork
         $this->reconcile($this->membership, $rows);
     }
 
-    /** @param iterable<MappedRow> $rows */
-    public function reconcileForOwner(MappedKey $owner, iterable $rows): void
+    /**
+     * @param MappedKey|array<string, int|string|\Stringable> $owner
+     * @param iterable<MappedRow> $rows
+     */
+    public function reconcileForOwner(MappedKey|array $owner, iterable $rows): void
     {
+        $owner = $this->normalizeOwner($owner);
         $membership = $this->collection($owner);
         $this->reconcile($membership, $rows);
         $this->collections[$owner->fingerprint()] = $membership;
@@ -145,39 +160,50 @@ final class MappedRowSet implements UnitOfWork
     }
 
     /**
-     * @param list<string> $columns
-     *
-     * @return array<string, mixed>|false
+     * @internal
+     * @param list<string>|null $columns
+     * @return array{values: array<string, mixed>, storedValues: array<string, mixed>}|null
      */
-    public function row(int|string|MappedKey|\Stringable $key, array $columns = []): array|false
+    public function readForHandle(MappedKey $key, int $generation, ?array $columns): ?array
     {
-        $key = $this->normalizeKey($key);
-        $columns = $this->selectedColumns($columns, includeKeys: true);
+        $this->assertHandleGeneration($generation);
+        $keyOnly = [] === $columns;
+        $projection = $keyOnly
+            ? $this->mapping->keyColumns ?? $key->columns()
+            : $this->selectedColumns($columns ?? [], includeKeys: true);
         $update = $this->updates[$key->fingerprint()] ?? null;
         if (!$this->isVisible($key, $update)) {
-            return false;
+            return null;
         }
 
-        $mapping = $this->mapping;
         $plan = $update?->toPlan();
-        $row = null !== $mapping
-        && in_array($plan?->mode, [RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE], true)
+        $stored = in_array($plan?->mode, [RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE], true)
             ? false
-            : $this->adapter->row($key, $columns);
-        if (false !== $row && null !== $mapping) {
-            $row = $this->projectRow($row, $columns);
-            $mapping->assertValues($row);
-        }
-        if (null === $plan || !$plan->writes()) {
-            return $row;
+            : $this->adapter->row($key, $projection);
+        $written = null !== $plan && $plan->writes() ? [...$plan->setColumns, ...$key->values] : [];
+        if (false === $stored && [] === $written) {
+            return null;
         }
 
-        $row = $this->applyPlanToRow($row, $plan);
-        if (false === $row) {
-            return false;
+        $stored = false === $stored ? [] : $stored;
+        $values = [];
+        $storedValues = [];
+        foreach ([] === $projection ? array_keys($stored + $written) : $projection as $column) {
+            $fromStorage = array_key_exists($column, $stored);
+            if ($fromStorage) {
+                $this->mapping?->assertValue($column, $stored[$column]);
+            }
+            if (array_key_exists($column, $written)) {
+                $values[$column] = $written[$column];
+            } elseif ($fromStorage) {
+                $values[$column] = $stored[$column];
+                if (!$key->contains($column)) {
+                    $storedValues[$column] = $stored[$column];
+                }
+            }
         }
 
-        return $this->projectRow(null === $mapping ? $row : [...$row, ...$key->values], $columns);
+        return ['values' => $keyOnly ? $key->values : $values, 'storedValues' => $storedValues];
     }
 
     /**
@@ -190,14 +216,31 @@ final class MappedRowSet implements UnitOfWork
     }
 
     /**
+     * @param MappedKey|array<string, int|string|\Stringable> $owner
      * @param list<string> $columns
      * @return list<MappedRow>
      */
-    public function rowsForOwner(MappedKey $owner, array $columns = []): array
+    public function rowsForOwner(MappedKey|array $owner, array $columns = []): array
     {
-        $this->assertOwner($owner);
+        return $this->readRows($this->normalizeOwner($owner), $columns);
+    }
 
-        return $this->readRows($owner, $columns);
+    /**
+     * Reads the complete item keys visible for this owner and observes their membership.
+     *
+     * @param MappedKey|array<string, int|string|\Stringable> $owner
+     * @return list<MappedKey>
+     */
+    public function observeKeysForOwner(MappedKey|array $owner): array
+    {
+        $owner = $this->normalizeOwner($owner);
+        $keys = array_map(
+            static fn(MappedRow $row): MappedKey => $row->key,
+            $this->readRows($owner, $this->adapter->keyColumns()),
+        );
+        $this->expectOwnerKeys($owner, $keys);
+
+        return $keys;
     }
 
     /**
@@ -258,17 +301,20 @@ final class MappedRowSet implements UnitOfWork
         return array_values($rows);
     }
 
-    /** @param list<int|string|MappedKey|\Stringable> $keys */
+    /** @param list<int|string|MappedKey|\Stringable|array<string, int|string|\Stringable>> $keys */
     public function expectSameRowKeys(array $keys): void
     {
         $this->assertLegacyMembership();
         $this->membership->expect(array_map($this->normalizeKey(...), $keys), array_values($this->updates));
     }
 
-    /** @param list<MappedKey> $keys */
-    public function expectSameRowKeysForOwner(MappedKey $owner, array $keys): void
+    /**
+     * @param MappedKey|array<string, int|string|\Stringable> $owner
+     * @param list<MappedKey|array<string, int|string|\Stringable>> $keys
+     */
+    public function expectSameRowKeysForOwner(MappedKey|array $owner, array $keys): void
     {
-        $membership = $this->collection($owner);
+        $owner = $this->normalizeOwner($owner);
         $expected = [];
         foreach ($keys as $key) {
             $key = $this->normalizeKey($key);
@@ -277,11 +323,18 @@ final class MappedRowSet implements UnitOfWork
             }
             $expected[] = $key;
         }
+        $this->expectOwnerKeys($owner, $expected);
+    }
+
+    /** @param list<MappedKey> $keys */
+    private function expectOwnerKeys(MappedKey $owner, array $keys): void
+    {
+        $membership = $this->collection($owner);
         $updates = array_values(array_filter(
             $this->updates,
             static fn(BufferedRowUpdate $update): bool => $update->key->matches($owner),
         ));
-        $membership->expect($expected, $updates);
+        $membership->expect($keys, $updates);
         $this->collections[$owner->fingerprint()] = $membership;
     }
 
@@ -340,6 +393,7 @@ final class MappedRowSet implements UnitOfWork
 
     public function clear(): void
     {
+        ++$this->generation;
         $this->updates = [];
         $this->membership = new BufferedRowMembership();
         $this->collections = [];
@@ -352,19 +406,28 @@ final class MappedRowSet implements UnitOfWork
         }
     }
 
-    private function assertOwner(MappedKey $owner): void
+    private function assertHandleGeneration(int $generation): void
+    {
+        if ($generation !== $this->generation) {
+            throw new \LogicException('Obtain a new row handle after flushing or clearing the buffer.');
+        }
+    }
+
+    /** @param MappedKey|array<string, int|string|\Stringable> $owner */
+    private function normalizeOwner(MappedKey|array $owner): MappedKey
     {
         if (null === $this->mapping) {
             throw new \LogicException('Owner collections require a mapped row set definition.');
         }
 
-        $this->mapping->assertOwner($owner);
+        $key = $owner instanceof MappedKey ? $owner : new MappedKey($owner);
+        $this->mapping->assertOwner($key);
+
+        return $key;
     }
 
     private function collection(MappedKey $owner): BufferedRowMembership
     {
-        $this->assertOwner($owner);
-
         return $this->collections[$owner->fingerprint()] ?? new BufferedRowMembership($owner);
     }
 
@@ -425,16 +488,21 @@ final class MappedRowSet implements UnitOfWork
         return $includeKeys ? $this->mapping->columnNames : $this->mapping->nonKeyColumns;
     }
 
-    private function normalizeKey(int|string|MappedKey|\Stringable $key): MappedKey
+    /** @param int|string|MappedKey|\Stringable|array<string, int|string|\Stringable> $key */
+    private function normalizeKey(int|string|MappedKey|\Stringable|array $key): MappedKey
     {
         $keyColumns = $this->mapping->keyColumns ?? $this->adapter->keyColumns();
         $scope = null === $this->mapping ? $this->adapter->scope() : null;
 
-        if (!$key instanceof MappedKey) {
-            $unboundColumns = array_values(array_filter(
-                $keyColumns,
-                static fn(string $column): bool => null === $scope || !$scope->contains($column),
-            ));
+        if (is_array($key)) {
+            $key = new MappedKey($key);
+        } elseif (!$key instanceof MappedKey) {
+            $unboundColumns = null === $scope
+                ? $keyColumns
+                : array_values(array_filter(
+                    $keyColumns,
+                    static fn(string $column): bool => !$scope->contains($column),
+                ));
             if (1 !== count($unboundColumns)) {
                 throw new \InvalidArgumentException(sprintf('A scalar key cannot address row-set key columns [%s].', implode(
                     ', ',

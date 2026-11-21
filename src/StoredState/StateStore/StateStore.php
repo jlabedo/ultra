@@ -28,9 +28,9 @@ final readonly class StateStore
         $this->assertIdentifierType($metadata, $id);
         $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
         $key = $metadata->keyFromNormalizedId($normalizedId);
-        $row = $this->tableRegistry->tableFor($metadata)->row($key, $metadata->selectedColumns());
+        $row = $this->tableRegistry->tableFor($metadata)->withKey($key)->get($metadata->selectedColumns());
 
-        if (false === $row) {
+        if (null === $row) {
             return null;
         }
 
@@ -76,10 +76,7 @@ final readonly class StateStore
         $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
         $key = $metadata->keyFromNormalizedId($normalizedId);
 
-        return false !== $this->tableRegistry->tableFor($metadata)->row(
-            $key,
-            array_values($metadata->idPropertyColumns),
-        );
+        return null !== $this->tableRegistry->tableFor($metadata)->withKey($key)->get([]);
     }
 
     /**
@@ -95,17 +92,7 @@ final readonly class StateStore
         $this->assertIdentifierType($metadata, $id);
         $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
         $key = $metadata->keyFromNormalizedId($normalizedId);
-        $table = $this->tableRegistry->tableFor($metadata);
-        $exists = false !== $table->row($key, array_values($metadata->idPropertyColumns));
-        $expectation = $table->withKey($key);
-        if ($exists) {
-            $expectation->expectPresent();
-
-            return true;
-        }
-        $expectation->expectAbsent();
-
-        return $exists;
+        return null !== $this->tableRegistry->tableFor($metadata)->withKey($key)->observe([]);
     }
 
     public function save(object $state): void

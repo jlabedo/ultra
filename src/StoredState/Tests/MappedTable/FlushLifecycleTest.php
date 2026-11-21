@@ -51,6 +51,36 @@ final class FlushLifecycleTest extends RowSetTestCase
         static::assertFalse($rows->hasPendingChanges());
     }
 
+    public function test_key_only_observation_reads_once_and_flushes_an_absence_check(): void
+    {
+        $adapter = new RecordingRowSetAdapter();
+        $rows = new MappedRowSet($adapter);
+        $row = $rows->withKey(['id' => 'missing']);
+        static::assertSame(0, $adapter->reads);
+        static::assertFalse($rows->hasPendingChanges());
+
+        static::assertNull($row->observe([]));
+        static::assertSame([['id']], $adapter->rowProjections);
+        static::assertTrue($rows->hasPendingChanges());
+        $rows->flush();
+        static::assertSame(RowUpdatePlan::EXPECTED_ABSENT, $adapter->batches[0]->rowUpdates[0]->expectedPresence);
+        static::assertFalse($rows->hasPendingChanges());
+    }
+
+    public function test_old_handles_cannot_begin_new_work_after_clear(): void
+    {
+        $rows = $this->fixture()->rows;
+        $row = $rows->withKey('row');
+        $rows->clear();
+
+        $this->expectException(\LogicException::class);
+        try {
+            $row->insert();
+        } finally {
+            static::assertFalse($rows->hasPendingChanges());
+        }
+    }
+
     #[DataProvider('backends')]
     public function test_successive_flushes_consume_writes_membership_and_expectations(string $backend): void
     {
@@ -64,7 +94,7 @@ final class FlushLifecycleTest extends RowSetTestCase
         $rows->flush();
         static::assertTrue($fixture->storage->isTransactionActive());
         static::assertFalse($rows->hasPendingChanges());
-        static::assertSame(['status' => 'new'], $rows->row('first', ['status']));
+        static::assertSame(['status' => 'new'], $rows->withKey('first')->get(['status']));
         // A second flush must neither replay the insert nor reconcile away a later row.
         $fixture->seed(['id' => 'later', 'status' => 'untouched']);
         $rows->flush();
@@ -74,7 +104,7 @@ final class FlushLifecycleTest extends RowSetTestCase
         $rows->flush();
         $rows->flush();
         static::assertFalse($rows->hasPendingChanges());
-        static::assertSame(['status' => 'changed'], $rows->row('first', ['status']));
+        static::assertSame(['status' => 'changed'], $rows->withKey('first')->get(['status']));
         $fixture->storage->rollBack();
         static::assertFalse($fixture->stored('first'));
         static::assertFalse($fixture->stored('later'));
@@ -123,7 +153,7 @@ final class FlushLifecycleTest extends RowSetTestCase
         static::assertSame([], $rows->rows());
         $rows->clear();
         static::assertFalse($rows->hasPendingChanges());
-        static::assertSame(['status' => 'pending'], $rows->row('existing', ['status']));
+        static::assertSame(['status' => 'pending'], $rows->withKey('existing')->get(['status']));
         $fixture->seed(['id' => 'existing', 'status' => 'concurrent']);
         $fixture->seed(['id' => 'added', 'status' => 'other']);
         $fixture->flush();

@@ -63,13 +63,15 @@ column names. They leave at least one further key column for the item. Table rea
 writes by complete row key all use the same buffer.
 
 ```php
-$owner = new MappedKey(['order_id' => 'o-42']);
-$current = $lines->rowsForOwner($owner, ['sku']);
-$lines->expectSameRowKeysForOwner($owner, array_column($current, 'key'));
+$owner = ['order_id' => 'o-42'];
+$keys = $lines->observeKeysForOwner($owner);
 $lines->reconcileForOwner($owner, []);
 ```
 
-Membership compares keys. Use line-level expectations for decisions about item values. An empty expectation
+`observeKeysForOwner()` reads only the complete item keys from the unit-of-work view, returns them as
+`MappedKey` objects and records the membership observation. Use `expectSameRowKeysForOwner()` to register
+keys already known to the caller. Both owner and item keys accept associative column maps. Use line-level
+observations to protect decisions about item values. An empty expectation
 checks that a collection is empty. An empty reconciliation requests a cleanup even when no rows were buffered.
 Repeated observations and later reconciliations preserve the first committed membership expectation. A later
 reconciliation replaces the previous desired membership of that owner and discards superseded writes to
@@ -113,10 +115,36 @@ fails partway, the caller rolls back and clears the pending buffers. The transac
 For low-level standalone row sets without a coordinator, adapters check membership, apply their own row
 mutations and then clean up reconciliations within the caller's transaction.
 
+## Reading and observing rows
+
+`withKey()` addresses one row. It prepares no work until a caller registers an expectation or a mutation.
+Use a scalar `int`, `string` or `Stringable` when exactly one key column remains unbound. Associative
+arrays and `MappedKey` objects supply the complete key by column name. Their values can be integers,
+strings or `Stringable` objects. A `MappedRow` accepts an associative key when constructed and exposes
+its normalized key as a `MappedKey`.
+
+```php
+$line = $lines->withKey(['order_id' => 'o-42', 'line_id' => 'l-7']);
+$sku = $line->get(['sku']);
+$observed = $line->observe(['sku']);
+```
+
+Both methods return `null` when the row is absent. An omitted projection selects all columns, and an
+empty list selects only the complete key. A non-empty list selects the named columns. Both methods
+see buffered writes and deletions. They omit values that are unknown in this view, such as an unset
+column of a pending insert. A known `null` is returned as a column value. A present row with no known
+values in the projection returns an empty array.
+
+`get()` only reads. `observe()` performs the same read once and observes presence or absence.
+It adds value expectations only for returned non-key columns read from storage, including a stored
+`null`. Buffered column values leave existing storage expectations in place. Use `observe([])` to
+depend on existence alone.
+
+Use a fresh handle after the buffer is flushed or cleared.
+
 ## Standalone adapter API
 
-Direct construction without a mapping continues to support adapters with a fixed scope. The following
-examples use that assembly.
+Direct construction without a mapping also supports adapters with a fixed scope.
 
 ```php
 use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
@@ -132,41 +160,15 @@ $table->withKey('user-1')
     ->setColumn('status', 'active');
 ```
 
-`withKey(...)` returns a fluent `PendingRowUpdate` handle for one row in the table. An `int`, `string` or
-`Stringable` object is accepted when exactly one key column remains unbound. `row(...)` and
-`expectSameRowKeys(...)` accept the same key forms. Composite rows use `MappedKey`, whose column values
-also accept `int`, `string` or `Stringable`. Stringable values are converted to strings when the `MappedKey`
-is constructed; its stored values remain `int|string`. A `MappedKey` passed directly keeps its named columns.
-Obtain a new `withKey()` handle after a successful flush or `clear()`; earlier handles refer to discarded buffers.
-
-```php
-$table->withKey($userId)->setColumn('status', 'active'); // $userId implements Stringable.
-```
-
-For composite keys:
-
-```php
-use Ultra\MappedTable\MappedKey;
-
-$key = new MappedKey([
-    'identity_id' => 'identity-1',
-    'terms_id' => 'terms-2026',
-]);
-
-$table->withKey($key)->insert();
-```
-
 `withKey($key)->delete()` buffers a conditional deletion, retaining existing column and presence expectations.
 Without a prior absence expectation, the row must still exist at flush. Deleting an expected-absent row only
 checks absence; a buffered insertion for that key is cancelled, and a competing creation still causes a conflict.
-
-`row(...)` reads the current row through the adapter and overlays any buffered in-memory mutations for the same id, so callers can observe pending state before `flush()`.
 
 `rows(...)` returns a list of `MappedRow` objects containing a structured `MappedKey` and the projected columns. It overlays buffered mutations. `expectSameRowKeys(...)` buffers an optimistic expectation that the row-key set has not changed before `flush()`.
 
 `reconcileRows(iterable $rows)` accepts desired `MappedRow` values, upserts their supplied columns and deletes
 rows missing from that set within the adapter's scope at flush. Preparing reconciliation does not read storage.
-The desired membership is reflected immediately in `row()` and `rows()`, alongside buffered column changes.
+The desired membership is reflected immediately in `withKey()->get()` and `rows()`, alongside buffered column changes.
 An empty set clears the scope; successive calls supersede earlier membership and discard writes to removed rows.
 Unspecified columns on retained rows and existing optimistic expectations are preserved. Repeated keys merge their supplied columns in input order, with the last supplied
 value winning. Reconciliation does not register new optimistic expectations. Without prior expectations, it
@@ -177,7 +179,7 @@ row writes can add or remove keys from the reconciled set. `clear()` discards th
 
 ### Expectations and the unit-of-work view
 
-`row(...)` and `rows(...)` return the unit of work's view: committed data with buffered changes applied. Expectations are written against that same view:
+Row reads expose the unit of work's view with buffered changes applied. Expectations address that same view.
 
 - a value, presence or row key decided by a buffered change is checked immediately, and a mismatch throws `ConcurrencyException` right away;
 - the rest comes from storage and becomes a condition checked by the adapter at flush.

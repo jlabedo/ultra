@@ -68,7 +68,7 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
         $rows->withKey('first')->insert()->setColumn($column, $input);
         $fixture->flush();
         $rows->clear();
-        static::assertSame([$column => $expected], $rows->row('first', [$column]));
+        static::assertSame([$column => $expected], $rows->withKey('first')->get([$column]));
         static::assertSame([$column => $expected], $rows->rows([$column])[0]->columns);
         $replacement = str_ends_with($type->sqlType, '[]') ? [] : null;
         $rows->withKey('first')->expectColumnValue($column, $expected)->setColumn($column, $replacement);
@@ -76,9 +76,9 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
         $rows->withKey('third')->insert()->setColumn($column, null);
         $fixture->flush();
         $rows->clear();
-        static::assertSame([$column => $replacement], $rows->row('first', [$column]));
-        static::assertSame([$column => $expected], $rows->row('second', [$column]));
-        static::assertSame([$column => null], $rows->row('third', [$column]));
+        static::assertSame([$column => $replacement], $rows->withKey('first')->get([$column]));
+        static::assertSame([$column => $expected], $rows->withKey('second')->get([$column]));
+        static::assertSame([$column => null], $rows->withKey('third')->get([$column]));
         static::assertSame([$column => $expected], $fixture->stored('second', [$column]));
         if ('date' === $kind) {
             static::assertSame(
@@ -102,8 +102,8 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
         $rows->withKey('second')->upsert()->setColumn('tags', ['beta', 'gamma']);
         $fixture->flush();
         $rows->clear();
-        static::assertSame(['tags' => ['alpha']], $rows->row('first', ['tags']));
-        static::assertSame(['tags' => ['beta', 'gamma']], $rows->row('second', ['tags']));
+        static::assertSame(['tags' => ['alpha']], $rows->withKey('first')->get(['tags']));
+        static::assertSame(['tags' => ['beta', 'gamma']], $rows->withKey('second')->get(['tags']));
         $rows->withKey('first')->expectColumnValue('tags', ['stale'])->setColumn('tags', []);
         $this->expectException(ConcurrencyException::class);
         try {

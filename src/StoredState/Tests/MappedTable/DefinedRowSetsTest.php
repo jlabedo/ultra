@@ -171,11 +171,11 @@ final class DefinedRowSetsTest extends RowSetTestCase
             static::assertFalse($unitOfWork->hasPendingChanges());
             static::assertSame(
                 ['tags' => ['one', 'two'], 'aliases' => ['third']],
-                $lines->row($line, ['tags', 'aliases']),
+                $lines->withKey($line)->get(['tags', 'aliases']),
             );
             $lines->withKey($line)->expectColumnValue('tags', ['one', 'two'])->setColumn('tags', ['updated']);
             $fixture->flush($unitOfWork);
-            static::assertSame(['tags' => ['updated']], $lines->row($line, ['tags']));
+            static::assertSame(['tags' => ['updated']], $lines->withKey($line)->get(['tags']));
             $owner = new MappedKey(['owner' => 'one']);
             $lines->expectSameRowKeysForOwner($owner, [$line]);
             $lines->reconcileForOwner($owner, []);
@@ -309,12 +309,12 @@ final class DefinedRowSetsTest extends RowSetTestCase
         [, $rows] = $this->ownedRows('memory');
         $key = new MappedKey(['tenant' => 'one', 'owner' => 'order', 'id' => 'line']);
         $invalid = [
-            static fn() => $rows->row(new MappedKey(['tenant' => 'one', 'owner' => 1, 'id' => 'line'])),
+            static fn() => $rows->withKey(new MappedKey(['tenant' => 'one', 'owner' => 1, 'id' => 'line']))->get(),
             static fn() => $rows->rowsForOwner(new MappedKey(['owner' => 'order'])),
             static fn() => $rows->withKey($key)->setColumn('status', 3),
             static fn() => $rows->withKey($key)->setColumn('owner', 'moved'),
             static fn() => $rows->withKey($key)->expectColumnValue('unknown', 'value'),
-            static fn() => $rows->row($key, ['unknown']),
+            static fn() => $rows->withKey($key)->get(['unknown']),
         ];
         foreach ($invalid as $operation) {
             try {
@@ -326,7 +326,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
         }
 
         $rows->withKey($key)->insert()->setColumn('status', null);
-        static::assertSame(['status' => null], $rows->row($key, ['status']));
+        static::assertSame(['status' => null], $rows->withKey($key)->get(['status']));
     }
 
     #[DataProvider('backends')]
@@ -339,7 +339,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
             new MappedRowSetMapping($fixture->tableName, ['id' => new MappedColumn('string')], ['id']),
         );
         static::assertSame([], $keys->rows()[0]->columns);
-        static::assertSame(['id' => 'line'], $keys->row($key));
+        static::assertSame(['id' => 'line'], $keys->withKey($key)->get());
 
         $rows = $fixture->defined(
             new MappedRowSetMapping(

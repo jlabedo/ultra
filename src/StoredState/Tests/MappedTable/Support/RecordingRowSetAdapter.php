@@ -11,6 +11,10 @@ use Ultra\MappedTable\RowSetUpdatePlan;
 final class RecordingRowSetAdapter implements MappedRowSetAdapter
 {
     public int $reads = 0;
+
+    /** @var list<list<string>> */
+    public array $rowProjections = [];
+
     /** @var list<RowSetUpdatePlan> */
     public array $batches = [];
 
@@ -27,6 +31,7 @@ final class RecordingRowSetAdapter implements MappedRowSetAdapter
     public function row(MappedKey $key, array $columns = []): array|false
     {
         ++$this->reads;
+        $this->rowProjections[] = $columns;
         return false;
     }
 

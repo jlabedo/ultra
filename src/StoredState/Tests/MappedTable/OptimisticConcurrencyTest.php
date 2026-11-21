@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\RowUpdatePlan;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
@@ -65,12 +66,13 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         }
     }
 
-    /** @return iterable<string, array{string, string}> */
+    /** @return iterable<string, array{string, string, bool}> */
     public static function observations(): iterable
     {
         foreach (['memory', 'postgres'] as $backend) {
             foreach (['columns', 'present', 'absent'] as $expectation) {
-                yield $backend . ' ' . $expectation => [$backend, $expectation];
+                yield $backend . ' explicit ' . $expectation => [$backend, $expectation, false];
+                yield $backend . ' read ' . $expectation => [$backend, $expectation, true];
             }
         }
     }
@@ -79,25 +81,36 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
     public function test_observations_without_writes_are_pending_and_reject_storage_changes(
         string $backend,
         string $expectation,
+        bool $observe,
     ): void {
         $fixture = $this->fixture($backend);
         $rows = $fixture->rows;
         if ('absent' !== $expectation) {
             $fixture->seed(['id' => 'row', 'status' => 'pending', 'note' => null]);
         }
-        match ($expectation) {
-            'columns' => $rows->withKey('row')->expectColumnValues(['status' => 'pending', 'note' => null]),
-            'present' => $rows->withKey('row')->expectPresent(),
-            'absent' => $rows->withKey('row')->expectAbsent(),
+        $register = static function () use ($rows, $expectation, $observe): void {
+            $row = $rows->withKey('row');
+            if (!$observe) {
+                match ($expectation) {
+                    'columns' => $row->expectColumnValues(['status' => 'pending', 'note' => null]),
+                    'present' => $row->expectPresent(),
+                    'absent' => $row->expectAbsent(),
+                };
+
+                return;
+            }
+
+            if ('columns' === $expectation) {
+                static::assertSame(['status' => 'pending', 'note' => null], $row->observe(['status', 'note']));
+            } else {
+                static::assertSame('present' === $expectation ? ['id' => 'row'] : null, $row->observe([]));
+            }
         };
+        $register();
         static::assertTrue($rows->hasPendingChanges());
         $fixture->flush();
         static::assertFalse($rows->hasPendingChanges());
-        match ($expectation) {
-            'columns' => $rows->withKey('row')->expectColumnValues(['status' => 'pending', 'note' => null]),
-            'present' => $rows->withKey('row')->expectPresent(),
-            'absent' => $rows->withKey('row')->expectAbsent(),
-        };
+        $register();
         if ('absent' === $expectation) {
             static::assertFalse($fixture->stored('row'));
             $fixture->seed(['id' => 'row', 'status' => 'created']);
@@ -105,13 +118,112 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
             $fixture->seed(['id' => 'row', 'status' => 'value changes are allowed']);
             $fixture->flush();
             static::assertSame(['status' => 'value changes are allowed'], $fixture->stored('row', ['status']));
-            $rows->withKey('row')->expectPresent();
+            $register();
             $fixture->delete('row');
         } else {
             $fixture->seed(['id' => 'row', 'status' => 'concurrent']);
         }
         $this->expectException(ConcurrencyException::class);
         $fixture->flush();
+    }
+
+    #[DataProvider('backends')]
+    public function test_observe_without_a_projection_protects_all_the_read_column_values(string $backend): void
+    {
+        $fixture = $this->fixture($backend);
+        $fixture->seed(['id' => 'row', 'status' => 'pending', 'note' => 'original']);
+        $row = $fixture->rows->withKey(['id' => 'row']);
+        static::assertSame(['status' => 'pending'], $row->observe(['status']));
+        $fixture->seed(['id' => 'row', 'status' => 'pending', 'note' => 'allowed']);
+        $fixture->flush();
+
+        $row = $fixture->rows->withKey('row');
+        static::assertSame($row->get(), $row->observe());
+        $fixture->seed(['id' => 'row', 'status' => 'pending', 'note' => 'conflict']);
+
+        $this->expectException(ConcurrencyException::class);
+        $fixture->flush();
+    }
+
+    #[DataProvider('backends')]
+    public function test_observing_an_unknown_column_keeps_a_blind_upsert(string $backend): void
+    {
+        [$fixture, $rows] = $this->ownedRows($backend);
+        $key = new MappedKey(['tenant' => 'one', 'owner' => 'order', 'id' => 'new']);
+        $row = $rows->withKey($key)->upsert()->setColumn('status', 'draft');
+
+        static::assertSame(['tenant' => 'one', 'owner' => 'order', 'id' => 'new', 'status' => 'draft'], $row->get());
+        static::assertSame([], $row->get(['note']));
+        static::assertSame([], $row->observe(['note']));
+        static::assertSame(['status' => 'draft'], $row->observe(['status', 'note']));
+        $plan = $rows->updatePlan()->rowUpdates[0];
+        static::assertSame(RowUpdatePlan::MODE_UPSERT, $plan->mode);
+        static::assertNull($plan->expectedPresence);
+        static::assertSame([], $plan->expectedColumns);
+
+        $fixture->flush($rows);
+
+        static::assertSame(['status' => 'draft'], $fixture->stored($key, ['status']));
+    }
+
+    #[DataProvider('backends')]
+    public function test_observe_compares_a_stored_null_and_returns_a_buffered_null(string $backend): void
+    {
+        [$fixture, $rows] = $this->ownedRows($backend);
+        $key = new MappedKey(['tenant' => 'one', 'owner' => 'order', 'id' => 'existing']);
+        $fixture->seed([...$key->values, 'status' => 'pending', 'note' => null]);
+        $row = $rows->withKey($key)->upsert()->setColumn('status', null);
+
+        static::assertSame(['status' => null, 'note' => null], $row->get(['status', 'note']));
+        static::assertSame(['status' => null, 'note' => null], $row->observe(['status', 'note']));
+        $plan = $rows->updatePlan()->rowUpdates[0];
+        static::assertSame(RowUpdatePlan::MODE_UPDATE, $plan->mode);
+        static::assertSame(['note' => null], $plan->expectedColumns);
+
+        $fixture->seed([...$key->values, 'status' => 'pending', 'note' => 'concurrent']);
+
+        $this->expectException(ConcurrencyException::class);
+        try {
+            $fixture->flush($rows);
+        } finally {
+            static::assertSame(
+                ['status' => 'pending', 'note' => 'concurrent'],
+                $fixture->stored($key, ['status', 'note']),
+            );
+        }
+    }
+
+    #[DataProvider('backends')]
+    public function test_observing_a_replacement_only_returns_its_known_values(string $backend): void
+    {
+        [$fixture, $rows] = $this->ownedRows($backend);
+        $key = new MappedKey(['tenant' => 'one', 'owner' => 'order', 'id' => 'existing']);
+        $fixture->seed([...$key->values, 'status' => 'pending', 'note' => 'old']);
+        $row = $rows->withKey($key)->delete()->insert()->setColumn('status', 'replacement');
+
+        static::assertSame(['status' => 'replacement'], $row->get(['status', 'note']));
+        static::assertSame(['status' => 'replacement'], $row->observe(['status', 'note']));
+        $plan = $rows->updatePlan()->rowUpdates[0];
+        static::assertSame(RowUpdatePlan::MODE_REPLACE, $plan->mode);
+        static::assertSame(RowUpdatePlan::EXPECTED_PRESENT, $plan->expectedPresence);
+        static::assertSame([], $plan->expectedColumns);
+        $fixture->flush($rows);
+
+        static::assertSame(['status' => 'replacement', 'note' => null], $fixture->stored($key, ['status', 'note']));
+    }
+
+    public function test_failed_multi_column_observation_leaves_previous_expectations_intact(): void
+    {
+        $fixture = $this->fixture();
+        $fixture->seed(['id' => 'row', 'status' => 'pending', 'note' => 'new']);
+        $row = $fixture->rows->withKey('row')->expectColumnValue('note', 'original');
+
+        try {
+            $row->observe(['status', 'note']);
+            static::fail('The previous expectation must be preserved.');
+        } catch (ConcurrencyException) {
+            static::assertSame(['note' => 'original'], $fixture->rows->updatePlan()->rowUpdates[0]->expectedColumns);
+        }
     }
 
     /** @return iterable<string, array{string, string}> */
@@ -133,12 +245,13 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         $fixture->seed(['id' => 'row', 'status' => 'pending', 'note' => null]);
         $rows = $fixture->rows;
         $rows->withKey('row')->expectColumnValue('status', 'pending')->setColumn('status', 'paid');
-        $rows
-            ->withKey('row')
-            ->expectColumnValue('status', 'paid')
-            ->expectColumnValue('note', null)
-            ->setColumn('status', 'shipped')
-            ->upsert();
+        $row = $rows->withKey('row');
+        static::assertSame(['status' => 'paid', 'note' => null], $row->observe(['status', 'note']));
+        static::assertSame(
+            ['status' => 'pending', 'note' => null],
+            $rows->updatePlan()->rowUpdates[0]->expectedColumns,
+        );
+        $row->setColumn('status', 'shipped')->upsert();
         $fixture->flush();
         static::assertSame(['status' => 'shipped', 'note' => null], $fixture->stored('row', ['status', 'note']));
         $rows->clear();
@@ -166,14 +279,11 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         $fixture->seed(['id' => 'deleted', 'status' => 'pending']);
         $rows = $fixture->rows;
         $rows->withKey('created')->expectAbsent()->setColumn('status', 'new');
-        $rows
-            ->withKey('created')
-            ->expectPresent()
-            ->expectColumnValue('status', 'new')
-            ->expectColumnValue('note', null)
-            ->setColumn('note', 'draft');
+        $created = $rows->withKey('created');
+        static::assertSame(['status' => 'new'], $created->observe(['status', 'note']));
+        $created->setColumn('note', 'draft');
         $rows->withKey('deleted')->expectColumnValue('status', 'pending')->delete();
-        $rows->withKey('deleted')->expectAbsent();
+        static::assertNull($rows->withKey('deleted')->observe([]));
         $fixture->flush();
         static::assertSame(['status' => 'new', 'note' => 'draft'], $fixture->stored('created', ['status', 'note']));
         static::assertFalse($fixture->stored('deleted'));
@@ -322,11 +432,11 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         $twoLine = $two->mergedWith(new MappedKey(['id' => 'line']));
         $fixture->seed([...$twoLine->values, 'status' => 'old']);
 
-        $rows->expectSameRowKeysForOwner($one, []);
-        $rows->expectSameRowKeysForOwner($two, [$twoLine]);
-        $rows->reconcileForOwner($one, []);
+        static::assertSame([], $rows->observeKeysForOwner($one->values));
+        static::assertEquals([$twoLine], $rows->observeKeysForOwner($two));
+        $rows->reconcileForOwner($one->values, []);
         $rows->withKey($twoLine)->setColumn('status', 'local');
-        $rows->expectSameRowKeysForOwner($two, [$twoLine]);
+        $rows->expectSameRowKeysForOwner($two->values, [$twoLine->values]);
         $fixture->seed([...$oneLine->values, 'status' => 'concurrent']);
 
         try {
@@ -339,7 +449,7 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         }
 
         $rows->clear();
-        $rows->expectSameRowKeysForOwner($one, [$oneLine]);
+        static::assertEquals([$oneLine], $rows->observeKeysForOwner($one->values));
         $fixture->seed([...$oneLine->values, 'status' => 'value change only']);
         $fixture->flush($rows);
         static::assertFalse($rows->hasPendingChanges());

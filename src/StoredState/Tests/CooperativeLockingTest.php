@@ -422,7 +422,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                     $other->executeStatement("SET LOCAL lock_timeout = '10ms'");
                     $otherRegistry->flush();
                 });
-                self::assertFalse($table->row('anchor'));
+                self::assertNull($table->withKey('anchor')->get());
             } finally {
                 PostgresConnectionSupport::resetSharedConnection($other);
                 $connection->rollBack();

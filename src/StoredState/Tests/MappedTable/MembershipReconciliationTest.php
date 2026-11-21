@@ -30,16 +30,22 @@ final class MembershipReconciliationTest extends RowSetTestCase
             new MappedRow($added, ['status' => 'new']),
         ]);
         $fixture->seed(['owner' => 'one', 'id' => 'late']);
-        static::assertSame(['status' => 'updated', 'note' => 'preserved'], $rows->row('keep', ['status', 'note']));
-        static::assertFalse($rows->row('remove'));
-        static::assertFalse($rows->row('late'));
+        static::assertSame(
+            ['status' => 'updated', 'note' => 'preserved'],
+            $rows->withKey('keep')->get(['status', 'note']),
+        );
+        static::assertNull($rows->withKey('remove')->get());
+        static::assertNull($rows->withKey('late')->get());
         static::assertSame(['added', 'keep'], array_map(static fn($row) => $row->key->value('id'), $rows->rows()));
         static::assertSame(['status' => 'old'], $fixture->stored($keep, ['status']));
         $fixture->flush();
         $rows->clear();
         static::assertCount(2, $rows->rows());
-        static::assertSame(['status' => 'updated', 'note' => 'preserved'], $rows->row('keep', ['status', 'note']));
-        static::assertSame(['status' => 'new'], $rows->row('added', ['status']));
+        static::assertSame(
+            ['status' => 'updated', 'note' => 'preserved'],
+            $rows->withKey('keep')->get(['status', 'note']),
+        );
+        static::assertSame(['status' => 'new'], $rows->withKey('added')->get(['status']));
         static::assertSame(
             ['status' => 'outside'],
             $fixture->stored(new MappedKey(['owner' => 'two', 'id' => 'keep']), ['status']),
@@ -63,8 +69,11 @@ final class MembershipReconciliationTest extends RowSetTestCase
             new MappedRow(new MappedKey(['id' => 'existing']), ['status' => 'first', 'note' => 'preserved']),
             new MappedRow(new MappedKey(['id' => 'existing']), ['status' => 'last']),
         ]);
-        static::assertFalse($rows->row('discarded'));
-        static::assertSame(['status' => 'last', 'note' => 'preserved'], $rows->row('existing', ['status', 'note']));
+        static::assertNull($rows->withKey('discarded')->get());
+        static::assertSame(
+            ['status' => 'last', 'note' => 'preserved'],
+            $rows->withKey('existing')->get(['status', 'note']),
+        );
         $fixture->flush();
         $rows->clear();
         static::assertFalse($fixture->stored('discarded'));
@@ -102,9 +111,9 @@ final class MembershipReconciliationTest extends RowSetTestCase
         $rows->expectSameRowKeys(['removed']);
         $fixture->flush();
         $rows->clear();
-        static::assertSame(['status' => 'restored'], $rows->row('removed', ['status']));
-        static::assertFalse($rows->row('added'));
-        static::assertFalse($rows->row('unseen'));
+        static::assertSame(['status' => 'restored'], $rows->withKey('removed')->get(['status']));
+        static::assertNull($rows->withKey('added')->get());
+        static::assertNull($rows->withKey('unseen')->get());
     }
 
     public function test_explicit_deletions_remove_keys_from_saved_membership(): void
@@ -118,8 +127,8 @@ final class MembershipReconciliationTest extends RowSetTestCase
         $rows->expectSameRowKeys(['added']);
         $fixture->flush();
         $rows->clear();
-        static::assertFalse($rows->row('removed'));
-        static::assertSame(['status' => 'new'], $rows->row('added', ['status']));
+        static::assertNull($rows->withKey('removed')->get());
+        static::assertSame(['status' => 'new'], $rows->withKey('added')->get(['status']));
     }
 
     /** @return iterable<string, array{string, string}> */
@@ -227,7 +236,7 @@ final class MembershipReconciliationTest extends RowSetTestCase
             ]);
             static::fail('A collection only accepts rows of its owner.');
         } catch (\InvalidArgumentException) {
-            static::assertSame(['status' => 'original'], $rows->row($line, ['status']));
+            static::assertSame(['status' => 'original'], $rows->withKey($line)->get(['status']));
             static::assertCount(1, $rows->rows());
         }
     }
