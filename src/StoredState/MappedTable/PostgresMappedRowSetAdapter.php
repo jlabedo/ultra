@@ -7,7 +7,7 @@ namespace Ultra\MappedTable;
 use Doctrine\DBAL\Connection;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
+final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAdapter
 {
     /**
      * @param list<string>                                $configuredKeyColumns
@@ -72,6 +72,20 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
     public function rows(array $columns = []): array
     {
+        return $this->readRows($columns, $this->configuredScope);
+    }
+
+    public function rowsForOwner(MappedKey $owner, array $columns = []): array
+    {
+        return $this->readRows($columns, $owner);
+    }
+
+    /**
+     * @param list<string> $columns
+     * @return list<MappedRow>
+     */
+    private function readRows(array $columns, ?MappedKey $scope): array
+    {
         $selected = [] === $columns ? ['*'] : array_values(array_unique([...$this->keyColumns(), ...$columns]));
         $quoted = '*' === $selected[0] ? ['*'] : array_map($this->connection->quoteSingleIdentifier(...), $selected);
 
@@ -80,10 +94,10 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
                 'SELECT %s FROM %s%s ORDER BY %s',
                 implode(', ', $quoted),
                 $this->connection->quoteSingleIdentifier($this->tableName),
-                $this->scopeWhereSql(),
+                $this->scopeWhereSql($scope),
                 implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $this->keyColumns())),
             ),
-            $this->scopeParams(),
+            $this->scopeParams($scope),
         );
 
         $mapped = [];
@@ -130,6 +144,9 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
         $this->lockAbsentKeys($checks, $writes);
         $this->assertExpectedRowKeys($plan->expectedRowKeys, $plan->ignoredRowKeys);
+        foreach ($plan->ownerCollections as $collection) {
+            $this->assertExpectedRowKeys($collection->expectedRowKeys, $collection->ignoredRowKeys, $collection->owner);
+        }
         $this->checkRows($checks);
 
         foreach ($this->groupConsecutive($writes) as $batch) {
@@ -147,26 +164,22 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
             };
         }
 
-        if (null !== $plan->retainedRowKeys) {
-            $this->deleteRowsOutside($plan->retainedRowKeys);
+        $this->deleteRowsOutside($plan->retainedRowKeys);
+        foreach ($plan->ownerCollections as $collection) {
+            $this->deleteRowsOutside($collection->retainedRowKeys, $collection->owner);
         }
     }
 
-    /** @param list<MappedKey> $keys */
-    private function deleteRowsOutside(array $keys): void
+    /** @param list<MappedKey>|null $keys */
+    private function deleteRowsOutside(?array $keys, ?MappedKey $owner = null): void
     {
-        $where = [];
-        $params = $this->scopeParams();
-        if (null !== $this->configuredScope) {
-            foreach ($this->configuredScope->columns() as $column) {
-                $where[] = sprintf(
-                    '%s = %s',
-                    $this->connection->quoteSingleIdentifier($column),
-                    $this->placeholder($column),
-                );
-            }
+        if (null === $keys) {
+            return;
         }
 
+        $scope = $owner ?? $this->configuredScope;
+        $where = $this->scopeWhereClauses($scope);
+        $params = $this->scopeParams($scope);
         $retained = [];
         foreach ($keys as $key) {
             $this->assertKey($key);
@@ -459,7 +472,7 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
      * @param list<MappedKey>|null $expected
      * @param list<MappedKey>      $ignored
      */
-    private function assertExpectedRowKeys(?array $expected, array $ignored): void
+    private function assertExpectedRowKeys(?array $expected, array $ignored, ?MappedKey $owner = null): void
     {
         if (null === $expected) {
             return;
@@ -473,10 +486,11 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
         $this->connection->executeStatement('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
             $this->tableName,
-            json_encode([$this->keyColumns(), $this->configuredScope?->values], JSON_THROW_ON_ERROR),
+            json_encode([$this->keyColumns(), ($owner ?? $this->configuredScope)?->values], JSON_THROW_ON_ERROR),
         ]);
 
-        $actual = array_map(static fn(MappedRow $row): string => $row->key->fingerprint(), $this->rows());
+        $rows = null === $owner ? $this->rows() : $this->rowsForOwner($owner, $this->keyColumns());
+        $actual = array_map(static fn(MappedRow $row): string => $row->key->fingerprint(), $rows);
         $expected = array_map(static fn(MappedKey $key): string => $key->fingerprint(), $expected);
         $actual = array_values(array_diff($actual, array_map(
             static fn(MappedKey $key): string => $key->fingerprint(),
@@ -639,28 +653,27 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         ), $this->keyColumns());
     }
 
-    private function scopeWhereSql(): string
+    private function scopeWhereSql(?MappedKey $scope): string
     {
-        if (null === $this->configuredScope) {
-            return '';
-        }
+        return null === $scope ? '' : ' WHERE ' . implode(' AND ', $this->scopeWhereClauses($scope));
+    }
 
-        return ' WHERE '
-        . implode(' AND ', array_map(fn(string $column): string => sprintf(
+    /** @return list<string> */
+    private function scopeWhereClauses(?MappedKey $scope): array
+    {
+        return array_map(fn(string $column): string => sprintf(
             '%s = %s',
             $this->connection->quoteSingleIdentifier($column),
             $this->placeholder($column),
-        ), $this->configuredScope->columns()));
+        ), $scope?->columns() ?? []);
     }
 
     /** @return list<mixed> */
-    private function scopeParams(): array
+    private function scopeParams(?MappedKey $scope): array
     {
-        if (null === $this->configuredScope) {
+        if (null === $scope) {
             return [];
         }
-
-        $scope = $this->configuredScope;
 
         return array_map(fn(string $column): mixed => $this->encodeColumnValue(
             $column,

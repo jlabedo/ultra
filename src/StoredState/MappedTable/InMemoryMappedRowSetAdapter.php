@@ -6,7 +6,7 @@ namespace Ultra\MappedTable;
 
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
+final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAdapter
 {
     /**
      * @param list<string> $configuredKeyColumns
@@ -46,6 +46,11 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
         return $this->database->rowsByKey($this->tableName, $this->keyColumns(), $columns, $this->configuredScope);
     }
 
+    public function rowsForOwner(MappedKey $owner, array $columns = []): array
+    {
+        return $this->database->rowsByKey($this->tableName, $this->keyColumns(), $columns, $owner);
+    }
+
     public function apply(RowSetUpdatePlan $plan): void
     {
         $this->policy->assertSupported($plan, $this->tableName);
@@ -55,6 +60,9 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
         }
 
         $this->assertExpectedRowKeys($plan->expectedRowKeys, $plan->ignoredRowKeys);
+        foreach ($plan->ownerCollections as $collection) {
+            $this->assertExpectedRowKeys($collection->expectedRowKeys, $collection->ignoredRowKeys, $collection->owner);
+        }
 
         foreach ($plan->rowUpdates as $update) {
             if ($update->writes()) {
@@ -79,19 +87,31 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
             };
         }
 
-        if (null !== $plan->retainedRowKeys) {
-            $retained = [];
-            foreach ($plan->retainedRowKeys as $key) {
-                $this->assertKey($key);
-                $retained[$key->fingerprint()] = true;
-            }
-            foreach ($this->rows() as $row) {
-                if (isset($retained[$row->key->fingerprint()])) {
-                    continue;
-                }
+        $this->deleteRowsOutside($plan->retainedRowKeys);
+        foreach ($plan->ownerCollections as $collection) {
+            $this->deleteRowsOutside($collection->retainedRowKeys, $collection->owner);
+        }
+    }
 
-                $this->database->deleteRowByKey($this->tableName, $row->key);
+    /** @param list<MappedKey>|null $keys */
+    private function deleteRowsOutside(?array $keys, ?MappedKey $owner = null): void
+    {
+        if (null === $keys) {
+            return;
+        }
+
+        $retained = [];
+        foreach ($keys as $key) {
+            $this->assertKey($key);
+            $retained[$key->fingerprint()] = true;
+        }
+        $rows = null === $owner ? $this->rows() : $this->rowsForOwner($owner, $this->keyColumns());
+        foreach ($rows as $row) {
+            if (isset($retained[$row->key->fingerprint()])) {
+                continue;
             }
+
+            $this->database->deleteRowByKey($this->tableName, $row->key);
         }
     }
 
@@ -99,13 +119,14 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
      * @param list<MappedKey>|null $expected
      * @param list<MappedKey>      $ignored
      */
-    private function assertExpectedRowKeys(?array $expected, array $ignored): void
+    private function assertExpectedRowKeys(?array $expected, array $ignored, ?MappedKey $owner = null): void
     {
         if (null === $expected) {
             return;
         }
 
-        $actual = array_map(static fn(MappedRow $row): string => $row->key->fingerprint(), $this->rows());
+        $rows = null === $owner ? $this->rows() : $this->rowsForOwner($owner, $this->keyColumns());
+        $actual = array_map(static fn(MappedRow $row): string => $row->key->fingerprint(), $rows);
         $expected = array_map(static fn(MappedKey $key): string => $key->fingerprint(), $expected);
         $actual = array_values(array_diff($actual, array_map(
             static fn(MappedKey $key): string => $key->fingerprint(),
@@ -178,7 +199,7 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
         }
 
         foreach ($update->expectedColumns as $column => $value) {
-            if (!array_key_exists($column, $row) || $row[$column] !== $value) {
+            if (($row[$column] ?? null) !== $value) {
                 throw $this->concurrency($message, $update);
             }
         }

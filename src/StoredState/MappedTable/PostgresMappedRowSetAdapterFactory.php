@@ -18,13 +18,17 @@ final readonly class PostgresMappedRowSetAdapterFactory implements MappedRowSetA
         private array $tablePolicies = [],
     ) {}
 
-    public function create(string $tableName, array $keyColumns = ['id']): MappedRowSetAdapter
+    /**
+     * @param list<string> $keyColumns
+     * @param array<string, PostgresMappedColumnType> $columnTypes
+     */
+    public function create(string $tableName, array $keyColumns = ['id'], array $columnTypes = []): MappedRowSetAdapter
     {
         return new PostgresMappedRowSetAdapter(
             $this->connection,
             $tableName,
             $keyColumns,
-            $this->columnTypesByTable[$tableName] ?? [],
+            [...($this->columnTypesByTable[$tableName] ?? []), ...$columnTypes],
             policy: $this->tablePolicies[$tableName] ?? new MappedTablePolicy(),
         );
     }

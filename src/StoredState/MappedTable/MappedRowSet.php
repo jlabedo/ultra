@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\UnitOfWork;
 
 /**
@@ -15,70 +14,130 @@ final class MappedRowSet implements UnitOfWork
     /** @var array<string, BufferedRowUpdate> */
     private array $updates = [];
 
-    /** @var list<MappedKey>|null */
-    private ?array $expectedRowKeys = null;
+    private BufferedRowMembership $membership;
 
-    /** @var list<MappedKey> */
-    private array $ignoredRowKeys = [];
-
-    /** @var array<string, MappedKey>|null */
-    private ?array $reconciledKeys = null;
+    /** @var array<string, BufferedRowMembership> */
+    private array $collections = [];
 
     public function __construct(
         private readonly MappedRowSetAdapter $adapter,
-    ) {}
+        private readonly ?MappedRowSetMapping $mapping = null,
+    ) {
+        if (null !== $mapping && (null !== $adapter->scope() || $mapping->keyColumns !== $adapter->keyColumns())) {
+            throw new \InvalidArgumentException('A defined row set needs an unscoped adapter with the declared key.');
+        }
+        if (null !== $mapping && [] !== $mapping->ownerColumns && !$adapter instanceof OwnerMappedRowSetAdapter) {
+            throw new \InvalidArgumentException('The mapped adapter must support owner collections.');
+        }
+
+        $this->membership = new BufferedRowMembership();
+    }
 
     public function withKey(int|string|MappedKey|\Stringable $key): PendingRowUpdate
     {
         $key = $this->normalizeKey($key);
-        $updateKey = $key->fingerprint();
-        if (!isset($this->updates[$updateKey])) {
+        $fingerprint = $key->fingerprint();
+        if (!isset($this->updates[$fingerprint])) {
             $update = new BufferedRowUpdate($key);
-            $update->removedByReconciliation =
-                null !== $this->reconciledKeys && !isset($this->reconciledKeys[$updateKey]);
-            $this->updates[$updateKey] = $update;
+            $reconciled = $this->membershipFor($key)?->reconciled;
+            $update->removedByReconciliation = null !== $reconciled && !isset($reconciled[$fingerprint]);
+            $this->updates[$fingerprint] = $update;
         }
-        $update = $this->updates[$updateKey];
 
-        return new PendingRowUpdate($update);
+        return new PendingRowUpdate(
+            $this->updates[$fingerprint],
+            $this->mapping->table ?? 'mapped row set',
+            $this->mapping,
+        );
     }
 
-    /**
-     * Upsert the desired keyed rows and delete rows absent from that set in this unit of work's view.
-     * No storage is read here. The adapter removes other rows at flush, after checking existing expectations.
-     * Unspecified columns are preserved on retained rows.
-     *
-     * @param iterable<MappedRow> $rows
-     */
+    /** @param iterable<MappedRow> $rows */
     public function reconcileRows(iterable $rows): void
     {
+        $this->assertLegacyMembership();
+        $this->reconcile($this->membership, $rows);
+    }
+
+    /** @param iterable<MappedRow> $rows */
+    public function reconcileForOwner(MappedKey $owner, iterable $rows): void
+    {
+        $membership = $this->collection($owner);
+        $this->reconcile($membership, $rows);
+        $this->collections[$owner->fingerprint()] = $membership;
+    }
+
+    /** @param iterable<MappedRow> $rows */
+    private function reconcile(BufferedRowMembership $membership, iterable $rows): void
+    {
         $desiredKeys = [];
+        $desiredColumns = [];
         foreach ($rows as $row) {
-            $desiredKeys[$row->key->fingerprint()] = $this->normalizeKey($row->key);
-            $this->withKey($row->key)->upsert()->setColumns($row->columns);
+            $key = $this->normalizeKey($row->key);
+            if (null !== $membership->owner && !$key->matches($membership->owner)) {
+                throw new \InvalidArgumentException('Mapped row key does not belong to the declared owner.');
+            }
+
+            foreach ($row->columns as $column => $value) {
+                $this->mapping?->assertWritableValue($column, $value);
+            }
+            $fingerprint = $key->fingerprint();
+            $desiredKeys[$fingerprint] = $key;
+            $desiredColumns[$fingerprint] = [...($desiredColumns[$fingerprint] ?? []), ...$row->columns];
+        }
+
+        foreach ($desiredKeys as $fingerprint => $key) {
+            $this->withKey($key)->upsert()->setColumns($desiredColumns[$fingerprint]);
         }
 
         foreach ($this->updates as $fingerprint => $update) {
-            if (array_key_exists($fingerprint, $desiredKeys)) {
+            if (isset($desiredKeys[$fingerprint]) || !$this->belongsTo($update->key, $membership->owner)) {
                 continue;
             }
 
-            // Discard superseded writes, but retain expectations on the committed row.
+            // Discard superseded writes, retaining expectations on the committed row.
             $update->mode = null;
             $update->setColumns = [];
             $update->removedByReconciliation = true;
         }
-        $this->reconciledKeys = $desiredKeys;
+        $membership->reconciled = $desiredKeys;
     }
 
     /** An immutable snapshot of the buffered row changes and expectations. */
     public function updatePlan(): RowSetUpdatePlan
     {
+        $plans = $this->sortedPlans();
+        $collections = $this->collections;
+        ksort($collections, SORT_STRING);
+        $ownerPlans = [];
+        $updatesByOwner = [];
+        if ([] !== $collections) {
+            foreach ($this->updates as $update) {
+                $owner = $this->ownerKey($update->key);
+                $updatesByOwner[$owner->fingerprint()][] = $update;
+            }
+        }
+        foreach ($collections as $fingerprint => $collection) {
+            if (!$collection->hasWork() || null === $collection->owner) {
+                continue;
+            }
+
+            $retained = $collection->retained($updatesByOwner[$fingerprint] ?? []);
+            $ownerPlans[] = new OwnerCollectionPlan(
+                $collection->owner,
+                $collection->expected,
+                $collection->ignored,
+                null === $retained ? null : array_values($retained),
+            );
+        }
+
+        $retained = $this->membership->retained($this->updates);
+
         return new RowSetUpdatePlan(
-            $this->expectedRowKeys,
-            $this->sortedPlans(),
-            $this->ignoredRowKeys,
-            $this->retainedRowKeys(),
+            $this->membership->expected,
+            $plans,
+            $this->membership->ignored,
+            null === $retained ? null : array_values($retained),
+            $ownerPlans,
         );
     }
 
@@ -90,132 +149,137 @@ final class MappedRowSet implements UnitOfWork
     public function row(int|string|MappedKey|\Stringable $key, array $columns = []): array|false
     {
         $key = $this->normalizeKey($key);
-        $retainedKeys = $this->retainedRowKeys();
-        if (null !== $retainedKeys && !in_array($key->fingerprint(), $this->keyFingerprints($retainedKeys), true)) {
+        $columns = $this->selectedColumns($columns, includeKeys: true);
+        $update = $this->updates[$key->fingerprint()] ?? null;
+        if (!$this->isVisible($key, $update)) {
             return false;
         }
-        $row = $this->adapter->row($key, $columns);
-        $plan = ($this->updates[$key->fingerprint()] ?? null)?->toPlan();
 
+        $mapping = $this->mapping;
+        $plan = $update?->toPlan();
+        $row = null !== $mapping
+        && in_array($plan?->mode, [RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE], true)
+            ? false
+            : $this->adapter->row($key, $columns);
+        if (false !== $row && null !== $mapping) {
+            $row = $this->projectRow($row, $columns);
+            $mapping->assertValues($row);
+        }
         if (null === $plan || !$plan->writes()) {
             return $row;
         }
 
-        return $this->projectRow($this->applyPlanToRow($row, $plan), $columns);
+        $row = $this->applyPlanToRow($row, $plan);
+        if (false === $row) {
+            return false;
+        }
+
+        return $this->projectRow(null === $mapping ? $row : [...$row, ...$key->values], $columns);
     }
 
     /**
      * @param list<string> $columns
-     *
      * @return list<MappedRow>
      */
     public function rows(array $columns = []): array
     {
+        return $this->readRows(null, $columns);
+    }
+
+    /**
+     * @param list<string> $columns
+     * @return list<MappedRow>
+     */
+    public function rowsForOwner(MappedKey $owner, array $columns = []): array
+    {
+        $this->assertOwner($owner);
+
+        return $this->readRows($owner, $columns);
+    }
+
+    /**
+     * @param list<string> $columns
+     * @return list<MappedRow>
+     */
+    private function readRows(?MappedKey $owner, array $columns): array
+    {
+        $mapping = $this->mapping;
+        $columns = $this->selectedColumns($columns);
+        $selected = [] === $columns && null !== $mapping ? $mapping->keyColumns : $columns;
+        $adapter = $this->adapter;
+        $committed =
+            null !== $owner && $adapter instanceof OwnerMappedRowSetAdapter
+                ? $adapter->rowsForOwner($owner, $selected)
+                : $adapter->rows($selected);
         $rows = [];
-        $retainedKeys = $this->retainedRowKeys();
-        $retained = null === $retainedKeys ? null : array_fill_keys($this->keyFingerprints($retainedKeys), true);
-        foreach ($this->adapter->rows($columns) as $row) {
-            if (!(null === $retained || isset($retained[$row->key->fingerprint()]))) {
+        foreach ($committed as $row) {
+            $fingerprint = $row->key->fingerprint();
+            $update = $this->updates[$fingerprint] ?? null;
+            if (!$this->isVisible($row->key, $update)) {
                 continue;
             }
 
-            $rows[$row->key->fingerprint()] = $row;
+            if (null !== $mapping) {
+                $mapping->assertKey($row->key);
+                if (in_array($update?->mode, [RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE], true)) {
+                    continue;
+                }
+                $values = [] === $columns ? [] : $this->projectRow([...$row->columns, ...$row->key->values], $columns);
+                $mapping->assertValues($values);
+                $row = new MappedRow($row->key, $values);
+            }
+            $rows[$fingerprint] = $row;
         }
 
-        foreach ($this->sortedWritePlans() as $plan) {
-            $fingerprint = $plan->key->fingerprint();
-            $row = $rows[$fingerprint] ?? null;
-            $projected = $this->projectRow($this->applyPlanToRow($row->columns ?? false, $plan), $columns);
+        foreach ($this->sortedPlans($owner) as $plan) {
+            if (!$plan->writes()) {
+                continue;
+            }
 
-            if (false === $projected) {
+            $fingerprint = $plan->key->fingerprint();
+            $existing = $rows[$fingerprint] ?? null;
+            $values = $this->applyPlanToRow($existing->columns ?? false, $plan);
+            if (false === $values) {
                 unset($rows[$fingerprint]);
 
                 continue;
             }
-            $rows[$fingerprint] = new MappedRow($plan->key, $projected);
+
+            if (null !== $mapping) {
+                $values = [] === $columns ? [] : [...$values, ...$plan->key->values];
+            }
+            $rows[$fingerprint] = new MappedRow($plan->key, $this->projectRow($values, $columns));
         }
+        ksort($rows, SORT_STRING);
 
-        $rows = array_values($rows);
-        usort(
-            $rows,
-            static fn(MappedRow $left, MappedRow $right): int => (
-                $left->key->fingerprint() <=> $right->key->fingerprint()
-            ),
-        );
-
-        return $rows;
+        return array_values($rows);
     }
 
-    /**
-     * Expects the row keys this unit of work sees, the ones rows() returns. Keys whose presence is decided by a
-     * buffered write are checked immediately; the other keys must match the committed rows at flush.
-     *
-     * @param list<int|string|MappedKey|\Stringable> $keys
-     */
+    /** @param list<int|string|MappedKey|\Stringable> $keys */
     public function expectSameRowKeys(array $keys): void
     {
-        $expected = array_map($this->normalizeKey(...), $keys);
-        $fingerprints = $this->keyFingerprints($expected);
-        if (count($fingerprints) !== count(array_unique($fingerprints))) {
-            throw new \InvalidArgumentException('Duplicate expected row key.');
-        }
+        $this->assertLegacyMembership();
+        $this->membership->expect(array_map($this->normalizeKey(...), $keys), array_values($this->updates));
+    }
 
-        $retainedKeys = $this->retainedRowKeys();
-        if (null !== $retainedKeys) {
-            $actual = $this->keyFingerprints($retainedKeys);
-            sort($actual, SORT_STRING);
-            sort($fingerprints, SORT_STRING);
-            if ($actual !== $fingerprints) {
-                throw new ConcurrencyException(
-                    'Row-set key expectation differs from the reconciled rows in this unit of work.',
-                );
+    /** @param list<MappedKey> $keys */
+    public function expectSameRowKeysForOwner(MappedKey $owner, array $keys): void
+    {
+        $membership = $this->collection($owner);
+        $expected = [];
+        foreach ($keys as $key) {
+            $key = $this->normalizeKey($key);
+            if (!$key->matches($owner)) {
+                throw new \InvalidArgumentException('Expected mapped row key does not belong to the declared owner.');
             }
-
-            // Reconciliation decides membership locally. Keep any earlier committed expectation unchanged.
-            return;
+            $expected[] = $key;
         }
-
-        $expectedSet = array_fill_keys($fingerprints, true);
-        $written = [];
-        foreach ($this->sortedWritePlans() as $plan) {
-            $written[$plan->key->fingerprint()] = $plan->key;
-            if ((RowUpdatePlan::MODE_DELETE !== $plan->mode) !== isset($expectedSet[$plan->key->fingerprint()])) {
-                throw new ConcurrencyException(
-                    'Row-set key expectation differs from the rows written in this unit of work.',
-                );
-            }
-        }
-
-        $committed = array_values(array_filter(
-            $expected,
-            static fn(MappedKey $key): bool => !isset($written[$key->fingerprint()]),
+        $updates = array_values(array_filter(
+            $this->updates,
+            static fn(BufferedRowUpdate $update): bool => $update->key->matches($owner),
         ));
-        usort(
-            $committed,
-            static fn(MappedKey $left, MappedKey $right): int => $left->fingerprint() <=> $right->fingerprint(),
-        );
-
-        $expectedRowKeys = $this->expectedRowKeys;
-        if (null === $expectedRowKeys) {
-            $this->expectedRowKeys = $committed;
-            $this->ignoredRowKeys = array_values($written);
-
-            return;
-        }
-
-        // Keep the first expectation; the new one must agree with it on rows neither of them ignores.
-        $previousIgnored = array_fill_keys($this->keyFingerprints($this->ignoredRowKeys), true);
-        $previous = array_values(array_filter(
-            $this->keyFingerprints($expectedRowKeys),
-            static fn(string $fingerprint): bool => !isset($written[$fingerprint]),
-        ));
-        $current = array_values(array_filter(
-            $this->keyFingerprints($committed),
-            static fn(string $fingerprint): bool => !isset($previousIgnored[$fingerprint]),
-        ));
-        if ($previous !== $current) {
-            throw new ConcurrencyException('Conflicting row-set key expectations were registered.');
-        }
+        $membership->expect($expected, $updates);
+        $this->collections[$owner->fingerprint()] = $membership;
     }
 
     public function flush(): void
@@ -230,7 +294,7 @@ final class MappedRowSet implements UnitOfWork
 
     public function hasPendingChanges(): bool
     {
-        if (null !== $this->reconciledKeys || null !== $this->expectedRowKeys) {
+        if ($this->membership->hasWork() || [] !== $this->collections) {
             return true;
         }
 
@@ -246,30 +310,90 @@ final class MappedRowSet implements UnitOfWork
     public function clear(): void
     {
         $this->updates = [];
-        $this->expectedRowKeys = null;
-        $this->ignoredRowKeys = [];
-        $this->reconciledKeys = null;
+        $this->membership = new BufferedRowMembership();
+        $this->collections = [];
     }
 
-    /** @return list<MappedKey>|null */
-    private function retainedRowKeys(): ?array
+    private function assertLegacyMembership(): void
     {
-        if (null === $this->reconciledKeys) {
+        if (null !== $this->mapping) {
+            throw new \LogicException('Defined row sets support membership operations only by declared owner.');
+        }
+    }
+
+    private function assertOwner(MappedKey $owner): void
+    {
+        if (null === $this->mapping) {
+            throw new \LogicException('Owner collections require a mapped row set definition.');
+        }
+
+        $this->mapping->assertOwner($owner);
+    }
+
+    private function collection(MappedKey $owner): BufferedRowMembership
+    {
+        $this->assertOwner($owner);
+
+        return $this->collections[$owner->fingerprint()] ?? new BufferedRowMembership($owner);
+    }
+
+    private function membershipFor(MappedKey $key): ?BufferedRowMembership
+    {
+        if (null === $this->mapping) {
+            return $this->membership;
+        }
+        if ([] === $this->mapping->ownerColumns || [] === $this->collections) {
             return null;
         }
 
-        $keys = $this->reconciledKeys;
-        foreach ($this->sortedWritePlans() as $plan) {
-            if (RowUpdatePlan::MODE_DELETE === $plan->mode) {
-                unset($keys[$plan->key->fingerprint()]);
+        return $this->collections[$this->ownerKey($key)->fingerprint()] ?? null;
+    }
 
-                continue;
-            }
-            $keys[$plan->key->fingerprint()] = $plan->key;
+    private function ownerKey(MappedKey $key): MappedKey
+    {
+        assert(null !== $this->mapping, 'An owner key requires a defined row set.');
+
+        return new MappedKey(array_intersect_key($key->values, array_flip($this->mapping->ownerColumns)));
+    }
+
+    private function isVisible(MappedKey $key, ?BufferedRowUpdate $update): bool
+    {
+        if (true === $update?->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update?->mode) {
+            return false;
         }
-        ksort($keys, SORT_STRING);
+        if (null !== $update?->mode) {
+            return true;
+        }
 
-        return array_values($keys);
+        $reconciled = $this->membershipFor($key)?->reconciled;
+
+        return null === $reconciled || isset($reconciled[$key->fingerprint()]);
+    }
+
+    private function belongsTo(MappedKey $key, ?MappedKey $owner): bool
+    {
+        return null === $owner || $key->matches($owner);
+    }
+
+    /**
+     * @param list<string> $columns
+     * @return list<string>
+     */
+    private function selectedColumns(array $columns, bool $includeKeys = false): array
+    {
+        if (null === $this->mapping) {
+            return $columns;
+        }
+        foreach ($columns as $column) {
+            $this->mapping->column($column);
+        }
+        if ([] !== $columns) {
+            return $columns;
+        }
+
+        $columns = array_keys($this->mapping->columns);
+
+        return $includeKeys ? $columns : array_values(array_diff($columns, $this->mapping->keyColumns));
     }
 
     private function normalizeKey(int|string|MappedKey|\Stringable $key): MappedKey
@@ -296,6 +420,7 @@ final class MappedRowSet implements UnitOfWork
         }
 
         $key->assertColumns($keyColumns);
+        $this->mapping?->assertKey($key);
         if (null !== $scope && !$key->matches($scope)) {
             throw new \InvalidArgumentException('Mapped key does not belong to the row-set scope.');
         }
@@ -304,10 +429,14 @@ final class MappedRowSet implements UnitOfWork
     }
 
     /** @return list<RowUpdatePlan> */
-    private function sortedPlans(): array
+    private function sortedPlans(?MappedKey $owner = null): array
     {
         $plans = [];
         foreach ($this->updates as $update) {
+            if (!$this->belongsTo($update->key, $owner)) {
+                continue;
+            }
+
             $plan = $update->toPlan();
             if (null !== $plan) {
                 $plans[] = $plan;
@@ -322,25 +451,6 @@ final class MappedRowSet implements UnitOfWork
         );
 
         return $plans;
-    }
-
-    /**
-     * The plans that change the unit of work's view: check-only plans leave the rows as they are.
-     *
-     * @return list<RowUpdatePlan>
-     */
-    private function sortedWritePlans(): array
-    {
-        return array_values(array_filter($this->sortedPlans(), static fn(RowUpdatePlan $plan): bool => $plan->writes()));
-    }
-
-    /**
-     * @param list<MappedKey> $keys
-     * @return list<string>
-     */
-    private function keyFingerprints(array $keys): array
-    {
-        return array_map(static fn(MappedKey $key): string => $key->fingerprint(), $keys);
     }
 
     /**
@@ -363,14 +473,14 @@ final class MappedRowSet implements UnitOfWork
     }
 
     /**
-     * @param array<string, mixed>|false $row
-     * @param list<string>              $columns
+     * @param array<string, mixed> $row
+     * @param list<string> $columns
      *
-     * @return array<string, mixed>|false
+     * @return array<string, mixed>
      */
-    private function projectRow(array|false $row, array $columns): array|false
+    private function projectRow(array $row, array $columns): array
     {
-        if (false === $row || [] === $columns) {
+        if ([] === $columns) {
             return $row;
         }
 

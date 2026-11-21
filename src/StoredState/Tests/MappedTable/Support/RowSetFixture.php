@@ -10,6 +10,7 @@ use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
+use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
@@ -80,6 +81,11 @@ final class RowSetFixture
                 ? $this->factory->create($this->tableName, $this->keyColumns)
                 : $this->factory->createScoped($this->tableName, $this->keyColumns, $scope),
         );
+    }
+
+    public function defined(MappedRowSetMapping $mapping): MappedRowSet
+    {
+        return new MappedRowSet($this->factory->create($mapping->table, $mapping->keyColumns), $mapping);
     }
 
     /** @param array<string, mixed> $row */

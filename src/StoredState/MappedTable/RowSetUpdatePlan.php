@@ -16,11 +16,13 @@ final readonly class RowSetUpdatePlan
      *                                               expectation was registered
      * @param list<MappedKey>|null $retainedRowKeys null leaves membership unchanged; otherwise remove other rows
      *                                             in the adapter's scope after checks and writes
+     * @param list<OwnerCollectionPlan> $ownerCollections
      */
     public function __construct(
         public ?array $expectedRowKeys,
         public array $rowUpdates,
         public array $ignoredRowKeys = [],
         public ?array $retainedRowKeys = null,
+        public array $ownerCollections = [],
     ) {}
 }

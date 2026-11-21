@@ -311,4 +311,38 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         $this->expectException(ConcurrencyException::class);
         $rows->expectSameRowKeys(['second', 'local']);
     }
+
+    #[DataProvider('backends')]
+    public function test_owner_membership_observations_precede_mutations_and_survive_local_reconciliation(string $backend): void
+    {
+        [$fixture, $rows] = $this->ownedRows($backend);
+        $one = new MappedKey(['tenant' => 'one', 'owner' => 'order']);
+        $two = new MappedKey(['tenant' => 'two', 'owner' => 'order']);
+        $oneLine = $one->mergedWith(new MappedKey(['id' => 'line']));
+        $twoLine = $two->mergedWith(new MappedKey(['id' => 'line']));
+        $fixture->seed([...$twoLine->values, 'status' => 'old']);
+
+        $rows->expectSameRowKeysForOwner($one, []);
+        $rows->expectSameRowKeysForOwner($two, [$twoLine]);
+        $rows->reconcileForOwner($one, []);
+        $rows->withKey($twoLine)->setColumn('status', 'local');
+        $rows->expectSameRowKeysForOwner($two, [$twoLine]);
+        $fixture->seed([...$oneLine->values, 'status' => 'concurrent']);
+
+        try {
+            $fixture->flush($rows);
+            static::fail('Reconciliation must retain the observation of the initially empty collection.');
+        } catch (ConcurrencyException) {
+            static::assertSame(['status' => 'concurrent'], $fixture->stored($oneLine, ['status']));
+            static::assertSame(['status' => 'old'], $fixture->stored($twoLine, ['status']));
+            static::assertTrue($rows->hasPendingChanges());
+        }
+
+        $rows->clear();
+        $rows->expectSameRowKeysForOwner($one, [$oneLine]);
+        $fixture->seed([...$oneLine->values, 'status' => 'value change only']);
+        $fixture->flush($rows);
+        static::assertFalse($rows->hasPendingChanges());
+        static::assertSame(['status' => 'value change only'], $fixture->stored($oneLine, ['status']));
+    }
 }

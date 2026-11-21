@@ -21,7 +21,65 @@ Adapters own:
 - how a storage backend is persisted
 - backend-specific concurrency checks
 
-## Core API
+## Defined row sets and owner collections
+
+A `MappedRowSetDefinition` declares the physical table, its complete key and the columns exposed to callers.
+Each `MappedColumn` declares the PHP representation after decoding and whether it accepts null. The supported
+representations are `int`, `string`, `bool`, `float` and normalized arrays of scalar values, null and nested
+arrays. A key column is a non-null integer or string with a single declared representation. Row writes assign
+only non-key columns. The database still owns defaults and constraints. A value supplied by a database default
+becomes available after persistence.
+
+```php
+final class OrderLinesDefinition implements MappedRowSetDefinition
+{
+    public function mapping(): MappedRowSetMapping
+    {
+        return new MappedRowSetMapping('order_lines', [
+            'order_id' => new MappedColumn('string'),
+            'line_id' => new MappedColumn('string'),
+            'sku' => new MappedColumn('string'),
+        ], ['order_id', 'line_id'], ownerColumns: ['order_id']);
+    }
+}
+```
+
+With Symfony, add `Ultra\MappedTable\Symfony\MappedTableExtension`, register definitions as autoconfigured
+resources and bind `MappedRowSetAdapterFactory` to the application's factory and connection. A definition is
+instantiated without constructor parameters at compilation. Its class name identifies the shared
+`MappedRowSet` service, which can be injected using `#[Autowire(service: OrderLinesDefinition::class)]` on a
+`MappedRowSet` parameter. The extension allows one definition per physical table. With
+`PostgresMappedRowSetAdapterFactory` selected, a definition can also implement
+`PostgresMappedRowSetConfiguration` to supply codecs for its declared columns. For standalone assembly, pass
+the mapping and an adapter for its complete key to `MappedRowSet`.
+
+The owner columns, when present, identify one collection for each complete owner key in the child table's
+column names. They leave at least one further key column for the item. Table reads, reads by owner and direct
+writes by complete row key all use the same buffer.
+
+```php
+$owner = new MappedKey(['order_id' => 'o-42']);
+$current = $lines->rowsForOwner($owner, ['sku']);
+$lines->expectSameRowKeysForOwner($owner, array_column($current, 'key'));
+$lines->reconcileForOwner($owner, []);
+```
+
+Membership compares keys. Use line-level expectations for decisions about item values. An empty expectation
+checks that a collection is empty. An empty reconciliation requests a cleanup even when no rows were buffered.
+Repeated observations and later reconciliations preserve the first committed membership expectation. A later
+reconciliation replaces the previous desired membership of that owner and discards superseded writes to
+excluded items while keeping earlier expectations. Later writes by complete key can retain or remove an item
+from the desired membership, including an unchanged item whose row update becomes a check only.
+A reconciliation validates all supplied rows before modifying the buffer. Different owner keys are disjoint.
+
+During `flush()`, adapters check all pending memberships in the row set before applying its row mutations, then
+delete rows outside each reconciled owner's retained keys. As with the standalone API below, callers provide
+the transaction and enroll the row set in their unit of work as needed.
+
+## Standalone adapter API
+
+Direct construction without a mapping continues to support adapters with a fixed scope. The following
+examples use that assembly.
 
 ```php
 use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
@@ -222,10 +280,11 @@ same scenario exercises the in-memory and Postgres adapters, including their fac
 
 | Guarantee | Suite | Cases |
 | --- | --- | --- |
-| Reads expose the unit-of-work view without changing storage | [BufferedViewTest](../../src/StoredState/Tests/MappedTable/BufferedViewTest.php) | Committed projections and structured rows, overlays of updates/inserts/deletes, check-only observations. |
+| Definitions compile to shared, adapter-backed row sets with a declared representation | [DefinedRowSetsTest](../../src/StoredState/Tests/MappedTable/DefinedRowSetsTest.php) | Dumped container, selected factory, codec selection and column validation. |
+| Reads expose the unit-of-work view without changing storage | [BufferedViewTest](../../src/StoredState/Tests/MappedTable/BufferedViewTest.php) | Committed projections and structured rows, shared owner and direct overlays, check-only observations. |
 | Writes have distinct insert, update, upsert, replacement and deletion semantics | [WriteSemanticsTest](../../src/StoredState/Tests/MappedTable/WriteSemanticsTest.php) | Preservation of unspecified values, conflicts, multiple deletions, replacement expectations, cancellation and merging. |
 | Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/StoredState/Tests/MappedTable/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, final-plan table policies, concurrent insertions/deletions and first-expectation retention. |
-| Saved membership supersedes earlier membership within its scope | [MembershipReconciliationTest](../../src/StoredState/Tests/MappedTable/MembershipReconciliationTest.php) | Late rows, empty and successive sets, duplicate keys, retained columns, earlier expectations and later explicit operations. |
+| Saved membership supersedes earlier membership for its owner or fixed adapter scope | [MembershipReconciliationTest](../../src/StoredState/Tests/MappedTable/MembershipReconciliationTest.php) | Late rows, empty and successive sets, duplicate keys, retained columns, earlier expectations and later explicit operations. |
 | Preparation, flush, clear and transactions retain their separate responsibilities | [FlushLifecycleTest](../../src/StoredState/Tests/MappedTable/FlushLifecycleTest.php) | Preparation without I/O, sorted immutable snapshots, check-only writes, successive flushes consuming completed work, complete cleanup, external rollback and in-memory transaction snapshots. |
 | Keys and scopes address independent rows | [KeyAndScopeIsolationTest](../../src/StoredState/Tests/MappedTable/KeyAndScopeIsolationTest.php) | Composite keys, scalar and Stringable shortcuts, colliding IDs, multiple scope columns and invalid addresses. |
 | Persisted column values survive encoding and decoding | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | Text/UUID/integer arrays, escaping and nulls, JSON, dates, booleans, single and multiple writes and optimistic typed comparisons. |

@@ -63,6 +63,22 @@ final readonly class PostgresMappedColumnType
         return new self('TIMESTAMP(6) WITH TIME ZONE', self::TIMESTAMP);
     }
 
+    /** @internal Reconstitutes a built-in codec from compiled configuration. */
+    public static function fromSqlType(string $sqlType): self
+    {
+        return match ($sqlType) {
+            'TEXT' => self::text(),
+            'TEXT[]' => self::textArray(),
+            'UUID[]' => self::uuidArray(),
+            'INTEGER[]' => self::intArray(),
+            'JSONB' => self::jsonb(),
+            'DATE' => self::date(),
+            'TIMESTAMP(6) WITHOUT TIME ZONE' => self::timestamp(),
+            'TIMESTAMP(6) WITH TIME ZONE' => self::timestampWithTimeZone(),
+            default => throw new \InvalidArgumentException('Unsupported PostgreSQL column type "' . $sqlType . '".'),
+        };
+    }
+
     public function encode(mixed $value): mixed
     {
         if (null === $value) {

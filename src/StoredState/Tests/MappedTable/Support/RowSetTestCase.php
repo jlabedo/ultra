@@ -6,7 +6,10 @@ namespace Ultra\MappedTable\Tests\Support;
 
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\Testing\PostgresConnectionSupport;
 
@@ -49,6 +52,31 @@ abstract class RowSetTestCase extends TestCase
         );
         $this->fixtures[] = $fixture;
         return $fixture;
+    }
+
+    /** @return array{RowSetFixture, MappedRowSet} */
+    protected function ownedRows(string $backend): array
+    {
+        $keys = ['tenant', 'owner', 'id'];
+        $fixture = $this->fixture($backend, $keys);
+
+        return [
+            $fixture,
+            $fixture->defined(
+                new MappedRowSetMapping(
+                    $fixture->tableName,
+                    [
+                        'tenant' => new MappedColumn('string'),
+                        'owner' => new MappedColumn('string'),
+                        'id' => new MappedColumn('string'),
+                        'status' => new MappedColumn('string', nullable: true),
+                        'note' => new MappedColumn('string', nullable: true),
+                    ],
+                    $keys,
+                    ownerColumns: ['tenant', 'owner'],
+                ),
+            ),
+        ];
     }
 
     protected function tearDown(): void

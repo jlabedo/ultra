@@ -6,6 +6,8 @@ namespace Ultra\MappedTable\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 
 /** @internal */
@@ -71,5 +73,44 @@ final class BufferedViewTest extends RowSetTestCase
         static::assertFalse($rows->row('missing'));
         static::assertSame(['present'], array_map(static fn($row) => $row->key->value('id'), $rows->rows()));
         $rows->expectSameRowKeys(['present']);
+    }
+
+    #[DataProvider('backends')]
+    public function test_owner_reads_and_direct_reads_share_the_pending_changes(string $backend): void
+    {
+        [$fixture, $rows] = $this->ownedRows($backend);
+        $one = new MappedKey(['tenant' => 'one', 'owner' => 'order']);
+        $two = new MappedKey(['tenant' => 'two', 'owner' => 'order']);
+        $oneLine = $one->mergedWith(new MappedKey(['id' => 'line']));
+        $twoLine = $two->mergedWith(new MappedKey(['id' => 'line']));
+        $fixture->seed([...$oneLine->values, 'status' => 'old', 'note' => 'kept']);
+        $fixture->seed([...$twoLine->values, 'status' => 'other']);
+
+        $rows->withKey($oneLine)->setColumn('status', 'direct');
+        static::assertSame(['status' => 'direct'], $rows->rowsForOwner($one, ['status'])[0]->columns);
+
+        $newLine = $one->mergedWith(new MappedKey(['id' => 'new']));
+        $rows->reconcileForOwner($one, [new MappedRow($newLine, ['status' => 'from collection'])]);
+        $rows->withKey($newLine)->setColumn('note', 'direct again');
+        static::assertFalse($rows->row($oneLine));
+        static::assertSame(
+            ['status' => 'from collection', 'note' => 'direct again'],
+            $rows->row($newLine, ['status', 'note']),
+        );
+        static::assertSame(
+            [$twoLine->values, $newLine->values],
+            array_map(static fn(MappedRow $row): array => $row->key->values, $rows->rows()),
+        );
+        static::assertSame(['status' => 'other'], $rows->rowsForOwner($two, ['status'])[0]->columns);
+        static::assertSame(['status' => 'old'], $fixture->stored($oneLine, ['status']));
+        static::assertFalse($fixture->stored($newLine, ['status']));
+
+        $fixture->flush($rows);
+        static::assertFalse($fixture->stored($oneLine, ['status']));
+        static::assertSame(
+            ['status' => 'from collection', 'note' => 'direct again'],
+            $fixture->stored($newLine, ['status', 'note']),
+        );
+        static::assertFalse($rows->hasPendingChanges());
     }
 }

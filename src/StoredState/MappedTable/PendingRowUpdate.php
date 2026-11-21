@@ -14,6 +14,7 @@ final readonly class PendingRowUpdate
     public function __construct(
         private BufferedRowUpdate $update,
         private string $tableName = 'mapped row set',
+        private ?MappedRowSetMapping $mapping = null,
     ) {}
 
     public function insert(): self
@@ -137,6 +138,7 @@ final readonly class PendingRowUpdate
         if (RowUpdatePlan::EXPECTED_ABSENT === $this->update->expectedPresence) {
             // Deleting an expected-absent row only checks absence, including a cancelled insertion.
             $this->update->mode = null;
+            $this->update->removedByReconciliation = true;
             $this->update->expectedColumns = [];
             $this->update->setColumns = [];
 
@@ -156,6 +158,15 @@ final readonly class PendingRowUpdate
      */
     public function expectColumnValue(string $column, mixed $value): self
     {
+        $this->mapping?->assertValue($column, $value);
+        if (null !== $this->mapping && $this->update->key->contains($column)) {
+            if ($this->update->key->value($column) !== $value) {
+                throw new ConcurrencyException('Expected key column value differs from the mapped row key.');
+            }
+
+            return $this->expectPresent();
+        }
+
         if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register expected column values for table "%s", row "%s" because it is deleted in this unit of work.',
@@ -224,6 +235,7 @@ final readonly class PendingRowUpdate
 
     public function setColumn(string $column, mixed $value): self
     {
+        $this->mapping?->assertWritableValue($column, $value);
         if ($this->update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $this->update->mode) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register column updates for table "%s", row "%s" because it is already marked for delete.',

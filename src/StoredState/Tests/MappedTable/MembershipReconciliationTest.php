@@ -185,4 +185,75 @@ final class MembershipReconciliationTest extends RowSetTestCase
             $rows->withKey('removed')->expectPresent();
         }
     }
+
+    #[DataProvider('backends')]
+    public function test_reconciling_multiple_owners_keeps_empty_results_and_later_writes_distinct(string $backend): void
+    {
+        [$fixture, $rows] = $this->ownedRows($backend);
+        $one = new MappedKey(['tenant' => 'one', 'owner' => 'order']);
+        $two = new MappedKey(['tenant' => 'two', 'owner' => 'order']);
+        $oneLine = $one->mergedWith(new MappedKey(['id' => 'line']));
+        $twoLine = $two->mergedWith(new MappedKey(['id' => 'line']));
+        $fixture->seed([...$oneLine->values, 'status' => 'old']);
+        $fixture->seed([...$twoLine->values, 'status' => 'old', 'note' => 'kept']);
+
+        $rows->reconcileForOwner($two, []);
+        $rows->reconcileForOwner($one, [new MappedRow($oneLine, ['status' => 'superseded'])]);
+        $rows->reconcileForOwner($one, []);
+        $rows->withKey($twoLine)->upsert()->setColumn('status', 'later');
+        $fixture->seed([...$one->values, 'id' => 'late', 'status' => 'late']);
+
+        $plan = $rows->updatePlan();
+        static::assertSame([], $plan->ownerCollections[0]->retainedRowKeys);
+        static::assertSame([$twoLine], $plan->ownerCollections[1]->retainedRowKeys);
+        static::assertNull($plan->ownerCollections[0]->expectedRowKeys);
+        static::assertSame([], $rows->rowsForOwner($one));
+        $fixture->flush($rows);
+        static::assertSame([], $rows->rowsForOwner($one));
+        static::assertSame(['status' => 'later', 'note' => 'kept'], $fixture->stored($twoLine, ['status', 'note']));
+    }
+
+    public function test_an_invalid_owner_reconciliation_leaves_the_previous_overlay_intact(): void
+    {
+        [, $rows] = $this->ownedRows('memory');
+        $owner = new MappedKey(['tenant' => 'one', 'owner' => 'order']);
+        $line = $owner->mergedWith(new MappedKey(['id' => 'line']));
+        $rows->reconcileForOwner($owner, [new MappedRow($line, ['status' => 'original'])]);
+
+        try {
+            $rows->reconcileForOwner($owner, [
+                new MappedRow($line, ['status' => 'would overwrite']),
+                new MappedRow(new MappedKey(['tenant' => 'other', 'owner' => 'order', 'id' => 'line']), []),
+            ]);
+            static::fail('A collection only accepts rows of its owner.');
+        } catch (\InvalidArgumentException) {
+            static::assertSame(['status' => 'original'], $rows->row($line, ['status']));
+            static::assertCount(1, $rows->rows());
+        }
+    }
+
+    #[DataProvider('backends')]
+    public function test_owner_reconciliation_can_retain_an_unchanged_item_and_cancel_an_insert(string $backend): void
+    {
+        [$fixture, $rows] = $this->ownedRows($backend);
+        $owner = new MappedKey(['tenant' => 'one', 'owner' => 'order']);
+        $kept = $owner->mergedWith(new MappedKey(['id' => 'kept']));
+        $cancelled = $owner->mergedWith(new MappedKey(['id' => 'cancelled']));
+        $fixture->seed([...$kept->values, 'status' => 'old']);
+
+        $rows->withKey($kept)->expectColumnValue('status', 'old');
+        $rows->withKey($cancelled)->expectAbsent();
+        $rows->reconcileForOwner($owner, [new MappedRow($cancelled, ['status' => 'new'])]);
+        $rows->withKey($cancelled)->delete();
+        $rows->withKey($kept)->upsert()->setColumn('status', 'old');
+        $rows->expectSameRowKeysForOwner($owner, [$kept]);
+
+        static::assertSame(
+            [$kept->values],
+            array_map(static fn(MappedRow $row): array => $row->key->values, $rows->rowsForOwner($owner)),
+        );
+        $fixture->flush($rows);
+        static::assertSame(['status' => 'old'], $fixture->stored($kept, ['status']));
+        static::assertFalse($fixture->stored($cancelled, ['status']));
+    }
 }
