@@ -1,5 +1,63 @@
 # Query guards
 
+Query guards protect decisions based on queries over mapped rows. Readers request shared guards. Affected
+writers request exclusive guards for the same name and value. Queries run once during the decision and
+are replayed under the guards inside the flush transaction.
+
+## MappedTable query guards
+
+Declare guards independently from reader services so every coordinated writer participates. The dependency
+names a row set definition, a physical column that supplies the guard value and the physical columns read
+by the query.
+
+```php
+use Ultra\MappedTable\QueryGuard;
+use Ultra\MappedTable\QueryGuardDefinition;
+use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\Symfony\MappedTableExtension;
+
+$extension = new MappedTableExtension([
+    new QueryGuardDefinition('company_usage', [
+        new QueryGuardDependency(BookingsDefinition::class, 'company_id', ['charged', 'duration']),
+        new QueryGuardDependency(BookingLinesDefinition::class, 'company_id'),
+    ]),
+]);
+```
+
+Register the MappedTable `GuardLockAdapter` on the same connection or in-memory database as the row sets.
+Inject the guard using `#[Autowire(service: QueryGuard::class . '.company_usage')]` on a MappedTable
+`QueryGuard` parameter. With standalone assembly, pass the same declarations as `queryGuards` and the
+adapter as `guardLocks` to `MappedTableUnitOfWork`, then call `queryGuard('company_usage')`.
+
+Symfony validates guard names, definitions, columns and the lock adapter registration during compilation.
+It emits dependency indexes by guard name and row set, watched column sets and ordered lock namespaces.
+Each guard value comes from one non-null integer or string column. An omitted column list watches the full
+row and an empty list watches membership and changes to the guard value. Inserting, deleting or replacing
+a row always participates. A move acquires both the old and new guard values. An affected write on a
+non-key value column needs an explicit previous-value expectation for an existing row. A blind upsert with
+such a value is rejected. An explicit insert must supply the value.
+
+Reconciliation, including a request to retain zero items, participates even when it has zero row mutations.
+The owner key must provide the guard value for every dependency affected by that reconciliation. A column
+outside the owner key is usable for direct row writes, with reconciliation rejected for that dependency.
+An observation of membership alone does not request a writer guard.
+
+Call `$guard->observe($value, $query)` before preparing writes affecting that value. It rejects conflicting
+pending changes before invoking the callback, including changes from direct writes against the shared
+row set. `lock($value)` requests a shared guard without reading or recording a query. Callbacks must read
+storage on the flush connection and return repeatable scalars, null or arrays of these values. The coordinator
+compares replay results with `===`. It acquires all guards before replay, consolidating shared and exclusive
+requests for the same name and value to one exclusive lock. It then delegates persistence checks and writes
+to the row-set adapters. PostgreSQL uses the same named advisory-lock protocol as StateStore, independently
+of the adapters' intrinsic locks. Use `READ COMMITTED` for replay to see commits that precede lock acquisition.
+
+Direct SQL, independently flushed row sets and other external writers need to follow the same protocol for
+the invariant to hold. Acquisition is cooperative. The database remains responsible for its constraints.
+The coordinator consumes the guards and query expectations on successful flush. The runner clears pending
+work after rollback or when the decision itself fails.
+
+## StateStore query guards
+
 `QueryGuard` protects decisions based on queries over mapped rows. The developer declares the states, scope
 properties and property or collection dependencies that affect a query. Readers request shared guards; `StateTableRegistry` automatically
 derives exclusive guards for affected writers, including actions that never call the query.

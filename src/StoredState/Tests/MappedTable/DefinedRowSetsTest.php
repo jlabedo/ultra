@@ -12,6 +12,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\MappedTable\GuardLockAdapter;
+use Ultra\MappedTable\InMemoryGuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
@@ -22,9 +24,14 @@ use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
 use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
+use Ultra\MappedTable\QueryGuard;
+use Ultra\MappedTable\QueryGuardDefinition;
+use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\QueryGuardRules;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\UnitOfWork\UnitOfWork;
@@ -65,7 +72,16 @@ final class DefinedRowSetsTest extends RowSetTestCase
 
         try {
             $container = new ContainerBuilder();
-            new MappedTableExtension()->build($container);
+            new MappedTableExtension([
+                new QueryGuardDefinition('lines', [
+                    new QueryGuardDependency(CompileTimeLineDefinition::class, 'owner', ['tags']),
+                    new QueryGuardDependency(CompileTimeLineDefinition::class, 'owner', ['aliases']),
+                ]),
+            ])->build($container);
+            $guardAdapter = $storage instanceof InMemoryRowDatabase
+                ? new InMemoryGuardLockAdapter($storage)
+                : new PostgresGuardLockAdapter($storage);
+            $container->register(GuardLockAdapter::class, $guardAdapter::class)->setSynthetic(true)->setPublic(true);
             new UnitOfWorkExtension()->build($container);
             if ($factoryAtRuntime) {
                 $container
@@ -95,6 +111,15 @@ final class DefinedRowSetsTest extends RowSetTestCase
                 [CompileTimeOrderDefinition::class => true, CompileTimeLineDefinition::class => false],
                 $container->findDefinition('test.coordination')->getArgument(1),
             );
+            $guardRules = $container->findDefinition('test.coordination')->getArgument(2);
+            static::assertInstanceOf(Definition::class, $guardRules);
+            static::assertSame(QueryGuardRules::class, $guardRules->getClass());
+            static::assertSame(['lines' => [CompileTimeLineDefinition::class => [0]]], $guardRules->getArgument(1));
+            static::assertSame([CompileTimeLineDefinition::class => [0]], $guardRules->getArgument(2));
+            static::assertSame(
+                ['owner' => true, 'tags' => true, 'aliases' => true],
+                $guardRules->getArgument(0)[0]->getArgument(4),
+            );
 
             $dumpedClass = 'MappedTableContainer' . bin2hex(random_bytes(8));
             $file = tempnam(sys_get_temp_dir(), 'mapped-table-');
@@ -107,6 +132,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
             }
 
             $compiled = new $dumpedClass();
+            $compiled->set(GuardLockAdapter::class, $guardAdapter);
             if ($factoryAtRuntime) {
                 $compiled->set(MappedRowSetAdapterFactory::class, $factory);
             } else {
@@ -115,6 +141,12 @@ final class DefinedRowSetsTest extends RowSetTestCase
             $lines = $compiled->get('test.lines');
             $writer = $compiled->get(DirectLineWriter::class);
             static::assertSame($lines, $writer->lines);
+            $queries = 0;
+            $writer->guard->observe('one', static function () use (&$queries): int {
+                ++$queries;
+
+                return 0;
+            });
             $line = new MappedKey(['owner' => 'one', 'id' => 'line']);
             $writer
                 ->lines
@@ -135,6 +167,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
             $unitOfWork = $compiled->get('test.unit_of_work');
             static::assertTrue($unitOfWork->hasPendingChanges());
             $fixture->flush($unitOfWork);
+            static::assertSame(2, $queries);
             static::assertFalse($unitOfWork->hasPendingChanges());
             static::assertSame(
                 ['tags' => ['one', 'two'], 'aliases' => ['third']],
@@ -169,6 +202,82 @@ final class DefinedRowSetsTest extends RowSetTestCase
         $container->register(CompileTimeLineDefinition::class)->setAutoconfigured(true);
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('Owner definition "' . CompileTimeOrderDefinition::class . '"');
+        $container->compile();
+    }
+
+    /** @return iterable<string, array{0: list<QueryGuardDefinition>, 1: string, 2?: bool}> */
+    public static function invalidQueryGuards(): iterable
+    {
+        yield 'missing dependency' => [
+            [new QueryGuardDefinition('guard', [
+                new QueryGuardDependency(CompileTimeLineDefinition::class, 'owner'),
+            ])],
+            'watches unknown row set definition',
+        ];
+        yield 'unknown watched column' => [
+            [new QueryGuardDefinition('guard', [
+                new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id', ['unknown']),
+            ])],
+            'Unknown column "unknown"',
+        ];
+        yield 'ambiguous guard name' => [
+            [
+                new QueryGuardDefinition('guard', [new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id')]),
+                new QueryGuardDefinition('guard', [new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id')]),
+            ],
+            'unique, non-empty name',
+        ];
+        yield 'invalid value column' => [
+            [new QueryGuardDefinition('guard', [
+                new QueryGuardDependency(CompileTimeLineDefinition::class, 'tags'),
+            ])],
+            'needs a non-null int or string value column',
+            true,
+        ];
+        yield 'absent lock adapter' => [
+            [new QueryGuardDefinition('guard', [
+                new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id'),
+            ])],
+            'require a GuardLockAdapter',
+        ];
+    }
+
+    #[DataProvider('invalidQueryGuards')]
+    public function test_invalid_query_guards_fail_during_container_compilation(
+        array $guards,
+        string $message,
+        bool $registerLines = false,
+    ): void {
+        $container = new ContainerBuilder();
+        new MappedTableExtension($guards)->build($container);
+        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
+        if ($registerLines) {
+            $container->register(CompileTimeLineDefinition::class)->setAutoconfigured(true);
+        }
+
+        $container
+            ->register(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
+            ->setSynthetic(true);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage($message);
+        $container->compile();
+    }
+
+    public function test_compilation_rejects_incompatible_query_guard_storage(): void
+    {
+        $container = new ContainerBuilder();
+        new MappedTableExtension([new QueryGuardDefinition('guard', [
+            new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id'),
+        ])])->build($container);
+        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
+        $container
+            ->register(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
+            ->setSynthetic(true);
+        $container->register(GuardLockAdapter::class, PostgresGuardLockAdapter::class)->setSynthetic(true);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('must use the same storage backend');
         $container->compile();
     }
 
@@ -302,5 +411,7 @@ final readonly class DirectLineWriter
     public function __construct(
         #[Autowire(service: CompileTimeLineDefinition::class)]
         public MappedRowSet $lines,
+        #[Autowire(service: QueryGuard::class . '.lines')]
+        public QueryGuard $guard,
     ) {}
 }

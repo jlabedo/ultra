@@ -8,6 +8,8 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\MappedTable\GuardLockAdapter;
+use Ultra\MappedTable\InMemoryGuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
@@ -19,10 +21,15 @@ use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableDependencies;
 use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
 use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
 use Ultra\MappedTable\PostgresMappedRowSetSql;
+use Ultra\MappedTable\QueryGuard;
+use Ultra\MappedTable\QueryGuardDefinition;
+use Ultra\MappedTable\QueryGuardRule;
+use Ultra\MappedTable\QueryGuardRules;
 use Ultra\UnitOfWork\TagNames;
 
 /** @internal */
@@ -30,10 +37,19 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
 {
     public const string DEFINITION_TAG = 'ultra.mapped_table.definition';
 
+    /** @param list<QueryGuardDefinition> $queryGuards */
+    public function __construct(
+        private readonly array $queryGuards = [],
+    ) {}
+
     public function process(ContainerBuilder $container): void
     {
         $resources = $container->findTaggedResourceIds(self::DEFINITION_TAG);
         if ([] === $resources) {
+            if ([] !== $this->queryGuards) {
+                QueryGuardRules::compile($this->queryGuards, []);
+            }
+
             return;
         }
 
@@ -111,10 +127,63 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         }
 
         $schedule = MappedTableDependencies::compile($mappings);
-        $container
+        $unitOfWork = $container
             ->register(MappedTableUnitOfWork::class, MappedTableUnitOfWork::class)
             ->setArguments([$rowSets, $schedule])
             ->addTag(TagNames::UNIT_OF_WORK);
+
+        if ([] !== $this->queryGuards) {
+            $this->registerQueryGuards(
+                $container,
+                $unitOfWork,
+                QueryGuardRules::compile($this->queryGuards, $mappings),
+                $factoryClass,
+            );
+        }
+    }
+
+    private function registerQueryGuards(
+        ContainerBuilder $container,
+        Definition $unitOfWork,
+        QueryGuardRules $rules,
+        ?string $rowSetFactoryClass,
+    ): void {
+        if (!$container->has(GuardLockAdapter::class)) {
+            throw new \LogicException('Compiled mapped query guards require a GuardLockAdapter.');
+        }
+
+        $guardAdapterClass = $container->findDefinition(GuardLockAdapter::class)->getClass();
+        $incompatible = match ($rowSetFactoryClass) {
+            InMemoryMappedRowSetAdapterFactory::class => PostgresGuardLockAdapter::class,
+            PostgresMappedRowSetAdapterFactory::class => InMemoryGuardLockAdapter::class,
+            default => null,
+        };
+        if (null !== $incompatible && $incompatible === $guardAdapterClass) {
+            throw new \LogicException('Mapped row sets and query guards must use the same storage backend.');
+        }
+
+        $unitOfWork->addArgument(new Definition(QueryGuardRules::class, [
+            array_map(
+                static fn(QueryGuardRule $rule): Definition => new Definition(QueryGuardRule::class, [
+                    $rule->name,
+                    $rule->valueColumn,
+                    $rule->valueInKey,
+                    $rule->valueInOwner,
+                    $rule->watchedColumns,
+                ]),
+                $rules->rules,
+            ),
+            $rules->byName,
+            $rules->byRowSet,
+            $rules->namespaces,
+        ]));
+        $unitOfWork->addArgument(new Reference(GuardLockAdapter::class));
+
+        foreach (array_keys($rules->namespaces) as $name) {
+            $container
+                ->register(QueryGuard::class . '.' . $name, QueryGuard::class)
+                ->setArguments([new Reference(MappedTableUnitOfWork::class), (string) $name]);
+        }
     }
 
     private function postgresAdapter(

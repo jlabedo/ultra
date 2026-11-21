@@ -276,9 +276,10 @@ advisory locks. SQL constraints, affected-row checks, present-row locks, row-set
 transactions remain in force.
 
 `MappedRowSet` buffers row mutations and optimistic expectations. `updatePlan()` exposes an immutable snapshot
-for inspection; `flush()` applies its own plan through the adapter. Cooperative decision guards and query replay
-belong to `StateStore`'s coordinating unit of work and its dedicated guard adapter. They are acquired before the
-mapped row sets are flushed. The persistence locks described above stay local to each mapped adapter.
+for inspection. Defined row sets in a coordinated unit of work can participate in
+[compiled query guards](query-guards.md#mappedtable-query-guards). The coordinator acquires these guards and
+replays the recorded queries before checking and applying the writes. The persistence locks described above
+stay local to each mapped adapter.
 
 ### Column types
 
@@ -322,6 +323,7 @@ same scenario exercises the in-memory and Postgres adapters, including their fac
 | Writes have distinct insert, update, upsert, replacement and deletion semantics | [WriteSemanticsTest](../../src/StoredState/Tests/MappedTable/WriteSemanticsTest.php) | Preservation of unspecified values, conflicts, multiple deletions, replacement expectations, cancellation and merging. |
 | Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/StoredState/Tests/MappedTable/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, final-plan table policies, concurrent insertions/deletions and first-expectation retention. |
 | Saved membership supersedes earlier membership for its owner or fixed adapter scope | [MembershipReconciliationTest](../../src/StoredState/Tests/MappedTable/MembershipReconciliationTest.php) | Late rows, empty and successive sets, duplicate keys, retained columns, earlier expectations and later explicit operations. |
+| Declared query guards protect decisions against affected coordinated writes | [QueryGuardTest](../../src/StoredState/Tests/MappedTable/QueryGuardTest.php) | Direct writes, scope moves, empty reconciliations, consolidation, strict replay and PostgreSQL participation. |
 | Coordinated flush orders explicit child deletions and parent creation atomically | [FlushCoordinationTest](../../src/StoredState/Tests/MappedTable/FlushCoordinationTest.php) | Composite owner keys, immediate foreign keys, checks before writes, rollback and reuse, one active transaction. |
 | Preparation, flush, clear and transactions retain their separate responsibilities | [FlushLifecycleTest](../../src/StoredState/Tests/MappedTable/FlushLifecycleTest.php) | Preparation without I/O, sorted immutable snapshots, check-only writes, successive flushes consuming completed work, complete cleanup, external rollback and in-memory transaction snapshots. |
 | Keys and scopes address independent rows | [KeyAndScopeIsolationTest](../../src/StoredState/Tests/MappedTable/KeyAndScopeIsolationTest.php) | Composite keys, scalar and Stringable shortcuts, colliding IDs, multiple scope columns and invalid addresses. |
