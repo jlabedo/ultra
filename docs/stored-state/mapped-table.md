@@ -4,7 +4,8 @@ Adapter-backed row-set unit of work for explicitly buffered row operations.
 
 ## Purpose
 
-`Ultra\MappedTable\MappedRowSet` buffers row-level changes and flushes them later through a storage adapter.
+`Ultra\MappedTable\MappedRowSet` buffers row-level changes. `MappedTableUnitOfWork` flushes all of its
+row sets through one adapter bound to a single storage resource.
 
 The core package owns:
 
@@ -45,18 +46,17 @@ final class OrderLinesDefinition implements MappedRowSetDefinition
 ```
 
 With Symfony, add `Ultra\MappedTable\Symfony\MappedTableExtension`, register definitions as autoconfigured
-resources and bind `MappedRowSetAdapterFactory` to the application's factory and connection. A definition is
-instantiated without constructor parameters at compilation. Its class name identifies the shared
+resources and bind `MappedTableAdapter` to a shared service for the application's storage resource. Symfony
+instantiates each definition without constructor parameters at compilation. Its class name identifies the shared
 `MappedRowSet` service, which can be injected using `#[Autowire(service: OrderLinesDefinition::class)]` on a
 `MappedRowSet` parameter. The extension allows one definition per physical table. It compiles key and owner
 columns, their lookup sets and the default read projections. The dumped container uses those validated values.
 
-With `PostgresMappedRowSetAdapterFactory` selected, `PostgresMappedRowSetConfiguration` supplies codecs for the
-definition's columns and takes precedence over factory defaults. Symfony resolves defaults declared using the
+With `PostgresMappedTableAdapter` selected, `PostgresMappedRowSetConfiguration` supplies codecs for the
+definition's columns and takes precedence over adapter defaults. Symfony resolves defaults declared using the
 built-in codec factories, checks codec compatibility with the declared PHP representation and prepares the
-static SQL fragments for the table, columns, keys and owner. Defaults supplied by a factory instance at runtime
-are resolved when that factory creates the adapter. For standalone assembly, pass the mapping and an adapter
-for its complete key to `MappedRowSet`.
+static SQL fragments for the table, columns, keys and owner. Defaults supplied by an adapter instance at
+runtime are resolved when it binds the table. For manual assembly, use `$adapter->createDefined($mapping)`.
 
 The [Symfony workshop example](../../examples/mapped-table-symfony/README.md) assembles and runs defined row
 sets, owner collections and query guards on PostgreSQL.
@@ -89,25 +89,24 @@ Declare an owner dependency when a child row set references another defined row 
 `owner: new MappedRowSetOwner(OrdersDefinition::class, ['order_id' => 'id'])` in place of `ownerColumns`.
 The reference maps the complete parent key to immutable child key columns of the same PHP representation.
 Symfony validates that the parent definitions exist and dependencies are acyclic, then emits the dependency
-order and the set of referenced definitions in the container. Standalone coordination computes the same
+order and the set of referenced definitions in the container. Manual assembly computes the same
 schedule during assembly. Fixed owner columns remain available for collections whose owners do not impose a
 dependency between row sets.
 
 With Symfony, `MappedTableExtension` enrolls a single `MappedTableUnitOfWork` in the composite registered
-by `UnitOfWorkExtension`. Inject the row sets by definition class to prepare operations. In standalone
-assembly, construct `MappedTableUnitOfWork` with a map from definition classes to row sets. A coordinated
-row set can belong to only one coordinator. Call the coordinator through the runner or explicitly inside
-the caller's transaction. Pending plans must use one active connection or in-memory transaction.
+by `UnitOfWorkExtension`. Inject the row sets by definition class to prepare operations. In manual
+assembly, create the row sets through one adapter and pass them with that adapter to `MappedTableUnitOfWork`.
+For declared dependencies and guards, key the map by definition class. A row set can belong to only one
+coordinator. Call the coordinator through the runner or explicitly inside a transaction active on the adapter's
+resource.
 
 For each flush, the coordinator takes a snapshot of every pending plan, validates the combined plan and
-acquires the query guards before replaying observed queries. Standalone and coordinated flush use the same
-execution phases.
-First the adapters check membership and check-only row expectations. The adapters keep their intrinsic
-locks and enforce update and delete predicates in the writes. Explicit deletes and reconciliation cleanup
-run in child-before-parent order, followed by inserts, updates and upserts in parent-before-child order.
-Within each row set, explicit deletes precede its cleanup so they can
-still validate their conditional predicates. An empty reconciliation executes a cleanup even when no child row
-is buffered.
+acquires the query guards before replaying observed queries. It calls its adapter with the complete ordered
+plan. The adapter checks membership and check-only row expectations, takes intrinsic locks and enforces
+update and delete predicates in the writes. Explicit deletes and reconciliation cleanup run in
+child-before-parent order, followed by other writes in parent-before-child order. Within each row set,
+explicit deletes precede cleanup so they can validate their conditional predicates. An empty reconciliation
+requests cleanup even when no child row is buffered.
 
 An owner dependency determines order. Applications request child cleanup explicitly. For existing children
 outside the plan, an immediate foreign key can reject the parent deletion. The coordinator rejects a write
@@ -117,7 +116,6 @@ on mutable columns are outside this model.
 
 A successful flush consumes all applied plans together. A later rollback undoes durable changes. If the flush
 fails partway, the caller rolls back and clears the pending buffers. The transactional runner handles both.
-A standalone flush applies one plan. The caller provides the transaction when required.
 
 ## Reading and observing rows
 
@@ -146,22 +144,26 @@ depend on existence alone.
 
 Use a fresh handle after the buffer is flushed or cleared.
 
-## Standalone adapter API
+## Manual assembly and whole-table membership
 
-Construct a standalone row set with its table adapter. Pass a mapping to declare columns and owner keys.
+Use one adapter and one unit of work, including when the unit of work contains a single row set.
 
 ```php
-use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedTableUnitOfWork;
 
 $database = new InMemoryRowDatabase();
-$adapter = new InMemoryMappedRowSetAdapter($database, 'users');
-$table = new MappedRowSet($adapter);
+$adapter = new InMemoryMappedTableAdapter($database);
+$table = $adapter->create('users');
+$unitOfWork = new MappedTableUnitOfWork(['users' => $table], $adapter);
+$database->seedRow('users', 'id', ['id' => 'user-1', 'status' => 'pending']);
 
 $table->withKey('user-1')
     ->expectColumnValue('status', 'pending')
     ->setColumn('status', 'active');
+
+$database->transactional($unitOfWork->flush(...));
 ```
 
 `withKey($key)->delete()` buffers a conditional deletion, retaining existing column and presence expectations.
@@ -194,26 +196,23 @@ Row reads expose the unit of work's view with buffered changes applied. Expectat
 
 So a caller can read a row, expect what it read and write it, even when an earlier operation in the same unit of work already changed that row. A stale copy read before that change is rejected. Order matters: `expectColumnValue('status', 'pending')->setColumn('status', 'active')` guards the committed value, while expecting `status` after setting it checks the buffered value.
 
-Row expectations are checked at flush even when the row is not written: `MappedRowSet` then flushes a check-only plan (`RowUpdatePlan::MODE_EXPECT`, `writes()` is false) that the adapter checks without writing. Such rows count as pending changes. An update that sets every column to the value it expects is also flushed as a check-only plan, so saving unchanged rows writes nothing.
+Row expectations count as pending changes and are checked at flush. For a row without writes, the row set
+produces a check-only plan (`RowUpdatePlan::MODE_EXPECT`, `writes()` is false). An update that sets each column
+to its expected value also produces a check-only plan.
 
 `withKey($key)->expectPresent()` checks presence without comparing columns. Buffered writes satisfy it locally;
 otherwise the committed row must exist at flush. A buffered deletion or a conflicting absence expectation is
 rejected immediately. This also guards states whose mapping contains only their identifier.
 
-`expectSameRowKeys(...)` keeps its first committed expectation. Keys whose presence was decided by buffered changes when an expectation was registered are ignored by the adapter's comparison (`RowSetUpdatePlan::$ignoredRowKeys`); their own row plans guard them.
+`expectSameRowKeys(...)` keeps its first committed expectation. Keys whose presence was decided by buffered
+changes at observation time appear in that membership entry's `ignoredRowKeys`. Their row plans guard them.
 
-## Adapter Contract
+## Adapter contract
 
-Adapters implement `Ultra\MappedTable\MappedRowSetAdapter`:
-
-- `keyColumns()` supplies the complete physical row key
-- `row(MappedKey $key, array $columns = [])` reads one row, optionally projecting columns
-- `rows(array $columns = [], ?MappedKey $owner = null)` reads the table or one declared owner's collection as
-  `MappedRow` values
-- `activeTransactionResource()` returns the storage resource for coordinated flush and rejects an inactive transaction
-- `check(RowSetUpdatePlan $plan)` checks membership and check-only row expectations and takes intrinsic locks
-- `writeRows(array $writes)` executes the supplied operations with their write predicates
-- `deleteExcludedRows(RowSetUpdatePlan $plan)` removes rows outside the retained membership of each reconciliation
+One `Ultra\MappedTable\MappedTableAdapter` binds table configurations to its storage resource. Row sets
+use it for committed reads. The unit of work verifies the active transaction and passes the adapter all
+pending plans by physical table in dependency order. The adapter owns the execution phases and table-level
+storage operations.
 
 The immutable flush plan contains sorted row operations and membership entries. Each membership entry carries
 its owner key (or `null` for the whole table), the expected and ignored keys, and the final retained keys
@@ -223,7 +222,7 @@ when reconciliation was requested. An empty retained set removes all rows covere
 the [unit-of-work contract](../transactions/README.md#core-contract). Later reads use storage without the consumed
 overlay; register fresh expectations for a new decision. An empty flush does not call the adapter.
 
-`MappedRowSet` itself does not open transactions. If you need atomicity across a flush, open the surrounding transaction on the underlying storage before calling `flush()`.
+The caller opens and completes the transaction on the adapter's resource.
 
 For locally constructed projection row sets, see the
 [projection-owned persistence](../projections/README.md#projection-owned-persistence).
@@ -231,24 +230,24 @@ For locally constructed projection row sets, see the
 ### Table policy
 
 `MappedTablePolicy` defines the operations a table supports, independently of its storage backend.
-Both included adapters accept a `policy`; their factories accept `tablePolicies`, keyed by table name,
-and apply each policy to standalone and compiled row sets. Unspecified tables use the default policy,
+Both included adapters accept `tablePolicies`, keyed by table name, and apply each policy to manual and
+compiled row sets. Unspecified tables use the default policy,
 which allows check-only absence observations.
 
 ```php
-use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\MappedTablePolicy;
-use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 
 $tablePolicies = [
     'course_names' => new MappedTablePolicy(allowAbsentObservations: false),
 ];
-$postgresFactory = new PostgresMappedRowSetAdapterFactory($connection, tablePolicies: $tablePolicies);
-$memoryFactory = new InMemoryMappedRowSetAdapterFactory($database, tablePolicies: $tablePolicies);
+$postgres = new PostgresMappedTableAdapter($connection, tablePolicies: $tablePolicies);
+$memory = new InMemoryMappedTableAdapter($database, tablePolicies: $tablePolicies);
 ```
 
 Only the adapters receive the policy. `MappedRowSet` buffers expectations and mutations, and `updatePlan()`
-remains an inspectable snapshot without lock instructions or policy validation. At `check()`, both adapters
+remains an inspectable snapshot without lock instructions or policy validation. At flush, both adapters
 validate the final plan through the policy before checking storage or applying writes. When absence observations
 are disabled, a check-only absence plan throws `LogicException`. `expectAbsent()->insert()` remains allowed;
 `expectAbsent()->insert()->delete()` becomes a check-only absence plan and is rejected. Contradictions with
@@ -256,12 +255,12 @@ buffered operations or expectations can still fail immediately when registered.
 
 All adapters accessing the same physical table must use the same policy across processes. An adapter's
 concurrency protocol relies on every writer participating when absence observations
-are allowed. The policy is configured by the application; factories do not coordinate independent configurations.
+are allowed. The application configures the policy.
 Each backend owns the mechanisms needed to enforce the permitted expectations and writes.
 
 ## Included In-Memory Adapter
 
-`Ultra\MappedTable\InMemoryMappedRowSetAdapter` provides a lightweight adapter for tests and local execution.
+`Ultra\MappedTable\InMemoryMappedTableAdapter` provides a lightweight adapter for tests and local execution.
 
 It delegates storage to `Ultra\MappedTable\InMemoryRowDatabase`, which exposes a DBAL-like transaction API:
 
@@ -274,19 +273,19 @@ Writes are applied directly to the in-memory tables, `commit()` simply closes th
 
 ## PostgreSQL Adapter
 
-When `doctrine/dbal` is installed, you can use `Ultra\MappedTable\PostgresMappedRowSetAdapter`:
+When `doctrine/dbal` is installed, you can use `Ultra\MappedTable\PostgresMappedTableAdapter`:
 
 ```php
-use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 
-$table = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, 'users'));
+$adapter = new PostgresMappedTableAdapter($connection);
+$table = $adapter->create('users');
 ```
 
 The Postgres adapter checks expected column values with `IS NOT DISTINCT FROM`, so `null` expectations are handled correctly.
 Row-set key expectations use a transaction-scoped advisory lock and therefore require an active transaction.
 
-Check-only rows are checked in one `SELECT ... FOR SHARE` per table, so they stay locked against concurrent writers until the transaction ends. An absent row cannot be locked, so rows expected absent, and rows an insert or upsert may create, take a transaction-scoped advisory lock on their key (one statement, keys in sorted order): an absent check holds back a concurrent creation of the row until its transaction ends, and the other way around. Absent checks require an active transaction; an insert outside a transaction takes no lock.
+Check-only rows are checked in one `SELECT ... FOR SHARE` per table, so they stay locked against concurrent writers until the transaction ends. An absent row cannot be locked, so rows expected absent, and rows an insert or upsert may create, take a transaction-scoped advisory lock on their key (one statement, keys in sorted order): an absent check holds back a concurrent creation of the row until its transaction ends, and the other way around.
 
 When the table policy disables [absence observations](#table-policy), inserts and upserts skip these per-key
 advisory locks. SQL constraints, affected-row checks, present-row locks, row-set expectations and caller-owned
@@ -296,12 +295,12 @@ transactions remain in force.
 for inspection. Defined row sets in a coordinated unit of work can participate in
 [compiled query guards](query-guards.md#mappedtable-query-guards). The coordinator acquires these guards and
 replays the recorded queries before checking and applying the writes. The persistence locks described above
-stay local to each mapped adapter.
+are managed by the adapter.
 
 ### Column types
 
-Pass `PostgresMappedColumnType` instances by physical column name to `PostgresMappedRowSetAdapter`, or by
-table and column name in `PostgresMappedRowSetAdapterFactory::columnTypesByTable`. The default is text;
+Pass `PostgresMappedColumnType` instances by physical column name to `PostgresMappedTableAdapter::create()`,
+or configure them by table and column name through the adapter's `columnTypesByTable` argument. The default is text;
 configured types provide encoding, decoding and SQL casts for single writes, bulk writes and optimistic comparisons.
 
 `timestamp()` targets `TIMESTAMP(6) WITHOUT TIME ZONE`: it preserves wall-clock values and returns them
@@ -311,7 +310,7 @@ Both accept date strings, `DateTimeInterface` objects and null. PostgreSQL valid
 its timezone-aware storage does not retain the original textual offset or named timezone.
 
 ```php
-$factory = new PostgresMappedRowSetAdapterFactory($connection, [
+$adapter = new PostgresMappedTableAdapter($connection, [
     'acceptances' => ['accepted_at' => PostgresMappedColumnType::timestampWithTimeZone()],
 ]);
 ```
@@ -320,8 +319,8 @@ Other available types include `text()`, `date()`, `jsonb()`, `textArray()`, `uui
 
 ## SQL inspection
 
-The [standalone SQL inspection example](../../examples/mapped-table-sql/README.md) builds a `MappedRowSet`,
-captures its pending plan and traces the real PostgreSQL execution through an opt-in DBAL middleware. It
+The [standalone SQL inspection example](../../examples/mapped-table-sql/README.md) assembles an adapter and
+a unit of work with one row set, captures its pending plan and traces PostgreSQL through an opt-in DBAL middleware. It
 includes scenarios for grouped writes, check-only observations and optimistic conflicts, with isolated
 temporary data and automatic cleanup. The example owns setup, authoring and report instructions; the storage
 and transaction contracts remain unchanged.
@@ -331,11 +330,11 @@ and transaction contracts remain unchanged.
 Each suite owns one guarantee and its cases. Tests are not grouped by implementation class or physical table.
 The shared fixture sets up storage, performs independent committed reads and cleans up transactions; it contains
 no assertions or model of the expected behavior. Common persistence cases use a backend data provider so the
-same scenario exercises the in-memory and Postgres adapters, including their factories.
+same scenario exercises the in-memory and Postgres adapters.
 
 | Guarantee | Suite | Cases |
 | --- | --- | --- |
-| Definitions compile to shared, adapter-backed row sets with a declared representation | [DefinedRowSetsTest](../../src/StoredState/Tests/MappedTable/DefinedRowSetsTest.php) | Dumped container, selected factory, codec selection and column validation. |
+| Definitions compile to shared, adapter-backed row sets with a declared representation | [DefinedRowSetsTest](../../src/StoredState/Tests/MappedTable/DefinedRowSetsTest.php) | Dumped container, shared adapter, codec selection and column validation. |
 | Reads expose the unit-of-work view without changing storage | [BufferedViewTest](../../src/StoredState/Tests/MappedTable/BufferedViewTest.php) | Committed projections and structured rows, shared owner and direct overlays, check-only observations. |
 | Writes have distinct insert, update, upsert, replacement and deletion semantics | [WriteSemanticsTest](../../src/StoredState/Tests/MappedTable/WriteSemanticsTest.php) | Preservation of unspecified values, conflicts, multiple deletions, replacement expectations, cancellation and merging. |
 | Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/StoredState/Tests/MappedTable/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, final-plan table policies, concurrent insertions/deletions and first-expectation retention. |

@@ -10,8 +10,8 @@ services:
 
     Ultra\MappedTable\InMemoryRowDatabase: ~
 
-    Ultra\MappedTable\MappedRowSetAdapterFactory:
-        class: Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory
+    Ultra\MappedTable\MappedTableAdapter:
+        class: Ultra\MappedTable\InMemoryMappedTableAdapter
 
     Ultra\UnitOfWork\TransactionManager:
         alias: Ultra\MappedTable\InMemoryRowDatabase

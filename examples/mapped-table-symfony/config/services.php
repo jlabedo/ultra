@@ -10,9 +10,9 @@ use MappedTableSymfonyExample\WorkshopsDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\GuardLockAdapter;
-use Ultra\MappedTable\MappedRowSetAdapterFactory;
+use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
-use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
@@ -32,7 +32,7 @@ new MappedTableExtension([
 
 $container->register(Connection::class)->setSynthetic(true)->setPublic(true);
 $container
-    ->register(MappedRowSetAdapterFactory::class, PostgresMappedRowSetAdapterFactory::class)
+    ->register(MappedTableAdapter::class, PostgresMappedTableAdapter::class)
     ->setArguments([new Reference(Connection::class)]);
 $container
     ->register(GuardLockAdapter::class, PostgresGuardLockAdapter::class)

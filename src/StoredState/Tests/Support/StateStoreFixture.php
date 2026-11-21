@@ -7,12 +7,11 @@ namespace Ultra\StateStore\Tests\Support;
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\InMemoryGuardLockAdapter;
-use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
-use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
@@ -115,8 +114,8 @@ final class StateStoreFixture
     ): array {
         $storage ??= $this->storage;
         $factory = $storage instanceof Connection
-            ? new PostgresMappedRowSetAdapterFactory($storage)
-            : new InMemoryMappedRowSetAdapterFactory($storage);
+            ? new PostgresMappedTableAdapter($storage)
+            : new InMemoryMappedTableAdapter($storage);
         $locks = $storage instanceof Connection
             ? new PostgresGuardLockAdapter($storage)
             : new InMemoryGuardLockAdapter($storage);
@@ -138,11 +137,11 @@ final class StateStoreFixture
             if (!isset($required[$mapping->table])) {
                 continue;
             }
-            $rowSet = new MappedRowSet($factory->create($mapping->table, $mapping->keyColumns), $mapping);
+            $rowSet = $factory->createDefined($mapping);
             $rowSets[$definition] = $rowSet;
             $tables[$mapping->table] = $rowSet;
         }
-        $unitOfWork = new MappedTableUnitOfWork($rowSets, queryGuards: $guards, guardLocks: $locks);
+        $unitOfWork = new MappedTableUnitOfWork($rowSets, $factory, queryGuards: $guards, guardLocks: $locks);
         $bindings = new StateRowSets($tables, $unitOfWork);
 
         return [new StateStore($this->metadata, $bindings, new UltraNormalizer()), $unitOfWork, $bindings];
@@ -175,10 +174,10 @@ final class StateStoreFixture
     public function collectionRows(StateCollectionMetadata $collection, mixed $normalizedId): array
     {
         $factory = $this->storage instanceof Connection
-            ? new PostgresMappedRowSetAdapterFactory($this->storage)
-            : new InMemoryMappedRowSetAdapterFactory($this->storage);
-        $adapter = $factory->create($collection->tableName, $collection->keyColumns());
-        return $adapter->rows(owner: $collection->ownerKey($normalizedId));
+            ? new PostgresMappedTableAdapter($this->storage)
+            : new InMemoryMappedTableAdapter($this->storage);
+        $factory->create($collection->tableName, $collection->keyColumns());
+        return $factory->rows($collection->tableName, [], $collection->ownerKey($normalizedId));
     }
 
     public function close(): void

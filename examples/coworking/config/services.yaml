@@ -19,8 +19,8 @@ services:
             $connection: '@doctrine.dbal.default_connection'
             $tablePrefix: '%app.event_store_table_prefix%'
 
-    Ultra\MappedTable\MappedRowSetAdapterFactory:
-        class: Ultra\MappedTable\PostgresMappedRowSetAdapterFactory
+    Ultra\MappedTable\MappedTableAdapter:
+        class: Ultra\MappedTable\PostgresMappedTableAdapter
         arguments:
             $connection: '@doctrine.dbal.default_connection'
 

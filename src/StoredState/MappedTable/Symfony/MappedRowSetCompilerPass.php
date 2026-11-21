@@ -8,21 +8,19 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetAdapter;
-use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\MappedRowSetOwner;
+use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableDependencies;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
 use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
 use Ultra\MappedTable\PostgresMappedRowSetSql;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\UnitOfWork\TagNames;
 
 /** @internal */
@@ -41,8 +39,17 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
             return;
         }
 
-        $factory = $container->findDefinition(MappedRowSetAdapterFactory::class);
-        $factoryClass = $factory->getClass();
+        $adapter = $container->findDefinition(MappedTableAdapter::class);
+        if (!$adapter->isShared()) {
+            throw new \LogicException('Compiled mapped row sets require a shared MappedTableAdapter.');
+        }
+        $adapterClass = $container->getParameterBag()->resolveValue($adapter->getClass());
+        if (
+            null !== $adapterClass
+            && (!is_string($adapterClass) || !is_a($adapterClass, MappedTableAdapter::class, true))
+        ) {
+            throw new \LogicException('The mapped table adapter service must extend MappedTableAdapter.');
+        }
         $mappings = [];
         $rowSets = [];
         foreach ($resources as $id => $tags) {
@@ -91,40 +98,33 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
             $metadataId = 'ultra.mapped_table.metadata.' . $class;
             $container->setDefinition($metadataId, $metadata);
             $metadataReference = new Reference($metadataId);
-            $adapter = match ($factoryClass) {
-                PostgresMappedRowSetAdapterFactory::class => $this->postgresAdapter(
+            $rowSet = match ($adapterClass) {
+                PostgresMappedTableAdapter::class => $this->postgresRowSet(
                     $container,
-                    $factory,
+                    $adapter,
                     $mapping,
                     $definition,
                     $metadataReference,
                 ),
-                InMemoryMappedRowSetAdapterFactory::class => new Definition(MappedRowSetAdapter::class)->setFactory([
-                    new Reference(MappedRowSetAdapterFactory::class),
+                default => new Definition(MappedRowSet::class)->setFactory([
+                    new Reference(MappedTableAdapter::class),
                     'createDefined',
                 ])->setArguments([$metadataReference]),
-                default => new Definition(MappedRowSetAdapter::class)->setFactory([
-                    new Reference(MappedRowSetAdapterFactory::class),
-                    'create',
-                ])->setArguments([$mapping->table, $mapping->keyColumns]),
             };
-            $container->setDefinition(
-                $class,
-                new Definition(MappedRowSet::class, [$adapter, $metadataReference, true]),
-            );
+            $container->setDefinition($class, $rowSet);
         }
 
         $schedule = MappedTableDependencies::compile($mappings);
         $container->setParameter(self::MAPPINGS, $mappings);
         $container
             ->register(MappedTableUnitOfWork::class, MappedTableUnitOfWork::class)
-            ->setArguments([$rowSets, $schedule])
+            ->setArguments([$rowSets, new Reference(MappedTableAdapter::class), $schedule])
             ->addTag(TagNames::UNIT_OF_WORK);
     }
 
-    private function postgresAdapter(
+    private function postgresRowSet(
         ContainerBuilder $container,
-        Definition $factory,
+        Definition $adapter,
         MappedRowSetMapping $mapping,
         MappedRowSetDefinition $definition,
         Reference $metadata,
@@ -134,7 +134,7 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
             : [];
         [$factoryTypes, $needsRuntimeDefaults] = $this->postgresDefaults(
             $container,
-            $factory,
+            $adapter,
             $mapping,
             $configuredTypes,
         );
@@ -165,8 +165,8 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
             $sql->absentRowLockNamespace,
         ]);
 
-        return new Definition(MappedRowSetAdapter::class)->setFactory([
-            new Reference(MappedRowSetAdapterFactory::class),
+        return new Definition(MappedRowSet::class)->setFactory([
+            new Reference(MappedTableAdapter::class),
             'createDefined',
         ])->setArguments([$metadata, $types, $compiledSql, $needsRuntimeDefaults]);
     }
@@ -177,18 +177,18 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
      */
     private function postgresDefaults(
         ContainerBuilder $container,
-        Definition $factory,
+        Definition $adapter,
         MappedRowSetMapping $mapping,
         array $declared,
     ): array {
-        if ($factory->isSynthetic() || null !== $factory->getFactory()) {
+        if ($adapter->isSynthetic() || null !== $adapter->getFactory()) {
             return [[], true];
         }
 
-        $arguments = $factory->getArguments();
+        $arguments = $adapter->getArguments();
         $argument = $arguments['$columnTypesByTable'] ?? $arguments[1] ?? null;
         if (null === $argument) {
-            $bindings = $factory->getBindings();
+            $bindings = $adapter->getBindings();
             $binding =
                 $bindings['array $columnTypesByTable']
                 ?? $bindings['$columnTypesByTable']

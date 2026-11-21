@@ -12,8 +12,9 @@ use Doctrine\DBAL\Connection;
 use Ultra\Coordination\Tracking\DirtyKeyTracker;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionResetter;
@@ -26,6 +27,7 @@ final class SourceProjection implements UnitOfWork
 
     private readonly MappedRowSet $evidence;
     private readonly MappedRowSet $qualifications;
+    private readonly MappedTableUnitOfWork $persistence;
     /** @var array<string, array<string, true>> */
     private array $invalidations = [];
 
@@ -33,21 +35,17 @@ final class SourceProjection implements UnitOfWork
         Connection $connection,
         private readonly DirtyKeyTracker $dirty,
     ) {
-        $this->evidence = new MappedRowSet(
-            new PostgresMappedRowSetAdapter(
-                $connection,
-                'compliance_evidence',
-                ['account_id', 'subject_id', 'evidence_id'],
-            ),
+        $adapter = new PostgresMappedTableAdapter($connection);
+        $this->evidence = $adapter->create('compliance_evidence', ['account_id', 'subject_id', 'evidence_id']);
+        $this->qualifications = $adapter->create(
+            'compliance_qualifications',
+            ['account_id', 'qualification_id'],
+            ['requirements' => PostgresMappedColumnType::jsonb()],
         );
-        $this->qualifications = new MappedRowSet(
-            new PostgresMappedRowSetAdapter(
-                $connection,
-                'compliance_qualifications',
-                ['account_id', 'qualification_id'],
-                ['requirements' => PostgresMappedColumnType::jsonb()],
-            ),
-        );
+        $this->persistence = new MappedTableUnitOfWork([
+            'compliance_evidence' => $this->evidence,
+            'compliance_qualifications' => $this->qualifications,
+        ], $adapter);
     }
 
     #[ProjectionHandler]
@@ -82,17 +80,12 @@ final class SourceProjection implements UnitOfWork
 
     public function hasPendingChanges(): bool
     {
-        return (
-            $this->evidence->hasPendingChanges()
-            || $this->qualifications->hasPendingChanges()
-            || [] !== $this->invalidations
-        );
+        return $this->persistence->hasPendingChanges() || [] !== $this->invalidations;
     }
 
     public function flush(): void
     {
-        $this->evidence->flush();
-        $this->qualifications->flush();
+        $this->persistence->flush();
         // The ProjectionRunner owns the transaction shared by the source rows, marks and checkpoint.
         foreach ($this->invalidations as $channel => $keys) {
             foreach (array_keys($keys) as $key) {
@@ -104,8 +97,7 @@ final class SourceProjection implements UnitOfWork
 
     public function clear(): void
     {
-        $this->evidence->clear();
-        $this->qualifications->clear();
+        $this->persistence->clear();
         $this->invalidations = [];
     }
 

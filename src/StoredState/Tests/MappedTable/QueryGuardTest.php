@@ -19,7 +19,7 @@ use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\MappedTable\Tests\Support\RowSetFixture;
@@ -35,12 +35,13 @@ final class QueryGuardTest extends RowSetTestCase
     {
         $root = $this->fixture();
         $rows = $root->defined(GuardedBookingDefinition::at($root->tableName));
-        [$owned, $lines] = $this->lineCollection(storage: $root->storage);
+        [$owned, $lines] = $this->lineCollection(sharedWith: $root);
         $storage = $root->storage;
         assert($storage instanceof InMemoryRowDatabase);
         $trace = new QueryGuardTrace($storage);
         $unit = new MappedTableUnitOfWork(
             [GuardedBookingDefinition::class => $rows, GuardedLineDefinition::class => $lines],
+            $root->adapter,
             queryGuards: [
                 new QueryGuardDefinition('z', [
                     new QueryGuardDependency(GuardedBookingDefinition::class, 'status', ['note']),
@@ -207,6 +208,7 @@ final class QueryGuardTest extends RowSetTestCase
         $locks = new InMemoryGuardLockAdapter($fixture->storage);
         $unit = new MappedTableUnitOfWork(
             [GuardedLineDefinition::class => $lines],
+            $fixture->adapter,
             queryGuards: [new QueryGuardDefinition('item', [new QueryGuardDependency(
                 GuardedLineDefinition::class,
                 'id',
@@ -224,6 +226,7 @@ final class QueryGuardTest extends RowSetTestCase
         $owner = new MappedKey(['owner' => 'one']);
         $unit = new MappedTableUnitOfWork(
             [GuardedLineDefinition::class => $lines],
+            $fixture->adapter,
             queryGuards: [new QueryGuardDefinition('membership', [
                 new QueryGuardDependency(GuardedLineDefinition::class, 'owner', []),
             ])],
@@ -269,6 +272,7 @@ final class QueryGuardTest extends RowSetTestCase
         $differentStorage = new InMemoryRowDatabase();
         $unit = new MappedTableUnitOfWork(
             [GuardedBookingDefinition::class => $rows],
+            $fixture->adapter,
             queryGuards: [new QueryGuardDefinition('booking', [
                 new QueryGuardDependency(GuardedBookingDefinition::class, 'id'),
             ])],
@@ -297,6 +301,7 @@ final class QueryGuardTest extends RowSetTestCase
         )])];
         $reader = new MappedTableUnitOfWork(
             [GuardedLineDefinition::class => $lines],
+            $fixture->adapter,
             queryGuards: $definitions,
             guardLocks: new PostgresGuardLockAdapter($connection),
         );
@@ -311,12 +316,11 @@ final class QueryGuardTest extends RowSetTestCase
         $other = PostgresConnectionSupport::connection($dsn);
 
         try {
-            $otherLines = new MappedRowSet(
-                new PostgresMappedRowSetAdapter($other, $fixture->tableName, ['owner', 'id']),
-                GuardedLineDefinition::at($fixture->tableName),
-            );
+            $otherAdapter = new PostgresMappedTableAdapter($other);
+            $otherLines = $otherAdapter->createDefined(GuardedLineDefinition::at($fixture->tableName));
             $writer = new MappedTableUnitOfWork(
                 [GuardedLineDefinition::class => $otherLines],
+                $otherAdapter,
                 queryGuards: $definitions,
                 guardLocks: new PostgresGuardLockAdapter($other),
             );
@@ -361,6 +365,7 @@ final class QueryGuardTest extends RowSetTestCase
         $rows = $fixture->defined(GuardedBookingDefinition::at($fixture->tableName));
         $unit = new MappedTableUnitOfWork(
             [GuardedBookingDefinition::class => $rows],
+            $fixture->adapter,
             queryGuards: [new QueryGuardDefinition('booking', [
                 new QueryGuardDependency(GuardedBookingDefinition::class, 'status', ['note']),
             ])],
@@ -371,9 +376,14 @@ final class QueryGuardTest extends RowSetTestCase
     }
 
     /** @return array{RowSetFixture, MappedRowSet} */
-    private function lineCollection(string $backend = 'memory', ?InMemoryRowDatabase $storage = null): array
+    private function lineCollection(string $backend = 'memory', ?RowSetFixture $sharedWith = null): array
     {
-        $fixture = $this->fixture($backend, ['owner', 'id'], storage: $storage);
+        $fixture = $this->fixture(
+            $backend,
+            ['owner', 'id'],
+            storage: $sharedWith?->storage,
+            adapter: $sharedWith?->adapter,
+        );
 
         return [$fixture, $fixture->defined(GuardedLineDefinition::at($fixture->tableName))];
     }

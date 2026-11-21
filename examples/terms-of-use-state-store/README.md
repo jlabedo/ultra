@@ -26,7 +26,7 @@ composer test
 symfony server:start --dir=public
 ```
 
-The example configures `InMemoryMappedRowSetAdapterFactory`, so all state is
+The example configures `InMemoryMappedTableAdapter`, so all state is
 lost when the application stops. Substitute a persistent mapped-row adapter for
 a production use case. Business handlers only express the domain transition.
 

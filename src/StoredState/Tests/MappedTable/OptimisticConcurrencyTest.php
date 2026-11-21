@@ -46,7 +46,7 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('Check-only absence observations are disabled');
         try {
-            $fixture->rows->flush();
+            $fixture->flush();
         } finally {
             static::assertFalse($fixture->stored('first'));
         }

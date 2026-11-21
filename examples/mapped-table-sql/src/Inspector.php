@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace MappedTableSqlExample;
 
 use Doctrine\DBAL\Connection;
-use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Testing\SqlTrace;
 use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
@@ -24,8 +24,11 @@ final readonly class Inspector
         $this->trace->clear();
         $tableName = 'ultra_sql_' . bin2hex(random_bytes(8));
         $quoted = $this->connection->quoteSingleIdentifier($tableName);
-        $rows = new MappedRowSet(new PostgresMappedRowSetAdapter($this->connection, $tableName));
-        $runner = new TransactionalUnitOfWorkRunner($rows, new DbalTransactionManager($this->connection));
+        $adapter = new PostgresMappedTableAdapter($this->connection);
+        $rows = $adapter->create($tableName);
+        $runner = new TransactionalUnitOfWorkRunner(new MappedTableUnitOfWork([
+            $tableName => $rows,
+        ], $adapter), new DbalTransactionManager($this->connection));
         $plan = null;
         $error = null;
         $cleanupError = null;

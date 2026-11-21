@@ -122,7 +122,7 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
     public static function bufferedResetFailures(): iterable
     {
         yield 'during reset preparation' => ['reset'];
-        yield 'after the first row-set flush' => ['reset flush'];
+        yield 'after the mapped-table flush' => ['reset flush'];
     }
 
     public static function lifecycleFailures(): iterable

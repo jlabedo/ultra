@@ -200,36 +200,39 @@ final class FlushCoordinationTest extends RowSetTestCase
         $parent->flush($flush);
     }
 
-    public function test_coordinated_flush_requires_one_active_transaction_resource(): void
+    public function test_coordinated_flush_requires_an_active_transaction(): void
     {
-        $parent = $this->fixture('memory', ['tenant', 'id']);
-        $child = $this->fixture('memory', ['order_tenant', 'order_id', 'id']);
-        [$orders, $lines, $flush] = $this->coordinate($parent, $child);
-        $orders->withKey(new MappedKey(['tenant' => 'one', 'id' => 'order']))->insert();
-        $lines->withKey(new MappedKey(['order_tenant' => 'one', 'order_id' => 'order', 'id' => 'line']))->insert();
+        [$parent, , $orders, , $flush] = $this->tables('memory');
+        $order = new MappedKey(['tenant' => 'one', 'id' => 'order']);
+        $orders->withKey($order)->insert();
 
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('active transaction');
         try {
-            $flush->flush();
-            static::fail('Pending work requires an active transaction.');
-        } catch (\LogicException $exception) {
-            static::assertStringContainsString('active transaction', $exception->getMessage());
-        }
-
-        $parent->storage->beginTransaction();
-        $child->storage->beginTransaction();
-        try {
-            $this->expectExceptionMessage('same transaction resource');
             $flush->flush();
         } finally {
-            $parent->storage->rollBack();
-            $child->storage->rollBack();
+            static::assertFalse($parent->stored($order));
+            static::assertTrue($flush->hasPendingChanges());
         }
+    }
+
+    public function test_assembly_rejects_row_sets_bound_to_a_different_adapter(): void
+    {
+        $parent = $this->fixture();
+        $child = $this->fixture(storage: $parent->storage);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('same mapped table adapter');
+        new MappedTableUnitOfWork([
+            $parent->tableName => $parent->rows,
+            $child->tableName => $child->rows,
+        ], $parent->adapter);
     }
 
     public function test_cyclic_owner_dependencies_are_rejected_during_assembly(): void
     {
         $parent = $this->fixture('memory', ['owner', 'id']);
-        $child = $this->fixture('memory', ['owner', 'id'], storage: $parent->storage);
+        $child = $this->fixture('memory', ['owner', 'id'], storage: $parent->storage, adapter: $parent->adapter);
         $columns = ['owner' => new MappedColumn('string'), 'id' => new MappedColumn('string')];
         $orders = $parent->defined(new MappedRowSetMapping(
             $parent->tableName,
@@ -246,14 +249,22 @@ final class FlushCoordinationTest extends RowSetTestCase
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('Cyclic mapped row set ownership');
-        new MappedTableUnitOfWork([FlushOrderDefinition::class => $orders, FlushLineDefinition::class => $lines]);
+        new MappedTableUnitOfWork([
+            FlushOrderDefinition::class => $orders,
+            FlushLineDefinition::class => $lines,
+        ], $parent->adapter);
     }
 
     /** @return array{RowSetFixture, RowSetFixture, MappedRowSet, MappedRowSet, MappedTableUnitOfWork} */
     private function tables(string $backend): array
     {
         $parent = $this->fixture($backend, ['tenant', 'id']);
-        $child = $this->fixture($backend, ['order_tenant', 'order_id', 'id'], storage: $parent->storage);
+        $child = $this->fixture(
+            $backend,
+            ['order_tenant', 'order_id', 'id'],
+            storage: $parent->storage,
+            adapter: $parent->adapter,
+        );
         if ($parent->storage instanceof Connection) {
             $quote = $parent->storage->quoteSingleIdentifier(...);
             $parent->storage->executeStatement(sprintf(
@@ -286,7 +297,7 @@ final class FlushCoordinationTest extends RowSetTestCase
         $flush = new MappedTableUnitOfWork([
             FlushLineDefinition::class => $lines,
             FlushOrderDefinition::class => $orders,
-        ]);
+        ], $parent->adapter);
 
         return [$orders, $lines, $flush];
     }

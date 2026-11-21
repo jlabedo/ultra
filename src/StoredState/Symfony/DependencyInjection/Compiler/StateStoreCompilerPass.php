@@ -85,7 +85,7 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             // A StateStore used solely for manual query expectations still participates in the flush.
             $container
                 ->register(MappedTableUnitOfWork::class, MappedTableUnitOfWork::class)
-                ->setArguments([[], []])
+                ->setArguments([[]])
                 ->addTag(UnitOfWorkTagNames::UNIT_OF_WORK);
         }
         $container

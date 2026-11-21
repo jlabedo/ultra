@@ -7,7 +7,7 @@ namespace Ultra\MappedTable;
 use Ultra\UnitOfWork\TransactionManager;
 
 /**
- * In-memory backing store for `InMemoryMappedRowSetAdapter`.
+ * In-memory backing store for `InMemoryMappedTableAdapter`.
  *
  * Storage is a single list of rows per table — the same shape Postgres has.
  * Row keys and scopes filter that list by column predicates. Transactions

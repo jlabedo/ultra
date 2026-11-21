@@ -7,7 +7,8 @@ namespace Ultra\MappedTable;
 use Doctrine\DBAL\Connection;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
+/** @internal */
+final readonly class PostgresRowSetStorage implements MappedRowSetStorage
 {
     /** @var list<string> */
     private array $keyColumns;
@@ -110,15 +111,6 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         }
 
         return $mapped;
-    }
-
-    public function activeTransactionResource(): object
-    {
-        if (!$this->connection->isTransactionActive()) {
-            throw new \LogicException('Coordinated mapped table flush requires an active transaction.');
-        }
-
-        return $this->connection;
     }
 
     public function check(RowSetUpdatePlan $plan): void
@@ -358,7 +350,6 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 
             $lockKeys[] = $check->key->fingerprint();
         }
-        $absentChecks = count($lockKeys);
         foreach ($writes as $write) {
             if (!(RowUpdatePlan::MODE_INSERT === $write->mode || RowUpdatePlan::MODE_UPSERT === $write->mode)) {
                 continue;
@@ -370,18 +361,6 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         if ([] === $lockKeys) {
             return;
         }
-        if (!$this->connection->isTransactionActive()) {
-            if (0 === $absentChecks) {
-                // An autocommitted write holds no lock worth taking.
-                return;
-            }
-
-            throw new \LogicException(sprintf(
-                'Absent row expectations for table "%s" require an active transaction.',
-                $this->tableName,
-            ));
-        }
-
         $lockKeys = array_values(array_unique($lockKeys));
         sort($lockKeys, SORT_STRING);
         // jsonb_array_elements_text() yields the keys in array order, so the locks are taken in sorted order.
@@ -460,13 +439,6 @@ final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
         if (null === $membership->expectedRowKeys) {
             return;
         }
-        if (!$this->connection->isTransactionActive()) {
-            throw new \LogicException(sprintf(
-                'Row-set expectations for table "%s" require an active transaction.',
-                $this->tableName,
-            ));
-        }
-
         $this->connection->executeStatement('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
             $this->tableName,
             json_encode([$this->keyColumns(), $membership->owner?->values], JSON_THROW_ON_ERROR),

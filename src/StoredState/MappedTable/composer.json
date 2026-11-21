@@ -14,7 +14,7 @@
         "ultra/unit-of-work": "*"
     },
     "suggest": {
-        "doctrine/dbal": "Required to use the PostgresMappedRowSetAdapter.",
+        "doctrine/dbal": "Required to use the PostgresMappedTableAdapter.",
         "symfony/dependency-injection": "Required for compiling mapped row set definitions with Symfony.",
         "ultra/container": "Required to register MappedTableExtension."
     },

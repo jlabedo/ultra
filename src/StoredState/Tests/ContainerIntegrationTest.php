@@ -16,14 +16,14 @@ use Ultra\MappedTable\Attribute\DefineQueryGuard;
 use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\InMemoryGuardLockAdapter;
-use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
+use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
-use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
@@ -417,16 +417,16 @@ final class ContainerIntegrationTest extends StateStoreTestCase
 
         if (null === $postgres) {
             $storage = InMemoryRowDatabase::class;
-            $factory = InMemoryMappedRowSetAdapterFactory::class;
+            $factory = InMemoryMappedTableAdapter::class;
             $guard = InMemoryGuardLockAdapter::class;
             $container->register($storage, $storage)->setPublic(true);
         } else {
             $storage = Connection::class;
-            $factory = PostgresMappedRowSetAdapterFactory::class;
+            $factory = PostgresMappedTableAdapter::class;
             $guard = PostgresGuardLockAdapter::class;
             $container->register($storage, $storage)->setPublic(true)->setSynthetic(true);
         }
-        $container->register(MappedRowSetAdapterFactory::class, $factory)->setArguments([new Reference($storage)]);
+        $container->register(MappedTableAdapter::class, $factory)->setArguments([new Reference($storage)]);
         if ($withGuardAdapter) {
             $container->register(GuardLockAdapter::class, $guard)->setArguments([new Reference($storage)]);
         }

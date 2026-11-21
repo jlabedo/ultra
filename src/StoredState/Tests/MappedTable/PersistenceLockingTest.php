@@ -8,10 +8,9 @@ use Doctrine\DBAL\Exception\DriverException;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\MappedKey;
-use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTablePolicy;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
-use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
+use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
@@ -44,13 +43,11 @@ final class PersistenceLockingTest extends RowSetTestCase
             $fixture->rows->withKey('row')->expectAbsent();
         }
         $other = PostgresConnectionSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
-        $competing = new MappedRowSet(
-            new PostgresMappedRowSetAdapter(
-                $other,
-                $fixture->tableName,
-                policy: new MappedTablePolicy($allowAbsentObservations),
-            ),
-        );
+        $adapter = new PostgresMappedTableAdapter($other, tablePolicies: [
+            $fixture->tableName => new MappedTablePolicy($allowAbsentObservations),
+        ]);
+        $competing = $adapter->create($fixture->tableName);
+        $writer = new MappedTableUnitOfWork([$fixture->tableName => $competing], $adapter);
         if ('update' === $operation) {
             $competing->withKey('row')->setColumn('status', 'paid');
         } else {
@@ -58,11 +55,11 @@ final class PersistenceLockingTest extends RowSetTestCase
         }
         $connection->beginTransaction();
         try {
-            $fixture->rows->flush();
+            $fixture->unit()->flush();
             $other->beginTransaction();
             $other->executeStatement("SET LOCAL lock_timeout = '10ms'");
             try {
-                $competing->flush();
+                $writer->flush();
                 static::fail('The competing write must wait for the observation transaction.');
             } catch (DriverException $exception) {
                 static::assertStringContainsString('lock timeout', $exception->getMessage());
@@ -70,7 +67,7 @@ final class PersistenceLockingTest extends RowSetTestCase
                 $other->rollBack();
             }
             $connection->commit();
-            $other->transactional($competing->flush(...));
+            $other->transactional($writer->flush(...));
             static::assertSame(['status' => 'paid'], $fixture->stored('row', ['status']));
         } finally {
             if ($connection->isTransactionActive()) {
@@ -98,10 +95,11 @@ final class PersistenceLockingTest extends RowSetTestCase
     {
         $fixture = $this->fixture('postgres', ['tenant', 'id']);
         $connection = $fixture->connection();
-        $factory = new PostgresMappedRowSetAdapterFactory($connection, tablePolicies: [
+        $factory = new PostgresMappedTableAdapter($connection, tablePolicies: [
             $protected ? 'another_table' : $fixture->tableName => new MappedTablePolicy(allowAbsentObservations: false),
         ]);
-        $rows = new MappedRowSet($factory->create($fixture->tableName, ['tenant', 'id']));
+        $rows = $factory->create($fixture->tableName, ['tenant', 'id']);
+        $unit = new MappedTableUnitOfWork([$fixture->tableName => $rows], $factory);
         foreach (['first', 'second'] as $id) {
             $rows
                 ->withKey(new MappedKey(['tenant' => 'tenant-1', 'id' => $id]))
@@ -111,7 +109,7 @@ final class PersistenceLockingTest extends RowSetTestCase
 
         $connection->beginTransaction();
         try {
-            $rows->flush();
+            $unit->flush();
             static::assertSame(2, (int) $connection->fetchOne('SELECT count(*) FROM ' . $fixture->tableName));
             static::assertSame(
                 $protected ? 2 : 0,
@@ -130,7 +128,7 @@ final class PersistenceLockingTest extends RowSetTestCase
         $fixture->rows->expectSameRowKeys([]);
         $fixture->connection()->beginTransaction();
         try {
-            $fixture->rows->flush();
+            $fixture->unit()->flush();
             static::assertSame(
                 1,
                 (int) $fixture
@@ -164,6 +162,6 @@ final class PersistenceLockingTest extends RowSetTestCase
             $fixture->rows->expectSameRowKeys([]);
         }
         $this->expectException(\LogicException::class);
-        $fixture->rows->flush();
+        $fixture->unit()->flush();
     }
 }

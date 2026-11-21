@@ -6,7 +6,8 @@ namespace Ultra\Projection\Tests\Support;
 
 use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
@@ -18,6 +19,7 @@ final class BufferedProjection implements UnitOfWork
 {
     private readonly MappedRowSet $courses;
     private readonly MappedRowSet $index;
+    private readonly MappedTableUnitOfWork $persistence;
 
     public ?string $failAt = null;
 
@@ -26,8 +28,13 @@ final class BufferedProjection implements UnitOfWork
         public readonly string $coursesTable,
         public readonly string $indexTable,
     ) {
-        $this->courses = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, $coursesTable));
-        $this->index = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, $indexTable));
+        $adapter = new PostgresMappedTableAdapter($connection);
+        $this->courses = $adapter->create($coursesTable);
+        $this->index = $adapter->create($indexTable);
+        $this->persistence = new MappedTableUnitOfWork([
+            $coursesTable => $this->courses,
+            $indexTable => $this->index,
+        ], $adapter);
     }
 
     #[ProjectionInitializer]
@@ -63,20 +70,18 @@ final class BufferedProjection implements UnitOfWork
 
     public function hasPendingChanges(): bool
     {
-        return $this->courses->hasPendingChanges() || $this->index->hasPendingChanges();
+        return $this->persistence->hasPendingChanges();
     }
 
     public function flush(): void
     {
-        $this->courses->flush();
+        $this->persistence->flush();
         $this->failIf('reset flush');
-        $this->index->flush();
     }
 
     public function clear(): void
     {
-        $this->courses->clear();
-        $this->index->clear();
+        $this->persistence->clear();
     }
 
     private function failIf(string $stage): void

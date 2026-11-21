@@ -15,20 +15,20 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\Attribute\DefineQueryGuard;
 use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\InMemoryGuardLockAdapter;
-use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetOwner;
+use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
 use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
@@ -58,13 +58,13 @@ final class DefinedRowSetsTest extends RowSetTestCase
         $fixture = $this->fixture($backend);
         $storage = $fixture->storage;
         if ($storage instanceof InMemoryRowDatabase) {
-            $factory = new InMemoryMappedRowSetAdapterFactory($storage);
+            $factory = new InMemoryMappedTableAdapter($storage);
         } else {
             $storage->executeStatement('CREATE TEMP TABLE mapped_definition_orders (id TEXT PRIMARY KEY)');
             $storage->executeStatement(
                 'CREATE TEMP TABLE mapped_definition_lines (owner TEXT REFERENCES mapped_definition_orders (id), id TEXT, tags TEXT[], aliases TEXT[], PRIMARY KEY (owner, id))',
             );
-            $factory = new PostgresMappedRowSetAdapterFactory($storage, ['mapped_definition_lines' => [
+            $factory = new PostgresMappedTableAdapter($storage, ['mapped_definition_lines' => [
                 'aliases' => PostgresMappedColumnType::textArray(),
             ]]);
         }
@@ -85,14 +85,12 @@ final class DefinedRowSetsTest extends RowSetTestCase
             $container->register(GuardLockAdapter::class, $guardAdapter::class)->setSynthetic(true)->setPublic(true);
             new UnitOfWorkExtension()->build($container);
             if ($factoryAtRuntime) {
-                $container
-                    ->register(MappedRowSetAdapterFactory::class, $factory::class)
-                    ->setSynthetic(true)
-                    ->setPublic(true);
+                $container->register(MappedTableAdapter::class, $factory::class)->setSynthetic(true)->setPublic(true);
             } else {
                 $container->register(Connection::class)->setSynthetic(true)->setPublic(true);
+                $container->setParameter('test.adapter_class', PostgresMappedTableAdapter::class);
                 $container
-                    ->register(MappedRowSetAdapterFactory::class, PostgresMappedRowSetAdapterFactory::class)
+                    ->register(MappedTableAdapter::class, '%test.adapter_class%')
                     ->setArguments([
                         new Reference(Connection::class),
                         ['mapped_definition_lines' => ['aliases' => new Definition(
@@ -108,11 +106,13 @@ final class DefinedRowSetsTest extends RowSetTestCase
             $container->setAlias('test.unit_of_work', UnitOfWork::class)->setPublic(true);
             $container->setAlias('test.coordination', MappedTableUnitOfWork::class)->setPublic(true);
             $container->compile();
+            $coordination = $container->findDefinition('test.coordination');
+            static::assertSame(MappedTableAdapter::class, (string) $coordination->getArgument(1));
             static::assertSame(
                 [CompileTimeOrderDefinition::class => true, CompileTimeLineDefinition::class => false],
-                $container->findDefinition('test.coordination')->getArgument(1),
+                $coordination->getArgument(2),
             );
-            $guardRules = $container->findDefinition('test.coordination')->getArgument(2);
+            $guardRules = $coordination->getArgument(3);
             static::assertInstanceOf(Definition::class, $guardRules);
             static::assertSame(QueryGuardRules::class, $guardRules->getClass());
             static::assertSame(['lines' => [CompileTimeLineDefinition::class => [0]]], $guardRules->getArgument(1));
@@ -135,7 +135,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
             $compiled = new $dumpedClass();
             $compiled->set(GuardLockAdapter::class, $guardAdapter);
             if ($factoryAtRuntime) {
-                $compiled->set(MappedRowSetAdapterFactory::class, $factory);
+                $compiled->set(MappedTableAdapter::class, $factory);
             } else {
                 $compiled->set(Connection::class, $storage);
             }
@@ -159,12 +159,6 @@ final class DefinedRowSetsTest extends RowSetTestCase
                 ['tags' => ['one', 'two'], 'aliases' => ['third']],
                 $lines->rowsForOwner(new MappedKey(['owner' => 'one']))[0]->columns,
             );
-            try {
-                $lines->flush();
-                static::fail('A compiled row set can only be flushed through its coordinator.');
-            } catch (\LogicException $exception) {
-                static::assertStringContainsString('through its coordinator', $exception->getMessage());
-            }
             $unitOfWork = $compiled->get('test.unit_of_work');
             static::assertTrue($unitOfWork->hasPendingChanges());
             $fixture->flush($unitOfWork);
@@ -197,12 +191,34 @@ final class DefinedRowSetsTest extends RowSetTestCase
     {
         $container = new ContainerBuilder();
         new MappedTableExtension()->build($container);
-        $container
-            ->register(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
-            ->setSynthetic(true);
+        $container->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setSynthetic(true);
         $container->register(CompileTimeLineDefinition::class)->setAutoconfigured(true);
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('Owner definition "' . CompileTimeOrderDefinition::class . '"');
+        $container->compile();
+    }
+
+    public function test_compilation_requires_a_shared_adapter(): void
+    {
+        $container = new ContainerBuilder();
+        new MappedTableExtension()->build($container);
+        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
+        $container->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setShared(false);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('require a shared MappedTableAdapter');
+        $container->compile();
+    }
+
+    public function test_compilation_rejects_a_service_that_cannot_bind_mapped_row_sets(): void
+    {
+        $container = new ContainerBuilder();
+        new MappedTableExtension()->build($container);
+        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
+        $container->register(MappedTableAdapter::class, InMemoryRowDatabase::class);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('must extend MappedTableAdapter');
         $container->compile();
     }
 
@@ -212,7 +228,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
         new MappedTableExtension()->build($container);
         $container->register(InMemoryRowDatabase::class, InMemoryRowDatabase::class);
         $container
-            ->register(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
+            ->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)
             ->setArguments([new Reference(InMemoryRowDatabase::class)]);
         $container
             ->register(GuardLockAdapter::class, InMemoryGuardLockAdapter::class)
@@ -287,9 +303,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
             $container->register(CompileTimeLineDefinition::class)->setAutoconfigured(true);
         }
 
-        $container
-            ->register(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
-            ->setSynthetic(true);
+        $container->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setSynthetic(true);
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage($message);
@@ -303,9 +317,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
             new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id'),
         ])])->build($container);
         $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
-        $container
-            ->register(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
-            ->setSynthetic(true);
+        $container->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setSynthetic(true);
         $container->register(GuardLockAdapter::class, PostgresGuardLockAdapter::class)->setSynthetic(true);
 
         $this->expectException(\LogicException::class);
@@ -320,7 +332,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
         $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
         $container->register(Connection::class)->setSynthetic(true);
         $container
-            ->register(MappedRowSetAdapterFactory::class, PostgresMappedRowSetAdapterFactory::class)
+            ->register(MappedTableAdapter::class, PostgresMappedTableAdapter::class)
             ->setArguments([
                 new Reference(Connection::class),
                 ['mapped_definition_orders' => [

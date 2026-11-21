@@ -6,11 +6,8 @@ namespace Ultra\MappedTable\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
-use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
-use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 
 /** @internal */
@@ -33,10 +30,7 @@ final class KeyIsolationTest extends RowSetTestCase
         string $address,
     ): void {
         $fixture = $this->fixture($backend);
-        $adapter = 'memory' === $backend
-            ? new InMemoryMappedRowSetAdapter($fixture->storage, $fixture->tableName)
-            : new PostgresMappedRowSetAdapter($fixture->connection(), $fixture->tableName);
-        $rows = new MappedRowSet($adapter);
+        $rows = $fixture->rows;
         $key = match ($address) {
             'scalar' => 'row',
             'Stringable' => self::stringable('row'),

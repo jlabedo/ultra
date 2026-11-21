@@ -26,11 +26,10 @@ use IamExample\State\RoleState;
 use IamExample\State\SubjectState;
 use IamExample\State\TenantState;
 use Psr\Clock\ClockInterface;
-use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
-use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
 use Ultra\MappedTable\PostgresMappedRowSetSql;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
@@ -78,7 +77,7 @@ final readonly class Runtime
             }
         }
         $metadataFactory = new StateMetadataFactory($shapes);
-        $adapters = new PostgresMappedRowSetAdapterFactory($connection);
+        $adapter = new PostgresMappedTableAdapter($connection);
         $metadata = [];
         foreach ($classes as $class) {
             $metadata[$class] = $metadataFactory->create($class)->toArray();
@@ -97,17 +96,17 @@ final readonly class Runtime
             AuditDefinition::class,
         ] as $definition) {
             $mapping = new $definition()->mapping();
-            $adapter = $adapters->createDefined(
+            $rowSets[$definition] = $adapter->createDefined(
                 $mapping,
                 [],
                 PostgresMappedRowSetSql::compile($mapping, []),
                 needsRuntimeDefaults: false,
             );
-            $rowSets[$definition] = new MappedRowSet($adapter, $mapping, requiresCoordinator: true);
             $tables[$mapping->table] = $rowSets[$definition];
         }
         $unitOfWork = new MappedTableUnitOfWork(
             $rowSets,
+            $adapter,
             queryGuards: [new QueryGuardDefinition('iam_authorization', [
                 new QueryGuardDependency(SubjectsDefinition::class, 'tenant_id', ['active']),
                 new QueryGuardDependency(GroupsDefinition::class, 'tenant_id', ['active']),

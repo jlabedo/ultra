@@ -24,8 +24,8 @@ use Ultra\Coordination_Postgres\Refresh\PostgresRefreshPublication;
 use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTracker;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
-use Ultra\MappedTable\MappedRowSetAdapterFactory;
-use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
+use Ultra\MappedTable\MappedTableAdapter;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Projection\Bundle\ProjectionImplementationInterface;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
@@ -67,7 +67,7 @@ final class Kernel extends BaseKernel
                 TransactionManager::class => DbalTransactionManager::class,
                 ProjectionImplementationInterface::class => PostgresProjectionImplementation::class,
                 ProjectionActivatorInterface::class => InMemoryProjectionActivator::class,
-                MappedRowSetAdapterFactory::class => PostgresMappedRowSetAdapterFactory::class,
+                MappedTableAdapter::class => PostgresMappedTableAdapter::class,
             ] as $id => $class) {
                 $container->register($id, $class)->setAutowired(true);
             }

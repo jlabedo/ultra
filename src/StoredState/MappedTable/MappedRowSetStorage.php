@@ -4,7 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-interface MappedRowSetAdapter
+/** @internal Table-specific storage operations used by the common adapter. */
+interface MappedRowSetStorage
 {
     /** @return list<string> */
     public function keyColumns(): array;
@@ -22,9 +23,6 @@ interface MappedRowSetAdapter
      * @return list<MappedRow>
      */
     public function rows(array $columns = [], ?MappedKey $owner = null): array;
-
-    /** The active transaction's connection or in-memory database. Throws when there is no active transaction. */
-    public function activeTransactionResource(): object;
 
     /** Verify check-only rows and memberships, and take any intrinsic locks needed for this plan. */
     public function check(RowSetUpdatePlan $plan): void;

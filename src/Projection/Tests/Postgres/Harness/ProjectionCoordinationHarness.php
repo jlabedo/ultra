@@ -25,7 +25,8 @@ use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTablePolicy;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
@@ -57,19 +58,17 @@ final readonly class HarnessCourseCreated
 final readonly class HarnessCourseNamesProjection
 {
     private MappedRowSet $table;
+    private MappedTableUnitOfWork $persistence;
 
     public function __construct(
         private Connection $connection,
         private string $tableName,
     ) {
-        $this->table = new MappedRowSet(
-            new PostgresMappedRowSetAdapter(
-                $this->connection,
-                $this->tableName,
-                ['course_id'],
-                policy: new MappedTablePolicy(allowAbsentObservations: false),
-            ),
-        );
+        $adapter = new PostgresMappedTableAdapter($connection, tablePolicies: [
+            $tableName => new MappedTablePolicy(allowAbsentObservations: false),
+        ]);
+        $this->table = $adapter->create($tableName, ['course_id']);
+        $this->persistence = new MappedTableUnitOfWork([$tableName => $this->table], $adapter);
     }
 
     #[ProjectionInitializer]
@@ -96,8 +95,7 @@ final readonly class HarnessCourseNamesProjection
     #[ProjectionFlush]
     public function flush(): void
     {
-        $this->table->flush();
-        $this->table->clear();
+        $this->persistence->flush();
     }
 }
 

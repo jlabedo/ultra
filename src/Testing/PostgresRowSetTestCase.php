@@ -6,9 +6,9 @@ namespace Ultra\Testing;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
-use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 
 abstract class PostgresRowSetTestCase extends TestCase
 {
@@ -37,11 +37,9 @@ abstract class PostgresRowSetTestCase extends TestCase
                     expires_on DATE NULL
                 )', $connection->quoteSingleIdentifier($tableName)));
 
-            $callback(
-                $connection,
-                new MappedRowSet(new PostgresMappedRowSetAdapter($connection, $tableName, columnTypes: $columnTypes)),
-                $tableName,
-            );
+            $adapter = new PostgresMappedTableAdapter($connection);
+            $rows = $adapter->create($tableName, columnTypes: $columnTypes);
+            $callback($connection, $rows, $tableName, new MappedTableUnitOfWork([$tableName => $rows], $adapter));
         } finally {
             PostgresConnectionSupport::resetSharedConnection($connection);
 

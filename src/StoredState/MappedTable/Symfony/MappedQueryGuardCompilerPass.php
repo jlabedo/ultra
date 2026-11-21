@@ -11,13 +11,13 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\Attribute\DefineQueryGuard;
 use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\InMemoryGuardLockAdapter;
-use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
-use Ultra\MappedTable\MappedRowSetAdapterFactory;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
+use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
-use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardRule;
@@ -42,8 +42,10 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
         }
 
         $unitOfWork = $container->getDefinition(MappedTableUnitOfWork::class);
-        $factoryClass = $container->findDefinition(MappedRowSetAdapterFactory::class)->getClass();
-        $this->registerQueryGuards($container, $unitOfWork, $rules, $factoryClass);
+        $adapterClass = $container
+            ->getParameterBag()
+            ->resolveValue($container->findDefinition(MappedTableAdapter::class)->getClass());
+        $this->registerQueryGuards($container, $unitOfWork, $rules, is_string($adapterClass) ? $adapterClass : null);
     }
 
     /** @return list<QueryGuardDefinition> */
@@ -92,7 +94,7 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
         ContainerBuilder $container,
         Definition $unitOfWork,
         QueryGuardRules $rules,
-        ?string $rowSetFactoryClass,
+        ?string $tableAdapterClass,
     ): void {
         $hasAdapter = $container->has(GuardLockAdapter::class);
         if (!$hasAdapter && [] !== $rules->namespaces) {
@@ -100,9 +102,9 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
         }
 
         $guardAdapterClass = $hasAdapter ? $container->findDefinition(GuardLockAdapter::class)->getClass() : null;
-        $incompatible = match ($rowSetFactoryClass) {
-            InMemoryMappedRowSetAdapterFactory::class => PostgresGuardLockAdapter::class,
-            PostgresMappedRowSetAdapterFactory::class => InMemoryGuardLockAdapter::class,
+        $incompatible = match ($tableAdapterClass) {
+            InMemoryMappedTableAdapter::class => PostgresGuardLockAdapter::class,
+            PostgresMappedTableAdapter::class => InMemoryGuardLockAdapter::class,
             default => null,
         };
         if (null !== $incompatible && $incompatible === $guardAdapterClass) {

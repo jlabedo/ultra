@@ -9,10 +9,9 @@ use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\GuardLockMode;
-use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
-use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetOwner;
@@ -195,7 +194,7 @@ final class QueryDependencyTest extends TestCase
     private function fixture(): array
     {
         $database = new InMemoryRowDatabase();
-        $factory = new InMemoryMappedRowSetAdapterFactory($database);
+        $factory = new InMemoryMappedTableAdapter($database);
         $analyzer = new NormalizationShapeAnalyzer();
         $metadataFactory = new StateMetadataFactory([
             GuardRole::class => $analyzer->forProperty(new \ReflectionProperty(GuardRole::class, 'id')),
@@ -222,10 +221,11 @@ final class QueryDependencyTest extends TestCase
         };
         $roleMapping = new GuardRolesDefinition()->mapping();
         $permissionMapping = new GuardPermissionsDefinition()->mapping();
-        $roles = new MappedRowSet($factory->createDefined($roleMapping), $roleMapping);
-        $permissions = new MappedRowSet($factory->createDefined($permissionMapping), $permissionMapping);
+        $roles = $factory->createDefined($roleMapping);
+        $permissions = $factory->createDefined($permissionMapping);
         $registry = new MappedTableUnitOfWork(
             [GuardRolesDefinition::class => $roles, GuardPermissionsDefinition::class => $permissions],
+            $factory,
             queryGuards: [new QueryGuardDefinition('iam', [
                 new QueryGuardDependency(GuardRolesDefinition::class, 'tenant_id', ['enabled']),
                 new QueryGuardDependency(GuardPermissionsDefinition::class, 'owner_tenant'),

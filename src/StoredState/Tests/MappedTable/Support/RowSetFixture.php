@@ -5,15 +5,16 @@ declare(strict_types=1);
 namespace Ultra\MappedTable\Tests\Support;
 
 use Doctrine\DBAL\Connection;
-use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedRowSetMapping;
+use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTablePolicy;
+use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\UnitOfWork\UnitOfWork;
 
@@ -21,7 +22,9 @@ use Ultra\UnitOfWork\UnitOfWork;
 final class RowSetFixture
 {
     public readonly MappedRowSet $rows;
-    private readonly MappedRowSetAdapterFactory $factory;
+    public readonly MappedTableAdapter $adapter;
+    /** @var \WeakMap<MappedRowSet, MappedTableUnitOfWork> */
+    private \WeakMap $units;
 
     /**
      * @param list<string> $keyColumns
@@ -33,6 +36,7 @@ final class RowSetFixture
         private readonly array $keyColumns = ['id'],
         private readonly array $columnTypes = [],
         bool $allowAbsentObservations = true,
+        ?MappedTableAdapter $adapter = null,
     ) {
         $tablePolicies = [$tableName => new MappedTablePolicy($allowAbsentObservations)];
         if ($storage instanceof Connection) {
@@ -63,25 +67,26 @@ final class RowSetFixture
                 . implode(', ', $definitions)
                 . ')',
             );
-            $this->factory = new PostgresMappedRowSetAdapterFactory(
+            $this->adapter = $adapter ?? new PostgresMappedTableAdapter(
                 $storage,
                 [$tableName => $columnTypes],
                 $tablePolicies,
             );
         } else {
-            $this->factory = new InMemoryMappedRowSetAdapterFactory($storage, $tablePolicies);
+            $this->adapter = $adapter ?? new InMemoryMappedTableAdapter($storage, $tablePolicies);
         }
         $this->rows = $this->view();
+        $this->units = new \WeakMap();
     }
 
     public function view(): MappedRowSet
     {
-        return new MappedRowSet($this->factory->create($this->tableName, $this->keyColumns));
+        return $this->adapter->create($this->tableName, $this->keyColumns);
     }
 
     public function defined(MappedRowSetMapping $mapping): MappedRowSet
     {
-        return new MappedRowSet($this->factory->create($mapping->table, $mapping->keyColumns), $mapping);
+        return $this->adapter->createDefined($mapping);
     }
 
     /** @param array<string, mixed> $row */
@@ -140,11 +145,19 @@ final class RowSetFixture
         return $row;
     }
 
-    public function flush(?UnitOfWork $rows = null): void
+    public function unit(?MappedRowSet $rows = null): MappedTableUnitOfWork
     {
+        $rows ??= $this->rows;
+
+        return $this->units[$rows] ??= new MappedTableUnitOfWork([$this->tableName => $rows], $this->adapter);
+    }
+
+    public function flush(UnitOfWork|MappedRowSet|null $rows = null): void
+    {
+        $unit = $rows instanceof UnitOfWork ? $rows : $this->unit($rows);
         $this->storage->beginTransaction();
         try {
-            ($rows ?? $this->rows)->flush();
+            $unit->flush();
             $this->storage->commit();
         } catch (\Throwable $exception) {
             $this->storage->rollBack();

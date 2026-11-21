@@ -14,21 +14,19 @@ use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetAdapter;
-use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedRowSetMapping;
+use Ultra\MappedTable\MappedTableAdapter;
+use Ultra\MappedTable\MappedTableUnitOfWork;
 
 final readonly class EligibilityRefresh
 {
     private MappedRowSetMapping $resultMapping;
 
-    private MappedRowSetAdapter $resultAdapter;
-
     public function __construct(
         private Connection $connection,
         private ReferenceQueries $reference,
         private RefreshWorker $worker,
-        MappedRowSetAdapterFactory $adapters,
+        private MappedTableAdapter $adapter,
     ) {
         $key = ['account_id', 'subject_id', 'qualification_id'];
         $this->resultMapping = new MappedRowSetMapping(
@@ -37,7 +35,6 @@ final readonly class EligibilityRefresh
             $key,
             ownerColumns: ['account_id', 'subject_id'],
         );
-        $this->resultAdapter = $adapters->create($this->resultMapping->table, $this->resultMapping->keyColumns);
     }
 
     public function run(string $account, int $maxSteps, int $subjectBatchSize): int
@@ -63,7 +60,7 @@ final readonly class EligibilityRefresh
     private function subject(string $account, string $subject, int $counter): RefreshStep
     {
         $owner = ['account_id' => $account, 'subject_id' => $subject];
-        $rows = $this->results();
+        [$rows, $persistence] = $this->results();
         $rows->reconcileForOwner($owner, array_map(
             static fn(string $qualification): MappedRow => new MappedRow(new MappedKey([
                 ...$owner,
@@ -72,7 +69,7 @@ final readonly class EligibilityRefresh
             $this->reference->qualifications($account, $subject),
         ));
 
-        return new RefreshStep($rows->flush(...), $counter);
+        return new RefreshStep($persistence->flush(...), $counter);
     }
 
     private function qualification(
@@ -99,7 +96,7 @@ final readonly class EligibilityRefresh
         if (!$finished) {
             array_pop($page);
         }
-        $rows = $this->results();
+        [$rows, $persistence] = $this->results();
         foreach ($page as $candidate) {
             if ($candidate['eligible'] === $candidate['materialized']) {
                 continue;
@@ -118,8 +115,8 @@ final readonly class EligibilityRefresh
         $cursor = $finished ? null : $page[array_key_last($page)]['subject_id'];
 
         return new RefreshStep(
-            function () use ($account, $qualification, $rows, $finished, $cursor, $observed): void {
-                $rows->flush();
+            function () use ($account, $qualification, $persistence, $finished, $cursor, $observed): void {
+                $persistence->flush();
                 $this->connection->executeStatement(
                     'INSERT INTO compliance_qualification_refresh
                     (account_id, qualification_id, ready, after_subject, observed_counter) VALUES (?, ?, ?, ?, ?)
@@ -134,8 +131,11 @@ final readonly class EligibilityRefresh
         );
     }
 
-    private function results(): MappedRowSet
+    /** @return array{MappedRowSet, MappedTableUnitOfWork} */
+    private function results(): array
     {
-        return new MappedRowSet($this->resultAdapter, $this->resultMapping);
+        $rows = $this->adapter->createDefined($this->resultMapping);
+
+        return [$rows, new MappedTableUnitOfWork([$this->resultMapping->table => $rows], $this->adapter)];
     }
 }

@@ -22,7 +22,7 @@ final readonly class QueryGuardRules
 
     /**
      * @param list<QueryGuardDefinition> $definitions
-     * @param array<class-string<MappedRowSetDefinition>, MappedRowSetMetadata> $mappings
+     * @param array<string, MappedRowSetMetadata> $mappings
      */
     public static function compile(array $definitions, array $mappings): self
     {

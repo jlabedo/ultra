@@ -9,36 +9,33 @@ use Ultra\UnitOfWork\UnitOfWork;
 /** Coordinates the defined row sets that persist in one transaction. */
 final readonly class MappedTableUnitOfWork implements UnitOfWork
 {
-    /** @var array<class-string<MappedRowSetDefinition>, MappedRowSet> */
+    /** @var array<string, MappedRowSet> */
     private array $rowSets;
 
-    /** @var array<class-string<MappedRowSetDefinition>, MappedRowSetAdapter> */
-    private array $adapters;
-
-    /** @var array<class-string<MappedRowSetDefinition>, MappedRowSetMetadata> */
+    /** @var array<string, MappedRowSetMetadata> */
     private array $mappings;
 
-    /** @var array<class-string<MappedRowSetDefinition>, bool> */
+    /** @var array<string, bool> */
     private array $referenced;
 
     private QueryGuardWork $guards;
 
     /**
-     * @param array<class-string<MappedRowSetDefinition>, MappedRowSet> $rowSets
-     * @param array<class-string<MappedRowSetDefinition>, bool>|null $compiledSchedule Supplied by the container compiler.
+     * @param array<string, MappedRowSet> $rowSets Keyed by definition class when used with declared dependencies or guards.
+     * @param array<string, bool>|null $compiledSchedule Supplied by the container compiler.
      * @param list<QueryGuardDefinition>|QueryGuardRules $queryGuards
      */
     public function __construct(
         array $rowSets,
+        private ?MappedTableAdapter $adapter = null,
         ?array $compiledSchedule = null,
         array|QueryGuardRules $queryGuards = [],
         ?GuardLockAdapter $guardLocks = null,
     ) {
         $mappings = [];
-        $adapters = [];
         foreach ($rowSets as $definition => $rowSet) {
+            $rowSet->assertCanEnroll($adapter ?? throw new \LogicException('Mapped row sets require a table adapter.'));
             $mappings[$definition] = $rowSet->mappingForCoordination();
-            $adapters[$definition] = $rowSet->adapterForCoordination();
         }
 
         $schedule = $compiledSchedule ?? MappedTableDependencies::compile($mappings);
@@ -58,7 +55,6 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
         }
 
         $this->rowSets = $orderedRowSets;
-        $this->adapters = $adapters;
         $this->mappings = $mappings;
         $this->referenced = $schedule;
     }
@@ -119,22 +115,19 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
 
         $this->assertSupported($plans);
         $requests = $this->guards->requests($plans);
-        $participating = array_fill_keys(array_keys($plans), true);
-        foreach ($this->guards->watchedRowSets($requests) as $definition => $included) {
-            $participating[$definition] = $included;
-        }
-
-        $resource = null;
-        foreach (array_keys($participating) as $definition) {
-            $active = $this->adapters[$definition]->activeTransactionResource();
-            if (null !== $resource && $resource !== $active) {
-                throw new \LogicException('Coordinated mapped row sets must use the same transaction resource.');
-            }
-            $resource = $active;
-        }
-
+        $resource = [] !== $plans || $this->guards->hasPendingChanges()
+            ? $this->adapter?->activeTransactionResource()
+            : null;
         $this->guards->replay($requests, $resource);
-        RowSetPlanFlusher::flush($plans, $this->adapters);
+
+        if ([] !== $plans) {
+            $tablePlans = [];
+            foreach ($plans as $definition => $plan) {
+                $tablePlans[$this->mappings[$definition]->table] = $plan;
+            }
+            assert(null !== $this->adapter, 'Pending mapped rows require a table adapter.');
+            $this->adapter->flush($tablePlans);
+        }
 
         $this->guards->clear();
         foreach (array_keys($plans) as $definition) {
@@ -150,7 +143,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
         }
     }
 
-    /** @param array<class-string<MappedRowSetDefinition>, RowSetUpdatePlan> $plans */
+    /** @param array<string, RowSetUpdatePlan> $plans */
     private function assertSupported(array $plans): void
     {
         $absent = [];

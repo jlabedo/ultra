@@ -8,7 +8,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\MappedTable\Exception\UnknownQueryGuardException;
 use Ultra\MappedTable\InMemoryGuardLockAdapter;
-use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
@@ -190,16 +190,12 @@ final class QueryReadOrderingTest extends StateStoreTestCase
     private function fixture(bool $numeric = false): array
     {
         $database = new InMemoryRowDatabase();
-        $table = new MappedRowSet(
-            new InMemoryMappedRowSetAdapter($database, 'bookings'),
-            new QueryReadBookingsDefinition($numeric)->mapping(),
-        );
-        $notes = new MappedRowSet(
-            new InMemoryMappedRowSetAdapter($database, 'notes'),
-            new QueryReadNotesDefinition()->mapping(),
-        );
+        $adapter = new InMemoryMappedTableAdapter($database);
+        $table = $adapter->createDefined(new QueryReadBookingsDefinition($numeric)->mapping());
+        $notes = $adapter->createDefined(new QueryReadNotesDefinition()->mapping());
         $unitOfWork = new MappedTableUnitOfWork(
             [QueryReadBookingsDefinition::class => $table, QueryReadNotesDefinition::class => $notes],
+            $adapter,
             queryGuards: [
                 new QueryGuardDefinition('company_usage', [
                     new QueryGuardDependency(QueryReadBookingsDefinition::class, 'company_id', ['charged', 'minutes']),

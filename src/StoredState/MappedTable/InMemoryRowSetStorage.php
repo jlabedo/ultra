@@ -6,7 +6,8 @@ namespace Ultra\MappedTable;
 
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
+/** @internal */
+final readonly class InMemoryRowSetStorage implements MappedRowSetStorage
 {
     /** @var list<string> */
     private array $keyColumns;
@@ -44,15 +45,6 @@ final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
     public function rows(array $columns = [], ?MappedKey $owner = null): array
     {
         return $this->database->rowsByKey($this->tableName, $this->keyColumns(), $columns, $owner);
-    }
-
-    public function activeTransactionResource(): object
-    {
-        if (!$this->database->isTransactionActive()) {
-            throw new \LogicException('Coordinated mapped table flush requires an active transaction.');
-        }
-
-        return $this->database;
     }
 
     public function check(RowSetUpdatePlan $plan): void

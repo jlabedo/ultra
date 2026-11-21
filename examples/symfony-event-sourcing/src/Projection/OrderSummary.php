@@ -8,7 +8,8 @@ use App\Event\OrderPlaced;
 use App\Event\OrderShipped;
 use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionResetter;
@@ -19,10 +20,13 @@ final readonly class OrderSummary implements UnitOfWork
 {
     private MappedRowSet $rows;
 
-    public function __construct(
-        Connection $connection,
-    ) {
-        $this->rows = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, 'order_summary'));
+    private MappedTableUnitOfWork $persistence;
+
+    public function __construct(Connection $connection)
+    {
+        $adapter = new PostgresMappedTableAdapter($connection);
+        $this->rows = $adapter->create('order_summary');
+        $this->persistence = new MappedTableUnitOfWork(['order_summary' => $this->rows], $adapter);
     }
 
     #[ProjectionHandler]
@@ -42,17 +46,17 @@ final readonly class OrderSummary implements UnitOfWork
 
     public function hasPendingChanges(): bool
     {
-        return $this->rows->hasPendingChanges();
+        return $this->persistence->hasPendingChanges();
     }
 
     public function clear(): void
     {
-        $this->rows->clear();
+        $this->persistence->clear();
     }
 
     public function flush(): void
     {
-        $this->rows->flush();
+        $this->persistence->flush();
     }
 
     #[ProjectionResetter]

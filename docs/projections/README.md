@@ -104,8 +104,8 @@ to projection writes and must not feed work into other independently flushed par
 Projection handlers must not append new domain events or perform irreversible external effects.
 
 The [Symfony event sourcing example](../../examples/symfony-event-sourcing/README.md)
-constructs a `MappedRowSet` inside a projection implementing `UnitOfWork`, with no
-per-table service or application transaction decorator.
+assembles a private `MappedTableUnitOfWork` inside a projection implementing `UnitOfWork`.
+Its row changes and resets run in the transaction owned by the projection runner.
 
 ## Managed reconstruction
 

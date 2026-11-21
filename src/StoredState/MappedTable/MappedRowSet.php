@@ -4,12 +4,10 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-use Ultra\UnitOfWork\UnitOfWork;
-
 /**
- * Logical row-set unit of work that buffers conditional row changes and flushes them through an adapter.
+ * Logical row set that buffers conditional row changes for MappedTableUnitOfWork.
  */
-final class MappedRowSet implements UnitOfWork
+final class MappedRowSet
 {
     /** @var array<string, BufferedRowUpdate> */
     private array $updates = [];
@@ -21,26 +19,21 @@ final class MappedRowSet implements UnitOfWork
     /** @var array<string, BufferedRowMembership> */
     private array $memberships = [];
 
+    /**
+     * @internal Create row sets through the common adapter.
+     * @param list<string> $keyColumns
+     */
     public function __construct(
-        private readonly MappedRowSetAdapter $adapter,
-        private readonly ?MappedRowSetMetadata $mapping = null,
-        private readonly bool $requiresCoordinator = false,
-    ) {
-        if (null !== $mapping && $mapping->keyColumns !== $adapter->keyColumns()) {
-            throw new \InvalidArgumentException('A defined row set needs an adapter with the declared key.');
-        }
-    }
+        private readonly MappedTableAdapter $adapter,
+        private readonly string $table,
+        private readonly array $keyColumns,
+        private readonly ?MappedRowSetMetadata $mapping,
+    ) {}
 
     /** @param int|string|MappedKey|\Stringable|array<string, int|string|\Stringable> $key */
     public function withKey(int|string|MappedKey|\Stringable|array $key): PendingRowUpdate
     {
-        return new PendingRowUpdate(
-            $this,
-            $this->normalizeKey($key),
-            $this->generation,
-            $this->mapping->table ?? 'mapped row set',
-            $this->mapping,
-        );
+        return new PendingRowUpdate($this, $this->normalizeKey($key), $this->generation, $this->table, $this->mapping);
     }
 
     /** @internal True when a buffered deletion, cancellation or reconciliation removes the row. */
@@ -163,7 +156,7 @@ final class MappedRowSet implements UnitOfWork
         $plan = $update?->toPlan();
         $stored = in_array($plan?->mode, [RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE], true)
             ? false
-            : $this->adapter->row($key, $projection);
+            : $this->adapter->row($this->table, $key, $projection);
         $written = null !== $plan && $plan->writes() ? [...$plan->setColumns, ...$key->values] : [];
         if (false === $stored && [] === $written) {
             return null;
@@ -220,7 +213,7 @@ final class MappedRowSet implements UnitOfWork
         $owner = $this->normalizeOwner($owner);
         $keys = array_map(
             static fn(MappedRow $row): MappedKey => $row->key,
-            $this->readRows($owner, $this->adapter->keyColumns()),
+            $this->readRows($owner, $this->keyColumns),
         );
         $this->expectKeys($owner, $keys);
 
@@ -236,7 +229,7 @@ final class MappedRowSet implements UnitOfWork
         $mapping = $this->mapping;
         $columns = $this->selectedColumns($columns);
         $selected = [] === $columns && null !== $mapping ? $mapping->keyColumns : $columns;
-        $committed = $this->adapter->rows($selected, $owner);
+        $committed = $this->adapter->rows($this->table, $selected, $owner);
         $rows = [];
         foreach ($committed as $row) {
             $fingerprint = $row->key->fingerprint();
@@ -324,35 +317,36 @@ final class MappedRowSet implements UnitOfWork
     /** @internal */
     public function mappingForCoordination(): MappedRowSetMetadata
     {
-        return $this->mapping ?? throw new \LogicException('A coordinated row set needs a definition.');
+        return (
+            $this->mapping ?? new MappedRowSetMetadata(
+                $this->table,
+                [],
+                $this->keyColumns,
+                [],
+                null,
+                $this->keyColumns,
+                [],
+                array_fill_keys($this->keyColumns, true),
+                [],
+            )
+        );
     }
 
     /** @internal */
-    public function adapterForCoordination(): MappedRowSetAdapter
+    public function assertCanEnroll(MappedTableAdapter $adapter): void
     {
         if ($this->coordinated) {
             throw new \LogicException('This mapped row set already has a flush coordinator.');
         }
-        return $this->adapter;
+        if ($this->adapter !== $adapter) {
+            throw new \LogicException('Coordinated row sets must be bound to the same mapped table adapter.');
+        }
     }
 
     /** @internal */
     public function enrollInCoordinator(): void
     {
         $this->coordinated = true;
-    }
-
-    public function flush(): void
-    {
-        if ($this->coordinated || $this->requiresCoordinator || null !== $this->mapping?->owner) {
-            throw new \LogicException('Flush this mapped row set through its coordinator.');
-        }
-        if (!$this->hasPendingChanges()) {
-            return;
-        }
-
-        RowSetPlanFlusher::flush([$this->updatePlan()], [$this->adapter]);
-        $this->clear();
     }
 
     public function hasPendingChanges(): bool
@@ -462,7 +456,7 @@ final class MappedRowSet implements UnitOfWork
     /** @param int|string|MappedKey|\Stringable|array<string, int|string|\Stringable> $key */
     private function normalizeKey(int|string|MappedKey|\Stringable|array $key): MappedKey
     {
-        $keyColumns = $this->mapping->keyColumns ?? $this->adapter->keyColumns();
+        $keyColumns = $this->mapping->keyColumns ?? $this->keyColumns;
         if (is_array($key)) {
             $key = new MappedKey($key);
         } elseif (!$key instanceof MappedKey) {

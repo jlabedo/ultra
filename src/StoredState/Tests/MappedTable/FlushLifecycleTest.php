@@ -9,9 +9,8 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRow;
-use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\RowUpdatePlan;
-use Ultra\MappedTable\Tests\Support\RecordingRowSetAdapter;
+use Ultra\MappedTable\Tests\Support\RecordingRowSetStorage;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
@@ -21,8 +20,8 @@ final class FlushLifecycleTest extends RowSetTestCase
 {
     public function test_preparation_performs_no_io_and_flush_uses_a_sorted_immutable_snapshot(): void
     {
-        $adapter = new RecordingRowSetAdapter();
-        $rows = new MappedRowSet($adapter);
+        $adapter = new RecordingRowSetStorage();
+        [$rows, $unit] = $adapter->assemble();
         static::assertFalse($rows->hasPendingChanges());
         $rows->reconcileRows([
             new MappedRow(new MappedKey(['id' => 'second']), ['status' => 'second']),
@@ -33,7 +32,7 @@ final class FlushLifecycleTest extends RowSetTestCase
         static::assertSame(0, $adapter->reads);
         static::assertSame([], $adapter->batches);
         $rows->withKey('first')->setColumn('status', 'changed');
-        $rows->flush();
+        $unit->flush();
         static::assertCount(1, $adapter->batches);
         static::assertSame(
             ['first', 'second'],
@@ -41,7 +40,7 @@ final class FlushLifecycleTest extends RowSetTestCase
         );
         static::assertSame(['status' => 'changed'], $adapter->batches[0]->rowUpdates[0]->setColumns);
         static::assertFalse($rows->hasPendingChanges());
-        $rows->flush();
+        $unit->flush();
         static::assertCount(1, $adapter->batches);
         static::assertSame(['status' => 'first'], $snapshot->rowUpdates[0]->setColumns);
         static::assertSame(
@@ -53,8 +52,8 @@ final class FlushLifecycleTest extends RowSetTestCase
 
     public function test_key_only_observation_reads_once_and_flushes_an_absence_check(): void
     {
-        $adapter = new RecordingRowSetAdapter();
-        $rows = new MappedRowSet($adapter);
+        $adapter = new RecordingRowSetStorage();
+        [$rows, $unit] = $adapter->assemble();
         $row = $rows->withKey(['id' => 'missing']);
         static::assertSame(0, $adapter->reads);
         static::assertFalse($rows->hasPendingChanges());
@@ -62,7 +61,7 @@ final class FlushLifecycleTest extends RowSetTestCase
         static::assertNull($row->observe([]));
         static::assertSame([['id']], $adapter->rowProjections);
         static::assertTrue($rows->hasPendingChanges());
-        $rows->flush();
+        $unit->flush();
         static::assertSame(RowUpdatePlan::EXPECTED_ABSENT, $adapter->batches[0]->rowUpdates[0]->expectedPresence);
         static::assertFalse($rows->hasPendingChanges());
     }
@@ -90,19 +89,20 @@ final class FlushLifecycleTest extends RowSetTestCase
         $rows->withKey('first')->expectAbsent()->insert()->setColumn('status', 'new');
         $rows->reconcileRows([new MappedRow(new MappedKey(['id' => 'first']), ['status' => 'new'])]);
 
+        $unit = $fixture->unit();
         $fixture->storage->beginTransaction();
-        $rows->flush();
+        $unit->flush();
         static::assertTrue($fixture->storage->isTransactionActive());
         static::assertFalse($rows->hasPendingChanges());
         static::assertSame(['status' => 'new'], $rows->withKey('first')->get(['status']));
         // A second flush must neither replay the insert nor reconcile away a later row.
         $fixture->seed(['id' => 'later', 'status' => 'untouched']);
-        $rows->flush();
+        $unit->flush();
         static::assertSame(['status' => 'untouched'], $fixture->stored('later', ['status']));
 
         $rows->withKey('first')->expectColumnValue('status', 'new')->setColumn('status', 'changed');
-        $rows->flush();
-        $rows->flush();
+        $unit->flush();
+        $unit->flush();
         static::assertFalse($rows->hasPendingChanges());
         static::assertSame(['status' => 'changed'], $rows->withKey('first')->get(['status']));
         $fixture->storage->rollBack();
@@ -113,8 +113,8 @@ final class FlushLifecycleTest extends RowSetTestCase
 
     public function test_observations_and_unchanged_updates_flush_as_checks_without_writes(): void
     {
-        $adapter = new RecordingRowSetAdapter();
-        $rows = new MappedRowSet($adapter);
+        $adapter = new RecordingRowSetStorage();
+        [$rows, $unit] = $adapter->assemble();
         $rows->withKey('absent')->expectAbsent();
         $rows->withKey('present')->expectPresent();
         $rows
@@ -122,7 +122,7 @@ final class FlushLifecycleTest extends RowSetTestCase
             ->expectColumnValues(['status' => 'pending', 'note' => null])
             ->setColumns(['status' => 'pending', 'note' => null]);
         $rows->withKey('changed')->expectColumnValue('status', 'pending')->setColumn('status', 'paid');
-        $rows->flush();
+        $unit->flush();
         $plans = $adapter->batches[0]->rowUpdates;
         static::assertSame(
             [
@@ -210,13 +210,16 @@ final class FlushLifecycleTest extends RowSetTestCase
         $fixture->seed(['id' => 'second', 'status' => 'pending']);
         $fixture->rows->withKey('first')->setColumn('status', 'active');
         $fixture->rows->withKey('second')->expectColumnValue('status', 'stale')->setColumn('status', 'active');
+        $fixture->storage->beginTransaction();
         $this->expectException(ConcurrencyException::class);
         try {
-            $fixture->rows->flush();
+            $fixture->unit()->flush();
         } finally {
             static::assertSame(['status' => 'active'], $fixture->stored('first', ['status']));
             static::assertSame(['status' => 'pending'], $fixture->stored('second', ['status']));
-            static::assertFalse($fixture->storage->isTransactionActive());
+            static::assertTrue($fixture->storage->isTransactionActive());
+            $fixture->storage->rollBack();
+            static::assertSame(['status' => 'pending'], $fixture->stored('first', ['status']));
         }
     }
 

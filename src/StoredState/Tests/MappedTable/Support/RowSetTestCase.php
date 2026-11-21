@@ -10,6 +10,7 @@ use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetMapping;
+use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\Testing\PostgresConnectionSupport;
 
@@ -32,6 +33,7 @@ abstract class RowSetTestCase extends TestCase
         array $columnTypes = [],
         bool $allowAbsentObservations = true,
         Connection|InMemoryRowDatabase|null $storage = null,
+        ?MappedTableAdapter $adapter = null,
     ): RowSetFixture {
         if (null === $storage && 'postgres' === $backend) {
             $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
@@ -47,6 +49,7 @@ abstract class RowSetTestCase extends TestCase
             $keyColumns,
             $columnTypes,
             $allowAbsentObservations,
+            $adapter,
         );
         $this->fixtures[] = $fixture;
         return $fixture;

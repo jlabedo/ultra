@@ -8,8 +8,8 @@ namespace Ultra\MappedTable;
 final class MappedTableDependencies
 {
     /**
-     * @param array<class-string<MappedRowSetDefinition>, MappedRowSetMetadata> $mappings
-     * @return array<class-string<MappedRowSetDefinition>, bool> Parents before children, with a flag for each referenced row set.
+     * @param array<string, MappedRowSetMetadata> $mappings
+     * @return array<string, bool> Parents before children, with a flag for each referenced row set.
      */
     public static function compile(array $mappings): array
     {
@@ -44,10 +44,10 @@ final class MappedTableDependencies
     }
 
     /**
-     * @param class-string<MappedRowSetDefinition> $definition
-     * @param array<class-string<MappedRowSetDefinition>, MappedRowSetMetadata> $mappings
-     * @param array<class-string<MappedRowSetDefinition>, true> $visiting
-     * @param array<class-string<MappedRowSetDefinition>, true> $order
+     * @param string $definition
+     * @param array<string, MappedRowSetMetadata> $mappings
+     * @param array<string, true> $visiting
+     * @param array<string, true> $order
      */
     private static function visit(string $definition, array $mappings, array &$visiting, array &$order): void
     {

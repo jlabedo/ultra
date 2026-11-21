@@ -15,7 +15,7 @@ use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
-use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\Mapper\UltraNormalizer;
@@ -289,9 +289,11 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
     private function guardedRows(Connection $connection, string $table, bool $collection = false): array
     {
         $mapping = new CooperativeRowsDefinition()->mappingFor($table, $collection);
-        $rows = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, $table, $mapping->keyColumns), $mapping);
+        $adapter = new PostgresMappedTableAdapter($connection);
+        $rows = $adapter->createDefined($mapping);
         $unitOfWork = new MappedTableUnitOfWork(
             [CooperativeRowsDefinition::class => $rows],
+            $adapter,
             queryGuards: [new QueryGuardDefinition($collection ? 'collection_usage' : 'usage', [
                 new QueryGuardDependency(CooperativeRowsDefinition::class, 'status', ['note']),
             ])],
@@ -364,7 +366,12 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
 
     public function test_manual_guards_do_not_reuse_automatic_absent_row_locks(): void
     {
-        $this->withMappedRowSet(static function (Connection $connection, MappedRowSet $table, string $tableName): void {
+        $this->withMappedRowSet(static function (
+            Connection $connection,
+            MappedRowSet $table,
+            string $tableName,
+            MappedTableUnitOfWork $persistence,
+        ): void {
             $other = PostgresConnectionSupport::sharedConnection(
                 (string) getenv('ULTRA_TEST_POSTGRES_DSN'),
                 self::class,
@@ -374,7 +381,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             $otherRegistry->lockRow($tableName, new MappedKey(['id' => 'anchor']));
             $connection->beginTransaction();
             try {
-                $table->flush();
+                $persistence->flush();
                 $other->transactional(static function () use ($other, $otherRegistry): void {
                     $other->executeStatement("SET LOCAL lock_timeout = '10ms'");
                     $otherRegistry->flush();
@@ -417,10 +424,15 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 ['status' => 'status'],
             );
             $mapping = new CooperativeRowsDefinition()->mappingFor($tableName, collection: false);
-            $table = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, $tableName), $mapping);
-            $registry = new MappedTableUnitOfWork([
-                CooperativeRowsDefinition::class => $table,
-            ], guardLocks: new PostgresGuardLockAdapter($connection));
+            $adapter = new PostgresMappedTableAdapter($connection);
+            $table = $adapter->createDefined($mapping);
+            $registry = new MappedTableUnitOfWork(
+                [
+                    CooperativeRowsDefinition::class => $table,
+                ],
+                $adapter,
+                guardLocks: new PostgresGuardLockAdapter($connection),
+            );
             $store = new StateStore(
                 new StateMetadataRegistry([ManualQueryState::class => $metadata]),
                 new StateRowSets([$tableName => $table], $registry),

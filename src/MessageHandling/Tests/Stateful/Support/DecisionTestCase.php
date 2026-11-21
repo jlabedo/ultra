@@ -9,9 +9,9 @@ use Ultra\Events\EventsExtension;
 use Ultra\EventSourcedState\EventSourcedStateExtension;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
-use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedRowSetAdapterFactory;
+use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Mapper_Bundle\MapperExtension;
@@ -80,11 +80,8 @@ abstract class DecisionTestCase extends TestCase
                     \Ultra\StatefulMessageHandling\Tests\DependentUsagesDefinition::class,
                 )
                 ->withService($database, InMemoryRowDatabase::class)
-                ->withService(
-                    new InMemoryMappedRowSetAdapterFactory($database),
-                    InMemoryMappedRowSetAdapterFactory::class,
-                )
-                ->withAlias(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
+                ->withService(new InMemoryMappedTableAdapter($database), InMemoryMappedTableAdapter::class)
+                ->withAlias(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)
                 ->withAlias('test.state_store', StateStore::class)
                 ->withAlias('test.state_tables', MappedTableUnitOfWork::class);
         }

@@ -11,7 +11,7 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
-use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MessageHandling\EventBusInterface;
@@ -45,12 +45,9 @@ final class ContainerAssemblyTest extends DecisionTestCase
             $classes[] = DecisionOrdersDefinition::class;
             $builder->register(InMemoryRowDatabase::class, InMemoryRowDatabase::class)->setPublic(true);
             $builder
-                ->register(InMemoryMappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
+                ->register(InMemoryMappedTableAdapter::class, InMemoryMappedTableAdapter::class)
                 ->setArguments([new Reference(InMemoryRowDatabase::class)]);
-            $builder->setAlias(
-                \Ultra\MappedTable\MappedRowSetAdapterFactory::class,
-                InMemoryMappedRowSetAdapterFactory::class,
-            );
+            $builder->setAlias(\Ultra\MappedTable\MappedTableAdapter::class, InMemoryMappedTableAdapter::class);
             $builder->setAlias('test.state_store', \Ultra\StateStore\StateStore::class)->setPublic(true);
             $extensions[] = new MappedTableExtension();
             $extensions[] = new \Ultra\StateStore_Bundle\StateStoreExtension();

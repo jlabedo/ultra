@@ -44,7 +44,7 @@ final class QueryGuardWork
     /**
      * @template T
      * @param callable(): T $query
-     * @param array<class-string<MappedRowSetDefinition>, MappedRowSet> $rowSets
+     * @param array<string, MappedRowSet> $rowSets
      * @return T
      */
     public function observe(string $name, int|string $value, callable $query, array $rowSets): mixed
@@ -90,7 +90,7 @@ final class QueryGuardWork
     }
 
     /**
-     * @param array<class-string<MappedRowSetDefinition>, RowSetUpdatePlan> $plans
+     * @param array<string, RowSetUpdatePlan> $plans
      * @return array<array-key, array<array-key, GuardLockMode>>
      */
     public function requests(array $plans): array
@@ -106,19 +106,6 @@ final class QueryGuardWork
         }
 
         return $requests;
-    }
-
-    /**
-     * @param array<array-key, array<array-key, GuardLockMode>> $requests
-     * @return iterable<class-string<MappedRowSetDefinition>, true>
-     */
-    public function watchedRowSets(array $requests): iterable
-    {
-        foreach (array_keys($requests) as $name) {
-            foreach (array_keys($this->rules->byName[$name]) as $definition) {
-                yield $definition => true;
-            }
-        }
     }
 
     /** @param array<array-key, array<array-key, GuardLockMode>> $requests */
