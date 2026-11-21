@@ -10,5 +10,12 @@ final readonly class QueryGuardDefinition
     public function __construct(
         public string $name,
         public array $dependencies,
-    ) {}
+    ) {
+        if (array_any(
+            $dependencies,
+            static fn(mixed $dependency): bool => !$dependency instanceof QueryGuardDependency,
+        )) {
+            throw new \InvalidArgumentException('A query guard dependency must be a QueryGuardDependency.');
+        }
+    }
 }

@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-use Ultra\MappedTable\Exception\UnknownQueryGuardException;
 use Ultra\UnitOfWork\UnitOfWork;
 
 /** Coordinates the defined row sets that persist in one transaction. */
@@ -22,7 +21,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
     /** @var array<class-string<MappedRowSetDefinition>, bool> */
     private array $referenced;
 
-    private ?QueryGuardWork $guards;
+    private QueryGuardWork $guards;
 
     /**
      * @param array<class-string<MappedRowSetDefinition>, MappedRowSet> $rowSets
@@ -49,8 +48,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
         if ([] !== $rules->namespaces && null === $guardLocks) {
             throw new \LogicException('Mapped query guards require a GuardLockAdapter.');
         }
-        $this->guards =
-            null === $guardLocks || [] === $rules->namespaces ? null : new QueryGuardWork($rules, $guardLocks);
+        $this->guards = new QueryGuardWork($rules, $guardLocks);
 
         $orderedRowSets = [];
         foreach (array_keys($schedule) as $definition) {
@@ -67,7 +65,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
 
     public function queryGuard(string $name): QueryGuard
     {
-        $this->guardWork($name)->assertKnown($name);
+        $this->guards->assertKnown($name);
 
         return new QueryGuard($this, $name);
     }
@@ -75,7 +73,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
     /** @internal */
     public function lockQuery(string $name, int|string $value): void
     {
-        $this->guardWork($name)->lock($name, $value);
+        $this->guards->lock($name, $value);
     }
 
     /**
@@ -86,18 +84,24 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
      */
     public function observeQuery(string $name, int|string $value, callable $query): mixed
     {
-        return $this->guardWork($name)->observe($name, $value, $query, $this->rowSets);
+        return $this->guards->observe($name, $value, $query, $this->rowSets);
     }
 
-    private function guardWork(string $name): QueryGuardWork
+    public function lockRow(string $table, MappedKey $key): void
     {
-        return $this->guards ?? throw new UnknownQueryGuardException($name);
+        $this->guards->lockRow($table, $key);
+    }
+
+    /** @param callable(): mixed $query */
+    public function expectQuery(callable $query, mixed $expected, ?string $name = null): void
+    {
+        $this->guards->expectQuery($query, $expected, $name);
     }
 
     public function hasPendingChanges(): bool
     {
         return (
-            true === $this->guards?->hasPendingChanges()
+            $this->guards->hasPendingChanges()
             || array_any($this->rowSets, static fn(MappedRowSet $rowSet): bool => $rowSet->hasPendingChanges())
         );
     }
@@ -114,9 +118,9 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
         }
 
         $this->assertSupported($plans);
-        $requests = $this->guards?->requests($plans) ?? [];
+        $requests = $this->guards->requests($plans);
         $participating = array_fill_keys(array_keys($plans), true);
-        foreach ($this->guards?->watchedRowSets($requests) ?? [] as $definition => $included) {
+        foreach ($this->guards->watchedRowSets($requests) as $definition => $included) {
             $participating[$definition] = $included;
         }
 
@@ -129,7 +133,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
             $resource = $active;
         }
 
-        $this->guards?->replay($requests, $resource);
+        $this->guards->replay($requests, $resource);
         foreach ($plans as $definition => $plan) {
             $this->adapters[$definition]->check($plan);
         }
@@ -150,7 +154,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
             )));
         }
 
-        $this->guards?->clear();
+        $this->guards->clear();
         foreach (array_keys($plans) as $definition) {
             $this->rowSets[$definition]->clear();
         }
@@ -158,7 +162,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
 
     public function clear(): void
     {
-        $this->guards?->clear();
+        $this->guards->clear();
         foreach ($this->rowSets as $rowSet) {
             $rowSet->clear();
         }

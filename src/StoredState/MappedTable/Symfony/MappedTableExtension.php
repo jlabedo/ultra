@@ -18,10 +18,20 @@ final readonly class MappedTableExtension implements ContainerExtension
 
     public function build(ContainerBuilder $container): void
     {
-        $container
-            ->registerForAutoconfiguration(MappedRowSetDefinition::class)
-            ->addResourceTag(MappedRowSetCompilerPass::DEFINITION_TAG);
-
-        $container->addCompilerPass(new MappedRowSetCompilerPass($this->queryGuards));
+        $configured = [];
+        if ($container->hasParameter(MappedQueryGuardCompilerPass::CONFIGURED_GUARDS)) {
+            /** @var list<QueryGuardDefinition> $configured */
+            $configured = $container->getParameter(MappedQueryGuardCompilerPass::CONFIGURED_GUARDS);
+        } else {
+            $container
+                ->registerForAutoconfiguration(MappedRowSetDefinition::class)
+                ->addResourceTag(MappedRowSetCompilerPass::DEFINITION_TAG);
+            $container->addCompilerPass(new MappedRowSetCompilerPass());
+            $container->addCompilerPass(new MappedQueryGuardCompilerPass(), priority: -30);
+        }
+        $container->setParameter(MappedQueryGuardCompilerPass::CONFIGURED_GUARDS, [
+            ...$configured,
+            ...$this->queryGuards,
+        ]);
     }
 }

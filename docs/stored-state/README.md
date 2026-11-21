@@ -34,8 +34,8 @@ hydration or collection reads. It selects identifier columns and sees buffered i
 Use it for informational reads; use an observation when the result must protect a later decision.
 `observe(StateClass::class, $id)` returns the same typed state or null and automatically registers:
 
-- `expect($state)` when the state exists: its row must remain present, its optimistic columns must match, and
-  collection membership is checked with the usual collection expectations;
+- a presence observation and expectations on the optimistic columns read from storage when the state exists.
+  Collection observations record item keys;
 - `expectMissing(StateClass::class, $id)` when it is absent: a later save is an insert, and a competing creation
   causes a concurrency conflict.
 
@@ -64,11 +64,11 @@ a null result and chooses any manual guards required for set-based rules.
 - `expectMissing(StateClass::class, $id)` buffers an optimistic expectation that the mapped row is still absent, also checked at flush
 - a later `save(...)` against the same mapped row uses the buffered expectation automatically
 - collection expectations use the loaded item id set to reject concurrent inserts or deletes in the collection
-- buffered writes are committed later by flushing `StateTableRegistry`, which coordinates the underlying `MappedRowSet` units of work
+- the [MappedTable coordinator](mapped-table.md#coordinated-flush) flushes compiled state mappings and direct row-set writes together
 
-State classes targeting the same physical table and complete key mapping share a `MappedRowSet` unit of work,
-but only read and write the columns each class maps. See [mapping](mapping.md) for manually assembled row sets
-using different candidate keys.
+State classes targeting the same physical table and complete key mapping share the container's
+`MappedRowSet`. Each state class reads and writes the columns it maps. See [Symfony integration](symfony.md)
+for the required definitions and [mapping](mapping.md) for manual assembly.
 
 ## Deletion
 
@@ -98,8 +98,9 @@ until that deletion is successfully flushed or discarded by `clear()`. A success
 and its expectations, allowing a fresh decision and save, including new collections. See the
 [unit-of-work lifecycle](../transactions/README.md#core-contract).
 
-Flush acquires query guards and replays queries before applying any deletion. It checks and empties the deleted
-owners' collection scopes before deleting root rows, then saves other owners' collections after their roots.
+Flush acquires query guards and replays queries before applying any deletion. For compiled state mappings,
+the declared MappedTable owner dependencies order child cleanup before parent deletion and parent writes before
+child writes.
 This ordering supports immediate foreign keys from collection rows to their owner without database cascades.
 Use one surrounding transaction: a conflict on either the parent or its collections requires rollback of the
 whole flush, followed by `clear()`, as described in [transactions](../transactions/README.md).
@@ -111,7 +112,7 @@ the owned collections when deleting their parent. Deletions and collection clean
 
 ## Query dependencies
 
-For named guards declared from mapped-state dependencies, read the [query guard contract](query-guards.md). It owns declaration rules, read ordering, flush replay, exceptions and caller responsibilities.
+For named guards declared on MappedTable row sets, read the [query guard contract](query-guards.md). It owns declaration rules, read ordering, flush replay, exceptions and caller responsibilities.
 
 For explicit SQL expectations and manually coordinated locks, read [manual queries and guards](manual-queries.md). These mechanisms supplement row expectations; the caller is responsible for enrolling every writer that affects the invariant.
 
@@ -128,8 +129,8 @@ Each file owns a guarantee; providers express alternative mappings, observation 
 | Collection hydration, reconciliation and owner cleanup respect identities, membership expectations and atomic rollback with immediate foreign keys | [CollectionOwnershipTest](../../src/StoredState/Tests/CollectionOwnershipTest.php) |
 | Recorded queries replay before writes, compare strictly and reject mutable expected values | [QueryReplayTest](../../src/StoredState/Tests/QueryReplayTest.php) |
 | Guarded decision reads reject affected pending changes before executing or queuing a query | [QueryReadOrderingTest](../../src/StoredState/Tests/QueryReadOrderingTest.php) |
-| Declared property and collection dependencies compile and enroll the relevant writers | [QueryDependencyTest](../../src/StoredState/Tests/QueryDependencyTest.php) |
-| Flush consolidates and orders guards before replay and writes; clear removes pending work | [FlushCoordinationTest](../../src/StoredState/Tests/FlushCoordinationTest.php) |
+| Mapped dependencies enroll object and direct writers, including collection reconciliation | [QueryDependencyTest](../../src/StoredState/Tests/QueryDependencyTest.php) |
+| Manual locks precede query replay and writes; clear removes pending work | [FlushCoordinationTest](../../src/StoredState/Tests/FlushCoordinationTest.php) |
 | Cooperative guards share or exclude competing transactions and remain separate from persistence locks | [CooperativeLockingTest](../../src/StoredState/Tests/CooperativeLockingTest.php) |
 | Symfony discovers root states and collection items, shares table views and assembles guards in dumped containers | [ContainerIntegrationTest](../../src/StoredState/Tests/ContainerIntegrationTest.php) |
 

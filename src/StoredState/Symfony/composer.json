@@ -12,10 +12,13 @@
     "require": {
         "php": ">=8.5",
         "symfony/dependency-injection": "7.*|8.*",
+        "symfony/type-info": "7.*|8.*",
         "ultra/container": "*",
+        "ultra/mapped-table": "*",
         "ultra/mapper-bundle": "*",
         "ultra/mapper-compiler": "*",
-        "ultra/state-store": "*"
+        "ultra/state-store": "*",
+        "ultra/unit-of-work": "*"
     },
     "autoload": {
         "psr-4": {

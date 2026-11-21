@@ -10,10 +10,10 @@ use App\Booking\StateStore\Write\BookWeekly;
 use App\Tests\Driver\BookingDriver;
 use App\Tests\Driver\StateStoreDriver;
 use Doctrine\DBAL\Connection;
+use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\StatefulMessageHandling\DecisionMode;
 use Ultra\StatefulMessageHandling\Violation;
-use Ultra\StateStore\Exception\PendingQueryChangesException;
 use Ultra\StateStore\StateStore;
 use Ultra\UnitOfWork\UnitOfWorkRunner;
 

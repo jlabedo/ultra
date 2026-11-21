@@ -14,6 +14,9 @@ use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
 use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\EventStore;
+use Ultra\MappedTable\MappedColumn;
+use Ultra\MappedTable\MappedRowSetDefinition;
+use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
@@ -940,5 +943,96 @@ final readonly class InspectMixedDecision
         }
 
         return $this->result;
+    }
+}
+
+final class DecisionOrdersDefinition implements MappedRowSetDefinition
+{
+    public function mapping(): MappedRowSetMapping
+    {
+        return new MappedRowSetMapping(
+            'decision_orders',
+            [
+                'order_id' => new MappedColumn('string'),
+                'status' => new MappedColumn('string'),
+            ],
+            ['order_id'],
+        );
+    }
+}
+
+final class DecisionTermsDefinition implements MappedRowSetDefinition
+{
+    public function mapping(): MappedRowSetMapping
+    {
+        return new MappedRowSetMapping(
+            'decision_terms',
+            [
+                'terms_id' => new MappedColumn('string'),
+                'status' => new MappedColumn('string'),
+            ],
+            ['terms_id'],
+        );
+    }
+}
+
+final class DecisionAcceptancesDefinition implements MappedRowSetDefinition
+{
+    public function mapping(): MappedRowSetMapping
+    {
+        return new MappedRowSetMapping(
+            'decision_acceptances',
+            [
+                'identity_id' => new MappedColumn('string'),
+                'terms_id' => new MappedColumn('string'),
+                'status' => new MappedColumn('string'),
+            ],
+            ['identity_id', 'terms_id'],
+        );
+    }
+}
+
+final class DependentMembersDefinition implements MappedRowSetDefinition
+{
+    public function mapping(): MappedRowSetMapping
+    {
+        return new MappedRowSetMapping(
+            'dependent_members',
+            [
+                'member_id' => new MappedColumn('string'),
+                'company_id' => new MappedColumn('string'),
+            ],
+            ['member_id'],
+        );
+    }
+}
+
+final class DependentCompaniesDefinition implements MappedRowSetDefinition
+{
+    public function mapping(): MappedRowSetMapping
+    {
+        return new MappedRowSetMapping(
+            'dependent_companies',
+            [
+                'company_id' => new MappedColumn('string'),
+                'monthly_minutes' => new MappedColumn('int'),
+            ],
+            ['company_id'],
+        );
+    }
+}
+
+final class DependentUsagesDefinition implements MappedRowSetDefinition
+{
+    public function mapping(): MappedRowSetMapping
+    {
+        return new MappedRowSetMapping(
+            'dependent_usages',
+            [
+                'company_month_id' => new MappedColumn('string'),
+                'used_minutes' => new MappedColumn('int'),
+            ],
+            ['company_month_id'],
+        );
     }
 }

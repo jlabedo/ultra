@@ -12,6 +12,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\MappedTable\Attribute\DefineQueryGuard;
 use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\InMemoryGuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
@@ -205,9 +206,40 @@ final class DefinedRowSetsTest extends RowSetTestCase
         $container->compile();
     }
 
+    public function test_attribute_declares_a_guard_in_a_mapped_table_only_container(): void
+    {
+        $container = new ContainerBuilder();
+        new MappedTableExtension()->build($container);
+        $container->register(InMemoryRowDatabase::class, InMemoryRowDatabase::class);
+        $container
+            ->register(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
+            ->setArguments([new Reference(InMemoryRowDatabase::class)]);
+        $container
+            ->register(GuardLockAdapter::class, InMemoryGuardLockAdapter::class)
+            ->setArguments([new Reference(InMemoryRowDatabase::class)]);
+        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
+        $container
+            ->register(AttributeGuardReader::class, AttributeGuardReader::class)
+            ->setAutowired(true)
+            ->setPublic(true);
+        $container->getDefinition(InMemoryRowDatabase::class)->setPublic(true);
+        $container->compile();
+
+        $reader = $container->get(AttributeGuardReader::class);
+        static::assertInstanceOf(AttributeGuardReader::class, $reader);
+        static::assertSame('empty', $reader->observe('one'));
+        $storage = $container->get(InMemoryRowDatabase::class);
+        static::assertInstanceOf(InMemoryRowDatabase::class, $storage);
+        $storage->seedRow('mapped_definition_orders', 'id', ['id' => 'one']);
+
+        $this->expectException(\Ultra\UnitOfWork\Exception\ConcurrencyException::class);
+        $storage->transactional($reader->flush(...));
+    }
+
     /** @return iterable<string, array{0: list<QueryGuardDefinition>, 1: string, 2?: bool}> */
     public static function invalidQueryGuards(): iterable
     {
+        yield 'empty dependencies' => [[new QueryGuardDefinition('guard', [])], 'at least one dependency'];
         yield 'missing dependency' => [
             [new QueryGuardDefinition('guard', [
                 new QueryGuardDependency(CompileTimeLineDefinition::class, 'owner'),
@@ -414,4 +446,30 @@ final readonly class DirectLineWriter
         #[Autowire(service: QueryGuard::class . '.lines')]
         public QueryGuard $guard,
     ) {}
+}
+
+final readonly class AttributeGuardReader
+{
+    public function __construct(
+        #[DefineQueryGuard('orders', [new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id')])]
+        private QueryGuard $guard,
+        private InMemoryRowDatabase $storage,
+        private MappedTableUnitOfWork $unitOfWork,
+    ) {}
+
+    public function observe(string $id): string
+    {
+        return $this->guard->observe($id, fn(): string => false === $this->storage->row(
+            'mapped_definition_orders',
+            'id',
+            $id,
+        )
+                ? 'empty'
+                : 'present');
+    }
+
+    public function flush(): void
+    {
+        $this->unitOfWork->flush();
+    }
 }

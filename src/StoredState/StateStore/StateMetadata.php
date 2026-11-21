@@ -20,12 +20,24 @@ use Ultra\MappedTable\MappedKey;
  *     idPropertyColumns: array<string, string>,
  *     propertyColumns: array<string, string>,
  *     optimisticPropertyColumns: array<string, string>,
+ *     completeKey?: list<string>,
+ *     readColumns?: list<string>,
+ *     optimisticColumnSet?: array<string, true>,
  *     embedded?: array<string, StateEmbeddedMetadataDefinition>,
  *     collections?: array<string, StateCollectionMetadataDefinition>
  * }
  */
 final readonly class StateMetadata
 {
+    /** @var list<string> */
+    private array $completeKey;
+
+    /** @var list<string> */
+    private array $readColumns;
+
+    /** @var array<string, true> */
+    public array $optimisticColumnSet;
+
     /**
      * @param class-string                            $stateClass
      * @param array<string, string>                   $idPropertyColumns
@@ -34,6 +46,9 @@ final readonly class StateMetadata
      * @param array<string, StateEmbeddedMetadata>    $embedded
      * @param array<string, StateCollectionMetadata>  $collections
      * @param 'int'|'string'|class-string $idType
+     * @param list<string>|null                      $completeKey
+     * @param list<string>|null                      $readColumns
+     * @param array<string, true>|null                $optimisticColumnSet
      */
     public function __construct(
         public string $stateClass,
@@ -47,7 +62,30 @@ final readonly class StateMetadata
         public array $optimisticPropertyColumns,
         public array $embedded = [],
         public array $collections = [],
-    ) {}
+        ?array $completeKey = null,
+        ?array $readColumns = null,
+        ?array $optimisticColumnSet = null,
+    ) {
+        if (null === $completeKey) {
+            $completeKey = array_values($idPropertyColumns);
+            sort($completeKey, SORT_STRING);
+        }
+        if (null === $readColumns) {
+            $readColumns = array_values($propertyColumns);
+            foreach ($embedded as $part) {
+                $readColumns = [...$readColumns, ...$part->selectedColumns()];
+            }
+        }
+        if (null === $optimisticColumnSet) {
+            $optimisticColumnSet = array_fill_keys(array_values($optimisticPropertyColumns), true);
+            foreach ($embedded as $part) {
+                $optimisticColumnSet += array_fill_keys(array_values($part->optimisticPropertyColumns), true);
+            }
+        }
+        $this->completeKey = $completeKey;
+        $this->readColumns = $readColumns;
+        $this->optimisticColumnSet = $optimisticColumnSet;
+    }
 
     /** @param StateMetadataDefinition $definition */
     public static function fromArray(array $definition): self
@@ -64,6 +102,9 @@ final readonly class StateMetadata
             optimisticPropertyColumns: $definition['optimisticPropertyColumns'],
             embedded: array_map(StateEmbeddedMetadata::fromArray(...), $definition['embedded'] ?? []),
             collections: array_map(StateCollectionMetadata::fromArray(...), $definition['collections'] ?? []),
+            completeKey: $definition['completeKey'] ?? null,
+            readColumns: $definition['readColumns'] ?? null,
+            optimisticColumnSet: $definition['optimisticColumnSet'] ?? null,
         );
     }
 
@@ -80,6 +121,9 @@ final readonly class StateMetadata
             'idPropertyColumns' => $this->idPropertyColumns,
             'propertyColumns' => $this->propertyColumns,
             'optimisticPropertyColumns' => $this->optimisticPropertyColumns,
+            'completeKey' => $this->completeKey,
+            'readColumns' => $this->readColumns,
+            'optimisticColumnSet' => $this->optimisticColumnSet,
             'embedded' => array_map(
                 static fn(StateEmbeddedMetadata $embedded): array => $embedded->toArray(),
                 $this->embedded,
@@ -94,21 +138,13 @@ final readonly class StateMetadata
     /** @return list<string> */
     public function keyColumns(): array
     {
-        $columns = array_values($this->idPropertyColumns);
-        sort($columns, SORT_STRING);
-
-        return $columns;
+        return $this->completeKey;
     }
 
     /** @return list<string> */
     public function selectedColumns(): array
     {
-        $columns = array_values($this->propertyColumns);
-        foreach ($this->embedded as $embedded) {
-            $columns = [...$columns, ...$embedded->selectedColumns()];
-        }
-
-        return array_values(array_unique($columns));
+        return $this->readColumns;
     }
 
     /**

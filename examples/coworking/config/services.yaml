@@ -24,8 +24,8 @@ services:
         arguments:
             $connection: '@doctrine.dbal.default_connection'
 
-    Ultra\StateStore\GuardLockAdapter:
-        class: Ultra\StateStore\PostgresGuardLockAdapter
+    Ultra\MappedTable\GuardLockAdapter:
+        class: Ultra\MappedTable\PostgresGuardLockAdapter
         arguments:
             $connection: '@doctrine.dbal.default_connection'
 

@@ -10,8 +10,8 @@ use App\Booking\StateStoreDirect\Repository\BookingRepository;
 use App\Tests\Driver\BookingDriver;
 use App\Tests\Driver\StateStoreDirectDriver;
 use Doctrine\DBAL\Connection;
+use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\StatefulMessageHandling\Exception\InvariantViolation;
-use Ultra\StateStore\Exception\PendingQueryChangesException;
 use Ultra\StateStore\StateStore;
 use Ultra\UnitOfWork\UnitOfWorkRunner;
 

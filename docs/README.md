@@ -14,7 +14,7 @@ Source code and documentation follow functional contexts. Use the task table to 
 | Row buffering, row-set reconciliation, mapped keys or storage adapters | [Mapped Table](stored-state/mapped-table.md) | [StoredState](../src/StoredState) | MappedTable |
 | Inspecting a row-set plan and its executed PostgreSQL queries | [SQL inspection](stored-state/mapped-table.md#sql-inspection), then [standalone scenarios](../examples/mapped-table-sql/README.md) | [StoredState](../src/StoredState), [Testing](../src/Testing) | MappedTable, ultra/testing-postgres |
 | State mapping, collections or optimistic row expectations | [Stored-state contracts](stored-state/README.md), then [mapping](stored-state/mapping.md) | [StoredState](../src/StoredState) | StateStore, StateStore_Bundle, MappedTable |
-| Set-based invariants, query observations or cooperative locking | [Query guards](stored-state/query-guards.md) | [StoredState](../src/StoredState) | StateStore, MappedTable |
+| Set-based invariants, query observations or cooperative locking | [Query guards](stored-state/query-guards.md) | [StoredState](../src/StoredState) | MappedTable |
 | Manual SQL expectations or explicit guards | [Manual queries](stored-state/manual-queries.md) | [StoredState](../src/StoredState) | StateStore |
 | Projection ordering, claims, checkpoints or scaling | [Projections](projections/README.md) | [Projection](../src/Projection) | Projection, Projection_Postgres |
 | Normalization, custom types or generated normalizers | [Mapping](mapping/README.md) | [Mapper](../src/Mapper) | Mapper, Mapper_Compiler, Mapper_Bundle |

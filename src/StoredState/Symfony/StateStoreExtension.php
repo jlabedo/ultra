@@ -12,9 +12,8 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\StateMetadataRegistry;
+use Ultra\StateStore\StateRowSets;
 use Ultra\StateStore\StateStore;
-use Ultra\StateStore\StateTableRegistry;
-use Ultra\StateStore_Bundle\DependencyInjection\Compiler\QueryGuardCompilerPass;
 use Ultra\StateStore_Bundle\DependencyInjection\Compiler\StateStoreCompilerPass;
 
 final class StateStoreExtension implements ContainerExtension
@@ -36,11 +35,10 @@ final class StateStoreExtension implements ContainerExtension
             ->register(StateStore::class)
             ->setArguments([
                 new Reference(StateMetadataRegistry::class),
-                new Reference(StateTableRegistry::class),
+                new Reference(StateRowSets::class),
                 new Reference(UltraNormalizer::class),
             ]);
 
-        $container->addCompilerPass(new StateStoreCompilerPass());
-        $container->addCompilerPass(new QueryGuardCompilerPass());
+        $container->addCompilerPass(new StateStoreCompilerPass(), priority: -10);
     }
 }

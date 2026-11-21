@@ -40,6 +40,17 @@ final readonly class PendingRowUpdate
      */
     public function observe(?array $columns = null): ?array
     {
+        return $this->observeProjectedColumns($columns, null);
+    }
+
+    /**
+     * @internal Allows object views to hydrate additional columns outside their optimistic mapping.
+     * @param list<string>|null $columns
+     * @param array<string, true>|null $observedColumns
+     * @return array<string, mixed>|null
+     */
+    public function observeProjectedColumns(?array $columns, ?array $observedColumns): ?array
+    {
         $row = $this->rowSet->readForHandle($this->key, $this->generation, $columns);
         if (null === $row) {
             $this->expectAbsent();
@@ -47,7 +58,9 @@ final readonly class PendingRowUpdate
             return null;
         }
 
-        $values = $row['storedValues'];
+        $values = null === $observedColumns
+            ? $row['storedValues']
+            : array_intersect_key($row['storedValues'], $observedColumns);
         if ([] === $values) {
             $this->expectPresent();
 

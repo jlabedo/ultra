@@ -18,16 +18,26 @@ use Ultra\MappedTable\MappedRow;
  *     itemIdProperty: string,
  *     itemIdScalar: bool,
  *     itemIdPropertyColumns: array<string, string>,
- *     itemPropertyColumns: array<string, string>
+ *     itemPropertyColumns: array<string, string>,
+ *     completeKey?: list<string>,
+ *     readColumns?: list<string>
  * }
  */
 final readonly class StateCollectionMetadata
 {
+    /** @var list<string> */
+    private array $completeKey;
+
+    /** @var list<string> */
+    public array $readColumns;
+
     /**
      * @param class-string          $itemClass
      * @param array<string, string> $ownerPropertyColumns
      * @param array<string, string> $itemIdPropertyColumns
      * @param array<string, string> $itemPropertyColumns
+     * @param list<string>|null $completeKey
+     * @param list<string>|null $readColumns
      */
     public function __construct(
         public string $property,
@@ -40,7 +50,17 @@ final readonly class StateCollectionMetadata
         public bool $itemIdScalar,
         public array $itemIdPropertyColumns,
         public array $itemPropertyColumns,
-    ) {}
+        ?array $completeKey = null,
+        ?array $readColumns = null,
+    ) {
+        if (null === $completeKey) {
+            $completeKey = [...array_values($ownerPropertyColumns), ...array_values($itemIdPropertyColumns)];
+            sort($completeKey, SORT_STRING);
+        }
+        $this->completeKey = $completeKey;
+        $this->readColumns =
+            $readColumns ?? ([] === $itemPropertyColumns ? $completeKey : array_values($itemPropertyColumns));
+    }
 
     /** @param StateCollectionMetadataDefinition $definition */
     public static function fromArray(array $definition): self
@@ -62,16 +82,15 @@ final readonly class StateCollectionMetadata
             'itemIdScalar' => $this->itemIdScalar,
             'itemIdPropertyColumns' => $this->itemIdPropertyColumns,
             'itemPropertyColumns' => $this->itemPropertyColumns,
+            'completeKey' => $this->completeKey,
+            'readColumns' => $this->readColumns,
         ];
     }
 
     /** @return list<string> */
     public function keyColumns(): array
     {
-        $columns = [...array_values($this->ownerPropertyColumns), ...array_values($this->itemIdPropertyColumns)];
-        sort($columns, SORT_STRING);
-
-        return $columns;
+        return $this->completeKey;
     }
 
     /** @return list<string> */

@@ -12,13 +12,14 @@ use Ultra\EventStore\InMemoryEventStore;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
+use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension;
 use Ultra\StateStore\StateStore;
-use Ultra\StateStore\StateTableRegistry;
 use Ultra\StateStore_Bundle\StateStoreExtension;
 use Ultra\Testing\UltraLight;
 use Ultra\Testing\UltraLightContainer;
@@ -69,7 +70,15 @@ abstract class DecisionTestCase extends TestCase
         if ($stored) {
             $database = new InMemoryRowDatabase();
             $application = $application
-                ->withBundle(new StateStoreExtension())
+                ->withBundle(new MappedTableExtension(), new StateStoreExtension())
+                ->withClass(
+                    \Ultra\StatefulMessageHandling\Tests\DecisionOrdersDefinition::class,
+                    \Ultra\StatefulMessageHandling\Tests\DecisionTermsDefinition::class,
+                    \Ultra\StatefulMessageHandling\Tests\DecisionAcceptancesDefinition::class,
+                    \Ultra\StatefulMessageHandling\Tests\DependentMembersDefinition::class,
+                    \Ultra\StatefulMessageHandling\Tests\DependentCompaniesDefinition::class,
+                    \Ultra\StatefulMessageHandling\Tests\DependentUsagesDefinition::class,
+                )
                 ->withService($database, InMemoryRowDatabase::class)
                 ->withService(
                     new InMemoryMappedRowSetAdapterFactory($database),
@@ -77,7 +86,7 @@ abstract class DecisionTestCase extends TestCase
                 )
                 ->withAlias(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
                 ->withAlias('test.state_store', StateStore::class)
-                ->withAlias('test.state_tables', StateTableRegistry::class);
+                ->withAlias('test.state_tables', MappedTableUnitOfWork::class);
         }
 
         return $application;

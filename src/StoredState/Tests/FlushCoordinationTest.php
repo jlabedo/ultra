@@ -8,17 +8,19 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapter;
+use Ultra\MappedTable\QueryGuardDefinition;
+use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\MappedTable\RowSetUpdatePlan;
 use Ultra\StateStore\GuardLockAdapter;
 use Ultra\StateStore\GuardLockMode;
-use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\StateStore\StateTableRegistry;
+use Ultra\StateStore\Tests\Support\OrdersDefinition;
 use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 
 /** @internal */
 final class FlushCoordinationTest extends StateStoreTestCase
 {
-    public function test_flush_consolidates_and_orders_all_guards_before_queries_and_writes(): void
+    public function test_flush_orders_manual_locks_before_queries_and_writes(): void
     {
         $trace = new \ArrayObject();
         $first = new MappedRowSet(new RegistryRecordingAdapter('a', $trace));
@@ -27,23 +29,15 @@ final class FlushCoordinationTest extends StateStoreTestCase
         $last = new MappedRowSet(new RegistryRecordingAdapter('z', $trace));
         $last->withKey('last')->expectPresent();
         $first->withKey('new')->insert()->setColumn('status', 'pending');
-        $registry = new StateTableRegistry(
-            ['first' => $first, 'last' => $last, 'same' => $sameTable],
-            queryGuardDefinitions: [
-                'usage' => [['tableKey' => 'last', 'keyBy' => 'id', 'columns' => null]],
-                'availability' => [['tableKey' => 'last', 'keyBy' => 'id', 'columns' => null]],
-            ],
-            guardLockAdapter: new RegistryRecordingGuardAdapter($trace),
-        );
+        $registry = new StateTableRegistry([
+            'first' => $first,
+            'last' => $last,
+            'same' => $sameTable,
+        ], guardLockAdapter: new RegistryRecordingGuardAdapter($trace));
         $registry->lock('z', new MappedKey(['id' => '2']));
         $registry->lock('a', new MappedKey(['id' => '2']));
         $registry->lock('a', new MappedKey(['id' => '1']));
         $registry->lock('a', new MappedKey(['id' => '2']));
-        $registry->guard('usage', '2', GuardLockMode::SHARED);
-        $registry->guard('usage', '1', GuardLockMode::SHARED);
-        $registry->guard('usage', '2', GuardLockMode::EXCLUSIVE);
-        $registry->guard('usage', '2', GuardLockMode::SHARED);
-        $registry->guard('availability', 'room', GuardLockMode::SHARED);
         $registry->expectQuery(static function () use ($trace): bool {
             $trace[] = 'validate';
 
@@ -54,9 +48,6 @@ final class FlushCoordinationTest extends StateStoreTestCase
 
         static::assertSame(
             [
-                'guard:availability:room:SHARED',
-                'guard:usage:1:SHARED',
-                'guard:usage:2:EXCLUSIVE',
                 'lock:a:1',
                 'lock:a:2',
                 'lock:z:2',
@@ -121,14 +112,14 @@ final class FlushCoordinationTest extends StateStoreTestCase
         $fixture->store->save($initial);
         $fixture->flush();
         $fixture->registry->clear();
-        $definition = new QueryGuardDefinition();
-        $definition->watch(OrderWithLinesState::class, scopeBy: 'status')->whenPropertiesChange('status');
-        [$store, $registry] = $fixture->newStore([OrderWithLinesState::class], [
-            'usage' => $definition->compile($fixture->metadata),
+        [$store, $registry] = $fixture->sharedOrders([
+            new QueryGuardDefinition('usage', [
+                new QueryGuardDependency(OrdersDefinition::class, 'status', ['status']),
+            ]),
         ]);
         $store->delete(OrderWithLinesState::class, 'one');
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('requires observing column "status"');
+        $this->expectExceptionMessage('requires an expectation on "status"');
         try {
             $fixture->flush($registry);
         } finally {
@@ -179,9 +170,8 @@ final readonly class RegistryRecordingGuardAdapter implements GuardLockAdapter
 
     public function acquire(string $namespace, string $key, GuardLockMode $mode): void
     {
-        $this->trace[] = str_starts_with($namespace, 'ultra:query_guard:')
-            ? 'guard:' . substr($namespace, strlen('ultra:query_guard:')) . ':' . $key . ':' . $mode->name
-            : 'lock:'
+        $this->trace[] =
+            'lock:'
             . substr($namespace, 0, -strlen(':manual'))
             . ':'
             . json_decode($key, true, flags: JSON_THROW_ON_ERROR)['id'];

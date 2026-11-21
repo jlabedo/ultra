@@ -13,6 +13,7 @@ use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\StatefulMessageHandling\Tests\Support\DecisionTestCase;
 
@@ -41,6 +42,7 @@ final class ContainerAssemblyTest extends DecisionTestCase
         }
         if ('events' !== $family) {
             $classes[] = DecisionOrderState::class;
+            $classes[] = DecisionOrdersDefinition::class;
             $builder->register(InMemoryRowDatabase::class, InMemoryRowDatabase::class)->setPublic(true);
             $builder
                 ->register(InMemoryMappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
@@ -50,6 +52,7 @@ final class ContainerAssemblyTest extends DecisionTestCase
                 InMemoryMappedRowSetAdapterFactory::class,
             );
             $builder->setAlias('test.state_store', \Ultra\StateStore\StateStore::class)->setPublic(true);
+            $extensions[] = new MappedTableExtension();
             $extensions[] = new \Ultra\StateStore_Bundle\StateStoreExtension();
         }
         $classes[] = match ($family) {

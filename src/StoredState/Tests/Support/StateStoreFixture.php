@@ -6,11 +6,15 @@ namespace Ultra\StateStore\Tests\Support;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
+use Ultra\MappedTable\InMemoryGuardLockAdapter as MappedInMemoryGuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
+use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\PostgresGuardLockAdapter as MappedPostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
+use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\StateCollection;
@@ -20,9 +24,11 @@ use Ultra\StateStore\PostgresGuardLockAdapter;
 use Ultra\StateStore\StateCollectionMetadata;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
+use Ultra\StateStore\StateRowSets;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
 use Ultra\Testing\PostgresConnectionSupport;
+use Ultra\UnitOfWork\UnitOfWork;
 
 require_once __DIR__ . '/States.php';
 
@@ -114,14 +120,10 @@ final class StateStoreFixture
 
     /**
      * @param list<class-string> $stateClasses
-     * @param array<string, list<array{tableKey: string, keyBy: string, columns: list<string>|null}>> $definitions
      * @return array{StateStore, StateTableRegistry}
      */
-    public function newStore(
-        array $stateClasses,
-        array $definitions = [],
-        Connection|InMemoryRowDatabase|null $storage = null,
-    ): array {
+    public function newStore(array $stateClasses, Connection|InMemoryRowDatabase|null $storage = null): array
+    {
         $storage ??= $this->storage;
         $adapters = $storage === $this->storage
             ? $this->adapters
@@ -138,12 +140,41 @@ final class StateStoreFixture
         $guards = $storage instanceof Connection
             ? new PostgresGuardLockAdapter($storage)
             : new InMemoryGuardLockAdapter($storage);
-        $registry = new StateTableRegistry($tables, $adapters, $definitions, $guards);
+        $registry = new StateTableRegistry($tables, $adapters, $guards);
 
         return [new StateStore($this->metadata, $registry, new UltraNormalizer()), $registry];
     }
 
-    public function flush(?StateTableRegistry $registry = null): void
+    /**
+     * @param list<QueryGuardDefinition> $guards
+     * @return array{StateStore, MappedTableUnitOfWork}
+     */
+    public function sharedOrders(array $guards, Connection|InMemoryRowDatabase|null $storage = null): array
+    {
+        $storage ??= $this->storage;
+        $factory = $storage instanceof Connection
+            ? new PostgresMappedRowSetAdapterFactory($storage)
+            : new InMemoryMappedRowSetAdapterFactory($storage);
+        $locks = $storage instanceof Connection
+            ? new MappedPostgresGuardLockAdapter($storage)
+            : new MappedInMemoryGuardLockAdapter($storage);
+        $rowSets = [];
+        $tables = [];
+        foreach ([OrdersDefinition::class, OrderLinesDefinition::class] as $definition) {
+            $mapping = new $definition()->mapping();
+            $key = StateMetadataFactory::tableKey($mapping->table, $mapping->keyColumns);
+            $rowSets[$definition] = new MappedRowSet($factory->create($mapping->table, $mapping->keyColumns), $mapping);
+            $tables[$key] = $rowSets[$definition];
+        }
+        $unitOfWork = new MappedTableUnitOfWork($rowSets, queryGuards: $guards, guardLocks: $locks);
+
+        return [
+            new StateStore($this->metadata, new StateRowSets($tables, $unitOfWork), new UltraNormalizer()),
+            $unitOfWork,
+        ];
+    }
+
+    public function flush(?UnitOfWork $registry = null): void
     {
         $this->storage->beginTransaction();
         try {

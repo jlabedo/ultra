@@ -1,17 +1,21 @@
 # State Store Bundle
 
 `StateStoreExtension` wires the state store into Symfony's dependency injection container. The default
-`Ultra\SymfonyBundle\UltraBundle` includes this extension when the package is installed. A custom container can
-call `StateStoreExtension::build()` before compilation, alongside the mapper and unit-of-work extensions.
+`Ultra\SymfonyBundle\UltraBundle` includes this extension and `MappedTableExtension` when installed.
+In a custom container, build both extensions before compilation, alongside the mapper and unit-of-work extensions.
 
 ## Services and state discovery
 
-Register `#[Ultra\StateStore\Attribute\State]` classes as autoconfigured resources and repositories as autowired
-services. The extension discovers state mappings, creates shared `MappedRowSet` services for their physical
-tables, and registers `StateMetadataRegistry`, `StateTableRegistry` and `StateStore`. `StateTableRegistry` is tagged
-for the composite unit of work. All registered roots and collections targeting one physical table must use the
-same complete key columns; compilation rejects conflicting mappings. Collection keys include both owner and
-item columns. A separate root view over an item table must therefore map that complete key.
+Register the independent [MappedTable definitions](mapped-table.md#defined-row-sets-and-owner-collections)
+and `#[Ultra\StateStore\Attribute\State]` classes as autoconfigured resources. Register repositories as
+autowired services. The compiler binds each state and collection to the definition for its physical table.
+StateStore and services injecting the row set by definition share the same instance. The composite unit of
+work enrolls a single `MappedTableUnitOfWork` for these row sets.
+
+Compilation verifies the complete key, mapped columns, normalized PHP representations and nullability.
+A state may map a subset of the non-key columns. An item table needs its complete owner and item key
+and a declared owner dependency matching the parent state and column mapping. Declare collection items in
+the property's Mapper type, for example `list<OrderLineState>`.
 
 The application provides `MappedRowSetAdapterFactory` and a configured mapper. Query guards additionally require
 `GuardLockAdapter`. For a PostgreSQL application using DoctrineBundle:
@@ -30,49 +34,21 @@ services:
         arguments:
             $connection: '@doctrine.dbal.default_connection'
 
-    Ultra\StateStore\GuardLockAdapter:
-        class: Ultra\StateStore\PostgresGuardLockAdapter
+    Ultra\MappedTable\GuardLockAdapter:
+        class: Ultra\MappedTable\PostgresGuardLockAdapter
         arguments:
             $connection: '@doctrine.dbal.default_connection'
 ```
 
 The transaction manager used by `TransactionalUnitOfWorkRunner`, mapped adapters, guard adapter and query
 callbacks must all use the same connection. For in-memory use, register `InMemoryMappedRowSetAdapterFactory` and
-`InMemoryGuardLockAdapter` with the same `InMemoryRowDatabase`.
+`InMemoryGuardLockAdapter` with the same `InMemoryRowDatabase`. Use that database as the
+`TransactionManager` for an in-memory runner.
 
 See the [state mapping contract](mapping.md) for mappings and the [coworking service
 configuration](../../examples/coworking/config/services.yaml) for a complete application example.
 
 ## Query guard declarations
 
-`#[Ultra\StateStore\Attribute\DefineQueryGuard]` belongs on a constructor parameter typed `QueryGuard` in an
-autowired service. Declarations on services with autowiring disabled are not discovered. Abstract services are
-skipped. Collection item classes are not registered root states and cannot be watched independently.
-
-```php
-use Ultra\StateStore\Attribute\DefineQueryGuard;
-use Ultra\StateStore\QueryGuard;
-use Ultra\StateStore\QueryGuardDefinition;
-
-public function __construct(
-    #[DefineQueryGuard('company_usage', static function (QueryGuardDefinition $definition): void {
-        $definition
-            ->watch(Booking::class, scopeBy: 'companyId')
-            ->whenPropertiesChange('charged', 'start', 'end');
-    })]
-    private QueryGuard $companyUsage,
-) {}
-```
-
-The configuration closure runs during compilation, after state metadata is available. Use it to declare mapped
-dependencies, without reading application data or requiring runtime services. The compiler validates property paths and collections,
-registers the writer rules in `StateTableRegistry` and injects the guard. A dumped container retains plain metadata
-and ordinary guard services; it does not replay the configuration closures at runtime.
-
-Compilation fails with `LogicException` for an empty name, a parameter with another type, an empty definition,
-an unregistered watched state, an unknown mapped property or collection, a collection scope outside the owner identifier, conflicting definitions for the same name, or a
-missing `GuardLockAdapter`. `whenPropertiesChange()` with no arguments raises `InvalidArgumentException`.
-Repeated names must produce identical compiled scopes; dependency order and duplicates are normalized. Prefer one consistent declaration per query dependency.
-
-The developer supplies complete query dependencies; the compiler does not inspect SQL. Read the [query guard
-contract](query-guards.md) for decision ordering, replay, exceptions and the supported scope.
+Register [MappedTable query guards](query-guards.md) against the shared row set definitions. The same guard
+participates in direct writes and writes prepared by StateStore.

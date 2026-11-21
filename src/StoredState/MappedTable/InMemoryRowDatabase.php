@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+use Ultra\UnitOfWork\TransactionManager;
+
 /**
  * In-memory backing store for `InMemoryMappedRowSetAdapter`.
  *
@@ -11,7 +13,7 @@ namespace Ultra\MappedTable;
  * Row keys and scopes filter that list by column predicates. Transactions
  * snapshot the table map and restore it on rollback.
  */
-final class InMemoryRowDatabase
+final class InMemoryRowDatabase implements TransactionManager
 {
     /** @var array<string, list<array<string, mixed>>> */
     private array $tables = [];
@@ -42,6 +44,20 @@ final class InMemoryRowDatabase
     public function beginTransaction(): void
     {
         $this->transactionSnapshots[] = $this->tables;
+    }
+
+    public function transactional(callable $callback): mixed
+    {
+        $this->beginTransaction();
+        try {
+            $result = $callback();
+        } catch (\Throwable $exception) {
+            $this->rollBack();
+            throw $exception;
+        }
+        $this->commit();
+
+        return $result;
     }
 
     public function commit(): void

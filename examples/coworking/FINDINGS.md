@@ -266,11 +266,11 @@ concurrent plan change is detected or waits for that check. Member registration 
 email violations in one validation, as in Doctrine.
 
 The direct variant uses `StateStore::observe(Class, id)` and constructor-injected `QueryGuard` instances declared
-with `#[DefineQueryGuard]`. `watch(Booking::class, scopeBy: 'companyId')` and `whenPropertiesChange()` compile global
-write rules; a second guard watches room-booking dependencies. `QueryGuard::observe(value, callback)` queues a
+with MappedTable’s `#[DefineQueryGuard]`. A `QueryGuardDependency` declares the booking row set, guard value column
+and watched columns. A second guard covers room-booking dependencies. `QueryGuard::observe(value, callback)` queues a
 shared guard and records the query result. Flush derives exclusive guards from affected row plans, including old
 and new scope values, consolidates modes before acquisition, checks query results, then runs the row-set plans.
-`StateTableRegistry` owns and consolidates guard requests; `PostgresGuardLockAdapter` acquires them on the same
+`MappedTableUnitOfWork` owns and consolidates guard requests; `PostgresGuardLockAdapter` acquires them on the same
 connection as the row adapters and SQL queries. `MappedRowSet` buffers row changes and optimistic expectations,
 without knowing these decision guards. Named query guards use a separate advisory namespace from manual row and automatic absent-row locks. Named guards
 are ordered by name/value; legacy manual guards follow in table/key order. Rows written by the plan are not all locked up front;
@@ -281,7 +281,7 @@ operations; it does not impose a global operation-type order.
 per changed booking rather than three synchronized state copies. StateStore's readonly snapshots and optimistic
 checks remain available without adopting message dispatch. Runtime fan-out is a plain loop. For an AI, the path
 from an operation to its loads, guards and SQL is visible through ordinary method calls; the framework phases are
-now documented beside the public APIs. The runner and StateTableRegistry own writes and cleanup; the repository
+now documented beside the public APIs. The runner and MappedTableUnitOfWork own writes and cleanup; the repository
 has no separate unit-of-work participation.
 
 **Costs:** correctness of set-based rules depends on complete dependency declarations. The framework enrolls

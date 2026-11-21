@@ -50,6 +50,14 @@ final class MappedRowSet implements UnitOfWork
         );
     }
 
+    /** @internal True when a buffered deletion, cancellation or reconciliation removes the row. */
+    public function hasPendingDeletion(MappedKey $key): bool
+    {
+        $update = $this->updates[$key->fingerprint()] ?? null;
+
+        return null !== $update && (RowUpdatePlan::MODE_DELETE === $update->mode || $update->removedByReconciliation);
+    }
+
     /** @internal */
     public function updateForHandle(MappedKey $key, int $generation): BufferedRowUpdate
     {

@@ -28,12 +28,12 @@ executing the callback. Expected values must be scalars, null or arrays of these
 cast database numeric values, normalize timestamps, and sort unordered query results in the callback. A mismatch
 throws `Ultra\UnitOfWork\Exception\ConcurrencyException`; the optional name identifies the failed expectation.
 
-`lock($state)` records a guard in `StateTableRegistry` for the state's physical table and mapped key, including
+`lock($state)` records a guard for the state's physical table and mapped key, including
 composite keys and missing rows. Registering a guard takes no database lock. It neither replaces `expect()` nor protects against writers that
 do not request the same guard. The developer chooses the guards and must use them in every action affecting the
 invariant: booking, cancellation, reschedule and bulk closure, for example.
 
-The `StateTableRegistry` flush has three phases, inside **one transaction**:
+The MappedTable coordinator flushes compiled state mappings in **one transaction**:
 
 1. Derive any compiled query guards, acquire them in name/value order, then acquire requested manual advisory locks
    in physical table/key order.
@@ -43,20 +43,19 @@ The `StateTableRegistry` flush has three phases, inside **one transaction**:
 Configure a dedicated `GuardLockAdapter` service when using manual or compiled query guards. For Postgres:
 
 ```yaml
-Ultra\StateStore\GuardLockAdapter:
-    class: Ultra\StateStore\PostgresGuardLockAdapter
+Ultra\MappedTable\GuardLockAdapter:
+    class: Ultra\MappedTable\PostgresGuardLockAdapter
     arguments:
         $connection: '@doctrine.dbal.default_connection'
 ```
 
 Use `InMemoryGuardLockAdapter` with the same `InMemoryRowDatabase` as the mapped adapters for in-memory work.
-`MappedRowSet` contains only row plans and optimistic expectations; cooperative guards are owned by the registry
-and acquired through the dedicated adapter. Guard-only work does not need to create a mapped row set.
+The coordinator acquires cooperative guards through the dedicated adapter. Guard-only work needs no row mutations.
+For manual assembly with the legacy StateStore registry, use the adapter interface from `Ultra\StateStore`.
 
 With `TransactionalUnitOfWorkRunner`, application work runs before the transaction is opened. Configure its
 `TransactionManager` for the same connection used by the mapped adapters, guard adapter and query callbacks. The runner commits
-or rolls back the entire flush and clears the queues on success or failure. Calling `StateTableRegistry::flush()`
-directly requires the caller to provide that transaction and call `clear()` when the unit of work ends. Query-only
+or rolls back the entire flush and clears the queues on success or failure. Calling the coordinator's `flush()` directly requires the caller to provide that transaction and call `clear()` when the unit of work ends. Query-only
 and guard-only work also counts as pending. This mechanism uses no `SERIALIZABLE` isolation and does not prelock
 every row that will be written. Ordered manual guards do not remove every possible database deadlock, particularly
 when other writers or callbacks acquire additional locks in a different order.

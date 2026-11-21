@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\StateStore;
 
+use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRow;
 use Ultra\Mapper\UltraNormalizer;
 
@@ -11,7 +12,7 @@ final readonly class StateStore
 {
     public function __construct(
         private StateMetadataRegistry $metadataRegistry,
-        private StateTableRegistry $tableRegistry,
+        private StateTableRegistry|StateRowSets $tableRegistry,
         private UltraNormalizer $normalizer,
     ) {}
 
@@ -24,22 +25,7 @@ final readonly class StateStore
      */
     public function load(string $stateClass, int|string|object $id): ?object
     {
-        $metadata = $this->metadataRegistry->metadataFor($stateClass);
-        $this->assertIdentifierType($metadata, $id);
-        $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
-        $key = $metadata->keyFromNormalizedId($normalizedId);
-        $row = $this->tableRegistry->tableFor($metadata)->withKey($key)->get($metadata->selectedColumns());
-
-        if (null === $row) {
-            return null;
-        }
-
-        $payload = $metadata->payloadFromRow($normalizedId, $row);
-        foreach ($metadata->collections as $collection) {
-            $payload[$collection->property] = $this->loadCollection($collection, $normalizedId);
-        }
-
-        return $this->normalizer->fromScalar($payload, $stateClass);
+        return $this->read($stateClass, $id, observe: false);
     }
 
     /**
@@ -52,15 +38,36 @@ final readonly class StateStore
      */
     public function observe(string $stateClass, int|string|object $id): ?object
     {
-        $state = $this->load($stateClass, $id);
-        if (null === $state) {
-            $this->expectMissing($stateClass, $id);
+        return $this->read($stateClass, $id, observe: true);
+    }
 
+    /**
+     * @template T of object
+     * @param class-string<T> $stateClass
+     * @return T|null
+     */
+    private function read(string $stateClass, int|string|object $id, bool $observe): ?object
+    {
+        $metadata = $this->metadataRegistry->metadataFor($stateClass);
+        $this->assertIdentifierType($metadata, $id);
+        $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
+        $key = $metadata->keyFromNormalizedId($normalizedId);
+        $handle = $this->tableRegistry->tableFor($metadata)->withKey($key);
+        $columns = $metadata->selectedColumns();
+        $row = $observe
+            ? $handle->observeProjectedColumns($columns, $metadata->optimisticColumnSet)
+            : $handle->get($columns);
+
+        if (null === $row) {
             return null;
         }
-        $this->expect($state);
 
-        return $state;
+        $payload = $metadata->payloadFromRow($normalizedId, $row);
+        foreach ($metadata->collections as $collection) {
+            $payload[$collection->property] = $this->loadCollection($collection, $normalizedId, $observe);
+        }
+
+        return $this->normalizer->fromScalar($payload, $stateClass);
     }
 
     /**
@@ -92,6 +99,7 @@ final readonly class StateStore
         $this->assertIdentifierType($metadata, $id);
         $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
         $key = $metadata->keyFromNormalizedId($normalizedId);
+
         return null !== $this->tableRegistry->tableFor($metadata)->withKey($key)->observe([]);
     }
 
@@ -109,13 +117,16 @@ final readonly class StateStore
             ->setColumns($metadata->columnsFromNormalized($normalizedState));
 
         foreach ($metadata->collections as $collection) {
-            $this->tableRegistry
-                ->collectionFor($collection, $normalizedId)
-                ->reconcileRows($this->collectionRows(
+            $owner = $collection->ownerKey($normalizedId);
+            $this->tableRegistry->reconcileCollection(
+                $collection,
+                $owner,
+                $this->collectionRows(
                     $collection,
-                    $normalizedId,
+                    $owner,
                     $this->normalizedCollectionItems($metadata, $normalizedState, $collection),
-                ));
+                ),
+            );
         }
     }
 
@@ -154,12 +165,11 @@ final readonly class StateStore
 
         foreach ($metadata->collections as $collection) {
             $items = $this->normalizedCollectionItems($metadata, $normalizedState, $collection);
-            $rowSet = $this->tableRegistry->collectionFor($collection, $normalizedId);
-            $ownerKey = $collection->ownerKey($normalizedId);
-            $rowSet->expectSameRowKeys(array_map(static fn(array $item) => $collection->itemKey(
-                $item,
-                $ownerKey,
-            ), $items));
+            $owner = $collection->ownerKey($normalizedId);
+            $this->tableRegistry->expectCollection($collection, $owner, array_map(
+                static fn(array $item) => $collection->itemKey($item, $owner),
+                $items,
+            ));
         }
     }
 
@@ -224,29 +234,24 @@ final readonly class StateStore
         return [$metadata, $normalizedState];
     }
 
-    private function loadCollection(StateCollectionMetadata $collection, mixed $normalizedOwnerId): array
+    /** @return list<array<string, mixed>> */
+    private function loadCollection(StateCollectionMetadata $collection, mixed $normalizedOwnerId, bool $observe): array
     {
-        $items = [];
-        foreach ($this->tableRegistry
-            ->collectionFor($collection, $normalizedOwnerId)
-            ->rows($collection->selectedColumns()) as $row) {
-            $items[] = $collection->payloadFromRow($row);
+        $owner = $collection->ownerKey($normalizedOwnerId);
+        $rows = $this->tableRegistry->rowsForCollection($collection, $owner);
+        if ($observe) {
+            $this->tableRegistry->expectCollection($collection, $owner, array_column($rows, 'key'));
         }
 
-        return $items;
+        return array_map($collection->payloadFromRow(...), $rows);
     }
 
     /**
      * @param list<array<array-key, mixed>> $items
      * @return iterable<MappedRow>
      */
-    private function collectionRows(
-        StateCollectionMetadata $collection,
-        mixed $normalizedOwnerId,
-        array $items,
-    ): iterable {
-        $ownerKey = $collection->ownerKey($normalizedOwnerId);
-
+    private function collectionRows(StateCollectionMetadata $collection, MappedKey $ownerKey, array $items): iterable
+    {
         foreach ($items as $item) {
             yield new MappedRow($collection->itemKey($item, $ownerKey), $collection->columnsFromNormalized($item));
         }

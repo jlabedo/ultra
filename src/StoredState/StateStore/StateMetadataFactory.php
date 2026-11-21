@@ -26,6 +26,12 @@ final readonly class StateMetadataFactory
     /** @param class-string $stateClass */
     public function create(string $stateClass): StateMetadata
     {
+        return $this->createMetadata($stateClass, collectionItem: false);
+    }
+
+    /** @param class-string $stateClass */
+    private function createMetadata(string $stateClass, bool $collectionItem): StateMetadata
+    {
         if (!class_exists($stateClass)) {
             throw new InvalidStateConfigurationException(sprintf(
                 'Cannot map state "%s" because the class does not exist.',
@@ -82,6 +88,12 @@ final readonly class StateMetadataFactory
             $columnAttributes = $property->getAttributes(StateColumn::class);
             $collectionAttributes = $property->getAttributes(StateCollection::class);
             $embeddedAttributes = $property->getAttributes(StateEmbedded::class);
+            if ($collectionItem && ([] !== $collectionAttributes || [] !== $embeddedAttributes)) {
+                throw new InvalidStateConfigurationException(sprintf(
+                    'State collection item class "%s" cannot declare collections or embedded properties.',
+                    $stateClass,
+                ));
+            }
             if (1 < count(array_filter([$columnAttributes, $collectionAttributes, $embeddedAttributes]))) {
                 throw new InvalidStateConfigurationException(sprintf(
                     'State "%s" property "%s" cannot declare more than one state mapping attribute.',
@@ -264,14 +276,7 @@ final readonly class StateMetadataFactory
         bool $ownerScalar,
         array $ownerPropertyColumns,
     ): StateCollectionMetadata {
-        $itemMetadata = $this->create($collection->itemClass);
-        if ([] !== $itemMetadata->collections || [] !== $itemMetadata->embedded) {
-            throw new InvalidStateConfigurationException(sprintf(
-                'State collection "%s" item class "%s" cannot declare collections or embedded properties.',
-                $property->getName(),
-                $collection->itemClass,
-            ));
-        }
+        $itemMetadata = $this->createMetadata($collection->itemClass, collectionItem: true);
 
         foreach ($collection->ownerColumns as $component => $_) {
             if (!array_key_exists($component, $ownerPropertyColumns)) {

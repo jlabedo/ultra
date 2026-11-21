@@ -6,9 +6,19 @@ namespace Ultra\StateStore\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Ultra\MappedTable\Exception\PendingQueryChangesException;
+use Ultra\MappedTable\GuardLockAdapter;
+use Ultra\MappedTable\GuardLockMode;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetDefinition;
+use Ultra\MappedTable\MappedRowSetMapping;
+use Ultra\MappedTable\MappedRowSetOwner;
+use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\QueryGuardDefinition;
+use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\State;
@@ -16,15 +26,10 @@ use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateColumn;
 use Ultra\StateStore\Attribute\StateEmbedded;
 use Ultra\StateStore\Attribute\StateId;
-use Ultra\StateStore\Exception\PendingQueryChangesException;
-use Ultra\StateStore\GuardLockAdapter;
-use Ultra\StateStore\GuardLockMode;
-use Ultra\StateStore\QueryGuard;
-use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
+use Ultra\StateStore\StateRowSets;
 use Ultra\StateStore\StateStore;
-use Ultra\StateStore\StateTableRegistry;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 final readonly class GuardRoleId
@@ -87,9 +92,9 @@ final class QueryDependencyTest extends TestCase
     }
 
     #[DataProvider('mutations')]
-    public function test_object_declarations_guard_property_or_collection_writes_and_reject_pending_reads(string $mutation): void
+    public function test_mapped_dependencies_guard_state_and_collection_writes_and_reject_pending_reads(string $mutation): void
     {
-        [$database, $store, $registry, $guard, $trace, $metadata] = $this->fixture();
+        [$database, $store, $registry, $guard, $trace, $roles, $permissions] = $this->fixture();
         $id = new GuardRoleId('acme', 'editor');
         $store->observe(GuardRole::class, $id);
         $items = match ($mutation) {
@@ -98,21 +103,13 @@ final class QueryDependencyTest extends TestCase
             'remove', 'empty' => [],
             default => [new GuardPermission('read')],
         };
-        $state = $metadata->metadataFor(GuardRole::class);
+        $owner = ['owner_tenant' => 'acme', 'owner_role' => 'editor'];
         if ('delete' === $mutation) {
             $store->delete(GuardRole::class, $id);
         } elseif ('active' === $mutation) {
-            $registry
-                ->tableFor($state)
-                ->withKey($state->keyFromNormalizedId(['tenantId' => 'acme', 'roleId' => 'editor']))
-                ->setColumn('enabled', false);
+            $roles->withKey(['tenant_id' => 'acme', 'role_id' => 'editor'])->setColumn('enabled', false);
         } elseif ('remove' === $mutation) {
-            $collection = $state->collections['permissions'];
-            $owner = $collection->ownerKey(['tenantId' => 'acme', 'roleId' => 'editor']);
-            $registry
-                ->collectionFor($collection, ['tenantId' => 'acme', 'roleId' => 'editor'])
-                ->withKey($collection->itemKey(['name' => 'read'], $owner))
-                ->delete();
+            $permissions->withKey([...$owner, 'permission_name' => 'read'])->delete();
         } else {
             $store->save(new GuardRole($id, true, '', new GuardRoleLabel('Editor'), $items));
         }
@@ -135,10 +132,7 @@ final class QueryDependencyTest extends TestCase
         static::assertFalse($registry->hasPendingChanges());
         if ('delete' === $mutation) {
             static::assertNull($store->load(GuardRole::class, $id));
-            static::assertSame([], $registry->collectionFor($state->collections['permissions'], [
-                'tenantId' => 'acme',
-                'roleId' => 'editor',
-            ])->rows());
+            static::assertSame([], $permissions->rowsForOwner($owner));
         } else {
             static::assertCount(count($items), $store->load(GuardRole::class, $id)->permissions);
         }
@@ -146,14 +140,14 @@ final class QueryDependencyTest extends TestCase
 
     public function test_unwatched_properties_and_collection_observations_do_not_require_a_writer_guard(): void
     {
-        [$database, $store, $registry, $guard, $trace, $metadata] = $this->fixture();
+        [$database, $store, $registry, $guard, $trace, $roles] = $this->fixture();
         $id = new GuardRoleId('acme', 'editor');
         $store->observe(GuardRole::class, $id);
         // Only a root property changes. Do not enqueue collection reconciliation.
-        $registry
-            ->tableFor($metadata->metadataFor(GuardRole::class))
-            ->withKey(new \Ultra\MappedTable\MappedKey(['tenant_id' => 'acme', 'role_id' => 'editor']))
-            ->setColumn('note', 'new');
+        $roles->withKey(new \Ultra\MappedTable\MappedKey(['tenant_id' => 'acme', 'role_id' => 'editor']))->setColumn(
+            'note',
+            'new',
+        );
         static::assertSame(1, $guard->observe('acme', static fn(): int => 1));
         $database->beginTransaction();
         $registry->flush();
@@ -198,116 +192,6 @@ final class QueryDependencyTest extends TestCase
         static::assertCount(1, $role->permissions);
     }
 
-    public function test_property_paths_and_owner_column_renames_compile_to_physical_dependencies(): void
-    {
-        [, , , , , $metadata] = $this->fixture();
-        $definition = new QueryGuardDefinition();
-        $definition
-            ->watch(GuardRole::class, scopeBy: 'id.tenantId')
-            ->whenPropertiesChange('label.name')
-            ->whenPropertiesChange('active')
-            ->whenPropertiesChange('permissions');
-        $rules = $definition->compile($metadata);
-        static::assertContains(
-            [
-                'tableKey' => $metadata->metadataFor(GuardRole::class)->tableKey,
-                'keyBy' => 'tenant_id',
-                'columns' => ['display_name', 'enabled'],
-            ],
-            $rules,
-        );
-        static::assertContains(
-            [
-                'tableKey' => $metadata->metadataFor(GuardRole::class)->collections['permissions']->tableKey,
-                'keyBy' => 'owner_tenant',
-                'columns' => null,
-            ],
-            $rules,
-        );
-        $all = new QueryGuardDefinition();
-        $all->watch(GuardRole::class, scopeBy: 'id.tenantId');
-        static::assertCount(2, $all->compile($metadata));
-        $onlyProperty = new QueryGuardDefinition();
-        $onlyProperty->watch(GuardRole::class, scopeBy: 'id.tenantId')->whenPropertiesChange('active');
-        static::assertCount(1, $onlyProperty->compile($metadata));
-        $onlyCollection = new QueryGuardDefinition();
-        $onlyCollection->watch(GuardRole::class, scopeBy: 'id.tenantId')->whenPropertiesChange('permissions');
-        static::assertContains(
-            ['tableKey' => $metadata->metadataFor(GuardRole::class)->tableKey, 'keyBy' => 'tenant_id', 'columns' => []],
-            $onlyCollection->compile($metadata),
-        );
-    }
-
-    public function test_scalar_identifier_scopes_use_the_collection_owner_mapping(): void
-    {
-        $collection = new \Ultra\StateStore\StateCollectionMetadata(
-            'items',
-            'items',
-            'items',
-            true,
-            ['id' => 'owner_id'],
-            \stdClass::class,
-            'id',
-            true,
-            ['id' => 'item_id'],
-            [],
-        );
-        $state = new \Ultra\StateStore\StateMetadata(
-            \stdClass::class,
-            'owners',
-            'owners',
-            'id',
-            'string',
-            true,
-            ['id' => 'owner_key'],
-            [],
-            [],
-            collections: ['items' => $collection],
-        );
-        $definition = new QueryGuardDefinition();
-        $definition->watch(\stdClass::class, scopeBy: 'id')->whenPropertiesChange('items');
-        static::assertSame(
-            [
-                ['tableKey' => 'items', 'keyBy' => 'owner_id', 'columns' => null],
-                ['tableKey' => 'owners', 'keyBy' => 'owner_key', 'columns' => []],
-            ],
-            $definition->compile(new StateMetadataRegistry([\stdClass::class => $state])),
-        );
-    }
-
-    public function test_unregistered_states_cannot_be_watched(): void
-    {
-        $definition = new QueryGuardDefinition();
-        $definition->watch(GuardRole::class, scopeBy: 'id.tenantId');
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('unregistered state');
-        $definition->compile(new StateMetadataRegistry([]));
-    }
-
-    public static function invalidDeclarations(): iterable
-    {
-        yield 'physical column instead of property' => ['id.tenantId', 'enabled', \LogicException::class];
-        yield 'unknown path' => ['id.missing', 'active', \LogicException::class];
-        yield 'unknown collection' => ['id.tenantId', 'missing', \LogicException::class];
-        yield 'collection cannot scope by root value' => ['note', 'permissions', \LogicException::class];
-        yield 'empty properties' => ['id.tenantId', '', \InvalidArgumentException::class];
-        yield 'item property paths are not supported' => ['id.tenantId', 'permissions.active', \LogicException::class];
-    }
-
-    #[DataProvider('invalidDeclarations')]
-    public function test_invalid_object_dependencies_are_rejected(
-        string $scope,
-        string $property,
-        string $exception,
-    ): void {
-        [, , , , , $metadata] = $this->fixture();
-        $this->expectException($exception);
-        $definition = new QueryGuardDefinition();
-        $watch = $definition->watch(GuardRole::class, scopeBy: $scope);
-        $watch->whenPropertiesChange(...'' === $property ? [] : [$property]);
-        $definition->compile($metadata);
-    }
-
     private function fixture(): array
     {
         $database = new InMemoryRowDatabase();
@@ -319,26 +203,43 @@ final class QueryDependencyTest extends TestCase
         ]);
         $state = $metadataFactory->create(GuardRole::class);
         $metadata = new StateMetadataRegistry([GuardRole::class => $state]);
-        $definition = new QueryGuardDefinition();
-        $definition->watch(GuardRole::class, scopeBy: 'id.tenantId')->whenPropertiesChange('active', 'permissions');
         $trace = new \ArrayObject();
-        $adapter = new class($trace) implements GuardLockAdapter {
+        $adapter = new class($trace, $database) implements GuardLockAdapter {
             public function __construct(
                 private \ArrayObject $trace,
+                private InMemoryRowDatabase $database,
             ) {}
+
+            public function activeTransactionResource(): object
+            {
+                return $this->database;
+            }
 
             public function acquire(string $namespace, string $key, GuardLockMode $mode): void
             {
                 $this->trace[] = [$namespace, $key, $mode];
             }
         };
-        $registry = new StateTableRegistry(
-            [$state->tableKey => new MappedRowSet($factory->create($state->tableName, $state->keyColumns()))],
-            $factory,
-            ['iam' => $definition->compile($metadata)],
-            $adapter,
+        $roleMapping = new GuardRolesDefinition()->mapping();
+        $permissionMapping = new GuardPermissionsDefinition()->mapping();
+        $roles = new MappedRowSet($factory->createDefined($roleMapping), $roleMapping);
+        $permissions = new MappedRowSet($factory->createDefined($permissionMapping), $permissionMapping);
+        $registry = new MappedTableUnitOfWork(
+            [GuardRolesDefinition::class => $roles, GuardPermissionsDefinition::class => $permissions],
+            queryGuards: [new QueryGuardDefinition('iam', [
+                new QueryGuardDependency(GuardRolesDefinition::class, 'tenant_id', ['enabled']),
+                new QueryGuardDependency(GuardPermissionsDefinition::class, 'owner_tenant'),
+            ])],
+            guardLocks: $adapter,
         );
-        $store = new StateStore($metadata, $registry, new UltraNormalizer());
+        $store = new StateStore(
+            $metadata,
+            new StateRowSets([
+                $state->tableKey => $roles,
+                $state->collections['permissions']->tableKey => $permissions,
+            ], $registry),
+            new UltraNormalizer(),
+        );
         $database->seedRow('guard_roles', 'role_id', [
             'tenant_id' => 'acme',
             'role_id' => 'editor',
@@ -353,6 +254,45 @@ final class QueryDependencyTest extends TestCase
             'description' => '',
         ]);
 
-        return [$database, $store, $registry, new QueryGuard($registry, 'iam'), $trace, $metadata];
+        return [$database, $store, $registry, $registry->queryGuard('iam'), $trace, $roles, $permissions];
+    }
+}
+
+final class GuardRolesDefinition implements MappedRowSetDefinition
+{
+    public function mapping(): MappedRowSetMapping
+    {
+        return new MappedRowSetMapping(
+            'guard_roles',
+            [
+                'tenant_id' => new MappedColumn('string'),
+                'role_id' => new MappedColumn('string'),
+                'enabled' => new MappedColumn('bool'),
+                'note' => new MappedColumn('string'),
+                'display_name' => new MappedColumn('string'),
+            ],
+            ['tenant_id', 'role_id'],
+        );
+    }
+}
+
+final class GuardPermissionsDefinition implements MappedRowSetDefinition
+{
+    public function mapping(): MappedRowSetMapping
+    {
+        return new MappedRowSetMapping(
+            'guard_permissions',
+            [
+                'owner_tenant' => new MappedColumn('string'),
+                'owner_role' => new MappedColumn('string'),
+                'permission_name' => new MappedColumn('string'),
+                'description' => new MappedColumn('string'),
+            ],
+            ['owner_tenant', 'owner_role', 'permission_name'],
+            owner: new MappedRowSetOwner(GuardRolesDefinition::class, [
+                'owner_tenant' => 'tenant_id',
+                'owner_role' => 'role_id',
+            ]),
+        );
     }
 }

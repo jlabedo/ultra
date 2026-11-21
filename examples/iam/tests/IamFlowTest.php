@@ -525,7 +525,7 @@ final class IamFlowTest extends TestCase
                 static fn(): bool => throw new \RuntimeException('Must not read stale SQL'),
             );
             self::fail('An initial guarded read must not ignore a pending revocation.');
-        } catch (\Ultra\StateStore\Exception\PendingQueryChangesException $exception) {
+        } catch (\Ultra\MappedTable\Exception\PendingQueryChangesException $exception) {
             self::assertSame('iam_authorization', $exception->guardName);
             self::assertSame('acme', $exception->guardValue);
         }

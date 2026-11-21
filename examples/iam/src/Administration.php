@@ -18,7 +18,7 @@ use IamExample\State\RoleState;
 use IamExample\State\SubjectState;
 use IamExample\State\TenantState;
 use Psr\Clock\ClockInterface;
-use Ultra\StateStore\QueryGuard;
+use Ultra\MappedTable\QueryGuard;
 use Ultra\StateStore\StateStore;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
 

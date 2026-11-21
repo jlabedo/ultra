@@ -5,13 +5,14 @@ declare(strict_types=1);
 namespace App\Booking\StateStoreDirect\Repository;
 
 use App\Booking\Domain\Slot;
+use App\Booking\StateStoreDirect\Persistence\BookingsDefinition;
 use App\Booking\StateStoreDirect\State\Booking;
 use App\Booking\StateStoreDirect\State\Company;
 use App\Booking\StateStoreDirect\State\Room;
 use Doctrine\DBAL\Connection;
-use Ultra\StateStore\Attribute\DefineQueryGuard;
-use Ultra\StateStore\QueryGuard;
-use Ultra\StateStore\QueryGuardDefinition;
+use Ultra\MappedTable\Attribute\DefineQueryGuard;
+use Ultra\MappedTable\QueryGuard;
+use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\StateStore\StateStore;
 
 /** Guarded queries read committed rows before affected writes are prepared. */
@@ -20,13 +21,13 @@ final readonly class BookingRepository
     public function __construct(
         private Connection $connection,
         private StateStore $states,
-        #[DefineQueryGuard('company_usage', static function (QueryGuardDefinition $definition): void {
-            $definition->watch(Booking::class, scopeBy: 'companyId')->whenPropertiesChange('charged', 'start', 'end');
-        })]
+        #[DefineQueryGuard('company_usage', [
+            new QueryGuardDependency(BookingsDefinition::class, 'company_id', ['charged', 'start_at', 'end_at']),
+        ])]
         private QueryGuard $companyUsage,
-        #[DefineQueryGuard('room_bookings', static function (QueryGuardDefinition $definition): void {
-            $definition->watch(Booking::class, scopeBy: 'roomId')->whenPropertiesChange('status', 'start', 'end');
-        })]
+        #[DefineQueryGuard('room_bookings', [
+            new QueryGuardDependency(BookingsDefinition::class, 'room_id', ['status', 'start_at', 'end_at']),
+        ])]
         private QueryGuard $roomBookings,
     ) {}
 

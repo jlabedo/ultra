@@ -8,19 +8,27 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetDefinition;
+use Ultra\MappedTable\MappedRowSetMapping;
+use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\PostgresGuardLockAdapter as MappedPostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedRowSetAdapter;
+use Ultra\MappedTable\QueryGuardDefinition;
+use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\StateStore\GuardLockMode;
 use Ultra\StateStore\InMemoryGuardLockAdapter;
 use Ultra\StateStore\PostgresGuardLockAdapter;
-use Ultra\StateStore\QueryGuard;
-use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\StateStore\StateMetadata;
 use Ultra\StateStore\StateMetadataRegistry;
+use Ultra\StateStore\StateRowSets;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore\StateTableRegistry;
+use Ultra\StateStore\Tests\Support\OrderLinesDefinition;
+use Ultra\StateStore\Tests\Support\OrdersDefinition;
 use Ultra\StateStore\Tests\Support\StateStoreFixture;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\PostgresRowSetTestCase;
@@ -40,15 +48,14 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, ['id' => 'one', 'status' => 'acme', 'note' => 'old']);
-            $registry = $this->registry($connection, $table);
-            $guard = new QueryGuard($registry, 'usage');
+            [$table, $registry] = $this->guardedRows($connection, $tableName);
+            $guard = $registry->queryGuard('usage');
             $other = PostgresConnectionSupport::sharedConnection(
                 (string) getenv('ULTRA_TEST_POSTGRES_DSN'),
                 self::class,
             );
-            $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
-            $otherRegistry = $this->registry($other, $otherTable);
-            $otherGuard = new QueryGuard($otherRegistry, 'usage');
+            [$otherTable, $otherRegistry] = $this->guardedRows($other, $tableName);
+            $otherGuard = $otherRegistry->queryGuard('usage');
             try {
                 $phases = [];
                 $guard->observe('acme', static function () use ($connection, &$phases): int {
@@ -92,7 +99,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             $scopes,
         ): void {
             $this->insertRow($connection, $tableName, ['id' => 'one', 'status' => 'old', 'note' => 'value']);
-            $registry = $this->registry($connection, $table);
+            [$table, $registry] = $this->guardedRows($connection, $tableName);
             if ('insert' === $mutation) {
                 $table->withKey('two')->insert()->setColumns(['status' => 'new', 'note' => 'value']);
             } elseif ('move' === $mutation) {
@@ -111,7 +118,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 );
                 $store = new StateStore(
                     new StateMetadataRegistry([ManualQueryState::class => $metadata]),
-                    $registry,
+                    new StateRowSets(['test' => $table], $registry),
                     new UltraNormalizer(),
                 );
                 $store->observe(ManualQueryState::class, 'one');
@@ -121,9 +128,8 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 (string) getenv('ULTRA_TEST_POSTGRES_DSN'),
                 self::class,
             );
-            $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
-            $otherRegistry = $this->registry($other, $otherTable);
-            $otherGuard = new QueryGuard($otherRegistry, 'usage');
+            [$otherTable, $otherRegistry] = $this->guardedRows($other, $tableName);
+            $otherGuard = $otherRegistry->queryGuard('usage');
             try {
                 $registry->expectQuery(function () use (
                     $connection,
@@ -155,28 +161,20 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
         });
     }
 
-    public function test_shared_observation_and_write_are_consolidated_to_exclusive_across_table_views(): void
+    public function test_shared_observation_and_direct_write_are_consolidated_to_exclusive(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, ['id' => 'one', 'status' => 'acme', 'note' => 'old']);
-            $view = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, $tableName));
-            $combined = new StateTableRegistry(
-                ['view' => $view, 'test' => $table],
-                queryGuardDefinitions: $this->definitions(),
-                guardLockAdapter: new PostgresGuardLockAdapter($connection),
-            );
-            $guard = new QueryGuard($combined, 'usage');
+            [$table, $combined] = $this->guardedRows($connection, $tableName);
+            $guard = $combined->queryGuard('usage');
             $guard->lock('acme');
             $table->withKey('one')->expectColumnValue('status', 'acme')->setColumn('note', 'new');
             $other = PostgresConnectionSupport::sharedConnection(
                 (string) getenv('ULTRA_TEST_POSTGRES_DSN'),
                 self::class,
             );
-            $otherRegistry = $this->registry(
-                $other,
-                new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName)),
-            );
-            $otherGuard = new QueryGuard($otherRegistry, 'usage');
+            [, $otherRegistry] = $this->guardedRows($other, $tableName);
+            $otherGuard = $otherRegistry->queryGuard('usage');
             try {
                 $combined->expectQuery(function () use ($other, $otherRegistry, $otherGuard): int {
                     $otherGuard->lock('acme');
@@ -195,18 +193,18 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
             $this->insertRow($connection, $tableName, ['id' => 'one', 'status' => 'acme', 'note' => 'old']);
-            $registry = $this->registry($connection, $table);
-            new QueryGuard($registry, 'usage')->lock('acme');
+            [$table, $registry] = $this->guardedRows($connection, $tableName);
+            $registry->queryGuard('usage')->lock('acme');
             $other = PostgresConnectionSupport::sharedConnection(
                 (string) getenv('ULTRA_TEST_POSTGRES_DSN'),
                 self::class,
             );
-            $otherTable = new MappedRowSet(new PostgresMappedRowSetAdapter($other, $tableName));
+            [$otherTable, $otherRegistry] = $this->guardedRows($other, $tableName);
             try {
                 $connection->beginTransaction();
                 $registry->flush();
                 $otherTable->withKey('one')->setColumn('version_a', 'unwatched');
-                $this->flushWithTimeout($other, $this->registry($other, $otherTable));
+                $this->flushWithTimeout($other, $otherRegistry);
                 self::assertSame('unwatched', $this->fetchRow($connection, $tableName, 'one')['version_a']);
                 $connection->commit();
                 $registry->clear();
@@ -219,11 +217,12 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
 
     public function test_a_mutation_without_an_observed_scope_is_rejected(): void
     {
-        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table): void {
+        $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
+            [$table, $unitOfWork] = $this->guardedRows($connection, $tableName);
             $table->withKey('one')->setColumn('note', 'new');
             $this->expectException(\LogicException::class);
-            $this->expectExceptionMessage('requires observing column "status"');
-            $connection->transactional($this->registry($connection, $table)->flush(...));
+            $this->expectExceptionMessage('requires an expectation on "status"');
+            $connection->transactional($unitOfWork->flush(...));
         });
     }
 
@@ -247,41 +246,8 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 'version_a' => 'editor',
                 'note' => 'old',
             ]);
-            $collection = new \Ultra\StateStore\StateCollectionMetadata(
-                'permissions',
-                $tableName,
-                'permissions',
-                false,
-                ['tenantId' => 'status', 'roleId' => 'version_a'],
-                \stdClass::class,
-                'id',
-                true,
-                ['id' => 'id'],
-                ['note' => 'note'],
-            );
-            $state = new \Ultra\StateStore\StateMetadata(
-                \stdClass::class,
-                $tableName,
-                'root',
-                'id',
-                \stdClass::class,
-                false,
-                ['tenantId' => 'status', 'roleId' => 'version_a'],
-                [],
-                [],
-                collections: ['permissions' => $collection],
-            );
-            $definition = new \Ultra\StateStore\QueryGuardDefinition();
-            $definition->watch(\stdClass::class, scopeBy: 'id.tenantId')->whenPropertiesChange('permissions');
-            $definitions = ['collection_usage' => $definition->compile(new \Ultra\StateStore\StateMetadataRegistry([
-                \stdClass::class => $state,
-            ]))];
-            $reader = new StateTableRegistry(
-                ['root' => $table],
-                queryGuardDefinitions: $definitions,
-                guardLockAdapter: new PostgresGuardLockAdapter($connection),
-            );
-            $guard = new QueryGuard($reader, 'collection_usage');
+            [, $reader] = $this->guardedRows($connection, $tableName, collection: true);
+            $guard = $reader->queryGuard('collection_usage');
             $guard->observe(
                 'acme',
                 static fn(): int => (int) $connection->fetchOne('SELECT count(*) FROM ' . $tableName),
@@ -290,13 +256,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 (string) getenv('ULTRA_TEST_POSTGRES_DSN'),
                 self::class,
             );
-            $writer = new StateTableRegistry(
-                [],
-                new \Ultra\MappedTable\PostgresMappedRowSetAdapterFactory($other),
-                $definitions,
-                new PostgresGuardLockAdapter($other),
-            );
-            $items = $writer->collectionFor($collection, ['tenantId' => 'acme', 'roleId' => 'editor']);
+            [$items, $writer] = $this->guardedRows($other, $tableName, collection: true);
             $key = new \Ultra\MappedTable\MappedKey([
                 'status' => 'acme',
                 'version_a' => 'editor',
@@ -306,7 +266,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 'insert' => $items->withKey($key)->insert()->setColumn('note', 'new'),
                 'update' => $items->withKey($key)->expectColumnValue('note', 'old')->setColumn('note', 'new'),
                 'delete' => $items->withKey($key)->delete(),
-                'empty' => $items->reconcileRows([]),
+                'empty' => $items->reconcileForOwner(['status' => 'acme', 'version_a' => 'editor'], []),
             };
             try {
                 $connection->beginTransaction();
@@ -330,21 +290,23 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
         });
     }
 
-    private function registry(Connection $connection, MappedRowSet $table): StateTableRegistry
+    /** @return array{MappedRowSet, MappedTableUnitOfWork} */
+    private function guardedRows(Connection $connection, string $table, bool $collection = false): array
     {
-        return new StateTableRegistry(
-            ['test' => $table],
-            queryGuardDefinitions: $this->definitions(),
-            guardLockAdapter: new PostgresGuardLockAdapter($connection),
+        $mapping = new CooperativeRowsDefinition()->mappingFor($table, $collection);
+        $rows = new MappedRowSet(new PostgresMappedRowSetAdapter($connection, $table, $mapping->keyColumns), $mapping);
+        $unitOfWork = new MappedTableUnitOfWork(
+            [CooperativeRowsDefinition::class => $rows],
+            queryGuards: [new QueryGuardDefinition($collection ? 'collection_usage' : 'usage', [
+                new QueryGuardDependency(CooperativeRowsDefinition::class, 'status', ['note']),
+            ])],
+            guardLocks: new MappedPostgresGuardLockAdapter($connection),
         );
+
+        return [$rows, $unitOfWork];
     }
 
-    private function definitions(): array
-    {
-        return ['usage' => [['tableKey' => 'test', 'keyBy' => 'status', 'columns' => ['note']]]];
-    }
-
-    private function flushWithTimeout(Connection $connection, StateTableRegistry $registry): void
+    private function flushWithTimeout(Connection $connection, MappedTableUnitOfWork $registry): void
     {
         $connection->transactional(static function () use ($connection, $registry): void {
             $connection->executeStatement("SET LOCAL lock_timeout = '10ms'");
@@ -352,7 +314,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
         });
     }
 
-    private function assertGuardBlocks(Connection $connection, StateTableRegistry $registry): void
+    private function assertGuardBlocks(Connection $connection, MappedTableUnitOfWork $registry): void
     {
         try {
             $this->flushWithTimeout($connection, $registry);
@@ -539,11 +501,12 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             $fixture->store->save(new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'SKU', 1)]));
             $fixture->flush();
             $fixture->registry->clear();
-            $definition = new QueryGuardDefinition();
-            $definition->watch(OrderWithLinesState::class, scopeBy: 'orderId')->whenPropertiesChange('lines');
-            $definitions = ['usage' => $definition->compile($fixture->metadata)];
-            [, $reader] = $fixture->newStore([OrderWithLinesState::class], $definitions);
-            new QueryGuard($reader, 'usage')->lock('one');
+            $definitions = [new QueryGuardDefinition('usage', [
+                new QueryGuardDependency(OrdersDefinition::class, 'order_id', []),
+                new QueryGuardDependency(OrderLinesDefinition::class, 'order_id'),
+            ])];
+            [, $reader] = $fixture->sharedOrders($definitions);
+            $reader->queryGuard('usage')->lock('one');
             $other = PostgresConnectionSupport::sharedConnection(
                 (string) getenv('ULTRA_TEST_POSTGRES_DSN'),
                 self::class,
@@ -553,7 +516,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 $other->executeStatement("SELECT set_config('search_path', ?, false)", [$fixture->storage->fetchOne(
                     'SHOW search_path',
                 )]);
-                [$store, $writer] = $fixture->newStore([OrderWithLinesState::class], $definitions, $other);
+                [$store, $writer] = $fixture->sharedOrders($definitions, $other);
                 $store->observe(OrderWithLinesState::class, 'one');
                 $store->delete(OrderWithLinesState::class, 'one');
                 $fixture->storage->beginTransaction();
@@ -585,5 +548,28 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
         } finally {
             $fixture->close();
         }
+    }
+}
+
+final class CooperativeRowsDefinition implements MappedRowSetDefinition
+{
+    public function mapping(): MappedRowSetMapping
+    {
+        return $this->mappingFor('cooperative_test_rows', false);
+    }
+
+    public function mappingFor(string $table, bool $collection): MappedRowSetMapping
+    {
+        return new MappedRowSetMapping(
+            $table,
+            [
+                'id' => new MappedColumn('string'),
+                'status' => new MappedColumn('string'),
+                'version_a' => new MappedColumn('string', nullable: !$collection),
+                'note' => new MappedColumn('string', nullable: true),
+            ],
+            $collection ? ['id', 'status', 'version_a'] : ['id'],
+            ownerColumns: $collection ? ['status', 'version_a'] : [],
+        );
     }
 }

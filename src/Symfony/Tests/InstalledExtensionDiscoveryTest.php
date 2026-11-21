@@ -14,6 +14,7 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\Container\ContainerExtension;
 use Ultra\Events\EventsExtension;
 use Ultra\EventSourcedState\EventSourcedStateExtension;
+use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\Projection\Bundle\ProjectionExtension;
@@ -34,6 +35,7 @@ final class InstalledExtensionDiscoveryTest extends TestCase
         UnitOfWorkExtension::class,
         MapperExtension::class,
         EventSourcedStateExtension::class,
+        MappedTableExtension::class,
         StateStoreExtension::class,
         StatefulMessageHandlingExtension::class,
         ProjectionExtension::class,

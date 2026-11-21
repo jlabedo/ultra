@@ -12,3 +12,6 @@ services:
 
     Ultra\MappedTable\MappedRowSetAdapterFactory:
         class: Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory
+
+    Ultra\UnitOfWork\TransactionManager:
+        alias: Ultra\MappedTable\InMemoryRowDatabase

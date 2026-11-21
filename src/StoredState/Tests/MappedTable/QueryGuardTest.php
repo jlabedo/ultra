@@ -62,6 +62,9 @@ final class QueryGuardTest extends RowSetTestCase
         });
         $unit->queryGuard('a')->lock('20');
         $unit->queryGuard('a')->lock('3');
+        $unit->lockRow('write', new MappedKey(['id' => '2']));
+        $unit->lockRow('read', new MappedKey(['id' => '1']));
+        $unit->lockRow('read', new MappedKey(['id' => '1']));
         $rows->withKey('booking')->expectColumnValue('status', '10')->setColumn('status', '20');
         $lines->reconcileForOwner($owner, []);
 
@@ -74,6 +77,8 @@ final class QueryGuardTest extends RowSetTestCase
                 'a:3:SHARED',
                 'z:10:EXCLUSIVE',
                 'z:20:EXCLUSIVE',
+                'read:manual:{"id":"1"}:EXCLUSIVE',
+                'write:manual:{"id":"2"}:EXCLUSIVE',
                 'query',
             ],
             $trace->events,
@@ -82,7 +87,7 @@ final class QueryGuardTest extends RowSetTestCase
         static::assertFalse($owned->stored($line, ['note']));
         static::assertFalse($unit->hasPendingChanges());
         $unit->flush();
-        static::assertCount(6, $trace->events);
+        static::assertCount(8, $trace->events);
     }
 
     /** @return iterable<string, array{string, int|string, ?class-string<\Throwable>}> */
@@ -367,7 +372,7 @@ final class QueryGuardTrace implements GuardLockAdapter
 
     public function acquire(string $namespace, string $key, GuardLockMode $mode): void
     {
-        $this->events[] = substr($namespace, strlen('ultra:query_guard:')) . ':' . $key . ':' . $mode->name;
+        $this->events[] = str_replace('ultra:query_guard:', '', $namespace) . ':' . $key . ':' . $mode->name;
     }
 }
 

@@ -113,8 +113,8 @@ ci-dessous sur la même transaction, comme le fait l'administration IAM.
 ## Concurrence : une garde par tenant
 
 Les commandes décident avant l'ouverture de la transaction, conformément au
-runner Ultra. `Runtime` compile un query guard nommé `iam_authorization`, puis
-l'injecte dans `Administration`. La commande observe son autorisation via
+runner Ultra. `Runtime` déclare le query guard `iam_authorization` sur les row sets
+MappedTable et l'injecte dans `Administration`. La commande observe son autorisation via
 `QueryGuard::observe($actor->tenantId, ...)`, avant de préparer ses écritures.
 Au flush, les gardes sont acquises, l'autorisation est relue à l'heure courante,
 puis les attentes optimistes et les écritures sont appliquées. Une révocation ou expiration entre décision et flush
@@ -131,15 +131,14 @@ un autre sujet. La garde et la relecture ordonnent cette attribution par rapport
 nouvelle fenêtre de concurrence.
 
 La définition couvre `active` sur les sujets, groupes et appartenances,
-`active` et `expiresAt` sur les attributions, ainsi que les rôles :
+`active` et `expires_at` sur les attributions, ainsi que les rôles et leurs permissions.
 
 ```php
-$definition
-    ->watch(RoleState::class, scopeBy: 'id.tenantId')
-    ->whenPropertiesChange('active', 'permissions');
+new QueryGuardDependency(RolesDefinition::class, 'tenant_id', ['active']);
+new QueryGuardDependency(RolePermissionsDefinition::class, 'tenant_id');
 ```
 
-Les readers demandent une garde partagée. StateStore déduit automatiquement les
+Les lecteurs demandent une garde partagée. MappedTable déduit les
 gardes exclusives des plans de mutation, y compris pour les permissions d'une
 collection vidée, le provisioning et les writers utilisant directement
 `Runtime::$states`. Les requêtes initiales qui ignoreraient une mutation locale
@@ -153,7 +152,7 @@ la relecture voie les révocations validées pendant l'attente de la garde. Les
 commandes ne peuvent pas être imbriquées dans un autre runner : une requête SQL
 ne verrait pas les révocations encore bufferisées dans la même unité de travail.
 
-Des écritures SQL directes ou via des row sets indépendants de ce registre,
+Des écritures SQL directes ou via des row sets indépendants de ce coordinateur,
 des dépendances omises dans la définition, ou des snapshots répétés hors de ce
 protocole invalident cette garantie. Le port bas niveau
 `Runtime::$states` est destiné à la composition et aux tests ; la frontière
@@ -169,10 +168,12 @@ configurable et restauration de l'isolation précédente. `observeExists()` a é
 ajouté à StateStore pour exprimer une dépendance à l'existence sans observer tout
 l'état.
 
-Les query guards déclaratifs couvrent désormais les propriétés et collections
-avec une interface exprimée dans le modèle objet. L'exemple utilise cette
-[API](../../docs/stored-state/query-guards.md) pour déduire la participation des
-writers, sans verrou manuel sur `TenantState`.
+Le guard déclare les colonnes surveillées sur les row sets concernés, dont celui
+des permissions par rôle. MappedTable déduit la participation des writers à partir
+des mutations préparées. [Contrat des query guards](../../docs/stored-state/query-guards.md)
+
+Le provisionnement crée le tenant et écrit son audit dans le même flush. La clé
+étrangère de l’audit vers le tenant est vérifiée au commit.
 
 Le DDL reste écrit à la main dans `Infrastructure/schema.sql`. Il manque un lien
 StateStore → Schema pour dériver tables, identifiants et collections, puis

@@ -5,11 +5,9 @@ declare(strict_types=1);
 namespace Ultra\StateStore;
 
 use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
-use Ultra\MappedTable\RowSetUpdatePlan;
-use Ultra\StateStore\Exception\PendingQueryChangesException;
-use Ultra\StateStore\Exception\UnknownQueryGuardException;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\UnitOfWork;
 
@@ -21,9 +19,6 @@ final class StateTableRegistry implements UnitOfWork
     /** @var array<string, MappedRowSet> */
     private array $collectionTables = [];
 
-    /** @var array<string, array{tableKey: string, scope: MappedKey}> */
-    private array $collectionScopes = [];
-
     /** @var array<string, true> */
     private array $collectionDeletions = [];
 
@@ -33,20 +28,15 @@ final class StateTableRegistry implements UnitOfWork
     /** @var list<array{query: \Closure, expected: mixed, name: ?string}> */
     private array $queryExpectations = [];
 
-    /** @var array<string, array<array-key, GuardLockMode>> Numeric guard values become integer keys. */
-    private array $guards = [];
-
     /** @var array<string, array<string, MappedKey>> */
     private array $locks = [];
 
     /**
      * @param array<string, MappedRowSet> $tables
-     * @param array<string, list<array{tableKey: string, keyBy: string, columns: list<string>|null}>> $queryGuardDefinitions
      */
     public function __construct(
         array $tables,
         private ?MappedRowSetAdapterFactory $adapterFactory = null,
-        private array $queryGuardDefinitions = [],
         private ?GuardLockAdapter $guardLockAdapter = null,
     ) {
         $this->tables = $tables;
@@ -67,6 +57,29 @@ final class StateTableRegistry implements UnitOfWork
 
     public function collectionFor(StateCollectionMetadata $collection, mixed $normalizedOwnerId): MappedRowSet
     {
+        return $this->legacyCollection($collection, $collection->ownerKey($normalizedOwnerId));
+    }
+
+    /** @return list<MappedRow> */
+    public function rowsForCollection(StateCollectionMetadata $collection, MappedKey $owner): array
+    {
+        return $this->legacyCollection($collection, $owner)->rows($collection->selectedColumns());
+    }
+
+    /** @param list<MappedKey> $keys */
+    public function expectCollection(StateCollectionMetadata $collection, MappedKey $owner, array $keys): void
+    {
+        $this->legacyCollection($collection, $owner)->expectSameRowKeys($keys);
+    }
+
+    /** @param iterable<MappedRow> $rows */
+    public function reconcileCollection(StateCollectionMetadata $collection, MappedKey $owner, iterable $rows): void
+    {
+        $this->legacyCollection($collection, $owner)->reconcileRows($rows);
+    }
+
+    private function legacyCollection(StateCollectionMetadata $collection, MappedKey $scope): MappedRowSet
+    {
         if (null === $this->adapterFactory) {
             throw new \LogicException(sprintf(
                 'No mapped row set adapter factory was registered for state collection "%s".',
@@ -74,9 +87,7 @@ final class StateTableRegistry implements UnitOfWork
             ));
         }
 
-        $scope = $collection->ownerKey($normalizedOwnerId);
         $key = $collection->tableKey . '#' . $scope->fingerprint();
-        $this->collectionScopes[$key] = ['tableKey' => $collection->tableKey, 'scope' => $scope];
 
         return $this->collectionTables[$key] ??= new MappedRowSet($this->adapterFactory->createScoped(
             $collection->tableName,
@@ -112,14 +123,6 @@ final class StateTableRegistry implements UnitOfWork
 
     public function flush(): void
     {
-        $plans = $this->updatePlans();
-        foreach (QueryGuardWriteRules::requests(
-            $plans,
-            $this->queryGuardDefinitions,
-            $this->reconciliationScopes(),
-        ) as $request) {
-            $this->guard($request['name'], $request['value'], GuardLockMode::EXCLUSIVE);
-        }
         $this->acquireGuards();
         foreach ($this->queryExpectations as $expectation) {
             if ($expectation['query']() !== $expectation['expected']) {
@@ -140,97 +143,21 @@ final class StateTableRegistry implements UnitOfWork
         $this->clear();
     }
 
-    /** Check only the initial decision read. Flush replays the recorded callback before applying local writes. */
-    public function assertQueryCanBeObserved(string $name, int|string $value): void
-    {
-        $scopes = $this->queryGuardScopes($name);
-        foreach (QueryGuardWriteRules::requests(
-            $this->updatePlans(),
-            [$name => $scopes],
-            $this->reconciliationScopes(),
-        ) as $request) {
-            if ((string) $request['value'] === (string) $value) {
-                throw new PendingQueryChangesException($name, $value, $request['tableKey'], $request['key']);
-            }
-        }
-    }
-
-    /** @return list<array{tableKey: string, keyBy: string, columns: list<string>|null}> */
-    private function queryGuardScopes(string $name): array
-    {
-        $scopes = $this->queryGuardDefinitions[$name] ?? [];
-        if ([] === $scopes) {
-            throw new UnknownQueryGuardException($name);
-        }
-
-        return $scopes;
-    }
-
-    /** @return array<string, RowSetUpdatePlan> */
-    private function updatePlans(): array
-    {
-        $plans = array_map(static fn(MappedRowSet $table): RowSetUpdatePlan => $table->updatePlan(), $this->tables);
-        foreach ($this->collectionTables as $key => $table) {
-            $tableKey = $this->collectionScopes[$key]['tableKey'];
-            $previous = $plans[$tableKey] ?? null;
-            $plans[$tableKey] = new RowSetUpdatePlan(null, [
-                ...($previous->rowUpdates ?? []),
-                ...$table->updatePlan()->rowUpdates,
-            ]);
-        }
-
-        return $plans;
-    }
-
-    /** @return array<string, list<MappedKey>> */
-    private function reconciliationScopes(): array
-    {
-        $scopes = [];
-        foreach ($this->collectionTables as $key => $table) {
-            if (null === $table->updatePlan()->retainedRowKeys) {
-                continue;
-            }
-
-            $context = $this->collectionScopes[$key];
-            $scopes[$context['tableKey']][] = $context['scope'];
-        }
-
-        return $scopes;
-    }
-
     private function acquireGuards(): void
     {
-        if ([] === $this->guards && [] === $this->locks) {
+        if ([] === $this->locks) {
             return;
         }
         if (null === $this->guardLockAdapter) {
             throw new \LogicException('State store guards require a GuardLockAdapter using the flush transaction.');
         }
 
-        // Consolidate modes before acquiring anything: an exclusive request must never upgrade a held lock.
-        ksort($this->guards, SORT_STRING);
-        foreach ($this->guards as $name => $values) {
-            ksort($values, SORT_STRING);
-            foreach ($values as $value => $mode) {
-                $this->guardLockAdapter->acquire('ultra:query_guard:' . $name, (string) $value, $mode);
-            }
-        }
         ksort($this->locks, SORT_STRING);
         foreach ($this->locks as $tableName => $keys) {
             ksort($keys, SORT_STRING);
             foreach ($keys as $key) {
                 $this->guardLockAdapter->acquire($tableName . ':manual', $key->fingerprint(), GuardLockMode::EXCLUSIVE);
             }
-        }
-    }
-
-    /** Buffer a named guard; exclusive dominates shared for the same name/value. */
-    public function guard(string $name, int|string $value, GuardLockMode $mode): void
-    {
-        $this->queryGuardScopes($name);
-        $fingerprint = (string) $value;
-        if (GuardLockMode::EXCLUSIVE !== ($this->guards[$name][$fingerprint] ?? null)) {
-            $this->guards[$name][$fingerprint] = $mode;
         }
     }
 
@@ -242,7 +169,7 @@ final class StateTableRegistry implements UnitOfWork
 
     public function hasPendingChanges(): bool
     {
-        if ([] !== $this->queryExpectations || [] !== $this->guards || [] !== $this->locks) {
+        if ([] !== $this->queryExpectations || [] !== $this->locks) {
             return true;
         }
 
@@ -262,11 +189,9 @@ final class StateTableRegistry implements UnitOfWork
         }
 
         $this->collectionTables = [];
-        $this->collectionScopes = [];
         $this->collectionDeletions = [];
         $this->deletedStates = [];
         $this->queryExpectations = [];
-        $this->guards = [];
         $this->locks = [];
     }
 

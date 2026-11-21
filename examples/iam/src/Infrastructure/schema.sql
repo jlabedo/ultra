@@ -36,7 +36,7 @@ CREATE TABLE IF NOT EXISTS iam_bindings (
     CHECK ((scope_type = 'tenant' AND scope_id = '*') OR (scope_type <> 'tenant' AND scope_id <> '*'))
 );
 CREATE TABLE IF NOT EXISTS iam_audit (
-    entry_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES iam_tenants,
+    entry_id TEXT PRIMARY KEY, tenant_id TEXT NOT NULL REFERENCES iam_tenants DEFERRABLE INITIALLY DEFERRED,
     actor_id TEXT NOT NULL, operation TEXT NOT NULL, target TEXT NOT NULL, occurred_at BIGINT NOT NULL, snapshot TEXT NOT NULL
 );
 CREATE INDEX IF NOT EXISTS iam_audit_tenant ON iam_audit (tenant_id, occurred_at, entry_id);

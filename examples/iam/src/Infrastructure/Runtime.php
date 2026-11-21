@@ -8,6 +8,14 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\TransactionIsolationLevel;
 use IamExample\Administration;
 use IamExample\Authorization;
+use IamExample\Infrastructure\Rows\AuditDefinition;
+use IamExample\Infrastructure\Rows\BindingsDefinition;
+use IamExample\Infrastructure\Rows\GroupsDefinition;
+use IamExample\Infrastructure\Rows\MembershipsDefinition;
+use IamExample\Infrastructure\Rows\RolePermissionsDefinition;
+use IamExample\Infrastructure\Rows\RolesDefinition;
+use IamExample\Infrastructure\Rows\SubjectsDefinition;
+use IamExample\Infrastructure\Rows\TenantsDefinition;
 use IamExample\Provisioning;
 use IamExample\State\AuditEntry;
 use IamExample\State\BindingState;
@@ -19,22 +27,25 @@ use IamExample\State\SubjectState;
 use IamExample\State\TenantState;
 use Psr\Clock\ClockInterface;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
+use Ultra\MappedTable\PostgresMappedRowSetSql;
+use Ultra\MappedTable\QueryGuard;
+use Ultra\MappedTable\QueryGuardDefinition;
+use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\StateId;
-use Ultra\StateStore\PostgresGuardLockAdapter;
-use Ultra\StateStore\QueryGuard;
-use Ultra\StateStore\QueryGuardDefinition;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
+use Ultra\StateStore\StateRowSets;
 use Ultra\StateStore\StateStore;
-use Ultra\StateStore\StateTableRegistry;
 use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
 use Ultra\UnitOfWork\TransactionManager;
 
-/** Explicit composition root; no Symfony container or hand-written mapping metadata. */
+/** Composes StateStore views and MappedTable row sets on one connection. */
 final readonly class Runtime
 {
     public Administration $administration;
@@ -69,36 +80,52 @@ final readonly class Runtime
         $metadataFactory = new StateMetadataFactory($shapes);
         $adapters = new PostgresMappedRowSetAdapterFactory($connection);
         $metadata = [];
-        $tables = [];
         foreach ($classes as $class) {
-            $state = $metadataFactory->create($class);
-            $metadata[$class] = $state->toArray();
-            $tables[$state->tableKey] = new MappedRowSet($adapters->create(
-                $state->tableName,
-                array_values($state->idPropertyColumns),
-            ));
+            $metadata[$class] = $metadataFactory->create($class)->toArray();
         }
-        $metadataRegistry = new StateMetadataRegistry($metadata);
-        $definition = new QueryGuardDefinition();
-        foreach ([SubjectState::class, GroupState::class, MembershipState::class] as $class) {
-            $definition->watch($class, scopeBy: 'id.tenantId')->whenPropertiesChange('active');
+
+        $rowSets = [];
+        $tables = [];
+        foreach ([
+            TenantsDefinition::class,
+            SubjectsDefinition::class,
+            GroupsDefinition::class,
+            RolesDefinition::class,
+            RolePermissionsDefinition::class,
+            MembershipsDefinition::class,
+            BindingsDefinition::class,
+            AuditDefinition::class,
+        ] as $definition) {
+            $mapping = new $definition()->mapping();
+            $adapter = $adapters->createDefined(
+                $mapping,
+                [],
+                PostgresMappedRowSetSql::compile($mapping, []),
+                needsRuntimeDefaults: false,
+            );
+            $rowSets[$definition] = new MappedRowSet($adapter, $mapping, requiresCoordinator: true);
+            $tables[StateMetadataFactory::tableKey($mapping->table, $mapping->keyColumns)] = $rowSets[$definition];
         }
-        $definition->watch(BindingState::class, scopeBy: 'id.tenantId')->whenPropertiesChange('active', 'expiresAt');
-        $definition->watch(RoleState::class, scopeBy: 'id.tenantId')->whenPropertiesChange('active', 'permissions');
-        $registry = new StateTableRegistry(
-            $tables,
-            $adapters,
-            queryGuardDefinitions: ['iam_authorization' => $definition->compile($metadataRegistry)],
-            guardLockAdapter: new PostgresGuardLockAdapter($connection),
+        $unitOfWork = new MappedTableUnitOfWork(
+            $rowSets,
+            queryGuards: [new QueryGuardDefinition('iam_authorization', [
+                new QueryGuardDependency(SubjectsDefinition::class, 'tenant_id', ['active']),
+                new QueryGuardDependency(GroupsDefinition::class, 'tenant_id', ['active']),
+                new QueryGuardDependency(MembershipsDefinition::class, 'tenant_id', ['active']),
+                new QueryGuardDependency(BindingsDefinition::class, 'tenant_id', ['active', 'expires_at']),
+                new QueryGuardDependency(RolesDefinition::class, 'tenant_id', ['active']),
+                new QueryGuardDependency(RolePermissionsDefinition::class, 'tenant_id'),
+            ])],
+            guardLocks: new PostgresGuardLockAdapter($connection),
         );
         $this->states = new StateStore(
-            $metadataRegistry,
-            $registry,
+            new StateMetadataRegistry($metadata),
+            new StateRowSets($tables, $unitOfWork),
             new UltraNormalizer(__DIR__ . '/../../var/normalizers'),
         );
-        $this->authorizationGuard = new QueryGuard($registry, 'iam_authorization');
+        $this->authorizationGuard = $unitOfWork->queryGuard('iam_authorization');
         $this->runner = new TransactionalUnitOfWorkRunner(
-            $registry,
+            $unitOfWork,
             $transactions ?? new DbalTransactionManager($connection, TransactionIsolationLevel::READ_COMMITTED),
         );
         $this->authorization = new Authorization($connection, $clock);

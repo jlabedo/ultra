@@ -14,14 +14,17 @@ final class QueryGuardWork
     /** @var array<array-key, array<array-key, GuardLockMode>> */
     private array $locks = [];
 
-    /** @var list<array{name: string, value: int|string, query: \Closure(): mixed, expected: mixed}> */
+    /** @var array<string, array<string, true>> */
+    private array $rowLocks = [];
+
+    /** @var list<array{name: ?string, query: \Closure(): mixed, expected: mixed}> */
     private array $observations = [];
 
     private bool $replaying = false;
 
     public function __construct(
         private readonly QueryGuardRules $rules,
-        private readonly GuardLockAdapter $adapter,
+        private readonly ?GuardLockAdapter $adapter,
     ) {}
 
     public function assertKnown(string $name): void
@@ -66,11 +69,24 @@ final class QueryGuardWork
         }
 
         $result = $query();
-        self::assertStable($result);
+        $this->expectQuery($query, $result, $name . '(' . $value . ')');
         $this->locks[$name][$fingerprint] = GuardLockMode::SHARED;
-        $this->observations[] = ['name' => $name, 'value' => $value, 'query' => $query(...), 'expected' => $result];
 
         return $result;
+    }
+
+    public function lockRow(string $table, MappedKey $key): void
+    {
+        $this->assertCollecting();
+        $this->rowLocks[$table][$key->fingerprint()] = true;
+    }
+
+    /** @param callable(): mixed $query */
+    public function expectQuery(callable $query, mixed $expected, ?string $name = null): void
+    {
+        $this->assertCollecting();
+        self::assertStable($expected);
+        $this->observations[] = ['name' => $name, 'query' => $query(...), 'expected' => $expected];
     }
 
     /**
@@ -109,21 +125,8 @@ final class QueryGuardWork
     public function replay(array $requests, ?object $rowSetResource): void
     {
         $this->assertCollecting();
-        if ([] === $requests) {
-            return;
-        }
-
-        $resource = $this->adapter->activeTransactionResource();
-        if (null !== $rowSetResource && $rowSetResource !== $resource) {
-            throw new \LogicException('Query guards and mapped row sets must use the same transaction resource.');
-        }
-
-        foreach ($this->rules->namespaces as $name => $namespace) {
-            $values = $requests[$name] ?? [];
-            ksort($values, SORT_STRING);
-            foreach ($values as $value => $mode) {
-                $this->adapter->acquire($namespace, (string) $value, $mode);
-            }
+        if ([] !== $requests || [] !== $this->rowLocks) {
+            $this->acquire($requests, $rowSetResource);
         }
 
         $this->replaying = true;
@@ -131,9 +134,8 @@ final class QueryGuardWork
             foreach ($this->observations as $observation) {
                 if ($observation['query']() !== $observation['expected']) {
                     throw new ConcurrencyException(sprintf(
-                        'Query expectation failed for "%s(%s)".',
-                        $observation['name'],
-                        $observation['value'],
+                        'Query expectation failed%s.',
+                        null === $observation['name'] ? '' : ' for "' . $observation['name'] . '"',
                     ));
                 }
             }
@@ -142,15 +144,41 @@ final class QueryGuardWork
         }
     }
 
+    /** @param array<array-key, array<array-key, GuardLockMode>> $requests */
+    private function acquire(array $requests, ?object $rowSetResource): void
+    {
+        $adapter = $this->adapter ?? throw new \LogicException('Mapped table locks require a GuardLockAdapter.');
+        $resource = $adapter->activeTransactionResource();
+        if (null !== $rowSetResource && $rowSetResource !== $resource) {
+            throw new \LogicException('Query guards and mapped row sets must use the same transaction resource.');
+        }
+
+        foreach ($this->rules->namespaces as $name => $namespace) {
+            $values = $requests[$name] ?? [];
+            ksort($values, SORT_STRING);
+            foreach ($values as $value => $mode) {
+                $adapter->acquire($namespace, (string) $value, $mode);
+            }
+        }
+        ksort($this->rowLocks, SORT_STRING);
+        foreach ($this->rowLocks as $table => $keys) {
+            ksort($keys, SORT_STRING);
+            foreach (array_keys($keys) as $key) {
+                $adapter->acquire($table . ':manual', $key, GuardLockMode::EXCLUSIVE);
+            }
+        }
+    }
+
     public function hasPendingChanges(): bool
     {
-        return [] !== $this->locks;
+        return [] !== $this->locks || [] !== $this->rowLocks || [] !== $this->observations;
     }
 
     public function clear(): void
     {
         $this->assertCollecting();
         $this->locks = [];
+        $this->rowLocks = [];
         $this->observations = [];
     }
 
