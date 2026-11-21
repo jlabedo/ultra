@@ -89,7 +89,7 @@ abstract class PostgresRowSetTestCase extends TestCase
             return $row;
         }
 
-        $row['tags'] = PostgresMappedColumnType::textArray()->decode($row['tags']);
+        $row['tags'] = PostgresMappedColumnType::TextArray->decode($row['tags']);
 
         return $row;
     }

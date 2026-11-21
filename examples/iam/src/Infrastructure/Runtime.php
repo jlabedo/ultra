@@ -96,12 +96,7 @@ final readonly class Runtime
             AuditDefinition::class,
         ] as $definition) {
             $mapping = new $definition()->mapping();
-            $rowSets[$definition] = $adapter->createDefined(
-                $mapping,
-                [],
-                PostgresMappedRowSetSql::compile($mapping, []),
-                needsRuntimeDefaults: false,
-            );
+            $rowSets[$definition] = $adapter->createCompiled($mapping, PostgresMappedRowSetSql::compile($mapping, []));
             $tables[$mapping->table] = $rowSets[$definition];
         }
         $unitOfWork = new MappedTableUnitOfWork(

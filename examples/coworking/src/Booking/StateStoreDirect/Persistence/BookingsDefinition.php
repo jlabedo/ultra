@@ -33,8 +33,8 @@ final class BookingsDefinition implements MappedRowSetDefinition, PostgresMapped
     public function postgresColumnTypes(): array
     {
         return [
-            'start_at' => PostgresMappedColumnType::timestampWithTimeZone(),
-            'end_at' => PostgresMappedColumnType::timestampWithTimeZone(),
+            'start_at' => PostgresMappedColumnType::TimestampWithTimeZone,
+            'end_at' => PostgresMappedColumnType::TimestampWithTimeZone,
         ];
     }
 }

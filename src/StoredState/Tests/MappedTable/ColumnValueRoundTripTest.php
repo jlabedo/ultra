@@ -14,55 +14,59 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 #[CoversNamespace('Ultra\MappedTable')]
 final class ColumnValueRoundTripTest extends RowSetTestCase
 {
-    /** @return iterable<string, array{string, string, mixed, mixed}> */
+    /** @return iterable<string, array{string, PostgresMappedColumnType, mixed, mixed}> */
     public static function values(): iterable
     {
         yield 'escaped text array with nulls' => [
             'tags',
-            'textArray',
+            PostgresMappedColumnType::TextArray,
             ['alpha', 'comma,value', 'quote"value', 'back\\slash', '', 'NULL', null],
             ['alpha', 'comma,value', 'quote"value', 'back\\slash', '', 'NULL', null],
         ];
-        yield 'integer array with nulls' => ['tags', 'intArray', [1, null, -7], [1, null, -7]];
+        yield 'integer array with nulls' => ['tags', PostgresMappedColumnType::IntArray, [1, null, -7], [1, null, -7]];
         yield 'UUID array' => [
             'tags',
-            'uuidArray',
+            PostgresMappedColumnType::UuidArray,
             ['00000000-0000-0000-0000-000000000001'],
             ['00000000-0000-0000-0000-000000000001'],
         ];
         $json = ['anyOf' => [['documentType' => 'passport'], ['allOf' => [['documentType' => 'driver_license']]]]];
-        yield 'nested JSON' => ['payload', 'jsonb', $json, $json];
-        yield 'ISO date' => ['expires_on', 'date', '2026-05-25', '2026-05-25'];
-        yield 'date object' => ['expires_on', 'date', new \DateTimeImmutable('2026-05-25'), '2026-05-25'];
+        yield 'nested JSON' => ['payload', PostgresMappedColumnType::Jsonb, $json, $json];
+        yield 'ISO date' => ['expires_on', PostgresMappedColumnType::Date, '2026-05-25', '2026-05-25'];
+        yield 'date object' => [
+            'expires_on',
+            PostgresMappedColumnType::Date,
+            new \DateTimeImmutable('2026-05-25'),
+            '2026-05-25',
+        ];
         yield 'wall-clock timestamp' => [
             'expires_on',
-            'timestamp',
+            PostgresMappedColumnType::Timestamp,
             new \DateTimeImmutable('2026-05-25T12:34:56.123456+02:00'),
             '2026-05-25T12:34:56.123456+00:00',
         ];
         yield 'timestamp instant with offset' => [
             'expires_on',
-            'timestampWithTimeZone',
+            PostgresMappedColumnType::TimestampWithTimeZone,
             '2026-05-25T12:34:56.654321+02:00',
             '2026-05-25T10:34:56.654321+00:00',
         ];
         yield 'timestamp instant object' => [
             'expires_on',
-            'timestampWithTimeZone',
+            PostgresMappedColumnType::TimestampWithTimeZone,
             new \DateTimeImmutable('2026-05-25T12:34:56.123456-03:00'),
             '2026-05-25T15:34:56.123456+00:00',
         ];
-        yield 'integer stored as text' => ['note', 'text', 42, '42'];
+        yield 'integer stored as text' => ['note', PostgresMappedColumnType::Text, 42, '42'];
     }
 
     #[DataProvider('values')]
     public function test_column_values_survive_single_and_multiple_writes_and_optimistic_updates(
         string $column,
-        string $kind,
+        PostgresMappedColumnType $type,
         mixed $input,
         mixed $expected,
     ): void {
-        $type = PostgresMappedColumnType::{$kind}();
         $fixture = $this->fixture('postgres', columnTypes: [$column => $type]);
         $rows = $fixture->rows;
         $rows->withKey('first')->insert()->setColumn($column, $input);
@@ -70,7 +74,7 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
         $rows->clear();
         static::assertSame([$column => $expected], $rows->withKey('first')->get([$column]));
         static::assertSame([$column => $expected], $rows->rows([$column])[0]->columns);
-        $replacement = str_ends_with($type->sqlType, '[]') ? [] : null;
+        $replacement = str_ends_with($type->value, '[]') ? [] : null;
         $rows->withKey('first')->expectColumnValue($column, $expected)->setColumn($column, $replacement);
         $rows->withKey('second')->insert()->setColumn($column, $input);
         $rows->withKey('third')->insert()->setColumn($column, null);
@@ -80,7 +84,7 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
         static::assertSame([$column => $expected], $rows->withKey('second')->get([$column]));
         static::assertSame([$column => null], $rows->withKey('third')->get([$column]));
         static::assertSame([$column => $expected], $fixture->stored('second', [$column]));
-        if ('date' === $kind) {
+        if (PostgresMappedColumnType::Date === $type) {
             static::assertSame(
                 'date',
                 $fixture
@@ -96,7 +100,7 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
 
     public function test_array_upserts_preserve_values_and_reject_stale_array_expectations(): void
     {
-        $fixture = $this->fixture('postgres', columnTypes: ['tags' => PostgresMappedColumnType::textArray()]);
+        $fixture = $this->fixture('postgres', columnTypes: ['tags' => PostgresMappedColumnType::TextArray]);
         $rows = $fixture->rows;
         $rows->withKey('first')->upsert()->setColumn('tags', ['alpha']);
         $rows->withKey('second')->upsert()->setColumn('tags', ['beta', 'gamma']);

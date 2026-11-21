@@ -657,7 +657,7 @@ final readonly class PostgresRowSetStorage implements MappedRowSetStorage
 
         $type = $this->columnTypes[$column] ?? null;
 
-        return null === $type ? '?' : '?::' . $type->sqlType;
+        return null === $type ? '?' : '?::' . $type->value;
     }
 
     private function encodeColumnValue(string $column, mixed $value): mixed

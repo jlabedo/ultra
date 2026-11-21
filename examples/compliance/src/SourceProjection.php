@@ -40,7 +40,7 @@ final class SourceProjection implements UnitOfWork
         $this->qualifications = $adapter->create(
             'compliance_qualifications',
             ['account_id', 'qualification_id'],
-            ['requirements' => PostgresMappedColumnType::jsonb()],
+            ['requirements' => PostgresMappedColumnType::Jsonb],
         );
         $this->persistence = new MappedTableUnitOfWork([
             'compliance_evidence' => $this->evidence,

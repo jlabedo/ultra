@@ -4,95 +4,29 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-final readonly class PostgresMappedColumnType
+enum PostgresMappedColumnType: string
 {
-    private const TEXT = 'text';
-    private const ARRAY_TEXT = 'array_text';
-    private const ARRAY_INT = 'array_int';
-    private const JSON = 'json';
-    private const DATE = 'date';
-    private const TIMESTAMP = 'timestamp';
-
-    private function __construct(
-        public string $sqlType,
-        private string $kind,
-        public string $factoryMethod,
-    ) {}
-
-    /**
-     * A scalar text column. Encodes/decodes as a plain string passthrough; its
-     * value is what makes the default (untyped) column behaviour explicit when
-     * building unnest()-based bulk inserts.
-     */
-    public static function text(): self
-    {
-        return new self('TEXT', self::TEXT, __FUNCTION__);
-    }
-
-    public static function textArray(): self
-    {
-        return new self('TEXT[]', self::ARRAY_TEXT, __FUNCTION__);
-    }
-
-    public static function uuidArray(): self
-    {
-        return new self('UUID[]', self::ARRAY_TEXT, __FUNCTION__);
-    }
-
-    public static function intArray(): self
-    {
-        return new self('INTEGER[]', self::ARRAY_INT, __FUNCTION__);
-    }
-
-    public static function jsonb(): self
-    {
-        return new self('JSONB', self::JSON, __FUNCTION__);
-    }
-
-    public static function date(): self
-    {
-        return new self('DATE', self::DATE, __FUNCTION__);
-    }
-
-    public static function timestamp(): self
-    {
-        return new self('TIMESTAMP(6) WITHOUT TIME ZONE', self::TIMESTAMP, __FUNCTION__);
-    }
-
-    public static function timestampWithTimeZone(): self
-    {
-        return new self('TIMESTAMP(6) WITH TIME ZONE', self::TIMESTAMP, __FUNCTION__);
-    }
-
-    /** @internal Resolves a built-in factory in declarative Symfony configuration. */
-    public static function fromFactoryMethod(string $method): ?self
-    {
-        return match ($method) {
-            'text' => self::text(),
-            'textArray' => self::textArray(),
-            'uuidArray' => self::uuidArray(),
-            'intArray' => self::intArray(),
-            'jsonb' => self::jsonb(),
-            'date' => self::date(),
-            'timestamp' => self::timestamp(),
-            'timestampWithTimeZone' => self::timestampWithTimeZone(),
-            default => null,
-        };
-    }
+    case Text = 'TEXT';
+    case TextArray = 'TEXT[]';
+    case UuidArray = 'UUID[]';
+    case IntArray = 'INTEGER[]';
+    case Jsonb = 'JSONB';
+    case Date = 'DATE';
+    case Timestamp = 'TIMESTAMP(6) WITHOUT TIME ZONE';
+    case TimestampWithTimeZone = 'TIMESTAMP(6) WITH TIME ZONE';
 
     /** @internal Validates the declared PHP representation before a codec is wired into a row set. */
     public function assertSupports(string $column, MappedColumn $mapping): void
     {
-        $type = match ($this->kind) {
-            self::ARRAY_TEXT, self::ARRAY_INT => 'array',
-            self::TEXT, self::DATE, self::TIMESTAMP => 'string',
-            self::JSON => $mapping->type,
-            default => throw new \LogicException('Unsupported PostgreSQL mapped column kind "' . $this->kind . '".'),
+        $type = match ($this) {
+            self::TextArray, self::UuidArray, self::IntArray => 'array',
+            self::Text, self::Date, self::Timestamp, self::TimestampWithTimeZone => 'string',
+            self::Jsonb => $mapping->type,
         };
         if ($mapping->type !== $type) {
             throw new \LogicException(sprintf(
                 'PostgreSQL codec "%s" for column "%s" expects PHP %s, declared %s.',
-                $this->sqlType,
+                $this->value,
                 $column,
                 $type,
                 $mapping->type,
@@ -106,120 +40,55 @@ final readonly class PostgresMappedColumnType
             return null;
         }
 
-        if (self::TEXT === $this->kind) {
-            return self::encodeText($value);
-        }
-
-        if (self::DATE === $this->kind) {
-            return self::encodeDate($value);
-        }
-
-        if (self::TIMESTAMP === $this->kind) {
-            return self::encodeTimestamp($value);
-        }
-
-        if (self::JSON === $this->kind) {
-            return self::encodeJson($value);
-        }
-
-        if (!is_array($value)) {
-            throw new \InvalidArgumentException(sprintf(
-                'Postgres column type "%s" expects a PHP array or null.',
-                $this->sqlType,
-            ));
-        }
-
-        return match ($this->kind) {
-            self::ARRAY_TEXT => self::encodeTextArray($value),
-            self::ARRAY_INT => self::encodeIntArray($value),
-            default => throw new \LogicException(sprintf('Unsupported Postgres mapped column kind "%s".', $this->kind)),
+        return match ($this) {
+            self::Text => self::encodeText($value),
+            self::Date => self::encodeDate($value),
+            self::Timestamp, self::TimestampWithTimeZone => self::encodeTimestamp($value),
+            self::Jsonb => self::encodeJson($value),
+            self::TextArray, self::UuidArray, self::IntArray => $this->encodeArray($value),
         };
     }
 
     public function decode(mixed $value): mixed
     {
-        if (null === $value || is_array($value)) {
+        if (null === $value || is_array($value) || self::Text === $this) {
             return $value;
         }
-
-        if (self::TEXT === $this->kind) {
-            return $value;
-        }
-
-        if (self::DATE === $this->kind) {
+        if (self::Date === $this) {
             return self::decodeDate($value);
         }
-
-        if (self::TIMESTAMP === $this->kind) {
+        if (self::Timestamp === $this || self::TimestampWithTimeZone === $this) {
             return new \DateTimeImmutable(self::encodeTimestamp($value), new \DateTimeZone('UTC'))->format(
                 'Y-m-d\TH:i:s.uP',
             );
         }
-
         if (!is_string($value)) {
             throw new \InvalidArgumentException(sprintf(
                 'Postgres column type "%s" expects a database string or null.',
-                $this->sqlType,
+                $this->value,
             ));
         }
-
-        if (self::JSON === $this->kind) {
+        if (self::Jsonb === $this) {
             return self::decodeJson($value);
         }
 
         $values = self::decodeArray($value);
 
-        return match ($this->kind) {
-            self::ARRAY_TEXT => $values,
-            self::ARRAY_INT => array_map(static fn(?string $item): ?int => null === $item
-                ? null
-                : (int) $item, $values),
-            default => throw new \LogicException(sprintf('Unsupported Postgres mapped column kind "%s".', $this->kind)),
-        };
+        return self::IntArray === $this
+            ? array_map(static fn(?string $item): ?int => null === $item ? null : (int) $item, $values)
+            : $values;
     }
 
-    /**
-     * SQL cast for a one-dimensional Postgres array whose elements have this
-     * column's type, e.g. DATE -> "DATE[]". Used by unnest()-based bulk inserts
-     * so the bound-parameter count stays constant (one array per column).
-     */
-    public function arraySqlType(): string
+    private function encodeArray(mixed $value): string
     {
-        if (self::ARRAY_TEXT === $this->kind || self::ARRAY_INT === $this->kind) {
-            throw new \LogicException(sprintf(
-                'Postgres column type "%s" is itself an array and cannot be bulk-inserted through unnest().',
-                $this->sqlType,
+        if (!is_array($value)) {
+            throw new \InvalidArgumentException(sprintf(
+                'Postgres column type "%s" expects a PHP array or null.',
+                $this->value,
             ));
         }
 
-        return $this->sqlType . '[]';
-    }
-
-    /**
-     * Encode a list of scalar values of this column's type into a Postgres
-     * array literal suitable for `unnest(:param::<type>[])`. Nulls serialize as
-     * NULL elements (not empty strings), preserving nullable-column semantics.
-     *
-     * @param list<mixed> $values
-     */
-    public function encodeArrayLiteral(array $values): string
-    {
-        return match ($this->kind) {
-            self::TEXT => self::encodeTextArray($values),
-            self::DATE => self::encodeTextArray(array_map(static fn(mixed $value): ?string => null === $value
-                ? null
-                : self::encodeDate($value), $values)),
-            self::TIMESTAMP => self::encodeTextArray(array_map(static fn(mixed $value): ?string => null === $value
-                ? null
-                : self::encodeTimestamp($value), $values)),
-            self::JSON => self::encodeTextArray(array_map(static fn(mixed $value): ?string => null === $value
-                ? null
-                : self::encodeJson($value), $values)),
-            default => throw new \LogicException(sprintf(
-                'Postgres column type "%s" cannot be encoded as a scalar unnest() array.',
-                $this->sqlType,
-            )),
-        };
+        return self::IntArray === $this ? self::encodeIntArray($value) : self::encodeTextArray($value);
     }
 
     private static function encodeText(mixed $value): string

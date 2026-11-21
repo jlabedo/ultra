@@ -6,7 +6,7 @@ namespace Ultra\MappedTable;
 
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 
-/** @internal SQL fragments determined entirely by a compiled row set definition. */
+/** @internal PostgreSQL codecs and SQL fragments compiled from a row set definition. */
 final readonly class PostgresMappedRowSetSql
 {
     /**
@@ -16,6 +16,7 @@ final readonly class PostgresMappedRowSetSql
      * @param list<string> $ownerPredicates
      * @param list<string> $columnNames
      * @param list<string> $nonKeyColumns
+     * @param array<string, PostgresMappedColumnType> $columnTypes
      */
     public function __construct(
         public string $table,
@@ -31,17 +32,19 @@ final readonly class PostgresMappedRowSetSql
         public string $rowColumns,
         public string $rowSetColumns,
         public string $absentRowLockNamespace,
+        public array $columnTypes,
     ) {}
 
     /** @param array<string, PostgresMappedColumnType> $types */
-    public static function compile(MappedRowSetMetadata $mapping, array $types, ?self $compiled = null): self
+    public static function compile(MappedRowSetMetadata $mapping, array $types): self
     {
+        self::validateColumnTypes($mapping, $types);
         $quote = new PostgreSQLPlatform()->quoteSingleIdentifier(...);
-        $columns = $compiled->columns ?? [];
-        foreach (null === $compiled ? $mapping->columnNames : array_keys($types) as $column) {
-            $identifier = $columns[$column]['identifier'] ?? $quote($column);
+        $columns = [];
+        foreach ($mapping->columnNames as $column) {
+            $identifier = $quote($column);
             $type = $types[$column] ?? null;
-            $parameter = null === $type ? '?' : '?::' . $type->sqlType;
+            $parameter = null === $type ? '?' : '?::' . $type->value;
             $columns[$column] = [
                 'identifier' => $identifier,
                 'parameter' => $parameter,
@@ -52,38 +55,43 @@ final readonly class PostgresMappedRowSetSql
         }
 
         $predicate = static fn(string $column): string => $columns[$column]['assign'];
-        if (null === $compiled || [] !== array_intersect_key($types, $mapping->keyColumnSet)) {
-            $keyPredicates = array_map($predicate, $mapping->keyColumns);
-            $keyPredicate = implode(' AND ', $keyPredicates);
-        } else {
-            $keyPredicates = $compiled->keyPredicates;
-            $keyPredicate = $compiled->keyPredicate;
-        }
-        if (null === $compiled || [] !== array_intersect_key($types, $mapping->ownerColumnSet)) {
-            $ownerPredicates = array_map($predicate, $mapping->ownerColumns);
-            $ownerWhere = [] === $ownerPredicates ? '' : ' WHERE ' . implode(' AND ', $ownerPredicates);
-        } else {
-            $ownerPredicates = $compiled->ownerPredicates;
-            $ownerWhere = $compiled->ownerWhere;
-        }
+        $keyPredicates = array_map($predicate, $mapping->keyColumns);
+        $ownerPredicates = array_map($predicate, $mapping->ownerColumns);
+        $identifier = static fn(string $column): string => $columns[$column]['identifier'];
+        $keyList = implode(', ', array_map($identifier, $mapping->keyColumns));
+        $rowSetColumns = [] === $mapping->nonKeyColumns
+            ? $keyList
+            : $keyList . ', ' . implode(', ', array_map($identifier, $mapping->nonKeyColumns));
 
         return new self(
-            $compiled->table ?? $quote($mapping->table),
+            $quote($mapping->table),
             $columns,
             $keyPredicates,
-            $keyPredicate,
-            $compiled->keyList ?? implode(', ', array_map($quote, $mapping->keyColumns)),
+            implode(' AND ', $keyPredicates),
+            $keyList,
             $mapping->ownerColumns,
             $ownerPredicates,
-            $ownerWhere,
+            [] === $ownerPredicates ? '' : ' WHERE ' . implode(' AND ', $ownerPredicates),
             $mapping->columnNames,
             $mapping->nonKeyColumns,
-            $compiled->rowColumns ?? implode(', ', array_map($quote, $mapping->columnNames)),
-            $compiled->rowSetColumns ?? implode(', ', array_map($quote, [
-                ...$mapping->keyColumns,
-                ...$mapping->nonKeyColumns,
-            ])),
-            $compiled->absentRowLockNamespace ?? $mapping->table . ':row',
+            implode(', ', array_map($identifier, $mapping->columnNames)),
+            $rowSetColumns,
+            $mapping->table . ':row',
+            $types,
         );
+    }
+
+    /** @param array<array-key, mixed> $types */
+    public static function validateColumnTypes(MappedRowSetMetadata $mapping, array $types): void
+    {
+        foreach ($types as $column => $type) {
+            if (!is_string($column) || !$type instanceof PostgresMappedColumnType) {
+                throw new \InvalidArgumentException(sprintf(
+                    'PostgreSQL codecs for table "%s" must map column names to PostgresMappedColumnType cases.',
+                    $mapping->table,
+                ));
+            }
+            $type->assertSupports($column, $mapping->column($column));
+        }
     }
 }

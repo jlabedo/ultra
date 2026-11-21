@@ -8,13 +8,9 @@ use Doctrine\DBAL\Connection;
 
 final class PostgresMappedTableAdapter extends MappedTableAdapter
 {
-    /**
-     * @param array<string, array<string, PostgresMappedColumnType>> $columnTypesByTable
-     * @param array<string, MappedTablePolicy> $tablePolicies
-     */
+    /** @param array<string, MappedTablePolicy> $tablePolicies */
     public function __construct(
         private readonly Connection $connection,
-        private readonly array $columnTypesByTable = [],
         private readonly array $tablePolicies = [],
     ) {}
 
@@ -39,38 +35,32 @@ final class PostgresMappedTableAdapter extends MappedTableAdapter
                 $this->connection,
                 $tableName,
                 $keyColumns,
-                [...($this->columnTypesByTable[$tableName] ?? []), ...$columnTypes],
+                $columnTypes,
                 policy: $this->tablePolicies[$tableName] ?? new MappedTablePolicy(),
             ),
         );
     }
 
-    /**
-     * @internal
-     * @param array<string, PostgresMappedColumnType> $columnTypes
-     */
-    public function createDefined(
-        MappedRowSetMetadata $mapping,
-        array $columnTypes = [],
-        ?PostgresMappedRowSetSql $sql = null,
-        bool $needsRuntimeDefaults = true,
-    ): MappedRowSet {
-        $defaults = !$needsRuntimeDefaults
-            ? []
-            : array_diff_key(
-                array_intersect_key($this->columnTypesByTable[$mapping->table] ?? [], $mapping->columns),
-                $columnTypes,
-            );
-        if ([] !== $defaults) {
-            foreach ($defaults as $column => $type) {
-                $type->assertSupports($column, $mapping->column($column));
-            }
-            $columnTypes += $defaults;
-            if (null !== $sql) {
-                $sql = PostgresMappedRowSetSql::compile($mapping, $defaults, $sql);
-            }
-        }
+    /** @param array<string, PostgresMappedColumnType> $columnTypes */
+    public function createDefined(MappedRowSetMetadata $mapping, array $columnTypes = []): MappedRowSet
+    {
+        PostgresMappedRowSetSql::validateColumnTypes($mapping, $columnTypes);
 
+        return $this->bindDefined($mapping, $columnTypes, null);
+    }
+
+    /** @internal */
+    public function createCompiled(MappedRowSetMetadata $mapping, PostgresMappedRowSetSql $sql): MappedRowSet
+    {
+        return $this->bindDefined($mapping, $sql->columnTypes, $sql);
+    }
+
+    /** @param array<string, PostgresMappedColumnType> $columnTypes */
+    private function bindDefined(
+        MappedRowSetMetadata $mapping,
+        array $columnTypes,
+        ?PostgresMappedRowSetSql $sql,
+    ): MappedRowSet {
         return $this->bind(
             $mapping->table,
             new PostgresRowSetStorage(

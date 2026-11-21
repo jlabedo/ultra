@@ -28,6 +28,7 @@ use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
+use Ultra\MappedTable\PostgresMappedRowSetSql;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
@@ -47,26 +48,24 @@ final class DefinedRowSetsTest extends RowSetTestCase
     {
         yield 'memory adapter resolved at runtime' => ['memory', true];
         yield 'Postgres adapter resolved at runtime' => ['postgres', true];
-        yield 'Postgres adapter with compiled defaults' => ['postgres', false];
+        yield 'Postgres adapter configured as a service' => ['postgres', false];
     }
 
     #[DataProvider('configuredAdapters')]
     public function test_definitions_compile_to_shared_row_sets_using_the_application_adapter(
         string $backend,
-        bool $factoryAtRuntime,
+        bool $syntheticAdapter,
     ): void {
         $fixture = $this->fixture($backend);
         $storage = $fixture->storage;
         if ($storage instanceof InMemoryRowDatabase) {
-            $factory = new InMemoryMappedTableAdapter($storage);
+            $adapter = new InMemoryMappedTableAdapter($storage);
         } else {
             $storage->executeStatement('CREATE TEMP TABLE mapped_definition_orders (id TEXT PRIMARY KEY)');
             $storage->executeStatement(
                 'CREATE TEMP TABLE mapped_definition_lines (owner TEXT REFERENCES mapped_definition_orders (id), id TEXT, tags TEXT[], aliases TEXT[], PRIMARY KEY (owner, id))',
             );
-            $factory = new PostgresMappedTableAdapter($storage, ['mapped_definition_lines' => [
-                'aliases' => PostgresMappedColumnType::textArray(),
-            ]]);
+            $adapter = new PostgresMappedTableAdapter($storage);
         }
         CompileTimeLineDefinition::$mappingCalls = 0;
         CompileTimeLineDefinition::$postgresCalls = 0;
@@ -84,19 +83,14 @@ final class DefinedRowSetsTest extends RowSetTestCase
                 : new PostgresGuardLockAdapter($storage);
             $container->register(GuardLockAdapter::class, $guardAdapter::class)->setSynthetic(true)->setPublic(true);
             new UnitOfWorkExtension()->build($container);
-            if ($factoryAtRuntime) {
-                $container->register(MappedTableAdapter::class, $factory::class)->setSynthetic(true)->setPublic(true);
+            if ($syntheticAdapter) {
+                $container->register(MappedTableAdapter::class, $adapter::class)->setSynthetic(true)->setPublic(true);
             } else {
                 $container->register(Connection::class)->setSynthetic(true)->setPublic(true);
                 $container->setParameter('test.adapter_class', PostgresMappedTableAdapter::class);
                 $container
                     ->register(MappedTableAdapter::class, '%test.adapter_class%')
-                    ->setArguments([
-                        new Reference(Connection::class),
-                        ['mapped_definition_lines' => ['aliases' => new Definition(
-                            PostgresMappedColumnType::class,
-                        )->setFactory([PostgresMappedColumnType::class, 'textArray'])]],
-                    ]);
+                    ->setArguments([new Reference(Connection::class)]);
             }
             $container->register(CompileTimeLineDefinition::class)->setAutoconfigured(true);
             $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
@@ -106,6 +100,16 @@ final class DefinedRowSetsTest extends RowSetTestCase
             $container->setAlias('test.unit_of_work', UnitOfWork::class)->setPublic(true);
             $container->setAlias('test.coordination', MappedTableUnitOfWork::class)->setPublic(true);
             $container->compile();
+            if ('postgres' === $backend) {
+                $lineService = $container->findDefinition('test.lines');
+                static::assertSame('createCompiled', $lineService->getFactory()[1]);
+                $sql = $lineService->getArgument(1);
+                static::assertInstanceOf(Definition::class, $sql);
+                static::assertSame(PostgresMappedRowSetSql::class, $sql->getClass());
+                static::assertSame(' WHERE "owner" = ?::TEXT', $sql->getArgument(7));
+                static::assertSame('?::TEXT[]', $sql->getArgument(1)['aliases']['parameter']);
+                static::assertSame(2, count($lineService->getArguments()));
+            }
             $coordination = $container->findDefinition('test.coordination');
             static::assertSame(MappedTableAdapter::class, (string) $coordination->getArgument(1));
             static::assertSame(
@@ -134,8 +138,8 @@ final class DefinedRowSetsTest extends RowSetTestCase
 
             $compiled = new $dumpedClass();
             $compiled->set(GuardLockAdapter::class, $guardAdapter);
-            if ($factoryAtRuntime) {
-                $compiled->set(MappedTableAdapter::class, $factory);
+            if ($syntheticAdapter) {
+                $compiled->set(MappedTableAdapter::class, $adapter);
             } else {
                 $compiled->set(Connection::class, $storage);
             }
@@ -325,26 +329,57 @@ final class DefinedRowSetsTest extends RowSetTestCase
         $container->compile();
     }
 
-    public function test_compilation_checks_postgres_codecs_configured_in_the_factory(): void
+    /** @return iterable<string, array{array<string, mixed>, class-string<\Throwable>, string}> */
+    public static function invalidPostgresCodecs(): iterable
+    {
+        yield 'incompatible PHP representation' => [
+            ['id' => PostgresMappedColumnType::TextArray],
+            \LogicException::class,
+            'PostgreSQL codec "TEXT[]" for column "id" expects PHP array, declared string.',
+        ];
+        yield 'unknown column' => [
+            ['missing' => PostgresMappedColumnType::Text],
+            \InvalidArgumentException::class,
+            'Unknown column "missing" in mapped table "mapped_definition_orders".',
+        ];
+        yield 'invalid codec declaration' => [
+            ['id' => 'TEXT'],
+            \InvalidArgumentException::class,
+            'must map column names to PostgresMappedColumnType cases.',
+        ];
+    }
+
+    /** @param array<string, mixed> $codecs @param class-string<\Throwable> $exception */
+    #[DataProvider('invalidPostgresCodecs')]
+    public function test_invalid_postgres_codecs_fail_during_container_compilation(
+        array $codecs,
+        string $exception,
+        string $message,
+    ): void {
+        $container = new ContainerBuilder();
+        new MappedTableExtension()->build($container);
+        $container->register(InvalidPostgresCodecDefinition::class)->setAutoconfigured(true);
+        $container->register(MappedTableAdapter::class, PostgresMappedTableAdapter::class)->setSynthetic(true);
+        InvalidPostgresCodecDefinition::$codecs = $codecs;
+
+        $this->expectException($exception);
+        $this->expectExceptionMessage($message);
+        try {
+            $container->compile();
+        } finally {
+            InvalidPostgresCodecDefinition::$codecs = [];
+        }
+    }
+
+    public function test_compilation_requires_the_concrete_backend_of_a_synthetic_adapter(): void
     {
         $container = new ContainerBuilder();
         new MappedTableExtension()->build($container);
         $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
-        $container->register(Connection::class)->setSynthetic(true);
-        $container
-            ->register(MappedTableAdapter::class, PostgresMappedTableAdapter::class)
-            ->setArguments([
-                new Reference(Connection::class),
-                ['mapped_definition_orders' => [
-                    'id' => new Definition(PostgresMappedColumnType::class)->setFactory([
-                        PostgresMappedColumnType::class,
-                        'textArray',
-                    ]),
-                ]],
-            ]);
+        $container->register(MappedTableAdapter::class, MappedTableAdapter::class)->setSynthetic(true);
 
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('PostgreSQL codec "TEXT[]" for column "id" expects PHP array, declared string.');
+        $this->expectExceptionMessage('must declare its concrete class');
         $container->compile();
     }
 
@@ -420,6 +455,22 @@ final class CompileTimeOrderDefinition implements MappedRowSetDefinition
     }
 }
 
+final class InvalidPostgresCodecDefinition implements MappedRowSetDefinition, PostgresMappedRowSetConfiguration
+{
+    /** @var array<string, mixed> */
+    public static array $codecs = [];
+
+    public function mapping(): MappedRowSetMapping
+    {
+        return new CompileTimeOrderDefinition()->mapping();
+    }
+
+    public function postgresColumnTypes(): array
+    {
+        return self::$codecs;
+    }
+}
+
 final class CompileTimeLineDefinition implements MappedRowSetDefinition, PostgresMappedRowSetConfiguration
 {
     public static int $mappingCalls = 0;
@@ -446,7 +497,11 @@ final class CompileTimeLineDefinition implements MappedRowSetDefinition, Postgre
     {
         ++self::$postgresCalls;
 
-        return ['tags' => PostgresMappedColumnType::textArray()];
+        return [
+            'owner' => PostgresMappedColumnType::Text,
+            'tags' => PostgresMappedColumnType::TextArray,
+            'aliases' => PostgresMappedColumnType::TextArray,
+        ];
     }
 }
 

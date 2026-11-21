@@ -52,7 +52,7 @@ final class RowSetFixture
                 'active' => 'BOOLEAN',
             ];
             foreach ($columnTypes as $column => $type) {
-                $columns[$column] = $type->sqlType;
+                $columns[$column] = $type->value;
             }
             $definitions = [];
             foreach ($columns as $column => $type) {
@@ -67,11 +67,7 @@ final class RowSetFixture
                 . implode(', ', $definitions)
                 . ')',
             );
-            $this->adapter = $adapter ?? new PostgresMappedTableAdapter(
-                $storage,
-                [$tableName => $columnTypes],
-                $tablePolicies,
-            );
+            $this->adapter = $adapter ?? new PostgresMappedTableAdapter($storage, $tablePolicies);
         } else {
             $this->adapter = $adapter ?? new InMemoryMappedTableAdapter($storage, $tablePolicies);
         }
@@ -81,11 +77,19 @@ final class RowSetFixture
 
     public function view(): MappedRowSet
     {
+        if ($this->adapter instanceof PostgresMappedTableAdapter) {
+            return $this->adapter->create($this->tableName, $this->keyColumns, $this->columnTypes);
+        }
+
         return $this->adapter->create($this->tableName, $this->keyColumns);
     }
 
     public function defined(MappedRowSetMapping $mapping): MappedRowSet
     {
+        if ($this->adapter instanceof PostgresMappedTableAdapter) {
+            return $this->adapter->createDefined($mapping, $this->columnTypes);
+        }
+
         return $this->adapter->createDefined($mapping);
     }
 

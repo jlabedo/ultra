@@ -17,7 +17,6 @@ use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableDependencies;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
 use Ultra\MappedTable\PostgresMappedRowSetSql;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
@@ -44,11 +43,11 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
             throw new \LogicException('Compiled mapped row sets require a shared MappedTableAdapter.');
         }
         $adapterClass = $container->getParameterBag()->resolveValue($adapter->getClass());
-        if (
-            null !== $adapterClass
-            && (!is_string($adapterClass) || !is_a($adapterClass, MappedTableAdapter::class, true))
-        ) {
+        if (!is_string($adapterClass) || !is_a($adapterClass, MappedTableAdapter::class, true)) {
             throw new \LogicException('The mapped table adapter service must extend MappedTableAdapter.');
+        }
+        if (new \ReflectionClass($adapterClass)->isAbstract()) {
+            throw new \LogicException('The mapped table adapter service must declare its concrete class.');
         }
         $mappings = [];
         $rowSets = [];
@@ -99,13 +98,7 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
             $container->setDefinition($metadataId, $metadata);
             $metadataReference = new Reference($metadataId);
             $rowSet = match ($adapterClass) {
-                PostgresMappedTableAdapter::class => $this->postgresRowSet(
-                    $container,
-                    $adapter,
-                    $mapping,
-                    $definition,
-                    $metadataReference,
-                ),
+                PostgresMappedTableAdapter::class => $this->postgresRowSet($mapping, $definition, $metadataReference),
                 default => new Definition(MappedRowSet::class)->setFactory([
                     new Reference(MappedTableAdapter::class),
                     'createDefined',
@@ -123,8 +116,6 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
     }
 
     private function postgresRowSet(
-        ContainerBuilder $container,
-        Definition $adapter,
         MappedRowSetMapping $mapping,
         MappedRowSetDefinition $definition,
         Reference $metadata,
@@ -132,22 +123,6 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         $configuredTypes = $definition instanceof PostgresMappedRowSetConfiguration
             ? $definition->postgresColumnTypes()
             : [];
-        [$factoryTypes, $needsRuntimeDefaults] = $this->postgresDefaults(
-            $container,
-            $adapter,
-            $mapping,
-            $configuredTypes,
-        );
-        $configuredTypes += $factoryTypes;
-        $types = [];
-        foreach ($configuredTypes as $column => $type) {
-            $type->assertSupports($column, $mapping->column($column));
-            $types[$column] = new Definition(PostgresMappedColumnType::class)->setFactory([
-                PostgresMappedColumnType::class,
-                $type->factoryMethod,
-            ]);
-        }
-
         $sql = PostgresMappedRowSetSql::compile($mapping, $configuredTypes);
         $compiledSql = new Definition(PostgresMappedRowSetSql::class, [
             $sql->table,
@@ -163,75 +138,12 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
             $sql->rowColumns,
             $sql->rowSetColumns,
             $sql->absentRowLockNamespace,
+            $sql->columnTypes,
         ]);
 
         return new Definition(MappedRowSet::class)->setFactory([
             new Reference(MappedTableAdapter::class),
-            'createDefined',
-        ])->setArguments([$metadata, $types, $compiledSql, $needsRuntimeDefaults]);
-    }
-
-    /**
-     * @param array<string, PostgresMappedColumnType> $declared
-     * @return array{array<string, PostgresMappedColumnType>, bool} Known defaults and whether other defaults need the runtime factory.
-     */
-    private function postgresDefaults(
-        ContainerBuilder $container,
-        Definition $adapter,
-        MappedRowSetMapping $mapping,
-        array $declared,
-    ): array {
-        if ($adapter->isSynthetic() || null !== $adapter->getFactory()) {
-            return [[], true];
-        }
-
-        $arguments = $adapter->getArguments();
-        $argument = $arguments['$columnTypesByTable'] ?? $arguments[1] ?? null;
-        if (null === $argument) {
-            $bindings = $adapter->getBindings();
-            $binding =
-                $bindings['array $columnTypesByTable']
-                ?? $bindings['$columnTypesByTable']
-                ?? $bindings['array']
-                ?? null;
-            $argument = $binding?->getValues()[0] ?? [];
-        }
-
-        $tables = $container->getParameterBag()->resolveValue($argument);
-        if (!is_array($tables)) {
-            return [[], true];
-        }
-
-        $defaults = $tables[$mapping->table] ?? [];
-        if (!is_array($defaults)) {
-            return [[], true];
-        }
-
-        $types = [];
-        $needsRuntimeDefaults = false;
-        foreach (array_diff_key(array_intersect_key($defaults, $mapping->columns), $declared) as $column => $service) {
-            if (!is_string($column)) {
-                continue;
-            }
-            if ($service instanceof Reference) {
-                $service = $container->findDefinition((string) $service);
-            }
-            $codecFactory =
-                $service instanceof Definition && [] === $service->getArguments() ? $service->getFactory() : null;
-            if (
-                !is_array($codecFactory)
-                || PostgresMappedColumnType::class !== ($codecFactory[0] ?? null)
-                || !is_string($codecFactory[1] ?? null)
-                || null === ($type = PostgresMappedColumnType::fromFactoryMethod($codecFactory[1]))
-            ) {
-                $needsRuntimeDefaults = true;
-
-                continue;
-            }
-
-            $types[$column] = $type;
-        }
-
-        return [$types, $needsRuntimeDefaults];
+            'createCompiled',
+        ])->setArguments([$metadata, $compiledSql]);
     }
 }

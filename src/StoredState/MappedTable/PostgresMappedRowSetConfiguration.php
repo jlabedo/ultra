@@ -6,6 +6,10 @@ namespace Ultra\MappedTable;
 
 interface PostgresMappedRowSetConfiguration
 {
-    /** @return array<string, PostgresMappedColumnType> */
+    /**
+     * Read at container compilation when PostgreSQL is the selected adapter.
+     *
+     * @return array<string, PostgresMappedColumnType> Codecs by physical column name.
+     */
     public function postgresColumnTypes(): array;
 }

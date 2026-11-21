@@ -52,11 +52,11 @@ instantiates each definition without constructor parameters at compilation. Its 
 `MappedRowSet` parameter. The extension allows one definition per physical table. It compiles key and owner
 columns, their lookup sets and the default read projections. The dumped container uses those validated values.
 
-With `PostgresMappedTableAdapter` selected, `PostgresMappedRowSetConfiguration` supplies codecs for the
-definition's columns and takes precedence over adapter defaults. Symfony resolves defaults declared using the
-built-in codec factories, checks codec compatibility with the declared PHP representation and prepares the
-static SQL fragments for the table, columns, keys and owner. Defaults supplied by an adapter instance at
-runtime are resolved when it binds the table. For manual assembly, use `$adapter->createDefined($mapping)`.
+Declare the concrete adapter class in Symfony, including for synthetic services. When the application selects
+`PostgresMappedTableAdapter`, the row set definition can implement `PostgresMappedRowSetConfiguration`
+and return a map of physical column names to `PostgresMappedColumnType` cases. Symfony validates the codecs
+against the declared PHP representations and emits the codec map and SQL fragments for read projections,
+columns, keys and owners in the container. Runtime binding uses this compiled configuration directly.
 
 The [Symfony workshop example](../../examples/mapped-table-symfony/README.md) assembles and runs defined row
 sets, owner collections and query guards on PostgreSQL.
@@ -301,23 +301,24 @@ are managed by the adapter.
 
 ### Column types
 
-Pass `PostgresMappedColumnType` instances by physical column name to `PostgresMappedTableAdapter::create()`,
-or configure them by table and column name through the adapter's `columnTypesByTable` argument. The default is text;
-configured types provide encoding, decoding and SQL casts for single writes, bulk writes and optimistic comparisons.
+For manual assembly, pass a map of physical column names to `PostgresMappedColumnType` cases when creating the
+row set. Both `create()` and `createDefined()` accept this map. The adapter checks it against the mapping in
+`createDefined()`. Configured codecs handle encoding, decoding and SQL casts for writes and optimistic
+comparisons. Other columns use the adapter's ordinary scalar bindings and the driver's decoded values.
 
-`timestamp()` targets `TIMESTAMP(6) WITHOUT TIME ZONE`: it preserves wall-clock values and returns them
-as RFC 3339 strings with a UTC offset. `timestampWithTimeZone()` targets `TIMESTAMP(6) WITH TIME ZONE`:
-it preserves instants and microseconds, while returned offsets follow the database session's timezone.
-Both accept date strings, `DateTimeInterface` objects and null. PostgreSQL validates string timestamp values;
-its timezone-aware storage does not retain the original textual offset or named timezone.
+`Timestamp` preserves wall-clock values in `TIMESTAMP(6) WITHOUT TIME ZONE` and returns them as
+RFC 3339 strings with a UTC offset. `TimestampWithTimeZone` preserves instants and microseconds in
+`TIMESTAMP(6) WITH TIME ZONE`. Returned offsets follow the database session's timezone. Both codecs
+accept date strings, `DateTimeInterface` objects and null. PostgreSQL validates string timestamp values.
 
 ```php
-$adapter = new PostgresMappedTableAdapter($connection, [
-    'acceptances' => ['accepted_at' => PostgresMappedColumnType::timestampWithTimeZone()],
+$adapter = new PostgresMappedTableAdapter($connection);
+$acceptances = $adapter->create('acceptances', columnTypes: [
+    'accepted_at' => PostgresMappedColumnType::TimestampWithTimeZone,
 ]);
 ```
 
-Other available types include `text()`, `date()`, `jsonb()`, `textArray()`, `uuidArray()` and `intArray()`.
+The other codecs are `Text`, `Date`, `Jsonb`, `TextArray`, `UuidArray` and `IntArray`.
 
 ## SQL inspection
 
