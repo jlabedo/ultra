@@ -51,7 +51,7 @@ final readonly class PendingRowUpdate
      */
     public function observeProjectedColumns(?array $columns, ?array $observedColumns): ?array
     {
-        $row = $this->rowSet->readForHandle($this->key, $this->generation, $columns);
+        $row = $this->rowSet->readForHandle($this->key, $this->generation, $columns, trackStorage: true);
         if (null === $row) {
             $this->expectAbsent();
 

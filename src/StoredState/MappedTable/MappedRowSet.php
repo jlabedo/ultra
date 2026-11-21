@@ -141,46 +141,31 @@ final class MappedRowSet
      * @param list<string>|null $columns
      * @return array{values: array<string, mixed>, storedValues: array<string, mixed>}|null
      */
-    public function readForHandle(MappedKey $key, int $generation, ?array $columns): ?array
+    public function readForHandle(MappedKey $key, int $generation, ?array $columns, bool $trackStorage = false): ?array
     {
         $this->assertHandleGeneration($generation);
         $keyOnly = [] === $columns;
-        $projection = $keyOnly
-            ? $this->mapping->keyColumns ?? $key->columns()
-            : $this->selectedColumns($columns ?? [], includeKeys: true);
+        $projection = $keyOnly ? $this->keyColumns : $this->selectedColumns($columns ?? [], includeKeys: true);
         $update = $this->updates[$key->fingerprint()] ?? null;
         if (!$this->isVisible($key, $update)) {
             return null;
         }
 
         $plan = $update?->toPlan();
-        $stored = in_array($plan?->mode, [RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE], true)
-            ? false
-            : $this->adapter->row($this->table, $key, $projection);
-        $written = null !== $plan && $plan->writes() ? [...$plan->setColumns, ...$key->values] : [];
-        if (false === $stored && [] === $written) {
-            return null;
+        $stored = $this->replacesStoredRow($plan) ? false : $this->adapter->row($this->table, $key, $projection);
+        $row = $this->overlayRow(
+            $key,
+            $stored,
+            $plan,
+            [] === $projection ? null : $projection,
+            includeKeys: true,
+            trackStorage: $trackStorage,
+        );
+        if ($keyOnly && null !== $row) {
+            $row['values'] = $key->values;
         }
 
-        $stored = false === $stored ? [] : $stored;
-        $values = [];
-        $storedValues = [];
-        foreach ([] === $projection ? array_keys($stored + $written) : $projection as $column) {
-            $fromStorage = array_key_exists($column, $stored);
-            if ($fromStorage) {
-                $this->mapping?->assertValue($column, $stored[$column]);
-            }
-            if (array_key_exists($column, $written)) {
-                $values[$column] = $written[$column];
-            } elseif ($fromStorage) {
-                $values[$column] = $stored[$column];
-                if (!$key->contains($column)) {
-                    $storedValues[$column] = $stored[$column];
-                }
-            }
-        }
-
-        return ['values' => $keyOnly ? $key->values : $values, 'storedValues' => $storedValues];
+        return $row;
     }
 
     /**
@@ -226,52 +211,97 @@ final class MappedRowSet
      */
     private function readRows(?MappedKey $owner, array $columns): array
     {
-        $mapping = $this->mapping;
         $columns = $this->selectedColumns($columns);
-        $selected = [] === $columns && null !== $mapping ? $mapping->keyColumns : $columns;
-        $committed = $this->adapter->rows($this->table, $selected, $owner);
+        $projection = null === $this->mapping && [] === $columns ? null : $columns;
+        $selected = [] === $projection ? $this->keyColumns : $columns;
         $rows = [];
-        foreach ($committed as $row) {
+        foreach ($this->adapter->rows($this->table, $selected, $owner) as $row) {
             $fingerprint = $row->key->fingerprint();
             $update = $this->updates[$fingerprint] ?? null;
             if (!$this->isVisible($row->key, $update)) {
                 continue;
             }
 
-            if (null !== $mapping) {
-                $mapping->assertKey($row->key);
-                if (in_array($update?->mode, [RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE], true)) {
-                    continue;
-                }
-                $values = [] === $columns ? [] : $this->projectRow([...$row->columns, ...$row->key->values], $columns);
-                $mapping->assertValues($values);
-                $row = new MappedRow($row->key, $values);
-            }
-            $rows[$fingerprint] = $row;
+            $this->mapping?->assertKey($row->key);
+            $plan = $update?->toPlan();
+            $key = true === $plan?->writes() ? $plan->key : $row->key;
+            $view = $this->overlayRow($key, $row->columns, $plan, $projection, null !== $projection);
+            assert(null !== $view, 'A visible stored row remains present.');
+            $rows[$fingerprint] = new MappedRow($key, $view['values']);
         }
 
-        foreach ($this->sortedPlans($owner) as $plan) {
-            if (!$plan->writes()) {
+        foreach ($this->updates as $fingerprint => $update) {
+            if (
+                isset($rows[$fingerprint])
+                || !$this->belongsTo($update->key, $owner)
+                || !$this->isVisible($update->key, $update)
+            ) {
                 continue;
             }
 
-            $fingerprint = $plan->key->fingerprint();
-            $existing = $rows[$fingerprint] ?? null;
-            $values = $this->applyPlanToRow($existing->columns ?? false, $plan);
-            if (false === $values) {
-                unset($rows[$fingerprint]);
-
-                continue;
+            $view = $this->overlayRow($update->key, false, $update->toPlan(), $projection, null !== $projection);
+            if (null !== $view) {
+                $rows[$fingerprint] = new MappedRow($update->key, $view['values']);
             }
-
-            if (null !== $mapping) {
-                $values = [] === $columns ? [] : [...$values, ...$plan->key->values];
-            }
-            $rows[$fingerprint] = new MappedRow($plan->key, $this->projectRow($values, $columns));
         }
         ksort($rows, SORT_STRING);
 
         return array_values($rows);
+    }
+
+    /**
+     * @param array<string, mixed>|false $stored False indicates no stored row.
+     * @param list<string>|null $projection Null selects all known values.
+     * @return array{values: array<string, mixed>, storedValues: array<string, mixed>}|null
+     */
+    private function overlayRow(
+        MappedKey $key,
+        array|false $stored,
+        ?RowUpdatePlan $plan,
+        ?array $projection,
+        bool $includeKeys,
+        bool $trackStorage = false,
+    ): ?array {
+        $writes = true === $plan?->writes();
+        if (false === $stored && !$writes) {
+            return null;
+        }
+
+        $stored = false === $stored || $this->replacesStoredRow($plan) ? [] : $stored;
+        $written = $writes ? [...$plan->setColumns, ...$key->values] : [];
+        $values = [];
+        $storedValues = [];
+        foreach ($projection ?? array_keys($stored + $written + $key->values) as $column) {
+            $isKey = $key->contains($column);
+            if ($isKey && !$includeKeys) {
+                continue;
+            }
+
+            $fromStorage = array_key_exists($column, $stored);
+            if ($fromStorage) {
+                $this->mapping?->assertValue($column, $stored[$column]);
+            }
+            if (array_key_exists($column, $written)) {
+                $values[$column] = $written[$column];
+            } elseif ($fromStorage) {
+                $values[$column] = $stored[$column];
+                if ($trackStorage && !$isKey) {
+                    $storedValues[$column] = $stored[$column];
+                }
+            } elseif ($isKey) {
+                $values[$column] = $key->value($column);
+            }
+        }
+
+        return ['values' => $values, 'storedValues' => $storedValues];
+    }
+
+    private function replacesStoredRow(?RowUpdatePlan $plan): bool
+    {
+        return match ($plan?->mode) {
+            RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE => true,
+            default => false,
+        };
     }
 
     /** @param list<int|string|MappedKey|\Stringable|array<string, int|string|\Stringable>> $keys */
@@ -480,14 +510,10 @@ final class MappedRowSet
     }
 
     /** @return list<RowUpdatePlan> */
-    private function sortedPlans(?MappedKey $owner = null): array
+    private function sortedPlans(): array
     {
         $plans = [];
         foreach ($this->updates as $update) {
-            if (!$this->belongsTo($update->key, $owner)) {
-                continue;
-            }
-
             $plan = $update->toPlan();
             if (null !== $plan) {
                 $plans[] = $plan;
@@ -502,44 +528,5 @@ final class MappedRowSet
         );
 
         return $plans;
-    }
-
-    /**
-     * @param array<string, mixed>|false $row
-     *
-     * @return array<string, mixed>|false
-     */
-    private function applyPlanToRow(array|false $row, RowUpdatePlan $plan): array|false
-    {
-        if (RowUpdatePlan::MODE_DELETE === $plan->mode) {
-            return false;
-        }
-
-        $row = false === $row ? [] : $row;
-        foreach ($plan->setColumns as $column => $value) {
-            $row[$column] = $value;
-        }
-
-        return $row;
-    }
-
-    /**
-     * @param array<string, mixed> $row
-     * @param list<string> $columns
-     *
-     * @return array<string, mixed>
-     */
-    private function projectRow(array $row, array $columns): array
-    {
-        if ([] === $columns) {
-            return $row;
-        }
-
-        $projected = [];
-        foreach ($columns as $column) {
-            $projected[$column] = $row[$column] ?? null;
-        }
-
-        return $projected;
     }
 }

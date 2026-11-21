@@ -39,9 +39,10 @@ final class BufferedViewTest extends RowSetTestCase
         static::assertFalse($rows->hasPendingChanges());
     }
 
-    public function test_reads_overlay_updates_creations_and_deletions_without_writing_storage(): void
+    #[DataProvider('backends')]
+    public function test_reads_overlay_updates_creations_and_deletions_without_writing_storage(string $backend): void
     {
-        $fixture = $this->fixture();
+        $fixture = $this->fixture($backend);
         $fixture->seed(['id' => 'keep', 'status' => 'pending', 'note' => 'draft']);
         $fixture->seed(['id' => 'remove', 'status' => 'old']);
         $rows = $fixture->rows;
@@ -51,6 +52,10 @@ final class BufferedViewTest extends RowSetTestCase
 
         static::assertSame(['status' => 'active', 'note' => 'draft'], $rows->withKey('keep')->get(['status', 'note']));
         static::assertSame(['status' => 'new'], $rows->withKey('added')->get(['status', 'version_a']));
+        static::assertSame(
+            $rows->withKey('added')->get(['id', 'status', 'version_a']),
+            $rows->rows(['id', 'status', 'version_a'])[0]->columns,
+        );
         static::assertNull($rows->withKey('remove')->get([]));
         static::assertSame(['id' => 'added'], $rows->withKey('added')->get([]));
         static::assertSame('added', $rows->withKey('added')->get()['id']);

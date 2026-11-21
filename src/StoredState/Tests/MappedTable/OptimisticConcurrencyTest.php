@@ -142,6 +142,7 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
         static::assertSame([], $row->get(['note']));
         static::assertSame([], $row->observe(['note']));
         static::assertSame(['status' => 'draft'], $row->observe(['status', 'note']));
+        static::assertSame([], $rows->rowsForOwner(['tenant' => 'one', 'owner' => 'order'], ['note'])[0]->columns);
         $plan = $rows->updatePlan()->rowUpdates[0];
         static::assertSame(RowUpdatePlan::MODE_UPSERT, $plan->mode);
         static::assertNull($plan->expectedPresence);
@@ -162,6 +163,7 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
 
         static::assertSame(['status' => null, 'note' => null], $row->get(['status', 'note']));
         static::assertSame(['status' => null, 'note' => null], $row->observe(['status', 'note']));
+        static::assertSame($row->get(['status', 'note']), $rows->rows(['status', 'note'])[0]->columns);
         $plan = $rows->updatePlan()->rowUpdates[0];
         static::assertSame(RowUpdatePlan::MODE_UPDATE, $plan->mode);
         static::assertSame(['note' => null], $plan->expectedColumns);
@@ -189,6 +191,10 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
 
         static::assertSame(['status' => 'replacement'], $row->get(['status', 'note']));
         static::assertSame(['status' => 'replacement'], $row->observe(['status', 'note']));
+        static::assertSame(
+            $row->get(['status', 'note']),
+            $rows->rowsForOwner(['tenant' => 'one', 'owner' => 'order'], ['status', 'note'])[0]->columns,
+        );
         $plan = $rows->updatePlan()->rowUpdates[0];
         static::assertSame(RowUpdatePlan::MODE_REPLACE, $plan->mode);
         static::assertSame(RowUpdatePlan::EXPECTED_PRESENT, $plan->expectedPresence);

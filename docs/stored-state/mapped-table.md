@@ -170,8 +170,10 @@ $database->transactional($unitOfWork->flush(...));
 Without a prior absence expectation, the row must still exist at flush. Deleting an expected-absent row only
 checks absence; a buffered insertion for that key is cancelled, and a competing creation still causes a conflict.
 
-`rows(...)` returns a list of `MappedRow` objects containing a structured `MappedKey` and the projected columns.
-It overlays buffered mutations. A row set without owner columns supports whole-table membership operations.
+`rows(...)` and `rowsForOwner(...)` return `MappedRow` objects with a separate `MappedKey` and the projected
+columns. By default they select all non-key columns. An explicit projection can include key columns.
+Both methods use the same buffered view as `get()`. They omit unknown values and return known `null` values.
+A row set without owner columns supports whole-table membership operations.
 `expectSameRowKeys(...)` buffers an optimistic expectation that the table's row-key set has not changed before
 `flush()`. Row sets with owner columns use `expectSameRowKeysForOwner()` and `reconcileForOwner()`.
 
