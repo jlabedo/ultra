@@ -12,7 +12,7 @@ final readonly class StateStore
 {
     public function __construct(
         private StateMetadataRegistry $metadataRegistry,
-        private StateTableRegistry|StateRowSets $tableRegistry,
+        private StateRowSets $rowSets,
         private UltraNormalizer $normalizer,
     ) {}
 
@@ -52,7 +52,7 @@ final readonly class StateStore
         $this->assertIdentifierType($metadata, $id);
         $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
         $key = $metadata->keyFromNormalizedId($normalizedId);
-        $handle = $this->tableRegistry->tableFor($metadata)->withKey($key);
+        $handle = $this->rowSets->tableFor($metadata)->withKey($key);
         $columns = $metadata->selectedColumns();
         $row = $observe
             ? $handle->observeProjectedColumns($columns, $metadata->optimisticColumnSet)
@@ -83,7 +83,7 @@ final readonly class StateStore
         $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
         $key = $metadata->keyFromNormalizedId($normalizedId);
 
-        return null !== $this->tableRegistry->tableFor($metadata)->withKey($key)->get([]);
+        return null !== $this->rowSets->tableFor($metadata)->withKey($key)->get([]);
     }
 
     /**
@@ -100,17 +100,17 @@ final readonly class StateStore
         $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
         $key = $metadata->keyFromNormalizedId($normalizedId);
 
-        return null !== $this->tableRegistry->tableFor($metadata)->withKey($key)->observe([]);
+        return null !== $this->rowSets->tableFor($metadata)->withKey($key)->observe([]);
     }
 
     public function save(object $state): void
     {
         [$metadata, $normalizedState] = $this->normalizeState($state);
         $key = $metadata->keyFromNormalizedState($normalizedState);
-        $this->tableRegistry->assertCanSave($metadata, $key);
+        $this->rowSets->assertCanSave($metadata, $key);
         $normalizedId = $normalizedState[$metadata->idProperty];
 
-        $this->tableRegistry
+        $this->rowSets
             ->tableFor($metadata)
             ->withKey($key)
             ->upsert()
@@ -118,7 +118,7 @@ final readonly class StateStore
 
         foreach ($metadata->collections as $collection) {
             $owner = $collection->ownerKey($normalizedId);
-            $this->tableRegistry->reconcileCollection(
+            $this->rowSets->reconcileCollection(
                 $collection,
                 $owner,
                 $this->collectionRows(
@@ -141,7 +141,7 @@ final readonly class StateStore
         $metadata = $this->metadataRegistry->metadataFor($stateClass);
         $this->assertIdentifierType($metadata, $id);
         $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
-        $this->tableRegistry->delete($metadata, $normalizedId);
+        $this->rowSets->delete($metadata, $normalizedId);
     }
 
     /**
@@ -151,7 +151,7 @@ final readonly class StateStore
     public function lock(object $state): void
     {
         [$metadata, $normalizedState] = $this->normalizeState($state);
-        $this->tableRegistry->lock($metadata->tableName, $metadata->keyFromNormalizedState($normalizedState));
+        $this->rowSets->lock($metadata->tableName, $metadata->keyFromNormalizedState($normalizedState));
     }
 
     public function expect(object $state): void
@@ -161,12 +161,12 @@ final readonly class StateStore
         $normalizedId = $normalizedState[$metadata->idProperty];
         $expectedColumns = $metadata->optimisticColumnsFromNormalized($normalizedState);
 
-        $this->tableRegistry->tableFor($metadata)->withKey($key)->expectPresent()->expectColumnValues($expectedColumns);
+        $this->rowSets->tableFor($metadata)->withKey($key)->expectPresent()->expectColumnValues($expectedColumns);
 
         foreach ($metadata->collections as $collection) {
             $items = $this->normalizedCollectionItems($metadata, $normalizedState, $collection);
             $owner = $collection->ownerKey($normalizedId);
-            $this->tableRegistry->expectCollection($collection, $owner, array_map(
+            $this->rowSets->expectCollection($collection, $owner, array_map(
                 static fn(array $item) => $collection->itemKey($item, $owner),
                 $items,
             ));
@@ -196,7 +196,7 @@ final readonly class StateStore
      */
     public function expectQuery(callable $query, mixed $expected, ?string $name = null): void
     {
-        $this->tableRegistry->expectQuery($query, $expected, $name);
+        $this->rowSets->expectQuery($query, $expected, $name);
     }
 
     /**
@@ -214,10 +214,7 @@ final readonly class StateStore
 
         $this->assertIdentifierType($metadata, $id);
         $normalizedId = is_object($id) ? $this->normalizer->toScalar($id) : $id;
-        $this->tableRegistry
-            ->tableFor($metadata)
-            ->withKey($metadata->keyFromNormalizedId($normalizedId))
-            ->expectAbsent();
+        $this->rowSets->tableFor($metadata)->withKey($metadata->keyFromNormalizedId($normalizedId))->expectAbsent();
     }
 
     /**
@@ -238,9 +235,9 @@ final readonly class StateStore
     private function loadCollection(StateCollectionMetadata $collection, mixed $normalizedOwnerId, bool $observe): array
     {
         $owner = $collection->ownerKey($normalizedOwnerId);
-        $rows = $this->tableRegistry->rowsForCollection($collection, $owner);
+        $rows = $this->rowSets->rowsForCollection($collection, $owner);
         if ($observe) {
-            $this->tableRegistry->expectCollection($collection, $owner, array_column($rows, 'key'));
+            $this->rowSets->expectCollection($collection, $owner, array_column($rows, 'key'));
         }
 
         return array_map($collection->payloadFromRow(...), $rows);

@@ -98,10 +98,10 @@ Mapper Compiler resolves whether the identifier normalizes to one scalar or a fl
 Date properties use [Mapper's date representation](../mapping/README.md#dates). For native PostgreSQL timestamp
 columns, configure the matching [mapped column type](mapped-table.md#column-types), including for bulk writes.
 
-The [Symfony integration](symfony.md#services-and-state-discovery) requires one complete key mapping per
-physical table. Manually assembled metadata and row sets can address a table through different unique candidate
-keys, such as `contact_id` and `email`. Those row sets have separate buffers; each adapter must use its metadata's
-complete key columns, backed by the corresponding unique constraint in PostgreSQL.
+Each physical table has one coordinated row set with a complete canonical key. Every StateStore view of
+that table uses the same key columns and shares the row set's buffer. The key must be backed by a unique
+constraint in PostgreSQL. The [Symfony integration](symfony.md#services-and-state-discovery) verifies the
+mapping during compilation.
 
 ## Embedded value objects
 

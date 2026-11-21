@@ -63,6 +63,7 @@ final class QueryGuardTest extends RowSetTestCase
         $unit->queryGuard('a')->lock('20');
         $unit->queryGuard('a')->lock('3');
         $unit->lockRow('write', new MappedKey(['id' => '2']));
+        $unit->lockRow('read', new MappedKey(['id' => '2']));
         $unit->lockRow('read', new MappedKey(['id' => '1']));
         $unit->lockRow('read', new MappedKey(['id' => '1']));
         $rows->withKey('booking')->expectColumnValue('status', '10')->setColumn('status', '20');
@@ -78,6 +79,7 @@ final class QueryGuardTest extends RowSetTestCase
                 'z:10:EXCLUSIVE',
                 'z:20:EXCLUSIVE',
                 'read:manual:{"id":"1"}:EXCLUSIVE',
+                'read:manual:{"id":"2"}:EXCLUSIVE',
                 'write:manual:{"id":"2"}:EXCLUSIVE',
                 'query',
             ],
@@ -87,7 +89,7 @@ final class QueryGuardTest extends RowSetTestCase
         static::assertFalse($owned->stored($line, ['note']));
         static::assertFalse($unit->hasPendingChanges());
         $unit->flush();
-        static::assertCount(8, $trace->events);
+        static::assertCount(9, $trace->events);
     }
 
     /** @return iterable<string, array{string, int|string, ?class-string<\Throwable>}> */
@@ -233,6 +235,16 @@ final class QueryGuardTest extends RowSetTestCase
         } catch (\InvalidArgumentException) {
             static::assertFalse($unit->hasPendingChanges());
         }
+    }
+
+    public function test_flushing_a_manual_lock_requires_a_guard_adapter(): void
+    {
+        $unitOfWork = new MappedTableUnitOfWork([]);
+        $unitOfWork->lockRow('companies', new MappedKey(['id' => 'company']));
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('GuardLockAdapter');
+        $unitOfWork->flush();
     }
 
     public function test_even_a_guard_only_flush_requires_the_watched_row_sets_transaction(): void

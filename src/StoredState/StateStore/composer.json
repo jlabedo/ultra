@@ -14,9 +14,6 @@
         "ultra/mapped-table": "*",
         "ultra/mapper": "*"
     },
-    "suggest": {
-        "doctrine/dbal": "Required for PostgresGuardLockAdapter."
-    },
     "autoload": {
         "psr-4": {
             "Ultra\\StateStore\\": ""

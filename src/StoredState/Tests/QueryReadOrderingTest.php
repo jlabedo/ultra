@@ -220,8 +220,8 @@ final class QueryReadOrderingTest extends StateStoreTestCase
         $fixture = $this->stateFixture($backend, [OrderWithLinesState::class]);
         $fixture->store->save(new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'SKU', 1)]));
         $fixture->flush();
-        $fixture->registry->clear();
-        [$store, $registry] = $fixture->sharedOrders([
+        $fixture->unitOfWork->clear();
+        [$store, $registry] = $fixture->newStore([OrderWithLinesState::class], guards: [
             new QueryGuardDefinition('usage', [
                 new QueryGuardDependency(OrdersDefinition::class, 'order_id', []),
                 new QueryGuardDependency(OrderLinesDefinition::class, 'order_id'),

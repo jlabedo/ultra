@@ -61,7 +61,7 @@ final readonly class StateRowSetBindings
         foreach ($states as $state) {
             $context = sprintf('State "%s"', $state->stateClass);
             $definition = $this->bind($context, $state->tableName, $state->keyColumns());
-            $bindings[$state->tableKey] = $definition;
+            $bindings[$state->tableName] = $definition;
             $mapping = $this->mappings[$definition];
             $this->assertIdentity($context, $state->stateClass, $state->idPropertyColumns, $mapping);
             $this->assertProperties($context, $state->stateClass, $state->propertyColumns, $mapping);
@@ -90,7 +90,7 @@ final readonly class StateRowSetBindings
                 }
 
                 $child = $this->bind($collectionContext, $collection->tableName, $collection->keyColumns());
-                $bindings[$collection->tableKey] = $child;
+                $bindings[$collection->tableName] = $child;
                 $childMapping = $this->mappings[$child];
                 $owner = $childMapping->owner;
                 $ownerColumns = [];

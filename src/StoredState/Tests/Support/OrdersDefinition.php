@@ -18,6 +18,8 @@ final class OrdersDefinition implements MappedRowSetDefinition
                 'order_id' => new MappedColumn('string'),
                 'status' => new MappedColumn('string'),
                 'note' => new MappedColumn('string', nullable: true),
+                'shipping_street' => new MappedColumn('string'),
+                'shipping_zip' => new MappedColumn('string'),
             ],
             ['order_id'],
         );

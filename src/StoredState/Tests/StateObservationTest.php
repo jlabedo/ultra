@@ -17,12 +17,12 @@ final class StateObservationTest extends StateStoreTestCase
         $fixture = $this->stateFixture($backend, [OrderIdentityState::class, OrderWithLinesState::class]);
         $fixture->store->save(new OrderIdentityState('one'));
         $fixture->flush();
-        $fixture->registry->clear();
+        $fixture->unitOfWork->clear();
 
         // The root is present, but its missing status prevents state hydration.
         static::assertTrue($fixture->store->exists(OrderWithLinesState::class, 'one'));
         static::assertFalse($fixture->store->exists(OrderWithLinesState::class, 'missing'));
-        static::assertFalse($fixture->registry->hasPendingChanges());
+        static::assertFalse($fixture->unitOfWork->hasPendingChanges());
 
         [$competitor, $registry] = $fixture->newStore([OrderIdentityState::class]);
         $competitor->delete(OrderIdentityState::class, 'one');
@@ -33,7 +33,7 @@ final class StateObservationTest extends StateStoreTestCase
 
     public function test_expectation_from_one_state_class_can_guard_save_of_another_on_same_row(): void
     {
-        [$database, $table, $store] = $this->newStore([OrderState::class, OrderStatusView::class]);
+        [$database, , $store, $unitOfWork] = $this->newStore([OrderState::class, OrderStatusView::class]);
         $database->seedRow('orders', 'order_id', [
             'order_id' => 'order-123',
             'status' => 'pending',
@@ -45,7 +45,7 @@ final class StateObservationTest extends StateStoreTestCase
 
         $store->expect($view);
         $store->save(new OrderState('order-123', 'shipped', 'confirmed'));
-        $this->flush($database, $table);
+        $this->flush($database, $unitOfWork);
 
         static::assertSame(
             [
@@ -216,7 +216,7 @@ final class StateObservationTest extends StateStoreTestCase
             ),
         );
 
-        static::assertFalse($fixture->registry->hasPendingChanges());
+        static::assertFalse($fixture->unitOfWork->hasPendingChanges());
         $fixture->store->observe(OrderWithLinesState::class, 'one');
         $fixture->store->delete(OrderWithLinesState::class, 'one');
         [$competitor, $registry] = $fixture->newStore([OrderWithLinesState::class]);
@@ -236,7 +236,7 @@ final class StateObservationTest extends StateStoreTestCase
         $fixture = $this->stateFixture($backend, [OrderState::class, OrderStatusView::class]);
         $fixture->store->save(new OrderState('one', 'pending', 'draft'));
         $fixture->flush();
-        $fixture->registry->clear();
+        $fixture->unitOfWork->clear();
         $fixture->store->observe(OrderState::class, 'one');
         $fixture->store->delete(OrderStatusView::class, 'one');
         [$competitor, $registry] = $fixture->newStore([OrderState::class]);

@@ -104,7 +104,7 @@ final readonly class Runtime
                 needsRuntimeDefaults: false,
             );
             $rowSets[$definition] = new MappedRowSet($adapter, $mapping, requiresCoordinator: true);
-            $tables[StateMetadataFactory::tableKey($mapping->table, $mapping->keyColumns)] = $rowSets[$definition];
+            $tables[$mapping->table] = $rowSets[$definition];
         }
         $unitOfWork = new MappedTableUnitOfWork(
             $rowSets,

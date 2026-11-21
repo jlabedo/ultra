@@ -53,7 +53,7 @@ final class StateMappingTest extends StateStoreTestCase
 
     public function test_embedded_value_object_is_saved_as_flat_columns_and_participates_in_optimistic_expectations(): void
     {
-        [$database, $table, $store] = $this->newStore([OrderWithShippingAddressState::class]);
+        [$database, $table, $store, $unitOfWork] = $this->newStore([OrderWithShippingAddressState::class]);
         $database->seedRow('orders', 'order_id', [
             'order_id' => 'order-123',
             'shipping_street' => '1 Main Street',
@@ -82,7 +82,7 @@ final class StateMappingTest extends StateStoreTestCase
 
         $this->expectException(ConcurrencyException::class);
 
-        $this->flush($database, $table);
+        $this->flush($database, $unitOfWork);
     }
 
     public static function stateRepresentations(): iterable
@@ -166,83 +166,19 @@ final class StateMappingTest extends StateStoreTestCase
         }
     }
 
-    public function test_manual_row_sets_preserve_distinct_candidate_keys_for_the_same_table(): void
+    public function test_registered_states_with_the_same_identifier_address_distinct_tables(): void
     {
-        [$database, , $store, $registry] = $this->newStore([ContactByIdState::class, ContactByEmailState::class]);
-        $database->seedRow('contacts', 'contact_id', [
-            'contact_id' => 42,
-            'email' => 'one@example.test',
-            'name' => 'Alice',
-        ]);
+        [$database, , $store, $unitOfWork] = $this->newStore([CounterState::class, ArchivedCounterState::class]);
+        $counter = new CounterState(42, 7);
+        $archived = new ArchivedCounterState(42, 11);
+        $store->save($counter);
+        $store->save($archived);
+        $this->flush($database, $unitOfWork);
 
-        static::assertEquals(
-            new ContactByIdState(42, 'one@example.test', 'Alice'),
-            $store->load(ContactByIdState::class, 42),
-        );
-        static::assertEquals(
-            new ContactByEmailState('one@example.test', 42, 'Alice'),
-            $store->observe(ContactByEmailState::class, 'one@example.test'),
-        );
-        $store->save(new ContactByEmailState('one@example.test', 42, 'Bob'));
-        static::assertEquals(
-            new ContactByEmailState('one@example.test', 42, 'Bob'),
-            $store->load(ContactByEmailState::class, 'one@example.test'),
-        );
-        $this->flush($database, $registry);
-        $registry->clear();
-
-        static::assertSame(['name' => 'Bob'], $database->row('contacts', 'contact_id', 42, ['name']));
-        static::assertEquals(
-            new ContactByIdState(42, 'one@example.test', 'Bob'),
-            $store->load(ContactByIdState::class, 42),
-        );
-        static::assertEquals(
-            new ContactByEmailState('one@example.test', 42, 'Bob'),
-            $store->load(ContactByEmailState::class, 'one@example.test'),
-        );
-    }
-
-    public static function independentTableMappings(): iterable
-    {
-        yield 'same key names and identifier in different tables' => [
-            new CounterState(42, 7),
-            new ArchivedCounterState(42, 11),
-            ['counters', ['id' => 42], ['count' => 7]],
-            ['archived_counters', ['id' => 42], ['count' => 11]],
-        ];
-        yield 'ambiguous table and column names' => [
-            new LeftBoundaryState('same', 'left'),
-            new RightBoundaryState('same', 'right'),
-            ['a', ['bc' => 'same'], ['value' => 'left']],
-            ['ab', ['c' => 'same'], ['value' => 'right']],
-        ];
-    }
-
-    /**
-     * @param array{string, array<string, int|string>, array<string, int|string>} $leftRow
-     * @param array{string, array<string, int|string>, array<string, int|string>} $rightRow
-     */
-    #[DataProvider('independentTableMappings')]
-    public function test_registered_states_address_their_own_physical_table(
-        object $left,
-        object $right,
-        array $leftRow,
-        array $rightRow,
-    ): void {
-        [$database, , $store, $registry] = $this->newStore([$left::class, $right::class]);
-        $store->save($left);
-        $store->save($right);
-        $this->flush($database, $registry);
-        $registry->clear();
-        static::assertEquals($left, $store->load($left::class, $left->id));
-        static::assertEquals($right, $store->load($right::class, $right->id));
-        foreach ([$leftRow, $rightRow] as [$table, $key, $columns]) {
-            static::assertSame($columns, $database->rowByKey(
-                $table,
-                new \Ultra\MappedTable\MappedKey($key),
-                array_keys($columns),
-            ));
-        }
+        static::assertEquals($counter, $store->load(CounterState::class, 42));
+        static::assertEquals($archived, $store->load(ArchivedCounterState::class, 42));
+        static::assertSame(['count' => 7], $database->row('counters', 'id', 42, ['count']));
+        static::assertSame(['count' => 11], $database->row('archived_counters', 'id', 42, ['count']));
     }
 
     public function test_identifier_validation_and_unknown_states_do_not_queue_work(): void
@@ -262,7 +198,7 @@ final class StateMappingTest extends StateStoreTestCase
                 }
             }
         }
-        static::assertFalse($fixture->registry->hasPendingChanges());
+        static::assertFalse($fixture->unitOfWork->hasPendingChanges());
     }
 
     #[DataProvider('backends')]
@@ -271,10 +207,10 @@ final class StateMappingTest extends StateStoreTestCase
         $fixture = $this->stateFixture($backend, [OrderIdentityState::class, OrderWithLinesState::class]);
         $fixture->store->save(new OrderIdentityState('one'));
         $fixture->flush();
-        $fixture->registry->clear();
+        $fixture->unitOfWork->clear();
         $fixture->store->delete(OrderWithLinesState::class, 'one');
         $fixture->flush();
-        $fixture->registry->clear();
+        $fixture->unitOfWork->clear();
         static::assertFalse($fixture->store->observeExists(OrderIdentityState::class, 'one'));
     }
 }

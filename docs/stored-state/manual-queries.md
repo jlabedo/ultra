@@ -33,7 +33,7 @@ composite keys and missing rows. Registering a guard takes no database lock. It 
 do not request the same guard. The developer chooses the guards and must use them in every action affecting the
 invariant: booking, cancellation, reschedule and bulk closure, for example.
 
-The MappedTable coordinator flushes compiled state mappings in **one transaction**:
+The MappedTable coordinator flushes StateStore work in **one transaction**:
 
 1. Derive any compiled query guards, acquire them in name/value order, then acquire requested manual advisory locks
    in physical table/key order.
@@ -51,7 +51,6 @@ Ultra\MappedTable\GuardLockAdapter:
 
 Use `InMemoryGuardLockAdapter` with the same `InMemoryRowDatabase` as the mapped adapters for in-memory work.
 The coordinator acquires cooperative guards through the dedicated adapter. Guard-only work needs no row mutations.
-For manual assembly with the legacy StateStore registry, use the adapter interface from `Ultra\StateStore`.
 
 With `TransactionalUnitOfWorkRunner`, application work runs before the transaction is opened. Configure its
 `TransactionManager` for the same connection used by the mapped adapters, guard adapter and query callbacks. The runner commits

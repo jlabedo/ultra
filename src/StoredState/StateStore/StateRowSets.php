@@ -10,10 +10,10 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-/** @internal The row sets selected for state mappings during container compilation. */
+/** @internal The coordinated row sets used by StateStore views. */
 final readonly class StateRowSets
 {
-    /** @param array<string, MappedRowSet> $tables */
+    /** @param array<string, MappedRowSet> $tables Row sets indexed by physical table name. */
     public function __construct(
         private array $tables,
         private MappedTableUnitOfWork $unitOfWork,
@@ -21,25 +21,25 @@ final readonly class StateRowSets
 
     public function tableFor(StateMetadata $metadata): MappedRowSet
     {
-        return $this->tables[$metadata->tableKey];
+        return $this->tables[$metadata->tableName];
     }
 
     /** @return list<MappedRow> */
     public function rowsForCollection(StateCollectionMetadata $collection, MappedKey $owner): array
     {
-        return $this->tables[$collection->tableKey]->rowsForOwner($owner, $collection->readColumns);
+        return $this->tables[$collection->tableName]->rowsForOwner($owner, $collection->readColumns);
     }
 
     /** @param list<MappedKey> $keys */
     public function expectCollection(StateCollectionMetadata $collection, MappedKey $owner, array $keys): void
     {
-        $this->tables[$collection->tableKey]->expectSameRowKeysForOwner($owner, $keys);
+        $this->tables[$collection->tableName]->expectSameRowKeysForOwner($owner, $keys);
     }
 
     /** @param iterable<MappedRow> $rows */
     public function reconcileCollection(StateCollectionMetadata $collection, MappedKey $owner, iterable $rows): void
     {
-        $this->tables[$collection->tableKey]->reconcileForOwner($owner, $rows);
+        $this->tables[$collection->tableName]->reconcileForOwner($owner, $rows);
     }
 
     public function assertCanSave(StateMetadata $metadata, MappedKey $key): void

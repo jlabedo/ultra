@@ -11,7 +11,6 @@ use Ultra\MappedTable\MappedRow;
  * @phpstan-type StateCollectionMetadataDefinition array{
  *     property: string,
  *     tableName: string,
- *     tableKey: string,
  *     ownerScalar: bool,
  *     ownerPropertyColumns: array<string, string>,
  *     itemClass: class-string,
@@ -42,7 +41,6 @@ final readonly class StateCollectionMetadata
     public function __construct(
         public string $property,
         public string $tableName,
-        public string $tableKey,
         public bool $ownerScalar,
         public array $ownerPropertyColumns,
         public string $itemClass,
@@ -74,7 +72,6 @@ final readonly class StateCollectionMetadata
         return [
             'property' => $this->property,
             'tableName' => $this->tableName,
-            'tableKey' => $this->tableKey,
             'ownerScalar' => $this->ownerScalar,
             'ownerPropertyColumns' => $this->ownerPropertyColumns,
             'itemClass' => $this->itemClass,
@@ -91,12 +88,6 @@ final readonly class StateCollectionMetadata
     public function keyColumns(): array
     {
         return $this->completeKey;
-    }
-
-    /** @return list<string> */
-    public function selectedColumns(): array
-    {
-        return array_values(array_unique(array_values($this->itemPropertyColumns)));
     }
 
     public function ownerKey(mixed $normalizedOwnerId): MappedKey

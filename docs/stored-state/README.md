@@ -18,7 +18,6 @@ The package owns:
 - row hydration through `Ultra\Mapper\UltraNormalizer`
 - optimistic write expectations backed by `Ultra\MappedTable`
 - support for multiple state classes over the same table
-- declared query dependencies and automatic reader/writer guards
 
 ## Mapping and integration
 
@@ -123,14 +122,14 @@ Each file owns a guarantee; providers express alternative mappings, observation 
 
 | Guarantee | Suite |
 | --- | --- |
-| State representations, embedded values and manual candidate keys preserve their physical mapping; deletion needs a valid identifier but no hydratable representation | [StateMappingTest](../../src/StoredState/Tests/StateMappingTest.php) |
+| State representations and embedded values preserve their physical mapping; deletion needs a valid identifier but no hydratable representation | [StateMappingTest](../../src/StoredState/Tests/StateMappingTest.php) |
 | State views share buffered writes and deletions, preserve original expectations and start fresh after clear | [BufferedStateViewTest](../../src/StoredState/Tests/BufferedStateViewTest.php) |
 | Value, presence and absence observations protect the dependency actually read, including across deletion and shared views | [StateObservationTest](../../src/StoredState/Tests/StateObservationTest.php) |
 | Collection hydration, reconciliation and owner cleanup respect identities, membership expectations and atomic rollback with immediate foreign keys | [CollectionOwnershipTest](../../src/StoredState/Tests/CollectionOwnershipTest.php) |
 | Recorded queries replay before writes, compare strictly and reject mutable expected values | [QueryReplayTest](../../src/StoredState/Tests/QueryReplayTest.php) |
 | Guarded decision reads reject affected pending changes before executing or queuing a query | [QueryReadOrderingTest](../../src/StoredState/Tests/QueryReadOrderingTest.php) |
 | Mapped dependencies enroll object and direct writers, including collection reconciliation | [QueryDependencyTest](../../src/StoredState/Tests/QueryDependencyTest.php) |
-| Manual locks precede query replay and writes; clear removes pending work | [FlushCoordinationTest](../../src/StoredState/Tests/FlushCoordinationTest.php) |
+| State views use the same physical lock identity; a rejected guard leaves the owner and its collection intact | [FlushCoordinationTest](../../src/StoredState/Tests/FlushCoordinationTest.php) |
 | Cooperative guards share or exclude competing transactions and remain separate from persistence locks | [CooperativeLockingTest](../../src/StoredState/Tests/CooperativeLockingTest.php) |
 | Symfony discovers root states and collection items, shares table views and assembles guards in dumped containers | [ContainerIntegrationTest](../../src/StoredState/Tests/ContainerIntegrationTest.php) |
 

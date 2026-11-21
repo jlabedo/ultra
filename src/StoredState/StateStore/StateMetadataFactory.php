@@ -143,7 +143,6 @@ final readonly class StateMetadataFactory
         return new StateMetadata(
             stateClass: $stateClass,
             tableName: $state->table,
-            tableKey: self::tableKey($state->table, array_values($idPropertyColumns)),
             idProperty: $idProperty->getName(),
             idType: $idType,
             idScalar: $idScalar,
@@ -153,14 +152,6 @@ final readonly class StateMetadataFactory
             embedded: $embedded,
             collections: $collections,
         );
-    }
-
-    /** @param list<string> $keyColumns */
-    public static function tableKey(string $tableName, array $keyColumns): string
-    {
-        sort($keyColumns, SORT_STRING);
-
-        return $tableName . '#' . implode(',', $keyColumns);
     }
 
     /**
@@ -316,7 +307,6 @@ final readonly class StateMetadataFactory
         return new StateCollectionMetadata(
             property: $property->getName(),
             tableName: $itemMetadata->tableName,
-            tableKey: self::tableKey($itemMetadata->tableName, $keyColumns),
             ownerScalar: $ownerScalar,
             ownerPropertyColumns: $resolvedOwnerColumns,
             itemClass: $itemMetadata->stateClass,

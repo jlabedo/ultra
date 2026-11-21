@@ -161,7 +161,7 @@ final class BufferedStateViewTest extends StateStoreTestCase
         $state = new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'SKU', 1)]);
         $fixture->store->save($state);
         $fixture->flush();
-        $fixture->registry->clear();
+        $fixture->unitOfWork->clear();
         $fixture->store->observe(OrderWithLinesState::class, 'one');
         $fixture->store->delete(OrderWithLinesState::class, 'one');
         try {
@@ -170,13 +170,13 @@ final class BufferedStateViewTest extends StateStoreTestCase
         } catch (ConcurrencyException $exception) {
             static::assertStringContainsString('deleted in this unit of work', $exception->getMessage());
         }
-        $fixture->registry->clear();
+        $fixture->unitOfWork->clear();
 
-        static::assertFalse($fixture->registry->hasPendingChanges());
+        static::assertFalse($fixture->unitOfWork->hasPendingChanges());
         static::assertEquals($state, $fixture->store->load(OrderWithLinesState::class, 'one'));
         $fixture->store->save(new OrderWithLinesState('one', 'paid', $state->lines));
         $fixture->flush();
-        $fixture->registry->clear();
+        $fixture->unitOfWork->clear();
         static::assertSame('paid', $fixture->store->load(OrderWithLinesState::class, 'one')->status);
     }
 
@@ -186,7 +186,7 @@ final class BufferedStateViewTest extends StateStoreTestCase
         $fixture = $this->stateFixture($backend, [OrderWithLinesState::class]);
         $fixture->store->save(new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'OLD', 1)]));
         $fixture->flush();
-        $fixture->registry->clear();
+        $fixture->unitOfWork->clear();
         $fixture->store->observe(OrderWithLinesState::class, 'one');
         $fixture->store->save(new OrderWithLinesState('one', 'paid', [new OrderLineState('new', 'NEW', 3)]));
         $fixture->store->delete(OrderWithLinesState::class, 'one');
@@ -196,7 +196,7 @@ final class BufferedStateViewTest extends StateStoreTestCase
         static::assertTrue($fixture->store->exists(OrderWithLinesState::class, 'two'));
 
         $fixture->flush();
-        $fixture->registry->clear();
+        $fixture->unitOfWork->clear();
         static::assertNull($fixture->store->load(OrderWithLinesState::class, 'one'));
         static::assertEquals($other, $fixture->store->load(OrderWithLinesState::class, 'two'));
         static::assertSame(

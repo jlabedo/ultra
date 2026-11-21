@@ -16,7 +16,7 @@ final class CollectionOwnershipTest extends StateStoreTestCase
     {
         $fixture = $this->stateFixture($backend, [OrderWithLinesState::class]);
         $store = $fixture->store;
-        $registry = $fixture->registry;
+        $registry = $fixture->unitOfWork;
         $initial = new OrderWithLinesState('one', 'pending', [new OrderLineState('first', 'SKU', 1)]);
         $store->observe(OrderWithLinesState::class, 'one');
         $store->save($initial);
@@ -263,7 +263,7 @@ final class CollectionOwnershipTest extends StateStoreTestCase
         $store->save($state);
         $store->save($other);
         $fixture->flush();
-        $fixture->registry->clear();
+        $fixture->unitOfWork->clear();
         [$committed] = $fixture->newStore([$state::class]);
 
         $store->delete($state::class, $id);
@@ -271,11 +271,11 @@ final class CollectionOwnershipTest extends StateStoreTestCase
         static::assertNull($store->load($state::class, $id));
         static::assertNull($store->observe($state::class, $id));
         static::assertFalse($store->observeExists($state::class, $id));
-        static::assertTrue($fixture->registry->hasPendingChanges());
+        static::assertTrue($fixture->unitOfWork->hasPendingChanges());
         static::assertEquals($state, $committed->load($state::class, $id));
 
         $fixture->flush();
-        $fixture->registry->clear();
+        $fixture->unitOfWork->clear();
         static::assertNull($store->load($state::class, $id));
         static::assertEquals($other, $store->load($state::class, $otherId));
         $normalizedId = is_object($id) ? ['tenantId' => $id->tenantId, 'orderNumber' => $id->orderNumber] : $id;
@@ -327,7 +327,7 @@ final class CollectionOwnershipTest extends StateStoreTestCase
         if ('missing row' !== $change) {
             $fixture->store->save($initial);
             $fixture->flush();
-            $fixture->registry->clear();
+            $fixture->unitOfWork->clear();
             if (null !== $read) {
                 $fixture->store->$read(OrderWithLinesState::class, 'one');
             }
@@ -370,7 +370,7 @@ final class CollectionOwnershipTest extends StateStoreTestCase
         try {
             $fixture->flush();
         } finally {
-            $fixture->registry->clear();
+            $fixture->unitOfWork->clear();
             static::assertEquals(
                 $conflict ? $expected : null,
                 $fixture->store->load(OrderWithLinesState::class, 'one'),

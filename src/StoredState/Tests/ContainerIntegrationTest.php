@@ -18,12 +18,10 @@ use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\InMemoryGuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
-use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
 use Ultra\MappedTable\QueryGuard;
@@ -39,6 +37,8 @@ use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\Exception\InvalidStateConfigurationException;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore\Tests\Support\NullEventStore;
+use Ultra\StateStore\Tests\Support\OrderLinesDefinition;
+use Ultra\StateStore\Tests\Support\OrdersDefinition;
 use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 use Ultra\StateStore_Bundle\DependencyInjection\Compiler\StateStoreCompilerPass;
 use Ultra\StateStore_Bundle\StateStoreExtension;
@@ -244,7 +244,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         $container->get('test.lines')->reconcileForOwner(['order_id' => 'one'], []);
 
         $this->expectException(PendingQueryChangesException::class);
-        $this->expectExceptionMessage(BundleLinesDefinition::class);
+        $this->expectExceptionMessage(OrderLinesDefinition::class);
         $container->get(BundleLinesGuardRepository::class)->observe('one');
     }
 
@@ -335,6 +335,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
     {
         yield 'missing definition' => [BundleUnmappedState::class, 'needs a mapped row set definition'];
         yield 'incomplete key' => [BundleWrongKeyState::class, 'must map the complete key'];
+        yield 'alternate key for the same table' => [BundleAlternateOrderKey::class, 'must map the complete key'];
         yield 'key representation' => [BundleWrongKeyTypeState::class, 'property "id" normalizes to int'];
         yield 'embedded column' => [
             BundleUnknownEmbeddedColumnState::class,
@@ -361,7 +362,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
     {
         $this->expectException(InvalidStateConfigurationException::class);
         $this->expectExceptionMessage('must match the owner dependency');
-        $this->createContainer(rowSets: [BundleOrdersDefinition::class, BundleLinesWithoutDependency::class]);
+        $this->createContainer(rowSets: [OrdersDefinition::class, BundleLinesWithoutDependency::class]);
     }
 
     public function test_bundle_autoconfiguration_marks_states_as_normalizable_resources(): void
@@ -395,7 +396,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         bool $withQueryGuard = false,
         ?string $extraGuardRepository = null,
         bool $withGuardAdapter = true,
-        array $rowSets = [BundleOrdersDefinition::class, BundleLinesDefinition::class],
+        array $rowSets = [OrdersDefinition::class, OrderLinesDefinition::class],
         array $extraStates = [],
         ?Connection $postgres = null,
     ): ContainerBuilder {
@@ -408,8 +409,8 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         foreach ($rowSets as $definition) {
             $container->register($definition)->setAutoconfigured(true);
         }
-        $container->setAlias('test.orders', BundleOrdersDefinition::class)->setPublic(true);
-        $container->setAlias('test.lines', BundleLinesDefinition::class)->setPublic(true);
+        $container->setAlias('test.orders', OrdersDefinition::class)->setPublic(true);
+        $container->setAlias('test.lines', OrderLinesDefinition::class)->setPublic(true);
 
         $container->register(NullEventStore::class, NullEventStore::class)->setPublic(true);
         $container->setAlias(EventStore::class, NullEventStore::class)->setPublic(true);
@@ -468,7 +469,7 @@ final readonly class BundleGuardedRepository
     public function __construct(
         private InMemoryRowDatabase $database,
         #[DefineQueryGuard('orders_status', [
-            new QueryGuardDependency(BundleOrdersDefinition::class, 'order_id', ['status']),
+            new QueryGuardDependency(OrdersDefinition::class, 'order_id', ['status']),
         ])]
         private QueryGuard $statusGuard,
     ) {}
@@ -486,7 +487,7 @@ final readonly class BundleInvalidGuardRepository
 {
     public function __construct(
         #[DefineQueryGuard('invalid', [
-            new QueryGuardDependency(BundleOrdersDefinition::class, 'order_id', ['missing']),
+            new QueryGuardDependency(OrdersDefinition::class, 'order_id', ['missing']),
         ])]
         private QueryGuard $guard,
     ) {}
@@ -496,7 +497,7 @@ final readonly class BundleWrongGuardParameter
 {
     public function __construct(
         #[DefineQueryGuard('invalid_type', [
-            new QueryGuardDependency(BundleOrdersDefinition::class, 'order_id'),
+            new QueryGuardDependency(OrdersDefinition::class, 'order_id'),
         ])]
         private string $guard,
     ) {}
@@ -506,7 +507,7 @@ final readonly class BundleLinesGuardRepository
 {
     public function __construct(
         #[DefineQueryGuard('order_lines', [
-            new QueryGuardDependency(BundleLinesDefinition::class, 'order_id'),
+            new QueryGuardDependency(OrderLinesDefinition::class, 'order_id'),
         ])]
         private QueryGuard $guard,
     ) {}
@@ -521,51 +522,17 @@ final readonly class BundleConflictingGuardRepository
 {
     public function __construct(
         #[DefineQueryGuard('orders_status', [
-            new QueryGuardDependency(BundleOrdersDefinition::class, 'order_id', ['note']),
+            new QueryGuardDependency(OrdersDefinition::class, 'order_id', ['note']),
         ])]
         private QueryGuard $guard,
     ) {}
 }
 
-final class BundleOrdersDefinition implements MappedRowSetDefinition
+final class BundleLinesWithoutDependency implements MappedRowSetDefinition
 {
     public function mapping(): MappedRowSetMapping
     {
-        return new MappedRowSetMapping(
-            'orders',
-            [
-                'order_id' => new MappedColumn('string'),
-                'status' => new MappedColumn('string'),
-                'note' => new MappedColumn('string', nullable: true),
-            ],
-            ['order_id'],
-        );
-    }
-}
-
-class BundleLinesDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping(
-            'order_lines',
-            [
-                'order_id' => new MappedColumn('string'),
-                'line_id' => new MappedColumn('string'),
-                'sku' => new MappedColumn('string'),
-                'quantity' => new MappedColumn('int'),
-            ],
-            ['line_id', 'order_id'],
-            owner: new MappedRowSetOwner(BundleOrdersDefinition::class, ['order_id' => 'order_id']),
-        );
-    }
-}
-
-final class BundleLinesWithoutDependency extends BundleLinesDefinition
-{
-    public function mapping(): MappedRowSetMapping
-    {
-        $lines = parent::mapping();
+        $lines = new OrderLinesDefinition()->mapping();
 
         return new MappedRowSetMapping($lines->table, $lines->columns, $lines->keyColumns, ['order_id']);
     }
@@ -585,6 +552,15 @@ final readonly class BundleWrongKeyState
 {
     public function __construct(
         #[StateId(column: 'line_id')]
+        public string $id,
+    ) {}
+}
+
+#[State(table: 'orders')]
+final readonly class BundleAlternateOrderKey
+{
+    public function __construct(
+        #[StateId(column: 'status')]
         public string $id,
     ) {}
 }

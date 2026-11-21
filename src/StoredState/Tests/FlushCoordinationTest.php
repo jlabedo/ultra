@@ -5,93 +5,14 @@ declare(strict_types=1);
 namespace Ultra\StateStore\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
-use Ultra\MappedTable\MappedKey;
-use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
-use Ultra\MappedTable\RowSetUpdatePlan;
-use Ultra\StateStore\GuardLockAdapter;
-use Ultra\StateStore\GuardLockMode;
-use Ultra\StateStore\StateTableRegistry;
 use Ultra\StateStore\Tests\Support\OrdersDefinition;
 use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 
 /** @internal */
 final class FlushCoordinationTest extends StateStoreTestCase
 {
-    public function test_flush_orders_manual_locks_before_queries_and_writes(): void
-    {
-        $trace = new \ArrayObject();
-        $first = new MappedRowSet(new RegistryRecordingAdapter('a', $trace));
-        $sameTable = new MappedRowSet(new RegistryRecordingAdapter('a', $trace));
-        $sameTable->withKey('same')->expectPresent();
-        $last = new MappedRowSet(new RegistryRecordingAdapter('z', $trace));
-        $last->withKey('last')->expectPresent();
-        $first->withKey('new')->insert()->setColumn('status', 'pending');
-        $registry = new StateTableRegistry([
-            'first' => $first,
-            'last' => $last,
-            'same' => $sameTable,
-        ], guardLockAdapter: new RegistryRecordingGuardAdapter($trace));
-        $registry->lock('z', new MappedKey(['id' => '2']));
-        $registry->lock('a', new MappedKey(['id' => '2']));
-        $registry->lock('a', new MappedKey(['id' => '1']));
-        $registry->lock('a', new MappedKey(['id' => '2']));
-        $registry->expectQuery(static function () use ($trace): bool {
-            $trace[] = 'validate';
-
-            return true;
-        }, true);
-
-        $registry->flush();
-
-        static::assertSame(
-            [
-                'lock:a:1',
-                'lock:a:2',
-                'lock:z:2',
-                'validate',
-                'apply:a',
-                'apply:z',
-                'apply:a',
-            ],
-            $trace->getArrayCopy(),
-        );
-        static::assertFalse($registry->hasPendingChanges());
-        $trace->exchangeArray([]);
-        $registry->flush();
-        static::assertSame([], $trace->getArrayCopy());
-        $registry->lock('a', new MappedKey(['id' => 'next']));
-        $registry->flush();
-        static::assertSame(['lock:a:next'], $trace->getArrayCopy());
-    }
-
-    public function test_manual_guards_belong_to_the_registry_without_creating_a_row_set(): void
-    {
-        $trace = new \ArrayObject();
-        $registry = new StateTableRegistry([], guardLockAdapter: new RegistryRecordingGuardAdapter($trace));
-        $registry->lock('companies', new MappedKey(['id' => 'company']));
-        static::assertTrue($registry->hasPendingChanges());
-
-        $registry->flush();
-
-        static::assertSame(['lock:companies:company'], $trace->getArrayCopy());
-        static::assertFalse($registry->hasPendingChanges());
-        $trace->exchangeArray([]);
-        $registry->flush();
-        static::assertSame([], $trace->getArrayCopy());
-    }
-
-    public function test_guarded_flush_requires_a_dedicated_adapter(): void
-    {
-        $registry = new StateTableRegistry([]);
-        $registry->lock('companies', new MappedKey(['id' => 'company']));
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('GuardLockAdapter');
-        $registry->flush();
-    }
-
     public function test_state_locks_use_the_same_mapped_row_for_different_state_views(): void
     {
         [$database, , $store, $registry] = $this->newStore([OrderState::class, OrderStatusView::class]);
@@ -111,8 +32,8 @@ final class FlushCoordinationTest extends StateStoreTestCase
         $initial = new OrderWithLinesState('one', 'pending', [new OrderLineState('line', 'SKU', 1)]);
         $fixture->store->save($initial);
         $fixture->flush();
-        $fixture->registry->clear();
-        [$store, $registry] = $fixture->sharedOrders([
+        $fixture->unitOfWork->clear();
+        [$store, $registry] = $fixture->newStore([OrderWithLinesState::class], guards: [
             new QueryGuardDefinition('usage', [
                 new QueryGuardDependency(OrdersDefinition::class, 'status', ['status']),
             ]),
@@ -125,55 +46,5 @@ final class FlushCoordinationTest extends StateStoreTestCase
         } finally {
             static::assertEquals($initial, $fixture->store->load(OrderWithLinesState::class, 'one'));
         }
-    }
-}
-
-/** Records the coordination protocol; Postgres tests cover transaction-level lock behavior. */
-final readonly class RegistryRecordingAdapter implements MappedRowSetAdapter
-{
-    public function __construct(
-        private string $name,
-        private \ArrayObject $trace,
-    ) {}
-
-    public function keyColumns(): array
-    {
-        return ['id'];
-    }
-
-    public function scope(): ?MappedKey
-    {
-        return null;
-    }
-
-    public function row(MappedKey $key, array $columns = []): array|false
-    {
-        return false;
-    }
-
-    public function rows(array $columns = []): array
-    {
-        return [];
-    }
-
-    public function apply(RowSetUpdatePlan $plan): void
-    {
-        $this->trace[] = 'apply:' . $this->name;
-    }
-}
-
-final readonly class RegistryRecordingGuardAdapter implements GuardLockAdapter
-{
-    public function __construct(
-        private \ArrayObject $trace,
-    ) {}
-
-    public function acquire(string $namespace, string $key, GuardLockMode $mode): void
-    {
-        $this->trace[] =
-            'lock:'
-            . substr($namespace, 0, -strlen(':manual'))
-            . ':'
-            . json_decode($key, true, flags: JSON_THROW_ON_ERROR)['id'];
     }
 }

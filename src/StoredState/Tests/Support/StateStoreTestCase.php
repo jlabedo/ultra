@@ -7,8 +7,8 @@ namespace Ultra\StateStore\Tests\Support;
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\StateStore\StateStore;
-use Ultra\StateStore\StateTableRegistry;
 
 require_once __DIR__ . '/States.php';
 
@@ -35,7 +35,7 @@ abstract class StateStoreTestCase extends TestCase
 
     /**
      * @param list<class-string> $stateClasses
-     * @return array{InMemoryRowDatabase, MappedRowSet, StateStore, StateTableRegistry}
+     * @return array{InMemoryRowDatabase, MappedRowSet, StateStore, MappedTableUnitOfWork}
      */
     protected function newStore(array $stateClasses): array
     {
@@ -43,24 +43,15 @@ abstract class StateStoreTestCase extends TestCase
 
         return [
             $fixture->storage,
-            $fixture->registry->tableFor($fixture->metadata->metadataFor($stateClasses[0])),
+            $fixture->rowSets->tableFor($fixture->metadata->metadataFor($stateClasses[0])),
             $fixture->store,
-            $fixture->registry,
+            $fixture->unitOfWork,
         ];
     }
 
     protected function flush(InMemoryRowDatabase $database, \Ultra\UnitOfWork\UnitOfWork $unitOfWork): void
     {
-        $database->beginTransaction();
-        try {
-            $unitOfWork->flush();
-            $database->commit();
-        } catch (\Throwable $exception) {
-            if ($database->isTransactionActive()) {
-                $database->rollBack();
-            }
-            throw $exception;
-        }
+        $database->transactional($unitOfWork->flush(...));
     }
 
     protected function tearDown(): void

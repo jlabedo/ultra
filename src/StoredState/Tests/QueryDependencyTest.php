@@ -235,8 +235,8 @@ final class QueryDependencyTest extends TestCase
         $store = new StateStore(
             $metadata,
             new StateRowSets([
-                $state->tableKey => $roles,
-                $state->collections['permissions']->tableKey => $permissions,
+                $state->tableName => $roles,
+                $state->collections['permissions']->tableName => $permissions,
             ], $registry),
             new UltraNormalizer(),
         );

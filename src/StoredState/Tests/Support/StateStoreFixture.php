@@ -6,39 +6,36 @@ namespace Ultra\StateStore\Tests\Support;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
-use Ultra\MappedTable\InMemoryGuardLockAdapter as MappedInMemoryGuardLockAdapter;
+use Ultra\MappedTable\InMemoryGuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresGuardLockAdapter as MappedPostgresGuardLockAdapter;
+use Ultra\MappedTable\OwnerMappedRowSetAdapter;
+use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateId;
-use Ultra\StateStore\InMemoryGuardLockAdapter;
-use Ultra\StateStore\PostgresGuardLockAdapter;
 use Ultra\StateStore\StateCollectionMetadata;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateRowSets;
 use Ultra\StateStore\StateStore;
-use Ultra\StateStore\StateTableRegistry;
 use Ultra\Testing\PostgresConnectionSupport;
-use Ultra\UnitOfWork\UnitOfWork;
 
 require_once __DIR__ . '/States.php';
+require_once __DIR__ . '/FixtureRowSetDefinitions.php';
 
 /** Shared object mappings over memory or an isolated Postgres schema, with immediate foreign keys. */
 final class StateStoreFixture
 {
     public readonly StateMetadataRegistry $metadata;
     public readonly StateStore $store;
-    public readonly StateTableRegistry $registry;
-    private readonly MappedRowSetAdapterFactory $adapters;
+    public readonly MappedTableUnitOfWork $unitOfWork;
+    public readonly StateRowSets $rowSets;
     private ?string $schema = null;
     private ?string $previousSearchPath = null;
 
@@ -68,9 +65,6 @@ final class StateStoreFixture
             $this->previousSearchPath = $storage->fetchOne('SHOW search_path');
             $storage->executeStatement('CREATE SCHEMA ' . $this->schema);
             $storage->executeStatement('SET search_path TO ' . $this->schema);
-            $this->adapters = new PostgresMappedRowSetAdapterFactory($storage);
-        } else {
-            $this->adapters = new InMemoryMappedRowSetAdapterFactory($storage);
         }
 
         $analyzer = new NormalizationShapeAnalyzer();
@@ -92,106 +86,102 @@ final class StateStoreFixture
         }
         $factory = new StateMetadataFactory($shapes);
         $this->metadata = new StateMetadataRegistry(array_combine($stateClasses, array_map(
-            static fn(string $class): array => $factory->create($class)->toArray(),
+            $factory->create(...),
             $stateClasses,
         )));
         if ($storage instanceof Connection) {
             $statements = [
-                'orders' => 'CREATE TABLE orders (order_id TEXT PRIMARY KEY, status TEXT, note TEXT)',
+                'orders' => 'CREATE TABLE orders (order_id TEXT PRIMARY KEY, status TEXT, note TEXT, shipping_street TEXT, shipping_zip TEXT)',
                 'order_lines' => 'CREATE TABLE order_lines (order_id TEXT REFERENCES orders (order_id), line_id TEXT, sku TEXT, quantity INT, PRIMARY KEY (order_id, line_id))',
                 'composite_orders' => 'CREATE TABLE composite_orders (tenant_id TEXT, order_number TEXT, PRIMARY KEY (tenant_id, order_number))',
                 'composite_order_lines' => 'CREATE TABLE composite_order_lines (tenant_id TEXT, order_number TEXT, line_sku TEXT, line_variant TEXT, quantity INT, PRIMARY KEY (tenant_id, order_number, line_sku, line_variant), FOREIGN KEY (tenant_id, order_number) REFERENCES composite_orders (tenant_id, order_number))',
                 'counters' => 'CREATE TABLE counters (id INT PRIMARY KEY, count INT)',
             ];
-            $required = [];
-            foreach ($stateClasses as $class) {
-                $metadata = $this->metadata->metadataFor($class);
-                $required[$metadata->tableName] = true;
-                foreach ($metadata->collections as $collection) {
-                    $required[$collection->tableName] = true;
-                }
-            }
-            foreach (array_intersect_key($statements, $required) as $statement) {
+            foreach (array_intersect_key($statements, $this->requiredTables($stateClasses)) as $statement) {
                 $storage->executeStatement($statement);
             }
         }
-        [$this->store, $this->registry] = $this->newStore($stateClasses);
+        [$this->store, $this->unitOfWork, $this->rowSets] = $this->newStore($stateClasses);
     }
 
     /**
      * @param list<class-string> $stateClasses
-     * @return array{StateStore, StateTableRegistry}
-     */
-    public function newStore(array $stateClasses, Connection|InMemoryRowDatabase|null $storage = null): array
-    {
-        $storage ??= $this->storage;
-        $adapters = $storage === $this->storage
-            ? $this->adapters
-            : (
-                $storage instanceof Connection
-                    ? new PostgresMappedRowSetAdapterFactory($storage)
-                    : new InMemoryMappedRowSetAdapterFactory($storage)
-            );
-        $tables = [];
-        foreach ($stateClasses as $class) {
-            $state = $this->metadata->metadataFor($class);
-            $tables[$state->tableKey] ??= new MappedRowSet($adapters->create($state->tableName, $state->keyColumns()));
-        }
-        $guards = $storage instanceof Connection
-            ? new PostgresGuardLockAdapter($storage)
-            : new InMemoryGuardLockAdapter($storage);
-        $registry = new StateTableRegistry($tables, $adapters, $guards);
-
-        return [new StateStore($this->metadata, $registry, new UltraNormalizer()), $registry];
-    }
-
-    /**
      * @param list<QueryGuardDefinition> $guards
-     * @return array{StateStore, MappedTableUnitOfWork}
+     * @return array{StateStore, MappedTableUnitOfWork, StateRowSets}
      */
-    public function sharedOrders(array $guards, Connection|InMemoryRowDatabase|null $storage = null): array
-    {
+    public function newStore(
+        array $stateClasses,
+        array $guards = [],
+        Connection|InMemoryRowDatabase|null $storage = null,
+    ): array {
         $storage ??= $this->storage;
         $factory = $storage instanceof Connection
             ? new PostgresMappedRowSetAdapterFactory($storage)
             : new InMemoryMappedRowSetAdapterFactory($storage);
         $locks = $storage instanceof Connection
-            ? new MappedPostgresGuardLockAdapter($storage)
-            : new MappedInMemoryGuardLockAdapter($storage);
+            ? new PostgresGuardLockAdapter($storage)
+            : new InMemoryGuardLockAdapter($storage);
+
+        $required = $this->requiredTables($stateClasses);
         $rowSets = [];
         $tables = [];
-        foreach ([OrdersDefinition::class, OrderLinesDefinition::class] as $definition) {
+        foreach ([
+            OrdersDefinition::class,
+            OrderLinesDefinition::class,
+            CompositeOrdersDefinition::class,
+            CompositeOrderLinesDefinition::class,
+            CountersDefinition::class,
+            ArchivedCountersDefinition::class,
+            TermsAcceptancesDefinition::class,
+            ConventionalNamesDefinition::class,
+        ] as $definition) {
             $mapping = new $definition()->mapping();
-            $key = StateMetadataFactory::tableKey($mapping->table, $mapping->keyColumns);
-            $rowSets[$definition] = new MappedRowSet($factory->create($mapping->table, $mapping->keyColumns), $mapping);
-            $tables[$key] = $rowSets[$definition];
+            if (!isset($required[$mapping->table])) {
+                continue;
+            }
+            $rowSet = new MappedRowSet($factory->create($mapping->table, $mapping->keyColumns), $mapping);
+            $rowSets[$definition] = $rowSet;
+            $tables[$mapping->table] = $rowSet;
         }
         $unitOfWork = new MappedTableUnitOfWork($rowSets, queryGuards: $guards, guardLocks: $locks);
+        $bindings = new StateRowSets($tables, $unitOfWork);
 
-        return [
-            new StateStore($this->metadata, new StateRowSets($tables, $unitOfWork), new UltraNormalizer()),
-            $unitOfWork,
-        ];
+        return [new StateStore($this->metadata, $bindings, new UltraNormalizer()), $unitOfWork, $bindings];
     }
 
-    public function flush(?UnitOfWork $registry = null): void
+    /**
+     * @param list<class-string> $stateClasses
+     * @return array<string, true>
+     */
+    private function requiredTables(array $stateClasses): array
     {
-        $this->storage->beginTransaction();
-        try {
-            ($registry ?? $this->registry)->flush();
-            $this->storage->commit();
-        } catch (\Throwable $exception) {
-            $this->storage->rollBack();
-            throw $exception;
+        $required = [];
+        foreach ($stateClasses as $class) {
+            $metadata = $this->metadata->metadataFor($class);
+            $required[$metadata->tableName] = true;
+            foreach ($metadata->collections as $collection) {
+                $required[$collection->tableName] = true;
+            }
         }
+
+        return $required;
+    }
+
+    public function flush(?MappedTableUnitOfWork $unitOfWork = null): void
+    {
+        $this->storage->transactional(($unitOfWork ?? $this->unitOfWork)->flush(...));
     }
 
     /** @return list<\Ultra\MappedTable\MappedRow> */
     public function collectionRows(StateCollectionMetadata $collection, mixed $normalizedId): array
     {
-        return $this->adapters
-            ->createScoped($collection->tableName, $collection->keyColumns(), $collection->ownerKey($normalizedId))
-            ->rows();
+        $factory = $this->storage instanceof Connection
+            ? new PostgresMappedRowSetAdapterFactory($this->storage)
+            : new InMemoryMappedRowSetAdapterFactory($this->storage);
+        $adapter = $factory->create($collection->tableName, $collection->keyColumns());
+        assert($adapter instanceof OwnerMappedRowSetAdapter, 'Fixture adapters support owner collections.');
+
+        return $adapter->rowsForOwner($collection->ownerKey($normalizedId));
     }
 
     public function close(): void

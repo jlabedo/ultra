@@ -13,7 +13,6 @@ use Ultra\MappedTable\MappedKey;
  * @phpstan-type StateMetadataDefinition array{
  *     stateClass: class-string,
  *     tableName: string,
- *     tableKey: string,
  *     idProperty: string,
  *     idType: 'int'|'string'|class-string,
  *     idScalar: bool,
@@ -53,7 +52,6 @@ final readonly class StateMetadata
     public function __construct(
         public string $stateClass,
         public string $tableName,
-        public string $tableKey,
         public string $idProperty,
         public string $idType,
         public bool $idScalar,
@@ -93,7 +91,6 @@ final readonly class StateMetadata
         return new self(
             stateClass: $definition['stateClass'],
             tableName: $definition['tableName'],
-            tableKey: $definition['tableKey'],
             idProperty: $definition['idProperty'],
             idType: $definition['idType'],
             idScalar: $definition['idScalar'],
@@ -114,7 +111,6 @@ final readonly class StateMetadata
         return [
             'stateClass' => $this->stateClass,
             'tableName' => $this->tableName,
-            'tableKey' => $this->tableKey,
             'idProperty' => $this->idProperty,
             'idType' => $this->idType,
             'idScalar' => $this->idScalar,
