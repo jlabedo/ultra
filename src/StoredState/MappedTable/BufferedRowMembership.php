@@ -19,13 +19,8 @@ final class BufferedRowMembership
     public ?array $reconciled = null;
 
     public function __construct(
-        public readonly ?MappedKey $owner = null,
+        public readonly ?MappedKey $owner,
     ) {}
-
-    public function hasWork(): bool
-    {
-        return null !== $this->expected || null !== $this->reconciled;
-    }
 
     /**
      * @param list<MappedKey> $keys

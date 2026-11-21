@@ -80,8 +80,8 @@ for additional setup such as adding a column. Scenario files execute as ordinary
 The example creates a fresh temporary table with `id TEXT PRIMARY KEY`, `status TEXT` and `note TEXT` on a
 dedicated connection. Reads and decisions run before the flush transaction; success commits and failure
 rolls back through `TransactionalUnitOfWorkRunner`. Cleanup drops the temporary table and closes the
-connection. The example addresses one unscoped row set with the default `id` key. For different keys, scopes
-or column codecs, reuse the collector below in a PHP script assembling the corresponding adapter.
+connection. The example addresses one row set with the default `id` key. For different keys, owner
+collections or column codecs, reuse the collector below in a PHP script assembling the corresponding row set.
 
 ## Reuse the collector
 

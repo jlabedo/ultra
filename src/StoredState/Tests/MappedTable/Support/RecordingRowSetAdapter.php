@@ -23,11 +23,6 @@ final class RecordingRowSetAdapter implements MappedRowSetAdapter
         return ['id'];
     }
 
-    public function scope(): ?MappedKey
-    {
-        return null;
-    }
-
     public function row(MappedKey $key, array $columns = []): array|false
     {
         ++$this->reads;
@@ -35,14 +30,23 @@ final class RecordingRowSetAdapter implements MappedRowSetAdapter
         return false;
     }
 
-    public function rows(array $columns = []): array
+    public function rows(array $columns = [], ?MappedKey $owner = null): array
     {
         ++$this->reads;
         return [];
     }
 
-    public function apply(RowSetUpdatePlan $plan): void
+    public function activeTransactionResource(): object
+    {
+        throw new \LogicException('Recording adapter has no transaction.');
+    }
+
+    public function check(RowSetUpdatePlan $plan): void
     {
         $this->batches[] = $plan;
     }
+
+    public function writeRows(array $writes): void {}
+
+    public function deleteExcludedRows(RowSetUpdatePlan $plan): void {}
 }

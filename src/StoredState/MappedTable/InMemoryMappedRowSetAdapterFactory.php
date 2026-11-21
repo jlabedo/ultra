@@ -6,7 +6,7 @@ namespace Ultra\MappedTable;
 
 final readonly class InMemoryMappedRowSetAdapterFactory implements MappedRowSetAdapterFactory
 {
-    /** @param array<string, MappedTablePolicy> $tablePolicies Policies shared by scoped and unscoped adapters. */
+    /** @param array<string, MappedTablePolicy> $tablePolicies */
     public function __construct(
         private InMemoryRowDatabase $database,
         private array $tablePolicies = [],
@@ -30,17 +30,6 @@ final readonly class InMemoryMappedRowSetAdapterFactory implements MappedRowSetA
             $mapping->table,
             $mapping,
             policy: $this->tablePolicies[$mapping->table] ?? new MappedTablePolicy(),
-        );
-    }
-
-    public function createScoped(string $tableName, array $keyColumns, MappedKey $scope): MappedRowSetAdapter
-    {
-        return new InMemoryMappedRowSetAdapter(
-            $this->database,
-            $tableName,
-            $keyColumns,
-            $scope,
-            $this->tablePolicies[$tableName] ?? new MappedTablePolicy(),
         );
     }
 }

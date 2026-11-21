@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-/** Operations supported by every adapter and scoped view of a table. */
+/** Operations supported by every adapter of a table. */
 final readonly class MappedTablePolicy
 {
     public function __construct(

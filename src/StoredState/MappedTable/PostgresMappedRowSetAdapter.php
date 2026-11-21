@@ -7,7 +7,7 @@ namespace Ultra\MappedTable;
 use Doctrine\DBAL\Connection;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAdapter, CoordinatedMappedRowSetAdapter
+final readonly class PostgresMappedRowSetAdapter implements MappedRowSetAdapter
 {
     /** @var list<string> */
     private array $keyColumns;
@@ -21,7 +21,6 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         private string $tableName,
         array $configuredKeyColumns = ['id'],
         private array $columnTypes = [],
-        private ?MappedKey $configuredScope = null,
         private MappedTablePolicy $policy = new MappedTablePolicy(),
         private ?PostgresMappedRowSetSql $sql = null,
     ) {
@@ -42,9 +41,6 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
                 throw new \InvalidArgumentException('Mapped row-set key column names must be non-empty.');
             }
         }
-        if (null !== $configuredScope && [] !== array_diff($configuredScope->columns(), $configuredKeyColumns)) {
-            throw new \InvalidArgumentException('Mapped row-set scope columns must belong to its key.');
-        }
         sort($configuredKeyColumns, SORT_STRING);
         $this->keyColumns = $configuredKeyColumns;
     }
@@ -52,11 +48,6 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
     public function keyColumns(): array
     {
         return $this->keyColumns;
-    }
-
-    public function scope(): ?MappedKey
-    {
-        return $this->configuredScope;
     }
 
     public function row(MappedKey $key, array $columns = []): array|false
@@ -76,21 +67,7 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         return false === $row ? false : $this->decodeRow($row);
     }
 
-    public function rows(array $columns = []): array
-    {
-        return $this->readRows($columns, $this->configuredScope);
-    }
-
-    public function rowsForOwner(MappedKey $owner, array $columns = []): array
-    {
-        return $this->readRows($columns, $owner);
-    }
-
-    /**
-     * @param list<string> $columns
-     * @return list<MappedRow>
-     */
-    private function readRows(array $columns, ?MappedKey $scope): array
+    public function rows(array $columns = [], ?MappedKey $owner = null): array
     {
         $projection = match (true) {
             [] === $columns => '*',
@@ -107,10 +84,10 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
                 'SELECT %s FROM %s%s ORDER BY %s',
                 $projection,
                 $this->quotedTable(),
-                $this->scopeWhereSql($scope),
+                $this->ownerWhereSql($owner),
                 $this->conflictTargetSql(),
             ),
-            $this->scopeParams($scope),
+            $this->ownerParams($owner),
         );
 
         $mapped = [];
@@ -133,20 +110,6 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         }
 
         return $mapped;
-    }
-
-    /**
-     * Flushes the plan inside the caller's transaction: protects absent keys when configured,
-     * checks the row-key expectations and check-only rows, then applies the writes.
-     */
-    public function apply(RowSetUpdatePlan $plan): void
-    {
-        $this->check($plan);
-        $this->writeRows(array_values(array_filter(
-            $plan->rowUpdates,
-            static fn(RowUpdatePlan $row): bool => $row->writes(),
-        )));
-        $this->deleteExcludedRows($plan);
     }
 
     public function activeTransactionResource(): object
@@ -175,9 +138,8 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         }
 
         $this->lockAbsentKeys($checks, $writes);
-        $this->assertExpectedRowKeys($plan->expectedRowKeys, $plan->ignoredRowKeys);
-        foreach ($plan->ownerCollections as $collection) {
-            $this->assertExpectedRowKeys($collection->expectedRowKeys, $collection->ignoredRowKeys, $collection->owner);
+        foreach ($plan->memberships as $membership) {
+            $this->assertExpectedRowKeys($membership);
         }
         $this->checkRows($checks);
     }
@@ -202,22 +164,20 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
 
     public function deleteExcludedRows(RowSetUpdatePlan $plan): void
     {
-        $this->deleteRowsOutside($plan->retainedRowKeys);
-        foreach ($plan->ownerCollections as $collection) {
-            $this->deleteRowsOutside($collection->retainedRowKeys, $collection->owner);
+        foreach ($plan->memberships as $membership) {
+            $this->deleteRowsOutside($membership->retainedRowKeys, $membership->owner);
         }
     }
 
     /** @param list<MappedKey>|null $keys */
-    private function deleteRowsOutside(?array $keys, ?MappedKey $owner = null): void
+    private function deleteRowsOutside(?array $keys, ?MappedKey $owner): void
     {
         if (null === $keys) {
             return;
         }
 
-        $scope = $owner ?? $this->configuredScope;
-        $where = $this->scopeWhereClauses($scope);
-        $params = $this->scopeParams($scope);
+        $where = $this->ownerWhereClauses($owner);
+        $params = $this->ownerParams($owner);
         $retained = [];
         foreach ($keys as $key) {
             $this->assertKey($key);
@@ -495,13 +455,9 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         }
     }
 
-    /**
-     * @param list<MappedKey>|null $expected
-     * @param list<MappedKey>      $ignored
-     */
-    private function assertExpectedRowKeys(?array $expected, array $ignored, ?MappedKey $owner = null): void
+    private function assertExpectedRowKeys(RowMembershipPlan $membership): void
     {
-        if (null === $expected) {
+        if (null === $membership->expectedRowKeys) {
             return;
         }
         if (!$this->connection->isTransactionActive()) {
@@ -513,20 +469,11 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
 
         $this->connection->executeStatement('SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))', [
             $this->tableName,
-            json_encode([$this->keyColumns(), ($owner ?? $this->configuredScope)?->values], JSON_THROW_ON_ERROR),
+            json_encode([$this->keyColumns(), $membership->owner?->values], JSON_THROW_ON_ERROR),
         ]);
 
-        $rows = null === $owner ? $this->rows() : $this->rowsForOwner($owner, $this->keyColumns());
-        $actual = array_map(static fn(MappedRow $row): string => $row->key->fingerprint(), $rows);
-        $expected = array_map(static fn(MappedKey $key): string => $key->fingerprint(), $expected);
-        $actual = array_values(array_diff($actual, array_map(
-            static fn(MappedKey $key): string => $key->fingerprint(),
-            $ignored,
-        )));
-        sort($actual, SORT_STRING);
-        sort($expected, SORT_STRING);
-
-        if ($actual !== $expected) {
+        $rows = $this->rows($this->keyColumns(), $membership->owner);
+        if (!$membership->matchesExpectedRows($rows)) {
             throw new ConcurrencyException(sprintf(
                 'Row-set expectation failed for table "%s": row keys changed.',
                 $this->tableName,
@@ -666,21 +613,21 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         ), $this->keyColumns());
     }
 
-    private function scopeWhereSql(?MappedKey $scope): string
+    private function ownerWhereSql(?MappedKey $owner): string
     {
-        if (null === $scope) {
+        if (null === $owner) {
             return '';
         }
 
-        return $scope->columns() === $this->sql?->ownerColumns
+        return $owner->columns() === $this->sql?->ownerColumns
             ? $this->sql->ownerWhere
-            : ' WHERE ' . implode(' AND ', $this->scopeWhereClauses($scope));
+            : ' WHERE ' . implode(' AND ', $this->ownerWhereClauses($owner));
     }
 
     /** @return list<string> */
-    private function scopeWhereClauses(?MappedKey $scope): array
+    private function ownerWhereClauses(?MappedKey $owner): array
     {
-        $columns = $scope?->columns() ?? [];
+        $columns = $owner?->columns() ?? [];
 
         return (
             $columns === $this->sql?->ownerColumns
@@ -690,16 +637,16 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
     }
 
     /** @return list<mixed> */
-    private function scopeParams(?MappedKey $scope): array
+    private function ownerParams(?MappedKey $owner): array
     {
-        if (null === $scope) {
+        if (null === $owner) {
             return [];
         }
 
         return array_map(fn(string $column): mixed => $this->encodeColumnValue(
             $column,
-            $scope->value($column),
-        ), $scope->columns());
+            $owner->value($column),
+        ), $owner->columns());
     }
 
     private function conflictTargetSql(): string
@@ -776,9 +723,6 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
     private function assertKey(MappedKey $key): void
     {
         $key->assertColumns($this->keyColumns());
-        if (null !== $this->configuredScope && !$key->matches($this->configuredScope)) {
-            throw new \InvalidArgumentException('Mapped key does not belong to adapter scope.');
-        }
     }
 
     private function concurrency(string $message, RowUpdatePlan $update): ConcurrencyException

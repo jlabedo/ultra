@@ -8,7 +8,6 @@ use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
-use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\PostgresMappedColumnType;
@@ -30,7 +29,6 @@ abstract class RowSetTestCase extends TestCase
     protected function fixture(
         string $backend = 'memory',
         array $keyColumns = ['id'],
-        ?MappedKey $scope = null,
         array $columnTypes = [],
         bool $allowAbsentObservations = true,
         Connection|InMemoryRowDatabase|null $storage = null,
@@ -47,7 +45,6 @@ abstract class RowSetTestCase extends TestCase
             $storage,
             'ultra_guarantees_' . bin2hex(random_bytes(4)),
             $keyColumns,
-            $scope,
             $columnTypes,
             $allowAbsentObservations,
         );

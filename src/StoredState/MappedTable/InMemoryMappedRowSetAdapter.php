@@ -6,7 +6,7 @@ namespace Ultra\MappedTable;
 
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAdapter, CoordinatedMappedRowSetAdapter
+final readonly class InMemoryMappedRowSetAdapter implements MappedRowSetAdapter
 {
     /** @var list<string> */
     private array $keyColumns;
@@ -18,13 +18,12 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
         private InMemoryRowDatabase $database,
         private string $tableName,
         array|MappedRowSetMetadata $configuredKeyColumns = ['id'],
-        private ?MappedKey $configuredScope = null,
         private MappedTablePolicy $policy = new MappedTablePolicy(),
     ) {
         if ($configuredKeyColumns instanceof MappedRowSetMetadata) {
             $this->keyColumns = $configuredKeyColumns->keyColumns;
         } else {
-            self::assertSchema($configuredKeyColumns, $configuredScope);
+            self::assertSchema($configuredKeyColumns);
             sort($configuredKeyColumns, SORT_STRING);
             $this->keyColumns = $configuredKeyColumns;
         }
@@ -35,11 +34,6 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
         return $this->keyColumns;
     }
 
-    public function scope(): ?MappedKey
-    {
-        return $this->configuredScope;
-    }
-
     public function row(MappedKey $key, array $columns = []): array|false
     {
         $this->assertKey($key);
@@ -47,24 +41,9 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
         return $this->database->rowByKey($this->tableName, $key, $columns);
     }
 
-    public function rows(array $columns = []): array
-    {
-        return $this->database->rowsByKey($this->tableName, $this->keyColumns(), $columns, $this->configuredScope);
-    }
-
-    public function rowsForOwner(MappedKey $owner, array $columns = []): array
+    public function rows(array $columns = [], ?MappedKey $owner = null): array
     {
         return $this->database->rowsByKey($this->tableName, $this->keyColumns(), $columns, $owner);
-    }
-
-    public function apply(RowSetUpdatePlan $plan): void
-    {
-        $this->check($plan);
-        $this->writeRows(array_values(array_filter(
-            $plan->rowUpdates,
-            static fn(RowUpdatePlan $row): bool => $row->writes(),
-        )));
-        $this->deleteExcludedRows($plan);
     }
 
     public function activeTransactionResource(): object
@@ -84,9 +63,8 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
             $this->assertKey($update->key);
         }
 
-        $this->assertExpectedRowKeys($plan->expectedRowKeys, $plan->ignoredRowKeys);
-        foreach ($plan->ownerCollections as $collection) {
-            $this->assertExpectedRowKeys($collection->expectedRowKeys, $collection->ignoredRowKeys, $collection->owner);
+        foreach ($plan->memberships as $membership) {
+            $this->assertExpectedRowKeys($membership);
         }
 
         foreach ($plan->rowUpdates as $update) {
@@ -114,14 +92,13 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
 
     public function deleteExcludedRows(RowSetUpdatePlan $plan): void
     {
-        $this->deleteRowsOutside($plan->retainedRowKeys);
-        foreach ($plan->ownerCollections as $collection) {
-            $this->deleteRowsOutside($collection->retainedRowKeys, $collection->owner);
+        foreach ($plan->memberships as $membership) {
+            $this->deleteRowsOutside($membership->retainedRowKeys, $membership->owner);
         }
     }
 
     /** @param list<MappedKey>|null $keys */
-    private function deleteRowsOutside(?array $keys, ?MappedKey $owner = null): void
+    private function deleteRowsOutside(?array $keys, ?MappedKey $owner): void
     {
         if (null === $keys) {
             return;
@@ -132,7 +109,7 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
             $this->assertKey($key);
             $retained[$key->fingerprint()] = true;
         }
-        $rows = null === $owner ? $this->rows() : $this->rowsForOwner($owner, $this->keyColumns());
+        $rows = $this->rows($this->keyColumns(), $owner);
         foreach ($rows as $row) {
             if (isset($retained[$row->key->fingerprint()])) {
                 continue;
@@ -142,27 +119,14 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
         }
     }
 
-    /**
-     * @param list<MappedKey>|null $expected
-     * @param list<MappedKey>      $ignored
-     */
-    private function assertExpectedRowKeys(?array $expected, array $ignored, ?MappedKey $owner = null): void
+    private function assertExpectedRowKeys(RowMembershipPlan $membership): void
     {
-        if (null === $expected) {
+        if (null === $membership->expectedRowKeys) {
             return;
         }
 
-        $rows = null === $owner ? $this->rows() : $this->rowsForOwner($owner, $this->keyColumns());
-        $actual = array_map(static fn(MappedRow $row): string => $row->key->fingerprint(), $rows);
-        $expected = array_map(static fn(MappedKey $key): string => $key->fingerprint(), $expected);
-        $actual = array_values(array_diff($actual, array_map(
-            static fn(MappedKey $key): string => $key->fingerprint(),
-            $ignored,
-        )));
-        sort($actual, SORT_STRING);
-        sort($expected, SORT_STRING);
-
-        if ($actual !== $expected) {
+        $rows = $this->rows($this->keyColumns(), $membership->owner);
+        if (!$membership->matchesExpectedRows($rows)) {
             throw new ConcurrencyException(sprintf(
                 'Row-set expectation failed for table "%s": row keys changed.',
                 $this->tableName,
@@ -247,13 +211,10 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
     private function assertKey(MappedKey $key): void
     {
         $key->assertColumns($this->keyColumns());
-        if (null !== $this->configuredScope && !$key->matches($this->configuredScope)) {
-            throw new \InvalidArgumentException('Mapped key does not belong to adapter scope.');
-        }
     }
 
     /** @param list<string> $keyColumns */
-    private static function assertSchema(array $keyColumns, ?MappedKey $scope): void
+    private static function assertSchema(array $keyColumns): void
     {
         if ([] === $keyColumns || count($keyColumns) !== count(array_unique($keyColumns))) {
             throw new \InvalidArgumentException('Mapped row-set key columns must be non-empty and unique.');
@@ -262,10 +223,6 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
             if ('' === $column) {
                 throw new \InvalidArgumentException('Mapped row-set key column names must be non-empty.');
             }
-        }
-
-        if (null !== $scope && [] !== array_diff($scope->columns(), $keyColumns)) {
-            throw new \InvalidArgumentException('Mapped row-set scope columns must belong to its key.');
         }
     }
 }

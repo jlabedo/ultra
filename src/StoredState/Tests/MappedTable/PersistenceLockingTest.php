@@ -83,39 +83,25 @@ final class PersistenceLockingTest extends RowSetTestCase
         }
     }
 
-    /** @return iterable<string, array{bool, bool, string}> */
+    /** @return iterable<string, array{bool, string}> */
     public static function absenceProtectionPolicies(): iterable
     {
         foreach ([true, false] as $protected) {
-            foreach ([true, false] as $scoped) {
-                foreach (['insert', 'upsert'] as $operation) {
-                    yield implode(' ', [
-                        $protected ? 'protected' : 'unprotected',
-                        $scoped ? 'scoped' : 'unscoped',
-                        $operation,
-                    ]) => [$protected, $scoped, $operation];
-                }
+            foreach (['insert', 'upsert'] as $operation) {
+                yield ($protected ? 'protected' : 'unprotected') . ' ' . $operation => [$protected, $operation];
             }
         }
     }
 
     #[DataProvider('absenceProtectionPolicies')]
-    public function test_table_policy_controls_creation_locks_for_all_views(
-        bool $protected,
-        bool $scoped,
-        string $operation,
-    ): void {
+    public function test_table_policy_controls_creation_locks(bool $protected, string $operation): void
+    {
         $fixture = $this->fixture('postgres', ['tenant', 'id']);
         $connection = $fixture->connection();
         $factory = new PostgresMappedRowSetAdapterFactory($connection, tablePolicies: [
             $protected ? 'another_table' : $fixture->tableName => new MappedTablePolicy(allowAbsentObservations: false),
         ]);
-        $scope = new MappedKey(['tenant' => 'tenant-1']);
-        $rows = new MappedRowSet(
-            $scoped
-                ? $factory->createScoped($fixture->tableName, ['tenant', 'id'], $scope)
-                : $factory->create($fixture->tableName, ['tenant', 'id']),
-        );
+        $rows = new MappedRowSet($factory->create($fixture->tableName, ['tenant', 'id']));
         foreach (['first', 'second'] as $id) {
             $rows
                 ->withKey(new MappedKey(['tenant' => 'tenant-1', 'id' => $id]))

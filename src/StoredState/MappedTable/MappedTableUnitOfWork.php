@@ -12,7 +12,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
     /** @var array<class-string<MappedRowSetDefinition>, MappedRowSet> */
     private array $rowSets;
 
-    /** @var array<class-string<MappedRowSetDefinition>, CoordinatedMappedRowSetAdapter> */
+    /** @var array<class-string<MappedRowSetDefinition>, MappedRowSetAdapter> */
     private array $adapters;
 
     /** @var array<class-string<MappedRowSetDefinition>, MappedRowSetMetadata> */
@@ -134,25 +134,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
         }
 
         $this->guards->replay($requests, $resource);
-        foreach ($plans as $definition => $plan) {
-            $this->adapters[$definition]->check($plan);
-        }
-
-        foreach (array_reverse($plans, preserve_keys: true) as $definition => $plan) {
-            $adapter = $this->adapters[$definition];
-            $adapter->writeRows(array_values(array_filter(
-                $plan->rowUpdates,
-                static fn(RowUpdatePlan $row): bool => RowUpdatePlan::MODE_DELETE === $row->mode,
-            )));
-            $adapter->deleteExcludedRows($plan);
-        }
-
-        foreach ($plans as $definition => $plan) {
-            $this->adapters[$definition]->writeRows(array_values(array_filter(
-                $plan->rowUpdates,
-                static fn(RowUpdatePlan $row): bool => $row->writes() && RowUpdatePlan::MODE_DELETE !== $row->mode,
-            )));
-        }
+        RowSetPlanFlusher::flush($plans, $this->adapters);
 
         $this->guards->clear();
         foreach (array_keys($plans) as $definition) {
@@ -172,7 +154,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
     private function assertSupported(array $plans): void
     {
         $absent = [];
-        $retainedByOwner = [];
+        $retainedByMembership = [];
         foreach ($plans as $definition => $plan) {
             if (!$this->referenced[$definition]) {
                 continue;
@@ -194,15 +176,19 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
                     $absent[$definition][$row->key->fingerprint()] = true;
                 }
             }
-            foreach ($plan->ownerCollections as $collection) {
-                if (null === $collection->retainedRowKeys) {
+            foreach ($plan->memberships as $membership) {
+                if (null === $membership->retainedRowKeys) {
                     continue;
                 }
 
-                $retainedByOwner[$definition][$collection->owner->fingerprint()] = array_fill_keys(array_map(
+                $keys = array_map(
                     static fn(MappedKey $key): string => $key->fingerprint(),
-                    $collection->retainedRowKeys,
-                ), true);
+                    $membership->retainedRowKeys,
+                );
+                $retainedByMembership[$definition][$membership->owner?->fingerprint() ?? ''] = array_fill_keys(
+                    $keys,
+                    true,
+                );
             }
         }
 
@@ -211,20 +197,20 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
             $owner = $mapping->owner;
             if (
                 null === $owner
-                || !isset($absent[$owner->definition]) && !isset($retainedByOwner[$owner->definition])
+                || !isset($absent[$owner->definition]) && !isset($retainedByMembership[$owner->definition])
             ) {
                 continue;
             }
 
             $parent = $this->mappings[$owner->definition];
-            $check = static function (MappedKey $childKey) use ($owner, $parent, $absent, $retainedByOwner): void {
+            $check = static function (MappedKey $childKey) use ($owner, $parent, $absent, $retainedByMembership): void {
                 $parentKey = $owner->parentKey($childKey);
                 $fingerprint = $parentKey->fingerprint();
                 $removed = isset($absent[$owner->definition][$fingerprint]);
-                $parentCollections = $retainedByOwner[$owner->definition] ?? [];
-                if ([] !== $parentCollections) {
-                    $ownerKey = $parent->ownerKey($parentKey);
-                    $retained = $parentCollections[$ownerKey->fingerprint()] ?? null;
+                $parentMemberships = $retainedByMembership[$owner->definition] ?? [];
+                if ([] !== $parentMemberships) {
+                    $id = [] === $parent->ownerColumns ? '' : $parent->ownerKey($parentKey)->fingerprint();
+                    $retained = $parentMemberships[$id] ?? null;
                     $removed = $removed || null !== $retained && !isset($retained[$fingerprint]);
                 }
 
@@ -245,8 +231,8 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
 
                 $check($row->key);
             }
-            foreach ($plan->ownerCollections as $collection) {
-                foreach ($collection->retainedRowKeys ?? [] as $key) {
+            foreach ($plan->memberships as $membership) {
+                foreach ($membership->retainedRowKeys ?? [] as $key) {
                     $check($key);
                 }
             }

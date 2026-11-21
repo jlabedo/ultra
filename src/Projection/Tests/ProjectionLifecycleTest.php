@@ -88,21 +88,23 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
         }
     }
 
-    public function test_failed_buffered_reset_clears_pending_deletions_and_preserves_persisted_state(): void
+    #[DataProvider('bufferedResetFailures')]
+    public function test_failed_buffered_reset_clears_pending_deletions_and_preserves_persisted_state(string $stage): void
     {
         $fixture = $this->fixture('postgres');
         $projection = $fixture->bufferedProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $fixture->runner->ensureInitialized($runtime);
-        $projection->failAt = 'reset';
+        $fixture->runner->splitSegment('buffered_projection', 0);
+        $projection->failAt = $stage;
         try {
             $fixture->runner->deleteProjection($runtime);
             static::fail('Expected reset failure.');
         } catch (\RuntimeException $exception) {
-            static::assertSame('Failed reset.', $exception->getMessage());
+            static::assertSame('Failed ' . $stage . '.', $exception->getMessage());
             static::assertFalse($projection->hasPendingChanges());
         }
-        static::assertCount(1, $fixture->runner->listSegments('buffered_projection'));
+        static::assertCount(2, $fixture->runner->listSegments('buffered_projection'));
         foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
             static::assertSame(1, (int) $fixture->connection->fetchOne('SELECT COUNT(*) FROM ' . $table));
         }
@@ -114,6 +116,13 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
             static::assertSame(0, (int) $fixture->connection->fetchOne('SELECT COUNT(*) FROM ' . $table));
         }
         static::assertFalse($projection->hasPendingChanges());
+    }
+
+    /** @return iterable<string, array{string}> */
+    public static function bufferedResetFailures(): iterable
+    {
+        yield 'during reset preparation' => ['reset'];
+        yield 'after the first row-set flush' => ['reset flush'];
     }
 
     public static function lifecycleFailures(): iterable

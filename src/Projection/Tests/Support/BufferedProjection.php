@@ -69,6 +69,7 @@ final class BufferedProjection implements UnitOfWork
     public function flush(): void
     {
         $this->courses->flush();
+        $this->failIf('reset flush');
         $this->index->flush();
     }
 

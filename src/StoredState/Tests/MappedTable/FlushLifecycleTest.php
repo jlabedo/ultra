@@ -46,7 +46,7 @@ final class FlushLifecycleTest extends RowSetTestCase
         static::assertSame(['status' => 'first'], $snapshot->rowUpdates[0]->setColumns);
         static::assertSame(
             ['first', 'second'],
-            array_map(static fn($key) => $key->value('id'), $snapshot->retainedRowKeys),
+            array_map(static fn($key) => $key->value('id'), $snapshot->memberships[0]->retainedRowKeys),
         );
         static::assertFalse($rows->hasPendingChanges());
     }

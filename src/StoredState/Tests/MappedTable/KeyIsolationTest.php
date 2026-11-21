@@ -15,7 +15,7 @@ use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 
 /** @internal */
 #[CoversNamespace('Ultra\MappedTable')]
-final class KeyAndScopeIsolationTest extends RowSetTestCase
+final class KeyIsolationTest extends RowSetTestCase
 {
     /** @return iterable<string, array{string, string}> */
     public static function singleColumnAddresses(): iterable
@@ -56,65 +56,59 @@ final class KeyAndScopeIsolationTest extends RowSetTestCase
     }
 
     #[DataProvider('backends')]
-    public function test_composite_keys_and_scoped_shortcuts_keep_colliding_ids_independent(string $backend): void
+    public function test_composite_keys_keep_colliding_item_ids_independent(string $backend): void
     {
-        $fixture = $this->fixture($backend, ['owner', 'env', 'id']);
-        $one = $fixture->view(new MappedKey(['owner' => self::stringable('one'), 'env' => 'prod']));
-        $two = $fixture->view(new MappedKey(['owner' => 'two', 'env' => 'prod']));
-        $dev = $fixture->view(new MappedKey(['owner' => 'one', 'env' => 'dev']));
-        foreach ([$one, $two, $dev] as $index => $rows) {
+        [$fixture, $rows] = $this->ownedRows($backend);
+        $one = ['owner' => self::stringable('one'), 'tenant' => 'prod'];
+        $two = ['owner' => 'two', 'tenant' => 'prod'];
+        $dev = ['owner' => 'one', 'tenant' => 'dev'];
+        foreach ([$one, $two, $dev] as $index => $owner) {
+            $item = [...$owner, 'id' => self::stringable('same')];
             $rows
-                ->withKey(self::stringable('same'))
+                ->withKey($item)
                 ->insert()
                 ->setColumn('status', 'value-' . $index);
-            $fixture->flush($rows);
-            $rows->clear();
         }
-        $key = new MappedKey(['id' => self::stringable('same'), 'env' => 'prod', 'owner' => 'one']);
-        static::assertSame(['env' => 'prod', 'id' => 'same', 'owner' => 'one'], $key->values);
-        static::assertTrue($key->matches(['env' => 'prod', 'owner' => 'one']));
-        static::assertEquals($key, new MappedKey(['env' => 'prod'])->mergedWith(['id' => 'same', 'owner' => 'one']));
-        static::assertSame(['status' => 'value-0'], $fixture->rows->withKey($key->values)->get(['status']));
-        static::assertSame($key->values, $one->withKey($key->values)->get([]));
-        static::assertSame($key->values, $one->rows(['status'])[0]->key->values);
-        static::assertCount(1, $one->rows());
-        $one->expectSameRowKeys([self::stringable('same')]);
-        $one->withKey('same')->setColumn('status', 'updated');
-        $fixture->flush($one);
-        $one->clear();
-        static::assertSame(['status' => 'updated'], $one->withKey(self::stringable('same'))->get(['status']));
-        static::assertSame(['status' => 'value-1'], $two->withKey('same')->get(['status']));
-        static::assertSame(['status' => 'value-2'], $dev->withKey('same')->get(['status']));
-        $one->withKey('same')->delete();
-        $fixture->flush($one);
-        $one->clear();
-        static::assertNull($one->withKey('same')->get());
-        static::assertNotNull($two->withKey('same')->get());
-        static::assertNotNull($dev->withKey('same')->get());
+        $fixture->flush($rows);
+
+        $key = new MappedKey([...$one, 'id' => self::stringable('same')]);
+        static::assertSame(['id' => 'same', 'owner' => 'one', 'tenant' => 'prod'], $key->values);
+        static::assertTrue($key->matches($one));
+        static::assertEquals($key, new MappedKey($one)->mergedWith(['id' => 'same']));
+        static::assertSame($key->values, $rows->withKey($key->values)->get([]));
+        static::assertEquals([$key], $rows->observeKeysForOwner($one));
+        $rows->withKey($key)->setColumn('status', 'updated');
+        $fixture->flush($rows);
+
+        static::assertSame(['status' => 'updated'], $rows->withKey($key)->get(['status']));
+        $rows->withKey($key)->delete();
+        $fixture->flush($rows);
+        static::assertNull($rows->withKey($key)->get());
+        static::assertSame(['status' => 'value-1'], $rows->withKey([...$two, 'id' => 'same'])->get(['status']));
+        static::assertSame(['status' => 'value-2'], $rows->withKey([...$dev, 'id' => 'same'])->get(['status']));
     }
 
     /** @return iterable<string, array{string}> */
     public static function invalidAddresses(): iterable
     {
-        yield 'scalar for multiple unbound columns' => ['scalar'];
+        yield 'scalar for a composite key' => ['scalar'];
         yield 'missing key column' => ['missing'];
-        yield 'key outside scope' => ['outside'];
         yield 'positional key array' => ['positional'];
-        yield 'associative key outside scope' => ['associative outside'];
+        yield 'associative key outside the collection' => ['outside'];
     }
 
     #[DataProvider('invalidAddresses')]
-    public function test_keys_must_match_the_declared_columns_and_scope(string $case): void
+    public function test_addresses_must_match_the_declared_key_or_owner(string $case): void
     {
-        $fixture = $this->fixture(keyColumns: ['owner', 'id']);
-        $rows = $fixture->view(new MappedKey(['owner' => 'one']));
+        [, $rows] = $this->ownedRows('memory');
+        $owner = ['tenant' => 'prod', 'owner' => 'one'];
+        $outside = ['tenant' => 'prod', 'owner' => 'two', 'id' => 'same'];
         $this->expectException(\InvalidArgumentException::class);
         match ($case) {
-            'scalar' => $fixture->rows->withKey('id')->get(),
-            'missing' => $rows->withKey(new MappedKey(['id' => 'id']))->get(),
-            'outside' => $rows->withKey(new MappedKey(['owner' => 'two', 'id' => 'id']))->get(),
-            'positional' => $rows->withKey(['one', 'id']),
-            'associative outside' => $rows->withKey(['owner' => 'two', 'id' => 'id']),
+            'scalar' => $rows->withKey('same'),
+            'missing' => $rows->withKey(new MappedKey(['id' => 'same'])),
+            'positional' => $rows->withKey(['prod', 'one', 'same']),
+            'outside' => $rows->expectSameRowKeysForOwner($owner, [$outside]),
         };
     }
 

@@ -100,10 +100,12 @@ row set can belong to only one coordinator. Call the coordinator through the run
 the caller's transaction. Pending plans must use one active connection or in-memory transaction.
 
 For each flush, the coordinator takes a snapshot of every pending plan, validates the combined plan and
-asks all relevant adapters to check membership and check-only row expectations. The adapters keep their
-intrinsic locks and enforce update and delete predicates in the writes. Then the coordinator executes
-explicit deletes and reconciliation cleanup in child-before-parent order, followed by inserts, updates and
-upserts in parent-before-child order. Within each row set, explicit deletes precede its cleanup so they can
+acquires the query guards before replaying observed queries. Standalone and coordinated flush use the same
+execution phases.
+First the adapters check membership and check-only row expectations. The adapters keep their intrinsic
+locks and enforce update and delete predicates in the writes. Explicit deletes and reconciliation cleanup
+run in child-before-parent order, followed by inserts, updates and upserts in parent-before-child order.
+Within each row set, explicit deletes precede its cleanup so they can
 still validate their conditional predicates. An empty reconciliation executes a cleanup even when no child row
 is buffered.
 
@@ -115,13 +117,12 @@ on mutable columns are outside this model.
 
 A successful flush consumes all applied plans together. A later rollback undoes durable changes. If the flush
 fails partway, the caller rolls back and clears the pending buffers. The transactional runner handles both.
-For low-level standalone row sets without a coordinator, adapters check membership, apply their own row
-mutations and then clean up reconciliations within the caller's transaction.
+A standalone flush applies one plan. The caller provides the transaction when required.
 
 ## Reading and observing rows
 
 `withKey()` addresses one row. It prepares no work until a caller registers an expectation or a mutation.
-Use a scalar `int`, `string` or `Stringable` when exactly one key column remains unbound. Associative
+Use a scalar `int`, `string` or `Stringable` for a single-column key. Associative
 arrays and `MappedKey` objects supply the complete key by column name. Their values can be integers,
 strings or `Stringable` objects. A `MappedRow` accepts an associative key when constructed and exposes
 its normalized key as a `MappedKey`.
@@ -147,7 +148,7 @@ Use a fresh handle after the buffer is flushed or cleared.
 
 ## Standalone adapter API
 
-Direct construction without a mapping also supports adapters with a fixed scope.
+Construct a standalone row set with its table adapter. Pass a mapping to declare columns and owner keys.
 
 ```php
 use Ultra\MappedTable\InMemoryMappedRowSetAdapter;
@@ -167,12 +168,16 @@ $table->withKey('user-1')
 Without a prior absence expectation, the row must still exist at flush. Deleting an expected-absent row only
 checks absence; a buffered insertion for that key is cancelled, and a competing creation still causes a conflict.
 
-`rows(...)` returns a list of `MappedRow` objects containing a structured `MappedKey` and the projected columns. It overlays buffered mutations. `expectSameRowKeys(...)` buffers an optimistic expectation that the row-key set has not changed before `flush()`.
+`rows(...)` returns a list of `MappedRow` objects containing a structured `MappedKey` and the projected columns.
+It overlays buffered mutations. A row set without owner columns supports whole-table membership operations.
+`expectSameRowKeys(...)` buffers an optimistic expectation that the table's row-key set has not changed before
+`flush()`. Row sets with owner columns use `expectSameRowKeysForOwner()` and `reconcileForOwner()`.
 
 `reconcileRows(iterable $rows)` accepts desired `MappedRow` values, upserts their supplied columns and deletes
-rows missing from that set within the adapter's scope at flush. Preparing reconciliation does not read storage.
+rows missing from that set across the table at flush. Preparing reconciliation does not read storage.
 The desired membership is reflected immediately in `withKey()->get()` and `rows()`, alongside buffered column changes.
-An empty set clears the scope; successive calls supersede earlier membership and discard writes to removed rows.
+An empty set clears the table at flush. Successive calls supersede earlier membership and discard writes to
+removed rows.
 Unspecified columns on retained rows and existing optimistic expectations are preserved. Repeated keys merge their supplied columns in input order, with the last supplied
 value winning. Reconciliation does not register new optimistic expectations. Without prior expectations, it
 imposes the saved membership, removing rows added to storage before the flush deletion. An earlier
@@ -202,10 +207,17 @@ rejected immediately. This also guards states whose mapping contains only their 
 Adapters implement `Ultra\MappedTable\MappedRowSetAdapter`:
 
 - `keyColumns()` supplies the complete physical row key
-- `scope()` supplies any bound key columns that limit this row-set view
 - `row(MappedKey $key, array $columns = [])` reads one row, optionally projecting columns
-- `rows(array $columns = [])` reads all rows as `MappedRow` values
-- `apply(RowSetUpdatePlan $plan)` receives optional row-set key expectations (plus the keys to leave out of that comparison) the sorted batch of immutable row plans and optional retained row keys; it checks the key expectations and the check-only plans against committed rows before applying the writes, then removes rows outside the retained set within its scope
+- `rows(array $columns = [], ?MappedKey $owner = null)` reads the table or one declared owner's collection as
+  `MappedRow` values
+- `activeTransactionResource()` returns the storage resource for coordinated flush and rejects an inactive transaction
+- `check(RowSetUpdatePlan $plan)` checks membership and check-only row expectations and takes intrinsic locks
+- `writeRows(array $writes)` executes the supplied operations with their write predicates
+- `deleteExcludedRows(RowSetUpdatePlan $plan)` removes rows outside the retained membership of each reconciliation
+
+The immutable flush plan contains sorted row operations and membership entries. Each membership entry carries
+its owner key (or `null` for the whole table), the expected and ignored keys, and the final retained keys
+when reconciliation was requested. An empty retained set removes all rows covered by the entry.
 
 `flush()` consumes applied row plans, checked expectations and membership reconciliation after success, following
 the [unit-of-work contract](../transactions/README.md#core-contract). Later reads use storage without the consumed
@@ -220,7 +232,7 @@ For locally constructed projection row sets, see the
 
 `MappedTablePolicy` defines the operations a table supports, independently of its storage backend.
 Both included adapters accept a `policy`; their factories accept `tablePolicies`, keyed by table name,
-and apply each policy to both `create()` and `createScoped()`. Unspecified tables use the default policy,
+and apply each policy to standalone and compiled row sets. Unspecified tables use the default policy,
 which allows check-only absence observations.
 
 ```php
@@ -236,14 +248,14 @@ $memoryFactory = new InMemoryMappedRowSetAdapterFactory($database, tablePolicies
 ```
 
 Only the adapters receive the policy. `MappedRowSet` buffers expectations and mutations, and `updatePlan()`
-remains an inspectable snapshot without lock instructions or policy validation. At `apply()`, both adapters
+remains an inspectable snapshot without lock instructions or policy validation. At `check()`, both adapters
 validate the final plan through the policy before checking storage or applying writes. When absence observations
 are disabled, a check-only absence plan throws `LogicException`. `expectAbsent()->insert()` remains allowed;
 `expectAbsent()->insert()->delete()` becomes a check-only absence plan and is rejected. Contradictions with
 buffered operations or expectations can still fail immediately when registered.
 
-All adapters accessing the same physical table must use the same policy, including scoped views and other
-processes. An adapter's concurrency protocol relies on every writer participating when absence observations
+All adapters accessing the same physical table must use the same policy across processes. An adapter's
+concurrency protocol relies on every writer participating when absence observations
 are allowed. The policy is configured by the application; factories do not coordinate independent configurations.
 Each backend owns the mechanisms needed to enforce the permitted expectations and writes.
 
@@ -327,11 +339,11 @@ same scenario exercises the in-memory and Postgres adapters, including their fac
 | Reads expose the unit-of-work view without changing storage | [BufferedViewTest](../../src/StoredState/Tests/MappedTable/BufferedViewTest.php) | Committed projections and structured rows, shared owner and direct overlays, check-only observations. |
 | Writes have distinct insert, update, upsert, replacement and deletion semantics | [WriteSemanticsTest](../../src/StoredState/Tests/MappedTable/WriteSemanticsTest.php) | Preservation of unspecified values, conflicts, multiple deletions, replacement expectations, cancellation and merging. |
 | Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/StoredState/Tests/MappedTable/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, final-plan table policies, concurrent insertions/deletions and first-expectation retention. |
-| Saved membership supersedes earlier membership for its owner or fixed adapter scope | [MembershipReconciliationTest](../../src/StoredState/Tests/MappedTable/MembershipReconciliationTest.php) | Late rows, empty and successive sets, duplicate keys, retained columns, earlier expectations and later explicit operations. |
-| Declared query guards protect decisions against affected coordinated writes | [QueryGuardTest](../../src/StoredState/Tests/MappedTable/QueryGuardTest.php) | Direct writes, scope moves, empty reconciliations, consolidation, strict replay and PostgreSQL participation. |
+| Saved membership supersedes earlier membership for its owner or the whole table | [MembershipReconciliationTest](../../src/StoredState/Tests/MappedTable/MembershipReconciliationTest.php) | Late rows, empty and successive sets, duplicate keys, retained columns, earlier expectations and later explicit operations. |
+| Declared query guards protect decisions against affected coordinated writes | [QueryGuardTest](../../src/StoredState/Tests/MappedTable/QueryGuardTest.php) | Direct writes, changing guard values, empty reconciliations, consolidation, strict replay and PostgreSQL participation. |
 | Coordinated flush orders explicit child deletions and parent creation atomically | [FlushCoordinationTest](../../src/StoredState/Tests/MappedTable/FlushCoordinationTest.php) | Composite owner keys, immediate foreign keys, checks before writes, rollback and reuse, one active transaction. |
 | Preparation, flush, clear and transactions retain their separate responsibilities | [FlushLifecycleTest](../../src/StoredState/Tests/MappedTable/FlushLifecycleTest.php) | Preparation without I/O, sorted immutable snapshots, check-only writes, successive flushes consuming completed work, complete cleanup, external rollback and in-memory transaction snapshots. |
-| Keys and scopes address independent rows | [KeyAndScopeIsolationTest](../../src/StoredState/Tests/MappedTable/KeyAndScopeIsolationTest.php) | Composite keys, scalar and Stringable shortcuts, colliding IDs, multiple scope columns and invalid addresses. |
+| Complete keys and owner keys address independent rows and collections | [KeyIsolationTest](../../src/StoredState/Tests/MappedTable/KeyIsolationTest.php) | Composite keys, scalar and Stringable shortcuts, colliding IDs and invalid addresses. |
 | Persisted column values survive encoding and decoding | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | Text/UUID/integer arrays, escaping and nulls, JSON, dates, booleans, single and multiple writes and optimistic typed comparisons. |
 | Persistence observations hold competing writers until their transaction ends | [PersistenceLockingTest](../../src/StoredState/Tests/MappedTable/PersistenceLockingTest.php) | Two real Postgres connections, present/absent checks, insert/upsert/update contention, release, transaction requirements and table-wide absence protection. |
 | Standalone inspection preserves pending plans and distinguishes actual SQL, failures and fixture work | [SqlInspectionTest](../../src/StoredState/Tests/MappedTable/SqlInspectionTest.php) | Merged batches, reads before transactions, checks without writes, executed prefixes, rollback, setup/work failures, cleanup, repeated runs and CLI status. |

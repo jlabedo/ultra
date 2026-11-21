@@ -28,11 +28,11 @@ final readonly class QueryGuardRule
                 yield ['value' => $value, 'key' => $row->key];
             }
         }
-        foreach ($plan->ownerCollections as $collection) {
-            if (null === $collection->retainedRowKeys) {
+        foreach ($plan->memberships as $membership) {
+            if (null === $membership->retainedRowKeys) {
                 continue;
             }
-            if (!$this->valueInOwner) {
+            if (null === $membership->owner || !$this->valueInOwner) {
                 throw new \LogicException(sprintf(
                     'Query guard "%s" requires reconciliation to fix its value column "%s" in the owner key.',
                     $this->name,
@@ -40,7 +40,7 @@ final readonly class QueryGuardRule
                 ));
             }
 
-            yield ['value' => (string) $collection->owner->value($this->valueColumn), 'key' => $collection->owner];
+            yield ['value' => (string) $membership->owner->value($this->valueColumn), 'key' => $membership->owner];
         }
     }
 

@@ -11,7 +11,6 @@ use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\OwnerMappedRowSetAdapter;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
 use Ultra\MappedTable\QueryGuardDefinition;
@@ -179,9 +178,7 @@ final class StateStoreFixture
             ? new PostgresMappedRowSetAdapterFactory($this->storage)
             : new InMemoryMappedRowSetAdapterFactory($this->storage);
         $adapter = $factory->create($collection->tableName, $collection->keyColumns());
-        assert($adapter instanceof OwnerMappedRowSetAdapter, 'Fixture adapters support owner collections.');
-
-        return $adapter->rowsForOwner($collection->ownerKey($normalizedId));
+        return $adapter->rows(owner: $collection->ownerKey($normalizedId));
     }
 
     public function close(): void

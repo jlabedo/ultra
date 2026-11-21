@@ -10,21 +10,35 @@ use Doctrine\DBAL\ParameterType;
 use Ultra\Coordination\Refresh\RefreshStep;
 use Ultra\Coordination\Refresh\RefreshWorker;
 use Ultra\Coordination\Tracking\PendingKey;
+use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetAdapter;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
+use Ultra\MappedTable\MappedRowSetMapping;
 
 final readonly class EligibilityRefresh
 {
-    private const array RESULT_KEY = ['account_id', 'subject_id', 'qualification_id'];
+    private MappedRowSetMapping $resultMapping;
+
+    private MappedRowSetAdapter $resultAdapter;
 
     public function __construct(
         private Connection $connection,
         private ReferenceQueries $reference,
         private RefreshWorker $worker,
-        private MappedRowSetAdapterFactory $adapters,
-    ) {}
+        MappedRowSetAdapterFactory $adapters,
+    ) {
+        $key = ['account_id', 'subject_id', 'qualification_id'];
+        $this->resultMapping = new MappedRowSetMapping(
+            'compliance_eligibility',
+            array_fill_keys($key, new MappedColumn('string')),
+            $key,
+            ownerColumns: ['account_id', 'subject_id'],
+        );
+        $this->resultAdapter = $adapters->create($this->resultMapping->table, $this->resultMapping->keyColumns);
+    }
 
     public function run(string $account, int $maxSteps, int $subjectBatchSize): int
     {
@@ -48,11 +62,11 @@ final readonly class EligibilityRefresh
 
     private function subject(string $account, string $subject, int $counter): RefreshStep
     {
-        $scope = ['account_id' => $account, 'subject_id' => $subject];
-        $rows = $this->results($scope);
-        $rows->reconcileRows(array_map(
+        $owner = ['account_id' => $account, 'subject_id' => $subject];
+        $rows = $this->results();
+        $rows->reconcileForOwner($owner, array_map(
             static fn(string $qualification): MappedRow => new MappedRow(new MappedKey([
-                ...$scope,
+                ...$owner,
                 'qualification_id' => $qualification,
             ]), []),
             $this->reference->qualifications($account, $subject),
@@ -67,7 +81,6 @@ final readonly class EligibilityRefresh
         int $counter,
         int $subjectBatchSize,
     ): RefreshStep {
-        $scope = ['account_id' => $account, 'qualification_id' => $qualification];
         $progress = $this->connection->fetchAssociative(
             'SELECT after_subject, observed_counter FROM compliance_qualification_refresh
              WHERE account_id = ? AND qualification_id = ?',
@@ -86,12 +99,16 @@ final readonly class EligibilityRefresh
         if (!$finished) {
             array_pop($page);
         }
-        $rows = $this->results($scope);
+        $rows = $this->results();
         foreach ($page as $candidate) {
             if ($candidate['eligible'] === $candidate['materialized']) {
                 continue;
             }
-            $row = $rows->withKey($candidate['subject_id']);
+            $row = $rows->withKey([
+                'account_id' => $account,
+                'subject_id' => $candidate['subject_id'],
+                'qualification_id' => $qualification,
+            ]);
             if ($candidate['eligible']) {
                 $row->insert();
             } else {
@@ -117,13 +134,8 @@ final readonly class EligibilityRefresh
         );
     }
 
-    /** @param array<string, string> $scope */
-    private function results(array $scope): MappedRowSet
+    private function results(): MappedRowSet
     {
-        return new MappedRowSet($this->adapters->createScoped(
-            'compliance_eligibility',
-            self::RESULT_KEY,
-            new MappedKey($scope),
-        ));
+        return new MappedRowSet($this->resultAdapter, $this->resultMapping);
     }
 }

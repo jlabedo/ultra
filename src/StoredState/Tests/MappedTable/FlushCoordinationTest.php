@@ -115,6 +115,34 @@ final class FlushCoordinationTest extends RowSetTestCase
         }
     }
 
+    #[DataProvider('backends')]
+    public function test_whole_table_reconciliation_respects_child_dependencies(string $backend): void
+    {
+        [$parent, $child, $orders, $lines, $flush] = $this->tables($backend);
+        $order = new MappedKey(['tenant' => 'one', 'id' => 'old']);
+        $owner = ['order_tenant' => 'one', 'order_id' => 'old'];
+        $line = new MappedKey([...$owner, 'id' => 'line']);
+        $parent->seed($order->values);
+        $child->seed($line->values);
+        $orders->reconcileRows([]);
+        $lines->reconcileForOwner($owner, [new MappedRow($line, [])]);
+
+        try {
+            $parent->flush($flush);
+            static::fail('The planned child requires its parent.');
+        } catch (\LogicException $exception) {
+            static::assertStringContainsString('leaves its parent', $exception->getMessage());
+            static::assertNotFalse($parent->stored($order));
+            static::assertNotFalse($child->stored($line));
+        }
+
+        $lines->reconcileForOwner($owner, []);
+        $parent->flush($flush);
+        static::assertFalse($parent->stored($order));
+        static::assertFalse($child->stored($line));
+        static::assertFalse($flush->hasPendingChanges());
+    }
+
     public function test_membership_checks_precede_every_table_write(): void
     {
         [$parent, $child, $orders, $lines, $flush] = $this->tables('memory');

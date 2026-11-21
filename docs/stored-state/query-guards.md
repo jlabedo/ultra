@@ -62,7 +62,8 @@ such a value is rejected. An explicit insert must supply the value.
 
 Reconciliation, including a request to retain zero items, participates even when it has zero row mutations.
 The owner key must provide the guard value for every dependency affected by that reconciliation. A column
-outside the owner key is usable for direct row writes, with reconciliation rejected for that dependency.
+outside the owner key is usable for direct row writes. A guarded row set rejects whole-table reconciliation
+because the plan cannot identify all guard values it would change.
 An observation of membership alone does not request a writer guard.
 
 Call `$guard->observe($value, $query)` before preparing writes affecting that value. It rejects conflicting

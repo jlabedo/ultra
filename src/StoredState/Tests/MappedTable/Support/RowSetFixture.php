@@ -31,7 +31,6 @@ final class RowSetFixture
         public readonly Connection|InMemoryRowDatabase $storage,
         public readonly string $tableName,
         private readonly array $keyColumns = ['id'],
-        ?MappedKey $scope = null,
         private readonly array $columnTypes = [],
         bool $allowAbsentObservations = true,
     ) {
@@ -72,16 +71,12 @@ final class RowSetFixture
         } else {
             $this->factory = new InMemoryMappedRowSetAdapterFactory($storage, $tablePolicies);
         }
-        $this->rows = $this->view($scope);
+        $this->rows = $this->view();
     }
 
-    public function view(?MappedKey $scope = null): MappedRowSet
+    public function view(): MappedRowSet
     {
-        return new MappedRowSet(
-            null === $scope
-                ? $this->factory->create($this->tableName, $this->keyColumns)
-                : $this->factory->createScoped($this->tableName, $this->keyColumns, $scope),
-        );
+        return new MappedRowSet($this->factory->create($this->tableName, $this->keyColumns));
     }
 
     public function defined(MappedRowSetMapping $mapping): MappedRowSet

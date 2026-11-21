@@ -32,13 +32,19 @@ final class TextReport
                 static fn(MappedKey $key): array => $key->values,
                 $values,
             );
-            $lines[] =
-                '  Expected row keys: '
-                . (null === $plan->expectedRowKeys ? 'none' : self::value($keys($plan->expectedRowKeys)));
-            $lines[] = '  Ignored row keys: ' . self::value($keys($plan->ignoredRowKeys));
-            $lines[] =
-                '  Retained row keys: '
-                . (null === $plan->retainedRowKeys ? 'unchanged' : self::value($keys($plan->retainedRowKeys)));
+            foreach ($plan->memberships as $membership) {
+                $owner = null === $membership->owner ? 'whole table' : self::value($membership->owner->values);
+                $expected = null === $membership->expectedRowKeys
+                    ? 'none'
+                    : self::value($keys($membership->expectedRowKeys));
+                $retained = null === $membership->retainedRowKeys
+                    ? 'unchanged'
+                    : self::value($keys($membership->retainedRowKeys));
+                $lines[] = '  Membership: ' . $owner;
+                $lines[] = '    Expected row keys: ' . $expected;
+                $lines[] = '    Ignored row keys: ' . self::value($keys($membership->ignoredRowKeys));
+                $lines[] = '    Retained row keys: ' . $retained;
+            }
         }
 
         $lines[] = '';

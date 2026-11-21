@@ -16,46 +16,47 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 final class MembershipReconciliationTest extends RowSetTestCase
 {
     #[DataProvider('backends')]
-    public function test_saved_membership_preserves_other_scopes_and_unspecified_columns_and_removes_late_rows(string $backend): void
+    public function test_saved_membership_preserves_other_owners_and_unspecified_columns_and_removes_late_rows(string $backend): void
     {
-        $fixture = $this->fixture($backend, ['owner', 'id'], new MappedKey(['owner' => 'one']));
-        $fixture->seed(['owner' => 'one', 'id' => 'keep', 'status' => 'old', 'note' => 'preserved']);
-        $fixture->seed(['owner' => 'one', 'id' => 'remove']);
-        $fixture->seed(['owner' => 'two', 'id' => 'keep', 'status' => 'outside']);
-        $rows = $fixture->rows;
-        $keep = new MappedKey(['owner' => 'one', 'id' => 'keep']);
-        $added = new MappedKey(['owner' => 'one', 'id' => 'added']);
-        $rows->reconcileRows([
+        [$fixture, $rows] = $this->ownedRows($backend);
+        $owner = ['tenant' => 'tenant', 'owner' => 'one'];
+        $keep = new MappedKey([...$owner, 'id' => 'keep']);
+        $added = new MappedKey([...$owner, 'id' => 'added']);
+        $removed = new MappedKey([...$owner, 'id' => 'remove']);
+        $late = new MappedKey([...$owner, 'id' => 'late']);
+        $outside = new MappedKey(['tenant' => 'tenant', 'owner' => 'two', 'id' => 'keep']);
+        $fixture->seed([...$keep->values, 'status' => 'old', 'note' => 'preserved']);
+        $fixture->seed($removed->values);
+        $fixture->seed([...$outside->values, 'status' => 'outside']);
+        $rows->reconcileForOwner($owner, [
             new MappedRow($keep, ['status' => 'updated']),
             new MappedRow($added, ['status' => 'new']),
         ]);
-        $fixture->seed(['owner' => 'one', 'id' => 'late']);
+        $fixture->seed($late->values);
         static::assertSame(
             ['status' => 'updated', 'note' => 'preserved'],
-            $rows->withKey('keep')->get(['status', 'note']),
+            $rows->withKey($keep)->get(['status', 'note']),
         );
-        static::assertNull($rows->withKey('remove')->get());
-        static::assertNull($rows->withKey('late')->get());
-        static::assertSame(['added', 'keep'], array_map(static fn($row) => $row->key->value('id'), $rows->rows()));
+        static::assertNull($rows->withKey($removed)->get());
+        static::assertNull($rows->withKey($late)->get());
+        static::assertSame(
+            ['added', 'keep'],
+            array_map(static fn(MappedRow $row) => $row->key->value('id'), $rows->rowsForOwner($owner)),
+        );
         static::assertSame(['status' => 'old'], $fixture->stored($keep, ['status']));
-        $fixture->flush();
-        $rows->clear();
-        static::assertCount(2, $rows->rows());
+        $fixture->flush($rows);
+        static::assertCount(2, $rows->rowsForOwner($owner));
         static::assertSame(
             ['status' => 'updated', 'note' => 'preserved'],
-            $rows->withKey('keep')->get(['status', 'note']),
+            $rows->withKey($keep)->get(['status', 'note']),
         );
-        static::assertSame(['status' => 'new'], $rows->withKey('added')->get(['status']));
-        static::assertSame(
-            ['status' => 'outside'],
-            $fixture->stored(new MappedKey(['owner' => 'two', 'id' => 'keep']), ['status']),
-        );
+        static::assertSame(['status' => 'new'], $rows->withKey($added)->get(['status']));
+        static::assertSame(['status' => 'outside'], $fixture->stored($outside, ['status']));
 
-        $rows->reconcileRows([]);
-        $fixture->flush();
-        $rows->clear();
-        static::assertSame([], $rows->rows());
-        static::assertNotFalse($fixture->stored(new MappedKey(['owner' => 'two', 'id' => 'keep'])));
+        $rows->reconcileForOwner($owner, []);
+        $fixture->flush($rows);
+        static::assertSame([], $rows->rowsForOwner($owner));
+        static::assertNotFalse($fixture->stored($outside));
     }
 
     public function test_successive_memberships_supersede_writes_and_duplicate_keys_merge_in_input_order(): void
@@ -213,9 +214,9 @@ final class MembershipReconciliationTest extends RowSetTestCase
         $fixture->seed([...$one->values, 'id' => 'late', 'status' => 'late']);
 
         $plan = $rows->updatePlan();
-        static::assertSame([], $plan->ownerCollections[0]->retainedRowKeys);
-        static::assertSame([$twoLine], $plan->ownerCollections[1]->retainedRowKeys);
-        static::assertNull($plan->ownerCollections[0]->expectedRowKeys);
+        static::assertSame([], $plan->memberships[0]->retainedRowKeys);
+        static::assertSame([$twoLine], $plan->memberships[1]->retainedRowKeys);
+        static::assertNull($plan->memberships[0]->expectedRowKeys);
         static::assertSame([], $rows->rowsForOwner($one));
         $fixture->flush($rows);
         static::assertSame([], $rows->rowsForOwner($one));

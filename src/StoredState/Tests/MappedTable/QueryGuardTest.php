@@ -157,6 +157,21 @@ final class QueryGuardTest extends RowSetTestCase
         }
     }
 
+    public function test_whole_table_reconciliation_without_a_guard_value_is_rejected(): void
+    {
+        [$fixture, $rows, $unit] = $this->bookings();
+        $fixture->seed(['id' => 'booking', 'status' => '10']);
+        $rows->reconcileRows([]);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('requires reconciliation to fix its value column');
+        try {
+            $fixture->flush($unit);
+        } finally {
+            static::assertSame(['status' => '10'], $fixture->stored('booking', ['status']));
+        }
+    }
+
     public function test_failed_replay_leaves_writes_unapplied_and_clear_discards_the_observation(): void
     {
         [$root, $rows, $unit] = $this->bookings();
