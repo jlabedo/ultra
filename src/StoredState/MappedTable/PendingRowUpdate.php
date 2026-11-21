@@ -14,7 +14,7 @@ final readonly class PendingRowUpdate
     public function __construct(
         private BufferedRowUpdate $update,
         private string $tableName = 'mapped row set',
-        private ?MappedRowSetMapping $mapping = null,
+        private ?MappedRowSetMetadata $mapping = null,
     ) {}
 
     public function insert(): self

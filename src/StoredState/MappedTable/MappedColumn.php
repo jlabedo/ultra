@@ -9,11 +9,7 @@ final readonly class MappedColumn
     public function __construct(
         public string $type,
         public bool $nullable = false,
-    ) {
-        if (!in_array($type, ['int', 'string', 'bool', 'float', 'array'], true)) {
-            throw new \InvalidArgumentException('Unsupported mapped column type "' . $type . '".');
-        }
-    }
+    ) {}
 
     public function accepts(mixed $value): bool
     {

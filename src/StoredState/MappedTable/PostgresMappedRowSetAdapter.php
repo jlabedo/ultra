@@ -7,8 +7,11 @@ namespace Ultra\MappedTable;
 use Doctrine\DBAL\Connection;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAdapter
+final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAdapter, CoordinatedMappedRowSetAdapter
 {
+    /** @var list<string> */
+    private array $keyColumns;
+
     /**
      * @param list<string>                                $configuredKeyColumns
      * @param array<string, PostgresMappedColumnType>     $columnTypes
@@ -16,11 +19,18 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
     public function __construct(
         private Connection $connection,
         private string $tableName,
-        private array $configuredKeyColumns = ['id'],
+        array $configuredKeyColumns = ['id'],
         private array $columnTypes = [],
         private ?MappedKey $configuredScope = null,
         private MappedTablePolicy $policy = new MappedTablePolicy(),
+        private ?PostgresMappedRowSetSql $sql = null,
     ) {
+        if (null !== $sql) {
+            $this->keyColumns = $configuredKeyColumns;
+
+            return;
+        }
+
         if (
             [] === $configuredKeyColumns
             || count($configuredKeyColumns) !== count(array_unique($configuredKeyColumns))
@@ -35,14 +45,13 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         if (null !== $configuredScope && [] !== array_diff($configuredScope->columns(), $configuredKeyColumns)) {
             throw new \InvalidArgumentException('Mapped row-set scope columns must belong to its key.');
         }
+        sort($configuredKeyColumns, SORT_STRING);
+        $this->keyColumns = $configuredKeyColumns;
     }
 
     public function keyColumns(): array
     {
-        $columns = $this->configuredKeyColumns;
-        sort($columns, SORT_STRING);
-
-        return $columns;
+        return $this->keyColumns;
     }
 
     public function scope(): ?MappedKey
@@ -53,17 +62,14 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
     public function row(MappedKey $key, array $columns = []): array|false
     {
         $this->assertKey($key);
-        $quotedColumns = [] === $columns
-            ? ['*']
-            : array_map($this->connection->quoteSingleIdentifier(...), array_values(array_unique($columns)));
+        $projection = match (true) {
+            [] === $columns => '*',
+            $columns === $this->sql?->columnNames => $this->sql->rowColumns,
+            default => implode(', ', array_map($this->quoteColumn(...), array_values(array_unique($columns)))),
+        };
 
         $row = $this->connection->fetchAssociative(
-            sprintf(
-                'SELECT %s FROM %s WHERE %s',
-                implode(', ', $quotedColumns),
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(' AND ', $this->keyWhereClauses()),
-            ),
+            sprintf('SELECT %s FROM %s WHERE %s', $projection, $this->quotedTable(), $this->keyPredicate()),
             $this->encodedKeyValues($key),
         );
 
@@ -86,16 +92,23 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
      */
     private function readRows(array $columns, ?MappedKey $scope): array
     {
-        $selected = [] === $columns ? ['*'] : array_values(array_unique([...$this->keyColumns(), ...$columns]));
-        $quoted = '*' === $selected[0] ? ['*'] : array_map($this->connection->quoteSingleIdentifier(...), $selected);
+        $projection = match (true) {
+            [] === $columns => '*',
+            $columns === $this->keyColumns => $this->conflictTargetSql(),
+            $columns === $this->sql?->nonKeyColumns => $this->sql->rowSetColumns,
+            default => implode(', ', array_map(
+                $this->quoteColumn(...),
+                array_values(array_unique([...$this->keyColumns, ...$columns])),
+            )),
+        };
 
         $rows = $this->connection->fetchAllAssociative(
             sprintf(
                 'SELECT %s FROM %s%s ORDER BY %s',
-                implode(', ', $quoted),
-                $this->connection->quoteSingleIdentifier($this->tableName),
+                $projection,
+                $this->quotedTable(),
                 $this->scopeWhereSql($scope),
-                implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $this->keyColumns())),
+                $this->conflictTargetSql(),
             ),
             $this->scopeParams($scope),
         );
@@ -128,6 +141,25 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
      */
     public function apply(RowSetUpdatePlan $plan): void
     {
+        $this->check($plan);
+        $this->writeRows(array_values(array_filter(
+            $plan->rowUpdates,
+            static fn(RowUpdatePlan $row): bool => $row->writes(),
+        )));
+        $this->deleteExcludedRows($plan);
+    }
+
+    public function activeTransactionResource(): object
+    {
+        if (!$this->connection->isTransactionActive()) {
+            throw new \LogicException('Coordinated mapped table flush requires an active transaction.');
+        }
+
+        return $this->connection;
+    }
+
+    public function check(RowSetUpdatePlan $plan): void
+    {
         $this->policy->assertSupported($plan, $this->tableName);
 
         $writes = [];
@@ -148,7 +180,10 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
             $this->assertExpectedRowKeys($collection->expectedRowKeys, $collection->ignoredRowKeys, $collection->owner);
         }
         $this->checkRows($checks);
+    }
 
+    public function writeRows(array $writes): void
+    {
         foreach ($this->groupConsecutive($writes) as $batch) {
             if (1 === count($batch)) {
                 $this->flushOne($batch[0]);
@@ -163,7 +198,10 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
                 default => array_map($this->flushOne(...), $batch),
             };
         }
+    }
 
+    public function deleteExcludedRows(RowSetUpdatePlan $plan): void
+    {
         $this->deleteRowsOutside($plan->retainedRowKeys);
         foreach ($plan->ownerCollections as $collection) {
             $this->deleteRowsOutside($collection->retainedRowKeys, $collection->owner);
@@ -183,7 +221,7 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         $retained = [];
         foreach ($keys as $key) {
             $this->assertKey($key);
-            $retained[] = '(' . implode(' AND ', $this->keyWhereClauses()) . ')';
+            $retained[] = '(' . $this->keyPredicate() . ')';
             array_push($params, ...$this->encodedKeyValues($key));
         }
         if ([] !== $retained) {
@@ -193,7 +231,7 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         $this->connection->executeStatement(
             sprintf(
                 'DELETE FROM %s%s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
+                $this->quotedTable(),
                 [] === $where ? '' : ' WHERE ' . implode(' AND ', $where),
             ),
             $params,
@@ -256,15 +294,11 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         $branches = [];
         $params = [];
         foreach ($updates as $update) {
-            $branches[] = '(' . implode(' AND ', $this->keyWhereClauses()) . ')';
+            $branches[] = '(' . $this->keyPredicate() . ')';
             array_push($params, ...$this->encodedKeyValues($update->key));
         }
         $affected = $this->connection->executeStatement(
-            sprintf(
-                'DELETE FROM %s WHERE %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(' OR ', $branches),
-            ),
+            sprintf('DELETE FROM %s WHERE %s', $this->quotedTable(), implode(' OR ', $branches)),
             $params,
         );
         if ($affected !== count($updates)) {
@@ -290,8 +324,8 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         $affected = $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO NOTHING',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
+                $this->quotedTable(),
+                implode(', ', array_map($this->quoteColumn(...), $columns)),
                 implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
                 $this->conflictTargetSql(),
             ),
@@ -325,17 +359,15 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         }
         $action = 'DO NOTHING';
         if ([] !== $updates[0]->setColumns) {
-            $action = 'DO UPDATE SET ' . implode(', ', array_map(function (string $column): string {
-                $quoted = $this->connection->quoteSingleIdentifier($column);
-
-                return sprintf('%1$s = EXCLUDED.%1$s', $quoted);
-            }, array_keys($updates[0]->setColumns)));
+            $action =
+                'DO UPDATE SET '
+                . implode(', ', array_map($this->conflictAssignment(...), array_keys($updates[0]->setColumns)));
         }
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
+                $this->quotedTable(),
+                implode(', ', array_map($this->quoteColumn(...), $columns)),
                 implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
                 $this->conflictTargetSql(),
                 $action,
@@ -395,7 +427,10 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         // jsonb_array_elements_text() yields the keys in array order, so the locks are taken in sorted order.
         $this->connection->executeQuery(
             'SELECT count(pg_advisory_xact_lock(hashtext(?), hashtext(lock_key))) FROM jsonb_array_elements_text(?::jsonb) AS locks(lock_key)',
-            [$this->tableName . ':row', json_encode($lockKeys, JSON_THROW_ON_ERROR)],
+            [
+                $this->sql->absentRowLockNamespace ?? $this->tableName . ':row',
+                json_encode($lockKeys, JSON_THROW_ON_ERROR),
+            ],
         );
     }
 
@@ -420,11 +455,7 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
                 array_push($params, ...$whereParams);
             }
             $matched = $this->connection->fetchAllAssociative(
-                sprintf(
-                    'SELECT 1 FROM %s WHERE %s FOR SHARE',
-                    $this->connection->quoteSingleIdentifier($this->tableName),
-                    implode(' OR ', $branches),
-                ),
+                sprintf('SELECT 1 FROM %s WHERE %s FOR SHARE', $this->quotedTable(), implode(' OR ', $branches)),
                 $params,
             );
             if (count($matched) !== count($present)) {
@@ -449,12 +480,8 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
             $existing = (int) $this->connection->fetchOne(
                 sprintf(
                     'SELECT count(*) FROM %s WHERE %s',
-                    $this->connection->quoteSingleIdentifier($this->tableName),
-                    implode(' OR ', array_fill(
-                        0,
-                        count($absent),
-                        '(' . implode(' AND ', $this->keyWhereClauses()) . ')',
-                    )),
+                    $this->quotedTable(),
+                    implode(' OR ', array_fill(0, count($absent), '(' . $this->keyPredicate() . ')')),
                 ),
                 $params,
             );
@@ -511,11 +538,7 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
     {
         [$where, $params] = $this->conditionalWhere($update);
         $affected = $this->connection->executeStatement(
-            sprintf(
-                'DELETE FROM %s WHERE %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(' AND ', $where),
-            ),
+            sprintf('DELETE FROM %s WHERE %s', $this->quotedTable(), implode(' AND ', $where)),
             $params,
         );
 
@@ -530,8 +553,8 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         $affected = $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns)),
+                $this->quotedTable(),
+                implode(', ', array_map($this->quoteColumn(...), $columns)),
                 implode(', ', array_map($this->placeholder(...), $columns)),
                 $this->conflictTargetSql(),
             ),
@@ -552,23 +575,19 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
     private function flushUpsert(RowUpdatePlan $update): void
     {
         [$columns, $params] = $this->insertValues($update);
-        $quotedColumns = implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $columns));
+        $quotedColumns = implode(', ', array_map($this->quoteColumn(...), $columns));
         $placeholders = implode(', ', array_map($this->placeholder(...), $columns));
 
         $action = 'DO NOTHING';
         if ([] !== $update->setColumns) {
-            $assignments = array_map(function (string $column): string {
-                $quoted = $this->connection->quoteSingleIdentifier($column);
-
-                return sprintf('%1$s = EXCLUDED.%1$s', $quoted);
-            }, array_keys($update->setColumns));
+            $assignments = array_map($this->conflictAssignment(...), array_keys($update->setColumns));
             $action = 'DO UPDATE SET ' . implode(', ', $assignments);
         }
 
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
+                $this->quotedTable(),
                 $quotedColumns,
                 $placeholders,
                 $this->conflictTargetSql(),
@@ -583,19 +602,14 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         $set = [];
         $params = [];
         foreach ($update->setColumns as $column => $value) {
-            $set[] = sprintf('%s = %s', $this->connection->quoteSingleIdentifier($column), $this->placeholder($column));
+            $set[] = $this->assignment($column);
             $params[] = $this->encodeColumnValue($column, $value);
         }
         [$where, $whereParams] = $this->conditionalWhere($update);
         array_push($params, ...$whereParams);
 
         $affected = $this->connection->executeStatement(
-            sprintf(
-                'UPDATE %s SET %s WHERE %s',
-                $this->connection->quoteSingleIdentifier($this->tableName),
-                implode(', ', $set),
-                implode(' AND ', $where),
-            ),
+            sprintf('UPDATE %s SET %s WHERE %s', $this->quotedTable(), implode(', ', $set), implode(' AND ', $where)),
             $params,
         );
 
@@ -610,11 +624,9 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         $where = $this->keyWhereClauses();
         $params = $this->encodedKeyValues($update->key);
         foreach ($update->expectedColumns as $column => $value) {
-            $where[] = sprintf(
-                '%s IS NOT DISTINCT FROM %s',
-                $this->connection->quoteSingleIdentifier($column),
-                $this->placeholder($column),
-            );
+            $where[] =
+                $this->sql->columns[$column]['compare']
+                ?? $this->quoteColumn($column) . ' IS NOT DISTINCT FROM ' . $this->placeholder($column);
             $params[] = $this->encodeColumnValue($column, $value);
         }
 
@@ -634,14 +646,15 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
         return [$columns, $params];
     }
 
+    private function keyPredicate(): string
+    {
+        return $this->sql->keyPredicate ?? implode(' AND ', $this->keyWhereClauses());
+    }
+
     /** @return list<string> */
     private function keyWhereClauses(): array
     {
-        return array_map(fn(string $column): string => sprintf(
-            '%s = %s',
-            $this->connection->quoteSingleIdentifier($column),
-            $this->placeholder($column),
-        ), $this->keyColumns());
+        return $this->sql->keyPredicates ?? array_map($this->assignment(...), $this->keyColumns);
     }
 
     /** @return list<mixed> */
@@ -655,17 +668,25 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
 
     private function scopeWhereSql(?MappedKey $scope): string
     {
-        return null === $scope ? '' : ' WHERE ' . implode(' AND ', $this->scopeWhereClauses($scope));
+        if (null === $scope) {
+            return '';
+        }
+
+        return $scope->columns() === $this->sql?->ownerColumns
+            ? $this->sql->ownerWhere
+            : ' WHERE ' . implode(' AND ', $this->scopeWhereClauses($scope));
     }
 
     /** @return list<string> */
     private function scopeWhereClauses(?MappedKey $scope): array
     {
-        return array_map(fn(string $column): string => sprintf(
-            '%s = %s',
-            $this->connection->quoteSingleIdentifier($column),
-            $this->placeholder($column),
-        ), $scope?->columns() ?? []);
+        $columns = $scope?->columns() ?? [];
+
+        return (
+            $columns === $this->sql?->ownerColumns
+                ? $this->sql->ownerPredicates
+                : array_map($this->assignment(...), $columns)
+        );
     }
 
     /** @return list<mixed> */
@@ -683,14 +704,41 @@ final readonly class PostgresMappedRowSetAdapter implements OwnerMappedRowSetAda
 
     private function conflictTargetSql(): string
     {
-        return implode(', ', array_map($this->connection->quoteSingleIdentifier(...), $this->keyColumns()));
+        return $this->sql->keyList ?? implode(', ', array_map($this->quoteColumn(...), $this->keyColumns));
+    }
+
+    private function quotedTable(): string
+    {
+        return $this->sql->table ?? $this->connection->quoteSingleIdentifier($this->tableName);
+    }
+
+    private function quoteColumn(string $column): string
+    {
+        return $this->sql->columns[$column]['identifier'] ?? $this->connection->quoteSingleIdentifier($column);
+    }
+
+    private function assignment(string $column): string
+    {
+        return (
+            $this->sql->columns[$column]['assign'] ?? $this->quoteColumn($column) . ' = ' . $this->placeholder($column)
+        );
+    }
+
+    private function conflictAssignment(string $column): string
+    {
+        return $this->sql->columns[$column]['excluded'] ?? sprintf('%1$s = EXCLUDED.%1$s', $this->quoteColumn($column));
     }
 
     private function placeholder(string $column): string
     {
+        $compiled = $this->sql->columns[$column]['parameter'] ?? null;
+        if (null !== $compiled) {
+            return $compiled;
+        }
+
         $type = $this->columnTypes[$column] ?? null;
 
-        return null === $type ? '?' : sprintf('?::%s', $type->sqlType);
+        return null === $type ? '?' : '?::' . $type->sqlType;
     }
 
     private function encodeColumnValue(string $column, mixed $value): mixed

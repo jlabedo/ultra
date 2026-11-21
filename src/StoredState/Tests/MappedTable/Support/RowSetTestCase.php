@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable\Tests\Support;
 
+use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
@@ -32,16 +33,16 @@ abstract class RowSetTestCase extends TestCase
         ?MappedKey $scope = null,
         array $columnTypes = [],
         bool $allowAbsentObservations = true,
+        Connection|InMemoryRowDatabase|null $storage = null,
     ): RowSetFixture {
-        if ('postgres' === $backend) {
+        if (null === $storage && 'postgres' === $backend) {
             $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
             if (false === $dsn || '' === $dsn) {
                 self::markTestSkipped('Set ULTRA_TEST_POSTGRES_DSN to run the Postgres guarantee cases.');
             }
             $storage = PostgresConnectionSupport::sharedConnection($dsn);
-        } else {
-            $storage = new InMemoryRowDatabase();
         }
+        $storage ??= new InMemoryRowDatabase();
         $fixture = new RowSetFixture(
             $storage,
             'ultra_guarantees_' . bin2hex(random_bytes(4)),

@@ -22,6 +22,17 @@ final readonly class InMemoryMappedRowSetAdapterFactory implements MappedRowSetA
         );
     }
 
+    /** @internal */
+    public function createDefined(MappedRowSetMetadata $mapping): MappedRowSetAdapter
+    {
+        return new InMemoryMappedRowSetAdapter(
+            $this->database,
+            $mapping->table,
+            $mapping,
+            policy: $this->tablePolicies[$mapping->table] ?? new MappedTablePolicy(),
+        );
+    }
+
     public function createScoped(string $tableName, array $keyColumns, MappedKey $scope): MappedRowSetAdapter
     {
         return new InMemoryMappedRowSetAdapter(

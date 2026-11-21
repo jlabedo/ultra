@@ -15,6 +15,7 @@ use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
 use Ultra\Testing\PostgresConnectionSupport;
+use Ultra\UnitOfWork\UnitOfWork;
 
 /** Storage setup and independent committed reads; assertions stay in the guarantee suites. */
 final class RowSetFixture
@@ -144,7 +145,7 @@ final class RowSetFixture
         return $row;
     }
 
-    public function flush(?MappedRowSet $rows = null): void
+    public function flush(?UnitOfWork $rows = null): void
     {
         $this->storage->beginTransaction();
         try {

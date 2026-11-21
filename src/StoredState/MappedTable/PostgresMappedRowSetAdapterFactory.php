@@ -33,6 +33,40 @@ final readonly class PostgresMappedRowSetAdapterFactory implements MappedRowSetA
         );
     }
 
+    /**
+     * @internal
+     * @param array<string, PostgresMappedColumnType> $columnTypes
+     */
+    public function createDefined(
+        MappedRowSetMetadata $mapping,
+        array $columnTypes,
+        PostgresMappedRowSetSql $sql,
+        bool $needsRuntimeDefaults,
+    ): MappedRowSetAdapter {
+        $defaults = !$needsRuntimeDefaults
+            ? []
+            : array_diff_key(
+                array_intersect_key($this->columnTypesByTable[$mapping->table] ?? [], $mapping->columns),
+                $columnTypes,
+            );
+        if ([] !== $defaults) {
+            foreach ($defaults as $column => $type) {
+                $type->assertSupports($column, $mapping->column($column));
+            }
+            $columnTypes += $defaults;
+            $sql = PostgresMappedRowSetSql::compile($mapping, $defaults, $sql);
+        }
+
+        return new PostgresMappedRowSetAdapter(
+            $this->connection,
+            $mapping->table,
+            $mapping->keyColumns,
+            $columnTypes,
+            policy: $this->tablePolicies[$mapping->table] ?? new MappedTablePolicy(),
+            sql: $sql,
+        );
+    }
+
     public function createScoped(string $tableName, array $keyColumns, MappedKey $scope): MappedRowSetAdapter
     {
         return new PostgresMappedRowSetAdapter(

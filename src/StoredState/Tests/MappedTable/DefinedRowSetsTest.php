@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable\Tests;
 
+use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
+use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\InMemoryMappedRowSetAdapterFactory;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
@@ -17,28 +20,45 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetAdapterFactory;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
+use Ultra\MappedTable\MappedRowSetOwner;
+use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetAdapterFactory;
 use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
+use Ultra\UnitOfWork\UnitOfWork;
+use Ultra\UnitOfWork\UnitOfWorkExtension;
 
 /** @internal */
 #[CoversNamespace('Ultra\MappedTable')]
 final class DefinedRowSetsTest extends RowSetTestCase
 {
-    #[DataProvider('backends')]
-    public function test_definitions_compile_to_shared_row_sets_using_the_application_adapter(string $backend): void
+    /** @return iterable<string, array{string, bool}> */
+    public static function configuredAdapters(): iterable
     {
+        yield 'memory adapter resolved at runtime' => ['memory', true];
+        yield 'Postgres adapter resolved at runtime' => ['postgres', true];
+        yield 'Postgres adapter with compiled defaults' => ['postgres', false];
+    }
+
+    #[DataProvider('configuredAdapters')]
+    public function test_definitions_compile_to_shared_row_sets_using_the_application_adapter(
+        string $backend,
+        bool $factoryAtRuntime,
+    ): void {
         $fixture = $this->fixture($backend);
         $storage = $fixture->storage;
         if ($storage instanceof InMemoryRowDatabase) {
             $factory = new InMemoryMappedRowSetAdapterFactory($storage);
         } else {
+            $storage->executeStatement('CREATE TEMP TABLE mapped_definition_orders (id TEXT PRIMARY KEY)');
             $storage->executeStatement(
-                'CREATE TEMP TABLE mapped_definition_lines (owner TEXT, id TEXT, tags TEXT[], PRIMARY KEY (owner, id))',
+                'CREATE TEMP TABLE mapped_definition_lines (owner TEXT REFERENCES mapped_definition_orders (id), id TEXT, tags TEXT[], aliases TEXT[], PRIMARY KEY (owner, id))',
             );
-            $factory = new PostgresMappedRowSetAdapterFactory($storage);
+            $factory = new PostgresMappedRowSetAdapterFactory($storage, ['mapped_definition_lines' => [
+                'aliases' => PostgresMappedColumnType::textArray(),
+            ]]);
         }
         CompileTimeLineDefinition::$mappingCalls = 0;
         CompileTimeLineDefinition::$postgresCalls = 0;
@@ -46,14 +66,35 @@ final class DefinedRowSetsTest extends RowSetTestCase
         try {
             $container = new ContainerBuilder();
             new MappedTableExtension()->build($container);
-            $container
-                ->register(MappedRowSetAdapterFactory::class, $factory::class)
-                ->setSynthetic(true)
-                ->setPublic(true);
+            new UnitOfWorkExtension()->build($container);
+            if ($factoryAtRuntime) {
+                $container
+                    ->register(MappedRowSetAdapterFactory::class, $factory::class)
+                    ->setSynthetic(true)
+                    ->setPublic(true);
+            } else {
+                $container->register(Connection::class)->setSynthetic(true)->setPublic(true);
+                $container
+                    ->register(MappedRowSetAdapterFactory::class, PostgresMappedRowSetAdapterFactory::class)
+                    ->setArguments([
+                        new Reference(Connection::class),
+                        ['mapped_definition_lines' => ['aliases' => new Definition(
+                            PostgresMappedColumnType::class,
+                        )->setFactory([PostgresMappedColumnType::class, 'textArray'])]],
+                    ]);
+            }
             $container->register(CompileTimeLineDefinition::class)->setAutoconfigured(true);
+            $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
             $container->register(DirectLineWriter::class)->setAutowired(true)->setPublic(true);
             $container->setAlias('test.lines', CompileTimeLineDefinition::class)->setPublic(true);
+            $container->setAlias('test.orders', CompileTimeOrderDefinition::class)->setPublic(true);
+            $container->setAlias('test.unit_of_work', UnitOfWork::class)->setPublic(true);
+            $container->setAlias('test.coordination', MappedTableUnitOfWork::class)->setPublic(true);
             $container->compile();
+            static::assertSame(
+                [CompileTimeOrderDefinition::class => true, CompileTimeLineDefinition::class => false],
+                $container->findDefinition('test.coordination')->getArgument(1),
+            );
 
             $dumpedClass = 'MappedTableContainer' . bin2hex(random_bytes(8));
             $file = tempnam(sys_get_temp_dir(), 'mapped-table-');
@@ -66,25 +107,92 @@ final class DefinedRowSetsTest extends RowSetTestCase
             }
 
             $compiled = new $dumpedClass();
-            $compiled->set(MappedRowSetAdapterFactory::class, $factory);
+            if ($factoryAtRuntime) {
+                $compiled->set(MappedRowSetAdapterFactory::class, $factory);
+            } else {
+                $compiled->set(Connection::class, $storage);
+            }
             $lines = $compiled->get('test.lines');
             $writer = $compiled->get(DirectLineWriter::class);
             static::assertSame($lines, $writer->lines);
             $line = new MappedKey(['owner' => 'one', 'id' => 'line']);
-            $writer->lines->withKey($line)->insert()->setColumn('tags', ['one', 'two']);
+            $writer
+                ->lines
+                ->withKey($line)
+                ->insert()
+                ->setColumns(['tags' => ['one', 'two'], 'aliases' => ['third']]);
+            $compiled->get('test.orders')->withKey('one')->insert();
             static::assertSame(
-                ['tags' => ['one', 'two']],
+                ['tags' => ['one', 'two'], 'aliases' => ['third']],
                 $lines->rowsForOwner(new MappedKey(['owner' => 'one']))[0]->columns,
             );
-            $fixture->flush($lines);
-            static::assertSame(['tags' => ['one', 'two']], $lines->row($line, ['tags']));
+            try {
+                $lines->flush();
+                static::fail('A compiled row set can only be flushed through its coordinator.');
+            } catch (\LogicException $exception) {
+                static::assertStringContainsString('through its coordinator', $exception->getMessage());
+            }
+            $unitOfWork = $compiled->get('test.unit_of_work');
+            static::assertTrue($unitOfWork->hasPendingChanges());
+            $fixture->flush($unitOfWork);
+            static::assertFalse($unitOfWork->hasPendingChanges());
+            static::assertSame(
+                ['tags' => ['one', 'two'], 'aliases' => ['third']],
+                $lines->row($line, ['tags', 'aliases']),
+            );
+            $lines->withKey($line)->expectColumnValue('tags', ['one', 'two'])->setColumn('tags', ['updated']);
+            $fixture->flush($unitOfWork);
+            static::assertSame(['tags' => ['updated']], $lines->row($line, ['tags']));
+            $owner = new MappedKey(['owner' => 'one']);
+            $lines->expectSameRowKeysForOwner($owner, [$line]);
+            $lines->reconcileForOwner($owner, []);
+            $fixture->flush($unitOfWork);
+            static::assertSame([], $lines->rowsForOwner($owner));
             static::assertSame(1, CompileTimeLineDefinition::$mappingCalls);
             static::assertSame('postgres' === $backend ? 1 : 0, CompileTimeLineDefinition::$postgresCalls);
         } finally {
             if (!$storage instanceof InMemoryRowDatabase) {
-                $storage->executeStatement('DROP TABLE pg_temp.mapped_definition_lines');
+                $storage->executeStatement(
+                    'DROP TABLE pg_temp.mapped_definition_lines, pg_temp.mapped_definition_orders',
+                );
             }
         }
+    }
+
+    public function test_compilation_rejects_a_missing_owner_definition(): void
+    {
+        $container = new ContainerBuilder();
+        new MappedTableExtension()->build($container);
+        $container
+            ->register(MappedRowSetAdapterFactory::class, InMemoryMappedRowSetAdapterFactory::class)
+            ->setSynthetic(true);
+        $container->register(CompileTimeLineDefinition::class)->setAutoconfigured(true);
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Owner definition "' . CompileTimeOrderDefinition::class . '"');
+        $container->compile();
+    }
+
+    public function test_compilation_checks_postgres_codecs_configured_in_the_factory(): void
+    {
+        $container = new ContainerBuilder();
+        new MappedTableExtension()->build($container);
+        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
+        $container->register(Connection::class)->setSynthetic(true);
+        $container
+            ->register(MappedRowSetAdapterFactory::class, PostgresMappedRowSetAdapterFactory::class)
+            ->setArguments([
+                new Reference(Connection::class),
+                ['mapped_definition_orders' => [
+                    'id' => new Definition(PostgresMappedColumnType::class)->setFactory([
+                        PostgresMappedColumnType::class,
+                        'textArray',
+                    ]),
+                ]],
+            ]);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('PostgreSQL codec "TEXT[]" for column "id" expects PHP array, declared string.');
+        $container->compile();
     }
 
     public function test_defined_rows_require_the_declared_representations_and_immutable_keys(): void
@@ -151,6 +259,14 @@ final class DefinedRowSetsTest extends RowSetTestCase
     }
 }
 
+final class CompileTimeOrderDefinition implements MappedRowSetDefinition
+{
+    public function mapping(): MappedRowSetMapping
+    {
+        return new MappedRowSetMapping('mapped_definition_orders', ['id' => new MappedColumn('string')], ['id']);
+    }
+}
+
 final class CompileTimeLineDefinition implements MappedRowSetDefinition, PostgresMappedRowSetConfiguration
 {
     public static int $mappingCalls = 0;
@@ -166,9 +282,10 @@ final class CompileTimeLineDefinition implements MappedRowSetDefinition, Postgre
                 'owner' => new MappedColumn('string'),
                 'id' => new MappedColumn('string'),
                 'tags' => new MappedColumn('array', nullable: true),
+                'aliases' => new MappedColumn('array', nullable: true),
             ],
             ['owner', 'id'],
-            ['owner'],
+            owner: new MappedRowSetOwner(CompileTimeOrderDefinition::class, ['owner' => 'id']),
         );
     }
 

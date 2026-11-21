@@ -66,11 +66,16 @@ final readonly class MappedKey implements \Stringable
     /** @param list<string> $columns */
     public function assertColumns(array $columns): void
     {
+        $actual = $this->columns();
+        if ($actual === $columns) {
+            return;
+        }
+
         sort($columns, SORT_STRING);
-        if ($this->columns() !== $columns) {
+        if ($actual !== $columns) {
             throw new \InvalidArgumentException(sprintf(
                 'Mapped key columns [%s] do not match expected columns [%s].',
-                implode(', ', $this->columns()),
+                implode(', ', $actual),
                 implode(', ', $columns),
             ));
         }

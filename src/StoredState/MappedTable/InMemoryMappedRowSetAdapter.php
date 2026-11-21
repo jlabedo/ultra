@@ -6,27 +6,33 @@ namespace Ultra\MappedTable;
 
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
-final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAdapter
+final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAdapter, CoordinatedMappedRowSetAdapter
 {
+    /** @var list<string> */
+    private array $keyColumns;
+
     /**
-     * @param list<string> $configuredKeyColumns
+     * @param list<string>|MappedRowSetMetadata $configuredKeyColumns
      */
     public function __construct(
         private InMemoryRowDatabase $database,
         private string $tableName,
-        private array $configuredKeyColumns = ['id'],
+        array|MappedRowSetMetadata $configuredKeyColumns = ['id'],
         private ?MappedKey $configuredScope = null,
         private MappedTablePolicy $policy = new MappedTablePolicy(),
     ) {
-        self::assertSchema($configuredKeyColumns, $configuredScope);
+        if ($configuredKeyColumns instanceof MappedRowSetMetadata) {
+            $this->keyColumns = $configuredKeyColumns->keyColumns;
+        } else {
+            self::assertSchema($configuredKeyColumns, $configuredScope);
+            sort($configuredKeyColumns, SORT_STRING);
+            $this->keyColumns = $configuredKeyColumns;
+        }
     }
 
     public function keyColumns(): array
     {
-        $columns = $this->configuredKeyColumns;
-        sort($columns, SORT_STRING);
-
-        return $columns;
+        return $this->keyColumns;
     }
 
     public function scope(): ?MappedKey
@@ -53,6 +59,25 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
 
     public function apply(RowSetUpdatePlan $plan): void
     {
+        $this->check($plan);
+        $this->writeRows(array_values(array_filter(
+            $plan->rowUpdates,
+            static fn(RowUpdatePlan $row): bool => $row->writes(),
+        )));
+        $this->deleteExcludedRows($plan);
+    }
+
+    public function activeTransactionResource(): object
+    {
+        if (!$this->database->isTransactionActive()) {
+            throw new \LogicException('Coordinated mapped table flush requires an active transaction.');
+        }
+
+        return $this->database;
+    }
+
+    public function check(RowSetUpdatePlan $plan): void
+    {
         $this->policy->assertSupported($plan, $this->tableName);
 
         foreach ($plan->rowUpdates as $update) {
@@ -71,12 +96,11 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
 
             $this->checkRow($update);
         }
+    }
 
-        foreach ($plan->rowUpdates as $update) {
-            if (!$update->writes()) {
-                continue;
-            }
-
+    public function writeRows(array $writes): void
+    {
+        foreach ($writes as $update) {
             match ($update->mode) {
                 RowUpdatePlan::MODE_DELETE => $this->applyDelete($update),
                 RowUpdatePlan::MODE_INSERT => $this->applyInsert($update),
@@ -86,7 +110,10 @@ final readonly class InMemoryMappedRowSetAdapter implements OwnerMappedRowSetAda
                 default => throw new \LogicException(sprintf('Unsupported row update mode "%s".', $update->mode)),
             };
         }
+    }
 
+    public function deleteExcludedRows(RowSetUpdatePlan $plan): void
+    {
         $this->deleteRowsOutside($plan->retainedRowKeys);
         foreach ($plan->ownerCollections as $collection) {
             $this->deleteRowsOutside($collection->retainedRowKeys, $collection->owner);

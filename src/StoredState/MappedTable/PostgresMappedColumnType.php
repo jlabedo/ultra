@@ -16,6 +16,7 @@ final readonly class PostgresMappedColumnType
     private function __construct(
         public string $sqlType,
         private string $kind,
+        public string $factoryMethod,
     ) {}
 
     /**
@@ -25,58 +26,78 @@ final readonly class PostgresMappedColumnType
      */
     public static function text(): self
     {
-        return new self('TEXT', self::TEXT);
+        return new self('TEXT', self::TEXT, __FUNCTION__);
     }
 
     public static function textArray(): self
     {
-        return new self('TEXT[]', self::ARRAY_TEXT);
+        return new self('TEXT[]', self::ARRAY_TEXT, __FUNCTION__);
     }
 
     public static function uuidArray(): self
     {
-        return new self('UUID[]', self::ARRAY_TEXT);
+        return new self('UUID[]', self::ARRAY_TEXT, __FUNCTION__);
     }
 
     public static function intArray(): self
     {
-        return new self('INTEGER[]', self::ARRAY_INT);
+        return new self('INTEGER[]', self::ARRAY_INT, __FUNCTION__);
     }
 
     public static function jsonb(): self
     {
-        return new self('JSONB', self::JSON);
+        return new self('JSONB', self::JSON, __FUNCTION__);
     }
 
     public static function date(): self
     {
-        return new self('DATE', self::DATE);
+        return new self('DATE', self::DATE, __FUNCTION__);
     }
 
     public static function timestamp(): self
     {
-        return new self('TIMESTAMP(6) WITHOUT TIME ZONE', self::TIMESTAMP);
+        return new self('TIMESTAMP(6) WITHOUT TIME ZONE', self::TIMESTAMP, __FUNCTION__);
     }
 
     public static function timestampWithTimeZone(): self
     {
-        return new self('TIMESTAMP(6) WITH TIME ZONE', self::TIMESTAMP);
+        return new self('TIMESTAMP(6) WITH TIME ZONE', self::TIMESTAMP, __FUNCTION__);
     }
 
-    /** @internal Reconstitutes a built-in codec from compiled configuration. */
-    public static function fromSqlType(string $sqlType): self
+    /** @internal Resolves a built-in factory in declarative Symfony configuration. */
+    public static function fromFactoryMethod(string $method): ?self
     {
-        return match ($sqlType) {
-            'TEXT' => self::text(),
-            'TEXT[]' => self::textArray(),
-            'UUID[]' => self::uuidArray(),
-            'INTEGER[]' => self::intArray(),
-            'JSONB' => self::jsonb(),
-            'DATE' => self::date(),
-            'TIMESTAMP(6) WITHOUT TIME ZONE' => self::timestamp(),
-            'TIMESTAMP(6) WITH TIME ZONE' => self::timestampWithTimeZone(),
-            default => throw new \InvalidArgumentException('Unsupported PostgreSQL column type "' . $sqlType . '".'),
+        return match ($method) {
+            'text' => self::text(),
+            'textArray' => self::textArray(),
+            'uuidArray' => self::uuidArray(),
+            'intArray' => self::intArray(),
+            'jsonb' => self::jsonb(),
+            'date' => self::date(),
+            'timestamp' => self::timestamp(),
+            'timestampWithTimeZone' => self::timestampWithTimeZone(),
+            default => null,
         };
+    }
+
+    /** @internal Validates the declared PHP representation before a codec is wired into a row set. */
+    public function assertSupports(string $column, MappedColumn $mapping): void
+    {
+        $type = match ($this->kind) {
+            self::ARRAY_TEXT, self::ARRAY_INT => 'array',
+            self::TEXT, self::DATE, self::TIMESTAMP => 'string',
+            self::JSON => $mapping->type,
+            default => throw new \LogicException('Unsupported PostgreSQL mapped column kind "' . $this->kind . '".'),
+        };
+        if ($mapping->type !== $type) {
+            throw new \LogicException(sprintf(
+                'PostgreSQL codec "%s" for column "%s" expects PHP %s, declared %s.',
+                $this->sqlType,
+                $column,
+                $type,
+                $mapping->type,
+            ));
+        }
     }
 
     public function encode(mixed $value): mixed

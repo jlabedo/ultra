@@ -48,10 +48,15 @@ With Symfony, add `Ultra\MappedTable\Symfony\MappedTableExtension`, register def
 resources and bind `MappedRowSetAdapterFactory` to the application's factory and connection. A definition is
 instantiated without constructor parameters at compilation. Its class name identifies the shared
 `MappedRowSet` service, which can be injected using `#[Autowire(service: OrderLinesDefinition::class)]` on a
-`MappedRowSet` parameter. The extension allows one definition per physical table. With
-`PostgresMappedRowSetAdapterFactory` selected, a definition can also implement
-`PostgresMappedRowSetConfiguration` to supply codecs for its declared columns. For standalone assembly, pass
-the mapping and an adapter for its complete key to `MappedRowSet`.
+`MappedRowSet` parameter. The extension allows one definition per physical table. It compiles key and owner
+columns, their lookup sets and the default read projections. The dumped container uses those validated values.
+
+With `PostgresMappedRowSetAdapterFactory` selected, `PostgresMappedRowSetConfiguration` supplies codecs for the
+definition's columns and takes precedence over factory defaults. Symfony resolves defaults declared using the
+built-in codec factories, checks codec compatibility with the declared PHP representation and prepares the
+static SQL fragments for the table, columns, keys and owner. Defaults supplied by a factory instance at runtime
+are resolved when that factory creates the adapter. For standalone assembly, pass the mapping and an adapter
+for its complete key to `MappedRowSet`.
 
 The owner columns, when present, identify one collection for each complete owner key in the child table's
 column names. They leave at least one further key column for the item. Table reads, reads by owner and direct
@@ -72,9 +77,41 @@ excluded items while keeping earlier expectations. Later writes by complete key 
 from the desired membership, including an unchanged item whose row update becomes a check only.
 A reconciliation validates all supplied rows before modifying the buffer. Different owner keys are disjoint.
 
-During `flush()`, adapters check all pending memberships in the row set before applying its row mutations, then
-delete rows outside each reconciled owner's retained keys. As with the standalone API below, callers provide
-the transaction and enroll the row set in their unit of work as needed.
+## Coordinated flush
+
+Declare an owner dependency when a child row set references another defined row set. For example, when
+`OrdersDefinition` declares the key `id`, the mapping for `OrderLinesDefinition` can pass
+`owner: new MappedRowSetOwner(OrdersDefinition::class, ['order_id' => 'id'])` in place of `ownerColumns`.
+The reference maps the complete parent key to immutable child key columns of the same PHP representation.
+Symfony validates that the parent definitions exist and dependencies are acyclic, then emits the dependency
+order and the set of referenced definitions in the container. Standalone coordination computes the same
+schedule during assembly. Fixed owner columns remain available for collections whose owners do not impose a
+dependency between row sets.
+
+With Symfony, `MappedTableExtension` enrolls a single `MappedTableUnitOfWork` in the composite registered
+by `UnitOfWorkExtension`. Inject the row sets by definition class to prepare operations. In standalone
+assembly, construct `MappedTableUnitOfWork` with a map from definition classes to row sets. A coordinated
+row set can belong to only one coordinator. Call the coordinator through the runner or explicitly inside
+the caller's transaction. Pending plans must use one active connection or in-memory transaction.
+
+For each flush, the coordinator takes a snapshot of every pending plan, validates the combined plan and
+asks all relevant adapters to check membership and check-only row expectations. The adapters keep their
+intrinsic locks and enforce update and delete predicates in the writes. Then the coordinator executes
+explicit deletes and reconciliation cleanup in child-before-parent order, followed by inserts, updates and
+upserts in parent-before-child order. Within each row set, explicit deletes precede its cleanup so they can
+still validate their conditional predicates. An empty reconciliation executes a cleanup even when no child row
+is buffered.
+
+An owner dependency determines order. Applications request child cleanup explicitly. For existing children
+outside the plan, an immediate foreign key can reject the parent deletion. The coordinator rejects a write
+or retention of a child whose parent the plan leaves absent. It also rejects physical replacement of a row in
+a referenced definition, since replacement deletes the row before recreating it. Owner moves and dependencies
+on mutable columns are outside this model.
+
+A successful flush consumes all applied plans together. A later rollback undoes durable changes. If the flush
+fails partway, the caller rolls back and clears the pending buffers. The transactional runner handles both.
+For low-level standalone row sets without a coordinator, adapters check membership, apply their own row
+mutations and then clean up reconciliations within the caller's transaction.
 
 ## Standalone adapter API
 
@@ -285,6 +322,7 @@ same scenario exercises the in-memory and Postgres adapters, including their fac
 | Writes have distinct insert, update, upsert, replacement and deletion semantics | [WriteSemanticsTest](../../src/StoredState/Tests/MappedTable/WriteSemanticsTest.php) | Preservation of unspecified values, conflicts, multiple deletions, replacement expectations, cancellation and merging. |
 | Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/StoredState/Tests/MappedTable/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, final-plan table policies, concurrent insertions/deletions and first-expectation retention. |
 | Saved membership supersedes earlier membership for its owner or fixed adapter scope | [MembershipReconciliationTest](../../src/StoredState/Tests/MappedTable/MembershipReconciliationTest.php) | Late rows, empty and successive sets, duplicate keys, retained columns, earlier expectations and later explicit operations. |
+| Coordinated flush orders explicit child deletions and parent creation atomically | [FlushCoordinationTest](../../src/StoredState/Tests/MappedTable/FlushCoordinationTest.php) | Composite owner keys, immediate foreign keys, checks before writes, rollback and reuse, one active transaction. |
 | Preparation, flush, clear and transactions retain their separate responsibilities | [FlushLifecycleTest](../../src/StoredState/Tests/MappedTable/FlushLifecycleTest.php) | Preparation without I/O, sorted immutable snapshots, check-only writes, successive flushes consuming completed work, complete cleanup, external rollback and in-memory transaction snapshots. |
 | Keys and scopes address independent rows | [KeyAndScopeIsolationTest](../../src/StoredState/Tests/MappedTable/KeyAndScopeIsolationTest.php) | Composite keys, scalar and Stringable shortcuts, colliding IDs, multiple scope columns and invalid addresses. |
 | Persisted column values survive encoding and decoding | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | Text/UUID/integer arrays, escaping and nulls, JSON, dates, booleans, single and multiple writes and optimistic typed comparisons. |

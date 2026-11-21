@@ -16,12 +16,15 @@ final class MappedRowSet implements UnitOfWork
 
     private BufferedRowMembership $membership;
 
+    private bool $coordinated = false;
+
     /** @var array<string, BufferedRowMembership> */
     private array $collections = [];
 
     public function __construct(
         private readonly MappedRowSetAdapter $adapter,
-        private readonly ?MappedRowSetMapping $mapping = null,
+        private readonly ?MappedRowSetMetadata $mapping = null,
+        private readonly bool $requiresCoordinator = false,
     ) {
         if (null !== $mapping && (null !== $adapter->scope() || $mapping->keyColumns !== $adapter->keyColumns())) {
             throw new \InvalidArgumentException('A defined row set needs an unscoped adapter with the declared key.');
@@ -282,8 +285,36 @@ final class MappedRowSet implements UnitOfWork
         $this->collections[$owner->fingerprint()] = $membership;
     }
 
+    /** @internal */
+    public function mappingForCoordination(): MappedRowSetMetadata
+    {
+        return $this->mapping ?? throw new \LogicException('A coordinated row set needs a definition.');
+    }
+
+    /** @internal */
+    public function adapterForCoordination(): CoordinatedMappedRowSetAdapter
+    {
+        if ($this->coordinated) {
+            throw new \LogicException('This mapped row set already has a flush coordinator.');
+        }
+        if (!$this->adapter instanceof CoordinatedMappedRowSetAdapter) {
+            throw new \LogicException('The mapped adapter does not support coordinated flush.');
+        }
+
+        return $this->adapter;
+    }
+
+    /** @internal */
+    public function enrollInCoordinator(): void
+    {
+        $this->coordinated = true;
+    }
+
     public function flush(): void
     {
+        if ($this->coordinated || $this->requiresCoordinator || null !== $this->mapping?->owner) {
+            throw new \LogicException('Flush this mapped row set through its coordinator.');
+        }
         if (!$this->hasPendingChanges()) {
             return;
         }
@@ -353,7 +384,7 @@ final class MappedRowSet implements UnitOfWork
     {
         assert(null !== $this->mapping, 'An owner key requires a defined row set.');
 
-        return new MappedKey(array_intersect_key($key->values, array_flip($this->mapping->ownerColumns)));
+        return $this->mapping->ownerKey($key);
     }
 
     private function isVisible(MappedKey $key, ?BufferedRowUpdate $update): bool
@@ -391,15 +422,13 @@ final class MappedRowSet implements UnitOfWork
             return $columns;
         }
 
-        $columns = array_keys($this->mapping->columns);
-
-        return $includeKeys ? $columns : array_values(array_diff($columns, $this->mapping->keyColumns));
+        return $includeKeys ? $this->mapping->columnNames : $this->mapping->nonKeyColumns;
     }
 
     private function normalizeKey(int|string|MappedKey|\Stringable $key): MappedKey
     {
-        $keyColumns = $this->adapter->keyColumns();
-        $scope = $this->adapter->scope();
+        $keyColumns = $this->mapping->keyColumns ?? $this->adapter->keyColumns();
+        $scope = null === $this->mapping ? $this->adapter->scope() : null;
 
         if (!$key instanceof MappedKey) {
             $unboundColumns = array_values(array_filter(
@@ -419,8 +448,11 @@ final class MappedRowSet implements UnitOfWork
             }
         }
 
-        $key->assertColumns($keyColumns);
-        $this->mapping?->assertKey($key);
+        if (null === $this->mapping) {
+            $key->assertColumns($keyColumns);
+        } else {
+            $this->mapping->assertKey($key);
+        }
         if (null !== $scope && !$key->matches($scope)) {
             throw new \InvalidArgumentException('Mapped key does not belong to the row-set scope.');
         }
