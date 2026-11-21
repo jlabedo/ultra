@@ -126,12 +126,6 @@ abstract class BufferedModeProjection extends ModeProjection implements UnitOfWo
     }
 }
 
-#[Projection(name: 'mode_projection', mode: ProjectionMode::SynchronousFromNow)]
-final class ImmediateModeProjection extends ModeProjection {}
-
-#[Projection(name: 'mode_projection', mode: ProjectionMode::SynchronousFromNow)]
-final class ImmediateBufferedModeProjection extends BufferedModeProjection {}
-
 #[Projection(name: 'mode_projection', partitionBy: 'courseId', mode: ProjectionMode::Synchronous)]
 final class ManagedModeProjection extends ModeProjection {}
 
@@ -165,9 +159,6 @@ final readonly class ProjectionModeFixture
             ProjectionMode::Synchronous => $buffered
                 ? ManagedBufferedModeProjection::class
                 : ManagedModeProjection::class,
-            ProjectionMode::SynchronousFromNow => $buffered
-                ? ImmediateBufferedModeProjection::class
-                : ImmediateModeProjection::class,
         };
         $table = $fixture->prefix . 'mode_model';
         if (null !== $fixture->connection) {
@@ -237,7 +228,8 @@ final class OwnedProjectionRows implements UnitOfWork
 
 #[Projection(
     name: 'owned_projection',
-    mode: ProjectionMode::SynchronousFromNow,
+    partitionBy: 'courseId',
+    mode: ProjectionMode::Synchronous,
     unitOfWork: [OwnedProjectionRows::class],
 )]
 final readonly class OwnedPersistenceProjection
@@ -255,7 +247,8 @@ final readonly class OwnedPersistenceProjection
 
 #[Projection(
     name: 'second_owned_projection',
-    mode: ProjectionMode::SynchronousFromNow,
+    partitionBy: 'courseId',
+    mode: ProjectionMode::Synchronous,
     unitOfWork: [OwnedProjectionRows::class],
 )]
 final readonly class ConflictingPersistenceProjection
@@ -288,9 +281,6 @@ final class BufferedLifecycleProjection extends BufferedModeProjection
         $this->write(['courseId' => 'lifecycle', 'name' => 'reset']);
     }
 }
-
-#[Projection(name: 'second_immediate_projection', mode: ProjectionMode::SynchronousFromNow)]
-final class SecondImmediateModeProjection extends BufferedModeProjection {}
 
 #[Projection(name: 'async_projection', partitionBy: 'courseId')]
 final class AdditionalAsyncModeProjection extends BufferedModeProjection {}

@@ -13,7 +13,7 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionMode;
 use Ultra\Projection\ProjectionPhase;
 use Ultra\Projection\ProjectionRuntime;
-use Ultra\Projection\Tests\Support\ImmediateModeProjection;
+use Ultra\Projection\Tests\Support\AsyncModeProjection;
 use Ultra\Projection\Tests\Support\ManagedModeProjection;
 use Ultra\Projection\Tests\Support\ProjectionModeFixture;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
@@ -143,11 +143,11 @@ final class ManagedActivationTest extends ProjectionTestCase
         static::assertFalse($f->runner->runClaimedOnce($f->runtime, 'mode_projection', 0, 'queued')->claimedSegment);
     }
 
-    public function test_a_writer_missing_a_registered_managed_projection_is_rejected(): void
+    public function test_a_writer_changing_a_registered_managed_projection_to_async_is_rejected(): void
     {
         $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous);
         $f->rebuilder->activate($f->runtime);
-        $f->catalog->add(new ProjectionRuntime(new ImmediateModeProjection(), new UltraNormalizer()));
+        $f->catalog->add(new ProjectionRuntime(new AsyncModeProjection(), new UltraNormalizer()));
         try {
             $f->store->append([self::courseCreatedEvent('c', 'bad')]);
             static::fail('Expected incompatible writer rejection.');
@@ -160,17 +160,13 @@ final class ManagedActivationTest extends ProjectionTestCase
     public function test_one_append_routes_mixed_modes_and_the_coordinator_discards_obsolete_live_activity(): void
     {
         $f = new ProjectionModeFixture($this->fixture('memory'), ProjectionMode::Synchronous, true);
-        $immediate = new \Ultra\Projection\Tests\Support\SecondImmediateModeProjection();
         $async = new \Ultra\Projection\Tests\Support\AdditionalAsyncModeProjection();
-        $f->catalog->add(new ProjectionRuntime($immediate, new UltraNormalizer()));
         $f->catalog->add(new ProjectionRuntime($async, new UltraNormalizer()));
         $f->store->append([self::courseCreatedEvent('c', 'building')]);
-        static::assertSame(['building'], $immediate->names());
         static::assertSame([], $async->names());
         static::assertSame([], $f->projection->names());
         $f->rebuilder->activate($f->runtime);
         $f->store->append([self::courseCreatedEvent('c', 'live')]);
-        static::assertSame(['building', 'live'], $immediate->names());
         static::assertSame(['building', 'live'], $f->projection->names());
         static::assertSame([], $async->names());
         $coordinator = new \Ultra\Projection\Coordination\ProjectionCoordinator(
@@ -281,13 +277,5 @@ final class ManagedActivationTest extends ProjectionTestCase
         }
         static::assertSame(['live'], $f->projection->names());
         static::assertSame(ProjectionPhase::Live, $f->states->find('mode_projection')->phase);
-    }
-
-    public function test_immediate_mode_has_no_automatic_replay_lifecycle(): void
-    {
-        $f = new ProjectionModeFixture($this->fixture('memory'), ProjectionMode::SynchronousFromNow);
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('application-managed initialization');
-        $f->runner->ensureInitialized($f->runtime);
     }
 }

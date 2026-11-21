@@ -36,23 +36,16 @@ final class AccountBalanceProjection
 | --- | --- | --- |
 | `Asynchronous` (default) | Workers apply persisted batches | Segment checkpoints track progress |
 | `Synchronous` | Append transactions apply events once the projection is live | Reconstruct in `building`, then explicitly activate |
-| `SynchronousFromNow` | Append transactions immediately apply new events | No automatic replay, activation state or per-projection activation barrier |
 
-`partitionBy` is required except for `SynchronousFromNow`. Managed synchronous
-appends reject handled events missing that identifier; historical events must
-also carry it to participate in partitioned reconstruction. Immediate projections
-may omit the dimension entirely.
+`partitionBy` is required in both modes. Managed synchronous appends reject
+handled events missing that identifier. Historical events must also carry it
+to participate in partitioned reconstruction.
 
 Synchronous execution inherits the event store's concurrency guarantees. It does
 not serialize writers by projection partition, bucket or checkpoint. Concurrent
 handlers updating the same row must use appropriate atomic operations or storage
 locking. Replay can choose a different order between independent events; reproducible
 read models need commutative effects or a deterministic conflict rule.
-
-`SynchronousFromNow` does not run initializer/resetter hooks automatically. Its
-tables must already exist, supplied through migrations or explicit initialization.
-It does not promise historical completeness or a globally persisted start instant.
-All writers must run the new configuration before relying on its completeness.
 
 ## Transactional append integration
 
@@ -90,7 +83,8 @@ service IDs:
 ```php
 #[Projection(
     name: 'account_balance',
-    mode: ProjectionMode::SynchronousFromNow,
+    partitionBy: 'accountId',
+    mode: ProjectionMode::Synchronous,
     unitOfWork: [AccountBalanceRepository::class],
 )]
 ```
@@ -136,7 +130,7 @@ segment checkpoints. Remaining activity after activation is discarded as obsolet
 `ProjectionRunner::deleteProjection()` resets a managed projection under the exclusive
 barrier, increments its generation, and initializes new building segments. Readers may
 observe the incomplete read model until reactivation. Serving an older generation during
-reconstruction is not supported. `SynchronousFromNow` rejects replay/reset through this runner.
+reconstruction is not supported.
 
 Symfony supplies `ultra:projection:rebuild <projection-id>` to resume reconstruction.
 Use `--activate` to drain and activate, `--reset` to start a new generation, and
@@ -148,7 +142,7 @@ Use `--activate` to drain and activate, `--reset` to start a new generation, and
 fingerprint. PostgreSQL uses `READ COMMITTED`, transaction-scoped advisory barriers,
 and the `states` table, included in `PostgresProjectionSegmentSchema::createStatements()`.
 Apply the schema update before using the new append integration, even in an app containing
-only asynchronous or immediately active projections.
+only asynchronous projections.
 
 Appends and worker application transactions take a shared registration barrier and checks the managed registry.
 First registration takes its exclusive counterpart so older appends finish before
@@ -160,8 +154,6 @@ all writers to use `ProjectingEventStore`; direct writes to its underlying store
 The fingerprint does not detect handler-body changes: coordinate code deployments and
 explicitly rebuild when semantics change. Managed definitions are not silently unregistered.
 
-`SynchronousFromNow` creates no activation row and takes no per-projection barrier;
-the common registry compatibility check still applies to the enclosing append integration.
 The in-memory state repository and no-op transaction manager provide single-process
 test/local composition, not database rollback or cross-process concurrency guarantees.
 

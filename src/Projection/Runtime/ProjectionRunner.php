@@ -151,11 +151,6 @@ final readonly class ProjectionRunner
     public function ensureInitialized(ProjectionRuntime $runtime): void
     {
         $definition = $runtime->definition();
-        if (ProjectionMode::SynchronousFromNow === $definition->mode) {
-            throw new \LogicException(
-                'SynchronousFromNow projections use application-managed initialization and have no replay state.',
-            );
-        }
         $existing = $this->states->find($definition->projectionId);
         if (null !== $existing) {
             $this->assertCompatibleState($runtime, $existing);
@@ -194,9 +189,6 @@ final readonly class ProjectionRunner
     public function deleteProjection(ProjectionRuntime $runtime): void
     {
         $definition = $runtime->definition();
-        if (ProjectionMode::SynchronousFromNow === $definition->mode) {
-            throw new \LogicException('SynchronousFromNow projections cannot be reset through the replay runner.');
-        }
         $this->transactionManager->transactional(function () use ($definition, $runtime): void {
             if (ProjectionMode::Asynchronous === $definition->mode) {
                 $this->assertWorkerDefinition($runtime);
@@ -230,11 +222,8 @@ final readonly class ProjectionRunner
     public function isReplayable(ProjectionRuntime $runtime): bool
     {
         return (
-            ProjectionMode::SynchronousFromNow !== $runtime->definition()->mode
-            && (
-                ProjectionMode::Asynchronous === $runtime->definition()->mode
-                || ProjectionPhase::Live !== $this->states->find($runtime->projectionId())?->phase
-            )
+            ProjectionMode::Asynchronous === $runtime->definition()->mode
+            || ProjectionPhase::Live !== $this->states->find($runtime->projectionId())?->phase
         );
     }
 

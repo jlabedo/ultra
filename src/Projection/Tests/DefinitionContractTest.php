@@ -29,19 +29,15 @@ use Ultra\Projection\Tests\Support\TestProjectionClassWithoutInitializer;
 #[CoversNamespace('Ultra\\Projection_Postgres')]
 final class DefinitionContractTest extends ProjectionTestCase
 {
-    public function test_mode_defaults_to_async_and_immediate_projections_can_omit_partition(): void
+    public function test_mode_defaults_to_async(): void
     {
-        require_once __DIR__ . '/Support/ProjectionModes.php';
         static::assertSame(
             \Ultra\Projection\ProjectionMode::Asynchronous,
             ProjectionDefinition::fromClass(TestProjectionClass::class)->mode,
         );
-        $definition = ProjectionDefinition::fromClass(\Ultra\Projection\Tests\Support\ImmediateModeProjection::class);
-        static::assertSame(\Ultra\Projection\ProjectionMode::SynchronousFromNow, $definition->mode);
-        static::assertNull($definition->partitionDimension);
     }
 
-    public function test_replay_modes_require_a_partition(): void
+    public function test_all_projections_require_a_partition(): void
     {
         require_once __DIR__ . '/Support/ProjectionModes.php';
         foreach ([

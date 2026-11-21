@@ -50,24 +50,24 @@ final readonly class ProjectingEventStore implements EventStore
             ));
             $live = [];
             foreach ($definitions as $definition) {
-                if ([] === array_filter($events, $definition->handles(...))) {
+                if (ProjectionMode::Synchronous !== $definition->mode) {
                     continue;
                 }
-                if (ProjectionMode::SynchronousFromNow === $definition->mode) {
+                $matching = array_filter($events, $definition->handles(...));
+                if ([] === $matching) {
+                    continue;
+                }
+                foreach ($matching as $event) {
+                    if (null === $definition->bucketFor($event)) {
+                        throw new \InvalidArgumentException(
+                            'Managed projection events must carry their partition identifier.',
+                        );
+                    }
+                }
+                // Lock even an uninitialized projection: registration must not race this append.
+                $this->states->lockShared($definition->projectionId);
+                if (ProjectionPhase::Live === $this->states->find($definition->projectionId)?->phase) {
                     $live[] = $definition->projectionId;
-                } elseif (ProjectionMode::Synchronous === $definition->mode) {
-                    foreach ($events as $event) {
-                        if ($definition->handles($event) && null === $definition->bucketFor($event)) {
-                            throw new \InvalidArgumentException(
-                                'Managed projection events must carry their partition identifier.',
-                            );
-                        }
-                    }
-                    // Lock even an uninitialized projection: registration must not race this append.
-                    $this->states->lockShared($definition->projectionId);
-                    if (ProjectionPhase::Live === $this->states->find($definition->projectionId)?->phase) {
-                        $live[] = $definition->projectionId;
-                    }
                 }
             }
             $this->assertCompatibleWriter();

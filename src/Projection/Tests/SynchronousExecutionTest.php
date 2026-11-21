@@ -20,7 +20,7 @@ require_once __DIR__ . '/Support/ProjectionModes.php';
 #[CoversNamespace('Ultra\\Projection_Postgres')]
 final class SynchronousExecutionTest extends ProjectionTestCase
 {
-    public static function immediateConfigurations(): iterable
+    public static function configurations(): iterable
     {
         foreach (['memory', 'postgres'] as $backend) {
             foreach ([false, true] as $applicationBuffer) {
@@ -35,14 +35,13 @@ final class SynchronousExecutionTest extends ProjectionTestCase
         }
     }
 
-    #[DataProvider('immediateConfigurations')]
-    public function test_direct_and_buffered_appends_share_immediate_projection_execution(
+    #[DataProvider('configurations')]
+    public function test_direct_and_buffered_appends_update_a_live_projection(
         string $backend,
         bool $applicationBuffer,
         bool $projectionBuffer,
     ): void {
-        $f = new ProjectionModeFixture($this->fixture($backend), ProjectionMode::SynchronousFromNow, $projectionBuffer);
-        $f->fixture->store->append([self::courseCreatedEvent('c', 'historical')]);
+        $f = $this->liveProjection($backend, $projectionBuffer);
         $store = $applicationBuffer ? new EventStoreUnitOfWork($f->store) : $f->store;
         $store->append([self::courseCreatedEvent('c', 'one'), self::courseCreatedEvent('c', 'two')]);
         if ($applicationBuffer) {
@@ -51,11 +50,8 @@ final class SynchronousExecutionTest extends ProjectionTestCase
             $store->clear();
         }
         static::assertSame(['one', 'two'], $f->projection->names());
-        static::assertCount(3, $f->fixture->store->load(StreamQuery::all())->events);
-        static::assertSame([], $f->states->all());
-        static::assertSame([], $f->fixture->segments->listSegments('mode_projection'));
+        static::assertCount(2, $f->fixture->store->load(StreamQuery::all())->events);
         static::assertSame([], $f->fixture->activity->affected());
-        static::assertSame(0, $f->projection->initialized);
         if ($projectionBuffer) {
             static::assertSame([], $f->projection->pending);
         }
@@ -85,11 +81,7 @@ final class SynchronousExecutionTest extends ProjectionTestCase
         string $stage,
         bool $projectionBuffer,
     ): void {
-        $f = new ProjectionModeFixture(
-            $this->fixture('postgres'),
-            ProjectionMode::SynchronousFromNow,
-            $projectionBuffer,
-        );
+        $f = $this->liveProjection('postgres', $projectionBuffer);
         $store = $applicationBuffer ? new EventStoreUnitOfWork($f->store) : $f->store;
         $f->projection->failAt = $stage;
         try {
@@ -120,9 +112,10 @@ final class SynchronousExecutionTest extends ProjectionTestCase
 
     public function test_append_conditions_fail_before_projection_execution(): void
     {
-        $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::SynchronousFromNow, true);
+        $f = $this->liveProjection('postgres');
         $snapshot = $f->store->load(StreamQuery::forStream(new \Ultra\EventStore\DomainIdentifier('courseId', 'c')));
         $f->store->append([self::courseCreatedEvent('c', 'first')]);
+        $f->projection->failAt = 'apply';
         try {
             $f->store->append([self::courseCreatedEvent('c', 'conflict')], $snapshot->appendCondition());
             static::fail('Expected optimistic conflict.');
@@ -134,7 +127,7 @@ final class SynchronousExecutionTest extends ProjectionTestCase
 
     public function test_an_outer_transaction_controls_visibility_of_events_and_projection(): void
     {
-        $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::SynchronousFromNow, true);
+        $f = $this->liveProjection('postgres');
         $observer = PostgresConnectionSupport::sharedConnection(
             getenv('ULTRA_TEST_POSTGRES_DSN'),
             'projection-observer',
@@ -158,7 +151,7 @@ final class SynchronousExecutionTest extends ProjectionTestCase
 
     public function test_catching_a_projection_failure_cannot_commit_the_partial_append(): void
     {
-        $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::SynchronousFromNow, true);
+        $f = $this->liveProjection('postgres');
         $connection = $f->fixture->connection;
         $connection->beginTransaction();
         $f->projection->failAt = 'apply';
@@ -172,5 +165,13 @@ final class SynchronousExecutionTest extends ProjectionTestCase
             $connection->rollBack();
         }
         static::assertSame([], $f->fixture->store->load(StreamQuery::all())->events);
+    }
+
+    private function liveProjection(string $backend, bool $projectionBuffer = true): ProjectionModeFixture
+    {
+        $fixture = new ProjectionModeFixture($this->fixture($backend), ProjectionMode::Synchronous, $projectionBuffer);
+        $fixture->rebuilder->activate($fixture->runtime);
+
+        return $fixture;
     }
 }

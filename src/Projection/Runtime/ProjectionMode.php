@@ -8,5 +8,4 @@ enum ProjectionMode
 {
     case Asynchronous;
     case Synchronous;
-    case SynchronousFromNow;
 }

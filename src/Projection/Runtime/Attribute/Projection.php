@@ -12,7 +12,7 @@ final readonly class Projection
     /** @param list<string> $unitOfWork Projection-owned persistence service IDs. */
     public function __construct(
         public string $name,
-        public ?string $partitionBy = null,
+        public string $partitionBy = '',
         public ProjectionMode $mode = ProjectionMode::Asynchronous,
         public array $unitOfWork = [],
     ) {
@@ -20,11 +20,8 @@ final readonly class Projection
             throw new \InvalidArgumentException('Projection name must be a non-empty string.');
         }
 
-        if (
-            '' === $this->partitionBy
-            || null === $this->partitionBy && ProjectionMode::SynchronousFromNow !== $this->mode
-        ) {
-            throw new \InvalidArgumentException('Projection partitionBy is required except for SynchronousFromNow.');
+        if ('' === $this->partitionBy) {
+            throw new \InvalidArgumentException('Projection partitionBy is required.');
         }
     }
 }

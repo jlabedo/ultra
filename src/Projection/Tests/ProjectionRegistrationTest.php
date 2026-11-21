@@ -20,6 +20,7 @@ use Ultra\Projection\MessageHandling\MessageHandlingProjectionActivator;
 use Ultra\Projection\MessageHandling\WakeProjectionCoordinator;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionDefinition;
+use Ultra\Projection\ProjectionRebuilder;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Tests\Support\ConfiguredProjectionActivator;
 use Ultra\Projection\Tests\Support\ConfiguredProjectionScalingPolicy;
@@ -48,10 +49,13 @@ final class ProjectionRegistrationTest extends ProjectionTestCase
                 \Ultra\Projection\Tests\Support\OwnedPersistenceProjection::class,
             )
             ->withAlias('test.rows', \Ultra\Projection\Tests\Support\OwnedProjectionRows::class)
+            ->withAlias('test.rebuilder', ProjectionRebuilder::class)
             ->withAlias('test.uow_runner', \Ultra\UnitOfWork\UnitOfWorkRunner::class)
             ->boot();
         $runner = $container->get('test.uow_runner');
         $rows = $container->get('test.rows');
+        $container->get('test.rebuilder')->activate($container->projectionCatalog()->runtime('owned_projection'));
+        $flushes = $rows->flushes;
         $store = $container->eventStore();
         static::assertInstanceOf(\Ultra\EventStore\EventStoreUnitOfWork::class, $store);
         $runner->run(function () use ($store, $rows): void {
@@ -60,9 +64,9 @@ final class ProjectionRegistrationTest extends ProjectionTestCase
         });
         static::assertSame(['projected'], $rows->stored);
         static::assertSame([], $rows->pending);
-        static::assertSame(1, $rows->flushes);
+        static::assertSame($flushes + 1, $rows->flushes);
         $runner->run(static function (): void {});
-        static::assertSame(1, $rows->flushes);
+        static::assertSame($flushes + 1, $rows->flushes);
     }
 
     public function test_a_projection_implementing_unit_of_work_is_privately_owned(): void
@@ -71,16 +75,19 @@ final class ProjectionRegistrationTest extends ProjectionTestCase
         $container = $this
             ->projectionUltraLight()
             ->withExtension(new \Ultra\UnitOfWork\UnitOfWorkExtension())
-            ->withClass(\Ultra\Projection\Tests\Support\ImmediateBufferedModeProjection::class)
-            ->withAlias('test.model', \Ultra\Projection\Tests\Support\ImmediateBufferedModeProjection::class)
+            ->withClass(\Ultra\Projection\Tests\Support\ManagedBufferedModeProjection::class)
+            ->withAlias('test.model', \Ultra\Projection\Tests\Support\ManagedBufferedModeProjection::class)
+            ->withAlias('test.rebuilder', ProjectionRebuilder::class)
             ->withAlias('test.uow_runner', \Ultra\UnitOfWork\UnitOfWorkRunner::class)
             ->boot();
         $model = $container->get('test.model');
+        $container->get('test.rebuilder')->activate($container->projectionCatalog()->runtime('mode_projection'));
+        $clears = $model->clears;
         $container->get('test.uow_runner')->run(function () use ($container): void {
             $container->eventStore()->append([self::courseCreatedEvent('c', 'projected')]);
         });
         static::assertSame(['projected'], $model->names());
-        static::assertSame(1, $model->clears);
+        static::assertSame($clears + 1, $model->clears);
     }
 
     public function test_two_projections_cannot_own_the_same_persistence_participant(): void
