@@ -36,7 +36,7 @@ final class MappedRowSet
     /** @param int|string|MappedKey|\Stringable|array<string, int|string|\Stringable> $key */
     public function withKey(int|string|MappedKey|\Stringable|array $key): MappedRowHandle
     {
-        return new MappedRowHandle($this, $this->normalizeKey($key), $this->generation, $this->mapping);
+        return new MappedRowHandle($this, $this->normalizeKey($key), $this->generation);
     }
 
     /** @internal True when a buffered deletion, cancellation or reconciliation removes the row. */
@@ -44,7 +44,7 @@ final class MappedRowSet
     {
         $update = $this->updates[$key->fingerprint()] ?? null;
 
-        return null !== $update && (RowUpdatePlan::MODE_DELETE === $update->mode || $update->removedByReconciliation);
+        return $update?->isDeleted() ?? false;
     }
 
     /** @internal */
@@ -57,11 +57,13 @@ final class MappedRowSet
 
     private function newUpdate(MappedKey $key): BufferedRowUpdate
     {
-        $update = new BufferedRowUpdate($key);
         $reconciled = $this->membershipFor($key)?->reconciled;
-        $update->removedByReconciliation = null !== $reconciled && !isset($reconciled[$key->fingerprint()]);
 
-        return $update;
+        return new BufferedRowUpdate(
+            $key,
+            $this->mapping,
+            locallyAbsent: null !== $reconciled && !isset($reconciled[$key->fingerprint()]),
+        );
     }
 
     /**
@@ -101,12 +103,10 @@ final class MappedRowSet
         $projection = $keyOnly ? $this->mapping->keyColumns : $this->selectedColumns($columns, includeKeys: true);
         $toRead = [];
         $visible = [];
-        $plans = [];
         foreach ($requested as $fingerprint => $key) {
             $pending = $this->updates[$fingerprint] ?? null;
             $visible[$fingerprint] = $this->isVisible($key, $pending);
-            $plans[$fingerprint] = $pending?->toPlan();
-            if ($visible[$fingerprint] && !$this->replacesStoredRow($plans[$fingerprint])) {
+            if ($visible[$fingerprint] && true !== $pending?->replacesStoredRow()) {
                 $toRead[$fingerprint] = $key;
             }
         }
@@ -114,23 +114,16 @@ final class MappedRowSet
         $updates = [];
         $results = [];
         foreach ($requested as $fingerprint => $key) {
-            $row = $visible[$fingerprint]
-                ? $this->overlayRow(
-                    $key,
-                    $stored[$fingerprint] ?? false,
-                    $plans[$fingerprint],
-                    $projection,
-                    trackStorage: true,
-                )
-                : null;
             $pending = $this->updates[$fingerprint] ?? null;
-            $candidate = null === $pending ? $this->newUpdate($key) : clone $pending;
-            new MappedRowHandle($this, $key, $this->generation, $this->mapping)->applyObservation(
-                $candidate,
-                $row,
+            $row = $visible[$fingerprint]
+                ? $this->overlayRow($key, $stored[$fingerprint] ?? false, $pending, $projection, trackStorage: true)
+                : null;
+            $updates[$fingerprint] = $this->observedUpdate(
+                $key,
+                $pending,
+                $row['storedValues'] ?? null,
                 $observedColumns,
             );
-            $updates[$fingerprint] = $candidate;
             $results[$fingerprint] = $keyOnly && null !== $row ? $key->values : $row['values'] ?? null;
         }
         foreach ($updates as $fingerprint => $update) {
@@ -138,6 +131,22 @@ final class MappedRowSet
         }
 
         return array_map(static fn(string $fingerprint): ?array => $results[$fingerprint], $order);
+    }
+
+    /**
+     * @param array<string, mixed>|null $storedValues
+     * @param array<string, true>|null $observedColumns
+     */
+    private function observedUpdate(
+        MappedKey $key,
+        ?BufferedRowUpdate $pending,
+        ?array $storedValues,
+        ?array $observedColumns,
+    ): BufferedRowUpdate {
+        $candidate = null === $pending ? $this->newUpdate($key) : clone $pending;
+        $candidate->applyObservation($storedValues, $observedColumns);
+
+        return $candidate;
     }
 
     /** @param iterable<MappedRow> $rows */
@@ -176,7 +185,10 @@ final class MappedRowSet
         }
 
         foreach ($desiredKeys as $fingerprint => $key) {
-            $this->withKey($key)->upsert()->setColumns($desiredColumns[$fingerprint]);
+            $update = $this->updates[$fingerprint] ?? $this->newUpdate($key);
+            $update->upsert();
+            $update->setColumns($desiredColumns[$fingerprint]);
+            $this->updates[$fingerprint] = $update;
         }
 
         foreach ($this->updates as $fingerprint => $update) {
@@ -185,9 +197,7 @@ final class MappedRowSet
             }
 
             // Discard superseded writes, retaining expectations on the committed row.
-            $update->mode = null;
-            $update->setColumns = [];
-            $update->removedByReconciliation = true;
+            $update->excludeFromReconciliation();
         }
         $this->membership($owner)->reconciled = $desiredKeys;
     }
@@ -220,28 +230,38 @@ final class MappedRowSet
     /**
      * @internal
      * @param list<string>|null $columns
-     * @return array{values: array<string, mixed>, storedValues: array<string, mixed>}|null
+     * @param array<string, true>|null $observedColumns
+     * @return array<string, mixed>|null
      */
-    public function readForHandle(MappedKey $key, int $generation, ?array $columns, bool $trackStorage = false): ?array
-    {
+    public function readForHandle(
+        MappedKey $key,
+        int $generation,
+        ?array $columns,
+        bool $observe = false,
+        ?array $observedColumns = null,
+    ): ?array {
         $this->assertHandleGeneration($generation);
         $keyOnly = [] === $columns;
         $projection = $keyOnly ? $this->mapping->keyColumns : $this->selectedColumns($columns, includeKeys: true);
-        $update = $this->updates[$key->fingerprint()] ?? null;
-        if (!$this->isVisible($key, $update)) {
-            return null;
+        $fingerprint = $key->fingerprint();
+        $update = $this->updates[$fingerprint] ?? null;
+        $row = null;
+        if ($this->isVisible($key, $update)) {
+            $stored = true === $update?->replacesStoredRow()
+                ? false
+                : $this->adapter->row($this->mapping->table, $key, $projection);
+            $row = $this->overlayRow($key, $stored, $update, $projection, trackStorage: $observe);
+        }
+        if ($observe) {
+            $this->updates[$fingerprint] = $this->observedUpdate(
+                $key,
+                $update,
+                $row['storedValues'] ?? null,
+                $observedColumns,
+            );
         }
 
-        $plan = $update?->toPlan();
-        $stored = $this->replacesStoredRow($plan)
-            ? false
-            : $this->adapter->row($this->mapping->table, $key, $projection);
-        $row = $this->overlayRow($key, $stored, $plan, $projection, trackStorage: $trackStorage);
-        if ($keyOnly && null !== $row) {
-            $row['values'] = $key->values;
-        }
-
-        return $row;
+        return $keyOnly && null !== $row ? $key->values : $row['values'] ?? null;
     }
 
     /**
@@ -289,9 +309,8 @@ final class MappedRowSet
             }
 
             $this->mapping->assertKey($row->key);
-            $plan = $update?->toPlan();
-            $key = true === $plan?->writes() ? $plan->key : $row->key;
-            $view = $this->overlayRow($key, $row->columns, $plan, $projection);
+            $key = true === $update?->writes() ? $update->key : $row->key;
+            $view = $this->overlayRow($key, $row->columns, $update, $projection);
             assert(null !== $view, 'A visible stored row remains present.');
             $rows[$fingerprint] = new MappedRow($key, $view['values']);
         }
@@ -305,7 +324,7 @@ final class MappedRowSet
                 continue;
             }
 
-            $view = $this->overlayRow($update->key, false, $update->toPlan(), $projection);
+            $view = $this->overlayRow($update->key, false, $update, $projection);
             if (null !== $view) {
                 $rows[$fingerprint] = new MappedRow($update->key, $view['values']);
             }
@@ -323,17 +342,17 @@ final class MappedRowSet
     private function overlayRow(
         MappedKey $key,
         array|false $stored,
-        ?RowUpdatePlan $plan,
+        ?BufferedRowUpdate $update,
         array $projection,
         bool $trackStorage = false,
     ): ?array {
-        $writes = true === $plan?->writes();
+        $writes = true === $update?->writes();
         if (false === $stored && !$writes) {
             return null;
         }
 
-        $stored = false === $stored || $this->replacesStoredRow($plan) ? [] : $stored;
-        $written = $writes ? [...$plan->setColumns, ...$key->values] : [];
+        $stored = false === $stored || true === $update?->replacesStoredRow() ? [] : $stored;
+        $written = $writes ? [...$update->writtenColumns(), ...$key->values] : [];
         $values = [];
         $storedValues = [];
         foreach ($projection as $column) {
@@ -355,14 +374,6 @@ final class MappedRowSet
         }
 
         return ['values' => $values, 'storedValues' => $storedValues];
-    }
-
-    private function replacesStoredRow(?RowUpdatePlan $plan): bool
-    {
-        return match ($plan?->mode) {
-            RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE => true,
-            default => false,
-        };
     }
 
     /** @param list<int|string|MappedKey|\Stringable|array<string, int|string|\Stringable>> $keys */
@@ -492,10 +503,10 @@ final class MappedRowSet
 
     private function isVisible(MappedKey $key, ?BufferedRowUpdate $update): bool
     {
-        if (true === $update?->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update?->mode) {
+        if (true === $update?->isDeleted()) {
             return false;
         }
-        if (null !== $update?->mode) {
+        if (true === $update?->hasWriteIntent()) {
             return true;
         }
 

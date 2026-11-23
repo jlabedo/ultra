@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Ultra\MappedTable\Buffer;
 
 use Ultra\MappedTable\MappedKey;
-use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /** @internal */
@@ -53,14 +52,13 @@ final class BufferedMembership
 
         $written = [];
         foreach ($updates as $update) {
-            $plan = $update->toPlan();
-            if (null === $plan || !$plan->writes()) {
+            if (!$update->writes()) {
                 continue;
             }
 
-            $fingerprint = $plan->key->fingerprint();
-            $written[$fingerprint] = $plan->key;
-            if ((RowUpdatePlan::MODE_DELETE !== $plan->mode) !== isset($expected[$fingerprint])) {
+            $fingerprint = $update->key->fingerprint();
+            $written[$fingerprint] = $update->key;
+            if ($update->isDeleted() === isset($expected[$fingerprint])) {
                 throw new ConcurrencyException(
                     'Row-set key expectation differs from the rows written in this unit of work.',
                 );
@@ -100,9 +98,9 @@ final class BufferedMembership
         $keys = $this->reconciled;
         foreach ($updates as $update) {
             $fingerprint = $update->key->fingerprint();
-            if ($update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update->mode) {
+            if ($update->isDeleted()) {
                 unset($keys[$fingerprint]);
-            } elseif (null !== $update->mode) {
+            } elseif ($update->hasWriteIntent()) {
                 $keys[$fingerprint] = $update->key;
             }
         }
