@@ -17,10 +17,10 @@
         "php": ">=8.5",
         "ext-ctype": "*",
         "ext-iconv": "*",
-        "symfony/console": "8.0.*",
-        "symfony/framework-bundle": "8.0.*",
-        "symfony/runtime": "8.0.*",
-        "symfony/yaml": "8.0.*",
+        "symfony/console": "^8.0",
+        "symfony/framework-bundle": "^8.0",
+        "symfony/runtime": "^8.0",
+        "symfony/yaml": "^8.0",
         "ultra/mapped-table": "dev-main",
         "ultra/mapper": "dev-main",
         "ultra/mapper-bundle": "dev-main",
@@ -59,7 +59,7 @@
     "extra": {
         "symfony": {
             "allow-contrib": false,
-            "require": "8.0.*"
+            "require": "^8.0"
         }
     }
 }

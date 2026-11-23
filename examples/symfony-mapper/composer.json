@@ -16,12 +16,13 @@
         "php": ">=8.5",
         "ext-ctype": "*",
         "ext-iconv": "*",
-        "symfony/console": "8.0.*",
-        "symfony/framework-bundle": "8.0.*",
-        "symfony/runtime": "8.0.*",
-        "symfony/yaml": "8.0.*",
+        "symfony/console": "^8.0",
+        "symfony/framework-bundle": "^8.0",
+        "symfony/runtime": "^8.0",
+        "symfony/yaml": "^8.0",
         "ultra/mapper": "*",
-        "ultra/mapper-bundle": "*"
+        "ultra/mapper-bundle": "*",
+        "ultra/symfony-bundle": "*"
     },
     "require-dev": {
         "ultra/mapper-compiler": "*"
@@ -66,7 +67,7 @@
     "extra": {
         "symfony": {
             "allow-contrib": false,
-            "require": "8.0.*"
+            "require": "^8.0"
         }
     }
 }

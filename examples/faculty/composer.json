@@ -20,12 +20,12 @@
         "doctrine/dbal": "^4.3",
         "doctrine/doctrine-bundle": "^3.2",
         "ext-iconv": "*",
-        "symfony/console": "8.0.*",
-        "symfony/dotenv": "8.0.*",
+        "symfony/console": "^8.0",
+        "symfony/dotenv": "^8.0",
         "symfony/flex": "^2",
-        "symfony/framework-bundle": "8.0.*",
-        "symfony/runtime": "8.0.*",
-        "symfony/yaml": "8.0.*",
+        "symfony/framework-bundle": "^8.0",
+        "symfony/runtime": "^8.0",
+        "symfony/yaml": "^8.0",
         "ultra/event-sourced-state": "dev-main",
         "ultra/event-sourced-state-compiler": "dev-main",
         "ultra/event-store": "dev-main",
@@ -98,7 +98,7 @@
     "extra": {
         "symfony": {
             "allow-contrib": false,
-            "require": "8.0.*"
+            "require": "^8.0"
         }
     }
 }
