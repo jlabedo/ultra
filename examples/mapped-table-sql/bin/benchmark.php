@@ -10,7 +10,6 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
@@ -146,7 +145,6 @@ function benchmark(Connection $connection, string $workload, int $warmups, int $
             ? [new QueryGuardDefinition('mapped-table-benchmark', [
                 new QueryGuardDependency($definition::class, 'owner'),
             ])] : [],
-        guardLocks: $guarded ? new PostgresGuardLockAdapter($connection) : null,
     );
     $runner = new TransactionalUnitOfWorkRunner($unit, new DbalTransactionManager($connection));
     $milliseconds = [];

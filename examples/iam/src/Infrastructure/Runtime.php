@@ -27,7 +27,6 @@ use IamExample\State\SubjectState;
 use IamExample\State\TenantState;
 use Psr\Clock\ClockInterface;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
@@ -110,7 +109,6 @@ final readonly class Runtime
                 new QueryGuardDependency(RolesDefinition::class, 'tenant_id', ['active']),
                 new QueryGuardDependency(RolePermissionsDefinition::class, 'tenant_id'),
             ])],
-            guardLocks: new PostgresGuardLockAdapter($connection),
         );
         $this->states = new StateStore(
             new StateMetadataRegistry($metadata),

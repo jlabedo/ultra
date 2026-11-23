@@ -40,20 +40,11 @@ The MappedTable coordinator flushes StateStore work in **one transaction**:
 2. Replay all query expectations before applying any row-set plan.
 3. Check the optimistic row expectations and apply the existing write plans.
 
-Configure a dedicated `GuardLockAdapter` service when using manual or compiled query guards. For Postgres:
-
-```yaml
-Ultra\MappedTable\GuardLockAdapter:
-    class: Ultra\MappedTable\PostgresGuardLockAdapter
-    arguments:
-        $connection: '@doctrine.dbal.default_connection'
-```
-
-Use `InMemoryGuardLockAdapter` with the same `InMemoryRowDatabase` as the mapped adapters for in-memory work.
-The coordinator acquires cooperative guards through the dedicated adapter. Guard-only work needs no row mutations.
+The coordinator acquires cooperative guards through the [mapped table adapter](mapped-table.md#adapter-contract).
+The adapter is required for query-only and guard-only units of work, including when they contain no row sets.
 
 With `TransactionalUnitOfWorkRunner`, application work runs before the transaction is opened. Configure its
-`TransactionManager` for the same connection used by the mapped adapters, guard adapter and query callbacks. The runner commits
+`TransactionManager` for the same connection used by the mapped table adapter and query callbacks. The runner commits
 or rolls back the entire flush and clears the queues on success or failure. Calling the coordinator's `flush()` directly requires the caller to provide that transaction and call `clear()` when the unit of work ends. Query-only
 and guard-only work also counts as pending. This mechanism uses no `SERIALIZABLE` isolation and does not prelock
 every row that will be written. Ordered manual guards do not remove every possible database deadlock, particularly

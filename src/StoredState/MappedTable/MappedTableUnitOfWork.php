@@ -32,14 +32,13 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
      */
     public function __construct(
         array $rowSets,
-        private ?MappedTableAdapter $adapter = null,
+        private MappedTableAdapter $adapter,
         ?array $compiledSchedule = null,
         array|QueryGuardRules $queryGuards = [],
-        ?GuardLockAdapter $guardLocks = null,
     ) {
         $mappings = [];
         foreach ($rowSets as $definition => $rowSet) {
-            $rowSet->assertCanEnroll($adapter ?? throw new \LogicException('Mapped row sets require a table adapter.'));
+            $rowSet->assertCanEnroll($adapter);
             $mappings[$definition] = $rowSet->mappingForCoordination();
         }
 
@@ -47,9 +46,6 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
         $rules = $queryGuards instanceof QueryGuardRules
             ? $queryGuards
             : QueryGuardRules::compile($queryGuards, $mappings);
-        if ([] !== $rules->namespaces && null === $guardLocks) {
-            throw new \LogicException('Mapped query guards require a GuardLockAdapter.');
-        }
         $orderedRowSets = [];
         foreach (array_keys($schedule) as $definition) {
             $rowSet = $rowSets[$definition];
@@ -57,7 +53,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
             $orderedRowSets[$definition] = $rowSet;
         }
 
-        $this->guards = new QueryGuardWork($rules, $guardLocks, $orderedRowSets);
+        $this->guards = new QueryGuardWork($rules, $orderedRowSets);
         $this->rowSets = $orderedRowSets;
         $this->mappings = $mappings;
         $this->referenced = $schedule;
@@ -100,17 +96,16 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
 
         $this->assertSupported($plans);
         $requests = $this->guards->requests($plans);
-        $resource = [] !== $plans || $this->guards->hasPendingChanges()
-            ? $this->adapter?->activeTransactionResource()
-            : null;
-        $this->guards->replay($requests, $resource);
+        if ([] !== $plans || $this->guards->hasPendingChanges()) {
+            $this->adapter->assertActiveTransaction();
+        }
+        $this->guards->replay($requests, $this->adapter);
 
         if ([] !== $plans) {
             $tablePlans = [];
             foreach ($plans as $definition => $plan) {
                 $tablePlans[$this->mappings[$definition]->table] = $plan;
             }
-            assert(null !== $this->adapter, 'Pending mapped rows require a table adapter.');
             $this->adapter->flush($tablePlans);
         }
 

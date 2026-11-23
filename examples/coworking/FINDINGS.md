@@ -270,8 +270,8 @@ with MappedTable’s `#[DefineQueryGuard]`. A `QueryGuardDependency` declares th
 and watched columns. A second guard covers room-booking dependencies. `QueryGuard::observe(value, callback)` queues a
 shared guard and records the query result. Flush derives exclusive guards from affected row plans, including old
 and new scope values, consolidates modes before acquisition, checks query results, then runs the row-set plans.
-`MappedTableUnitOfWork` owns and consolidates guard requests; `PostgresGuardLockAdapter` acquires them on the same
-connection as the row adapters and SQL queries. `MappedRowSet` buffers row changes and optimistic expectations,
+`MappedTableUnitOfWork` owns and consolidates guard requests. `PostgresMappedTableAdapter` acquires them and applies
+row plans on the same connection as the SQL queries. `MappedRowSet` buffers row changes and optimistic expectations,
 without knowing these decision guards. Named query guards use a separate advisory namespace from manual row and automatic absent-row locks. Named guards
 are ordered by name/value; legacy manual guards follow in table/key order. Rows written by the plan are not all locked up front;
 `SERIALIZABLE` is not used. The existing adapter sorts row plans by key and batches consecutive compatible

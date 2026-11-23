@@ -16,13 +16,20 @@ final class PostgresMappedTableAdapter extends MappedTableAdapter
         private readonly array $tablePolicies = [],
     ) {}
 
-    public function activeTransactionResource(): object
+    public function assertActiveTransaction(): void
     {
         if (!$this->connection->isTransactionActive()) {
             throw new \LogicException('Mapped table flush requires an active transaction.');
         }
+    }
 
-        return $this->connection;
+    public function acquireGuardLock(string $namespace, string $key, GuardLockMode $mode): void
+    {
+        $sql = match ($mode) {
+            GuardLockMode::SHARED => 'SELECT pg_advisory_xact_lock_shared(hashtext(?), hashtext(?))',
+            GuardLockMode::EXCLUSIVE => 'SELECT pg_advisory_xact_lock(hashtext(?), hashtext(?))',
+        };
+        $this->connection->executeQuery($sql, [$namespace, $key]);
     }
 
     /**

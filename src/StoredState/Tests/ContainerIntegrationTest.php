@@ -14,15 +14,12 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\EventStore\EventStore;
 use Ultra\MappedTable\Attribute\DefineQueryGuard;
 use Ultra\MappedTable\Exception\PendingQueryChangesException;
-use Ultra\MappedTable\GuardLockAdapter;
-use Ultra\MappedTable\InMemoryGuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableAdapter;
-use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDependency;
@@ -125,13 +122,6 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         $container->get(UnitOfWork::class)->flush();
     }
 
-    public function test_query_guards_require_a_dedicated_adapter_during_compilation(): void
-    {
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('GuardLockAdapter');
-        $this->createContainer(withQueryGuard: true, withGuardAdapter: false);
-    }
-
     public function test_state_resources_reject_non_string_class_names_during_compilation(): void
     {
         $container = new ContainerBuilder();
@@ -167,7 +157,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
 
     public function test_bundle_registers_state_store_and_shared_mapped_row_set_services(): void
     {
-        $container = $this->createContainer(withGuardAdapter: false);
+        $container = $this->createContainer();
         $database = $container->get(InMemoryRowDatabase::class);
         $store = $container->get('test.state_store');
         $unitOfWork = $container->get(UnitOfWork::class);
@@ -250,7 +240,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
 
     public function test_manual_sql_expectations_run_before_shared_writes(): void
     {
-        $container = $this->createContainer(withGuardAdapter: false);
+        $container = $this->createContainer();
         $database = $container->get(InMemoryRowDatabase::class);
         $store = $container->get('test.state_store');
         $orders = $container->get('test.orders');
@@ -293,7 +283,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         $fixture = $this->stateFixture('postgres', [OrderWithLinesState::class]);
         self::assertInstanceOf(Connection::class, $fixture->storage);
         $database = $fixture->storage;
-        $container = $this->createContainer(withGuardAdapter: false, postgres: $database);
+        $container = $this->createContainer(postgres: $database);
         $store = $container->get('test.state_store');
         $lines = $container->get('test.lines');
         $unitOfWork = $container->get(UnitOfWork::class);
@@ -403,7 +393,6 @@ final class ContainerIntegrationTest extends StateStoreTestCase
     private function createContainer(
         bool $withQueryGuard = false,
         ?string $extraGuardRepository = null,
-        bool $withGuardAdapter = true,
         array $rowSets = [OrdersDefinition::class, OrderLinesDefinition::class],
         array $extraStates = [],
         ?Connection $postgres = null,
@@ -430,18 +419,13 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         if (null === $postgres) {
             $storage = InMemoryRowDatabase::class;
             $factory = InMemoryMappedTableAdapter::class;
-            $guard = InMemoryGuardLockAdapter::class;
             $container->register($storage, $storage)->setPublic(true);
         } else {
             $storage = Connection::class;
             $factory = PostgresMappedTableAdapter::class;
-            $guard = PostgresGuardLockAdapter::class;
             $container->register($storage, $storage)->setPublic(true)->setSynthetic(true);
         }
         $container->register(MappedTableAdapter::class, $factory)->setArguments([new Reference($storage)]);
-        if ($withGuardAdapter) {
-            $container->register(GuardLockAdapter::class, $guard)->setArguments([new Reference($storage)]);
-        }
         $container->setAlias('test.state_store', StateStore::class)->setPublic(true);
 
         $container->setDefinition(

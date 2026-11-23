@@ -6,10 +6,10 @@ namespace Ultra\MappedTable\Guard;
 
 use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\MappedTable\Exception\UnknownQueryGuardException;
-use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\GuardLockMode;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\Plan\RowSetUpdatePlan;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
@@ -31,7 +31,6 @@ final class QueryGuardWork
     /** @param array<string, MappedRowSet> $rowSets */
     public function __construct(
         private readonly QueryGuardRules $rules,
-        private readonly ?GuardLockAdapter $adapter,
         private readonly array $rowSets,
     ) {}
 
@@ -116,11 +115,11 @@ final class QueryGuardWork
     }
 
     /** @param array<array-key, array<array-key, GuardLockMode>> $requests */
-    public function replay(array $requests, ?object $rowSetResource): void
+    public function replay(array $requests, MappedTableAdapter $adapter): void
     {
         $this->assertCollecting();
         if ([] !== $requests || [] !== $this->rowLocks) {
-            $this->acquire($requests, $rowSetResource);
+            $this->acquire($requests, $adapter);
         }
 
         $this->replaying = true;
@@ -139,26 +138,20 @@ final class QueryGuardWork
     }
 
     /** @param array<array-key, array<array-key, GuardLockMode>> $requests */
-    private function acquire(array $requests, ?object $rowSetResource): void
+    private function acquire(array $requests, MappedTableAdapter $adapter): void
     {
-        $adapter = $this->adapter ?? throw new \LogicException('Mapped table locks require a GuardLockAdapter.');
-        $resource = $adapter->activeTransactionResource();
-        if (null !== $rowSetResource && $rowSetResource !== $resource) {
-            throw new \LogicException('Query guards and mapped row sets must use the same transaction resource.');
-        }
-
         foreach ($this->rules->namespaces as $name => $namespace) {
             $values = $requests[$name] ?? [];
             ksort($values, SORT_STRING);
             foreach ($values as $value => $mode) {
-                $adapter->acquire($namespace, (string) $value, $mode);
+                $adapter->acquireGuardLock($namespace, (string) $value, $mode);
             }
         }
         ksort($this->rowLocks, SORT_STRING);
         foreach ($this->rowLocks as $table => $keys) {
             ksort($keys, SORT_STRING);
             foreach (array_keys($keys) as $key) {
-                $adapter->acquire($table . ':manual', $key, GuardLockMode::EXCLUSIVE);
+                $adapter->acquireGuardLock($table . ':manual', $key, GuardLockMode::EXCLUSIVE);
             }
         }
     }

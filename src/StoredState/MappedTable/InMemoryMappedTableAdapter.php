@@ -14,14 +14,14 @@ final class InMemoryMappedTableAdapter extends MappedTableAdapter
         private readonly array $tablePolicies = [],
     ) {}
 
-    public function activeTransactionResource(): object
+    public function assertActiveTransaction(): void
     {
         if (!$this->database->isTransactionActive()) {
             throw new \LogicException('Mapped table flush requires an active transaction.');
         }
-
-        return $this->database;
     }
+
+    public function acquireGuardLock(string $namespace, string $key, GuardLockMode $mode): void {}
 
     public function create(string $tableName, array $keyColumns = ['id']): MappedRowSet
     {

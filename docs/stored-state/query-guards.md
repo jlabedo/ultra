@@ -7,8 +7,8 @@ are replayed under the guards inside the flush transaction.
 ## MappedTable query guards
 
 A dependency identifies a row set definition, the physical column that supplies the guard value and the
-physical columns read by the query. Register a MappedTable `GuardLockAdapter` using the same connection or
-in-memory database as the row sets.
+physical columns read by the query. The [mapped table adapter](mapped-table.md#adapter-contract) handles
+guard locks on the same resource as row writes.
 
 ### Symfony attribute
 
@@ -47,12 +47,11 @@ $guardDefinitions = [
 ```
 
 Pass these declarations to `MappedTableExtension` in Symfony. In manual assembly, pass them as
-`queryGuards` and the adapter as `guardLocks` to `MappedTableUnitOfWork`, then call
-`queryGuard('company_usage')`.
+`queryGuards` to `MappedTableUnitOfWork`, then call `queryGuard('company_usage')`.
 
 ### Dependencies and flush
 
-Symfony validates guard names, definitions, columns and the lock adapter registration during compilation.
+Symfony validates guard names, row set definitions and columns during compilation.
 It emits dependency indexes by guard name and row set, watched column sets and ordered lock namespaces.
 Each guard value comes from one non-null integer or string column. An omitted column list watches the full
 row and an empty list watches membership and changes to the guard value. Inserting, deleting or replacing
@@ -72,7 +71,7 @@ row set. `lock($value)` requests a shared guard without reading or recording a q
 storage on the flush connection and return repeatable scalars, null or arrays of these values. The coordinator
 compares replay results with `===`. It acquires all guards before replay, consolidating shared and exclusive
 requests for the same name and value to one exclusive lock. It then delegates persistence checks and writes
-to the row-set adapters. PostgreSQL uses transaction-scoped advisory locks. Named guards are acquired in
+to the shared mapped table adapter. PostgreSQL uses transaction-scoped advisory locks. Named guards are acquired in
 name/value order, followed by manual row locks in table/key order. Use `READ COMMITTED` for replay to see
 commits that precede lock acquisition.
 

@@ -11,15 +11,9 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\Attribute\DefineQueryGuard;
 use Ultra\MappedTable\Guard\QueryGuardRule;
 use Ultra\MappedTable\Guard\QueryGuardRules;
-use Ultra\MappedTable\GuardLockAdapter;
-use Ultra\MappedTable\InMemoryGuardLockAdapter;
-use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
-use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresGuardLockAdapter;
-use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 
@@ -46,12 +40,9 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
             return;
         }
 
-        $adapterClass = $container
-            ->getParameterBag()
-            ->resolveValue($container->findDefinition(MappedTableAdapter::class)->getClass());
         foreach ($groups as $id => $definitions) {
             $rules = QueryGuardRules::compile($definitions, $mappings);
-            $this->registerQueryGuards($container, $id, $rules, is_string($adapterClass) ? $adapterClass : null);
+            $this->registerQueryGuards($container, $id, $rules);
         }
     }
 
@@ -135,27 +126,8 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
         return $guards;
     }
 
-    private function registerQueryGuards(
-        ContainerBuilder $container,
-        string $coordinator,
-        QueryGuardRules $rules,
-        ?string $tableAdapterClass,
-    ): void {
-        $hasAdapter = $container->has(GuardLockAdapter::class);
-        if (!$hasAdapter && [] !== $rules->namespaces) {
-            throw new \LogicException('Compiled mapped query guards require a GuardLockAdapter.');
-        }
-
-        $guardAdapterClass = $hasAdapter ? $container->findDefinition(GuardLockAdapter::class)->getClass() : null;
-        $incompatible = match ($tableAdapterClass) {
-            InMemoryMappedTableAdapter::class => PostgresGuardLockAdapter::class,
-            PostgresMappedTableAdapter::class => InMemoryGuardLockAdapter::class,
-            default => null,
-        };
-        if (null !== $incompatible && $incompatible === $guardAdapterClass) {
-            throw new \LogicException('Mapped row sets and query guards must use the same storage backend.');
-        }
-
+    private function registerQueryGuards(ContainerBuilder $container, string $coordinator, QueryGuardRules $rules): void
+    {
         $unitOfWork = $container->getDefinition($coordinator);
         $unitOfWork->addArgument(new Definition(QueryGuardRules::class, [
             array_map(
@@ -172,10 +144,6 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
             $rules->byRowSet,
             $rules->namespaces,
         ]));
-        if ($hasAdapter) {
-            $unitOfWork->addArgument(new Reference(GuardLockAdapter::class));
-        }
-
         foreach (array_keys($rules->namespaces) as $name) {
             $container
                 ->register(QueryGuard::class . '.' . $name, QueryGuard::class)

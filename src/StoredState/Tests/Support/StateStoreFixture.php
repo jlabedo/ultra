@@ -6,11 +6,9 @@ namespace Ultra\StateStore\Tests\Support;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
-use Ultra\MappedTable\InMemoryGuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\Mapper\UltraNormalizer;
@@ -116,9 +114,6 @@ final class StateStoreFixture
         $factory = $storage instanceof Connection
             ? new PostgresMappedTableAdapter($storage)
             : new InMemoryMappedTableAdapter($storage);
-        $locks = $storage instanceof Connection
-            ? new PostgresGuardLockAdapter($storage)
-            : new InMemoryGuardLockAdapter($storage);
 
         $required = $this->requiredTables($stateClasses);
         $rowSets = [];
@@ -141,7 +136,7 @@ final class StateStoreFixture
             $rowSets[$definition] = $rowSet;
             $tables[$mapping->table] = $rowSet;
         }
-        $unitOfWork = new MappedTableUnitOfWork($rowSets, $factory, queryGuards: $guards, guardLocks: $locks);
+        $unitOfWork = new MappedTableUnitOfWork($rowSets, $factory, queryGuards: $guards);
         $bindings = new StateRowSets($tables, $unitOfWork);
 
         return [new StateStore($this->metadata, $bindings, new UltraNormalizer()), $unitOfWork, $bindings];

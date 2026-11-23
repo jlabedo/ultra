@@ -7,9 +7,7 @@ namespace Ultra\StateStore\Tests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\Exception\PendingQueryChangesException;
-use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\GuardLockMode;
-use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSetDefinition;
@@ -18,6 +16,7 @@ use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\Tests\Support\RecordingGuardMappedTableAdapter;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\State;
@@ -194,7 +193,6 @@ final class QueryDependencyTest extends TestCase
     private function fixture(): array
     {
         $database = new InMemoryRowDatabase();
-        $factory = new InMemoryMappedTableAdapter($database);
         $analyzer = new NormalizationShapeAnalyzer();
         $metadataFactory = new StateMetadataFactory([
             GuardRole::class => $analyzer->forProperty(new \ReflectionProperty(GuardRole::class, 'id')),
@@ -203,22 +201,13 @@ final class QueryDependencyTest extends TestCase
         $state = $metadataFactory->create(GuardRole::class);
         $metadata = new StateMetadataRegistry([GuardRole::class => $state]);
         $trace = new \ArrayObject();
-        $adapter = new class($trace, $database) implements GuardLockAdapter {
-            public function __construct(
-                private \ArrayObject $trace,
-                private InMemoryRowDatabase $database,
-            ) {}
-
-            public function activeTransactionResource(): object
-            {
-                return $this->database;
-            }
-
-            public function acquire(string $namespace, string $key, GuardLockMode $mode): void
-            {
-                $this->trace[] = [$namespace, $key, $mode];
-            }
-        };
+        $factory = new RecordingGuardMappedTableAdapter($database, static function (
+            string $namespace,
+            string $key,
+            GuardLockMode $mode,
+        ) use ($trace): void {
+            $trace[] = [$namespace, $key, $mode];
+        });
         $roleMapping = new GuardRolesDefinition()->mapping();
         $permissionMapping = new GuardPermissionsDefinition()->mapping();
         $roles = $factory->createDefined($roleMapping);
@@ -230,7 +219,6 @@ final class QueryDependencyTest extends TestCase
                 new QueryGuardDependency(GuardRolesDefinition::class, 'tenant_id', ['enabled']),
                 new QueryGuardDependency(GuardPermissionsDefinition::class, 'owner_tenant'),
             ])],
-            guardLocks: $adapter,
         );
         $store = new StateStore(
             $metadata,

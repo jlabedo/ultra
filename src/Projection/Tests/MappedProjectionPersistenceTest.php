@@ -16,7 +16,6 @@ use Ultra\EventStore\StreamQuery;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\MappedTable\Attribute\DefineQueryGuard;
-use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
@@ -25,7 +24,6 @@ use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableAdapter;
-use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
@@ -83,7 +81,6 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
             ->withService($connection, Connection::class)
             ->withService(new DbalTransactionManager($connection), TransactionManager::class)
             ->withService(new PostgresMappedTableAdapter($connection), MappedTableAdapter::class)
-            ->withService(new PostgresGuardLockAdapter($connection), GuardLockAdapter::class)
             ->withClass(
                 CompiledMappedProjection::class,
                 ProjectedCoursesDefinition::class,

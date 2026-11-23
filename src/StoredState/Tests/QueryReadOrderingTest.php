@@ -7,7 +7,6 @@ namespace Ultra\StateStore\Tests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\MappedTable\Exception\UnknownQueryGuardException;
-use Ultra\MappedTable\InMemoryGuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
@@ -34,7 +33,7 @@ final class QueryReadOrderingTest extends StateStoreTestCase
     #[DataProvider('unknownGuards')]
     public function test_unknown_guards_are_rejected_at_lookup_without_queuing_work(string $name): void
     {
-        $unitOfWork = new MappedTableUnitOfWork([]);
+        $unitOfWork = new MappedTableUnitOfWork([], new InMemoryMappedTableAdapter(new InMemoryRowDatabase()));
         try {
             $unitOfWork->queryGuard($name);
             static::fail('An unknown guard must fail.');
@@ -195,7 +194,6 @@ final class QueryReadOrderingTest extends StateStoreTestCase
                     new QueryGuardDependency(QueryReadBookingsDefinition::class, 'room_id', ['status']),
                 ]),
             ],
-            guardLocks: new InMemoryGuardLockAdapter($database),
         );
 
         return [$database, $table, $notes, $unitOfWork, $unitOfWork->queryGuard('company_usage')];

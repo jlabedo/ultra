@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable\Tests\Support;
 
+use Ultra\MappedTable\GuardLockMode;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetMetadata;
@@ -58,10 +59,9 @@ final class RecordingRowSetStorage implements RowSetStorage
                 return $this->bind($mapping->table, $this->storage, $mapping);
             }
 
-            public function activeTransactionResource(): object
-            {
-                return $this;
-            }
+            public function assertActiveTransaction(): void {}
+
+            public function acquireGuardLock(string $namespace, string $key, GuardLockMode $mode): void {}
         };
         $rows = $adapter->create('rows');
 

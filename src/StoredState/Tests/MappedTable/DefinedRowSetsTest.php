@@ -14,8 +14,6 @@ use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\Attribute\DefineQueryGuard;
 use Ultra\MappedTable\Guard\QueryGuardRules;
-use Ultra\MappedTable\GuardLockAdapter;
-use Ultra\MappedTable\InMemoryGuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
@@ -26,7 +24,6 @@ use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
@@ -78,10 +75,6 @@ final class DefinedRowSetsTest extends RowSetTestCase
                     new QueryGuardDependency(CompileTimeLineDefinition::class, 'owner', ['aliases']),
                 ]),
             ])->build($container);
-            $guardAdapter = $storage instanceof InMemoryRowDatabase
-                ? new InMemoryGuardLockAdapter($storage)
-                : new PostgresGuardLockAdapter($storage);
-            $container->register(GuardLockAdapter::class, $guardAdapter::class)->setSynthetic(true)->setPublic(true);
             new UnitOfWorkExtension()->build($container);
             if ($syntheticAdapter) {
                 $container->register(MappedTableAdapter::class, $adapter::class)->setSynthetic(true)->setPublic(true);
@@ -137,7 +130,6 @@ final class DefinedRowSetsTest extends RowSetTestCase
             }
 
             $compiled = new $dumpedClass();
-            $compiled->set(GuardLockAdapter::class, $guardAdapter);
             if ($syntheticAdapter) {
                 $compiled->set(MappedTableAdapter::class, $adapter);
             } else {
@@ -234,9 +226,6 @@ final class DefinedRowSetsTest extends RowSetTestCase
         $container
             ->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)
             ->setArguments([new Reference(InMemoryRowDatabase::class)]);
-        $container
-            ->register(GuardLockAdapter::class, InMemoryGuardLockAdapter::class)
-            ->setArguments([new Reference(InMemoryRowDatabase::class)]);
         $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
         $container
             ->register(AttributeGuardReader::class, AttributeGuardReader::class)
@@ -286,12 +275,6 @@ final class DefinedRowSetsTest extends RowSetTestCase
             'needs a non-null int or string value column',
             true,
         ];
-        yield 'absent lock adapter' => [
-            [new QueryGuardDefinition('guard', [
-                new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id'),
-            ])],
-            'require a GuardLockAdapter',
-        ];
     }
 
     #[DataProvider('invalidQueryGuards')]
@@ -311,21 +294,6 @@ final class DefinedRowSetsTest extends RowSetTestCase
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage($message);
-        $container->compile();
-    }
-
-    public function test_compilation_rejects_incompatible_query_guard_storage(): void
-    {
-        $container = new ContainerBuilder();
-        new MappedTableExtension([new QueryGuardDefinition('guard', [
-            new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id'),
-        ])])->build($container);
-        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
-        $container->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setSynthetic(true);
-        $container->register(GuardLockAdapter::class, PostgresGuardLockAdapter::class)->setSynthetic(true);
-
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('must use the same storage backend');
         $container->compile();
     }
 

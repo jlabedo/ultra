@@ -216,7 +216,8 @@ changes at observation time appear in that membership entry's `ignoredRowKeys`. 
 ## Adapter contract
 
 One `Ultra\MappedTable\MappedTableAdapter` binds table configurations to its storage resource. Row sets
-use it for committed reads. The unit of work verifies the active transaction and passes the adapter all
+use it for committed reads and the unit of work uses it to acquire cooperative guards. The unit of work
+verifies the active transaction for every non-empty flush and passes the adapter all
 pending plans by physical table in dependency order. The adapter owns the execution phases and table-level
 storage operations.
 

@@ -8,9 +8,8 @@ use Doctrine\DBAL\Exception\DriverException;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\Exception\PendingQueryChangesException;
-use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\GuardLockMode;
-use Ultra\MappedTable\InMemoryGuardLockAdapter;
+use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
@@ -18,10 +17,10 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\Tests\Support\RecordingGuardMappedTableAdapter;
 use Ultra\MappedTable\Tests\Support\RowSetFixture;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\Testing\PostgresConnectionSupport;
@@ -33,12 +32,18 @@ final class QueryGuardTest extends RowSetTestCase
 {
     public function test_direct_writers_and_owner_cleanup_consolidate_guards_before_query_replay(): void
     {
-        $root = $this->fixture();
+        $storage = new InMemoryRowDatabase();
+        $trace = new \ArrayObject();
+        $adapter = new RecordingGuardMappedTableAdapter($storage, static function (
+            string $namespace,
+            string $key,
+            GuardLockMode $mode,
+        ) use ($trace): void {
+            $trace[] = str_replace('ultra:query_guard:', '', $namespace) . ':' . $key . ':' . $mode->name;
+        });
+        $root = $this->fixture(storage: $storage, adapter: $adapter);
         $rows = $root->defined(GuardedBookingDefinition::at($root->tableName));
         [$owned, $lines] = $this->lineCollection(sharedWith: $root);
-        $storage = $root->storage;
-        assert($storage instanceof InMemoryRowDatabase);
-        $trace = new QueryGuardTrace($storage);
         $unit = new MappedTableUnitOfWork(
             [GuardedBookingDefinition::class => $rows, GuardedLineDefinition::class => $lines],
             $root->adapter,
@@ -49,7 +54,6 @@ final class QueryGuardTest extends RowSetTestCase
                 ]),
                 new QueryGuardDefinition('a', [new QueryGuardDependency(GuardedBookingDefinition::class, 'id', [])]),
             ],
-            guardLocks: $trace,
         );
 
         $root->seed(['id' => 'booking', 'status' => '10', 'note' => 'original']);
@@ -57,7 +61,7 @@ final class QueryGuardTest extends RowSetTestCase
         $line = $owner->mergedWith(new MappedKey(['id' => 'item']));
         $owned->seed([...$line->values, 'note' => 'line']);
         $unit->queryGuard('z')->observe(10, static function () use ($root, $owned, $line, $trace): array {
-            $trace->events[] = 'query';
+            $trace[] = 'query';
 
             return [$root->stored('booking', ['status']), $owned->stored($line, ['note'])];
         });
@@ -70,7 +74,7 @@ final class QueryGuardTest extends RowSetTestCase
         $rows->withKey('booking')->expectColumnValue('status', '10')->setColumn('status', '20');
         $lines->reconcileForOwner($owner, []);
 
-        static::assertSame(['query'], $trace->events);
+        static::assertSame(['query'], $trace->getArrayCopy());
         $root->flush($unit);
         static::assertSame(
             [
@@ -84,13 +88,13 @@ final class QueryGuardTest extends RowSetTestCase
                 'write:manual:{"id":"2"}:EXCLUSIVE',
                 'query',
             ],
-            $trace->events,
+            $trace->getArrayCopy(),
         );
         static::assertSame(['status' => '20'], $root->stored('booking', ['status']));
         static::assertFalse($owned->stored($line, ['note']));
         static::assertFalse($unit->hasPendingChanges());
         $unit->flush();
-        static::assertCount(9, $trace->events);
+        static::assertCount(9, $trace->getArrayCopy());
     }
 
     /** @return iterable<string, array{string, int|string, ?class-string<\Throwable>}> */
@@ -205,7 +209,6 @@ final class QueryGuardTest extends RowSetTestCase
     public function test_empty_reconciliation_with_an_unknown_guard_value_is_rejected(): void
     {
         [$fixture, $lines] = $this->lineCollection();
-        $locks = new InMemoryGuardLockAdapter($fixture->storage);
         $unit = new MappedTableUnitOfWork(
             [GuardedLineDefinition::class => $lines],
             $fixture->adapter,
@@ -213,7 +216,6 @@ final class QueryGuardTest extends RowSetTestCase
                 GuardedLineDefinition::class,
                 'id',
             )])],
-            guardLocks: $locks,
         );
         $lines->reconcileForOwner(new MappedKey(['owner' => 'one']), []);
         $this->expectExceptionMessage('requires reconciliation to fix its value column "id" in the owner key');
@@ -230,7 +232,6 @@ final class QueryGuardTest extends RowSetTestCase
             queryGuards: [new QueryGuardDefinition('membership', [
                 new QueryGuardDependency(GuardedLineDefinition::class, 'owner', []),
             ])],
-            guardLocks: new InMemoryGuardLockAdapter($fixture->storage),
         );
         $lines->reconcileForOwner($owner, []);
 
@@ -255,38 +256,26 @@ final class QueryGuardTest extends RowSetTestCase
         }
     }
 
-    public function test_flushing_a_manual_lock_requires_a_guard_adapter(): void
+    public function test_flushing_a_manual_lock_requires_a_transaction_with_no_mapped_rows(): void
     {
-        $unitOfWork = new MappedTableUnitOfWork([]);
+        $storage = new InMemoryRowDatabase();
+        $unitOfWork = new MappedTableUnitOfWork([], new InMemoryMappedTableAdapter($storage));
         $unitOfWork->lockRow('companies', new MappedKey(['id' => 'company']));
 
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('GuardLockAdapter');
+        $this->expectExceptionMessage('active transaction');
         $unitOfWork->flush();
     }
 
-    public function test_even_a_guard_only_flush_requires_the_watched_row_sets_transaction(): void
+    public function test_even_a_guard_only_flush_requires_a_transaction_on_the_mapped_adapter(): void
     {
-        $fixture = $this->fixture();
-        $rows = $fixture->defined(GuardedBookingDefinition::at($fixture->tableName));
-        $differentStorage = new InMemoryRowDatabase();
-        $unit = new MappedTableUnitOfWork(
-            [GuardedBookingDefinition::class => $rows],
-            $fixture->adapter,
-            queryGuards: [new QueryGuardDefinition('booking', [
-                new QueryGuardDependency(GuardedBookingDefinition::class, 'id'),
-            ])],
-            guardLocks: new InMemoryGuardLockAdapter($differentStorage),
-        );
+        [, , $unit] = $this->bookings();
         $unit->queryGuard('booking')->lock('booking');
-        $differentStorage->beginTransaction();
-        try {
-            $this->expectException(\LogicException::class);
-            $this->expectExceptionMessage('same transaction resource');
-            $fixture->flush($unit);
-        } finally {
-            $differentStorage->rollBack();
-        }
+        $unrelatedStorage = new InMemoryRowDatabase();
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('active transaction');
+        $unrelatedStorage->transactional($unit->flush(...));
     }
 
     public function test_empty_reconciliation_waits_for_a_postgres_query_reader_of_the_same_owner(): void
@@ -303,7 +292,6 @@ final class QueryGuardTest extends RowSetTestCase
             [GuardedLineDefinition::class => $lines],
             $fixture->adapter,
             queryGuards: $definitions,
-            guardLocks: new PostgresGuardLockAdapter($connection),
         );
         $owner = new MappedKey(['owner' => 'one']);
         $count = static fn(): int => (int) $connection->fetchOne(
@@ -322,7 +310,6 @@ final class QueryGuardTest extends RowSetTestCase
                 [GuardedLineDefinition::class => $otherLines],
                 $otherAdapter,
                 queryGuards: $definitions,
-                guardLocks: new PostgresGuardLockAdapter($other),
             );
             $connection->beginTransaction();
             $reader->flush();
@@ -369,7 +356,6 @@ final class QueryGuardTest extends RowSetTestCase
             queryGuards: [new QueryGuardDefinition('booking', [
                 new QueryGuardDependency(GuardedBookingDefinition::class, 'status', ['note']),
             ])],
-            guardLocks: new InMemoryGuardLockAdapter($fixture->storage),
         );
 
         return [$fixture, $rows, $unit];
@@ -386,30 +372,6 @@ final class QueryGuardTest extends RowSetTestCase
         );
 
         return [$fixture, $fixture->defined(GuardedLineDefinition::at($fixture->tableName))];
-    }
-}
-
-final class QueryGuardTrace implements GuardLockAdapter
-{
-    /** @var list<string> */
-    public array $events = [];
-
-    public function __construct(
-        private readonly InMemoryRowDatabase $database,
-    ) {}
-
-    public function activeTransactionResource(): object
-    {
-        if (!$this->database->isTransactionActive()) {
-            throw new \LogicException('Expected an active test transaction.');
-        }
-
-        return $this->database;
-    }
-
-    public function acquire(string $namespace, string $key, GuardLockMode $mode): void
-    {
-        $this->events[] = str_replace('ultra:query_guard:', '', $namespace) . ':' . $key . ':' . $mode->name;
     }
 }
 

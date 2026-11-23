@@ -19,8 +19,11 @@ abstract class MappedTableAdapter
 
     abstract public function createDefined(MappedRowSetMetadata $mapping): MappedRowSet;
 
-    /** Return the resource of the caller's active transaction. */
-    abstract public function activeTransactionResource(): object;
+    /** @internal Require a transaction on the storage used by this adapter. */
+    abstract public function assertActiveTransaction(): void;
+
+    /** @internal Called after assertActiveTransaction(), before replaying queries and applying row plans. */
+    abstract public function acquireGuardLock(string $namespace, string $key, GuardLockMode $mode): void;
 
     /**
      * @internal

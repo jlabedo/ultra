@@ -14,7 +14,6 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
@@ -297,7 +296,6 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             queryGuards: [new QueryGuardDefinition($collection ? 'collection_usage' : 'usage', [
                 new QueryGuardDependency(CooperativeRowsDefinition::class, 'status', ['note']),
             ])],
-            guardLocks: new PostgresGuardLockAdapter($connection),
         );
 
         return [$rows, $unitOfWork];
@@ -330,8 +328,8 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 (string) getenv('ULTRA_TEST_POSTGRES_DSN'),
                 self::class,
             );
-            $otherRegistry = new MappedTableUnitOfWork([], guardLocks: new PostgresGuardLockAdapter($other));
-            $registry = new MappedTableUnitOfWork([], guardLocks: new PostgresGuardLockAdapter($connection));
+            $otherRegistry = new MappedTableUnitOfWork([], new PostgresMappedTableAdapter($other));
+            $registry = new MappedTableUnitOfWork([], new PostgresMappedTableAdapter($connection));
             try {
                 // The anchor need not exist, and registering it outside a transaction takes no lock.
                 $registry->lockRow($tableName, new MappedKey(['id' => 'anchor']));
@@ -376,7 +374,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 (string) getenv('ULTRA_TEST_POSTGRES_DSN'),
                 self::class,
             );
-            $otherRegistry = new MappedTableUnitOfWork([], guardLocks: new PostgresGuardLockAdapter($other));
+            $otherRegistry = new MappedTableUnitOfWork([], new PostgresMappedTableAdapter($other));
             $table->withKey('anchor')->expectAbsent();
             $otherRegistry->lockRow($tableName, new MappedKey(['id' => 'anchor']));
             $connection->beginTransaction();
@@ -397,7 +395,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
     public function test_manual_guards_require_a_transaction_when_flushed(): void
     {
         $this->withMappedRowSet(function (Connection $connection, MappedRowSet $table, string $tableName): void {
-            $registry = new MappedTableUnitOfWork([], guardLocks: new PostgresGuardLockAdapter($connection));
+            $registry = new MappedTableUnitOfWork([], new PostgresMappedTableAdapter($connection));
             $registry->lockRow($tableName, new MappedKey(['id' => 'anchor']));
             self::assertFalse($connection->isTransactionActive());
             $this->expectException(\LogicException::class);
@@ -412,7 +410,7 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 (string) getenv('ULTRA_TEST_POSTGRES_DSN'),
                 self::class,
             );
-            $otherRegistry = new MappedTableUnitOfWork([], guardLocks: new PostgresGuardLockAdapter($other));
+            $otherRegistry = new MappedTableUnitOfWork([], new PostgresMappedTableAdapter($other));
             $metadata = new StateMetadata(
                 ManualQueryState::class,
                 $tableName,
@@ -426,13 +424,9 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             $mapping = new CooperativeRowsDefinition()->mappingFor($tableName, collection: false);
             $adapter = new PostgresMappedTableAdapter($connection);
             $table = $adapter->createDefined($mapping);
-            $registry = new MappedTableUnitOfWork(
-                [
-                    CooperativeRowsDefinition::class => $table,
-                ],
-                $adapter,
-                guardLocks: new PostgresGuardLockAdapter($connection),
-            );
+            $registry = new MappedTableUnitOfWork([
+                CooperativeRowsDefinition::class => $table,
+            ], $adapter);
             $store = new StateStore(
                 new StateMetadataRegistry([ManualQueryState::class => $metadata]),
                 new StateRowSets([$tableName => $table], $registry),

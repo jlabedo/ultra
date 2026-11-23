@@ -24,11 +24,6 @@ services:
         arguments:
             $connection: '@doctrine.dbal.default_connection'
 
-    Ultra\MappedTable\GuardLockAdapter:
-        class: Ultra\MappedTable\PostgresGuardLockAdapter
-        arguments:
-            $connection: '@doctrine.dbal.default_connection'
-
     Ultra\UnitOfWork\TransactionManager:
         alias: App\Infrastructure\DoctrineTransactionManager
 

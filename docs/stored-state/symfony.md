@@ -17,8 +17,8 @@ A state may map a subset of the non-key columns. An item table needs its complet
 and a declared owner dependency matching the parent state and column mapping. Declare collection items in
 the property's Mapper type, for example `list<OrderLineState>`.
 
-The application provides `MappedTableAdapter` and a configured mapper. Query guards additionally require
-`GuardLockAdapter`. For a PostgreSQL application using DoctrineBundle:
+The application provides `MappedTableAdapter` and a configured mapper. The adapter handles query guard
+locks and row sets on the same connection. For a PostgreSQL application using DoctrineBundle:
 
 ```yaml
 services:
@@ -33,17 +33,11 @@ services:
         class: Ultra\MappedTable\PostgresMappedTableAdapter
         arguments:
             $connection: '@doctrine.dbal.default_connection'
-
-    Ultra\MappedTable\GuardLockAdapter:
-        class: Ultra\MappedTable\PostgresGuardLockAdapter
-        arguments:
-            $connection: '@doctrine.dbal.default_connection'
 ```
 
-The transaction manager used by `TransactionalUnitOfWorkRunner`, the shared mapped table adapter, guard adapter and query
-callbacks must all use the same connection. For in-memory use, register `InMemoryMappedTableAdapter` and
-`InMemoryGuardLockAdapter` with the same `InMemoryRowDatabase`. Use that database as the
-`TransactionManager` for an in-memory runner.
+The transaction manager used by `TransactionalUnitOfWorkRunner`, the shared mapped table adapter and query
+callbacks must all use the same connection. For an in-memory runner, use the adapter's `InMemoryRowDatabase`
+as the `TransactionManager`.
 
 See the [state mapping contract](mapping.md) for mappings and the [coworking service
 configuration](../../examples/coworking/config/services.yaml) for a complete application example.
