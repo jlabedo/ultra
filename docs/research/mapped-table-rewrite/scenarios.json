@@ -1,0 +1,79 @@
+{
+  "buffered values do not replace storage observations": [
+    {"op": "seed", "target": "a/line", "values": {"status": "draft", "note": null}},
+    {"op": "observe", "target": "a/line", "columns": ["status"], "returns": {"status": "draft"}},
+    {"op": "change", "target": "a/line", "values": {"status": "paid"}},
+    {"op": "observe", "target": "a/line", "columns": ["status", "note"], "returns": {"status": "paid", "note": null}},
+    {"op": "seed", "target": "a/line", "values": {"status": "draft", "note": "changed elsewhere"}},
+    {"op": "flush", "outcome": "conflict"},
+    {"op": "stored", "target": "a/line", "columns": ["status", "note"], "returns": {"status": "draft", "note": "changed elsewhere"}}
+  ],
+  "a repeated observation retains the original stored value": [
+    {"op": "seed", "target": "a/line", "values": {"status": "draft"}},
+    {"op": "observe", "target": "a/line", "columns": ["status"], "returns": {"status": "draft"}},
+    {"op": "change", "target": "a/line", "values": {"status": "paid"}},
+    {"op": "observe", "target": "a/line", "columns": ["status"], "returns": {"status": "paid"}},
+    {"op": "seed", "target": "a/line", "values": {"status": "cancelled"}},
+    {"op": "flush", "outcome": "conflict"},
+    {"op": "stored", "target": "a/line", "columns": ["status"], "returns": {"status": "cancelled"}}
+  ],
+  "an unknown projected value adds no condition to a blind upsert": [
+    {"op": "upsert", "target": "a/line", "values": {"status": "local"}},
+    {"op": "observe", "target": "a/line", "columns": ["status", "note"], "returns": {"status": "local"}},
+    {"op": "seed", "target": "a/line", "values": {"status": "external", "note": "preserved"}},
+    {"op": "flush", "outcome": "ok"},
+    {"op": "stored", "target": "a/line", "columns": ["status", "note"], "returns": {"status": "local", "note": "preserved"}}
+  ],
+  "key-only reads and membership leave values independent": [
+    {"op": "seed", "target": "a/line", "values": {"status": "draft"}},
+    {"op": "observe", "target": "a/line", "columns": [], "returns": {"id": "line", "owner": "a", "tenant": "shop"}},
+    {"op": "observeKeys", "target": "a", "returns": ["line"]},
+    {"op": "seed", "target": "a/line", "values": {"status": "cancelled"}},
+    {"op": "flush", "outcome": "ok"},
+    {"op": "stored", "target": "a/line", "columns": ["status"], "returns": {"status": "cancelled"}}
+  ],
+  "an observed empty collection rejects a concurrent new member": [
+    {"op": "seed", "target": "b/line", "values": {"status": "draft"}},
+    {"op": "observeKeys", "target": "a", "returns": []},
+    {"op": "reconcile", "target": "a", "rows": {}},
+    {"op": "change", "target": "b/line", "values": {"status": "paid"}},
+    {"op": "seed", "target": "a/line", "values": {"status": "external"}},
+    {"op": "flush", "outcome": "conflict"},
+    {"op": "stored", "target": "a/line", "columns": ["status"], "returns": {"status": "external"}},
+    {"op": "stored", "target": "b/line", "columns": ["status"], "returns": {"status": "draft"}}
+  ],
+  "successive reconciliations compose with later writes and isolate owners": [
+    {"op": "seed", "target": "a/line", "values": {"status": "old", "note": "keep"}},
+    {"op": "seed", "target": "a/remove", "values": {"status": "old"}},
+    {"op": "seed", "target": "b/line", "values": {"status": "old"}},
+    {"op": "reconcile", "target": "a", "rows": {"discard": {"status": "temporary"}}},
+    {"op": "reconcile", "target": "a", "rows": {"line": {"status": "new"}}},
+    {"op": "reconcile", "target": "b", "rows": {}},
+    {"op": "upsert", "target": "b/later", "values": {"status": "created"}},
+    {"op": "keys", "target": "a", "returns": ["line"]},
+    {"op": "keys", "target": "b", "returns": ["later"]},
+    {"op": "read", "target": "a/discard", "columns": ["status"], "returns": null},
+    {"op": "read", "target": "a/line", "columns": ["status", "note"], "returns": {"status": "new", "note": "keep"}},
+    {"op": "flush", "outcome": "ok"},
+    {"op": "keys", "target": "a", "returns": ["line"]},
+    {"op": "keys", "target": "b", "returns": ["later"]},
+    {"op": "stored", "target": "a/line", "columns": ["status", "note"], "returns": {"status": "new", "note": "keep"}},
+    {"op": "stored", "target": "b/later", "columns": ["status"], "returns": {"status": "created"}}
+  ],
+  "a failed flush rolls back earlier writes and the runner can be reused": [
+    {"op": "seed", "target": "a/first", "values": {"status": "draft"}},
+    {"op": "seed", "target": "a/second", "values": {"status": "draft"}},
+    {"op": "change", "target": "a/first", "values": {"status": "local"}},
+    {"op": "observe", "target": "a/second", "columns": ["status"], "returns": {"status": "draft"}},
+    {"op": "change", "target": "a/second", "values": {"status": "local"}},
+    {"op": "seed", "target": "a/second", "values": {"status": "external"}},
+    {"op": "flush", "outcome": "conflict"},
+    {"op": "read", "target": "a/first", "columns": ["status"], "returns": {"status": "draft"}},
+    {"op": "read", "target": "a/second", "columns": ["status"], "returns": {"status": "external"}},
+    {"op": "change", "target": "a/first", "values": {"status": "retried"}},
+    {"op": "flush", "outcome": "ok"},
+    {"op": "flush", "outcome": "ok"},
+    {"op": "stored", "target": "a/first", "columns": ["status"], "returns": {"status": "retried"}},
+    {"op": "stored", "target": "a/second", "columns": ["status"], "returns": {"status": "external"}}
+  ]
+}
