@@ -7,6 +7,7 @@ namespace Ultra\MappedTable\Tests\Support;
 use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetMapping;
@@ -21,7 +22,11 @@ use Ultra\UnitOfWork\UnitOfWork;
 /** Storage setup and independent committed reads; assertions stay in the guarantee suites. */
 final class RowSetFixture
 {
-    public readonly MappedRowSet $rows;
+    public MappedRowSet $rows {
+        get => $this->defaultRows ??= $this->defined($this->mapping());
+    }
+
+    private ?MappedRowSet $defaultRows = null;
     public readonly MappedTableAdapter $adapter;
     /** @var \WeakMap<MappedRowSet, MappedTableUnitOfWork> */
     private \WeakMap $units;
@@ -71,17 +76,26 @@ final class RowSetFixture
         } else {
             $this->adapter = $adapter ?? new InMemoryMappedTableAdapter($storage, $tablePolicies);
         }
-        $this->rows = $this->view();
         $this->units = new \WeakMap();
     }
 
-    public function view(): MappedRowSet
+    public function mapping(): MappedRowSetMapping
     {
-        if ($this->adapter instanceof PostgresMappedTableAdapter) {
-            return $this->adapter->create($this->tableName, $this->keyColumns, $this->columnTypes);
-        }
-
-        return $this->adapter->create($this->tableName, $this->keyColumns);
+        return new MappedRowSetMapping(
+            $this->tableName,
+            array_fill_keys($this->keyColumns, new MappedColumn('string'))
+            + [
+                'status' => new MappedColumn('string', nullable: true),
+                'note' => new MappedColumn('string', nullable: true),
+                'version_a' => new MappedColumn('string', nullable: true),
+                'version_b' => new MappedColumn('string', nullable: true),
+                'tags' => new MappedColumn('array', nullable: true),
+                'payload' => new MappedColumn('array', nullable: true),
+                'expires_on' => new MappedColumn('string', nullable: true),
+                'active' => new MappedColumn('bool', nullable: true),
+            ],
+            $this->keyColumns,
+        );
     }
 
     public function defined(MappedRowSetMapping $mapping): MappedRowSet

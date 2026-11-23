@@ -384,7 +384,10 @@ final class DefinedRowSetsTest extends RowSetTestCase
         $key = new MappedKey([...$owner, 'id' => 'line']);
         $fixture->seed([...$key->values, 'status' => 'outside the definition']);
         $keyColumns = ['id' => new MappedColumn('string'), 'owner' => new MappedColumn('string')];
-        $keys = $fixture->defined(
+        $keyOnlyAdapter = $fixture->storage instanceof Connection
+            ? new PostgresMappedTableAdapter($fixture->storage)
+            : new InMemoryMappedTableAdapter($fixture->storage);
+        $keys = $keyOnlyAdapter->createDefined(
             new MappedRowSetMapping($fixture->tableName, $keyColumns, ['id', 'owner'], ownerColumns: ['owner']),
         );
         static::assertSame([], $keys->rowsForOwner($owner)[0]->columns);

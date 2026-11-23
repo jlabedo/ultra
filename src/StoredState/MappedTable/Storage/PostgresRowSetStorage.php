@@ -11,76 +11,46 @@ use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\Plan\RowMembershipPlan;
 use Ultra\MappedTable\Plan\RowSetUpdatePlan;
 use Ultra\MappedTable\Plan\RowUpdatePlan;
-use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /** @internal */
 final readonly class PostgresRowSetStorage implements RowSetStorage
 {
-    /** @var list<string> */
-    private array $keyColumns;
-
-    /**
-     * @param list<string>                                $configuredKeyColumns
-     * @param array<string, PostgresMappedColumnType>     $columnTypes
-     */
+    /** @param list<string> $keyColumns Validated and ordered by the mapping. */
     public function __construct(
         private Connection $connection,
         private string $tableName,
-        array $configuredKeyColumns = ['id'],
-        private array $columnTypes = [],
+        private array $keyColumns,
+        private PostgresRowSetSql $sql,
         private MappedTablePolicy $policy = new MappedTablePolicy(),
-        private ?PostgresRowSetSql $sql = null,
-    ) {
-        if (null !== $sql) {
-            $this->keyColumns = $configuredKeyColumns;
-
-            return;
-        }
-
-        if (
-            [] === $configuredKeyColumns
-            || count($configuredKeyColumns) !== count(array_unique($configuredKeyColumns))
-        ) {
-            throw new \InvalidArgumentException('Mapped row-set key columns must be non-empty and unique.');
-        }
-        foreach ($configuredKeyColumns as $column) {
-            if ('' === $column) {
-                throw new \InvalidArgumentException('Mapped row-set key column names must be non-empty.');
-            }
-        }
-        sort($configuredKeyColumns, SORT_STRING);
-        $this->keyColumns = $configuredKeyColumns;
-    }
+    ) {}
 
     public function keyColumns(): array
     {
         return $this->keyColumns;
     }
 
-    public function row(MappedKey $key, array $columns = []): array|false
+    public function row(MappedKey $key, array $columns): array|false
     {
         $this->assertKey($key);
         $projection = match (true) {
-            [] === $columns => '*',
-            $columns === $this->sql?->columnNames => $this->sql->rowColumns,
+            $columns === $this->sql->columnNames => $this->sql->rowColumns,
             default => implode(', ', array_map($this->quoteColumn(...), array_values(array_unique($columns)))),
         };
 
         $row = $this->connection->fetchAssociative(
-            sprintf('SELECT %s FROM %s WHERE %s', $projection, $this->quotedTable(), $this->keyPredicate()),
+            sprintf('SELECT %s FROM %s WHERE %s', $projection, $this->sql->table, $this->sql->keyPredicate),
             $this->encodedKeyValues($key),
         );
 
         return false === $row ? false : $this->decodeRow($row);
     }
 
-    public function rows(array $columns = [], ?MappedKey $owner = null): array
+    public function rows(array $columns, ?MappedKey $owner): array
     {
         $projection = match (true) {
-            [] === $columns => '*',
-            $columns === $this->keyColumns => $this->conflictTargetSql(),
-            $columns === $this->sql?->nonKeyColumns => $this->sql->rowSetColumns,
+            $columns === $this->keyColumns => $this->sql->keyList,
+            $columns === $this->sql->nonKeyColumns => $this->sql->rowSetColumns,
             default => implode(', ', array_map(
                 $this->quoteColumn(...),
                 array_values(array_unique([...$this->keyColumns, ...$columns])),
@@ -91,9 +61,9 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
             sprintf(
                 'SELECT %s FROM %s%s ORDER BY %s',
                 $projection,
-                $this->quotedTable(),
-                $this->ownerWhereSql($owner),
-                $this->conflictTargetSql(),
+                $this->sql->table,
+                null === $owner ? '' : $this->sql->ownerWhere,
+                $this->sql->keyList,
             ),
             $this->ownerParams($owner),
         );
@@ -175,12 +145,12 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
             return;
         }
 
-        $where = $this->ownerWhereClauses($owner);
+        $where = null === $owner ? [] : $this->sql->ownerPredicates;
         $params = $this->ownerParams($owner);
         $retained = [];
         foreach ($keys as $key) {
             $this->assertKey($key);
-            $retained[] = '(' . $this->keyPredicate() . ')';
+            $retained[] = '(' . $this->sql->keyPredicate . ')';
             array_push($params, ...$this->encodedKeyValues($key));
         }
         if ([] !== $retained) {
@@ -188,11 +158,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         }
 
         $this->connection->executeStatement(
-            sprintf(
-                'DELETE FROM %s%s',
-                $this->quotedTable(),
-                [] === $where ? '' : ' WHERE ' . implode(' AND ', $where),
-            ),
+            sprintf('DELETE FROM %s%s', $this->sql->table, [] === $where ? '' : ' WHERE ' . implode(' AND ', $where)),
             $params,
         );
     }
@@ -253,11 +219,11 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         $branches = [];
         $params = [];
         foreach ($updates as $update) {
-            $branches[] = '(' . $this->keyPredicate() . ')';
+            $branches[] = '(' . $this->sql->keyPredicate . ')';
             array_push($params, ...$this->encodedKeyValues($update->key));
         }
         $affected = $this->connection->executeStatement(
-            sprintf('DELETE FROM %s WHERE %s', $this->quotedTable(), implode(' OR ', $branches)),
+            sprintf('DELETE FROM %s WHERE %s', $this->sql->table, implode(' OR ', $branches)),
             $params,
         );
         if ($affected !== count($updates)) {
@@ -283,10 +249,10 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         $affected = $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) DO NOTHING',
-                $this->quotedTable(),
+                $this->sql->table,
                 implode(', ', array_map($this->quoteColumn(...), $columns)),
                 implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
-                $this->conflictTargetSql(),
+                $this->sql->keyList,
             ),
             $params,
         );
@@ -325,10 +291,10 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) %s',
-                $this->quotedTable(),
+                $this->sql->table,
                 implode(', ', array_map($this->quoteColumn(...), $columns)),
                 implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
-                $this->conflictTargetSql(),
+                $this->sql->keyList,
                 $action,
             ),
             $params,
@@ -374,7 +340,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         $this->connection->executeQuery(
             'SELECT count(pg_advisory_xact_lock(hashtext(?), hashtext(lock_key))) FROM jsonb_array_elements_text(?::jsonb) AS locks(lock_key)',
             [
-                $this->sql->absentRowLockNamespace ?? $this->tableName . ':row',
+                $this->sql->absentRowLockNamespace,
                 json_encode($lockKeys, JSON_THROW_ON_ERROR),
             ],
         );
@@ -401,7 +367,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
                 array_push($params, ...$whereParams);
             }
             $matched = $this->connection->fetchAllAssociative(
-                sprintf('SELECT 1 FROM %s WHERE %s FOR SHARE', $this->quotedTable(), implode(' OR ', $branches)),
+                sprintf('SELECT 1 FROM %s WHERE %s FOR SHARE', $this->sql->table, implode(' OR ', $branches)),
                 $params,
             );
             if (count($matched) !== count($present)) {
@@ -426,8 +392,8 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
             $existing = (int) $this->connection->fetchOne(
                 sprintf(
                     'SELECT count(*) FROM %s WHERE %s',
-                    $this->quotedTable(),
-                    implode(' OR ', array_fill(0, count($absent), '(' . $this->keyPredicate() . ')')),
+                    $this->sql->table,
+                    implode(' OR ', array_fill(0, count($absent), '(' . $this->sql->keyPredicate . ')')),
                 ),
                 $params,
             );
@@ -464,7 +430,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
     {
         [$where, $params] = $this->conditionalWhere($update);
         $affected = $this->connection->executeStatement(
-            sprintf('DELETE FROM %s WHERE %s', $this->quotedTable(), implode(' AND ', $where)),
+            sprintf('DELETE FROM %s WHERE %s', $this->sql->table, implode(' AND ', $where)),
             $params,
         );
 
@@ -479,10 +445,10 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         $affected = $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
-                $this->quotedTable(),
+                $this->sql->table,
                 implode(', ', array_map($this->quoteColumn(...), $columns)),
                 implode(', ', array_map($this->placeholder(...), $columns)),
-                $this->conflictTargetSql(),
+                $this->sql->keyList,
             ),
             $params,
         );
@@ -513,10 +479,10 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) %s',
-                $this->quotedTable(),
+                $this->sql->table,
                 $quotedColumns,
                 $placeholders,
-                $this->conflictTargetSql(),
+                $this->sql->keyList,
                 $action,
             ),
             $params,
@@ -535,7 +501,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         array_push($params, ...$whereParams);
 
         $affected = $this->connection->executeStatement(
-            sprintf('UPDATE %s SET %s WHERE %s', $this->quotedTable(), implode(', ', $set), implode(' AND ', $where)),
+            sprintf('UPDATE %s SET %s WHERE %s', $this->sql->table, implode(', ', $set), implode(' AND ', $where)),
             $params,
         );
 
@@ -547,12 +513,10 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
     /** @return array{list<string>, list<mixed>} */
     private function conditionalWhere(RowUpdatePlan $update): array
     {
-        $where = $this->keyWhereClauses();
+        $where = $this->sql->keyPredicates;
         $params = $this->encodedKeyValues($update->key);
         foreach ($update->expectedColumns as $column => $value) {
-            $where[] =
-                $this->sql->columns[$column]['compare']
-                ?? $this->quoteColumn($column) . ' IS NOT DISTINCT FROM ' . $this->placeholder($column);
+            $where[] = $this->sql->columns[$column]['compare'];
             $params[] = $this->encodeColumnValue($column, $value);
         }
 
@@ -572,17 +536,6 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         return [$columns, $params];
     }
 
-    private function keyPredicate(): string
-    {
-        return $this->sql->keyPredicate ?? implode(' AND ', $this->keyWhereClauses());
-    }
-
-    /** @return list<string> */
-    private function keyWhereClauses(): array
-    {
-        return $this->sql->keyPredicates ?? array_map($this->assignment(...), $this->keyColumns);
-    }
-
     /** @return list<mixed> */
     private function encodedKeyValues(MappedKey $key): array
     {
@@ -590,29 +543,6 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
             $column,
             $key->value($column),
         ), $this->keyColumns());
-    }
-
-    private function ownerWhereSql(?MappedKey $owner): string
-    {
-        if (null === $owner) {
-            return '';
-        }
-
-        return $owner->columns() === $this->sql?->ownerColumns
-            ? $this->sql->ownerWhere
-            : ' WHERE ' . implode(' AND ', $this->ownerWhereClauses($owner));
-    }
-
-    /** @return list<string> */
-    private function ownerWhereClauses(?MappedKey $owner): array
-    {
-        $columns = $owner?->columns() ?? [];
-
-        return (
-            $columns === $this->sql?->ownerColumns
-                ? $this->sql->ownerPredicates
-                : array_map($this->assignment(...), $columns)
-        );
     }
 
     /** @return list<mixed> */
@@ -625,51 +555,32 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         return array_map(fn(string $column): mixed => $this->encodeColumnValue(
             $column,
             $owner->value($column),
-        ), $owner->columns());
-    }
-
-    private function conflictTargetSql(): string
-    {
-        return $this->sql->keyList ?? implode(', ', array_map($this->quoteColumn(...), $this->keyColumns));
-    }
-
-    private function quotedTable(): string
-    {
-        return $this->sql->table ?? $this->connection->quoteSingleIdentifier($this->tableName);
+        ), $this->sql->ownerColumns);
     }
 
     private function quoteColumn(string $column): string
     {
-        return $this->sql->columns[$column]['identifier'] ?? $this->connection->quoteSingleIdentifier($column);
+        return $this->sql->columns[$column]['identifier'];
     }
 
     private function assignment(string $column): string
     {
-        return (
-            $this->sql->columns[$column]['assign'] ?? $this->quoteColumn($column) . ' = ' . $this->placeholder($column)
-        );
+        return $this->sql->columns[$column]['assign'];
     }
 
     private function conflictAssignment(string $column): string
     {
-        return $this->sql->columns[$column]['excluded'] ?? sprintf('%1$s = EXCLUDED.%1$s', $this->quoteColumn($column));
+        return $this->sql->columns[$column]['excluded'];
     }
 
     private function placeholder(string $column): string
     {
-        $compiled = $this->sql->columns[$column]['parameter'] ?? null;
-        if (null !== $compiled) {
-            return $compiled;
-        }
-
-        $type = $this->columnTypes[$column] ?? null;
-
-        return null === $type ? '?' : '?::' . $type->value;
+        return $this->sql->columns[$column]['parameter'];
     }
 
     private function encodeColumnValue(string $column, mixed $value): mixed
     {
-        $type = $this->columnTypes[$column] ?? null;
+        $type = $this->sql->columnTypes[$column] ?? null;
         if (null !== $type) {
             return $type->encode($value);
         }
@@ -688,7 +599,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
      */
     private function decodeRow(array $row): array
     {
-        foreach ($this->columnTypes as $column => $type) {
+        foreach ($this->sql->columnTypes as $column => $type) {
             if (!array_key_exists($column, $row)) {
                 continue;
             }

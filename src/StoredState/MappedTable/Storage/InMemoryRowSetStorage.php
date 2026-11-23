@@ -6,7 +6,6 @@ namespace Ultra\MappedTable\Storage;
 
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
-use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\Plan\RowMembershipPlan;
 use Ultra\MappedTable\Plan\RowSetUpdatePlan;
@@ -16,40 +15,27 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 /** @internal */
 final readonly class InMemoryRowSetStorage implements RowSetStorage
 {
-    /** @var list<string> */
-    private array $keyColumns;
-
-    /**
-     * @param list<string>|MappedRowSetMetadata $configuredKeyColumns
-     */
+    /** @param list<string> $keyColumns Validated and ordered by the mapping. */
     public function __construct(
         private InMemoryRowDatabase $database,
         private string $tableName,
-        array|MappedRowSetMetadata $configuredKeyColumns = ['id'],
+        private array $keyColumns,
         private MappedTablePolicy $policy = new MappedTablePolicy(),
-    ) {
-        if ($configuredKeyColumns instanceof MappedRowSetMetadata) {
-            $this->keyColumns = $configuredKeyColumns->keyColumns;
-        } else {
-            self::assertSchema($configuredKeyColumns);
-            sort($configuredKeyColumns, SORT_STRING);
-            $this->keyColumns = $configuredKeyColumns;
-        }
-    }
+    ) {}
 
     public function keyColumns(): array
     {
         return $this->keyColumns;
     }
 
-    public function row(MappedKey $key, array $columns = []): array|false
+    public function row(MappedKey $key, array $columns): array|false
     {
         $this->assertKey($key);
 
         return $this->database->rowByKey($this->tableName, $key, $columns);
     }
 
-    public function rows(array $columns = [], ?MappedKey $owner = null): array
+    public function rows(array $columns, ?MappedKey $owner): array
     {
         return $this->database->rowsByKey($this->tableName, $this->keyColumns(), $columns, $owner);
     }
@@ -210,18 +196,5 @@ final readonly class InMemoryRowSetStorage implements RowSetStorage
     private function assertKey(MappedKey $key): void
     {
         $key->assertColumns($this->keyColumns());
-    }
-
-    /** @param list<string> $keyColumns */
-    private static function assertSchema(array $keyColumns): void
-    {
-        if ([] === $keyColumns || count($keyColumns) !== count(array_unique($keyColumns))) {
-            throw new \InvalidArgumentException('Mapped row-set key columns must be non-empty and unique.');
-        }
-        foreach ($keyColumns as $column) {
-            if ('' === $column) {
-                throw new \InvalidArgumentException('Mapped row-set key column names must be non-empty.');
-            }
-        }
     }
 }

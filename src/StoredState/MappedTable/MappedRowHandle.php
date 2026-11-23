@@ -18,8 +18,7 @@ final readonly class MappedRowHandle
         private MappedRowSet $rowSet,
         private MappedKey $key,
         private int $generation,
-        private string $tableName,
-        private ?MappedRowSetMetadata $mapping = null,
+        private MappedRowSetMetadata $mapping,
     ) {}
 
     /**
@@ -101,7 +100,7 @@ final readonly class MappedRowHandle
 
             throw new ConcurrencyException(sprintf(
                 'Cannot mark table "%s", row "%s" for insert because the row is already expected to exist.',
-                $this->tableName,
+                $this->mapping->table,
                 (string) $update->key,
             ));
         }
@@ -127,7 +126,7 @@ final readonly class MappedRowHandle
         if (true === $update->toPlan()?->writes()) {
             throw new ConcurrencyException(sprintf(
                 'Cannot mark table "%s", row "%s" as expected absent because it is written in this unit of work.',
-                $this->tableName,
+                $this->mapping->table,
                 (string) $update->key,
             ));
         }
@@ -135,7 +134,7 @@ final readonly class MappedRowHandle
         if (RowUpdatePlan::EXPECTED_PRESENT === $update->expectedPresence) {
             throw new ConcurrencyException(sprintf(
                 'Cannot mark table "%s", row "%s" as expected absent because it is already expected to exist.',
-                $this->tableName,
+                $this->mapping->table,
                 (string) $update->key,
             ));
         }
@@ -161,7 +160,7 @@ final readonly class MappedRowHandle
         if ($update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update->mode) {
             throw new ConcurrencyException(sprintf(
                 'Cannot expect table "%s", row "%s" to be present because it is deleted in this unit of work.',
-                $this->tableName,
+                $this->mapping->table,
                 (string) $update->key,
             ));
         }
@@ -171,7 +170,7 @@ final readonly class MappedRowHandle
         if (RowUpdatePlan::EXPECTED_ABSENT === $update->expectedPresence) {
             throw new ConcurrencyException(sprintf(
                 'Cannot expect table "%s", row "%s" to be present because it is already expected absent.',
-                $this->tableName,
+                $this->mapping->table,
                 (string) $update->key,
             ));
         }
@@ -245,8 +244,8 @@ final readonly class MappedRowHandle
 
     private function expectValue(BufferedRowUpdate $update, string $column, mixed $value): void
     {
-        $this->mapping?->assertValue($column, $value);
-        if (null !== $this->mapping && $update->key->contains($column)) {
+        $this->mapping->assertValue($column, $value);
+        if ($update->key->contains($column)) {
             if ($update->key->value($column) !== $value) {
                 throw new ConcurrencyException('Expected key column value differs from the mapped row key.');
             }
@@ -259,7 +258,7 @@ final readonly class MappedRowHandle
         if ($update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update->mode) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register expected column values for table "%s", row "%s" because it is deleted in this unit of work.',
-                $this->tableName,
+                $this->mapping->table,
                 (string) $update->key,
             ));
         }
@@ -270,7 +269,7 @@ final readonly class MappedRowHandle
             if (($update->setColumns[$column] ?? null) !== $value) {
                 throw new ConcurrencyException(sprintf(
                     'Expected value for table "%s", row "%s", column "%s" differs from the value written in this unit of work.',
-                    $this->tableName,
+                    $this->mapping->table,
                     (string) $update->key,
                     $column,
                 ));
@@ -282,7 +281,7 @@ final readonly class MappedRowHandle
         if (RowUpdatePlan::EXPECTED_ABSENT === $update->expectedPresence) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register expected column values for table "%s", row "%s" because it is already expected to be absent.',
-                $this->tableName,
+                $this->mapping->table,
                 (string) $update->key,
             ));
         }
@@ -295,7 +294,7 @@ final readonly class MappedRowHandle
         if (array_key_exists($column, $update->expectedColumns) && $update->expectedColumns[$column] !== $value) {
             throw new ConcurrencyException(sprintf(
                 'Conflicting expected values were registered for table "%s", row "%s", column "%s".',
-                $this->tableName,
+                $this->mapping->table,
                 (string) $update->key,
                 $column,
             ));
@@ -321,12 +320,12 @@ final readonly class MappedRowHandle
 
     public function setColumn(string $column, mixed $value): self
     {
-        $this->mapping?->assertWritableValue($column, $value);
+        $this->mapping->assertWritableValue($column, $value);
         $update = $this->update();
         if ($update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update->mode) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register column updates for table "%s", row "%s" because it is already marked for delete.',
-                $this->tableName,
+                $this->mapping->table,
                 (string) $update->key,
             ));
         }

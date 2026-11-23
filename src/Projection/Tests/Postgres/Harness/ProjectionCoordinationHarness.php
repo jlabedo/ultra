@@ -23,7 +23,9 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
+use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
@@ -67,7 +69,16 @@ final readonly class HarnessCourseNamesProjection
         $adapter = new PostgresMappedTableAdapter($connection, tablePolicies: [
             $tableName => new MappedTablePolicy(allowAbsentObservations: false),
         ]);
-        $this->table = $adapter->create($tableName, ['course_id']);
+        $this->table = $adapter->createDefined(
+            new MappedRowSetMapping(
+                $tableName,
+                [
+                    'course_id' => new MappedColumn('string'),
+                    'name' => new MappedColumn('string'),
+                ],
+                ['course_id'],
+            ),
+        );
         $this->persistence = new MappedTableUnitOfWork([$tableName => $this->table], $adapter);
     }
 

@@ -183,6 +183,30 @@ final class SqlInspectionTest extends TestCase
         $this->assertCleanedUp($inspection);
     }
 
+    public function test_a_scenario_can_declare_a_column_added_during_setup(): void
+    {
+        $inspection = new Inspector($this->connection, $this->trace)->run(new Scenario(
+            static function (MappedRowSet $rows): void {
+                $row = $rows->withKey('a');
+                static::assertSame(['attempts' => 0], $row->observe(['attempts']));
+                $row->setColumn('attempts', 1);
+            },
+            initialRows: [['id' => 'a']],
+            prepare: static function (Connection $connection, string $table): void {
+                $connection->executeStatement(
+                    'ALTER TABLE '
+                    . $connection->quoteSingleIdentifier($table)
+                    . ' ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0',
+                );
+            },
+            extraColumns: ['attempts' => new MappedColumn('int')],
+        ));
+
+        static::assertTrue($inspection->succeeded());
+        static::assertSame(['attempts' => 1], $inspection->plan->rowUpdates[0]->setColumns);
+        $this->assertCleanedUp($inspection);
+    }
+
     /** @return iterable<string, array{string, int}> */
     public static function commandScenarios(): iterable
     {

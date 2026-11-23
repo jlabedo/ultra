@@ -6,6 +6,8 @@ namespace Ultra\Testing;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
+use Ultra\MappedTable\MappedColumn;
+use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
@@ -38,7 +40,23 @@ abstract class PostgresRowSetTestCase extends TestCase
                 )', $connection->quoteSingleIdentifier($tableName)));
 
             $adapter = new PostgresMappedTableAdapter($connection);
-            $rows = $adapter->create($tableName, columnTypes: $columnTypes);
+            $rows = $adapter->createDefined(
+                new MappedRowSetMapping(
+                    $tableName,
+                    [
+                        'id' => new MappedColumn('string'),
+                        'status' => new MappedColumn('string', nullable: true),
+                        'note' => new MappedColumn('string', nullable: true),
+                        'version_a' => new MappedColumn('string', nullable: true),
+                        'version_b' => new MappedColumn('string', nullable: true),
+                        'tags' => new MappedColumn('array', nullable: true),
+                        'payload' => new MappedColumn('array', nullable: true),
+                        'expires_on' => new MappedColumn('string', nullable: true),
+                    ],
+                    ['id'],
+                ),
+                $columnTypes,
+            );
             $callback($connection, $rows, $tableName, new MappedTableUnitOfWork([$tableName => $rows], $adapter));
         } finally {
             PostgresConnectionSupport::resetSharedConnection($connection);

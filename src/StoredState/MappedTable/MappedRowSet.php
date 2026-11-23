@@ -27,19 +27,16 @@ final class MappedRowSet
 
     /**
      * @internal Create row sets through the common adapter.
-     * @param list<string> $keyColumns
      */
     public function __construct(
         private readonly MappedTableAdapter $adapter,
-        private readonly string $table,
-        private readonly array $keyColumns,
-        private readonly ?MappedRowSetMetadata $mapping,
+        private readonly MappedRowSetMetadata $mapping,
     ) {}
 
     /** @param int|string|MappedKey|\Stringable|array<string, int|string|\Stringable> $key */
     public function withKey(int|string|MappedKey|\Stringable|array $key): MappedRowHandle
     {
-        return new MappedRowHandle($this, $this->normalizeKey($key), $this->generation, $this->table, $this->mapping);
+        return new MappedRowHandle($this, $this->normalizeKey($key), $this->generation, $this->mapping);
     }
 
     /** @internal True when a buffered deletion, cancellation or reconciliation removes the row. */
@@ -93,7 +90,7 @@ final class MappedRowSet
             }
 
             foreach ($row->columns as $column => $value) {
-                $this->mapping?->assertWritableValue($column, $value);
+                $this->mapping->assertWritableValue($column, $value);
             }
             $fingerprint = $key->fingerprint();
             $desiredKeys[$fingerprint] = $key;
@@ -151,14 +148,16 @@ final class MappedRowSet
     {
         $this->assertHandleGeneration($generation);
         $keyOnly = [] === $columns;
-        $projection = $keyOnly ? $this->keyColumns : $this->selectedColumns($columns, includeKeys: true);
+        $projection = $keyOnly ? $this->mapping->keyColumns : $this->selectedColumns($columns, includeKeys: true);
         $update = $this->updates[$key->fingerprint()] ?? null;
         if (!$this->isVisible($key, $update)) {
             return null;
         }
 
         $plan = $update?->toPlan();
-        $stored = $this->replacesStoredRow($plan) ? false : $this->adapter->row($this->table, $key, $projection ?? []);
+        $stored = $this->replacesStoredRow($plan)
+            ? false
+            : $this->adapter->row($this->mapping->table, $key, $projection);
         $row = $this->overlayRow($key, $stored, $plan, $projection, trackStorage: $trackStorage);
         if ($keyOnly && null !== $row) {
             $row['values'] = $key->values;
@@ -202,17 +201,16 @@ final class MappedRowSet
     private function readOwnerRows(MappedKey $owner, ?array $columns): array
     {
         $projection = $this->selectedColumns($columns);
-        assert(null !== $projection, 'Owner reads require a mapped row set definition.');
-        $selected = [] === $projection ? $this->keyColumns : $projection;
+        $selected = [] === $projection ? $this->mapping->keyColumns : $projection;
         $rows = [];
-        foreach ($this->adapter->rows($this->table, $selected, $owner) as $row) {
+        foreach ($this->adapter->rows($this->mapping->table, $selected, $owner) as $row) {
             $fingerprint = $row->key->fingerprint();
             $update = $this->updates[$fingerprint] ?? null;
             if (!$this->isVisible($row->key, $update)) {
                 continue;
             }
 
-            $this->mapping?->assertKey($row->key);
+            $this->mapping->assertKey($row->key);
             $plan = $update?->toPlan();
             $key = true === $plan?->writes() ? $plan->key : $row->key;
             $view = $this->overlayRow($key, $row->columns, $plan, $projection);
@@ -241,14 +239,14 @@ final class MappedRowSet
 
     /**
      * @param array<string, mixed>|false $stored False indicates no stored row.
-     * @param list<string>|null $projection Null selects all known values.
+     * @param list<string> $projection
      * @return array{values: array<string, mixed>, storedValues: array<string, mixed>}|null
      */
     private function overlayRow(
         MappedKey $key,
         array|false $stored,
         ?RowUpdatePlan $plan,
-        ?array $projection,
+        array $projection,
         bool $trackStorage = false,
     ): ?array {
         $writes = true === $plan?->writes();
@@ -260,11 +258,11 @@ final class MappedRowSet
         $written = $writes ? [...$plan->setColumns, ...$key->values] : [];
         $values = [];
         $storedValues = [];
-        foreach ($projection ?? array_keys($stored + $written + $key->values) as $column) {
+        foreach ($projection as $column) {
             $isKey = $key->contains($column);
             $fromStorage = array_key_exists($column, $stored);
             if ($fromStorage) {
-                $this->mapping?->assertValue($column, $stored[$column]);
+                $this->mapping->assertValue($column, $stored[$column]);
             }
             if (array_key_exists($column, $written)) {
                 $values[$column] = $written[$column];
@@ -332,19 +330,7 @@ final class MappedRowSet
     /** @internal */
     public function mappingForCoordination(): MappedRowSetMetadata
     {
-        return (
-            $this->mapping ?? new MappedRowSetMetadata(
-                $this->table,
-                [],
-                $this->keyColumns,
-                [],
-                null,
-                $this->keyColumns,
-                [],
-                array_fill_keys($this->keyColumns, true),
-                [],
-            )
-        );
+        return $this->mapping;
     }
 
     /** @internal */
@@ -388,7 +374,7 @@ final class MappedRowSet
 
     private function assertWholeTableMembership(): void
     {
-        if ([] !== ($this->mapping->ownerColumns ?? [])) {
+        if ([] !== $this->mapping->ownerColumns) {
             throw new \LogicException('Row sets with owner columns require membership operations by owner.');
         }
     }
@@ -403,10 +389,6 @@ final class MappedRowSet
     /** @param MappedKey|array<string, int|string|\Stringable> $owner */
     private function normalizeOwner(MappedKey|array $owner): MappedKey
     {
-        if (null === $this->mapping) {
-            throw new \LogicException('Owner collections require a mapped row set definition.');
-        }
-
         $key = $owner instanceof MappedKey ? $owner : new MappedKey($owner);
         $this->mapping->assertOwner($key);
 
@@ -427,7 +409,7 @@ final class MappedRowSet
     {
         $mapping = $this->mapping;
 
-        return null === $mapping || [] === $mapping->ownerColumns ? '' : $mapping->ownerKey($key)->fingerprint();
+        return [] === $mapping->ownerColumns ? '' : $mapping->ownerKey($key)->fingerprint();
     }
 
     private function isVisible(MappedKey $key, ?BufferedRowUpdate $update): bool
@@ -451,13 +433,10 @@ final class MappedRowSet
 
     /**
      * @param list<string>|null $columns
-     * @return list<string>|null
+     * @return list<string>
      */
-    private function selectedColumns(?array $columns, bool $includeKeys = false): ?array
+    private function selectedColumns(?array $columns, bool $includeKeys = false): array
     {
-        if (null === $this->mapping) {
-            return $columns;
-        }
         if (null === $columns) {
             return $includeKeys ? $this->mapping->columnNames : $this->mapping->nonKeyColumns;
         }
@@ -472,7 +451,7 @@ final class MappedRowSet
     /** @param int|string|MappedKey|\Stringable|array<string, int|string|\Stringable> $key */
     private function normalizeKey(int|string|MappedKey|\Stringable|array $key): MappedKey
     {
-        $keyColumns = $this->mapping->keyColumns ?? $this->keyColumns;
+        $keyColumns = $this->mapping->keyColumns;
         if (is_array($key)) {
             $key = new MappedKey($key);
         } elseif (!$key instanceof MappedKey) {
@@ -486,11 +465,7 @@ final class MappedRowSet
             $key = new MappedKey([$keyColumns[0] => $key]);
         }
 
-        if (null === $this->mapping) {
-            $key->assertColumns($keyColumns);
-        } else {
-            $this->mapping->assertKey($key);
-        }
+        $this->mapping->assertKey($key);
 
         return $key;
     }

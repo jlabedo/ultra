@@ -16,18 +16,18 @@ interface RowSetStorage
     public function keyColumns(): array;
 
     /**
-     * @param list<string> $columns
+     * @param list<string> $columns Columns selected from the mapping.
      *
      * @return array<string, mixed>|false
      */
-    public function row(MappedKey $key, array $columns = []): array|false;
+    public function row(MappedKey $key, array $columns): array|false;
 
     /**
-     * @param list<string> $columns
+     * @param list<string> $columns Columns selected from the mapping.
      *
      * @return list<MappedRow>
      */
-    public function rows(array $columns = [], ?MappedKey $owner = null): array;
+    public function rows(array $columns, ?MappedKey $owner): array;
 
     /** Verify check-only rows and memberships, and take any intrinsic locks needed for this plan. */
     public function check(RowSetUpdatePlan $plan): void;

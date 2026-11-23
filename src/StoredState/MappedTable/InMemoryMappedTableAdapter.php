@@ -23,31 +23,16 @@ final class InMemoryMappedTableAdapter extends MappedTableAdapter
 
     public function acquireGuardLock(string $namespace, string $key, GuardLockMode $mode): void {}
 
-    public function create(string $tableName, array $keyColumns = ['id']): MappedRowSet
-    {
-        return $this->bind(
-            $tableName,
-            new InMemoryRowSetStorage(
-                $this->database,
-                $tableName,
-                $keyColumns,
-                policy: $this->tablePolicies[$tableName] ?? new MappedTablePolicy(),
-            ),
-        );
-    }
-
-    /** @internal */
     public function createDefined(MappedRowSetMetadata $mapping): MappedRowSet
     {
         return $this->bind(
-            $mapping->table,
+            $mapping,
             new InMemoryRowSetStorage(
                 $this->database,
                 $mapping->table,
-                $mapping,
+                $mapping->keyColumns,
                 policy: $this->tablePolicies[$mapping->table] ?? new MappedTablePolicy(),
             ),
-            $mapping,
         );
     }
 }

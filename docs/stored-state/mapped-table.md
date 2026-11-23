@@ -153,16 +153,22 @@ buffered changes, omit unknown values, and preserve known nulls.
 
 ## Manual assembly and whole-table membership
 
-Use one adapter and one unit of work, including when the unit of work contains a single row set.
+Pass a complete mapping to the shared adapter when assembling row sets manually. Use one adapter and
+one unit of work, including when the unit of work contains a single row set.
 
 ```php
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MappedTable\MappedColumn;
+use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 
 $database = new InMemoryRowDatabase();
 $adapter = new InMemoryMappedTableAdapter($database);
-$table = $adapter->create('users');
+$table = $adapter->createDefined(new MappedRowSetMapping('users', [
+    'id' => new MappedColumn('string'),
+    'status' => new MappedColumn('string'),
+], ['id']));
 $unitOfWork = new MappedTableUnitOfWork(['users' => $table], $adapter);
 $database->seedRow('users', 'id', ['id' => 'user-1', 'status' => 'pending']);
 
@@ -183,7 +189,7 @@ A row set without owner columns supports whole-table membership operations.
 
 `reconcileRows(iterable $rows)` accepts desired `MappedRow` values, upserts their supplied columns and deletes
 rows missing from that set across the table at flush. Preparing reconciliation does not read storage.
-The desired membership is reflected immediately in `withKey()->get()` and `rows()`, alongside buffered column changes.
+The desired membership is reflected immediately in `withKey()->get()` alongside buffered column changes.
 An empty set clears the table at flush. Successive calls supersede earlier membership and discard writes to
 removed rows.
 Unspecified columns on retained rows and existing optimistic expectations are preserved. Repeated keys merge their supplied columns in input order, with the last supplied
@@ -286,7 +292,7 @@ When `doctrine/dbal` is installed, you can use `Ultra\MappedTable\PostgresMapped
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 
 $adapter = new PostgresMappedTableAdapter($connection);
-$table = $adapter->create('users');
+$table = $adapter->createDefined($mapping);
 ```
 
 The Postgres adapter checks expected column values with `IS NOT DISTINCT FROM`, so `null` expectations are handled correctly.
@@ -306,21 +312,25 @@ are managed by the adapter.
 
 ### Column types
 
-For manual assembly, pass a map of physical column names to `PostgresMappedColumnType` cases when creating the
-row set. Both `create()` and `createDefined()` accept this map. The adapter checks it against the mapping in
-`createDefined()`. Configured codecs handle encoding, decoding and SQL casts for writes and optimistic
-comparisons. Other columns use the adapter's ordinary scalar bindings and the driver's decoded values.
+For manual assembly, pass a map of physical column names to `PostgresMappedColumnType` cases to
+`createDefined()`. The adapter validates the codecs and prepares SQL fragments at assembly time.
+Configured codecs handle encoding, decoding and SQL casts for writes and optimistic comparisons.
+Other columns use the adapter's ordinary scalar bindings and the driver's decoded values.
 
 `Timestamp` preserves wall-clock values in `TIMESTAMP(6) WITHOUT TIME ZONE` and returns them as
 RFC 3339 strings with a UTC offset. `TimestampWithTimeZone` preserves instants and microseconds in
-`TIMESTAMP(6) WITH TIME ZONE`. Returned offsets follow the database session's timezone. Both codecs
-accept date strings, `DateTimeInterface` objects and null. PostgreSQL validates string timestamp values.
+`TIMESTAMP(6) WITH TIME ZONE`. Returned offsets follow the database session's timezone. Pass normalized
+strings to the row set, or null for a nullable column. PostgreSQL validates string timestamp values.
 
 ```php
 $adapter = new PostgresMappedTableAdapter($connection);
-$acceptances = $adapter->create('acceptances', columnTypes: [
-    'accepted_at' => PostgresMappedColumnType::TimestampWithTimeZone,
-]);
+$acceptances = $adapter->createDefined(
+    new MappedRowSetMapping('acceptances', [
+        'id' => new MappedColumn('string'),
+        'accepted_at' => new MappedColumn('string'),
+    ], ['id']),
+    columnTypes: ['accepted_at' => PostgresMappedColumnType::TimestampWithTimeZone],
+);
 ```
 
 The other codecs are `Text`, `Date`, `Jsonb`, `TextArray`, `UuidArray` and `IntArray`.

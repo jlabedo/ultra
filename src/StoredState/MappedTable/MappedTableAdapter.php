@@ -14,9 +14,6 @@ abstract class MappedTableAdapter
     /** @var array<string, RowSetStorage> */
     private array $tables = [];
 
-    /** @param list<string> $keyColumns */
-    abstract public function create(string $tableName, array $keyColumns = ['id']): MappedRowSet;
-
     abstract public function createDefined(MappedRowSetMetadata $mapping): MappedRowSet;
 
     /** @internal Require a transaction on the storage used by this adapter. */
@@ -72,14 +69,12 @@ abstract class MappedTableAdapter
         }
     }
 
-    final protected function bind(
-        string $table,
-        RowSetStorage $storage,
-        ?MappedRowSetMetadata $mapping = null,
-    ): MappedRowSet {
-        if (null !== $mapping && $mapping->keyColumns !== $storage->keyColumns()) {
+    final protected function bind(MappedRowSetMetadata $mapping, RowSetStorage $storage): MappedRowSet
+    {
+        if ($mapping->keyColumns !== $storage->keyColumns()) {
             throw new \InvalidArgumentException('A defined row set must use its declared key.');
         }
+        $table = $mapping->table;
         // Fresh buffers may reuse an equivalent immutable table configuration.
         // @mago-expect linter:identity-comparison
         if (isset($this->tables[$table]) && $this->tables[$table] != $storage) {
@@ -90,6 +85,6 @@ abstract class MappedTableAdapter
         }
         $this->tables[$table] ??= $storage;
 
-        return new MappedRowSet($this, $table, $storage->keyColumns(), $mapping);
+        return new MappedRowSet($this, $mapping);
     }
 }

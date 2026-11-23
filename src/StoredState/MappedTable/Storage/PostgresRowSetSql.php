@@ -84,7 +84,7 @@ final readonly class PostgresRowSetSql
     }
 
     /** @param array<array-key, mixed> $types */
-    public static function validateColumnTypes(MappedRowSetMetadata $mapping, array $types): void
+    private static function validateColumnTypes(MappedRowSetMetadata $mapping, array $types): void
     {
         foreach ($types as $column => $type) {
             if (!is_string($column) || !$type instanceof PostgresMappedColumnType) {

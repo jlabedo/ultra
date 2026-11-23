@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Ultra\Projection\Tests\Support;
 
 use Doctrine\DBAL\Connection;
+use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Projection\Attribute\Projection;
@@ -29,8 +31,9 @@ final class BufferedProjection implements UnitOfWork
         public readonly string $indexTable,
     ) {
         $adapter = new PostgresMappedTableAdapter($connection);
-        $this->courses = $adapter->create($coursesTable);
-        $this->index = $adapter->create($indexTable);
+        $columns = ['id' => new MappedColumn('string'), 'name' => new MappedColumn('string')];
+        $this->courses = $adapter->createDefined(new MappedRowSetMapping($coursesTable, $columns, ['id']));
+        $this->index = $adapter->createDefined(new MappedRowSetMapping($indexTable, $columns, ['id']));
         $this->persistence = new MappedTableUnitOfWork([
             $coursesTable => $this->courses,
             $indexTable => $this->index,

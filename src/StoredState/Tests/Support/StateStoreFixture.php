@@ -171,8 +171,12 @@ final class StateStoreFixture
         $factory = $this->storage instanceof Connection
             ? new PostgresMappedTableAdapter($this->storage)
             : new InMemoryMappedTableAdapter($this->storage);
-        $factory->create($collection->tableName, $collection->keyColumns());
-        return $factory->rows($collection->tableName, [], $collection->ownerKey($normalizedId));
+        $definition = match ($collection->tableName) {
+            'order_lines' => new OrderLinesDefinition(),
+            'composite_order_lines' => new CompositeOrderLinesDefinition(),
+        };
+
+        return $factory->createDefined($definition->mapping())->rowsForOwner($collection->ownerKey($normalizedId));
     }
 
     public function close(): void

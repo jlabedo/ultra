@@ -19,18 +19,9 @@ final class RecordingGuardMappedTableAdapter extends MappedTableAdapter
         private readonly \Closure $record,
     ) {}
 
-    public function create(string $tableName, array $keyColumns = ['id']): MappedRowSet
-    {
-        return $this->bind($tableName, new InMemoryRowSetStorage($this->database, $tableName, $keyColumns));
-    }
-
     public function createDefined(MappedRowSetMetadata $mapping): MappedRowSet
     {
-        return $this->bind(
-            $mapping->table,
-            new InMemoryRowSetStorage($this->database, $mapping->table, $mapping),
-            $mapping,
-        );
+        return $this->bind($mapping, new InMemoryRowSetStorage($this->database, $mapping->table, $mapping->keyColumns));
     }
 
     public function assertActiveTransaction(): void

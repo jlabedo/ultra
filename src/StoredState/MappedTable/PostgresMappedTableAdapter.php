@@ -32,55 +32,24 @@ final class PostgresMappedTableAdapter extends MappedTableAdapter
         $this->connection->executeQuery($sql, [$namespace, $key]);
     }
 
-    /**
-     * @param list<string> $keyColumns
-     * @param array<string, PostgresMappedColumnType> $columnTypes
-     */
-    public function create(string $tableName, array $keyColumns = ['id'], array $columnTypes = []): MappedRowSet
-    {
-        return $this->bind(
-            $tableName,
-            new PostgresRowSetStorage(
-                $this->connection,
-                $tableName,
-                $keyColumns,
-                $columnTypes,
-                policy: $this->tablePolicies[$tableName] ?? new MappedTablePolicy(),
-            ),
-        );
-    }
-
     /** @param array<string, PostgresMappedColumnType> $columnTypes */
     public function createDefined(MappedRowSetMetadata $mapping, array $columnTypes = []): MappedRowSet
     {
-        PostgresRowSetSql::validateColumnTypes($mapping, $columnTypes);
-
-        return $this->bindDefined($mapping, $columnTypes, null);
+        return $this->createCompiled($mapping, PostgresRowSetSql::compile($mapping, $columnTypes));
     }
 
     /** @internal */
     public function createCompiled(MappedRowSetMetadata $mapping, PostgresRowSetSql $sql): MappedRowSet
     {
-        return $this->bindDefined($mapping, $sql->columnTypes, $sql);
-    }
-
-    /** @param array<string, PostgresMappedColumnType> $columnTypes */
-    private function bindDefined(
-        MappedRowSetMetadata $mapping,
-        array $columnTypes,
-        ?PostgresRowSetSql $sql,
-    ): MappedRowSet {
         return $this->bind(
-            $mapping->table,
+            $mapping,
             new PostgresRowSetStorage(
                 $this->connection,
                 $mapping->table,
                 $mapping->keyColumns,
-                $columnTypes,
+                $sql,
                 policy: $this->tablePolicies[$mapping->table] ?? new MappedTablePolicy(),
-                sql: $sql,
             ),
-            $mapping,
         );
     }
 }

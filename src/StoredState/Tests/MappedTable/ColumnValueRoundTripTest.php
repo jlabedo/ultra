@@ -33,16 +33,10 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
         $json = ['anyOf' => [['documentType' => 'passport'], ['allOf' => [['documentType' => 'driver_license']]]]];
         yield 'nested JSON' => ['payload', PostgresMappedColumnType::Jsonb, $json, $json];
         yield 'ISO date' => ['expires_on', PostgresMappedColumnType::Date, '2026-05-25', '2026-05-25'];
-        yield 'date object' => [
-            'expires_on',
-            PostgresMappedColumnType::Date,
-            new \DateTimeImmutable('2026-05-25'),
-            '2026-05-25',
-        ];
         yield 'wall-clock timestamp' => [
             'expires_on',
             PostgresMappedColumnType::Timestamp,
-            new \DateTimeImmutable('2026-05-25T12:34:56.123456+02:00'),
+            '2026-05-25T12:34:56.123456+02:00',
             '2026-05-25T12:34:56.123456+00:00',
         ];
         yield 'timestamp instant with offset' => [
@@ -51,13 +45,13 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
             '2026-05-25T12:34:56.654321+02:00',
             '2026-05-25T10:34:56.654321+00:00',
         ];
-        yield 'timestamp instant object' => [
+        yield 'timestamp instant with negative offset' => [
             'expires_on',
             PostgresMappedColumnType::TimestampWithTimeZone,
-            new \DateTimeImmutable('2026-05-25T12:34:56.123456-03:00'),
+            '2026-05-25T12:34:56.123456-03:00',
             '2026-05-25T15:34:56.123456+00:00',
         ];
-        yield 'integer stored as text' => ['note', PostgresMappedColumnType::Text, 42, '42'];
+        yield 'numeric text' => ['note', PostgresMappedColumnType::Text, '42', '42'];
     }
 
     #[DataProvider('values')]
