@@ -15,11 +15,11 @@ use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableAdapter;
-use Ultra\MappedTable\MappedTableDependencies;
 use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\Plan\RowSetDependencies;
 use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
-use Ultra\MappedTable\PostgresMappedRowSetSql;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\Storage\PostgresRowSetSql;
 use Ultra\UnitOfWork\TagNames;
 
 /** @internal */
@@ -112,7 +112,7 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
 
         $coordinators = $this->coordinators($container, $mappings);
         $schedules = [MappedTableUnitOfWork::class => []];
-        foreach (MappedTableDependencies::compile($mappings) as $rowSet => $referenced) {
+        foreach (RowSetDependencies::compile($mappings) as $rowSet => $referenced) {
             $coordinator = $coordinators[$rowSet];
             $parent = $mappings[$rowSet]->owner?->definition;
             if (null !== $parent && $coordinator !== $coordinators[$parent]) {
@@ -184,8 +184,8 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         $configuredTypes = $definition instanceof PostgresMappedRowSetConfiguration
             ? $definition->postgresColumnTypes()
             : [];
-        $sql = PostgresMappedRowSetSql::compile($mapping, $configuredTypes);
-        $compiledSql = new Definition(PostgresMappedRowSetSql::class, [
+        $sql = PostgresRowSetSql::compile($mapping, $configuredTypes);
+        $compiledSql = new Definition(PostgresRowSetSql::class, [
             $sql->table,
             $sql->columns,
             $sql->keyPredicates,

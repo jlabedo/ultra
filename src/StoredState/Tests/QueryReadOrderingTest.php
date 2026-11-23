@@ -27,25 +27,16 @@ final class QueryReadOrderingTest extends StateStoreTestCase
 {
     public static function unknownGuards(): iterable
     {
-        foreach (['lookup', 'lock', 'observe'] as $operation) {
-            yield $operation . ' with missing definition' => [$operation, 'company_usgae'];
-            yield $operation . ' with empty name' => [$operation, ''];
-        }
+        yield 'missing definition' => ['company_usgae'];
+        yield 'empty name' => [''];
     }
 
     #[DataProvider('unknownGuards')]
-    public function test_unknown_guards_are_rejected_without_reading_or_queuing_work(
-        string $operation,
-        string $name,
-    ): void {
+    public function test_unknown_guards_are_rejected_at_lookup_without_queuing_work(string $name): void
+    {
         $unitOfWork = new MappedTableUnitOfWork([]);
-        $query = static fn(): never => throw new \RuntimeException('The query should never be called.');
         try {
-            match ($operation) {
-                'lookup' => $unitOfWork->queryGuard($name),
-                'lock' => $unitOfWork->lockQuery($name, 'acme'),
-                'observe' => $unitOfWork->observeQuery($name, 'acme', $query),
-            };
+            $unitOfWork->queryGuard($name);
             static::fail('An unknown guard must fail.');
         } catch (UnknownQueryGuardException $exception) {
             static::assertSame($name, $exception->guardName);

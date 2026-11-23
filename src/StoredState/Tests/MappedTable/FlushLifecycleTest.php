@@ -9,7 +9,7 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRow;
-use Ultra\MappedTable\RowUpdatePlan;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\MappedTable\Tests\Support\RecordingRowSetStorage;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;

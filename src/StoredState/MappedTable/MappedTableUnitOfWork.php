@@ -4,6 +4,11 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+use Ultra\MappedTable\Guard\QueryGuardRules;
+use Ultra\MappedTable\Guard\QueryGuardWork;
+use Ultra\MappedTable\Plan\RowSetDependencies;
+use Ultra\MappedTable\Plan\RowSetUpdatePlan;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\UnitOfWork\UnitOfWork;
 
 /** Coordinates the defined row sets that persist in one transaction. */
@@ -38,15 +43,13 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
             $mappings[$definition] = $rowSet->mappingForCoordination();
         }
 
-        $schedule = $compiledSchedule ?? MappedTableDependencies::compile($mappings);
+        $schedule = $compiledSchedule ?? RowSetDependencies::compile($mappings);
         $rules = $queryGuards instanceof QueryGuardRules
             ? $queryGuards
             : QueryGuardRules::compile($queryGuards, $mappings);
         if ([] !== $rules->namespaces && null === $guardLocks) {
             throw new \LogicException('Mapped query guards require a GuardLockAdapter.');
         }
-        $this->guards = new QueryGuardWork($rules, $guardLocks);
-
         $orderedRowSets = [];
         foreach (array_keys($schedule) as $definition) {
             $rowSet = $rowSets[$definition];
@@ -54,6 +57,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
             $orderedRowSets[$definition] = $rowSet;
         }
 
+        $this->guards = new QueryGuardWork($rules, $guardLocks, $orderedRowSets);
         $this->rowSets = $orderedRowSets;
         $this->mappings = $mappings;
         $this->referenced = $schedule;
@@ -61,26 +65,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
 
     public function queryGuard(string $name): QueryGuard
     {
-        $this->guards->assertKnown($name);
-
-        return new QueryGuard($this, $name);
-    }
-
-    /** @internal */
-    public function lockQuery(string $name, int|string $value): void
-    {
-        $this->guards->lock($name, $value);
-    }
-
-    /**
-     * @internal
-     * @template T
-     * @param callable(): T $query
-     * @return T
-     */
-    public function observeQuery(string $name, int|string $value, callable $query): mixed
-    {
-        return $this->guards->observe($name, $value, $query, $this->rowSets);
+        return $this->guards->guard($name);
     }
 
     public function lockRow(string $table, MappedKey $key): void

@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Guard;
+
+use Ultra\MappedTable\MappedRowSetDefinition;
+use Ultra\MappedTable\MappedRowSetMetadata;
+use Ultra\MappedTable\QueryGuardDefinition;
 
 /** @internal Compiled dependency indexes for decision reads and writer plans. */
 final readonly class QueryGuardRules

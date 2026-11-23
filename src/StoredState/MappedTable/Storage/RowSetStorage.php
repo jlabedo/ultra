@@ -2,10 +2,15 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Storage;
+
+use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRow;
+use Ultra\MappedTable\Plan\RowSetUpdatePlan;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
 
 /** @internal Table-specific storage operations used by the common adapter. */
-interface MappedRowSetStorage
+interface RowSetStorage
 {
     /** @return list<string> */
     public function keyColumns(): array;

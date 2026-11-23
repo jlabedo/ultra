@@ -28,11 +28,11 @@ use IamExample\State\TenantState;
 use Psr\Clock\ClockInterface;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresGuardLockAdapter;
-use Ultra\MappedTable\PostgresMappedRowSetSql;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\Storage\PostgresRowSetSql;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\StateId;
@@ -96,7 +96,7 @@ final readonly class Runtime
             AuditDefinition::class,
         ] as $definition) {
             $mapping = new $definition()->mapping();
-            $rowSets[$definition] = $adapter->createCompiled($mapping, PostgresMappedRowSetSql::compile($mapping, []));
+            $rowSets[$definition] = $adapter->createCompiled($mapping, PostgresRowSetSql::compile($mapping, []));
             $tables[$mapping->table] = $rowSets[$definition];
         }
         $unitOfWork = new MappedTableUnitOfWork(

@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+use Ultra\MappedTable\Storage\InMemoryRowSetStorage;
+
 final class InMemoryMappedTableAdapter extends MappedTableAdapter
 {
     /** @param array<string, MappedTablePolicy> $tablePolicies */

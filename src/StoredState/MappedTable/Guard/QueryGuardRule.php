@@ -2,7 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Guard;
+
+use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\Plan\RowSetUpdatePlan;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
 
 /** @internal A dependency on one compiled row set. */
 final readonly class QueryGuardRule

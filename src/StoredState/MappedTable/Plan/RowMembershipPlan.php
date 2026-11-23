@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Plan;
+
+use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRow;
 
 /** Membership of the whole table or of one declared owner's collection. */
 final readonly class RowMembershipPlan

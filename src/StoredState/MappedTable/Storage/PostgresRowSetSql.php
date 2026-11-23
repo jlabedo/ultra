@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Storage;
 
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
+use Ultra\MappedTable\MappedRowSetMetadata;
+use Ultra\MappedTable\PostgresMappedColumnType;
 
 /** @internal PostgreSQL codecs and SQL fragments compiled from a row set definition. */
-final readonly class PostgresMappedRowSetSql
+final readonly class PostgresRowSetSql
 {
     /**
      * @param array<string, array{identifier: string, parameter: string, assign: string, compare: string, excluded: string}> $columns

@@ -2,12 +2,19 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Storage;
 
+use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRowSetMetadata;
+use Ultra\MappedTable\MappedTablePolicy;
+use Ultra\MappedTable\Plan\RowMembershipPlan;
+use Ultra\MappedTable\Plan\RowSetUpdatePlan;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /** @internal */
-final readonly class InMemoryRowSetStorage implements MappedRowSetStorage
+final readonly class InMemoryRowSetStorage implements RowSetStorage
 {
     /** @var list<string> */
     private array $keyColumns;

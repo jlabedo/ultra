@@ -2,7 +2,9 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Plan;
+
+use Ultra\MappedTable\MappedRowSet;
 
 /**
  * Immutable row-set mutation plan prepared by MappedRowSet before it reaches an adapter.

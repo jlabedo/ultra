@@ -2,10 +2,13 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Plan;
+
+use Ultra\MappedTable\MappedRowSetMetadata;
+use Ultra\MappedTable\MappedRowSetOwner;
 
 /** @internal */
-final class MappedTableDependencies
+final class RowSetDependencies
 {
     /**
      * @param array<string, MappedRowSetMetadata> $mappings

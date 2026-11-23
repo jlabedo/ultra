@@ -2,13 +2,20 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Storage;
 
 use Doctrine\DBAL\Connection;
+use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRow;
+use Ultra\MappedTable\MappedTablePolicy;
+use Ultra\MappedTable\Plan\RowMembershipPlan;
+use Ultra\MappedTable\Plan\RowSetUpdatePlan;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
+use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /** @internal */
-final readonly class PostgresRowSetStorage implements MappedRowSetStorage
+final readonly class PostgresRowSetStorage implements RowSetStorage
 {
     /** @var list<string> */
     private array $keyColumns;
@@ -23,7 +30,7 @@ final readonly class PostgresRowSetStorage implements MappedRowSetStorage
         array $configuredKeyColumns = ['id'],
         private array $columnTypes = [],
         private MappedTablePolicy $policy = new MappedTablePolicy(),
-        private ?PostgresMappedRowSetSql $sql = null,
+        private ?PostgresRowSetSql $sql = null,
     ) {
         if (null !== $sql) {
             $this->keyColumns = $configuredKeyColumns;

@@ -2,10 +2,16 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Guard;
 
 use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\MappedTable\Exception\UnknownQueryGuardException;
+use Ultra\MappedTable\GuardLockAdapter;
+use Ultra\MappedTable\GuardLockMode;
+use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\Plan\RowSetUpdatePlan;
+use Ultra\MappedTable\QueryGuard;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /** @internal Pending reader requests and replay for one unit of work. */
@@ -22,38 +28,39 @@ final class QueryGuardWork
 
     private bool $replaying = false;
 
+    /** @param array<string, MappedRowSet> $rowSets */
     public function __construct(
         private readonly QueryGuardRules $rules,
         private readonly ?GuardLockAdapter $adapter,
+        private readonly array $rowSets,
     ) {}
 
-    public function assertKnown(string $name): void
+    public function guard(string $name): QueryGuard
     {
         if (!isset($this->rules->byName[$name])) {
             throw new UnknownQueryGuardException($name);
         }
+
+        return new QueryGuard($this, $name);
     }
 
     public function lock(string $name, int|string $value): void
     {
         $this->assertCollecting();
-        $this->assertKnown($name);
         $this->locks[$name][(string) $value] = GuardLockMode::SHARED;
     }
 
     /**
      * @template T
      * @param callable(): T $query
-     * @param array<string, MappedRowSet> $rowSets
      * @return T
      */
-    public function observe(string $name, int|string $value, callable $query, array $rowSets): mixed
+    public function observe(string $name, int|string $value, callable $query): mixed
     {
         $this->assertCollecting();
-        $this->assertKnown($name);
         $fingerprint = (string) $value;
         foreach ($this->rules->byName[$name] as $definition => $indexes) {
-            $rowSet = $rowSets[$definition];
+            $rowSet = $this->rowSets[$definition];
             if (!$rowSet->hasPendingChanges()) {
                 continue;
             }

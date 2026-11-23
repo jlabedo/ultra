@@ -120,7 +120,8 @@ fails partway, the caller rolls back and clears the pending buffers. The transac
 
 ## Reading and observing rows
 
-`withKey()` addresses one row. It prepares no work until a caller registers an expectation or a mutation.
+`withKey()` returns a `MappedRowHandle` for one row. It prepares no work until a caller registers an
+expectation or a mutation.
 Use a scalar `int`, `string` or `Stringable` for a single-column key. Associative
 arrays and `MappedKey` objects supply the complete key by column name. Their values can be integers,
 strings or `Stringable` objects. A `MappedRow` accepts an associative key when constructed and exposes
@@ -217,7 +218,7 @@ use it for committed reads. The unit of work verifies the active transaction and
 pending plans by physical table in dependency order. The adapter owns the execution phases and table-level
 storage operations.
 
-The immutable flush plan contains sorted row operations and membership entries. Each membership entry carries
+The immutable types under `Ultra\MappedTable\Plan` describe the sorted row operations and membership entries. Each membership entry carries
 its owner key (or `null` for the whole table), the expected and ignored keys, and the final retained keys
 when reconciliation was requested. An empty retained set removes all rows covered by the entry.
 

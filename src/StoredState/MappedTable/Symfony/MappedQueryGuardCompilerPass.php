@@ -9,6 +9,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\Attribute\DefineQueryGuard;
+use Ultra\MappedTable\Guard\QueryGuardRule;
+use Ultra\MappedTable\Guard\QueryGuardRules;
 use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\InMemoryGuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
@@ -20,8 +22,6 @@ use Ultra\MappedTable\PostgresGuardLockAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
-use Ultra\MappedTable\QueryGuardRule;
-use Ultra\MappedTable\QueryGuardRules;
 
 /** @internal */
 final class MappedQueryGuardCompilerPass implements CompilerPassInterface
@@ -179,7 +179,8 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
         foreach (array_keys($rules->namespaces) as $name) {
             $container
                 ->register(QueryGuard::class . '.' . $name, QueryGuard::class)
-                ->setArguments([new Reference($coordinator), (string) $name]);
+                ->setFactory([new Reference($coordinator), 'queryGuard'])
+                ->setArguments([(string) $name]);
         }
     }
 }

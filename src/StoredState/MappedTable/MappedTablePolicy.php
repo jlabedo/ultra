@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+use Ultra\MappedTable\Plan\RowSetUpdatePlan;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
+
 /** Operations supported by every adapter of a table. */
 final readonly class MappedTablePolicy
 {

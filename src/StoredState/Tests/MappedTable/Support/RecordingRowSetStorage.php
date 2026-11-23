@@ -7,12 +7,12 @@ namespace Ultra\MappedTable\Tests\Support;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetMetadata;
-use Ultra\MappedTable\MappedRowSetStorage;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\RowSetUpdatePlan;
+use Ultra\MappedTable\Plan\RowSetUpdatePlan;
+use Ultra\MappedTable\Storage\RowSetStorage;
 
-final class RecordingRowSetStorage implements MappedRowSetStorage
+final class RecordingRowSetStorage implements RowSetStorage
 {
     public int $reads = 0;
 

@@ -16,7 +16,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\RowUpdatePlan;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\SqlTrace;
 use Ultra\Testing\SqlTraceEntry;

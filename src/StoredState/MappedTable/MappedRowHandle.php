@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+use Ultra\MappedTable\Buffer\BufferedRowUpdate;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /**
  * Fluent handle for reading, observing and buffering changes to one mapped row.
  */
-final readonly class PendingRowUpdate
+final readonly class MappedRowHandle
 {
     /** @internal Obtain through MappedRowSet::withKey(). */
     public function __construct(

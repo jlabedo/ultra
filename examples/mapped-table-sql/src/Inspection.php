@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace MappedTableSqlExample;
 
-use Ultra\MappedTable\RowSetUpdatePlan;
+use Ultra\MappedTable\Plan\RowSetUpdatePlan;
 use Ultra\Testing\SqlTraceEntry;
 
 final readonly class Inspection

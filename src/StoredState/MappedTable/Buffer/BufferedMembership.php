@@ -2,12 +2,14 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Buffer;
 
+use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /** @internal */
-final class BufferedRowMembership
+final class BufferedMembership
 {
     /** @var list<MappedKey>|null */
     public ?array $expected = null;

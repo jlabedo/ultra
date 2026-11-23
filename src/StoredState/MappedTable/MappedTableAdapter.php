@@ -4,10 +4,14 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+use Ultra\MappedTable\Plan\RowSetUpdatePlan;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
+use Ultra\MappedTable\Storage\RowSetStorage;
+
 /** Binds tables to one storage resource and applies an entire mapped-table flush. */
 abstract class MappedTableAdapter
 {
-    /** @var array<string, MappedRowSetStorage> */
+    /** @var array<string, RowSetStorage> */
     private array $tables = [];
 
     /** @param list<string> $keyColumns */
@@ -67,7 +71,7 @@ abstract class MappedTableAdapter
 
     final protected function bind(
         string $table,
-        MappedRowSetStorage $storage,
+        RowSetStorage $storage,
         ?MappedRowSetMetadata $mapping = null,
     ): MappedRowSet {
         if (null !== $mapping && $mapping->keyColumns !== $storage->keyColumns()) {

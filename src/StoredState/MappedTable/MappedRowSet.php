@@ -4,6 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+use Ultra\MappedTable\Buffer\BufferedMembership;
+use Ultra\MappedTable\Buffer\BufferedRowUpdate;
+use Ultra\MappedTable\Plan\RowMembershipPlan;
+use Ultra\MappedTable\Plan\RowSetUpdatePlan;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
+
 /**
  * Logical row set that buffers conditional row changes for MappedTableUnitOfWork.
  */
@@ -16,7 +22,7 @@ final class MappedRowSet
 
     private int $generation = 0;
 
-    /** @var array<string, BufferedRowMembership> */
+    /** @var array<string, BufferedMembership> */
     private array $memberships = [];
 
     /**
@@ -31,9 +37,9 @@ final class MappedRowSet
     ) {}
 
     /** @param int|string|MappedKey|\Stringable|array<string, int|string|\Stringable> $key */
-    public function withKey(int|string|MappedKey|\Stringable|array $key): PendingRowUpdate
+    public function withKey(int|string|MappedKey|\Stringable|array $key): MappedRowHandle
     {
-        return new PendingRowUpdate($this, $this->normalizeKey($key), $this->generation, $this->table, $this->mapping);
+        return new MappedRowHandle($this, $this->normalizeKey($key), $this->generation, $this->table, $this->mapping);
     }
 
     /** @internal True when a buffered deletion, cancellation or reconciliation removes the row. */
@@ -333,7 +339,7 @@ final class MappedRowSet
     private function expectKeys(?MappedKey $owner, array $keys): void
     {
         $id = $owner?->fingerprint() ?? '';
-        $membership = $this->memberships[$id] ?? new BufferedRowMembership($owner);
+        $membership = $this->memberships[$id] ?? new BufferedMembership($owner);
         $updates = null === $owner
             ? array_values($this->updates)
             : array_values(array_filter(
@@ -386,7 +392,7 @@ final class MappedRowSet
         }
 
         foreach ($this->updates as $update) {
-            if (null !== $update->toPlan()) {
+            if ($update->hasPendingChanges()) {
                 return true;
             }
         }
@@ -428,12 +434,12 @@ final class MappedRowSet
         return $key;
     }
 
-    private function membership(?MappedKey $owner): BufferedRowMembership
+    private function membership(?MappedKey $owner): BufferedMembership
     {
-        return $this->memberships[$owner?->fingerprint() ?? ''] ??= new BufferedRowMembership($owner);
+        return $this->memberships[$owner?->fingerprint() ?? ''] ??= new BufferedMembership($owner);
     }
 
-    private function membershipFor(MappedKey $key): ?BufferedRowMembership
+    private function membershipFor(MappedKey $key): ?BufferedMembership
     {
         return [] === $this->memberships ? null : $this->memberships[$this->membershipIdForRow($key)] ?? null;
     }

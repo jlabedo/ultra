@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Ultra\MappedTable;
 
 use Doctrine\DBAL\Connection;
+use Ultra\MappedTable\Storage\PostgresRowSetSql;
+use Ultra\MappedTable\Storage\PostgresRowSetStorage;
 
 final class PostgresMappedTableAdapter extends MappedTableAdapter
 {
@@ -44,13 +46,13 @@ final class PostgresMappedTableAdapter extends MappedTableAdapter
     /** @param array<string, PostgresMappedColumnType> $columnTypes */
     public function createDefined(MappedRowSetMetadata $mapping, array $columnTypes = []): MappedRowSet
     {
-        PostgresMappedRowSetSql::validateColumnTypes($mapping, $columnTypes);
+        PostgresRowSetSql::validateColumnTypes($mapping, $columnTypes);
 
         return $this->bindDefined($mapping, $columnTypes, null);
     }
 
     /** @internal */
-    public function createCompiled(MappedRowSetMetadata $mapping, PostgresMappedRowSetSql $sql): MappedRowSet
+    public function createCompiled(MappedRowSetMetadata $mapping, PostgresRowSetSql $sql): MappedRowSet
     {
         return $this->bindDefined($mapping, $sql->columnTypes, $sql);
     }
@@ -59,7 +61,7 @@ final class PostgresMappedTableAdapter extends MappedTableAdapter
     private function bindDefined(
         MappedRowSetMetadata $mapping,
         array $columnTypes,
-        ?PostgresMappedRowSetSql $sql,
+        ?PostgresRowSetSql $sql,
     ): MappedRowSet {
         return $this->bind(
             $mapping->table,

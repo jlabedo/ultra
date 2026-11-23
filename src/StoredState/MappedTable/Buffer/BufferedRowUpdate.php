@@ -2,7 +2,10 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable;
+namespace Ultra\MappedTable\Buffer;
+
+use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\Plan\RowUpdatePlan;
 
 /**
  * Internal mutable state backing one fluent row update.
@@ -28,25 +31,35 @@ final class BufferedRowUpdate
         public readonly MappedKey $key,
     ) {}
 
-    /**
-     * The row's plan: a write, a check-only plan (RowUpdatePlan::MODE_EXPECT) when the row is only expected or its
-     * update writes only expected values, or null when nothing was registered.
-     */
+    public function hasPendingChanges(): bool
+    {
+        return null !== $this->expectedPresence || null !== $this->writeMode();
+    }
+
+    /** A write, a check-only plan, or null when nothing was registered. */
     public function toPlan(): ?RowUpdatePlan
     {
-        $writes =
-            null !== $this->mode && (RowUpdatePlan::MODE_UPDATE !== $this->mode || !$this->updatesOnlyExpectedValues());
-        if (!$writes && null === $this->expectedPresence) {
+        $mode = $this->writeMode();
+        if (null === $mode && null === $this->expectedPresence) {
             return null;
         }
 
         return new RowUpdatePlan(
             key: $this->key,
             expectedPresence: $this->expectedPresence,
-            mode: $writes ? $this->mode : RowUpdatePlan::MODE_EXPECT,
+            mode: $mode ?? RowUpdatePlan::MODE_EXPECT,
             expectedColumns: $this->expectedColumns,
-            setColumns: $writes ? $this->setColumns : [],
+            setColumns: null === $mode ? [] : $this->setColumns,
         );
+    }
+
+    private function writeMode(): ?string
+    {
+        if (RowUpdatePlan::MODE_UPDATE === $this->mode && $this->updatesOnlyExpectedValues()) {
+            return null;
+        }
+
+        return $this->mode;
     }
 
     /**
