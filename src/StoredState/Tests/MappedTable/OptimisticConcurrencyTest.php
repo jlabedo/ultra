@@ -16,6 +16,89 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 #[CoversNamespace('Ultra\MappedTable')]
 final class OptimisticConcurrencyTest extends RowSetTestCase
 {
+    #[DataProvider('backends')]
+    public function test_grouped_observation_preserves_order_and_the_buffered_view(string $backend): void
+    {
+        [$fixture, $rows] = $this->ownedRows($backend);
+        $a = ['tenant' => 'shop', 'owner' => 'a', 'id' => 'same'];
+        $b = ['tenant' => 'shop', 'owner' => 'b', 'id' => 'same'];
+        $created = ['tenant' => 'shop', 'owner' => 'a', 'id' => 'new'];
+        $missing = ['tenant' => 'shop', 'owner' => 'a', 'id' => 'missing'];
+        static::assertSame([], $rows->observeMany([]));
+        static::assertFalse($rows->hasPendingChanges());
+        $fixture->seed($a + ['status' => 'draft', 'note' => null]);
+        $fixture->seed($b + ['status' => 'other', 'note' => 'removed']);
+        $rows->withKey($a)->observe(['status']);
+        $rows->withKey($a)->setColumn('status', 'paid');
+        $rows->withKey($b)->delete();
+        $rows->withKey($created)->insert()->setColumn('status', 'local');
+
+        static::assertSame(
+            [
+                null,
+                ['status' => 'paid', 'note' => null],
+                ['status' => 'local'],
+                null,
+                ['status' => 'paid', 'note' => null],
+            ],
+            $rows->observeMany([$b, $a, $created, $missing, new MappedKey($a)], ['status', 'note']),
+        );
+
+        static::assertSame(
+            [
+                new MappedKey($created)->values,
+                new MappedKey($a)->values,
+            ],
+            $rows->observeMany([$created, $a], []),
+        );
+        $fixture->seed($a + ['status' => 'concurrent', 'note' => null]);
+
+        $this->expectException(ConcurrencyException::class);
+        $fixture->flush($rows);
+    }
+
+    /** @return iterable<string, array{string, bool}> */
+    public static function concurrentGroupChanges(): iterable
+    {
+        foreach (self::backends() as $name => [$backend]) {
+            yield "$name stored null changes" => [$backend, false];
+            yield "$name missing row appears" => [$backend, true];
+        }
+    }
+
+    #[DataProvider('concurrentGroupChanges')]
+    public function test_grouped_observation_guards_stored_null_and_absence(string $backend, bool $create): void
+    {
+        $fixture = $this->fixture($backend);
+        $fixture->seed(['id' => 'present', 'note' => null]);
+        static::assertSame([null, ['note' => null]], $fixture->rows->observeMany(['missing', 'present'], ['note']));
+        $fixture->seed(['id' => $create ? 'missing' : 'present', 'note' => 'concurrent']);
+
+        $this->expectException(ConcurrencyException::class);
+        $fixture->flush();
+    }
+
+    #[DataProvider('backends')]
+    public function test_a_conflicting_group_observation_installs_none_of_its_new_expectations(string $backend): void
+    {
+        $fixture = $this->fixture($backend);
+        $rows = $fixture->rows;
+        $fixture->seed(['id' => 'first', 'status' => 'old']);
+        $fixture->seed(['id' => 'second', 'status' => 'old']);
+        $rows->withKey('second')->observe(['status']);
+        $fixture->seed(['id' => 'second', 'status' => 'changed']);
+
+        try {
+            $rows->observeMany(['first', 'second'], ['status']);
+            static::fail('A conflicting observation must fail.');
+        } catch (ConcurrencyException) {
+            $fixture->seed(['id' => 'first', 'status' => 'new']);
+            $fixture->seed(['id' => 'second', 'status' => 'old']);
+            $fixture->flush();
+            static::assertFalse($rows->hasPendingChanges());
+        }
+    }
+
     /** @return iterable<string, array{string, string}> */
     public static function unsupportedAbsenceChecks(): iterable
     {

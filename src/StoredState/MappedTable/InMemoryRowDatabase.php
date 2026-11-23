@@ -103,6 +103,33 @@ final class InMemoryRowDatabase implements TransactionManager
     }
 
     /**
+     * @internal
+     * @param non-empty-array<string, MappedKey> $keys
+     * @param list<string> $columns
+     * @return array<string, array<string, mixed>>
+     */
+    public function rowsForKeys(string $tableName, array $keys, array $columns): array
+    {
+        $keyColumns = $keys[array_key_first($keys)]->values;
+        $rows = [];
+        foreach ($this->tables[$tableName] ?? [] as $row) {
+            $values = array_intersect_key($row, $keyColumns);
+            if (
+                count($values) !== count($keyColumns)
+                || !array_all($values, static fn(mixed $value): bool => is_int($value) || is_string($value))
+            ) {
+                continue;
+            }
+            $fingerprint = new MappedKey($values)->fingerprint();
+            if (isset($keys[$fingerprint]) && self::rowMatches($row, $keys[$fingerprint]->values)) {
+                $rows[$fingerprint] ??= self::project($row, $columns);
+            }
+        }
+
+        return $rows;
+    }
+
+    /**
      * @param list<string> $keyColumns
      * @param list<string> $columns
      *

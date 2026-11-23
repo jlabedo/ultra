@@ -43,6 +43,13 @@ final class RecordingRowSetStorage implements RowSetStorage
         return [];
     }
 
+    public function rowsByKeys(array $keys, array $columns): array
+    {
+        ++$this->reads;
+
+        return [];
+    }
+
     /** @return array{MappedRowSet, MappedTableUnitOfWork} */
     public function assemble(): array
     {

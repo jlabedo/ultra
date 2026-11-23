@@ -28,7 +28,7 @@ function prepare(Connection $connection, string $workload): void
 {
     $table = 'pg_temp.' . BENCHMARK_TABLE;
     $connection->executeStatement("TRUNCATE {$table}");
-    if ('unchanged-250' === $workload) {
+    if (in_array($workload, ['unchanged-250', 'unchanged-batch-250'], true)) {
         $connection->executeStatement(
             "INSERT INTO {$table} SELECT 'a', id, 'draft' FROM generate_series(1, 250) AS id",
         );
@@ -75,6 +75,15 @@ function execute_workload(
                     $row->setColumn('status', 'draft');
                 }
                 break;
+            case 'unchanged-batch-250':
+                $keys = array_map(static fn(int $id): array => ['owner' => 'a', 'id' => $id], range(1, 250));
+                foreach ($rows->observeMany($keys, ['status']) as $index => $row) {
+                    if (['status' => 'draft'] !== $row) {
+                        throw new RuntimeException('Expected a draft item.');
+                    }
+                    $rows->withKey($keys[$index])->setColumn('status', 'draft');
+                }
+                break;
             case 'reconcile-200':
                 $keys = $rows->observeKeysForOwner(['owner' => 'a']);
                 if (100 !== count($keys)) {
@@ -104,7 +113,7 @@ function verify(Connection $connection, string $workload): void
     $expected = match ($workload) {
         'insert-1000' => [1000, 1000, 0, 1, 1000],
         'guarded-100' => [100, 100, 0, 1, 100],
-        'unchanged-250' => [250, 0, 250, 1, 250],
+        'unchanged-250', 'unchanged-batch-250' => [250, 0, 250, 1, 250],
         'reconcile-200' => [50, 50, 0, 1, 50],
     };
     if (false === $actual || $expected !== array_map(intval(...), array_values($actual))) {
@@ -214,7 +223,7 @@ try {
         'samples' => $samples,
         'workloads' => [],
     ];
-    foreach (['insert-1000', 'unchanged-250', 'reconcile-200', 'guarded-100'] as $workload) {
+    foreach (['insert-1000', 'unchanged-250', 'unchanged-batch-250', 'reconcile-200', 'guarded-100'] as $workload) {
         $result['workloads'][$workload] =
             benchmark($connection, $workload, $warmups, $samples, null) + benchmark($observed, $workload, 0, 1, $trace);
     }

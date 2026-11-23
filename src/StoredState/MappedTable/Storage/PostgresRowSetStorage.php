@@ -71,23 +71,54 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         $mapped = [];
         foreach ($rows as $row) {
             $row = $this->decodeRow($row);
-            $keyValues = [];
-            foreach ($this->keyColumns() as $column) {
-                $value = $row[$column] ?? null;
-                if (!is_int($value) && !is_string($value)) {
-                    throw new \LogicException(sprintf(
-                        'Table "%s" returned no scalar key column "%s".',
-                        $this->tableName,
-                        $column,
-                    ));
-                }
-                $keyValues[$column] = $value;
-                unset($row[$column]);
-            }
-            $mapped[] = new MappedRow(new MappedKey($keyValues), $row);
+            $key = $this->keyFromRow($row);
+            $mapped[] = new MappedRow($key, array_diff_key($row, $key->values));
         }
 
         return $mapped;
+    }
+
+    public function rowsByKeys(array $keys, array $columns): array
+    {
+        $columns = array_values(array_unique($columns));
+        $projection = implode(', ', array_map($this->quoteColumn(...), $columns));
+        // Associate each result with the input key that PostgreSQL matched, even when PostgreSQL
+        // canonicalizes its spelling (for example, an uppercase UUID).
+        $querySuffix = sprintf(', %s FROM %s WHERE %s', $projection, $this->sql->table, $this->sql->keyPredicate);
+        $fingerprints = array_keys($keys);
+        $branches = [];
+        $params = [];
+        foreach ($fingerprints as $index => $fingerprint) {
+            $branches[] = 'SELECT ' . $index . $querySuffix;
+            array_push($params, ...$this->encodedKeyValues($keys[$fingerprint]));
+        }
+
+        $mapped = [];
+        foreach ($this->connection->fetchAllNumeric(implode(' UNION ALL ', $branches), $params) as $row) {
+            $index = (int) array_shift($row);
+            $mapped[$fingerprints[$index]] = $this->decodeRow(array_combine($columns, $row));
+        }
+
+        return $mapped;
+    }
+
+    /** @param array<string, mixed> $row */
+    private function keyFromRow(array $row): MappedKey
+    {
+        $key = [];
+        foreach ($this->keyColumns as $column) {
+            $value = $row[$column] ?? null;
+            if (!is_int($value) && !is_string($value)) {
+                throw new \LogicException(sprintf(
+                    'Table "%s" returned no scalar key column "%s".',
+                    $this->tableName,
+                    $column,
+                ));
+            }
+            $key[$column] = $value;
+        }
+
+        return new MappedKey($key);
     }
 
     public function check(RowSetUpdatePlan $plan): void

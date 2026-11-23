@@ -18,6 +18,7 @@ use Symfony\Component\Process\Process;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetMapping;
+use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Testing\PostgresConnectionSupport;
@@ -124,6 +125,41 @@ final class SqlInspectionTest extends TestCase
         $entries = $this->trace->entries();
         static::assertCount(1, $entries);
         static::assertStringStartsWith('SELECT "id", "owner_id" FROM', $entries[0]->sql);
+    }
+
+    public function test_batch_observation_reads_and_checks_once_even_with_canonicalized_postgres_keys(): void
+    {
+        $this->connection->executeStatement('CREATE TEMP TABLE observed_uuids (id UUID PRIMARY KEY, status TEXT)');
+        $first = 'AAAA0000-0000-0000-0000-000000000001';
+        $second = 'BBBB0000-0000-0000-0000-000000000002';
+        $this->connection->insert('observed_uuids', ['id' => $first, 'status' => 'first']);
+        $this->connection->insert('observed_uuids', ['id' => $second, 'status' => 'second']);
+        $adapter = new PostgresMappedTableAdapter($this->connection);
+        $rows = $adapter->createDefined(
+            new MappedRowSetMapping(
+                'observed_uuids',
+                ['id' => new MappedColumn('string'), 'status' => new MappedColumn('string')],
+                ['id'],
+            ),
+        );
+        $unit = new MappedTableUnitOfWork(['observed_uuids' => $rows], $adapter);
+        $this->trace->clear();
+
+        static::assertSame(
+            [['status' => 'second'], ['status' => 'first']],
+            $rows->observeMany([$second, $first], ['status']),
+        );
+        $rows->withKey($first)->setColumn('status', 'first');
+        $rows->withKey($second)->setColumn('status', 'second');
+        $this->connection->transactional($unit->flush(...));
+
+        $entries = $this->trace->entries();
+        $sql = array_values(array_filter(array_column($entries, 'sql')));
+        static::assertSame('begin', $entries[1]->operation);
+        static::assertCount(2, $sql);
+        static::assertStringStartsWith('SELECT ', $sql[0]);
+        static::assertStringStartsWith('SELECT ', $sql[1]);
+        static::assertStringEndsWith('FOR SHARE', $sql[1]);
     }
 
     public function test_conflict_retains_the_full_plan_but_only_the_executed_prefix_and_rollback(): void

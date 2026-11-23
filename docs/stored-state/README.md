@@ -38,6 +38,10 @@ Use it for informational reads; use an observation when the result must protect 
 - `expectMissing(StateClass::class, $id)` when it is absent: a later save is an insert, and a competing creation
   causes a concurrency conflict.
 
+`observeMany(StateClass::class, $ids)` reads the root rows of one state class together and returns typed
+states or nulls in input order. It applies the same optimistic column selection and collection membership
+observations as `observe()`. Collections are loaded separately for each present root.
+
 `observeExists(StateClass::class, $id)` returns a boolean and observes only the root row's
 presence or absence. It selects the identifier columns, without hydrating the state or loading
 its collections. Column changes and collection changes do not invalidate this observation;

@@ -53,33 +53,37 @@ final readonly class MappedRowHandle
     public function observeProjectedColumns(?array $columns, ?array $observedColumns): ?array
     {
         $row = $this->rowSet->readForHandle($this->key, $this->generation, $columns, trackStorage: true);
-        if (null === $row) {
-            $this->expectAbsent();
-
-            return null;
-        }
-
-        $values = null === $observedColumns
-            ? $row['storedValues']
-            : array_intersect_key($row['storedValues'], $observedColumns);
-        if ([] === $values) {
-            $this->expectPresent();
-
-            return $row['values'];
-        }
-
         $update = $this->update();
         $observation = clone $update;
-        $this->expectPresence($observation);
-        foreach ($values as $column => $value) {
-            $this->expectValue($observation, $column, $value);
-        }
+        $this->applyObservation($observation, $row, $observedColumns);
 
         $update->expectedPresence = $observation->expectedPresence;
         $update->expectedColumns = $observation->expectedColumns;
         $update->mode = $observation->mode;
 
-        return $row['values'];
+        return $row['values'] ?? null;
+    }
+
+    /**
+     * @internal Apply the same observation rules to a candidate update for a single or grouped read.
+     * @param array{values: array<string, mixed>, storedValues: array<string, mixed>}|null $row
+     * @param array<string, true>|null $observedColumns
+     */
+    public function applyObservation(BufferedRowUpdate $update, ?array $row, ?array $observedColumns): void
+    {
+        if (null === $row) {
+            $this->expectAbsence($update);
+
+            return;
+        }
+
+        $this->expectPresence($update);
+        $values = null === $observedColumns
+            ? $row['storedValues']
+            : array_intersect_key($row['storedValues'], $observedColumns);
+        foreach ($values as $column => $value) {
+            $this->expectValue($update, $column, $value);
+        }
     }
 
     private function update(): BufferedRowUpdate
@@ -118,9 +122,15 @@ final readonly class MappedRowHandle
      */
     public function expectAbsent(): self
     {
-        $update = $this->update();
+        $this->expectAbsence($this->update());
+
+        return $this;
+    }
+
+    private function expectAbsence(BufferedRowUpdate $update): void
+    {
         if ($update->removedByReconciliation || RowUpdatePlan::MODE_DELETE === $update->mode) {
-            return $this;
+            return;
         }
 
         if (true === $update->toPlan()?->writes()) {
@@ -140,8 +150,6 @@ final readonly class MappedRowHandle
         }
 
         $update->expectedPresence = RowUpdatePlan::EXPECTED_ABSENT;
-
-        return $this;
     }
 
     /**

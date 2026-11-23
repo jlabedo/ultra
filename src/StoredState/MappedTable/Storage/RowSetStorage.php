@@ -23,6 +23,13 @@ interface RowSetStorage
     public function row(MappedKey $key, array $columns): array|false;
 
     /**
+     * @param non-empty-array<string, MappedKey> $keys Indexed by key fingerprint.
+     * @param list<string> $columns Columns selected from the mapping.
+     * @return array<string, array<string, mixed>> Existing rows indexed by key fingerprint.
+     */
+    public function rowsByKeys(array $keys, array $columns): array;
+
+    /**
      * @param list<string> $columns Columns selected from the mapping.
      *
      * @return list<MappedRow>

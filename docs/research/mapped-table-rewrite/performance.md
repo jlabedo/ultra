@@ -8,6 +8,7 @@ all static mapping information ahead of the measured run. Reset and seed the tab
 | --- | --- |
 | `insert-1000` | From empty storage, buffer 1,000 explicit inserts for owner A with IDs 1 through 1,000 and status `paid`. Run one flush. All rows should be present. |
 | `unchanged-250` | Seed IDs 1 through 250 for A as `draft`. For every row observe only status and set it to the observed value. Flush and verify that all 250 rows still have that value. Check the SQL trace for zero writes. |
+| `unchanged-batch-250` | Use the same initial data and writes as `unchanged-250`. Observe the complete list of known keys together before setting the values. |
 | `reconcile-200` | Seed 100 draft items for each of A and B. Observe A's keys. Reconcile A to IDs 1 through 50 with status `paid`, reconcile B to empty and flush. Only the 50 paid items for A should remain. |
 | `guarded-100` | Observe a guarded SQL count for owner A in an empty table. Insert 100 paid items for A in the same unit of work. During flush acquire the guard and replay the count before the inserts. Verify the 100 paid items. |
 
@@ -44,6 +45,20 @@ DBAL 4.6.0 with PDO PostgreSQL, PostgreSQL 18.6 in the local Docker container.
 The homogeneous insert completes as a single batch. The unchanged workload makes one storage read per
 observation and one combined check at flush. These runs use temporary tables and a local database, so
 the latency figures omit regular-table WAL costs and production network latency.
+
+## Grouped observation comparison
+
+Both variants below were measured in the same run on PHP 8.5.12, DBAL 4.6.0 and PostgreSQL 18.6,
+using the protocol above. Each variant produced zero writes and one check of all observed rows at flush.
+
+| Workload | SELECT before flush | SELECT at flush | Median (ms) | p95 (ms) |
+| --- | ---: | ---: | ---: | ---: |
+| `unchanged-250` | 250 | 1 | 57.576 | 69.601 |
+| `unchanged-batch-250` | 1 | 1 | 15.307 | 18.681 |
+
+Coworking also exercises grouped observation when closing a room for the day. The two StateStore
+variants perform three reads of the booking table for three bookings. These are the guarded ID query,
+the grouped row read, and replay of the ID query at flush.
 
 ## If deferred foreign keys are evaluated
 

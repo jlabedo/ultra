@@ -117,18 +117,52 @@ final class ConcurrentDecisionsTest extends CoworkingKernelTestCase
         self::assertSame(60, $first->usedMinutes('acme', '2026-09'));
     }
 
-    public function test_state_store_bulk_closure_rejects_a_concurrent_booking_without_cancelling_existing_bookings(): void
+    public static function stateStoreFlavors(): iterable
     {
-        [$first, $second] = $this->drivers('stateStore');
+        yield 'state store' => ['stateStore'];
+        yield 'state store direct' => ['stateStoreDirect'];
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('stateStoreFlavors')]
+    public function test_bulk_closure_reads_booking_values_once_and_replays_the_query_guard(string $flavor): void
+    {
+        $table = 'stateStore' === $flavor ? 'cw_ss_bookings' : 'cw_direct_bookings';
+        $driver = $this->driver($flavor, self::getContainer());
+        $this->given($driver);
+        $driver->book('one', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
+        $driver->book('two', 'blue', 'grace', Slot::of('2026-09-10 12:00', '2026-09-10 13:00'));
+        $driver->book('three', 'blue', 'ada', Slot::of('2026-09-10 14:00', '2026-09-10 15:00'));
+
+        $trace = self::getContainer()->get('doctrine.debug_data_holder');
+        $trace->reset();
+        $driver->closeRoomForDay('blue', '2026-09-10');
+        $reads = [];
+        foreach ($trace->getData()['default'] as $query) {
+            $sql = str_replace('"', '', $query['sql']);
+            if (str_starts_with($sql, 'SELECT ') && str_contains($sql, ' FROM ' . $table . ' ')) {
+                $reads[] = $sql;
+            }
+        }
+        self::assertCount(3, $reads);
+        self::assertSame($reads[0], $reads[2], 'The guarded ID query must be replayed at flush.');
+        self::assertStringContainsString(' UNION ALL ', $reads[1]);
+    }
+
+    #[\PHPUnit\Framework\Attributes\DataProvider('stateStoreFlavors')]
+    public function test_bulk_closure_rejects_a_concurrent_booking_without_cancelling_existing_bookings(string $flavor): void
+    {
+        [$first, $second] = $this->drivers($flavor);
         $this->given($first);
         $first->book('existing', 'blue', 'ada', Slot::of('2026-09-10 10:00', '2026-09-10 11:00'));
+        $first->book('second', 'blue', 'ada', Slot::of('2026-09-10 12:00', '2026-09-10 13:00'));
         $this->assertLosesRace(
             fn() => $first->closeRoomForDay('blue', '2026-09-10'),
             fn() => $second->book('winner', 'blue', 'grace', Slot::of('2026-09-10 14:00', '2026-09-10 15:00')),
         );
         self::assertSame('confirmed', $first->bookingStatus('existing'));
-        self::assertSame(['existing', 'winner'], $first->bookingsOnDay('blue', '2026-09-10'));
-        self::assertSame(120, $first->usedMinutes('acme', '2026-09'));
+        self::assertSame('confirmed', $first->bookingStatus('second'));
+        self::assertSame(['existing', 'second', 'winner'], $first->bookingsOnDay('blue', '2026-09-10'));
+        self::assertSame(180, $first->usedMinutes('acme', '2026-09'));
     }
 
     #[\PHPUnit\Framework\Attributes\DataProvider('flavors')]

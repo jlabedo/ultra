@@ -51,15 +51,93 @@ final class MappedRowSet
     public function updateForHandle(MappedKey $key, int $generation): BufferedRowUpdate
     {
         $this->assertHandleGeneration($generation);
-        $fingerprint = $key->fingerprint();
-        if (!isset($this->updates[$fingerprint])) {
-            $update = new BufferedRowUpdate($key);
-            $reconciled = $this->membershipFor($key)?->reconciled;
-            $update->removedByReconciliation = null !== $reconciled && !isset($reconciled[$fingerprint]);
+
+        return $this->updates[$key->fingerprint()] ??= $this->newUpdate($key);
+    }
+
+    private function newUpdate(MappedKey $key): BufferedRowUpdate
+    {
+        $update = new BufferedRowUpdate($key);
+        $reconciled = $this->membershipFor($key)?->reconciled;
+        $update->removedByReconciliation = null !== $reconciled && !isset($reconciled[$key->fingerprint()]);
+
+        return $update;
+    }
+
+    /**
+     * Observe known keys as a group, returning one result per requested key in input order.
+     *
+     * @param iterable<int|string|MappedKey|\Stringable|array<string, int|string|\Stringable>> $keys
+     * @param list<string>|null $columns
+     * @return list<array<string, mixed>|null>
+     */
+    public function observeMany(iterable $keys, ?array $columns = null): array
+    {
+        return $this->observeManyProjectedColumns($keys, $columns, null);
+    }
+
+    /**
+     * @internal Allows object views to hydrate additional columns outside their optimistic mapping.
+     * @param iterable<int|string|MappedKey|\Stringable|array<string, int|string|\Stringable>> $keys
+     * @param list<string>|null $columns
+     * @param array<string, true>|null $observedColumns
+     * @return list<array<string, mixed>|null>
+     */
+    public function observeManyProjectedColumns(iterable $keys, ?array $columns, ?array $observedColumns): array
+    {
+        $order = [];
+        $requested = [];
+        foreach ($keys as $key) {
+            $key = $this->normalizeKey($key);
+            $fingerprint = $key->fingerprint();
+            $order[] = $fingerprint;
+            $requested[$fingerprint] ??= $key;
+        }
+        if ([] === $requested) {
+            return [];
+        }
+
+        $keyOnly = [] === $columns;
+        $projection = $keyOnly ? $this->mapping->keyColumns : $this->selectedColumns($columns, includeKeys: true);
+        $toRead = [];
+        $visible = [];
+        $plans = [];
+        foreach ($requested as $fingerprint => $key) {
+            $pending = $this->updates[$fingerprint] ?? null;
+            $visible[$fingerprint] = $this->isVisible($key, $pending);
+            $plans[$fingerprint] = $pending?->toPlan();
+            if ($visible[$fingerprint] && !$this->replacesStoredRow($plans[$fingerprint])) {
+                $toRead[$fingerprint] = $key;
+            }
+        }
+        $stored = [] === $toRead ? [] : $this->adapter->rowsByKeys($this->mapping->table, $toRead, $projection);
+        $updates = [];
+        $results = [];
+        foreach ($requested as $fingerprint => $key) {
+            $row = $visible[$fingerprint]
+                ? $this->overlayRow(
+                    $key,
+                    $stored[$fingerprint] ?? false,
+                    $plans[$fingerprint],
+                    $projection,
+                    trackStorage: true,
+                )
+                : null;
+            $pending = $this->updates[$fingerprint] ?? null;
+            $candidate = null === $pending ? $this->newUpdate($key) : clone $pending;
+            new MappedRowHandle($this, $key, $this->generation, $this->mapping)->applyObservation(
+                $candidate,
+                $row,
+                $observedColumns,
+            );
+            $updates[$fingerprint] = $candidate;
+            $results[$fingerprint] = $keyOnly && null !== $row ? $key->values : $row['values'] ?? null;
+        }
+        foreach ($updates as $fingerprint => $update) {
             $this->updates[$fingerprint] = $update;
         }
 
-        return $this->updates[$fingerprint];
+        return array_map(static fn(string $fingerprint): ?array => $results[$fingerprint], $order);
     }
 
     /** @param iterable<MappedRow> $rows */

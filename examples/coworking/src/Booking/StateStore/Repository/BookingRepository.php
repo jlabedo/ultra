@@ -14,6 +14,7 @@ use Ultra\MappedTable\Attribute\DefineQueryGuard;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\StateStore\StateStore;
+use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
 /** Guarded queries read committed rows before affected writes are prepared. */
 final readonly class BookingRepository
@@ -81,6 +82,12 @@ final readonly class BookingRepository
     public function observeConfirmedOnDay(string $roomId, string $day): array
     {
         $ids = $this->roomBookings->observe($roomId, fn(): array => $this->bookingIdsOnDay($roomId, $day));
-        return array_map(fn(string $id): BookingState => $this->states->observe(BookingState::class, $id), $ids);
+
+        return array_map(
+            static fn(?BookingState $booking): BookingState => $booking ?? throw new ConcurrencyException(
+                'A confirmed booking disappeared while preparing room closure.',
+            ),
+            $this->states->observeMany(BookingState::class, $ids),
+        );
     }
 }

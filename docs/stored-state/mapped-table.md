@@ -144,6 +144,12 @@ It adds value expectations only for returned non-key columns read from storage, 
 `null`. Buffered column values leave existing storage expectations in place. Use `observe([])` to
 depend on existence alone.
 
+`observeMany($keys, $columns)` observes known keys of one table with a shared storage read and the
+same projection and provenance rules. It returns a list in input order, including repeated keys and
+`null` for each missing row. An empty input returns an empty list. A conflict while preparing the
+group leaves its new expectations unapplied. The operation observes only the supplied keys.
+Use a membership observation or query guard when the decision depends on how the keys were selected.
+
 Use a fresh handle after the buffer is flushed or cleared.
 
 `rowsForOwner($owner, $columns)` returns the owner's rows as `MappedRow` objects with a separate complete key.

@@ -34,6 +34,17 @@ abstract class MappedTableAdapter
 
     /**
      * @internal
+     * @param non-empty-array<string, MappedKey> $keys
+     * @param list<string> $columns
+     * @return array<string, array<string, mixed>>
+     */
+    final public function rowsByKeys(string $table, array $keys, array $columns): array
+    {
+        return $this->tables[$table]->rowsByKeys($keys, $columns);
+    }
+
+    /**
+     * @internal
      * @param list<string> $columns
      * @return list<MappedRow>
      */

@@ -40,6 +40,11 @@ final readonly class InMemoryRowSetStorage implements RowSetStorage
         return $this->database->rowsByKey($this->tableName, $this->keyColumns(), $columns, $owner);
     }
 
+    public function rowsByKeys(array $keys, array $columns): array
+    {
+        return $this->database->rowsForKeys($this->tableName, $keys, $columns);
+    }
+
     public function check(RowSetUpdatePlan $plan): void
     {
         $this->policy->assertSupported($plan, $this->tableName);

@@ -42,6 +42,44 @@ final readonly class StateStore
     }
 
     /**
+     * Observe the requested roots together and return states in the order of the supplied identifiers.
+     *
+     * @template T of object
+     * @param class-string<T> $stateClass
+     * @param iterable<int|string|object> $ids
+     * @return list<T|null>
+     */
+    public function observeMany(string $stateClass, iterable $ids): array
+    {
+        $metadata = $this->metadataRegistry->metadataFor($stateClass);
+        $normalizedIds = [];
+        $keys = [];
+        foreach ($ids as $id) {
+            $this->assertIdentifierType($metadata, $id);
+            $normalized = is_object($id) ? $this->normalizer->toScalar($id) : $id;
+            $normalizedIds[] = $normalized;
+            $keys[] = $metadata->keyFromNormalizedId($normalized);
+        }
+        if ([] === $keys) {
+            return [];
+        }
+
+        $rows = $this->rowSets->tableFor($metadata)->observeManyProjectedColumns(
+            $keys,
+            $metadata->selectedColumns(),
+            $metadata->optimisticColumnSet,
+        );
+        $states = [];
+        foreach ($rows as $index => $row) {
+            $states[] = null === $row
+                ? null
+                : $this->hydrate($stateClass, $metadata, $normalizedIds[$index], $row, observe: true);
+        }
+
+        return $states;
+    }
+
+    /**
      * @template T of object
      * @param class-string<T> $stateClass
      * @return T|null
@@ -58,10 +96,22 @@ final readonly class StateStore
             ? $handle->observeProjectedColumns($columns, $metadata->optimisticColumnSet)
             : $handle->get($columns);
 
-        if (null === $row) {
-            return null;
-        }
+        return null === $row ? null : $this->hydrate($stateClass, $metadata, $normalizedId, $row, $observe);
+    }
 
+    /**
+     * @template T of object
+     * @param class-string<T> $stateClass
+     * @param array<string, mixed> $row
+     * @return T
+     */
+    private function hydrate(
+        string $stateClass,
+        StateMetadata $metadata,
+        mixed $normalizedId,
+        array $row,
+        bool $observe,
+    ): object {
         $payload = $metadata->payloadFromRow($normalizedId, $row);
         foreach ($metadata->collections as $collection) {
             $payload[$collection->property] = $this->loadCollection($collection, $normalizedId, $observe);

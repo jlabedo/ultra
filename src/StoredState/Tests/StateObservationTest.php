@@ -127,6 +127,7 @@ final class StateObservationTest extends StateStoreTestCase
         ];
         yield 'identity-only observation' => ['observe', OrderIdentityState::class];
         yield 'non-optimistic columns' => ['observe', OrderUnwatchedState::class];
+        yield 'non-optimistic columns in a group' => ['observeMany', OrderUnwatchedState::class];
     }
 
     #[DataProvider('presenceObservations')]
@@ -140,7 +141,10 @@ final class StateObservationTest extends StateStoreTestCase
             'order_id' => 'order-123',
             ...('observeExists' === $read ? [] : ['status' => 'pending']),
         ]);
-        $result = $store->$read($class, 'order-123');
+        $readState = static fn() => 'observeMany' === $read
+            ? $store->observeMany($class, ['order-123'])[0]
+            : $store->$read($class, 'order-123');
+        $result = $readState();
         static::assertSame(
             'observeExists' === $read ? true : 'order-123',
             is_object($result) ? $result->orderId : $result,
@@ -157,7 +161,7 @@ final class StateObservationTest extends StateStoreTestCase
         $this->flush($database, $registry);
         static::assertSame('paid', $database->row('orders', 'order_id', 'order-123')['status']);
         static::assertFalse($registry->hasPendingChanges());
-        $store->$read($class, 'order-123');
+        $readState();
         $database->deleteRowByKey('orders', new \Ultra\MappedTable\MappedKey(['order_id' => 'order-123']));
         $this->expectException(ConcurrencyException::class);
         $this->flush($database, $registry);
