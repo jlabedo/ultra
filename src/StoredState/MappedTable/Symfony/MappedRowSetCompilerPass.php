@@ -28,12 +28,15 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
     public const string DEFINITION_TAG = 'ultra.mapped_table.definition';
 
     public const string MAPPINGS = 'ultra.mapped_table.compiling.mappings';
+    public const string COORDINATORS = 'ultra.mapped_table.compiling.coordinators';
+    public const string PRIVATE_COORDINATOR_TAG = 'ultra.mapped_table.private_coordinator';
 
     public function process(ContainerBuilder $container): void
     {
         $resources = $container->findTaggedResourceIds(self::DEFINITION_TAG);
         if ([] === $resources) {
             $container->setParameter(self::MAPPINGS, []);
+            $container->setParameter(self::COORDINATORS, $this->coordinators($container, []));
 
             return;
         }
@@ -107,12 +110,70 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
             $container->setDefinition($class, $rowSet);
         }
 
-        $schedule = MappedTableDependencies::compile($mappings);
+        $coordinators = $this->coordinators($container, $mappings);
+        $schedules = [MappedTableUnitOfWork::class => []];
+        foreach (MappedTableDependencies::compile($mappings) as $rowSet => $referenced) {
+            $coordinator = $coordinators[$rowSet];
+            $parent = $mappings[$rowSet]->owner?->definition;
+            if (null !== $parent && $coordinator !== $coordinators[$parent]) {
+                throw new \LogicException(sprintf(
+                    'Mapped row set "%s" and its owner "%s" must use the same coordinator.',
+                    $rowSet,
+                    $parent,
+                ));
+            }
+            $schedules[$coordinator][$rowSet] = $referenced;
+        }
+
         $container->setParameter(self::MAPPINGS, $mappings);
+        $container->setParameter(self::COORDINATORS, $coordinators);
         $container
             ->register(MappedTableUnitOfWork::class, MappedTableUnitOfWork::class)
-            ->setArguments([$rowSets, new Reference(MappedTableAdapter::class), $schedule])
             ->addTag(TagNames::UNIT_OF_WORK);
+        foreach ($schedules as $id => $schedule) {
+            $container
+                ->getDefinition($id)
+                ->setArguments([
+                    array_intersect_key($rowSets, $schedule),
+                    new Reference(MappedTableAdapter::class),
+                    $schedule,
+                ]);
+        }
+    }
+
+    /**
+     * @param array<class-string<MappedRowSetDefinition>, MappedRowSetMapping> $mappings
+     * @return array<string, string>
+     */
+    private function coordinators(ContainerBuilder $container, array $mappings): array
+    {
+        $coordinators = array_fill_keys(array_keys($mappings), MappedTableUnitOfWork::class);
+        foreach ($container->findTaggedServiceIds(self::PRIVATE_COORDINATOR_TAG) as $id => $tags) {
+            $tag = $tags[0] ?? null;
+            if (!is_array($tag) || !is_array($tag['rowSets'] ?? null) || [] === $tag['rowSets']) {
+                throw new \LogicException(sprintf('Private coordinator "%s" must declare its mapped row sets.', $id));
+            }
+            foreach ($tag['rowSets'] as $rowSet) {
+                if (!is_string($rowSet) || !isset($mappings[$rowSet])) {
+                    throw new \LogicException(sprintf(
+                        'Private coordinator "%s" requires a registered mapped row set definition, got "%s".',
+                        $id,
+                        is_string($rowSet) ? $rowSet : get_debug_type($rowSet),
+                    ));
+                }
+                if (MappedTableUnitOfWork::class !== $coordinators[$rowSet] && $id !== $coordinators[$rowSet]) {
+                    throw new \LogicException(sprintf(
+                        'Mapped row set "%s" must have a single owner, claimed by "%s" and "%s".',
+                        $rowSet,
+                        $coordinators[$rowSet],
+                        $id,
+                    ));
+                }
+                $coordinators[$rowSet] = $id;
+            }
+        }
+
+        return $coordinators;
     }
 
     private function postgresRowSet(

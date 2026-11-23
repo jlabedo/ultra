@@ -23,6 +23,9 @@ services:
     Ultra\UnitOfWork\TransactionManager:
         class: Ultra\UnitOfWork\DbalTransactionManager
 
+    Ultra\MappedTable\MappedTableAdapter:
+        class: Ultra\MappedTable\PostgresMappedTableAdapter
+
     Ultra\Projection\Bundle\ProjectionImplementationInterface:
         class: Ultra\Projection_Postgres\PostgresProjectionImplementation
 

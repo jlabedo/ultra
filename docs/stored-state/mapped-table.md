@@ -93,12 +93,13 @@ order and the set of referenced definitions in the container. Manual assembly co
 schedule during assembly. Fixed owner columns remain available for collections whose owners do not impose a
 dependency between row sets.
 
-With Symfony, `MappedTableExtension` enrolls a single `MappedTableUnitOfWork` in the composite registered
-by `UnitOfWorkExtension`. Inject the row sets by definition class to prepare operations. In manual
-assembly, create the row sets through one adapter and pass them with that adapter to `MappedTableUnitOfWork`.
-For declared dependencies and guards, key the map by definition class. A row set can belong to only one
-coordinator. Call the coordinator through the runner or explicitly inside a transaction active on the adapter's
-resource.
+With Symfony, `MappedTableExtension` enrolls one application `MappedTableUnitOfWork` in the composite
+registered by `UnitOfWorkExtension`. Row sets declared as
+[projection-owned](../projections/README.md#mapped-row-sets-in-symfony) use the projection's private
+coordinator. Inject the row sets by definition class to prepare operations. In manual assembly, create
+the row sets through one adapter and pass them with that adapter to `MappedTableUnitOfWork`. For declared
+dependencies and guards, key the map by definition class. A row set belongs to one coordinator. Call
+the coordinator through the runner or explicitly inside a transaction active on the adapter's resource.
 
 For each flush, the coordinator takes a snapshot of every pending plan, validates the combined plan and
 acquires the query guards before replaying observed queries. It calls its adapter with the complete ordered

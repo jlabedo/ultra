@@ -97,9 +97,41 @@ automatically. Do not also put them in the application composite. They must be d
 to projection writes and must not feed work into other independently flushed participants.
 Projection handlers must not append new domain events or perform irreversible external effects.
 
+### Mapped row sets in Symfony
+
+With `MappedTableExtension`, list the definitions for the row sets the projection
+writes in `rowSets` and inject each `MappedRowSet` by its definition class:
+
+```php
+#[Projection(
+    name: 'account_balance',
+    partitionBy: 'accountId',
+    mode: ProjectionMode::Synchronous,
+    rowSets: [AccountBalanceDefinition::class],
+)]
+final readonly class AccountBalanceProjection
+{
+    public function __construct(
+        #[Autowire(service: AccountBalanceDefinition::class)]
+        private MappedRowSet $balances,
+    ) {}
+}
+```
+
+Symfony compiles a private `MappedTableUnitOfWork` for those row sets and gives it to
+the projection runtime. The handler, replay and reset paths flush the same private
+buffers through `ProjectionBatchExecutor`. Configure the mapped-table adapter on the
+same connection as projection execution and the event store. The application composite
+flushes the remaining mapped row sets.
+
+A row set has one writer coordinator. A parent and child linked by a declared owner
+dependency must belong to the same coordinator. All dependencies of a query guard must
+also belong to one coordinator, and code observing the guard must use that coordinator's
+unit of work. Symfony rejects split dependencies, competing projection owners, and
+StateStore bindings to projection-owned row sets at compilation.
+
 The [Symfony event sourcing example](../../examples/symfony-event-sourcing/README.md)
-assembles a private `MappedTableUnitOfWork` inside a projection implementing `UnitOfWork`.
-Its row changes and resets run in the transaction owned by the projection runner.
+shows the injection and a transactional row-set reset.
 
 ## Managed reconstruction
 

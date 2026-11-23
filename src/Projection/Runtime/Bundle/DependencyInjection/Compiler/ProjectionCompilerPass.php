@@ -8,6 +8,7 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Bundle\TagNames;
@@ -48,6 +49,13 @@ final class ProjectionCompilerPass implements CompilerPassInterface
                 $definition->clearTag(\Ultra\UnitOfWork\TagNames::UNIT_OF_WORK);
                 $references[] = new Reference($participant);
             }
+            if ([] !== $attribute->rowSets) {
+                if (!class_exists(MappedTableExtension::class)) {
+                    throw new \LogicException('Projection row sets require MappedTableExtension.');
+                }
+                $references[] = MappedTableExtension::privateUnitOfWork($container, $serviceId, $attribute->rowSets);
+            }
+
             $runtime = new Definition(ProjectionRuntime::class, [
                 new Reference($serviceId),
                 new Reference(UltraNormalizer::class),

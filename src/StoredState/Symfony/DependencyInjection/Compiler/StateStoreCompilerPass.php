@@ -18,6 +18,7 @@ use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateId;
+use Ultra\StateStore\Exception\InvalidStateConfigurationException;
 use Ultra\StateStore\StateMetadataFactory;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateRowSets;
@@ -80,6 +81,17 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             /** @var array<class-string<MappedRowSetDefinition>, MappedRowSetMapping> $mappings */
             $mappings = $container->getParameter(MappedRowSetCompilerPass::MAPPINGS);
             $bindings = new StateRowSetBindings($mappings, $identityShapes, $normalizers)->compile($rootMetadata);
+            /** @var array<string, string> $coordinators */
+            $coordinators = $container->getParameter(MappedRowSetCompilerPass::COORDINATORS);
+            foreach ($bindings as $table => $definition) {
+                if (MappedTableUnitOfWork::class !== $coordinators[$definition]) {
+                    throw new InvalidStateConfigurationException(sprintf(
+                        'StateStore cannot bind table "%s" to the private mapped row set "%s".',
+                        $table,
+                        $definition,
+                    ));
+                }
+            }
         }
         if (!$container->hasDefinition(MappedTableUnitOfWork::class)) {
             // A StateStore used solely for manual query expectations still participates in the flush.

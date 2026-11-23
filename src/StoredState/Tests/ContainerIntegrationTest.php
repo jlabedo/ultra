@@ -365,6 +365,13 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         $this->createContainer(rowSets: [OrdersDefinition::class, BundleLinesWithoutDependency::class]);
     }
 
+    public function test_states_cannot_bind_projection_owned_tables(): void
+    {
+        $this->expectException(InvalidStateConfigurationException::class);
+        $this->expectExceptionMessage('StateStore cannot bind table');
+        $this->createContainer(privateRowSets: [OrdersDefinition::class, OrderLinesDefinition::class]);
+    }
+
     public function test_bundle_autoconfiguration_marks_states_as_normalizable_resources(): void
     {
         $container = new ContainerBuilder();
@@ -391,6 +398,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
     /**
      * @param list<class-string<MappedRowSetDefinition>> $rowSets
      * @param list<class-string> $extraStates
+     * @param list<class-string<MappedRowSetDefinition>> $privateRowSets
      */
     private function createContainer(
         bool $withQueryGuard = false,
@@ -399,6 +407,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         array $rowSets = [OrdersDefinition::class, OrderLinesDefinition::class],
         array $extraStates = [],
         ?Connection $postgres = null,
+        array $privateRowSets = [],
     ): ContainerBuilder {
         $container = new ContainerBuilder();
         $container->setParameter('kernel.build_dir', sys_get_temp_dir() . '/ultra_state_store_bundle_test');
@@ -406,6 +415,9 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         new UnitOfWorkExtension()->build($container);
         new StateStoreExtension()->build($container);
         new MappedTableExtension()->build($container);
+        if ([] !== $privateRowSets) {
+            MappedTableExtension::privateUnitOfWork($container, 'test.projection', $privateRowSets);
+        }
         foreach ($rowSets as $definition) {
             $container->register($definition)->setAutoconfigured(true);
         }

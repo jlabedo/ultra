@@ -33,19 +33,64 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
         /** @var array<class-string<MappedRowSetDefinition>, MappedRowSetMapping> $mappings */
         $mappings = $container->getParameter(MappedRowSetCompilerPass::MAPPINGS);
         $container->getParameterBag()->remove(MappedRowSetCompilerPass::MAPPINGS);
+        /** @var array<string, string> $coordinators */
+        $coordinators = $container->getParameter(MappedRowSetCompilerPass::COORDINATORS);
+        $container->getParameterBag()->remove(MappedRowSetCompilerPass::COORDINATORS);
         /** @var list<QueryGuardDefinition> $configured */
         $configured = $container->getParameter(self::CONFIGURED_GUARDS);
         $container->getParameterBag()->remove(self::CONFIGURED_GUARDS);
-        $rules = QueryGuardRules::compile([...$configured, ...$this->attributeDefinitions($container)], $mappings);
+        $groups = $this->groupDefinitions([...$configured, ...$this->attributeDefinitions($container)], $coordinators);
         if ([] === $mappings) {
+            QueryGuardRules::compile($groups[MappedTableUnitOfWork::class], []);
+
             return;
         }
 
-        $unitOfWork = $container->getDefinition(MappedTableUnitOfWork::class);
         $adapterClass = $container
             ->getParameterBag()
             ->resolveValue($container->findDefinition(MappedTableAdapter::class)->getClass());
-        $this->registerQueryGuards($container, $unitOfWork, $rules, is_string($adapterClass) ? $adapterClass : null);
+        foreach ($groups as $id => $definitions) {
+            $rules = QueryGuardRules::compile($definitions, $mappings);
+            $this->registerQueryGuards($container, $id, $rules, is_string($adapterClass) ? $adapterClass : null);
+        }
+    }
+
+    /**
+     * @param list<QueryGuardDefinition> $definitions
+     * @param array<string, string> $coordinators
+     * @return array<string, list<QueryGuardDefinition>>
+     */
+    private function groupDefinitions(array $definitions, array $coordinators): array
+    {
+        $groups = array_fill_keys([MappedTableUnitOfWork::class, ...array_values($coordinators)], []);
+        $names = [];
+        foreach ($definitions as $definition) {
+            if (isset($names[$definition->name])) {
+                throw new \InvalidArgumentException(
+                    'A query guard needs a unique, non-empty name and at least one dependency.',
+                );
+            }
+            $names[$definition->name] = true;
+
+            $group = null;
+            foreach ($definition->dependencies as $dependency) {
+                $coordinator = $coordinators[$dependency->rowSet] ?? throw new \InvalidArgumentException(sprintf(
+                    'Query guard "%s" watches unknown row set definition "%s".',
+                    $definition->name,
+                    $dependency->rowSet,
+                ));
+                if (null !== $group && $group !== $coordinator) {
+                    throw new \LogicException(sprintf(
+                        'Query guard "%s" must watch row sets in the same coordinator.',
+                        $definition->name,
+                    ));
+                }
+                $group = $coordinator;
+            }
+            $groups[$group ?? MappedTableUnitOfWork::class][] = $definition;
+        }
+
+        return $groups;
     }
 
     /** @return list<QueryGuardDefinition> */
@@ -92,7 +137,7 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
 
     private function registerQueryGuards(
         ContainerBuilder $container,
-        Definition $unitOfWork,
+        string $coordinator,
         QueryGuardRules $rules,
         ?string $tableAdapterClass,
     ): void {
@@ -111,6 +156,7 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
             throw new \LogicException('Mapped row sets and query guards must use the same storage backend.');
         }
 
+        $unitOfWork = $container->getDefinition($coordinator);
         $unitOfWork->addArgument(new Definition(QueryGuardRules::class, [
             array_map(
                 static fn(QueryGuardRule $rule): Definition => new Definition(QueryGuardRule::class, [
@@ -133,7 +179,7 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
         foreach (array_keys($rules->namespaces) as $name) {
             $container
                 ->register(QueryGuard::class . '.' . $name, QueryGuard::class)
-                ->setArguments([new Reference(MappedTableUnitOfWork::class), (string) $name]);
+                ->setArguments([new Reference($coordinator), (string) $name]);
         }
     }
 }

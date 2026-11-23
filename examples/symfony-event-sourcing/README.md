@@ -85,26 +85,18 @@ et la même connexion DBAL, fournie par DoctrineBundle et configurée dans
 [l'Unit of Work](../../docs/transactions/README.md) et de son
 [intégration Symfony](../../docs/transactions/symfony.md).
 
-[OrderSummary](src/Projection/OrderSummary.php) construit son `MappedRowSet` dans
-son constructeur à partir de la connexion DBAL. Plusieurs tables peuvent être
-construites de la même façon ; elles ne deviennent pas des services Symfony.
+[OrderSummary](src/Projection/OrderSummary.php) déclare
+[OrderSummaryDefinition](src/Projection/OrderSummaryDefinition.php) dans `rowSets`
+et reçoit le `MappedRowSet` par injection. Le conteneur compile une unité de travail
+privée pour la projection. L'adaptateur PostgreSQL utilise la connexion DBAL de
+l'event store et du runner de projection.
 
-[OrderSummary](src/Projection/OrderSummary.php) implémente `UnitOfWork` et délègue
-`hasPendingChanges()`, `flush()` et `clear()` à sa table locale. Les handlers traitent
-`OrderPlaced` et `OrderShipped` dans l'ordre de chaque commande grâce à
-`partitionBy: 'order'`.
-
-Le moteur de projection appelle le flush de cette Unit of Work dans la transaction
-du checkpoint et assure son nettoyage après chaque lot, y compris si un handler
-échoue avant le flush. La même projection peut donc être réutilisée après échec.
-Un flush réussi consomme déjà les opérations bufferisées ; un nouvel appel sans
-nouvelles mutations ne répète pas les écritures.
-
-Symfony exclut automatiquement la projection de l'Unit of Work des commandes.
-Aucun service par table, hook `#[ProjectionFlush]` ou décorateur transactionnel
-applicatif n'est nécessaire ici. Le resetter prépare simplement une réconciliation
-vide ; le moteur assure également le flush et le nettoyage de cette opération.
-Voir le contrat de [persistance propre aux projections](../../docs/projections/README.md#projection-owned-persistence)
+Les handlers traitent `OrderPlaced` et `OrderShipped` dans l'ordre de chaque
+commande grâce à `partitionBy: 'order'`. Le moteur flushe les changements dans la
+transaction du checkpoint puis vide le buffer après chaque lot, même si un handler
+échoue. Le resetter prépare une réconciliation vide que le moteur flushe dans la
+transaction du reset.
+Voir le contrat de [persistance propre aux projections](../../docs/projections/README.md#mapped-row-sets-in-symfony)
 et celui de [Mapped Table](../../docs/stored-state/mapped-table.md).
 
 [Schema](src/Schema.php) assemble les DDL fournis par les packages et la table de

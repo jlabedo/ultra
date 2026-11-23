@@ -19,6 +19,8 @@ Handler execution follows append validation and stays under the activation barri
 
 `ProjectionBatchExecutor` provides common batch application, the optional projection flush hook, and flushing of projection-owned units of work. Projections may instead write directly through the shared transactional connection. Projection persistence participants must not also be registered in the parent composite unit of work; they are exclusively owned and cleared by projection execution. There is no global prepare phase, stabilization loop, specialized application runner or dependency on parent participant order. Projection handlers do not append new domain events.
 
+Symfony compiles projection-owned mapped row sets into a private persistence participant. The row-set definitions and adapter configuration use the ordinary MappedTable assembly. Exclusive buffer ownership lets append, replay and reset share the projection batch lifecycle.
+
 ## Reconstruction and activation
 
 Managed synchronous projections persist a generation and phase (`building` or `live`). Checkpoints are used while building, never as a synchronous concurrency lock. Initializers and resetters participate in transactional lifecycle operations.
