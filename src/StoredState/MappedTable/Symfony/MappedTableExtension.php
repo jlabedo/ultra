@@ -13,6 +13,9 @@ use Ultra\MappedTable\QueryGuardDefinition;
 
 final readonly class MappedTableExtension implements ContainerExtension
 {
+    /** @internal Identifies the compiled row-set service for each definition class. */
+    public const string ROW_SET_TAG = 'ultra.mapped_table.compiled_row_set';
+
     /** @param list<QueryGuardDefinition> $queryGuards */
     public function __construct(
         private array $queryGuards = [],

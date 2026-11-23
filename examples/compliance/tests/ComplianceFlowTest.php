@@ -253,8 +253,21 @@ final class ComplianceFlowTest extends TestCase
         $this->runtime->refresh('acme');
         self::assertSame(['ada'], $this->runtime->queries->subjects('acme', 'base'));
 
+        $this->connection->executeStatement(<<<'SQL'
+            CREATE FUNCTION reject_after_source_withdrawal() RETURNS trigger LANGUAGE plpgsql AS $$
+            BEGIN
+                IF NEW.key = 'subject:ada' AND NOT EXISTS (
+                    SELECT 1 FROM compliance_evidence
+                    WHERE account_id = 'acme' AND subject_id = 'ada' AND evidence_id = 'p-1'
+                ) THEN
+                    RAISE check_violation USING MESSAGE = 'Invalidation refused after source withdrawal';
+                END IF;
+                RETURN NEW;
+            END $$
+            SQL);
         $this->connection->executeStatement(
-            "ALTER TABLE compliance_dirty_keys ADD CONSTRAINT reject_ada CHECK (key <> 'subject:ada' OR counter = 0)",
+            'CREATE TRIGGER reject_ada BEFORE INSERT ON compliance_dirty_keys
+             FOR EACH ROW EXECUTE FUNCTION reject_after_source_withdrawal()',
         );
         $compliance->withdraw('acme', 'ada', 'p-1');
         try {
@@ -265,7 +278,7 @@ final class ComplianceFlowTest extends TestCase
         }
         self::assertSame(['ada'], $this->runtime->reference->subjects('acme', 'base'));
         self::assertSame(0, $this->runtime->refresh('acme'));
-        $this->connection->executeStatement('ALTER TABLE compliance_dirty_keys DROP CONSTRAINT reject_ada');
+        $this->connection->executeStatement('DROP TRIGGER reject_ada ON compliance_dirty_keys');
 
         $restarted = new Runtime($this->connection, subjectBatchSize: 1);
         $restarted->project();

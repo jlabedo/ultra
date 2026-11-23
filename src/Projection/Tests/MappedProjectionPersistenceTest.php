@@ -8,8 +8,13 @@ use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\Reference;
+use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
+use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\MappedTable\Attribute\DefineQueryGuard;
 use Ultra\MappedTable\GuardLockAdapter;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
@@ -26,9 +31,12 @@ use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
+use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionResetter;
+use Ultra\Projection\Bundle\ProjectionExtension;
+use Ultra\Projection\Bundle\ProjectionImplementationInterface;
 use Ultra\Projection\ProjectionMode;
 use Ultra\Projection\ProjectionRebuilder;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
@@ -197,6 +205,80 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
         $this->expectExceptionMessage($message);
         $builder->boot();
     }
+
+    public function test_direct_injection_requires_the_projection_to_declare_the_row_set(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('and must declare it in rowSets');
+        $this
+            ->projectionUltraLight()
+            ->withExtension(new MappedTableExtension())
+            ->withService(new InMemoryMappedTableAdapter(new InMemoryRowDatabase()), MappedTableAdapter::class)
+            ->withClass(UndeclaredMappedProjection::class, ProjectedCoursesDefinition::class)
+            ->withAlias('test.course_table_alias', ProjectedCoursesDefinition::class)
+            ->boot();
+    }
+
+    /** @return iterable<string, array{class-string<EventStore>, ?string, bool}> */
+    public static function postgresConnectionConfigurations(): iterable
+    {
+        yield 'shared connection via alias' => [PostgresEventStoreQueryStreams::class, null, true];
+        yield 'QueryStreams store on a separate connection' => [
+            PostgresEventStoreQueryStreams::class,
+            EventStore::class,
+            true,
+        ];
+        yield 'HStore store on a separate connection' => [PostgresEventStoreHStore::class, EventStore::class, true];
+        yield 'private tables on a separate connection' => [
+            PostgresEventStoreQueryStreams::class,
+            MappedTableAdapter::class,
+            true,
+        ];
+        yield 'autowired connection service is not shared' => [PostgresEventStoreQueryStreams::class, null, false];
+    }
+
+    /** @param class-string<EventStore> $eventStore */
+    #[DataProvider('postgresConnectionConfigurations')]
+    public function test_standard_postgres_persistence_uses_one_connection_service(
+        string $eventStore,
+        ?string $separate,
+        bool $shared,
+    ): void {
+        $container = new ContainerBuilder();
+        new ProjectionExtension()->build($container);
+        new MappedTableExtension()->build($container);
+        new UnitOfWorkExtension()->build($container);
+        $container->register(UltraNormalizer::class);
+        $container->register('test.projection_connection', Connection::class)->setSynthetic(true)->setPublic(true);
+        $container->register('test.different_connection', Connection::class)->setSynthetic(true)->setPublic(true);
+        $container->getDefinition('test.projection_connection')->setShared($shared);
+        $container->setAlias(Connection::class, 'test.projection_connection');
+        $container->setAlias('test.shared_connection_alias', 'test.projection_connection');
+        foreach ([
+            EventStore::class => $eventStore,
+            ProjectionImplementationInterface::class => PostgresProjectionImplementation::class,
+            MappedTableAdapter::class => PostgresMappedTableAdapter::class,
+        ] as $id => $class) {
+            $definition = $container->register($id, $class)->setAutowired(true);
+            if ($id === $separate) {
+                $definition->setArgument('$connection', new Reference('test.different_connection'));
+            } elseif (EventStore::class === $id) {
+                $definition->setArgument('$connection', new Reference('test.shared_connection_alias'));
+            }
+        }
+        $container->getDefinition(EventStore::class)->setPublic(true);
+        $container->register(ProjectedCoursesDefinition::class)->setAutoconfigured(true);
+        $container->register(ConflictingMappedProjection::class)->setAutoconfigured(true);
+
+        if (null !== $separate || !$shared) {
+            $this->expectException(\LogicException::class);
+            $this->expectExceptionMessage(
+                $shared ? 'requires the same connection' : 'needs a shared connection service',
+            );
+        }
+        $container->compile();
+        static::assertTrue($container->isCompiled());
+    }
 }
 
 #[Projection(
@@ -252,6 +334,15 @@ final readonly class CompiledMappedProjection
     rowSets: [ProjectedCoursesDefinition::class],
 )]
 final class ConflictingMappedProjection {}
+
+#[Projection(name: 'undeclared_mapped_projection', partitionBy: 'courseId')]
+final readonly class UndeclaredMappedProjection
+{
+    public function __construct(
+        #[Autowire(service: 'test.course_table_alias')]
+        public MappedRowSet $courses,
+    ) {}
+}
 
 final class ProjectedCoursesDefinition implements MappedRowSetDefinition
 {

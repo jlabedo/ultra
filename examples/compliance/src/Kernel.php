@@ -89,6 +89,8 @@ final class Kernel extends BaseKernel
                 QualificationDefined::class,
                 EvidenceState::class,
                 QualificationState::class,
+                EvidenceRowsDefinition::class,
+                QualificationRowsDefinition::class,
                 SourceProjection::class,
             ] as $class) {
                 $container

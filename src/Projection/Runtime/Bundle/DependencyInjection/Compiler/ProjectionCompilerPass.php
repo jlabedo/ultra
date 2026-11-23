@@ -22,6 +22,7 @@ final class ProjectionCompilerPass implements CompilerPassInterface
     {
         $runtimes = [];
         $owners = [];
+        $projectionRowSets = [];
 
         foreach (array_keys($container->findTaggedServiceIds(TagNames::PROJECTION)) as $serviceId) {
             $class = $container->findDefinition($serviceId)->getClass();
@@ -38,7 +39,14 @@ final class ProjectionCompilerPass implements CompilerPassInterface
             if (is_a($class, UnitOfWork::class, true)) {
                 $participants[] = $serviceId;
             }
+            $projectionRowSets[$serviceId] = $attribute->rowSets;
             $references = [];
+            if ([] !== $attribute->rowSets) {
+                if (!class_exists(MappedTableExtension::class)) {
+                    throw new \LogicException('Projection row sets require MappedTableExtension.');
+                }
+                $references[] = MappedTableExtension::privateUnitOfWork($container, $serviceId, $attribute->rowSets);
+            }
             foreach (array_unique($participants) as $participant) {
                 $definition = $container->findDefinition($participant);
                 $identity = spl_object_id($definition);
@@ -48,12 +56,6 @@ final class ProjectionCompilerPass implements CompilerPassInterface
                 $owners[$identity] = $serviceId;
                 $definition->clearTag(\Ultra\UnitOfWork\TagNames::UNIT_OF_WORK);
                 $references[] = new Reference($participant);
-            }
-            if ([] !== $attribute->rowSets) {
-                if (!class_exists(MappedTableExtension::class)) {
-                    throw new \LogicException('Projection row sets require MappedTableExtension.');
-                }
-                $references[] = MappedTableExtension::privateUnitOfWork($container, $serviceId, $attribute->rowSets);
             }
 
             $runtime = new Definition(ProjectionRuntime::class, [
@@ -69,6 +71,7 @@ final class ProjectionCompilerPass implements CompilerPassInterface
             $runtimes[] = new Reference($runtimeId);
         }
 
+        $container->setParameter(ProjectionPersistenceCompilerPass::ROW_SETS, $projectionRowSets);
         $container->register(ProjectionCatalog::class, ProjectionCatalog::class)->setArguments($runtimes);
     }
 }

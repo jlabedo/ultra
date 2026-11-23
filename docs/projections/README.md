@@ -120,9 +120,16 @@ final readonly class AccountBalanceProjection
 
 Symfony compiles a private `MappedTableUnitOfWork` for those row sets and gives it to
 the projection runtime. The handler, replay and reset paths flush the same private
-buffers through `ProjectionBatchExecutor`. Configure the mapped-table adapter on the
-same connection as projection execution and the event store. The application composite
-flushes the remaining mapped row sets.
+buffers through `ProjectionBatchExecutor`. The private mapped-table participant flushes
+before additional participants of that projection. The application composite flushes the
+remaining mapped row sets.
+
+A direct constructor injection of a compiled `MappedRowSet` requires a matching entry
+in `rowSets`. For an informational read of another writer's table, use a read service.
+Configure PostgreSQL persistence on one connection. Symfony checks direct connection
+service references of the built-in PostgreSQL projection implementation, event-store
+adapters and the adapter for private mapped tables. Custom factories and instances
+supplied by the application must use the same connection as well.
 
 A row set has one writer coordinator. A parent and child linked by a declared owner
 dependency must belong to the same coordinator. All dependencies of a query guard must

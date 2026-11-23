@@ -8,45 +8,34 @@ use ComplianceExample\Event\EvidenceProvided;
 use ComplianceExample\Event\EvidenceWithdrawn;
 use ComplianceExample\Event\QualificationDefined;
 use ComplianceExample\Refresh\Scope;
-use Doctrine\DBAL\Connection;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Ultra\Coordination\Tracking\DirtyKeyTracker;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionResetter;
 use Ultra\UnitOfWork\UnitOfWork;
 
-#[Projection(name: self::NAME, partitionBy: 'account')]
+#[Projection(
+    name: self::NAME,
+    partitionBy: 'account',
+    rowSets: [EvidenceRowsDefinition::class, QualificationRowsDefinition::class],
+)]
 final class SourceProjection implements UnitOfWork
 {
     public const string NAME = 'compliance_sources';
 
-    private readonly MappedRowSet $evidence;
-    private readonly MappedRowSet $qualifications;
-    private readonly MappedTableUnitOfWork $persistence;
     /** @var array<string, array<string, true>> */
     private array $invalidations = [];
 
     public function __construct(
-        Connection $connection,
+        #[Autowire(service: EvidenceRowsDefinition::class)]
+        private readonly MappedRowSet $evidence,
+        #[Autowire(service: QualificationRowsDefinition::class)]
+        private readonly MappedRowSet $qualifications,
         private readonly DirtyKeyTracker $dirty,
-    ) {
-        $adapter = new PostgresMappedTableAdapter($connection);
-        $this->evidence = $adapter->create('compliance_evidence', ['account_id', 'subject_id', 'evidence_id']);
-        $this->qualifications = $adapter->create(
-            'compliance_qualifications',
-            ['account_id', 'qualification_id'],
-            ['requirements' => PostgresMappedColumnType::Jsonb],
-        );
-        $this->persistence = new MappedTableUnitOfWork([
-            'compliance_evidence' => $this->evidence,
-            'compliance_qualifications' => $this->qualifications,
-        ], $adapter);
-    }
+    ) {}
 
     #[ProjectionHandler]
     public function provided(EvidenceProvided $event): void
@@ -80,12 +69,11 @@ final class SourceProjection implements UnitOfWork
 
     public function hasPendingChanges(): bool
     {
-        return $this->persistence->hasPendingChanges() || [] !== $this->invalidations;
+        return [] !== $this->invalidations;
     }
 
     public function flush(): void
     {
-        $this->persistence->flush();
         // The ProjectionRunner owns the transaction shared by the source rows, marks and checkpoint.
         foreach ($this->invalidations as $channel => $keys) {
             foreach (array_keys($keys) as $key) {
@@ -97,7 +85,6 @@ final class SourceProjection implements UnitOfWork
 
     public function clear(): void
     {
-        $this->persistence->clear();
         $this->invalidations = [];
     }
 

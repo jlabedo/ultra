@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\Projection\Bundle;
 
 use Symfony\Component\DependencyInjection\ChildDefinition;
+use Symfony\Component\DependencyInjection\Compiler\PassConfig;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\Container\ContainerExtension;
@@ -17,6 +18,7 @@ use Ultra\Projection\Bundle\Command\ProjectionWorkerCommand;
 use Ultra\Projection\Bundle\Command\RebuildProjectionCommand;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionDefaultsCompilerPass;
+use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionPersistenceCompilerPass;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
@@ -156,6 +158,7 @@ final class ProjectionExtension implements ContainerExtension
 
         $container->addCompilerPass(new ProjectionCompilerPass());
         $container->addCompilerPass(new ProjectionDefaultsCompilerPass());
+        $container->addCompilerPass(new ProjectionPersistenceCompilerPass(), PassConfig::TYPE_BEFORE_REMOVING);
     }
 
     private function registerMessageHandlingIntegration(ContainerBuilder $container): void

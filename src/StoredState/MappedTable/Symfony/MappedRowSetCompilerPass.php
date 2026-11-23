@@ -107,7 +107,7 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
                     'createDefined',
                 ])->setArguments([$metadataReference]),
             };
-            $container->setDefinition($class, $rowSet);
+            $container->setDefinition($class, $rowSet->addTag(MappedTableExtension::ROW_SET_TAG));
         }
 
         $coordinators = $this->coordinators($container, $mappings);

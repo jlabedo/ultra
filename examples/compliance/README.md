@@ -39,9 +39,10 @@ ce même kernel sur leur connexion de test.
    Voir les [décisions avec état](../../docs/message-handling/stateful.md).
 2. `Runtime::project()` fait tourner le `ProjectionCoordinator` à la demande sur les
    événements persistés. [SourceProjection](src/SourceProjection.php) est partitionnée par
-   compte et possède les Mapped Tables des justificatifs et des exigences. Chaque lot
-   écrit ces tables de référence, enregistre les périmètres invalidés et avance le
-   checkpoint dans une seule transaction.
+   compte et reçoit les Mapped Tables des justificatifs et des exigences par injection.
+   Le conteneur compile leur unité de travail privée. Chaque lot écrit les lignes de
+   référence, enregistre les périmètres invalidés et avance le checkpoint dans une seule
+   transaction.
 3. `Runtime::refresh($account, $maxSteps)` relève les marqueurs du compte. La [requête de référence](src/ReferenceQueries.php)
    calcule les lignes attendues. Le [worker](../../docs/coordination/refresh.md) publie le résultat et acquitte
    les marqueurs dans sa propre transaction.
