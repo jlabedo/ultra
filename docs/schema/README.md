@@ -22,6 +22,18 @@ Column definitions also accept SQL type strings and SQL constraints for dialect-
 [MappedTable](../stored-state/mapped-table.md#compile-row-sets-from-schema) can compile row sets from these
 same table definitions.
 
+## Symfony discovery
+
+`UltraBundle` includes `Ultra\Schema\Symfony\SchemaExtension` when Schema is installed. When assembling a
+container directly, register that extension. On an autoconfigured resource, mark a public static method
+with `#[Ultra\Schema\Attribute\DefineSchema]`. The method takes no parameters and declares
+`SchemaDefinition` as its return type. A method may provide any number of tables.
+
+Symfony invokes each discovered method once during compilation. It merges the fragments by table and
+column ID and validates foreign keys across the assembled schema. Compiler passes such as MappedTable
+consume the result during compilation. The fragment providers and the assembled schema are discarded
+from the dumped container. For DDL generation outside Symfony, the same methods can be called directly.
+
 ## Guarantee suites
 
 The tests live together under [src/Schema/Runtime/Tests](../../src/Schema/Tests), organized by observable guarantees:
@@ -32,6 +44,7 @@ The tests live together under [src/Schema/Runtime/Tests](../../src/Schema/Tests)
 | Comparison preserves index identities and rejects unsupported constraint changes | [SchemaComparisonTest](../../src/Schema/Tests/SchemaComparisonTest.php) |
 | Column changes have minimal inspectable payloads; renames preserve stored rows; dependent operations address resolved names; generated SQL applies types, defaults, constraints, indexes and management comments | [ExecutableMigrationTest](../../src/Schema/Tests/ExecutableMigrationTest.php) |
 | Composite keys resolve column IDs to physical names, enforce references and allow related tables to be dropped | [RelationalConstraintsTest](../../src/Schema/Tests/RelationalConstraintsTest.php) |
+| Autoconfigured fragments compose at compilation, including cross-fragment references | [SymfonySchemaDiscoveryTest](../../src/Schema/Tests/SymfonySchemaDiscoveryTest.php) |
 | Invalid operations fail before a script is returned; caller-provided index SQL retains its clauses and is terminated | [MigrationInspectionTest](../../src/Schema/Tests/MigrationInspectionTest.php) |
 
 Operation payloads are inspectable before execution. SQL cases execute the generated statements against PostgreSQL and inspect data and catalog metadata. Whitespace and the layout of generated SQL are not frozen. The raw-index inspection case checks the supplied statement after surrounding whitespace and statement termination are normalized.

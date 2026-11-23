@@ -13,10 +13,12 @@ use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MappedTable\Symfony\SchemaMappedRowSet;
+use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
 
 /** @internal */
@@ -25,21 +27,7 @@ final class SchemaMappedRowSetsTest extends TestCase
 {
     public function test_dumped_container_uses_physical_names_the_inferred_key_and_the_requested_columns(): void
     {
-        $schema = new SchemaDefinition([
-            new TableDefinition(
-                'test.entries',
-                'physical_entries',
-                [
-                    new ColumnDefinition('id', 'entry_id', ColumnType::Int32),
-                    new ColumnDefinition('name', 'entry_name', ColumnType::Text),
-                    new ColumnDefinition('note', 'entry_note', 'varchar(40)', nullable: true),
-                    new ColumnDefinition('internal', type: 'jsonb'),
-                ],
-                primaryKey: ['id'],
-            ),
-        ]);
         $container = self::container(
-            $schema,
             new SchemaMappedRowSet('test.entries', columns: ['name', 'note'], representations: ['note' => 'string']),
         );
         $container->setAlias('test.public_entries', 'test.entries')->setPublic(true);
@@ -68,25 +56,59 @@ final class SchemaMappedRowSetsTest extends TestCase
 
     public function test_native_types_require_an_explicit_representation_at_compilation(): void
     {
-        $schema = new SchemaDefinition([
-            new TableDefinition(
-                'test.entries',
-                columns: [
-                    new ColumnDefinition('id', type: ColumnType::Int32),
-                    new ColumnDefinition('dates', type: 'date[]'),
-                ],
-                primaryKey: ['id'],
-            ),
-        ]);
-
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('Select a PHP representation for column "dates" on schema table "test.entries".');
-        self::container($schema, new SchemaMappedRowSet('test.entries'))->compile();
+        $this->expectExceptionMessage(
+            'Select a PHP representation for column "internal" on schema table "test.entries".',
+        );
+        self::container(new SchemaMappedRowSet('test.entries', columns: ['internal']))->compile();
     }
 
     public function test_the_owner_foreign_key_requires_its_parent_row_set_to_be_selected(): void
     {
-        $schema = new SchemaDefinition([
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Owner definition "test.parents" of table "test.children" is missing.');
+        self::container(new SchemaMappedRowSet('test.children', owner: 'parent_reference'))->compile();
+    }
+
+    private static function container(SchemaMappedRowSet ...$selections): ContainerBuilder
+    {
+        $container = new ContainerBuilder();
+        new SchemaExtension()->build($container);
+        $container->register(MappedRowSetsSchema::class)->setAutoconfigured(true);
+        new MappedTableExtension(schemaRowSets: $selections)->build($container);
+        $container
+            ->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)
+            ->setSynthetic(true)
+            ->setPublic(true);
+
+        return $container;
+    }
+}
+
+final class MappedRowSetsSchema
+{
+    #[DefineSchema]
+    public static function entries(): SchemaDefinition
+    {
+        return new SchemaDefinition([
+            new TableDefinition(
+                'test.entries',
+                'physical_entries',
+                [
+                    new ColumnDefinition('id', 'entry_id', ColumnType::Int32),
+                    new ColumnDefinition('name', 'entry_name', ColumnType::Text),
+                    new ColumnDefinition('note', 'entry_note', 'varchar(40)', nullable: true),
+                    new ColumnDefinition('internal', type: 'jsonb'),
+                ],
+                primaryKey: ['id'],
+            ),
+        ]);
+    }
+
+    #[DefineSchema]
+    public static function ownership(): SchemaDefinition
+    {
+        return new SchemaDefinition([
             new TableDefinition(
                 'test.parents',
                 columns: [
@@ -106,21 +128,5 @@ final class SchemaMappedRowSetsTest extends TestCase
                 ],
             ),
         ]);
-
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('Owner definition "test.parents" of table "test.children" is missing.');
-        self::container($schema, new SchemaMappedRowSet('test.children', owner: 'parent_reference'))->compile();
-    }
-
-    private static function container(SchemaDefinition $schema, SchemaMappedRowSet ...$selections): ContainerBuilder
-    {
-        $container = new ContainerBuilder();
-        new MappedTableExtension(schema: $schema, schemaRowSets: $selections)->build($container);
-        $container
-            ->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)
-            ->setSynthetic(true)
-            ->setPublic(true);
-
-        return $container;
     }
 }

@@ -8,8 +8,9 @@ conteneur Symfony compilé. Il adresse les clés composites avec des tableaux as
 
 ## Ce que montre l’exemple
 
-- `WorkshopSchema` déclare les deux tables et leur relation une seule fois. Cette définition sert à
-  générer le DDL PostgreSQL et à compiler les deux row sets dans Symfony.
+- `WorkshopSchema` déclare les deux tables et leur relation une seule fois. Symfony découvre cette
+  définition via `#[DefineSchema]` et compile les deux row sets. La même méthode fournit le schéma
+  utilisé pour générer le DDL PostgreSQL.
 - La publication crée l’atelier et ses réservations initiales dans le même flush. La déclaration
   du propriétaire permet à MappedTable d’insérer l’atelier avant les réservations qui le référencent.
 - Pour une nouvelle réservation, le service lit et observe la capacité avec `withKey()->observe(['capacity'])`, puis observe

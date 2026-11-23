@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace MappedTableSymfonyExample;
 
+use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
@@ -16,6 +17,7 @@ final class WorkshopSchema
     public const string RESERVATIONS = 'workshop.reservations';
     public const string WORKSHOP_REFERENCE = 'reservations_workshop_fk';
 
+    #[DefineSchema]
     public static function definition(): SchemaDefinition
     {
         return new SchemaDefinition([

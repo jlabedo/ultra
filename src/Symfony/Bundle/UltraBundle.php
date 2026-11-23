@@ -37,6 +37,7 @@ final class UltraBundle extends AbstractBundle
             'Ultra\\UnitOfWork\\UnitOfWorkExtension',
             'Ultra\\Mapper_Bundle\\MapperExtension',
             'Ultra\\EventSourcedState\\EventSourcedStateExtension',
+            'Ultra\\Schema\\Symfony\\SchemaExtension',
             'Ultra\\MappedTable\\Symfony\\MappedTableExtension',
             'Ultra\\StateStore_Bundle\\StateStoreExtension',
             'Ultra\\StatefulMessageHandling\\StatefulMessageHandlingExtension',

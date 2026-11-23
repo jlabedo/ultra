@@ -81,8 +81,8 @@ A reconciliation validates all supplied rows before modifying the buffer. Differ
 
 ## Compile row sets from Schema
 
-Use `MappedTableExtension(schema: $schema, schemaRowSets: [...])` to compile row sets from a
-[SchemaDefinition](../schema/README.md#current-reconciliation-contract). Each `SchemaMappedRowSet` selects
+Use `MappedTableExtension(schemaRowSets: [...])` to compile row sets from the schema assembled through
+[`#[DefineSchema]`](../schema/README.md#symfony-discovery). Each `SchemaMappedRowSet` selects
 a table by its stable ID. This ID is the Symfony service ID and can be used for injection, query guard
 dependencies and projection ownership.
 

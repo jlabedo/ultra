@@ -24,8 +24,15 @@ use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
+use Ultra\MappedTable\Symfony\SchemaMappedRowSet;
 use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
+use Ultra\Schema\Attribute\DefineSchema;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\Symfony\SchemaExtension;
+use Ultra\Schema\TableDefinition;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateColumn;
@@ -217,6 +224,44 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         $store->load(OrderLineState::class, 'one');
     }
 
+    public function test_state_store_and_direct_access_share_the_buffer_of_a_discovered_schema_row_set(): void
+    {
+        $builder = $this->stateStoreContainer();
+        new SchemaExtension()->build($builder);
+        new MappedTableExtension(schemaRowSets: [new SchemaMappedRowSet(BundleOrdersSchema::ORDERS)])->build($builder);
+        $builder->register(BundleOrdersSchema::class)->setAutoconfigured(true);
+        $builder->register(BundleOrderState::class)->setAutoconfigured(true);
+        $builder->setAlias('test.orders', BundleOrdersSchema::ORDERS)->setPublic(true);
+        $builder->compile();
+
+        $class = 'SchemaStateStoreContainer_' . bin2hex(random_bytes(4));
+        $php = new PhpDumper($builder)->dump(['class' => $class]);
+        eval(substr($php, 5));
+        $container = new $class();
+        $store = $container->get('test.state_store');
+        $orders = $container->get('test.orders');
+        $database = $container->get(InMemoryRowDatabase::class);
+        $unitOfWork = $container->get(UnitOfWork::class);
+
+        $store->save(new BundleOrderState('one', 'pending', 'draft'));
+        $row = $orders->withKey('one');
+        static::assertSame(['status' => 'pending'], $row->get(['status']));
+        static::assertFalse($database->row('orders', 'order_id', 'one', ['status']));
+
+        $row->setColumn('status', 'shipped');
+        static::assertEquals(
+            new BundleOrderState('one', 'shipped', 'draft'),
+            $store->load(BundleOrderState::class, 'one'),
+        );
+        $this->flush($database, $unitOfWork);
+        $unitOfWork->clear();
+
+        static::assertSame(
+            ['status' => 'shipped', 'note' => 'draft'],
+            $database->row('orders', 'order_id', 'one', ['status', 'note']),
+        );
+    }
+
     public function test_direct_writes_participate_in_state_query_guards(): void
     {
         $container = $this->createContainer(withQueryGuard: true);
@@ -398,11 +443,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         ?Connection $postgres = null,
         array $privateRowSets = [],
     ): ContainerBuilder {
-        $container = new ContainerBuilder();
-        $container->setParameter('kernel.build_dir', sys_get_temp_dir() . '/ultra_state_store_bundle_test');
-        new MapperExtension()->build($container);
-        new UnitOfWorkExtension()->build($container);
-        new StateStoreExtension()->build($container);
+        $container = $this->stateStoreContainer($postgres);
         new MappedTableExtension()->build($container);
         if ([] !== $privateRowSets) {
             MappedTableExtension::privateUnitOfWork($container, 'test.projection', $privateRowSets);
@@ -412,21 +453,6 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         }
         $container->setAlias('test.orders', OrdersDefinition::class)->setPublic(true);
         $container->setAlias('test.lines', OrderLinesDefinition::class)->setPublic(true);
-
-        $container->register(NullEventStore::class, NullEventStore::class)->setPublic(true);
-        $container->setAlias(EventStore::class, NullEventStore::class)->setPublic(true);
-
-        if (null === $postgres) {
-            $storage = InMemoryRowDatabase::class;
-            $factory = InMemoryMappedTableAdapter::class;
-            $container->register($storage, $storage)->setPublic(true);
-        } else {
-            $storage = Connection::class;
-            $factory = PostgresMappedTableAdapter::class;
-            $container->register($storage, $storage)->setPublic(true)->setSynthetic(true);
-        }
-        $container->register(MappedTableAdapter::class, $factory)->setArguments([new Reference($storage)]);
-        $container->setAlias('test.state_store', StateStore::class)->setPublic(true);
 
         $container->setDefinition(
             BundleOrderState::class,
@@ -441,7 +467,6 @@ final class ContainerIntegrationTest extends StateStoreTestCase
             $container->setDefinition($class, new Definition($class)->setAutoconfigured(true));
         }
 
-        $container->getAlias(UnitOfWork::class)->setPublic(true);
         if ($withQueryGuard) {
             $container
                 ->register(BundleGuardedRepository::class, BundleGuardedRepository::class)
@@ -457,6 +482,54 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         }
 
         return $container;
+    }
+
+    private function stateStoreContainer(?Connection $postgres = null): ContainerBuilder
+    {
+        $container = new ContainerBuilder();
+        $container->setParameter('kernel.build_dir', sys_get_temp_dir() . '/ultra_state_store_bundle_test');
+        new MapperExtension()->build($container);
+        new UnitOfWorkExtension()->build($container);
+        new StateStoreExtension()->build($container);
+        $container->register(NullEventStore::class, NullEventStore::class)->setPublic(true);
+        $container->setAlias(EventStore::class, NullEventStore::class)->setPublic(true);
+
+        if (null === $postgres) {
+            $storage = InMemoryRowDatabase::class;
+            $factory = InMemoryMappedTableAdapter::class;
+            $container->register($storage, $storage)->setPublic(true);
+        } else {
+            $storage = Connection::class;
+            $factory = PostgresMappedTableAdapter::class;
+            $container->register($storage, $storage)->setPublic(true)->setSynthetic(true);
+        }
+        $container->register(MappedTableAdapter::class, $factory)->setArguments([new Reference($storage)]);
+        $container->setAlias('test.state_store', StateStore::class)->setPublic(true);
+        $container->getAlias(UnitOfWork::class)->setPublic(true);
+
+        return $container;
+    }
+}
+
+final class BundleOrdersSchema
+{
+    public const string ORDERS = 'schema.orders';
+
+    #[DefineSchema]
+    public static function definition(): SchemaDefinition
+    {
+        return new SchemaDefinition([
+            new TableDefinition(
+                self::ORDERS,
+                'orders',
+                [
+                    new ColumnDefinition('id', 'order_id', ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text),
+                    new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
+                ],
+                primaryKey: ['id'],
+            ),
+        ]);
     }
 }
 

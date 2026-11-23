@@ -14,6 +14,7 @@ use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MappedTable\Symfony\SchemaMappedRowSet;
+use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\TransactionManager;
 use Ultra\UnitOfWork\UnitOfWorkExtension;
@@ -22,18 +23,14 @@ use Ultra\UnitOfWork\UnitOfWorkRunner;
 $container = new ContainerBuilder();
 
 new UnitOfWorkExtension()->build($container);
-new MappedTableExtension(
-    queryGuards: [
-        new QueryGuardDefinition(WorkshopRegistration::CAPACITY_GUARD, [
-            new QueryGuardDependency(WorkshopSchema::RESERVATIONS, 'workshop_id', ['seats']),
-        ]),
-    ],
-    schema: WorkshopSchema::definition(),
-    schemaRowSets: [
-        new SchemaMappedRowSet(WorkshopSchema::WORKSHOPS),
-        new SchemaMappedRowSet(WorkshopSchema::RESERVATIONS, owner: WorkshopSchema::WORKSHOP_REFERENCE),
-    ],
-)->build($container);
+new SchemaExtension()->build($container);
+$capacityGuard = new QueryGuardDefinition(WorkshopRegistration::CAPACITY_GUARD, [
+    new QueryGuardDependency(WorkshopSchema::RESERVATIONS, 'workshop_id', ['seats']),
+]);
+new MappedTableExtension(queryGuards: [$capacityGuard], schemaRowSets: [
+    new SchemaMappedRowSet(WorkshopSchema::WORKSHOPS),
+    new SchemaMappedRowSet(WorkshopSchema::RESERVATIONS, owner: WorkshopSchema::WORKSHOP_REFERENCE),
+])->build($container);
 
 $container->register(Connection::class)->setSynthetic(true)->setPublic(true);
 $container
@@ -43,6 +40,7 @@ $container
     ->register(TransactionManager::class, DbalTransactionManager::class)
     ->setArguments([new Reference(Connection::class), TransactionIsolationLevel::READ_COMMITTED]);
 
+$container->register(WorkshopSchema::class)->setAutoconfigured(true);
 $container->register(WorkshopRegistration::class)->setAutowired(true)->setPublic(true);
 $container->getAlias(UnitOfWorkRunner::class)->setPublic(true);
 

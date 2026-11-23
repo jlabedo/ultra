@@ -21,7 +21,7 @@ use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\Storage\PostgresRowSetSql;
-use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\UnitOfWork\TagNames;
 
 /** @internal */
@@ -37,13 +37,13 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
     public function process(ContainerBuilder $container): void
     {
         $resources = $container->findTaggedResourceIds(self::DEFINITION_TAG);
-        $schemas = [];
+        $selections = [];
         if ($container->hasParameter(self::SCHEMA_ROW_SETS)) {
-            /** @var list<array{SchemaDefinition, list<SchemaMappedRowSet>}> $schemas */
-            $schemas = $container->getParameter(self::SCHEMA_ROW_SETS);
+            /** @var list<SchemaMappedRowSet> $selections */
+            $selections = $container->getParameter(self::SCHEMA_ROW_SETS);
             $container->getParameterBag()->remove(self::SCHEMA_ROW_SETS);
         }
-        if ([] === $resources && [] === $schemas) {
+        if ([] === $resources && [] === $selections) {
             $container->setParameter(self::MAPPINGS, []);
             $container->setParameter(self::COORDINATORS, $this->coordinators($container, []));
 
@@ -91,9 +91,8 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
             }
         }
 
-        foreach ($schemas as [$schema, $selections]) {
-            $schema->validateForeignKeys();
-            $tables = $schema->tablesById();
+        if ([] !== $selections) {
+            $tables = SchemaExtension::compiledSchema($container)->tablesById();
             foreach ($selections as $selection) {
                 $id = $selection->table;
                 if (isset($mappings[$id]) || $container->has($id)) {

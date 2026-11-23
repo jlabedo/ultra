@@ -10,7 +10,6 @@ use Ultra\Container\ContainerExtension;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\QueryGuardDefinition;
-use Ultra\Schema\SchemaDefinition;
 
 final readonly class MappedTableExtension implements ContainerExtension
 {
@@ -23,7 +22,6 @@ final readonly class MappedTableExtension implements ContainerExtension
      */
     public function __construct(
         private array $queryGuards = [],
-        private ?SchemaDefinition $schema = null,
         private array $schemaRowSets = [],
     ) {}
 
@@ -46,15 +44,11 @@ final readonly class MappedTableExtension implements ContainerExtension
             ...$this->queryGuards,
         ]);
         if ([] !== $this->schemaRowSets) {
-            /** @var list<array{SchemaDefinition, list<SchemaMappedRowSet>}> $schemas */
-            $schemas = $container->hasParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS)
+            /** @var list<SchemaMappedRowSet> $rowSets */
+            $rowSets = $container->hasParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS)
                 ? $container->getParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS)
                 : [];
-            $schemas[] = [
-                $this->schema ?? throw new \LogicException('Schema row sets require a schema definition.'),
-                $this->schemaRowSets,
-            ];
-            $container->setParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS, $schemas);
+            $container->setParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS, [...$rowSets, ...$this->schemaRowSets]);
         }
     }
 

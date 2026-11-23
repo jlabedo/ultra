@@ -12,6 +12,10 @@
     "require": {
         "php": ">=8.5"
     },
+    "suggest": {
+        "symfony/dependency-injection": "Required to discover schema fragments during Symfony compilation.",
+        "ultra/container": "Required to register SchemaExtension."
+    },
     "autoload": {
         "psr-4": {
             "Ultra\\Schema\\": ""

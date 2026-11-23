@@ -18,6 +18,7 @@ use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\MessageHandling\MessageHandlingExtension;
 use Ultra\Projection\Bundle\ProjectionExtension;
+use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension;
 use Ultra\StateStore_Bundle\StateStoreExtension;
 use Ultra\SymfonyBundle\UltraBundle;
@@ -35,6 +36,7 @@ final class InstalledExtensionDiscoveryTest extends TestCase
         UnitOfWorkExtension::class,
         MapperExtension::class,
         EventSourcedStateExtension::class,
+        SchemaExtension::class,
         MappedTableExtension::class,
         StateStoreExtension::class,
         StatefulMessageHandlingExtension::class,
