@@ -23,7 +23,7 @@ final class ProjectionPersistenceCompilerPass implements CompilerPassInterface
 
     public function process(ContainerBuilder $container): void
     {
-        /** @var array<string, list<class-string>> $projectionRowSets */
+        /** @var array<string, list<string>> $projectionRowSets */
         $projectionRowSets = $container->getParameter(self::ROW_SETS);
         $container->getParameterBag()->remove(self::ROW_SETS);
 
@@ -36,7 +36,7 @@ final class ProjectionPersistenceCompilerPass implements CompilerPassInterface
         ));
     }
 
-    /** @param array<string, list<class-string>> $projectionRowSets */
+    /** @param array<string, list<string>> $projectionRowSets */
     private function validateRowSetInjections(ContainerBuilder $container, array $projectionRowSets): void
     {
         $rowSets = [];

@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Ultra\Schema;
 
 use Ultra\Schema\Operations\AddColumn;
+use Ultra\Schema\Operations\AddForeignKey;
 use Ultra\Schema\Operations\AddIndex;
 use Ultra\Schema\Operations\AlterColumn;
 use Ultra\Schema\Operations\CreateTable;
 use Ultra\Schema\Operations\DropColumn;
+use Ultra\Schema\Operations\DropForeignKey;
 use Ultra\Schema\Operations\DropIndex;
 use Ultra\Schema\Operations\DropTable;
 use Ultra\Schema\Operations\RenameColumn;
@@ -42,6 +44,14 @@ final class PostgresSqlGenerator
                     $this->quoteIdentifier($operation->toName),
                 ),
                 $operation instanceof AddColumn => $this->addColumn($operation),
+                $operation instanceof AddForeignKey => sprintf(
+                    'ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s);',
+                    $this->quoteIdentifier($operation->tableName),
+                    $this->quoteIdentifier($operation->name),
+                    $this->quoteIdentifiers(array_keys($operation->columns)),
+                    $this->quoteIdentifier($operation->referencedTableName),
+                    $this->quoteIdentifiers(array_values($operation->columns)),
+                ),
                 $operation instanceof AddIndex => $this->createIndex($operation),
                 $operation instanceof DropColumn => sprintf(
                     'ALTER TABLE %s DROP COLUMN %s;',
@@ -51,6 +61,11 @@ final class PostgresSqlGenerator
                 $operation instanceof DropIndex => sprintf(
                     'DROP INDEX %s;',
                     $this->quoteIdentifier($operation->indexName),
+                ),
+                $operation instanceof DropForeignKey => sprintf(
+                    'ALTER TABLE %s DROP CONSTRAINT %s;',
+                    $this->quoteIdentifier($operation->tableName),
+                    $this->quoteIdentifier($operation->name),
                 ),
                 $operation instanceof RenameColumn => sprintf(
                     'ALTER TABLE %s RENAME COLUMN %s TO %s;',
@@ -100,7 +115,13 @@ final class PostgresSqlGenerator
 
     private function createTable(CreateTable $operation): string
     {
-        $columnDefinitions = array_map($this->renderColumnDefinition(...), $operation->table->columns);
+        $table = $operation->table;
+        $columnDefinitions = array_map($this->renderColumnDefinition(...), $table->columns);
+        if ([] !== $table->primaryKey) {
+            $columns = $table->columnsById();
+            $names = array_map(static fn(string $id): string => $columns[$id]->name, $table->primaryKey);
+            $columnDefinitions[] = sprintf('PRIMARY KEY (%s)', $this->quoteIdentifiers($names));
+        }
 
         $sql = sprintf(
             "CREATE TABLE %s (\n    %s\n);",
@@ -125,7 +146,7 @@ final class PostgresSqlGenerator
         $clauses = [];
 
         if (null !== $operation->type) {
-            $clauses[] = sprintf('ALTER COLUMN %s TYPE %s', $columnName, $operation->type);
+            $clauses[] = sprintf('ALTER COLUMN %s TYPE %s', $columnName, $this->renderType($operation->type));
         }
 
         if (null !== $operation->nullable) {
@@ -156,7 +177,7 @@ final class PostgresSqlGenerator
     {
         $parts = [
             $this->quoteIdentifier($column->name),
-            $column->type,
+            $this->renderType($column->type),
         ];
 
         if (!$column->nullable) {
@@ -175,6 +196,21 @@ final class PostgresSqlGenerator
     private function quoteIdentifier(string $identifier): string
     {
         return sprintf('"%s"', str_replace('"', '""', $identifier));
+    }
+
+    private function renderType(ColumnType|string $type): string
+    {
+        return match ($type) {
+            ColumnType::Text => 'text',
+            ColumnType::Int32 => 'integer',
+            default => $type,
+        };
+    }
+
+    /** @param list<string> $identifiers */
+    private function quoteIdentifiers(array $identifiers): string
+    {
+        return implode(', ', array_map($this->quoteIdentifier(...), $identifiers));
     }
 
     private function terminateStatement(string $sql): string

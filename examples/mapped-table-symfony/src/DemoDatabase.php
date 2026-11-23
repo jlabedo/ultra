@@ -7,6 +7,9 @@ namespace MappedTableSymfonyExample;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\DriverManager;
 use Doctrine\DBAL\Tools\DsnParser;
+use Ultra\Schema\PostgresSqlGenerator;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SchemaReconciler;
 
 /** Owns an isolated schema for the demo and its integration tests. */
 final readonly class DemoDatabase
@@ -20,10 +23,10 @@ final readonly class DemoDatabase
     public static function open(string $dsn): self
     {
         $schema = 'mapped_table_workshops_' . bin2hex(random_bytes(8));
-        $ddl = file_get_contents(dirname(__DIR__) . '/schema.sql');
-        if (false === $ddl) {
-            throw new \RuntimeException('Cannot read the workshop schema.');
-        }
+        $ddl = new PostgresSqlGenerator()->generate(new SchemaReconciler()->reconcile(
+            new SchemaDefinition([]),
+            WorkshopSchema::definition(),
+        ));
 
         $connection = self::connect($dsn);
         try {
@@ -31,7 +34,9 @@ final readonly class DemoDatabase
                 $identifier = $connection->quoteSingleIdentifier($schema);
                 $connection->executeStatement('CREATE SCHEMA ' . $identifier);
                 $connection->executeStatement('SET search_path TO ' . $identifier);
-                $connection->executeStatement($ddl);
+                foreach ($ddl as $statement) {
+                    $connection->executeStatement($statement);
+                }
             });
         } catch (\Throwable $error) {
             $connection->close();

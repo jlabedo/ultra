@@ -10,6 +10,7 @@
                 "symlink": true,
                 "versions": {
                     "ultra/mapped-table": "dev-main",
+                    "ultra/schema": "dev-main",
                     "ultra/unit-of-work": "dev-main"
                 }
             }
@@ -23,6 +24,7 @@
         "doctrine/dbal": "^4.0",
         "symfony/dependency-injection": "7.*|8.*",
         "ultra/mapped-table": "dev-main",
+        "ultra/schema": "dev-main",
         "ultra/unit-of-work": "dev-main"
     },
     "require-dev": {

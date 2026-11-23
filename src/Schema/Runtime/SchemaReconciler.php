@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Ultra\Schema;
 
 use Ultra\Schema\Operations\AddColumn;
+use Ultra\Schema\Operations\AddForeignKey;
 use Ultra\Schema\Operations\AddIndex;
 use Ultra\Schema\Operations\AlterColumn;
 use Ultra\Schema\Operations\CreateTable;
 use Ultra\Schema\Operations\DropColumn;
+use Ultra\Schema\Operations\DropForeignKey;
 use Ultra\Schema\Operations\DropIndex;
 use Ultra\Schema\Operations\DropTable;
 use Ultra\Schema\Operations\RenameColumn;
@@ -23,10 +25,20 @@ final class SchemaReconciler
      */
     public function reconcile(SchemaDefinition $current, SchemaDefinition $target): array
     {
-        $operations = [];
-
+        $current->validateForeignKeys();
+        $target->validateForeignKeys();
         $currentTables = $current->tablesById();
         $targetTables = $target->tablesById();
+
+        $operations = [];
+        foreach ($currentTables as $tableId => $currentTable) {
+            foreach ($currentTable->foreignKeys as $name => $foreignKey) {
+                if ($foreignKey->equivalentTo($targetTables[$tableId]->foreignKeys[$name] ?? null)) {
+                    continue;
+                }
+                $operations[] = new DropForeignKey($currentTable->name, $name);
+            }
+        }
 
         foreach ($targetTables as $tableId => $targetTable) {
             $currentTable = $currentTables[$tableId] ?? null;
@@ -35,6 +47,13 @@ final class SchemaReconciler
                 $operations[] = new CreateTable($targetTable);
 
                 continue;
+            }
+
+            if ($currentTable->primaryKey !== $targetTable->primaryKey) {
+                throw new \LogicException(sprintf(
+                    'Cannot reconcile a changed primary key for table "%s".',
+                    $currentTable->name,
+                ));
             }
 
             $resolvedTableName = $currentTable->name;
@@ -54,6 +73,23 @@ final class SchemaReconciler
             }
 
             $operations[] = new DropTable($currentTable->name);
+        }
+
+        // All tables and columns are in place before adding references, including self-references and cycles.
+        foreach ($targetTables as $tableId => $targetTable) {
+            foreach ($targetTable->foreignKeys as $name => $foreignKey) {
+                if ($foreignKey->equivalentTo($currentTables[$tableId]->foreignKeys[$name] ?? null)) {
+                    continue;
+                }
+
+                $referenced = $targetTables[$foreignKey->table];
+                $operations[] = new AddForeignKey(
+                    $targetTable->name,
+                    $name,
+                    $referenced->name,
+                    $foreignKey->physicalColumns($targetTable, $referenced),
+                );
+            }
         }
 
         return $operations;

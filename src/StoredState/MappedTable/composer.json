@@ -16,7 +16,8 @@
     "suggest": {
         "doctrine/dbal": "Required to use the PostgresMappedTableAdapter.",
         "symfony/dependency-injection": "Required for compiling mapped row set definitions with Symfony.",
-        "ultra/container": "Required to register MappedTableExtension."
+        "ultra/container": "Required to register MappedTableExtension.",
+        "ultra/schema": "Required to compile mapped row sets from a shared schema."
     },
     "autoload": {
         "psr-4": {

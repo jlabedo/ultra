@@ -8,7 +8,6 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Symfony\MappedRowSetCompilerPass;
@@ -78,7 +77,7 @@ final class StateStoreCompilerPass implements CompilerPassInterface
             if (!$container->hasParameter(MappedRowSetCompilerPass::MAPPINGS)) {
                 throw new \LogicException('StateStore requires MappedTableExtension to compile state mappings.');
             }
-            /** @var array<class-string<MappedRowSetDefinition>, MappedRowSetMapping> $mappings */
+            /** @var array<string, MappedRowSetMapping> $mappings */
             $mappings = $container->getParameter(MappedRowSetCompilerPass::MAPPINGS);
             $bindings = new StateRowSetBindings($mappings, $identityShapes, $normalizers)->compile($rootMetadata);
             /** @var array<string, string> $coordinators */

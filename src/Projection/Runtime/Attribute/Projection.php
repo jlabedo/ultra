@@ -11,7 +11,7 @@ final readonly class Projection
 {
     /**
      * @param list<string> $unitOfWork Projection-owned persistence service IDs.
-     * @param list<class-string> $rowSets Mapped row set definitions owned by this projection.
+     * @param list<string> $rowSets IDs of the mapped row sets owned by this projection.
      */
     public function __construct(
         public string $name,

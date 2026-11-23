@@ -9,7 +9,6 @@ use Symfony\Component\TypeInfo\Type\CollectionType;
 use Symfony\Component\TypeInfo\Type\ObjectType;
 use Symfony\Component\TypeInfo\Type\UnionType;
 use Symfony\Component\TypeInfo\TypeResolver\TypeResolver;
-use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\Mapper\RuntimeNormalizerInterface;
 use Ultra\Mapper_Compiler\CodeGeneratorBuilderRegistry;
@@ -25,7 +24,7 @@ use Ultra\StateStore\StateMetadata;
  */
 final readonly class StateRowSetBindings
 {
-    /** @var array<string, class-string<MappedRowSetDefinition>> */
+    /** @var array<string, string> */
     private array $byTable;
 
     private CodeGeneratorBuilderRegistry $generators;
@@ -33,7 +32,7 @@ final readonly class StateRowSetBindings
     private TypeResolver $typeResolver;
 
     /**
-     * @param array<class-string<MappedRowSetDefinition>, MappedRowSetMapping> $mappings
+     * @param array<string, MappedRowSetMapping> $mappings
      * @param array<class-string, Shape> $identities
      * @param array<class-string, class-string<RuntimeNormalizerInterface>> $runtimeNormalizers
      */
@@ -53,7 +52,7 @@ final readonly class StateRowSetBindings
 
     /**
      * @param iterable<StateMetadata> $states
-     * @return array<string, class-string<MappedRowSetDefinition>>
+     * @return array<string, string>
      */
     public function compile(iterable $states): array
     {
@@ -129,7 +128,6 @@ final readonly class StateRowSetBindings
 
     /**
      * @param list<string> $keys
-     * @return class-string<MappedRowSetDefinition>
      */
     private function bind(string $context, string $table, array $keys): string
     {

@@ -10,15 +10,21 @@ use Ultra\Container\ContainerExtension;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\QueryGuardDefinition;
+use Ultra\Schema\SchemaDefinition;
 
 final readonly class MappedTableExtension implements ContainerExtension
 {
-    /** @internal Identifies the compiled row-set service for each definition class. */
+    /** @internal Identifies compiled row-set services. */
     public const string ROW_SET_TAG = 'ultra.mapped_table.compiled_row_set';
 
-    /** @param list<QueryGuardDefinition> $queryGuards */
+    /**
+     * @param list<QueryGuardDefinition> $queryGuards
+     * @param list<SchemaMappedRowSet> $schemaRowSets
+     */
     public function __construct(
         private array $queryGuards = [],
+        private ?SchemaDefinition $schema = null,
+        private array $schemaRowSets = [],
     ) {}
 
     public function build(ContainerBuilder $container): void
@@ -39,13 +45,24 @@ final readonly class MappedTableExtension implements ContainerExtension
             ...$configured,
             ...$this->queryGuards,
         ]);
+        if ([] !== $this->schemaRowSets) {
+            /** @var list<array{SchemaDefinition, list<SchemaMappedRowSet>}> $schemas */
+            $schemas = $container->hasParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS)
+                ? $container->getParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS)
+                : [];
+            $schemas[] = [
+                $this->schema ?? throw new \LogicException('Schema row sets require a schema definition.'),
+                $this->schemaRowSets,
+            ];
+            $container->setParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS, $schemas);
+        }
     }
 
     /**
      * Register a coordinator populated by the MappedTable compiler and flushed by the caller.
      *
      * @internal For compiler passes that register private persistence.
-     * @param non-empty-list<class-string> $rowSets
+     * @param non-empty-list<string> $rowSets
      */
     public static function privateUnitOfWork(ContainerBuilder $container, string $owner, array $rowSets): Reference
     {

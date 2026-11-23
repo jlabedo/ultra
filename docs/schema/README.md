@@ -12,6 +12,16 @@ The caller supplies current and target SchemaDefinition values. Stable table and
 
 See [SchemaReconciler](../../src/Schema/Runtime/SchemaReconciler.php) and [PostgresSqlGenerator](../../src/Schema/Runtime/PostgresSqlGenerator.php).
 
+Tables can declare a primary key by ordered column IDs and foreign keys by constraint name. A foreign key maps
+local column IDs to the complete referenced primary key in key order. The reconciler removes obsolete references
+before removing tables or columns and adds new references once tables and columns are in place. References
+are resolved after composing schema fragments. Changing the primary key of an existing table is unsupported.
+
+`ColumnType::Text` and `ColumnType::Int32` are portable column definitions with a PostgreSQL translation.
+Column definitions also accept SQL type strings and SQL constraints for dialect-specific declarations.
+[MappedTable](../stored-state/mapped-table.md#compile-row-sets-from-schema) can compile row sets from these
+same table definitions.
+
 ## Guarantee suites
 
 The tests live together under [src/Schema/Runtime/Tests](../../src/Schema/Tests), organized by observable guarantees:
@@ -21,6 +31,7 @@ The tests live together under [src/Schema/Runtime/Tests](../../src/Schema/Tests)
 | Fragments combine by identity, preserve explicit names and reject conflicting or duplicate definitions | [DefinitionCompositionTest](../../src/Schema/Tests/DefinitionCompositionTest.php) |
 | Comparison preserves index identities and rejects unsupported constraint changes | [SchemaComparisonTest](../../src/Schema/Tests/SchemaComparisonTest.php) |
 | Column changes have minimal inspectable payloads; renames preserve stored rows; dependent operations address resolved names; generated SQL applies types, defaults, constraints, indexes and management comments | [ExecutableMigrationTest](../../src/Schema/Tests/ExecutableMigrationTest.php) |
+| Composite keys resolve column IDs to physical names, enforce references and allow related tables to be dropped | [RelationalConstraintsTest](../../src/Schema/Tests/RelationalConstraintsTest.php) |
 | Invalid operations fail before a script is returned; caller-provided index SQL retains its clauses and is terminated | [MigrationInspectionTest](../../src/Schema/Tests/MigrationInspectionTest.php) |
 
 Operation payloads are inspectable before execution. SQL cases execute the generated statements against PostgreSQL and inspect data and catalog metadata. Whitespace and the layout of generated SQL are not frozen. The raw-index inspection case checks the supplied statement after surrounding whitespace and statement termination are normalized.

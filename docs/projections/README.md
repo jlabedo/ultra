@@ -99,8 +99,9 @@ Projection handlers must not append new domain events or perform irreversible ex
 
 ### Mapped row sets in Symfony
 
-With `MappedTableExtension`, list the definitions for the row sets the projection
-writes in `rowSets` and inject each `MappedRowSet` by its definition class:
+With `MappedTableExtension`, list the service IDs of the row sets the projection
+writes in `rowSets` and use the same IDs for injection. The ID is the definition class for a
+class-based row set or the table ID for a [row set compiled from Schema](../stored-state/mapped-table.md#compile-row-sets-from-schema).
 
 ```php
 #[Projection(

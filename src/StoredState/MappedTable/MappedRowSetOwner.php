@@ -8,7 +8,7 @@ namespace Ultra\MappedTable;
 final readonly class MappedRowSetOwner
 {
     /**
-     * @param class-string<MappedRowSetDefinition> $definition
+     * @param string $definition Parent row set ID.
      * @param array<string, string> $columns Child column to parent key column.
      */
     public function __construct(

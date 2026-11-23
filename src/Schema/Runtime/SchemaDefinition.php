@@ -61,6 +61,25 @@ final readonly class SchemaDefinition
         return $tables;
     }
 
+    /** Validate references once all schema fragments have been assembled. */
+    public function validateForeignKeys(): void
+    {
+        $tables = $this->tablesById();
+        foreach ($this->tables as $table) {
+            foreach ($table->foreignKeys as $name => $foreignKey) {
+                $referenced = $tables[$foreignKey->table] ?? null;
+                if (null === $referenced || array_values($foreignKey->columns) !== $referenced->primaryKey) {
+                    throw new \InvalidArgumentException(sprintf(
+                        'Foreign key "%s" of table "%s" must reference the complete primary key of "%s" in key order.',
+                        $name,
+                        $table->id,
+                        $foreignKey->table,
+                    ));
+                }
+            }
+        }
+    }
+
     public function mergedWith(self $schema): self
     {
         return self::merge($this, $schema);
@@ -78,6 +97,21 @@ final readonly class SchemaDefinition
         );
         $columns = self::mergeColumns($left, $right);
         $indexes = self::mergeIndexes($left, $right);
+        if ([] !== $left->primaryKey && [] !== $right->primaryKey && $left->primaryKey !== $right->primaryKey) {
+            throw new \InvalidArgumentException(sprintf('Conflicting primary key for table "%s".', $left->id));
+        }
+        $foreignKeys = $left->foreignKeys;
+        foreach ($right->foreignKeys as $key => $foreignKey) {
+            $existing = $foreignKeys[$key] ?? null;
+            if (null !== $existing && !$existing->equivalentTo($foreignKey)) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Conflicting foreign key "%s" for table "%s".',
+                    $key,
+                    $left->id,
+                ));
+            }
+            $foreignKeys[$key] = $foreignKey;
+        }
 
         return new TableDefinition(
             id: $left->id,
@@ -85,6 +119,8 @@ final readonly class SchemaDefinition
             columns: $columns,
             indexes: $indexes,
             hasExplicitName: $left->hasExplicitName || $right->hasExplicitName,
+            primaryKey: [] === $left->primaryKey ? $right->primaryKey : $left->primaryKey,
+            foreignKeys: $foreignKeys,
         );
     }
 

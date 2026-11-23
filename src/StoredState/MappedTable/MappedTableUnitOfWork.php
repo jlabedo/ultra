@@ -26,7 +26,7 @@ final readonly class MappedTableUnitOfWork implements UnitOfWork
     private QueryGuardWork $guards;
 
     /**
-     * @param array<string, MappedRowSet> $rowSets Keyed by definition class when used with declared dependencies or guards.
+     * @param array<string, MappedRowSet> $rowSets Keyed by row set ID when used with declared dependencies or guards.
      * @param array<string, bool>|null $compiledSchedule Supplied by the container compiler.
      * @param list<QueryGuardDefinition>|QueryGuardRules $queryGuards
      */

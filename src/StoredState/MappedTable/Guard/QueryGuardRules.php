@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable\Guard;
 
-use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\QueryGuardDefinition;
 
@@ -13,8 +12,8 @@ final readonly class QueryGuardRules
 {
     /**
      * @param list<QueryGuardRule> $rules
-     * @param array<array-key, array<class-string<MappedRowSetDefinition>, list<int>>> $byName
-     * @param array<class-string<MappedRowSetDefinition>, list<int>> $byRowSet
+     * @param array<array-key, array<string, list<int>>> $byName
+     * @param array<string, list<int>> $byRowSet
      * @param array<array-key, string> $namespaces
      */
     public function __construct(

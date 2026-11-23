@@ -4,10 +4,12 @@ Un atelier a une capacité et des réservations par groupe. Chaque réservation 
 `(workshop_id, reference)`, ce qui permet de réutiliser la même référence dans un autre atelier.
 Le service de réservation travaille directement avec deux `MappedRowSet` injectés par un
 conteneur Symfony compilé. Il adresse les clés composites avec des tableaux associatifs. Le total des places réservées est lu par une requête PostgreSQL.
-[Service de réservation](src/WorkshopRegistration.php) · [Schéma PostgreSQL](schema.sql)
+[Service de réservation](src/WorkshopRegistration.php) · [Déclaration du schéma](src/WorkshopSchema.php)
 
 ## Ce que montre l’exemple
 
+- `WorkshopSchema` déclare les deux tables et leur relation une seule fois. Cette définition sert à
+  générer le DDL PostgreSQL et à compiler les deux row sets dans Symfony.
 - La publication crée l’atelier et ses réservations initiales dans le même flush. La déclaration
   du propriétaire permet à MappedTable d’insérer l’atelier avant les réservations qui le référencent.
 - Pour une nouvelle réservation, le service lit et observe la capacité avec `withKey()->observe(['capacity'])`, puis observe
@@ -18,8 +20,7 @@ conteneur Symfony compilé. Il adresse les clés composites avec des tableaux as
 - Le retrait observe le membership avec `observeKeysForOwner()` et réconcilie la collection avec une liste vide. Le
   flush supprime les réservations de cet atelier avant de supprimer l’atelier lui-même.
 
-[Définition des ateliers](src/WorkshopsDefinition.php) · [Définition des réservations](src/ReservationsDefinition.php)
-· [Déclaration du guard et services Symfony](config/services.php)
+[Sélection des row sets, déclaration du guard et services Symfony](config/services.php)
 
 ## Exécuter la démonstration
 

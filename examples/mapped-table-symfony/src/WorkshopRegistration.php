@@ -17,9 +17,9 @@ final readonly class WorkshopRegistration
 
     public function __construct(
         private UnitOfWorkRunner $runner,
-        #[Autowire(service: WorkshopsDefinition::class)]
+        #[Autowire(service: WorkshopSchema::WORKSHOPS)]
         private MappedRowSet $workshops,
-        #[Autowire(service: ReservationsDefinition::class)]
+        #[Autowire(service: WorkshopSchema::RESERVATIONS)]
         private MappedRowSet $reservations,
         #[Autowire(service: QueryGuard::class . '.' . self::CAPACITY_GUARD)]
         private QueryGuard $capacityGuard,

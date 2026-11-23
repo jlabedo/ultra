@@ -58,9 +58,6 @@ and return a map of physical column names to `PostgresMappedColumnType` cases. S
 against the declared PHP representations and emits the codec map and SQL fragments for read projections,
 columns, keys and owners in the container. Runtime binding uses this compiled configuration directly.
 
-The [Symfony workshop example](../../examples/mapped-table-symfony/README.md) assembles and runs defined row
-sets, owner collections and query guards on PostgreSQL.
-
 The owner columns, when present, identify one collection for each complete owner key in the child table's
 column names. They leave at least one further key column for the item. Reads by owner and direct writes by
 complete row key use the same buffer.
@@ -82,6 +79,27 @@ excluded items while keeping earlier expectations. Later writes by complete key 
 from the desired membership, including an unchanged item whose row update becomes a check only.
 A reconciliation validates all supplied rows before modifying the buffer. Different owner keys are disjoint.
 
+## Compile row sets from Schema
+
+Use `MappedTableExtension(schema: $schema, schemaRowSets: [...])` to compile row sets from a
+[SchemaDefinition](../schema/README.md#current-reconciliation-contract). Each `SchemaMappedRowSet` selects
+a table by its stable ID. This ID is the Symfony service ID and can be used for injection, query guard
+dependencies and projection ownership.
+
+A selected table needs a structured primary key. MappedTable uses its physical column names and nullability.
+It maps `ColumnType::Text` to PHP `string` and `ColumnType::Int32` to `int` by default. Native SQL types
+need an explicit PHP representation for each exposed column, and may need a PostgreSQL codec. The optional
+column selection, representations and codecs are configured by column ID. All primary key columns are
+always included.
+
+Set `owner` to the name of a declared foreign key to make it a MappedTable owner relationship. Select the
+parent row set too. The usual owner validation applies, including the requirement that the foreign key use
+immutable child key columns and leave at least one item key column. The dumped container uses the same
+compiled metadata and SQL fragments as class-based definitions.
+
+The [Symfony workshop example](../../examples/mapped-table-symfony/README.md) generates the PostgreSQL DDL
+and compiles two row sets from one schema, then exercises owner collections and a query guard.
+
 ## Coordinated flush
 
 Declare an owner dependency when a child row set references another defined row set. For example, when
@@ -96,9 +114,9 @@ dependency between row sets.
 With Symfony, `MappedTableExtension` enrolls one application `MappedTableUnitOfWork` in the composite
 registered by `UnitOfWorkExtension`. Row sets declared as
 [projection-owned](../projections/README.md#mapped-row-sets-in-symfony) use the projection's private
-coordinator. Inject the row sets by definition class to prepare operations. In manual assembly, create
+coordinator. Inject the row sets by their Symfony service IDs to prepare operations. In manual assembly, create
 the row sets through one adapter and pass them with that adapter to `MappedTableUnitOfWork`. For declared
-dependencies and guards, key the map by definition class. A row set belongs to one coordinator. Call
+dependencies and guards, key the map by row set ID. A row set belongs to one coordinator. Call
 the coordinator through the runner or explicitly inside a transaction active on the adapter's resource.
 
 For each flush, the coordinator takes a snapshot of every pending plan, validates the combined plan and

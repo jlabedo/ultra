@@ -7,7 +7,7 @@ namespace Ultra\MappedTable;
 final readonly class QueryGuardDependency
 {
     /**
-     * @param class-string<MappedRowSetDefinition> $rowSet
+     * @param string $rowSet Mapped row set ID.
      * @param list<string>|null $columns Null watches every column. An empty list watches membership and the guard value.
      */
     public function __construct(

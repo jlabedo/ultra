@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\Operations\AddIndex;
 use Ultra\Schema\Operations\DropIndex;
@@ -73,6 +74,21 @@ final class SchemaComparisonTest extends TestCase
         )])]);
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('Cannot reconcile changed constraints for column "accounts"."address".');
+        new SchemaReconciler()->reconcile($current, $target);
+    }
+
+    public function test_changing_an_existing_primary_key_is_rejected_before_generating_sql(): void
+    {
+        $columns = [
+            new ColumnDefinition('site', type: ColumnType::Text),
+            new ColumnDefinition('number', type: ColumnType::Int32),
+        ];
+        $current = new SchemaDefinition([new TableDefinition('workshops', columns: $columns, primaryKey: ['number'])]);
+        $target = new SchemaDefinition([
+            new TableDefinition('workshops', columns: $columns, primaryKey: ['site', 'number']),
+        ]);
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Cannot reconcile a changed primary key for table "workshops".');
         new SchemaReconciler()->reconcile($current, $target);
     }
 }

@@ -16,7 +16,9 @@ final readonly class TableDefinition
 
     /**
      * @param list<ColumnDefinition> $columns
-     * @param list<IndexDefinition>  $indexes
+     * @param list<IndexDefinition> $indexes
+     * @param list<string> $primaryKey Column IDs in key order.
+     * @param array<string, ForeignKeyDefinition> $foreignKeys By constraint name.
      */
     public function __construct(
         public string $id,
@@ -24,6 +26,8 @@ final readonly class TableDefinition
         public array $columns = [],
         public array $indexes = [],
         ?bool $hasExplicitName = null,
+        public array $primaryKey = [],
+        public array $foreignKeys = [],
     ) {
         $this->name = $name ?? $this->id;
         $this->hasExplicitName = $hasExplicitName ?? null !== $name;
@@ -50,7 +54,7 @@ final readonly class TableDefinition
                 ));
             }
 
-            $columnIds[$column->id] = true;
+            $columnIds[$column->id] = $column;
             $columnNames[$column->name] = true;
         }
 
@@ -73,6 +77,32 @@ final readonly class TableDefinition
 
             $indexIds[$index->id] = true;
             $indexNames[$index->name] = true;
+        }
+
+        $keyColumns = [];
+        foreach ($this->primaryKey as $column) {
+            if (!isset($columnIds[$column]) || $columnIds[$column]->nullable || isset($keyColumns[$column])) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Primary key of table "%s" requires distinct, declared, non-nullable columns. Invalid column "%s".',
+                    $this->id,
+                    $column,
+                ));
+            }
+            $keyColumns[$column] = true;
+        }
+
+        foreach ($this->foreignKeys as $name => $foreignKey) {
+            if (
+                '' === $name
+                || [] === $foreignKey->columns
+                || [] !== array_diff_key($foreignKey->columns, $columnIds)
+            ) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Foreign key "%s" of table "%s" needs a name and declared local columns.',
+                    $name,
+                    $this->id,
+                ));
+            }
         }
     }
 

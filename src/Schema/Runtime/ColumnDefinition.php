@@ -16,7 +16,7 @@ final readonly class ColumnDefinition
     public function __construct(
         public string $id,
         ?string $name = null,
-        public string $type = '',
+        public ColumnType|string $type = '',
         public bool $nullable = false,
         public ?string $defaultExpression = null,
         public array $constraints = [],

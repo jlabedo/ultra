@@ -17,9 +17,11 @@ use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Plan\RowSetDependencies;
+use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\Storage\PostgresRowSetSql;
+use Ultra\Schema\SchemaDefinition;
 use Ultra\UnitOfWork\TagNames;
 
 /** @internal */
@@ -30,11 +32,18 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
     public const string MAPPINGS = 'ultra.mapped_table.compiling.mappings';
     public const string COORDINATORS = 'ultra.mapped_table.compiling.coordinators';
     public const string PRIVATE_COORDINATOR_TAG = 'ultra.mapped_table.private_coordinator';
+    public const string SCHEMA_ROW_SETS = 'ultra.mapped_table.compiling.schema_row_sets';
 
     public function process(ContainerBuilder $container): void
     {
         $resources = $container->findTaggedResourceIds(self::DEFINITION_TAG);
-        if ([] === $resources) {
+        $schemas = [];
+        if ($container->hasParameter(self::SCHEMA_ROW_SETS)) {
+            /** @var list<array{SchemaDefinition, list<SchemaMappedRowSet>}> $schemas */
+            $schemas = $container->getParameter(self::SCHEMA_ROW_SETS);
+            $container->getParameterBag()->remove(self::SCHEMA_ROW_SETS);
+        }
+        if ([] === $resources && [] === $schemas) {
             $container->setParameter(self::MAPPINGS, []);
             $container->setParameter(self::COORDINATORS, $this->coordinators($container, []));
 
@@ -52,8 +61,10 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         if (new \ReflectionClass($adapterClass)->isAbstract()) {
             throw new \LogicException('The mapped table adapter service must declare its concrete class.');
         }
+        $postgres = is_a($adapterClass, PostgresMappedTableAdapter::class, true);
+
         $mappings = [];
-        $rowSets = [];
+        $codecs = [];
         foreach ($resources as $id => $tags) {
             $class = $tags[0]['class'] ?? $container->findDefinition($id)->getClass();
             if (!is_string($class) || !is_a($class, MappedRowSetDefinition::class, true)) {
@@ -74,10 +85,30 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
             }
 
             $definition = $reflection->newInstance();
-            $mapping = $definition->mapping();
-            $mappings[$class] = $mapping;
-            $rowSets[$class] = new Reference($class);
+            $mappings[$class] = $definition->mapping();
+            if ($postgres && $definition instanceof PostgresMappedRowSetConfiguration) {
+                $codecs[$class] = $definition->postgresColumnTypes();
+            }
+        }
 
+        foreach ($schemas as [$schema, $selections]) {
+            $schema->validateForeignKeys();
+            $tables = $schema->tablesById();
+            foreach ($selections as $selection) {
+                $id = $selection->table;
+                if (isset($mappings[$id]) || $container->has($id)) {
+                    throw new \LogicException(sprintf(
+                        'Mapped schema table "%s" conflicts with another service or row set.',
+                        $id,
+                    ));
+                }
+                [$mappings[$id], $codecs[$id]] = $selection->compile($tables, $postgres);
+            }
+        }
+
+        $rowSets = [];
+        foreach ($mappings as $id => $mapping) {
+            $rowSets[$id] = new Reference($id);
             $metadata = new Definition(MappedRowSetMetadata::class, [
                 $mapping->table,
                 array_map(
@@ -97,17 +128,13 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
                 $mapping->keyColumnSet,
                 $mapping->ownerColumnSet,
             ]);
-            $metadataId = 'ultra.mapped_table.metadata.' . $class;
-            $container->setDefinition($metadataId, $metadata);
-            $metadataReference = new Reference($metadataId);
-            $rowSet = match ($adapterClass) {
-                PostgresMappedTableAdapter::class => $this->postgresRowSet($mapping, $definition, $metadataReference),
-                default => new Definition(MappedRowSet::class)->setFactory([
+            $rowSet = $postgres
+                ? $this->postgresRowSet($mapping, $codecs[$id] ?? [], $metadata)
+                : new Definition(MappedRowSet::class)->setFactory([
                     new Reference(MappedTableAdapter::class),
                     'createDefined',
-                ])->setArguments([$metadataReference]),
-            };
-            $container->setDefinition($class, $rowSet->addTag(MappedTableExtension::ROW_SET_TAG));
+                ])->setArguments([$metadata]);
+            $container->setDefinition($id, $rowSet->addTag(MappedTableExtension::ROW_SET_TAG));
         }
 
         $coordinators = $this->coordinators($container, $mappings);
@@ -142,7 +169,7 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
     }
 
     /**
-     * @param array<class-string<MappedRowSetDefinition>, MappedRowSetMapping> $mappings
+     * @param array<string, MappedRowSetMapping> $mappings
      * @return array<string, string>
      */
     private function coordinators(ContainerBuilder $container, array $mappings): array
@@ -176,14 +203,12 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         return $coordinators;
     }
 
+    /** @param array<string, PostgresMappedColumnType> $configuredTypes */
     private function postgresRowSet(
         MappedRowSetMapping $mapping,
-        MappedRowSetDefinition $definition,
-        Reference $metadata,
+        array $configuredTypes,
+        Definition $metadata,
     ): Definition {
-        $configuredTypes = $definition instanceof PostgresMappedRowSetConfiguration
-            ? $definition->postgresColumnTypes()
-            : [];
         $sql = PostgresRowSetSql::compile($mapping, $configuredTypes);
         $compiledSql = new Definition(PostgresRowSetSql::class, [
             $sql->table,

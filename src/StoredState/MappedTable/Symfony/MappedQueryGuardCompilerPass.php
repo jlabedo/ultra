@@ -11,7 +11,6 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\Attribute\DefineQueryGuard;
 use Ultra\MappedTable\Guard\QueryGuardRule;
 use Ultra\MappedTable\Guard\QueryGuardRules;
-use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\QueryGuard;
@@ -24,7 +23,7 @@ final class MappedQueryGuardCompilerPass implements CompilerPassInterface
 
     public function process(ContainerBuilder $container): void
     {
-        /** @var array<class-string<MappedRowSetDefinition>, MappedRowSetMapping> $mappings */
+        /** @var array<string, MappedRowSetMapping> $mappings */
         $mappings = $container->getParameter(MappedRowSetCompilerPass::MAPPINGS);
         $container->getParameterBag()->remove(MappedRowSetCompilerPass::MAPPINGS);
         /** @var array<string, string> $coordinators */
