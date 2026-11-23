@@ -44,7 +44,7 @@ final class KeyIsolationTest extends RowSetTestCase
         $fixture->flush($rows);
         $rows->clear();
         static::assertSame(['status' => 'saved'], $rows->withKey($key)->get(['status']));
-        static::assertSame(['id' => 'row'], $rows->rows()[0]->key->values);
+        static::assertSame(['id' => 'row'], $rows->withKey($key)->get([]));
         $rows->expectSameRowKeys([$key]);
         $fixture->flush($rows);
     }

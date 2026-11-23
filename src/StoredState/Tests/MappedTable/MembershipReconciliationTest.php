@@ -93,7 +93,8 @@ final class MembershipReconciliationTest extends RowSetTestCase
         $fixture->seed(['id' => 'late']);
         $fixture->flush();
         $fixture->rows->clear();
-        static::assertSame([], $fixture->rows->rows());
+        static::assertFalse($fixture->stored('added'));
+        static::assertFalse($fixture->stored('late'));
     }
 
     public function test_explicit_operations_override_saved_membership_and_local_absence(): void
@@ -238,7 +239,7 @@ final class MembershipReconciliationTest extends RowSetTestCase
             static::fail('A collection only accepts rows of its owner.');
         } catch (\InvalidArgumentException) {
             static::assertSame(['status' => 'original'], $rows->withKey($line)->get(['status']));
-            static::assertCount(1, $rows->rows());
+            static::assertCount(1, $rows->rowsForOwner($owner));
         }
     }
 

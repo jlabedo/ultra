@@ -151,22 +151,15 @@ final class MappedRowSet
     {
         $this->assertHandleGeneration($generation);
         $keyOnly = [] === $columns;
-        $projection = $keyOnly ? $this->keyColumns : $this->selectedColumns($columns ?? [], includeKeys: true);
+        $projection = $keyOnly ? $this->keyColumns : $this->selectedColumns($columns, includeKeys: true);
         $update = $this->updates[$key->fingerprint()] ?? null;
         if (!$this->isVisible($key, $update)) {
             return null;
         }
 
         $plan = $update?->toPlan();
-        $stored = $this->replacesStoredRow($plan) ? false : $this->adapter->row($this->table, $key, $projection);
-        $row = $this->overlayRow(
-            $key,
-            $stored,
-            $plan,
-            [] === $projection ? null : $projection,
-            includeKeys: true,
-            trackStorage: $trackStorage,
-        );
+        $stored = $this->replacesStoredRow($plan) ? false : $this->adapter->row($this->table, $key, $projection ?? []);
+        $row = $this->overlayRow($key, $stored, $plan, $projection, trackStorage: $trackStorage);
         if ($keyOnly && null !== $row) {
             $row['values'] = $key->values;
         }
@@ -175,22 +168,16 @@ final class MappedRowSet
     }
 
     /**
-     * @param list<string> $columns
-     * @return list<MappedRow>
-     */
-    public function rows(array $columns = []): array
-    {
-        return $this->readRows(null, $columns);
-    }
-
-    /**
+     * Reads the owner's visible rows. Omit the projection or pass null for all mapped columns.
+     * An empty projection returns complete keys with empty column maps.
+     *
      * @param MappedKey|array<string, int|string|\Stringable> $owner
-     * @param list<string> $columns
+     * @param list<string>|null $columns
      * @return list<MappedRow>
      */
-    public function rowsForOwner(MappedKey|array $owner, array $columns = []): array
+    public function rowsForOwner(MappedKey|array $owner, ?array $columns = null): array
     {
-        return $this->readRows($this->normalizeOwner($owner), $columns);
+        return $this->readOwnerRows($this->normalizeOwner($owner), $columns);
     }
 
     /**
@@ -202,24 +189,21 @@ final class MappedRowSet
     public function observeKeysForOwner(MappedKey|array $owner): array
     {
         $owner = $this->normalizeOwner($owner);
-        $keys = array_map(
-            static fn(MappedRow $row): MappedKey => $row->key,
-            $this->readRows($owner, $this->keyColumns),
-        );
+        $keys = array_map(static fn(MappedRow $row): MappedKey => $row->key, $this->readOwnerRows($owner, []));
         $this->expectKeys($owner, $keys);
 
         return $keys;
     }
 
     /**
-     * @param list<string> $columns
+     * @param list<string>|null $columns
      * @return list<MappedRow>
      */
-    private function readRows(?MappedKey $owner, array $columns): array
+    private function readOwnerRows(MappedKey $owner, ?array $columns): array
     {
-        $columns = $this->selectedColumns($columns);
-        $projection = null === $this->mapping && [] === $columns ? null : $columns;
-        $selected = [] === $projection ? $this->keyColumns : $columns;
+        $projection = $this->selectedColumns($columns);
+        assert(null !== $projection, 'Owner reads require a mapped row set definition.');
+        $selected = [] === $projection ? $this->keyColumns : $projection;
         $rows = [];
         foreach ($this->adapter->rows($this->table, $selected, $owner) as $row) {
             $fingerprint = $row->key->fingerprint();
@@ -231,7 +215,7 @@ final class MappedRowSet
             $this->mapping?->assertKey($row->key);
             $plan = $update?->toPlan();
             $key = true === $plan?->writes() ? $plan->key : $row->key;
-            $view = $this->overlayRow($key, $row->columns, $plan, $projection, null !== $projection);
+            $view = $this->overlayRow($key, $row->columns, $plan, $projection);
             assert(null !== $view, 'A visible stored row remains present.');
             $rows[$fingerprint] = new MappedRow($key, $view['values']);
         }
@@ -245,7 +229,7 @@ final class MappedRowSet
                 continue;
             }
 
-            $view = $this->overlayRow($update->key, false, $update->toPlan(), $projection, null !== $projection);
+            $view = $this->overlayRow($update->key, false, $update->toPlan(), $projection);
             if (null !== $view) {
                 $rows[$fingerprint] = new MappedRow($update->key, $view['values']);
             }
@@ -265,7 +249,6 @@ final class MappedRowSet
         array|false $stored,
         ?RowUpdatePlan $plan,
         ?array $projection,
-        bool $includeKeys,
         bool $trackStorage = false,
     ): ?array {
         $writes = true === $plan?->writes();
@@ -279,10 +262,6 @@ final class MappedRowSet
         $storedValues = [];
         foreach ($projection ?? array_keys($stored + $written + $key->values) as $column) {
             $isKey = $key->contains($column);
-            if ($isKey && !$includeKeys) {
-                continue;
-            }
-
             $fromStorage = array_key_exists($column, $stored);
             if ($fromStorage) {
                 $this->mapping?->assertValue($column, $stored[$column]);
@@ -471,22 +450,23 @@ final class MappedRowSet
     }
 
     /**
-     * @param list<string> $columns
-     * @return list<string>
+     * @param list<string>|null $columns
+     * @return list<string>|null
      */
-    private function selectedColumns(array $columns, bool $includeKeys = false): array
+    private function selectedColumns(?array $columns, bool $includeKeys = false): ?array
     {
         if (null === $this->mapping) {
             return $columns;
         }
+        if (null === $columns) {
+            return $includeKeys ? $this->mapping->columnNames : $this->mapping->nonKeyColumns;
+        }
+
         foreach ($columns as $column) {
             $this->mapping->column($column);
         }
-        if ([] !== $columns) {
-            return $columns;
-        }
 
-        return $includeKeys ? $this->mapping->columnNames : $this->mapping->nonKeyColumns;
+        return $columns;
     }
 
     /** @param int|string|MappedKey|\Stringable|array<string, int|string|\Stringable> $key */

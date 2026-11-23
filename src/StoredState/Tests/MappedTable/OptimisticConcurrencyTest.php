@@ -163,7 +163,10 @@ final class OptimisticConcurrencyTest extends RowSetTestCase
 
         static::assertSame(['status' => null, 'note' => null], $row->get(['status', 'note']));
         static::assertSame(['status' => null, 'note' => null], $row->observe(['status', 'note']));
-        static::assertSame($row->get(['status', 'note']), $rows->rows(['status', 'note'])[0]->columns);
+        static::assertSame(
+            $row->get(['status', 'note']),
+            $rows->rowsForOwner(['tenant' => 'one', 'owner' => 'order'], ['status', 'note'])[0]->columns,
+        );
         $plan = $rows->updatePlan()->rowUpdates[0];
         static::assertSame(RowUpdatePlan::MODE_UPDATE, $plan->mode);
         static::assertSame(['note' => null], $plan->expectedColumns);

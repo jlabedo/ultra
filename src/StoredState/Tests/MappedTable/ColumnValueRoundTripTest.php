@@ -73,7 +73,6 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
         $fixture->flush();
         $rows->clear();
         static::assertSame([$column => $expected], $rows->withKey('first')->get([$column]));
-        static::assertSame([$column => $expected], $rows->rows([$column])[0]->columns);
         $replacement = str_ends_with($type->value, '[]') ? [] : null;
         $rows->withKey('first')->expectColumnValue($column, $expected)->setColumn($column, $replacement);
         $rows->withKey('second')->insert()->setColumn($column, $input);
@@ -129,9 +128,8 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
         $rows->withKey('third')->insert()->setColumn('active', false);
         $fixture->flush();
         $rows->clear();
-        static::assertSame(
-            [true, false, false],
-            array_map(static fn($row) => $row->columns['active'], $rows->rows(['active'])),
-        );
+        static::assertSame(['active' => true], $rows->withKey('first')->get(['active']));
+        static::assertSame(['active' => false], $rows->withKey('second')->get(['active']));
+        static::assertSame(['active' => false], $rows->withKey('third')->get(['active']));
     }
 }

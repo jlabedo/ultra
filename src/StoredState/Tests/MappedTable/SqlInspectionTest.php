@@ -15,8 +15,11 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
+use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\Plan\RowUpdatePlan;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\SqlTrace;
 use Ultra\Testing\SqlTraceEntry;
@@ -95,6 +98,32 @@ final class SqlInspectionTest extends TestCase
         }
         static::assertStringContainsString('FOR SHARE', implode('\n', array_column($entries, 'sql')));
         $this->assertCleanedUp($inspection);
+    }
+
+    public function test_keys_only_owner_reads_select_only_key_columns(): void
+    {
+        $this->connection->executeStatement(
+            'CREATE TEMP TABLE owner_read_rows (owner_id TEXT, id TEXT, status TEXT, PRIMARY KEY (owner_id, id))',
+        );
+        $rows = new PostgresMappedTableAdapter($this->connection)->createDefined(
+            new MappedRowSetMapping(
+                'owner_read_rows',
+                [
+                    'owner_id' => new MappedColumn('string'),
+                    'id' => new MappedColumn('string'),
+                    'status' => new MappedColumn('string', nullable: true),
+                ],
+                ['owner_id', 'id'],
+                ownerColumns: ['owner_id'],
+            ),
+        );
+        $this->trace->clear();
+
+        $rows->rowsForOwner(['owner_id' => 'order'], []);
+
+        $entries = $this->trace->entries();
+        static::assertCount(1, $entries);
+        static::assertStringStartsWith('SELECT "id", "owner_id" FROM', $entries[0]->sql);
     }
 
     public function test_conflict_retains_the_full_plan_but_only_the_executed_prefix_and_rollback(): void

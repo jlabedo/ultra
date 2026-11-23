@@ -411,23 +411,26 @@ final class DefinedRowSetsTest extends RowSetTestCase
     #[DataProvider('backends')]
     public function test_defined_projection_exposes_only_mapped_columns_and_checks_nullable_values(string $backend): void
     {
-        $fixture = $this->fixture($backend);
-        $key = new MappedKey(['id' => 'line']);
-        $fixture->seed(['id' => 'line', 'status' => 'outside the definition']);
+        $fixture = $this->fixture($backend, ['id', 'owner']);
+        $owner = ['owner' => 'order'];
+        $key = new MappedKey([...$owner, 'id' => 'line']);
+        $fixture->seed([...$key->values, 'status' => 'outside the definition']);
+        $keyColumns = ['id' => new MappedColumn('string'), 'owner' => new MappedColumn('string')];
         $keys = $fixture->defined(
-            new MappedRowSetMapping($fixture->tableName, ['id' => new MappedColumn('string')], ['id']),
+            new MappedRowSetMapping($fixture->tableName, $keyColumns, ['id', 'owner'], ownerColumns: ['owner']),
         );
-        static::assertSame([], $keys->rows()[0]->columns);
-        static::assertSame(['id' => 'line'], $keys->withKey($key)->get());
+        static::assertSame([], $keys->rowsForOwner($owner)[0]->columns);
+        static::assertSame($key->values, $keys->withKey($key)->get());
 
         $rows = $fixture->defined(
             new MappedRowSetMapping(
                 $fixture->tableName,
-                ['id' => new MappedColumn('string'), 'note' => new MappedColumn('string', nullable: true)],
-                ['id'],
+                $keyColumns + ['note' => new MappedColumn('string', nullable: true)],
+                ['id', 'owner'],
+                ownerColumns: ['owner'],
             ),
         );
-        static::assertSame(['note' => null], $rows->rows()[0]->columns);
+        static::assertSame(['note' => null], $rows->rowsForOwner($owner)[0]->columns);
         $rows->withKey($key)->expectColumnValue('note', null);
         $fixture->flush($rows);
         static::assertFalse($rows->hasPendingChanges());

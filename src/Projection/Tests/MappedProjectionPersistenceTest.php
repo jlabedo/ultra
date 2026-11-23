@@ -321,9 +321,10 @@ final readonly class CompiledMappedProjection
     #[ProjectionResetter]
     public function reset(): void
     {
-        foreach ($this->courses->rows([]) as $row) {
-            $this->details->reconcileForOwner(['course_id' => $row->key->value('id')], []);
-            $this->courses->withKey($row->key)->delete();
+        foreach ($this->connection->fetchFirstColumn('SELECT id FROM mapped_projection_courses') as $courseId) {
+            assert(is_string($courseId), 'The course ID is a PostgreSQL TEXT key.');
+            $this->details->reconcileForOwner(['course_id' => $courseId], []);
+            $this->courses->withKey($courseId)->delete();
         }
     }
 }

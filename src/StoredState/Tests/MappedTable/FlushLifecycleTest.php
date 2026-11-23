@@ -150,7 +150,8 @@ final class FlushLifecycleTest extends RowSetTestCase
         $rows->expectSameRowKeys(['existing', 'added']);
         $rows->reconcileRows([]);
         static::assertTrue($rows->hasPendingChanges());
-        static::assertSame([], $rows->rows());
+        static::assertNull($rows->withKey('existing')->get([]));
+        static::assertNull($rows->withKey('added')->get([]));
         $rows->clear();
         static::assertFalse($rows->hasPendingChanges());
         static::assertSame(['status' => 'pending'], $rows->withKey('existing')->get(['status']));

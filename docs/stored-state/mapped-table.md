@@ -62,8 +62,8 @@ The [Symfony workshop example](../../examples/mapped-table-symfony/README.md) as
 sets, owner collections and query guards on PostgreSQL.
 
 The owner columns, when present, identify one collection for each complete owner key in the child table's
-column names. They leave at least one further key column for the item. Table reads, reads by owner and direct
-writes by complete row key all use the same buffer.
+column names. They leave at least one further key column for the item. Reads by owner and direct writes by
+complete row key use the same buffer.
 
 ```php
 $owner = ['order_id' => 'o-42'];
@@ -146,6 +146,11 @@ depend on existence alone.
 
 Use a fresh handle after the buffer is flushed or cleared.
 
+`rowsForOwner($owner, $columns)` returns the owner's rows as `MappedRow` objects with a separate complete key.
+Omit `$columns` or pass `null` to return all mapped non-key columns. Pass `[]` for the complete keys alone
+with empty `columns` maps. A non-empty projection can explicitly include key columns. The rows reflect
+buffered changes, omit unknown values, and preserve known nulls.
+
 ## Manual assembly and whole-table membership
 
 Use one adapter and one unit of work, including when the unit of work contains a single row set.
@@ -172,9 +177,6 @@ $database->transactional($unitOfWork->flush(...));
 Without a prior absence expectation, the row must still exist at flush. Deleting an expected-absent row only
 checks absence; a buffered insertion for that key is cancelled, and a competing creation still causes a conflict.
 
-`rows(...)` and `rowsForOwner(...)` return `MappedRow` objects with a separate `MappedKey` and the projected
-columns. By default they select all non-key columns. An explicit projection can include key columns.
-Both methods use the same buffered view as `get()`. They omit unknown values and return known `null` values.
 A row set without owner columns supports whole-table membership operations.
 `expectSameRowKeys(...)` buffers an optimistic expectation that the table's row-key set has not changed before
 `flush()`. Row sets with owner columns use `expectSameRowKeysForOwner()` and `reconcileForOwner()`.

@@ -112,7 +112,7 @@ final class WriteSemanticsTest extends RowSetTestCase
         $rows = $fixture->rows;
         $rows->withKey('row')->expectColumnValue('status', 'old')->delete();
         $rows->withKey('row')->{$operation}()->setColumn('status', 'new');
-        static::assertSame(['status' => 'new'], $rows->rows(['status', 'note'])[0]->columns);
+        static::assertSame(['status' => 'new'], $rows->withKey('row')->get(['status', 'note']));
         $fixture->flush();
         static::assertSame(['status' => 'new', 'note' => null], $fixture->stored('row', ['status', 'note']));
         $rows->clear();
