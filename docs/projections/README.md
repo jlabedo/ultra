@@ -219,7 +219,8 @@ generated dispatch does not justify its additional complexity.
 
 [ProjectionDefinition.php](../../src/Projection/Runtime/ProjectionDefinition.php) is the static description of a projection class.
 
-It is built from attributes and reflection and contains:
+It is built from attributes. Symfony validates and compiles the handler metadata during container
+compilation. Manual assembly builds the same definition through reflection. The definition contains:
 
 - `projectionId`
 - `partitionDimension`
@@ -227,6 +228,7 @@ It is built from attributes and reflection and contains:
 - resetter method, if any
 - flush method, if any
 - handler metadata per event type
+- the structural fingerprint used for managed activation
 
 It also knows how to:
 

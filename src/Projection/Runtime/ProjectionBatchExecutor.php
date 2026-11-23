@@ -22,25 +22,16 @@ final readonly class ProjectionBatchExecutor
     /** @param callable(): void $operation */
     public function lifecycle(ProjectionRuntime $runtime, callable $operation): void
     {
+        $participants = $runtime->persistenceParticipants();
         try {
             $operation();
-            $this->flushPersistence($runtime);
+            foreach ($participants as $participant) {
+                $participant->flush();
+            }
         } finally {
-            $this->clear($runtime);
-        }
-    }
-
-    private function flushPersistence(ProjectionRuntime $runtime): void
-    {
-        foreach ($runtime->persistenceParticipants() as $participant) {
-            $participant->flush();
-        }
-    }
-
-    private function clear(ProjectionRuntime $runtime): void
-    {
-        foreach ($runtime->persistenceParticipants() as $participant) {
-            $participant->clear();
+            foreach ($participants as $participant) {
+                $participant->clear();
+            }
         }
     }
 }

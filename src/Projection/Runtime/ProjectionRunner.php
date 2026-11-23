@@ -172,7 +172,7 @@ final readonly class ProjectionRunner
                         $definition->projectionId,
                         1,
                         ProjectionPhase::Building,
-                        ProjectionState::fingerprint($definition),
+                        $definition->fingerprint,
                     ),
                 );
             }
@@ -206,7 +206,7 @@ final readonly class ProjectionRunner
                         $definition->projectionId,
                         ($previous->generation ?? 0) + 1,
                         ProjectionPhase::Building,
-                        ProjectionState::fingerprint($definition),
+                        $definition->fingerprint,
                     ),
                 );
             }
@@ -243,7 +243,7 @@ final readonly class ProjectionRunner
     {
         if (
             ProjectionMode::Synchronous !== $runtime->definition()->mode
-            || ProjectionState::fingerprint($runtime->definition()) !== $state->fingerprint
+            || $runtime->definition()->fingerprint !== $state->fingerprint
         ) {
             throw new \LogicException('Projection definition changed; explicitly reset the projection before replay.');
         }

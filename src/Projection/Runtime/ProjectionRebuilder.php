@@ -60,7 +60,7 @@ final readonly class ProjectionRebuilder
             if (ProjectionPhase::Live === $state->phase) {
                 return 0;
             }
-            if (ProjectionState::fingerprint($runtime->definition()) !== $state->fingerprint) {
+            if ($runtime->definition()->fingerprint !== $state->fingerprint) {
                 throw new \LogicException('Cannot activate an incompatible projection definition.');
             }
             $processed = 0;

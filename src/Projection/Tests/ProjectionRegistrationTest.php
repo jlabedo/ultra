@@ -24,6 +24,7 @@ use Ultra\Projection\ProjectionRebuilder;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Tests\Support\ConfiguredProjectionActivator;
 use Ultra\Projection\Tests\Support\ConfiguredProjectionScalingPolicy;
+use Ultra\Projection\Tests\Support\InvalidParameterCountProjection;
 use Ultra\Projection\Tests\Support\OtherStubProjection;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Projection\Tests\Support\RecordingMediator;
@@ -103,6 +104,13 @@ final class ProjectionRegistrationTest extends ProjectionTestCase
                 \Ultra\Projection\Tests\Support\ConflictingPersistenceProjection::class,
             )
             ->boot();
+    }
+
+    public function test_invalid_handler_signatures_are_rejected_when_the_container_compiles(): void
+    {
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('must have exactly one parameter');
+        $this->projectionUltraLight()->withClass(InvalidParameterCountProjection::class)->boot();
     }
 
     public function test_a_mediator_registered_after_the_extension_receives_projection_wakeups(): void

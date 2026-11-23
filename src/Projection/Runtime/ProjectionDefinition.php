@@ -16,8 +16,11 @@ use Ultra\Projection\Attribute\ProjectionResetter;
 
 final readonly class ProjectionDefinition
 {
-    /** @param array<string, ProjectionHandlerDefinition> $handlers */
-    private function __construct(
+    /**
+     * @internal Assemble through fromClass() or the Symfony compiler.
+     * @param array<string, ProjectionHandlerDefinition> $handlers
+     */
+    public function __construct(
         public string $projectionId,
         public string $partitionDimension,
         public ProjectionMode $mode,
@@ -25,6 +28,7 @@ final readonly class ProjectionDefinition
         public ?string $resetterMethod,
         public ?string $flushMethod,
         private array $handlers,
+        public string $fingerprint,
     ) {}
 
     public static function fromClass(string $class): self
@@ -44,6 +48,9 @@ final readonly class ProjectionDefinition
         }
 
         $attribute = $attributes[0]->newInstance();
+        $handlers = self::resolveHandlers($reflection);
+        $types = array_keys($handlers);
+        sort($types);
 
         return new self(
             projectionId: $attribute->name,
@@ -52,7 +59,8 @@ final readonly class ProjectionDefinition
             initializerMethod: self::resolveInitializerMethod($reflection),
             resetterMethod: self::resolveResetterMethod($reflection),
             flushMethod: self::resolveFlushMethod($reflection),
-            handlers: self::resolveHandlers($reflection),
+            handlers: $handlers,
+            fingerprint: hash('sha256', serialize([$attribute->partitionBy, $types])),
         );
     }
 

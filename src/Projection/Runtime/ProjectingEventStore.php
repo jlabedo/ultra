@@ -43,22 +43,15 @@ final readonly class ProjectingEventStore implements EventStore
         }
         $this->transactions->transactional(function () use ($events, $appendConditions): void {
             $this->states->lockRegistrationShared();
-            $definitions = $this->catalog->definitions();
-            usort($definitions, static fn(ProjectionDefinition $a, ProjectionDefinition $b): int => strcmp(
-                $a->projectionId,
-                $b->projectionId,
-            ));
             $live = [];
-            foreach ($definitions as $definition) {
-                if (ProjectionMode::Synchronous !== $definition->mode) {
-                    continue;
-                }
-                $matching = array_filter($events, $definition->handles(...));
+            foreach ($this->catalog->synchronousRuntimes() as $runtime) {
+                $definition = $runtime->definition();
+                $matching = array_values(array_filter($events, $definition->handles(...)));
                 if ([] === $matching) {
                     continue;
                 }
                 foreach ($matching as $event) {
-                    if (null === $definition->bucketFor($event)) {
+                    if (!isset($event->domainIds[$definition->partitionDimension])) {
                         throw new \InvalidArgumentException(
                             'Managed projection events must carry their partition identifier.',
                         );
@@ -67,19 +60,17 @@ final readonly class ProjectingEventStore implements EventStore
                 // Lock even an uninitialized projection: registration must not race this append.
                 $this->states->lockShared($definition->projectionId);
                 if (ProjectionPhase::Live === $this->states->find($definition->projectionId)?->phase) {
-                    $live[] = $definition->projectionId;
+                    $live[] = [$runtime, $matching];
                 }
             }
             $this->assertCompatibleWriter();
             $this->inner->append($events, ...$appendConditions);
-            foreach ($live as $projectionId) {
-                $runtime = $this->catalog->runtime($projectionId);
-                $matching = array_values(array_filter($events, $runtime->definition()->handles(...)));
-                if ([] !== $matching) {
-                    $this->batches->execute($runtime, $matching);
-                }
+            $applied = [];
+            foreach ($live as [$runtime, $matching]) {
+                $this->batches->execute($runtime, $matching);
+                $applied[] = $runtime->projectionId();
             }
-            $this->activityRecorder->record($events, $live);
+            $this->activityRecorder->record($events, $applied);
         });
     }
 
@@ -94,10 +85,7 @@ final readonly class ProjectingEventStore implements EventStore
                     previous: $e,
                 );
             }
-            if (
-                ProjectionMode::Synchronous !== $definition->mode
-                || ProjectionState::fingerprint($definition) !== $state->fingerprint
-            ) {
+            if (ProjectionMode::Synchronous !== $definition->mode || $definition->fingerprint !== $state->fingerprint) {
                 throw new \LogicException(
                     'Writer has an incompatible managed projection "' . $state->projectionId . '".',
                 );

@@ -12,30 +12,35 @@ final readonly class ProjectionRuntime
 {
     private ProjectionDefinition $definition;
 
+    /** @var list<UnitOfWork> */
+    private array $participants;
+
     /** @param list<UnitOfWork> $unitOfWork */
     public function __construct(
         private object $projection,
         private UltraNormalizer $normalizer,
         ?ProjectionDefinition $definition = null,
-        private array $unitOfWork = [],
+        array $unitOfWork = [],
     ) {
         $this->definition = $definition ?? ProjectionDefinition::fromProjection($projection);
-    }
-
-    /** @return list<UnitOfWork> */
-    public function persistenceParticipants(): array
-    {
-        $participants = $this->unitOfWork;
-        if ($this->projection instanceof UnitOfWork) {
-            $participants[] = $this->projection;
+        if ($projection instanceof UnitOfWork) {
+            $unitOfWork[] = $projection;
         }
 
         $unique = [];
-        foreach ($participants as $participant) {
+        foreach ($unitOfWork as $participant) {
             $unique[spl_object_id($participant)] = $participant;
         }
+        $this->participants = array_values($unique);
+    }
 
-        return array_values($unique);
+    /**
+     * @internal Used by the projection catalog and batch executor.
+     * @return list<UnitOfWork>
+     */
+    public function persistenceParticipants(): array
+    {
+        return $this->participants;
     }
 
     public function projectionId(): string

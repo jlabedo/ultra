@@ -6,8 +6,11 @@ namespace Ultra\Projection;
 
 final class ProjectionCatalog
 {
-    /** @var array<string, ProjectionRuntime> */
+    /** @var array<array-key, ProjectionRuntime> */
     private array $runtimes = [];
+
+    /** @var list<ProjectionRuntime> Ordered by ID for transaction-scoped activation barriers. */
+    private array $synchronousRuntimes = [];
 
     public function __construct(ProjectionRuntime ...$runtimes)
     {
@@ -30,7 +33,32 @@ final class ProjectionCatalog
                 }
             }
         }
-        $this->runtimes[$runtime->projectionId()] = $runtime;
+        $id = $runtime->projectionId();
+        $replaced = $this->runtimes[$id] ?? null;
+        $this->runtimes[$id] = $runtime;
+
+        if (
+            ProjectionMode::Synchronous === $runtime->definition()->mode
+            || ProjectionMode::Synchronous === $replaced?->definition()->mode
+        ) {
+            $synchronous = array_filter(
+                $this->runtimes,
+                static fn(ProjectionRuntime $candidate): bool => (
+                    ProjectionMode::Synchronous === $candidate->definition()->mode
+                ),
+            );
+            ksort($synchronous, SORT_STRING);
+            $this->synchronousRuntimes = array_values($synchronous);
+        }
+    }
+
+    /**
+     * @internal Sorted once when synchronous registrations change.
+     * @return list<ProjectionRuntime>
+     */
+    public function synchronousRuntimes(): array
+    {
+        return $this->synchronousRuntimes;
     }
 
     public function runtime(string $projectionId): ProjectionRuntime

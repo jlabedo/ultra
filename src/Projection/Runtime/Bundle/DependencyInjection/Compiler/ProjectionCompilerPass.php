@@ -13,6 +13,8 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Bundle\TagNames;
 use Ultra\Projection\ProjectionCatalog;
+use Ultra\Projection\ProjectionDefinition;
+use Ultra\Projection\ProjectionHandlerDefinition;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\UnitOfWork\UnitOfWork;
 
@@ -61,7 +63,7 @@ final class ProjectionCompilerPass implements CompilerPassInterface
             $runtime = new Definition(ProjectionRuntime::class, [
                 new Reference($serviceId),
                 new Reference(UltraNormalizer::class),
-                null,
+                $this->compileMetadata(ProjectionDefinition::fromClass($class)),
                 $references,
             ]);
 
@@ -73,5 +75,30 @@ final class ProjectionCompilerPass implements CompilerPassInterface
 
         $container->setParameter(ProjectionPersistenceCompilerPass::ROW_SETS, $projectionRowSets);
         $container->register(ProjectionCatalog::class, ProjectionCatalog::class)->setArguments($runtimes);
+    }
+
+    private function compileMetadata(ProjectionDefinition $projection): Definition
+    {
+        $handlers = [];
+        foreach ($projection->handledEventTypes() as $eventType) {
+            $handler = $projection->handlerFor($eventType);
+            assert(null !== $handler, 'A declared projection event type must have handler metadata.');
+            $handlers[$eventType] = new Definition(ProjectionHandlerDefinition::class, [
+                $handler->eventType,
+                $handler->eventClass,
+                $handler->method,
+            ]);
+        }
+
+        return new Definition(ProjectionDefinition::class, [
+            $projection->projectionId,
+            $projection->partitionDimension,
+            $projection->mode,
+            $projection->initializerMethod,
+            $projection->resetterMethod,
+            $projection->flushMethod,
+            $handlers,
+            $projection->fingerprint,
+        ]);
     }
 }
