@@ -4,27 +4,54 @@ declare(strict_types=1);
 
 namespace Ultra\Projection_Postgres;
 
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\PostgresSqlGenerator;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
+
 final readonly class PostgresProjectionSegmentSchema
 {
     public function __construct(
-        private string $tablePrefix = 'projection_',
+        private string $tablePrefix = PostgresProjectionImplementation::DEFAULT_TABLE_PREFIX,
     ) {}
+
+    public function definition(): SchemaDefinition
+    {
+        return new SchemaDefinition([
+            new PostgresProjectionStateSchema($this->tablePrefix)->tableDefinition(),
+            $this->tableDefinition(),
+        ]);
+    }
+
+    private function tableDefinition(): TableDefinition
+    {
+        return new TableDefinition(
+            'projection.segments',
+            strtolower($this->segmentsTable()),
+            columns: [
+                new ColumnDefinition('projection_id', type: ColumnType::Text),
+                new ColumnDefinition('bucket_from', type: 'smallint'),
+                new ColumnDefinition('bucket_to', type: 'smallint'),
+                new ColumnDefinition(
+                    'checkpoint',
+                    type: ColumnType::Text,
+                    defaultExpression: "'{\"gapFloor\":0,\"gapSeqNos\":[]}'",
+                ),
+                new ColumnDefinition('worker_id', type: ColumnType::Text, nullable: true),
+                new ColumnDefinition('lease_expires_at', type: 'timestamptz', nullable: true),
+                new ColumnDefinition('updated_at', type: 'timestamptz', defaultExpression: 'statement_timestamp()'),
+            ],
+            primaryKey: ['projection_id', 'bucket_from'],
+        );
+    }
 
     /** @return list<string> */
     public function createStatements(): array
     {
         return [
             ...new PostgresProjectionStateSchema($this->tablePrefix)->createStatements(),
-            sprintf("CREATE TABLE IF NOT EXISTS %s (
-                    projection_id     TEXT        NOT NULL,
-                    bucket_from       SMALLINT    NOT NULL,
-                    bucket_to         SMALLINT    NOT NULL,
-                    checkpoint        TEXT        NOT NULL DEFAULT '{\"gapFloor\":0,\"gapSeqNos\":[]}',
-                    worker_id         TEXT        NULL,
-                    lease_expires_at  TIMESTAMPTZ NULL,
-                    updated_at        TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
-                    PRIMARY KEY (projection_id, bucket_from)
-                )", $this->segmentsTable()),
+            new PostgresSqlGenerator()->createTableIfNotExists($this->tableDefinition(), $this->segmentsTable()),
         ];
     }
 

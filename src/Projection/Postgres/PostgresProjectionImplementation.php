@@ -16,9 +16,11 @@ use Ultra\Time\SystemClock;
 
 final class PostgresProjectionImplementation implements ProjectionImplementationInterface
 {
+    public const string DEFAULT_TABLE_PREFIX = 'projection_';
+
     public function __construct(
         private readonly Connection $connection,
-        private readonly string $tablePrefix = 'projection_',
+        private readonly string $tablePrefix = self::DEFAULT_TABLE_PREFIX,
         private readonly ClockInterface $clock = new SystemClock(),
     ) {}
 

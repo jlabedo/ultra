@@ -114,10 +114,14 @@ final class PostgresSqlGenerator
         ];
     }
 
-    /** @return list<string> */
-    private function createTable(CreateTable $operation): array
+    /** Render an unterminated bootstrap statement using the storage adapter's trusted table reference. */
+    public function createTableIfNotExists(TableDefinition $table, string $tableReference): string
     {
-        $table = $operation->table;
+        return $this->renderTable($table, 'CREATE TABLE IF NOT EXISTS ' . $tableReference);
+    }
+
+    private function renderTable(TableDefinition $table, string $createTable): string
+    {
         $columnDefinitions = array_map($this->renderColumnDefinition(...), $table->columns);
         if ([] !== $table->primaryKey) {
             $columns = $table->columnsById();
@@ -128,12 +132,15 @@ final class PostgresSqlGenerator
             $columnDefinitions[] = sprintf('CONSTRAINT %s CHECK (%s)', $this->quoteIdentifier($name), $expression);
         }
 
+        return sprintf("%s (\n    %s\n)", $createTable, implode(",\n    ", $columnDefinitions));
+    }
+
+    /** @return list<string> */
+    private function createTable(CreateTable $operation): array
+    {
+        $table = $operation->table;
         $sql = [
-            sprintf(
-                "CREATE TABLE %s (\n    %s\n);",
-                $this->quoteIdentifier($table->name),
-                implode(",\n    ", $columnDefinitions),
-            ),
+            $this->renderTable($table, 'CREATE TABLE ' . $this->quoteIdentifier($table->name)) . ';',
             $this->commentOnTable($table->name),
         ];
 

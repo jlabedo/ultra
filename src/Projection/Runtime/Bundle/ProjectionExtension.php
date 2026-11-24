@@ -19,6 +19,7 @@ use Ultra\Projection\Bundle\Command\RebuildProjectionCommand;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionCompilerPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionDefaultsCompilerPass;
 use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionPersistenceCompilerPass;
+use Ultra\Projection\Bundle\DependencyInjection\Compiler\ProjectionSchemaCompilerPass;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
@@ -36,6 +37,8 @@ use Ultra\Projection\ProjectionTransactionManagerInterface;
 
 final class ProjectionExtension implements ContainerExtension
 {
+    public const string POSTGRES_TABLE_PREFIX_PARAMETER = 'ultra.projection.postgres.table_prefix';
+
     /** Projection-private service id for the coordinator's dirty-key tracker. */
     public const string DIRTY_KEY_TRACKER_ID = 'ultra.projection.coordination.dirty_key_tracker';
 
@@ -156,6 +159,7 @@ final class ProjectionExtension implements ContainerExtension
 
         $this->registerMessageHandlingIntegration($container);
 
+        $container->addCompilerPass(new ProjectionSchemaCompilerPass(), priority: 10);
         $container->addCompilerPass(new ProjectionCompilerPass());
         $container->addCompilerPass(new ProjectionDefaultsCompilerPass());
         $container->addCompilerPass(new ProjectionPersistenceCompilerPass(), PassConfig::TYPE_BEFORE_REMOVING);

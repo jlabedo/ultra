@@ -4,21 +4,42 @@ declare(strict_types=1);
 
 namespace Ultra\Projection_Postgres;
 
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\PostgresSqlGenerator;
+use Ultra\Schema\TableDefinition;
+
 final readonly class PostgresProjectionStateSchema
 {
     public function __construct(
-        private string $tablePrefix = 'projection_',
+        private string $tablePrefix = PostgresProjectionImplementation::DEFAULT_TABLE_PREFIX,
     ) {}
+
+    public function tableDefinition(): TableDefinition
+    {
+        $name = strtolower($this->tablePrefix . 'states');
+
+        return new TableDefinition(
+            'projection.states',
+            $name,
+            columns: [
+                new ColumnDefinition('projection_id', type: ColumnType::Text),
+                new ColumnDefinition('generation', type: ColumnType::Int64),
+                new ColumnDefinition('phase', type: ColumnType::Text),
+                new ColumnDefinition('fingerprint', type: ColumnType::Text),
+            ],
+            primaryKey: ['projection_id'],
+            checks: ['valid_phase' => "phase IN ('building', 'live')"],
+        );
+    }
 
     /** @return list<string> */
     public function createStatements(): array
     {
-        return [sprintf("CREATE TABLE IF NOT EXISTS %s (
-            projection_id TEXT PRIMARY KEY,
-            generation BIGINT NOT NULL,
-            phase TEXT NOT NULL CHECK (phase IN ('building', 'live')),
-            fingerprint TEXT NOT NULL
-        )", $this->tablePrefix . 'states')];
+        return [new PostgresSqlGenerator()->createTableIfNotExists(
+            $this->tableDefinition(),
+            $this->tablePrefix . 'states',
+        )];
     }
 
     /** @return list<string> */

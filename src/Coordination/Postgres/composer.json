@@ -10,10 +10,11 @@
         }
     ],
     "require": {
-        "php": ">=8.4",
+        "php": ">=8.5",
         "doctrine/dbal": "^4.0",
         "psr/clock": "^1.0",
         "ultra/coordination": "self.version",
+        "ultra/schema": "self.version",
         "ultra/time": "self.version"
     },
     "autoload": {

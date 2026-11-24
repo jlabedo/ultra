@@ -4,24 +4,37 @@ declare(strict_types=1);
 
 namespace Ultra\Coordination_Postgres\Lease;
 
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\PostgresSqlGenerator;
+use Ultra\Schema\TableDefinition;
+
 final readonly class PostgresCoordinatorLeaseSchema
 {
     public function __construct(
         private string $table = 'coordination_leases',
     ) {}
 
+    public function tableDefinition(?string $id = null): TableDefinition
+    {
+        return new TableDefinition(
+            $id ?? $this->table,
+            strtolower($this->table),
+            columns: [
+                new ColumnDefinition('coordinator_key', type: ColumnType::Text),
+                new ColumnDefinition('worker_id', type: ColumnType::Text, nullable: true),
+                new ColumnDefinition('lease_expires_at', type: 'timestamptz', nullable: true),
+                new ColumnDefinition('wake_enqueued_until', type: 'timestamptz', nullable: true),
+                new ColumnDefinition('updated_at', type: 'timestamptz', defaultExpression: 'statement_timestamp()'),
+            ],
+            primaryKey: ['coordinator_key'],
+        );
+    }
+
     /** @return list<string> */
     public function createStatements(): array
     {
-        return [
-            sprintf('CREATE TABLE IF NOT EXISTS %s (
-                    coordinator_key      TEXT        NOT NULL PRIMARY KEY,
-                    worker_id            TEXT        NULL,
-                    lease_expires_at     TIMESTAMPTZ NULL,
-                    wake_enqueued_until  TIMESTAMPTZ NULL,
-                    updated_at           TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp()
-                )', $this->table),
-        ];
+        return [new PostgresSqlGenerator()->createTableIfNotExists($this->tableDefinition(), $this->table)];
     }
 
     /** @return list<string> */

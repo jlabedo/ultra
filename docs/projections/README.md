@@ -183,6 +183,24 @@ and the `states` table, included in `PostgresProjectionSegmentSchema::createStat
 Apply the schema update before using the new append integration, even in an app containing
 only asynchronous projections.
 
+When Symfony constructs `PostgresProjectionImplementation` as the projection implementation, the
+[Schema migration command](../schema/README.md#from-symfony) includes the `states`, `segments`,
+`dirty_keys` and `coordinator_lease` tables. Storage and migration generation both use the Symfony
+parameter `ultra.projection.postgres.table_prefix`. Set it in `config/services.yaml` to choose a prefix:
+
+```yaml
+parameters:
+    ultra.projection.postgres.table_prefix: reporting_
+```
+
+An explicit parameter takes precedence over the implementation's constructor argument. When omitted,
+Ultra initializes the parameter from that argument, whose default is `projection_`. Generation works offline, and table identities stay stable when the prefix
+changes. Use an unqualified prefix and select the target PostgreSQL schema through `search_path` when
+applying the migration.
+
+`PostgresProjectionSchema::definition()` can also supply the four tables to a manually composed
+schema. Its table definitions are shared with the PostgreSQL creation helpers.
+
 Appends and worker application transactions take a shared registration barrier and checks the managed registry.
 First registration takes its exclusive counterpart so older appends finish before
 registration commits. Writers missing a registered managed projection, changing its
