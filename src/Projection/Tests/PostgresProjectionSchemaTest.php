@@ -99,11 +99,12 @@ final class PostgresProjectionSchemaTest extends TestCase
         $builder->setParameter('kernel.project_dir', $directory);
         $builder->register(EventStore::class, InMemoryEventStore::class);
         $builder->register('test.connection', Connection::class)->setSynthetic(true)->setPublic(true);
+        $builder->setAlias('database_connection', 'test.connection');
         $builder->setAlias('test.projection_implementation', ProjectionImplementationInterface::class)->setPublic(true);
 
-        $postgres = ['connection' => 'test.connection'];
+        $postgres = [];
         if (null !== $tablePrefix) {
-            $postgres['table_prefix'] = $tablePrefix;
+            $postgres = ['connection' => 'test.connection', 'table_prefix' => $tablePrefix];
         }
         $builder->loadFromExtension('ultra', [
             'schema' => ['migrations_directory' => 'migrations'],

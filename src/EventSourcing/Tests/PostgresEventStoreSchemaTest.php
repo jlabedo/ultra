@@ -53,14 +53,19 @@ final class PostgresEventStoreSchemaTest extends TestCase
             $builder->addCompilerPass(new AddConsoleCommandPass());
             $builder->setParameter('kernel.project_dir', $directory);
             $builder->register('test.connection', Connection::class)->setSynthetic(true)->setPublic(true);
+            $builder->setAlias('database_connection', 'test.connection');
             $builder->register('test.lock_strategy', BucketLockStrategy::class);
             $builder->setAlias('test.event_store', EventStore::class)->setPublic(true);
 
-            $postgres = ['variant' => $variant, 'connection' => 'test.connection'];
+            $postgres = ['variant' => $variant];
             $prefix = 'event_store_';
             if (null !== $strategy) {
                 $prefix = 'journal_';
-                $postgres += ['table_prefix' => $prefix, 'lock_strategy' => $strategy];
+                $postgres += [
+                    'connection' => 'test.connection',
+                    'table_prefix' => $prefix,
+                    'lock_strategy' => $strategy,
+                ];
             }
             $builder->loadFromExtension('ultra', ['event_store' => ['postgres' => $postgres]]);
             $builder->compile();

@@ -25,7 +25,7 @@ use Ultra\Schema\Operations\SetRowLevelSecurity;
 
 final class PostgresSqlGenerator
 {
-    private const MANAGED_BY_ULTRA_COMMENT = 'managed by: ultra';
+    private const MANAGED_BY_ULTRA_COMMENT = 'managed-by:ultra';
 
     /**
      * @param list<SchemaOperation> $operations

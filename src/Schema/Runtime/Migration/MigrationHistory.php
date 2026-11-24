@@ -20,9 +20,44 @@ final readonly class MigrationHistory
     /** @return ?array{id: string, schema: SchemaDefinition} */
     public function head(): ?array
     {
+        $head = null;
+        foreach ($this->snapshots() as $id => $entry) {
+            $head = ['id' => $id, 'schema' => $entry['schema']];
+        }
+
+        return $head;
+    }
+
+    /** @return list<array{id: string, snapshotHash: string, sql: ?string, sqlHash: ?string}> */
+    public function migrations(): array
+    {
+        $migrations = [];
+        foreach ($this->snapshots() as $id => $entry) {
+            $sql = null;
+            if (null !== $entry['sqlPath']) {
+                $path = $entry['sqlPath'];
+                $sql = self::filesystem(static fn(): string|false => file_get_contents($path));
+                if (false === $sql || '' === trim($sql)) {
+                    throw new \UnexpectedValueException(sprintf('Cannot read a migration script from "%s".', $path));
+                }
+            }
+            $migrations[] = [
+                'id' => $id,
+                'snapshotHash' => $entry['snapshotHash'],
+                'sql' => $sql,
+                'sqlHash' => null === $sql ? null : hash('sha256', $sql),
+            ];
+        }
+
+        return $migrations;
+    }
+
+    /** @return \Generator<string, array{schema: SchemaDefinition, snapshotHash: string, sqlPath: ?string}> */
+    private function snapshots(): \Generator
+    {
         clearstatcache();
         if (!file_exists($this->directory) && !is_link($this->directory)) {
-            return null;
+            return;
         }
 
         $entries = self::filesystem(fn(): array|false => scandir($this->directory));
@@ -30,7 +65,7 @@ final readonly class MigrationHistory
             throw new \RuntimeException(sprintf('Cannot read migration history "%s".', $this->directory));
         }
 
-        $head = null;
+        $previous = null;
         foreach ($entries as $id) {
             if (str_starts_with($id, '.')) {
                 continue;
@@ -38,10 +73,10 @@ final readonly class MigrationHistory
 
             $path = $this->directory . '/' . $id;
             $baseline = self::BASELINE === $id;
-            $expectedNumber = sprintf('%06d', self::nextNumber($head['id'] ?? null));
+            $expectedNumber = sprintf('%06d', self::nextNumber($previous));
             if (
                 !is_dir($path)
-                || $baseline && null !== $head
+                || $baseline && null !== $previous
                 || !$baseline && !preg_match('/\A' . $expectedNumber . '-[a-z0-9]+(?:-[a-z0-9]+)*\z/', $id)
             ) {
                 throw new \UnexpectedValueException(sprintf(
@@ -69,18 +104,21 @@ final readonly class MigrationHistory
                 );
             }
 
-            if ($snapshot->previous !== ($head['id'] ?? null)) {
+            if ($snapshot->previous !== $previous) {
                 throw new \UnexpectedValueException(sprintf(
                     'Divergent migration history at "%s". Expected predecessor "%s", found "%s".',
                     $path,
-                    $head['id'] ?? '(none)',
+                    $previous ?? '(none)',
                     $snapshot->previous ?? '(none)',
                 ));
             }
-            $head = ['id' => $id, 'schema' => $snapshot->schema];
+            $previous = $id;
+            yield $id => [
+                'schema' => $snapshot->schema,
+                'snapshotHash' => hash('sha256', $json),
+                'sqlPath' => $baseline ? null : $path . '/migration.sql',
+            ];
         }
-
-        return $head;
     }
 
     /** Publish the entire entry together, after checking that the history still has the expected head. */

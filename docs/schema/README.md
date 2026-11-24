@@ -58,10 +58,46 @@ Review the target definition and rerun with `--allow-destructive` to generate th
 
 Review and commit both files together. If review changes the resulting structure of a declared table,
 keep the snapshot and target definition aligned with the revised SQL. Apply the forward SQL in numbered
-order through the deployment tooling, which also tracks applied migrations and handles any rollback.
+order with the Symfony migration commands or through deployment tooling that tracks applied migrations.
 An incomplete entry or divergent history stops generation. If branches generated migrations from the
 same predecessor, choose an order and regenerate the later migration from the new history, carrying
 over any reviewed SQL edits.
+
+### Apply from Symfony
+
+The commands resolve their PostgreSQL DBAL connection when run. They use `database_connection` by
+default, the alias for the connection selected by DoctrineBundle. Set `connection` to override it
+or to use a custom `doctrine/dbal` service without DoctrineBundle.
+
+```yaml
+ultra:
+    schema:
+        connection: app.migrations_connection
+```
+
+The commands use the same `migrations_directory` as `generate`. The metadata table defaults to
+`public.ultra_schema_migrations`. Its schema must already exist. An unqualified metadata table name
+uses `public`. Set the connection's `search_path` for unqualified names in the migration SQL.
+
+```bash
+bin/console ultra:schema:status
+bin/console ultra:schema:migrate
+```
+
+`status` reports applied and pending entries without creating the journal. `migrate` takes a
+PostgreSQL advisory lock for the journal and records each entry in the same transaction as its SQL.
+A retry resumes at the first pending entry. The journal records the entry ID, execution time,
+and SHA-256 checksums of the SQL and snapshot. Applied entries must form an unchanged prefix of the
+versioned history. Keep these files intact and commit corrections as a later migration.
+
+Scripts must run within one PostgreSQL transaction. Leave transaction control to the runner.
+Statements that require execution outside a transaction, such as `CREATE INDEX CONCURRENTLY`,
+are unsupported. Use a connection with a stable PostgreSQL session for the advisory lock.
+
+If the history starts with `000000-baseline`, verify that the target database matches that snapshot
+and run `bin/console ultra:schema:baseline` before `migrate`. This records the baseline in the
+journal without writing to the application tables. An existing baseline describes an already
+provisioned database. For a fresh database, use a history that starts with a creation migration.
 
 ### Coexist with Doctrine
 
@@ -70,6 +106,12 @@ separate Schema and Doctrine histories on the same PostgreSQL database. Assign e
 generator and configure Doctrine's schema introspection to exclude tables outside its scope. An
 application can use its own naming or ownership convention. Add foreign keys across the two scopes
 in a hand-written migration and account for their dependencies when ordering deployment.
+Schema marks managed tables, columns and indexes with `managed-by:ultra`.
+
+To transfer an existing Doctrine table, declare its current structure in Schema and generate a
+dedicated adoption entry. Keep the verified snapshot and replace the table-creation SQL with a
+`COMMENT ON TABLE ... IS 'managed-by:ultra'` statement. Apply the adoption entry before the next
+Doctrine diff so a filter based on `managed-by:doctrine` excludes the table.
 
 ## Current reconciliation contract
 
@@ -218,6 +260,7 @@ The tests live together under [src/Schema/Tests](../../src/Schema/Tests), organi
 | Policies can be deployed before activation, enforce reads and writes for application roles, and can be replaced around structural changes. Forced RLS applies to the owner and disabling RLS preserves policies | [PostgresPolicyMigrationTest](../../src/Schema/Tests/PostgresPolicyMigrationTest.php) |
 | Invalid operations fail before a script is returned; caller-provided index SQL retains its clauses and is terminated | [MigrationInspectionTest](../../src/Schema/Tests/MigrationInspectionTest.php) |
 | CLI generation uses the versioned history, requires approval for table and column drops, and rejects incomplete or divergent histories | [MigrationCommandTest](../../src/Schema/Tests/MigrationCommandTest.php) |
+| Symfony applies SQL and journals it atomically, verifies applied file checksums, and records a baseline independently of Doctrine | [PostgresMigrationCommandTest](../../src/Schema/Tests/PostgresMigrationCommandTest.php) |
 
 Operation payloads are inspectable before execution. SQL cases execute the generated statements against PostgreSQL and inspect data and catalog metadata. Whitespace and the layout of generated SQL are not frozen. The raw-index inspection case checks the supplied statement after surrounding whitespace and statement termination are normalized.
 

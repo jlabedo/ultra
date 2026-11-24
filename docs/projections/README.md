@@ -198,11 +198,11 @@ Declare PostgreSQL projection storage in `config/packages/ultra.yaml`:
 ultra:
     projection:
         postgres:
-            connection: doctrine.dbal.default_connection
             table_prefix: reporting_
 ```
 
-Set `connection` to the Symfony service ID of the DBAL connection. The storage implementation and the
+Storage uses DoctrineBundle's `database_connection` alias by default. Set `connection` to the Symfony
+service ID of a different DBAL connection. The storage implementation and the
 [Schema migration command](../schema/README.md#from-symfony) both use `table_prefix`, which defaults to
 `projection_`. The command generates migrations for the `states`, `segments`, `dirty_keys` and
 `coordinator_lease` tables offline. Table identities stay stable when the prefix changes. Use an

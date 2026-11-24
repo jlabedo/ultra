@@ -111,11 +111,11 @@ final class ExecutableMigrationTest extends MigrationTestCase
             'SELECT indisunique FROM pg_index JOIN pg_class ON indexrelid = oid WHERE relname = ? AND relnamespace = current_schema()::regnamespace',
             ['app"name_idx'],
         ));
-        static::assertSame('managed by: ultra', $this->connection->fetchOne(
+        static::assertSame('managed-by:ultra', $this->connection->fetchOne(
             "SELECT obj_description(oid, 'pg_class') FROM pg_class WHERE relname = ? AND relnamespace = current_schema()::regnamespace",
             ['app"name_idx'],
         ));
-        static::assertSame('managed by: ultra', $this->connection->fetchOne(
+        static::assertSame('managed-by:ultra', $this->connection->fetchOne(
             "SELECT col_description(attrelid, attnum) FROM pg_attribute JOIN pg_class ON attrelid = oid WHERE relname = ? AND attname = 'created_at' AND relnamespace = current_schema()::regnamespace",
             ['app"users'],
         ));
@@ -216,7 +216,7 @@ final class ExecutableMigrationTest extends MigrationTestCase
         static::assertTrue($this->connection->fetchOne(
             "SELECT indisunique FROM pg_index WHERE indexrelid = 'accounts_id_idx'::regclass",
         ));
-        static::assertSame(['managed by: ultra', 'managed by: ultra'], $this->connection->fetchFirstColumn(<<<'SQL'
+        static::assertSame(['managed-by:ultra', 'managed-by:ultra'], $this->connection->fetchFirstColumn(<<<'SQL'
             SELECT obj_description(indexname::regclass, 'pg_class')
             FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'accounts' ORDER BY indexname
             SQL));
@@ -367,11 +367,11 @@ final class ExecutableMigrationTest extends MigrationTestCase
             ),
         );
         static::assertSame(
-            'managed by: ultra',
+            'managed-by:ultra',
             $this->connection->fetchOne("SELECT obj_description('events'::regclass, 'pg_class')"),
         );
         static::assertSame(
-            array_fill(0, 6, 'managed by: ultra'),
+            array_fill(0, 6, 'managed-by:ultra'),
             $this->connection->fetchFirstColumn(
                 "SELECT col_description(attrelid, attnum) FROM pg_attribute WHERE attrelid = 'events'::regclass AND attnum > 0 ORDER BY attnum",
             ),
@@ -387,7 +387,7 @@ final class ExecutableMigrationTest extends MigrationTestCase
         )]));
         $this->execute([new AddIndex('documents', new IndexDefinition('i', 'gin_idx', rawSql: $sql))]);
         static::assertSame(
-            ['access_method' => 'gin', 'options' => '{fastupdate=off}', 'comment' => 'managed by: ultra'],
+            ['access_method' => 'gin', 'options' => '{fastupdate=off}', 'comment' => 'managed-by:ultra'],
             $this->connection->fetchAssociative(<<<'SQL'
                 SELECT amname AS access_method, reloptions::text AS options, obj_description(c.oid, 'pg_class') AS comment
                 FROM pg_class c JOIN pg_am ON relam = pg_am.oid WHERE relname = 'gin_idx' AND relnamespace = current_schema()::regnamespace

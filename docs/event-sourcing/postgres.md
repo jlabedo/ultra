@@ -24,13 +24,13 @@ ultra:
     event_store:
         postgres:
             variant: query-streams
-            connection: doctrine.dbal.default_connection
             table_prefix: journal_
             lock_strategy: bucket
 ```
 
 The bundle configures `EventStore` and its schema provider from this block. Both services receive the
-same prefix and strategy. The connection is a Symfony service ID and is injected into the storage.
+same prefix and strategy. Storage uses DoctrineBundle's `database_connection` alias by default.
+Set `connection` to the Symfony service ID of a different DBAL connection.
 Choose `hstore` or `query-streams` as the variant. The prefix defaults to `event_store_` and the strategy
 defaults to `shared-exclusive`. Use an unqualified prefix and select the target PostgreSQL schema
 through `search_path` when applying the migration.

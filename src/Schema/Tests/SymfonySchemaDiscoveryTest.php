@@ -12,6 +12,7 @@ use Symfony\Component\Console\CommandLoader\CommandLoaderInterface;
 use Symfony\Component\Console\DependencyInjection\AddConsoleCommandPass;
 use Symfony\Component\Console\Tester\ApplicationTester;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
+use Symfony\Component\DependencyInjection\Compiler\MergeExtensionConfigurationPass;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\Filesystem\Filesystem;
@@ -98,13 +99,25 @@ final class SymfonySchemaDiscoveryTest extends TestCase
             $bundle = new UltraBundle([new SchemaExtension()]);
             $bundle->build($builder);
             $builder->registerExtension($bundle->getContainerExtension());
-            $builder->loadFromExtension('ultra', $config);
+            $builder->getCompilerPassConfig()->setMergePass(new MergeExtensionConfigurationPass(['ultra']));
+            if ([] !== $config) {
+                $builder->loadFromExtension('ultra', $config);
+            }
             $builder->addCompilerPass(new AddConsoleCommandPass());
             $builder->setParameter('schema_test_token', 'unexpected substitution');
             $builder->register(MigrationTargetSchema::class)->setAutoconfigured(true);
             $builder->compile();
 
             $tester = $this->console($builder, $directory, $suffix);
+            self::assertSame(0, $tester->run(['command' => 'list', 'namespace' => 'ultra:schema']));
+            foreach (['migrate', 'status', 'baseline'] as $command) {
+                $name = 'ultra:schema:' . $command;
+                self::assertStringContainsString($name, $tester->getDisplay());
+            }
+            self::assertSame(0, $tester->run(['command' => 'ultra:schema:migrate', '--help' => true]));
+            self::assertSame(1, $tester->run(['command' => 'ultra:schema:status']));
+            self::assertStringContainsString('Configure ultra.schema.connection', $tester->getDisplay());
+            self::assertStringContainsString('database_connection', $tester->getDisplay());
             $arguments = [
                 'command' => 'ultra:schema:generate',
                 'name' => 'rename-items',

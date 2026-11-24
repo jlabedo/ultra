@@ -5,8 +5,11 @@ declare(strict_types=1);
 namespace Ultra\SymfonyBundle;
 
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
+use Symfony\Component\DependencyInjection\Argument\ServiceLocatorArgument;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
+use Symfony\Component\DependencyInjection\ContainerInterface;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\Filesystem\Path;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 use Ultra\Container\ContainerExtension;
@@ -14,6 +17,7 @@ use Ultra\Coordination_Postgres\PostgresCoordinationSchema;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\MessageHandling_PostgresQueue\PostgresAsyncQueueSchema;
 use Ultra\Projection_Postgres\PostgresProjectionImplementation;
+use Ultra\Schema\Migration\RunMigrationCommand;
 use Ultra\SymfonyBundle\Coordination\PostgresCoordinationConfiguration;
 use Ultra\SymfonyBundle\EventStore\PostgresEventStoreConfiguration;
 use Ultra\SymfonyBundle\MessageHandling\PostgresAsyncQueueConfiguration;
@@ -39,15 +43,10 @@ final class UltraBundle extends AbstractBundle
 
     public function configure(DefinitionConfigurator $definition): void
     {
-        $definition
-            ->rootNode()
-            ->children()
-            ->arrayNode('schema')
-            ->addDefaultsIfNotSet()
-            ->children()
-            ->scalarNode('migrations_directory')
-            ->defaultValue('migrations/schema')
-            ->cannotBeEmpty();
+        $schema = $definition->rootNode()->children()->arrayNode('schema')->addDefaultsIfNotSet()->children();
+        $schema->scalarNode('migrations_directory')->defaultValue('migrations/schema')->cannotBeEmpty();
+        $schema->scalarNode('connection')->defaultValue('database_connection')->cannotBeEmpty();
+        $schema->scalarNode('metadata_table')->defaultValue('public.ultra_schema_migrations')->cannotBeEmpty();
 
         if (class_exists(PostgresEventStoreHStore::class)) {
             PostgresEventStoreConfiguration::configure($definition);
@@ -77,6 +76,13 @@ final class UltraBundle extends AbstractBundle
         }
 
         $configurator->parameters()->set('ultra.schema.migrations_directory', $directory);
+        if (class_exists(RunMigrationCommand::class)) {
+            $this->registerMigrationCommands(
+                $container,
+                $schema['connection'] ?? null,
+                $schema['metadata_table'] ?? null,
+            );
+        }
 
         $eventStore = $config['event_store'] ?? null;
         $postgres = is_array($eventStore) ? $eventStore['postgres'] ?? null : null;
@@ -100,6 +106,23 @@ final class UltraBundle extends AbstractBundle
         $postgres = is_array($coordination) ? $coordination['postgres'] ?? null : null;
         if (is_array($postgres)) {
             PostgresCoordinationConfiguration::load($postgres, $container);
+        }
+    }
+
+    private function registerMigrationCommands(ContainerBuilder $container, mixed $connection, mixed $table): void
+    {
+        if (!is_string($connection) || !is_string($table)) {
+            throw new \InvalidArgumentException('The schema connection and metadata table must be strings.');
+        }
+
+        $connections = new ServiceLocatorArgument([
+            $connection => new Reference($connection, ContainerInterface::IGNORE_ON_INVALID_REFERENCE),
+        ]);
+        foreach (RunMigrationCommand::DESCRIPTIONS as $command => $_) {
+            $container
+                ->register($command, RunMigrationCommand::class)
+                ->setArguments([$command, $connections, $connection, '%ultra.schema.migrations_directory%', $table])
+                ->addTag('console.command', ['command' => $command]);
         }
     }
 

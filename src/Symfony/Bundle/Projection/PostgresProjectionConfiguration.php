@@ -27,7 +27,7 @@ final class PostgresProjectionConfiguration
             ->children()
             ->arrayNode('postgres')
             ->children();
-        $postgres->scalarNode('connection')->isRequired()->cannotBeEmpty();
+        $postgres->scalarNode('connection')->defaultValue('database_connection')->cannotBeEmpty();
         $postgres->scalarNode('table_prefix')->defaultValue(PostgresProjectionImplementation::DEFAULT_TABLE_PREFIX);
     }
 

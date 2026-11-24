@@ -65,7 +65,7 @@ final class MigrationInspectionTest extends TestCase
         static::assertSame(
             [
                 $raw . ';',
-                'COMMENT ON INDEX "gin_idx" IS \'managed by: ultra\';',
+                'COMMENT ON INDEX "gin_idx" IS \'managed-by:ultra\';',
             ],
             $sql,
         );

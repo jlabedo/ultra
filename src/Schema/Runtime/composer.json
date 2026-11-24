@@ -14,6 +14,7 @@
         "symfony/console": "7.4.*|8.*"
     },
     "suggest": {
+        "doctrine/dbal": "Required to execute PostgreSQL migrations through UltraBundle.",
         "symfony/dependency-injection": "Required to discover schema fragments during Symfony compilation.",
         "ultra/container": "Required to register SchemaExtension."
     },

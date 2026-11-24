@@ -2,7 +2,5 @@ ultra:
     event_store:
         postgres:
             variant: query-streams
-            connection: doctrine.dbal.default_connection
     projection:
-        postgres:
-            connection: doctrine.dbal.default_connection
+        postgres: {}

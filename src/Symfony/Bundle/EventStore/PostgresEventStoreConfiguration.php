@@ -44,7 +44,7 @@ final class PostgresEventStoreConfiguration
             ->arrayNode('postgres')
             ->children();
         $postgres->enumNode('variant')->values(array_keys(self::VARIANTS))->isRequired();
-        $postgres->scalarNode('connection')->isRequired()->cannotBeEmpty();
+        $postgres->scalarNode('connection')->defaultValue('database_connection')->cannotBeEmpty();
         $postgres->scalarNode('table_prefix')->defaultValue(PostgresEventStoreSchema::DEFAULT_TABLE_PREFIX);
         $postgres->scalarNode('lock_strategy')->defaultValue('shared-exclusive')->cannotBeEmpty();
     }
