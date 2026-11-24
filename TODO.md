@@ -10,6 +10,3 @@
   livraison asynchrone.
   Étudier séparément les nouvelles livraisons de messages : backoff, plafond
   de tentatives et renouvellement des leases pendant les traitements longs.
-
-- [ ] Générer le DDL d'IAM depuis Schema, notamment le `CHECK` de table sur le
-  périmètre des attributions. Préserver la réinstallation sur une base déjà peuplée.

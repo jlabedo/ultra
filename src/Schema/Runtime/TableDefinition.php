@@ -19,6 +19,7 @@ final readonly class TableDefinition
      * @param list<IndexDefinition> $indexes
      * @param list<string> $primaryKey Column IDs in key order.
      * @param array<string, ForeignKeyDefinition> $foreignKeys By constraint name.
+     * @param array<string, string> $checks SQL expressions by constraint name.
      */
     public function __construct(
         public string $id,
@@ -28,6 +29,7 @@ final readonly class TableDefinition
         ?bool $hasExplicitName = null,
         public array $primaryKey = [],
         public array $foreignKeys = [],
+        public array $checks = [],
     ) {
         $this->name = $name ?? $this->id;
         $this->hasExplicitName = $hasExplicitName ?? null !== $name;
@@ -99,6 +101,15 @@ final readonly class TableDefinition
             ) {
                 throw new \InvalidArgumentException(sprintf(
                     'Foreign key "%s" of table "%s" needs a name and declared local columns.',
+                    $name,
+                    $this->id,
+                ));
+            }
+        }
+        foreach ($this->checks as $name => $expression) {
+            if ('' === trim($name) || '' === trim($expression) || isset($this->foreignKeys[$name])) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Check constraint "%s" of table "%s" needs a distinct name and an expression.',
                     $name,
                     $this->id,
                 ));

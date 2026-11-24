@@ -55,6 +55,15 @@ final class SchemaReconciler
                     $currentTable->name,
                 ));
             }
+            if (
+                count($currentTable->checks) !== count($targetTable->checks)
+                || [] !== array_diff_assoc($currentTable->checks, $targetTable->checks)
+            ) {
+                throw new \LogicException(sprintf(
+                    'Cannot reconcile changed check constraints for table "%s".',
+                    $currentTable->name,
+                ));
+            }
 
             $resolvedTableName = $currentTable->name;
 

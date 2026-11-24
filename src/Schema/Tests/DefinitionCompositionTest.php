@@ -181,4 +181,14 @@ final class DefinitionCompositionTest extends TestCase
         $this->expectExceptionMessage('Column "value" must define a type.');
         new ColumnDefinition('value');
     }
+
+    public function test_fragments_cannot_replace_a_named_check_with_a_different_expression(): void
+    {
+        $left = new SchemaDefinition([new TableDefinition('limits', checks: ['valid' => 'value > 0'])]);
+        $right = new SchemaDefinition([new TableDefinition('limits', checks: ['valid' => 'value >= 0'])]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Conflicting check "valid" for table "limits".');
+        SchemaDefinition::merge($left, $right);
+    }
 }

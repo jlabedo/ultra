@@ -175,10 +175,9 @@ des mutations préparées. [Contrat des query guards](../../docs/stored-state/qu
 Le provisionnement crée le tenant et écrit son audit dans le même flush. La clé
 étrangère de l’audit vers le tenant est vérifiée au commit.
 
-Le DDL reste écrit à la main dans `Infrastructure/schema.sql`. Il manque un lien
-StateStore → Schema pour dériver tables, identifiants et collections, puis
-déclarer les contraintes et index métier. Cette amélioration est consignée dans
-[la TODO](../../TODO.md).
+Le [schéma IAM](src/Infrastructure/Rows/IamSchema.php) fournit les définitions
+MappedTable et le DDL PostgreSQL, y compris les contraintes d’attribution et l’index
+partiel des appartenances actives.
 
 La suppression explicite de StateStore figure déjà dans la TODO. Elle serait
 utile pour une purge de données, mais ne bloque pas les révocations métier de
@@ -198,11 +197,12 @@ ULTRA_TEST_POSTGRES_DSN='pgsql://ultra:ultra@127.0.0.1:55432/ultra_test' \
   bin/phpunit -c examples/iam/phpunit.xml.dist
 ```
 
-La démonstration installe les tables si elles sont absentes, crée un tenant neuf
-et conserve ses données. Elle affiche `ALLOW` pour l'édition via un groupe,
-`DENY` pour une autre ressource et pour l'administration, puis `DENY` après
-révocation. Elle n'expose pas de serveur HTTP ni de mécanisme d'authentification.
-Le SQL fourni installe un schéma neuf ; il ne constitue pas un moteur de migration.
+Au premier lancement, la démonstration installe les tables IAM dans le schéma
+courant. Les lancements suivants réutilisent cette installation. Chaque lancement
+crée un tenant neuf et conserve les données existantes. La démonstration affiche
+`ALLOW` pour l'édition via un groupe, `DENY` pour une autre ressource et pour
+l'administration, puis `DENY` après révocation. Elle n'expose pas de serveur HTTP
+ni de mécanisme d'authentification.
 
 L'exemple peut aussi être installé indépendamment avec `composer install` puis
 `ULTRA_TEST_POSTGRES_DSN=... composer test` depuis `examples/iam`. Depuis la racine,

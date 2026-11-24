@@ -91,4 +91,14 @@ final class SchemaComparisonTest extends TestCase
         $this->expectExceptionMessage('Cannot reconcile a changed primary key for table "workshops".');
         new SchemaReconciler()->reconcile($current, $target);
     }
+
+    public function test_changing_a_table_check_is_rejected_before_generating_sql(): void
+    {
+        $current = new SchemaDefinition([new TableDefinition('limits', checks: ['valid' => 'value > 0'])]);
+        $target = new SchemaDefinition([new TableDefinition('limits', checks: ['valid' => 'value >= 0'])]);
+
+        $this->expectException(\LogicException::class);
+        $this->expectExceptionMessage('Cannot reconcile changed check constraints for table "limits".');
+        new SchemaReconciler()->reconcile($current, $target);
+    }
 }

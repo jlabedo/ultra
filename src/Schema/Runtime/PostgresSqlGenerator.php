@@ -124,6 +124,9 @@ final class PostgresSqlGenerator
             $names = array_map(static fn(string $id): string => $columns[$id]->name, $table->primaryKey);
             $columnDefinitions[] = sprintf('PRIMARY KEY (%s)', $this->quoteIdentifiers($names));
         }
+        foreach ($table->checks as $name => $expression) {
+            $columnDefinitions[] = sprintf('CONSTRAINT %s CHECK (%s)', $this->quoteIdentifier($name), $expression);
+        }
 
         $sql = [
             sprintf(

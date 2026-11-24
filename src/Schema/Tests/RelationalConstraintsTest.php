@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Schema\Tests;
 
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\Attributes\CoversNamespace;
@@ -20,6 +21,33 @@ use Ultra\Schema\Tests\Support\MigrationTestCase;
 #[CoversNamespace('Ultra\Schema')]
 final class RelationalConstraintsTest extends MigrationTestCase
 {
+    public function test_named_table_checks_from_fragments_enforce_rules_across_columns(): void
+    {
+        $schema = SchemaDefinition::merge(
+            new SchemaDefinition([new TableDefinition('limits', columns: [
+                new ColumnDefinition('lower_bound', type: ColumnType::Int32),
+                new ColumnDefinition('upper_bound', type: ColumnType::Int32),
+            ])]),
+            new SchemaDefinition([new TableDefinition('limits', checks: [
+                'ordered"bounds' => 'lower_bound <= upper_bound',
+            ])]),
+        );
+        $this->execute(new SchemaReconciler()->reconcile(new SchemaDefinition([]), $schema));
+        self::assertSame('ordered"bounds', $this->connection->fetchOne(<<<'SQL'
+            SELECT conname FROM pg_constraint WHERE conrelid = 'limits'::regclass AND contype = 'c'
+            SQL));
+        $this->connection->insert('limits', ['lower_bound' => 1, 'upper_bound' => 2]);
+        try {
+            $this->connection->transactional(static fn($db) => $db->insert('limits', [
+                'lower_bound' => 3,
+                'upper_bound' => 2,
+            ]));
+            self::fail('PostgreSQL must reject the unordered bounds.');
+        } catch (DriverException $exception) {
+            self::assertSame('23514', $exception->getSQLState());
+        }
+    }
+
     public function test_changing_foreign_key_timing_updates_when_postgres_checks_the_reference(): void
     {
         $parent = new TableDefinition(

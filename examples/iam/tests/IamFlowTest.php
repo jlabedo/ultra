@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace IamExample\Tests;
 
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\TransactionIsolationLevel;
 use IamExample\AccessDenied;
 use IamExample\Domain\BindingId;
@@ -12,6 +13,7 @@ use IamExample\Domain\LocalId;
 use IamExample\Domain\MembershipId;
 use IamExample\Domain\Permission;
 use IamExample\Domain\Scope;
+use IamExample\Infrastructure\Rows\IamSchema;
 use IamExample\Infrastructure\Runtime;
 use IamExample\Infrastructure\Schema;
 use IamExample\State\BindingState;
@@ -74,6 +76,79 @@ final class IamFlowTest extends TestCase
                 $connection->executeStatement('DROP SCHEMA IF EXISTS ' . $this->schema . ' CASCADE');
             });
         }
+    }
+
+    public function test_installed_schema_enforces_checks_and_preserves_foreign_key_timing_and_partial_index(): void
+    {
+        self::assertSame(8, (int) $this->connection->fetchOne(<<<'SQL'
+            SELECT count(*) FROM pg_constraint WHERE connamespace = current_schema()::regnamespace AND contype = 'p'
+            SQL));
+        self::assertSame(
+            [
+                ['iam_audit_tenant_id_fkey',                    true,  true],
+                ['iam_bindings_tenant_id_role_id_fkey',         true,  true],
+                ['iam_groups_tenant_id_fkey',                   false, false],
+                ['iam_memberships_tenant_id_group_id_fkey',     true,  true],
+                ['iam_memberships_tenant_id_subject_id_fkey',   true,  true],
+                ['iam_role_permissions_tenant_id_role_id_fkey', true,  true],
+                ['iam_roles_tenant_id_fkey',                    false, false],
+                ['iam_subjects_tenant_id_fkey',                 false, false],
+            ],
+            $this->connection->fetchAllNumeric(<<<'SQL'
+                SELECT conname, condeferrable, condeferred FROM pg_constraint
+                WHERE connamespace = current_schema()::regnamespace AND contype = 'f' ORDER BY conname
+                SQL),
+        );
+        self::assertSame(['tenant_id', 'subject_id', 'group_id', 'active'], $this->connection->fetchNumeric(<<<'SQL'
+            SELECT pg_get_indexdef(indexrelid, 1, true), pg_get_indexdef(indexrelid, 2, true),
+                   pg_get_indexdef(indexrelid, 3, true), pg_get_expr(indpred, indrelid)
+            FROM pg_index WHERE indexrelid = 'iam_memberships_subject'::regclass AND indnkeyatts = 3
+            SQL));
+
+        $binding = $this->connection->fetchAssociative("SELECT * FROM iam_bindings WHERE tenant_id = 'acme'");
+        self::assertIsArray($binding);
+        foreach ([
+            ['principal_type' => 'invalid'],
+            ['scope_type' => 'tenant', 'scope_id' => 'doc-1'],
+            ['scope_type' => 'document', 'scope_id' => '*'],
+        ] as $invalidFields) {
+            try {
+                $this->connection->insert('iam_bindings', [...$binding, ...$invalidFields]);
+                self::fail('PostgreSQL must reject an invalid IAM binding.');
+            } catch (DriverException $exception) {
+                self::assertSame('23514', $exception->getSQLState());
+            }
+        }
+    }
+
+    public function test_installing_again_preserves_iam_rows(): void
+    {
+        $administration = $this->runtime->administration;
+        $administration->setGroup($this->admin, 'reviewers');
+        $administration->setMembership($this->admin, new MembershipId('acme', 'reviewers', 'ada'), true);
+        $administration->grant($this->admin, $this->readerBinding());
+
+        $before = $this->tableRows();
+        foreach ($before as $table => $rows) {
+            self::assertNotEmpty($rows, sprintf('Expected IAM data in %s before reinstalling.', $table));
+        }
+        Schema::install($this->connection);
+        self::assertSame($before, $this->tableRows());
+        self::assertTrue($this->allows($this->ada));
+    }
+
+    /** @return array<string, list<string>> */
+    private function tableRows(): array
+    {
+        $result = [];
+        foreach (IamSchema::definition()->tables as $table) {
+            $result[$table->name] = $this->connection->fetchFirstColumn(sprintf(
+                'SELECT to_jsonb(row)::text FROM %s AS row ORDER BY 1',
+                $this->connection->quoteSingleIdentifier($table->name),
+            ));
+        }
+
+        return $result;
     }
 
     public function test_unknown_subjects_and_unassigned_permissions_are_denied(): void

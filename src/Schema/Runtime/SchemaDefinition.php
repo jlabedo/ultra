@@ -112,6 +112,13 @@ final readonly class SchemaDefinition
             }
             $foreignKeys[$key] = $foreignKey;
         }
+        $checks = $left->checks;
+        foreach ($right->checks as $key => $expression) {
+            if (isset($checks[$key]) && $checks[$key] !== $expression) {
+                throw new \InvalidArgumentException(sprintf('Conflicting check "%s" for table "%s".', $key, $left->id));
+            }
+            $checks[$key] = $expression;
+        }
 
         return new TableDefinition(
             id: $left->id,
@@ -121,6 +128,7 @@ final readonly class SchemaDefinition
             hasExplicitName: $left->hasExplicitName || $right->hasExplicitName,
             primaryKey: [] === $left->primaryKey ? $right->primaryKey : $left->primaryKey,
             foreignKeys: $foreignKeys,
+            checks: $checks,
         );
     }
 
