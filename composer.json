@@ -16,7 +16,7 @@
         "psr/clock": "^1.0",
         "psr/container": "^2.0",
         "symfony/config": "7.*|8.*",
-        "symfony/console": "7.*|8.*",
+        "symfony/console": "7.4.*|8.*",
         "symfony/dependency-injection": "7.*|8.*",
         "symfony/http-kernel": "7.*|8.*",
         "symfony/type-info": "7.*|8.*"
@@ -57,6 +57,7 @@
     },
     "minimum-stability": "dev",
     "prefer-stable": true,
+    "bin": ["src/Schema/Runtime/bin/ultra-schema"],
     "autoload": {
         "psr-4": {
             "Ultra\\CodeGeneration\\": "src/CodeGeneration/Runtime/",

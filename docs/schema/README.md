@@ -1,10 +1,51 @@
 # Schema
 
-Schema is an incomplete building block for schema definition and reconciliation. Its intended direction includes automating schema creation in a role comparable to Doctrine's schema tooling. How far Ultra should infer schema from other building blocks remains open. Application developers must retain the choice to define their own tables and constraints.
+Schema defines relational tables and generates reviewable PostgreSQL migrations. Applications supply their
+own definitions and can compose them from fragments.
 
-This intention does not imply that automatic schema derivation is currently complete.
+## Generate a migration
 
-Schema currently separates reconciliation operations from Postgres SQL generation. Future automation should preserve inspection before execution, including for destructive operations. Exporting generated SQL to a script file, similar to Doctrine workflows, is a likely extension rather than a promised current command.
+Create a PHP file that returns the target `SchemaDefinition`. It can call the same fragment methods that
+[Symfony discovery](#symfony-discovery) uses. Run the Composer binary from the application:
+
+```bash
+vendor/bin/ultra-schema generate config/schema.php migrations/schema create-tables
+```
+
+The command uses Symfony Console 7.4 or 8.x. Run `vendor/bin/ultra-schema generate --help` to see the
+arguments and options. The command starts from an empty schema when the history is empty. For an existing database, first use
+a definition that describes its current Ultra-managed tables:
+
+```bash
+vendor/bin/ultra-schema init config/schema.php migrations/schema
+```
+
+`init` records `000000-baseline/snapshot.json` in an empty history. Verify the baseline against the database
+before generating further changes. Both commands run offline.
+
+Each generation compares the target with the latest versioned snapshot, including when the corresponding
+SQL is still pending deployment. It writes `migration.sql` and a versioned JSON `snapshot.json` together in a
+numbered subdirectory such as `000001-create-tables`. Use lowercase letters and digits separated by hyphens
+for the migration name. The snapshot records the predecessor and retains the table, column and index identities
+used to recognize renames. A diff with no operations creates no entry.
+
+For table or column drops, the command lists the affected objects and exits before writing an entry.
+Review the target definition and rerun with `--allow-destructive` to generate the SQL if the drops are intended.
+
+Review and commit both files together. If review changes the resulting structure of a declared table,
+keep the snapshot and target definition aligned with the revised SQL. Apply the forward SQL in numbered
+order through the deployment tooling, which also tracks applied migrations and handles any rollback.
+An incomplete entry or divergent history stops generation. If branches generated migrations from the
+same predecessor, choose an order and regenerate the later migration from the new history, carrying
+over any reviewed SQL edits.
+
+### Coexist with Doctrine
+
+Schema compares only the tables in its snapshots and supplied definition. An application can keep
+separate Schema and Doctrine histories on the same PostgreSQL database. Assign each table to one
+generator and configure Doctrine's schema introspection to exclude tables outside its scope. An
+application can use its own naming or ownership convention. Add foreign keys across the two scopes
+in a hand-written migration and account for their dependencies when ordering deployment.
 
 ## Current reconciliation contract
 
@@ -61,6 +102,7 @@ The tests live together under [src/Schema/Tests](../../src/Schema/Tests), organi
 | Composite keys resolve column IDs to physical names, foreign keys enforce references with the declared timing and named table checks enforce rules across columns | [RelationalConstraintsTest](../../src/Schema/Tests/RelationalConstraintsTest.php) |
 | Autoconfigured fragments compose at compilation, including cross-fragment references | [SymfonySchemaDiscoveryTest](../../src/Schema/Tests/SymfonySchemaDiscoveryTest.php) |
 | Invalid operations fail before a script is returned; caller-provided index SQL retains its clauses and is terminated | [MigrationInspectionTest](../../src/Schema/Tests/MigrationInspectionTest.php) |
+| CLI generation uses the versioned history, requires approval for table and column drops, and rejects incomplete or divergent histories | [MigrationCommandTest](../../src/Schema/Tests/MigrationCommandTest.php) |
 
 Operation payloads are inspectable before execution. SQL cases execute the generated statements against PostgreSQL and inspect data and catalog metadata. Whitespace and the layout of generated SQL are not frozen. The raw-index inspection case checks the supplied statement after surrounding whitespace and statement termination are normalized.
 

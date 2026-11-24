@@ -1,0 +1,11 @@
+#!/usr/bin/env php
+<?php
+
+declare(strict_types=1);
+
+use Ultra\Schema\Migration\MigrationConsole;
+
+$autoload = $_composer_autoload_path ?? null;
+require is_string($autoload) ? $autoload : dirname(__DIR__, 4) . '/vendor/autoload.php';
+
+MigrationConsole::create()->run();

@@ -19,7 +19,7 @@ Source code and documentation follow functional contexts. Use the task table to 
 | Manual SQL expectations or explicit guards | [Manual queries](stored-state/manual-queries.md) | [StoredState](../src/StoredState) | StateStore |
 | Projection ordering, claims, checkpoints or scaling | [Projections](projections/README.md) | [Projection](../src/Projection) | Projection, Projection_Postgres |
 | Normalization, custom types or generated normalizers | [Mapping](mapping/README.md) | [Mapper](../src/Mapper) | Mapper, Mapper_Compiler, Mapper_Bundle |
-| Schema comparison, renames or SQL generation | [Schema](schema/README.md) | [Schema](../src/Schema) | Schema |
+| Schema comparison, renames or migration generation | [Schema](schema/README.md) | [Schema](../src/Schema) | Schema |
 | Materialized query refresh, scoped invalidation or publication conflicts | [Materialized queries](coordination/refresh.md) | [Coordination](../src/Coordination) | Coordination, Coordination_Postgres |
 | Dirty-key tracking, coordinator leases or wake signals | [Coordination](coordination/README.md) | [Coordination](../src/Coordination) | Coordination, Coordination_Postgres |
 | Flush ordering, transaction boundaries or nested work | [Transactions](transactions/README.md) | [UnitOfWork](../src/UnitOfWork) | UnitOfWork |
