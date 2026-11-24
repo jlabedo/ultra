@@ -12,11 +12,9 @@ use Symfony\Component\Console\Application;
 use Symfony\Component\Console\CommandLoader\CommandLoaderInterface;
 use Symfony\Component\Console\DependencyInjection\AddConsoleCommandPass;
 use Symfony\Component\Console\Tester\ApplicationTester;
-use Symfony\Component\DependencyInjection\Argument\BoundArgument;
 use Symfony\Component\DependencyInjection\Container;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
-use Symfony\Component\DependencyInjection\Reference;
 use Symfony\Component\Filesystem\Filesystem;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
@@ -26,6 +24,7 @@ use Ultra\Projection\ProjectionPhase;
 use Ultra\Projection\ProjectionState;
 use Ultra\Projection_Postgres\PostgresProjectionImplementation;
 use Ultra\Schema\Symfony\SchemaExtension;
+use Ultra\SymfonyBundle\UltraBundle;
 
 final class PostgresProjectionSchemaTest extends TestCase
 {
@@ -44,8 +43,8 @@ final class PostgresProjectionSchemaTest extends TestCase
         $connection = DriverManager::getConnection($parameters);
 
         try {
-            $first = $this->generate($directory, 'Reporting_', 'create-storage');
-            $second = $this->generate($directory, 'legacy_', 'rename-storage', sharedPrefix: 'analytics_');
+            $first = $this->generate($directory, 'create-storage');
+            $second = $this->generate($directory, 'rename-storage', tablePrefix: 'Analytics_');
 
             $connection->beginTransaction();
             $connection->executeStatement('CREATE SCHEMA projection_schema_' . $suffix);
@@ -55,7 +54,7 @@ final class PostgresProjectionSchemaTest extends TestCase
             $connection->executeStatement($creation);
 
             $first->set('test.connection', $connection);
-            $before = $first->get(ProjectionImplementationInterface::class);
+            $before = $first->get('test.projection_implementation');
             self::assertInstanceOf(PostgresProjectionImplementation::class, $before);
             $state = new ProjectionState('report', 1, ProjectionPhase::Building, 'fingerprint');
             $before->createStateRepository()->save($state);
@@ -68,14 +67,14 @@ final class PostgresProjectionSchemaTest extends TestCase
             self::assertStringNotContainsString('DROP TABLE', $renameSql);
             foreach (['states', 'segments', 'dirty_keys', 'coordinator_lease'] as $table) {
                 self::assertStringContainsString(
-                    sprintf('ALTER TABLE "reporting_%s" RENAME TO "analytics_%s"', $table, $table),
+                    sprintf('ALTER TABLE "projection_%s" RENAME TO "analytics_%s"', $table, $table),
                     $renameSql,
                 );
             }
             $connection->executeStatement($renameSql);
 
             $second->set('test.connection', $connection);
-            $after = $second->get(ProjectionImplementationInterface::class);
+            $after = $second->get('test.projection_implementation');
             self::assertInstanceOf(PostgresProjectionImplementation::class, $after);
             self::assertEquals($state, $after->createStateRepository()->find('report'));
             self::assertFalse($after->createSegmentRepository()->ensureInitialized('report'));
@@ -90,28 +89,26 @@ final class PostgresProjectionSchemaTest extends TestCase
         }
     }
 
-    private function generate(
-        string $directory,
-        string $servicePrefix,
-        string $name,
-        ?string $sharedPrefix = null,
-    ): Container {
+    private function generate(string $directory, string $name, ?string $tablePrefix = null): Container
+    {
         $builder = new ContainerBuilder();
-        new SchemaExtension()->build($builder);
-        new ProjectionExtension()->build($builder);
+        $bundle = new UltraBundle([new SchemaExtension(), new ProjectionExtension()]);
+        $bundle->build($builder);
+        $builder->registerExtension($bundle->getContainerExtension());
         $builder->addCompilerPass(new AddConsoleCommandPass());
-        $builder->setParameter('ultra.schema.migrations_directory', $directory . '/migrations');
-        if (null !== $sharedPrefix) {
-            $builder->setParameter('ultra.projection.postgres.table_prefix', $sharedPrefix);
-        }
+        $builder->setParameter('kernel.project_dir', $directory);
         $builder->register(EventStore::class, InMemoryEventStore::class);
         $builder->register('test.connection', Connection::class)->setSynthetic(true)->setPublic(true);
-        $builder
-            ->register('test.projection_implementation', PostgresProjectionImplementation::class)
-            ->setAutowired(true)
-            ->setArguments(['$connection' => new Reference('test.connection')])
-            ->setBindings(['$tablePrefix' => new BoundArgument($servicePrefix)]);
-        $builder->setAlias(ProjectionImplementationInterface::class, 'test.projection_implementation')->setPublic(true);
+        $builder->setAlias('test.projection_implementation', ProjectionImplementationInterface::class)->setPublic(true);
+
+        $postgres = ['connection' => 'test.connection'];
+        if (null !== $tablePrefix) {
+            $postgres['table_prefix'] = $tablePrefix;
+        }
+        $builder->loadFromExtension('ultra', [
+            'schema' => ['migrations_directory' => 'migrations'],
+            'projection' => ['postgres' => $postgres],
+        ]);
         $builder->compile();
 
         $class = 'ProjectionSchemaContainer' . bin2hex(random_bytes(8));
@@ -119,10 +116,6 @@ final class PostgresProjectionSchemaTest extends TestCase
         file_put_contents($file, new PhpDumper($builder)->dump(['class' => $class]));
         require $file;
         $container = new $class();
-        self::assertSame(
-            $sharedPrefix ?? $servicePrefix,
-            $container->getParameter('ultra.projection.postgres.table_prefix'),
-        );
         $loader = $container->get('console.command_loader');
         self::assertInstanceOf(CommandLoaderInterface::class, $loader);
 

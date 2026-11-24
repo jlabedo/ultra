@@ -183,23 +183,26 @@ and the `states` table, included in `PostgresProjectionSegmentSchema::createStat
 Apply the schema update before using the new append integration, even in an app containing
 only asynchronous projections.
 
-When Symfony constructs `PostgresProjectionImplementation` as the projection implementation, the
-[Schema migration command](../schema/README.md#from-symfony) includes the `states`, `segments`,
-`dirty_keys` and `coordinator_lease` tables. Storage and migration generation both use the Symfony
-parameter `ultra.projection.postgres.table_prefix`. Set it in `config/services.yaml` to choose a prefix:
+Declare PostgreSQL projection storage in `config/packages/ultra.yaml`:
 
 ```yaml
-parameters:
-    ultra.projection.postgres.table_prefix: reporting_
+ultra:
+    projection:
+        postgres:
+            connection: doctrine.dbal.default_connection
+            table_prefix: reporting_
 ```
 
-An explicit parameter takes precedence over the implementation's constructor argument. When omitted,
-Ultra initializes the parameter from that argument, whose default is `projection_`. Generation works offline, and table identities stay stable when the prefix
-changes. Use an unqualified prefix and select the target PostgreSQL schema through `search_path` when
-applying the migration.
+Set `connection` to the Symfony service ID of the DBAL connection. The storage implementation and the
+[Schema migration command](../schema/README.md#from-symfony) both use `table_prefix`, which defaults to
+`projection_`. The command generates migrations for the `states`, `segments`, `dirty_keys` and
+`coordinator_lease` tables offline. Table identities stay stable when the prefix changes. Use an
+unqualified prefix and select the target PostgreSQL schema through `search_path` when applying the migration.
 
-`PostgresProjectionSchema::definition()` can also supply the four tables to a manually composed
-schema. Its table definitions are shared with the PostgreSQL creation helpers.
+When wiring storage by hand in Symfony, register `PostgresProjectionSchema::definition()` as a
+[schema fragment](../schema/README.md#symfony-discovery) with the same prefix. The method can also supply
+the four tables to a manually composed schema. Its table definitions are shared with the PostgreSQL
+creation helpers.
 
 Appends and worker application transactions take a shared registration barrier and checks the managed registry.
 First registration takes its exclusive counterpart so older appends finish before

@@ -12,8 +12,6 @@
     "require": {
         "php": ">=8.5",
         "doctrine/dbal": "^4.0",
-        "symfony/config": "7.4.*|8.*",
-        "symfony/dependency-injection": "7.4.*|8.*",
         "ultra/event-store": "self.version",
         "ultra/schema": "self.version"
     },

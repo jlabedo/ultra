@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\EventStore_Postgres\Symfony;
+namespace Ultra\SymfonyBundle\EventStore;
 
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;

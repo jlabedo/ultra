@@ -6,14 +6,12 @@ namespace Ultra\Projection\Bundle\DependencyInjection\Compiler;
 
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Parameter;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
-use Ultra\Projection\Bundle\ProjectionExtension;
 use Ultra\Projection\Bundle\ProjectionImplementationInterface;
 use Ultra\Projection\ProjectingEventStore;
 use Ultra\Projection_Postgres\PostgresProjectionImplementation;
@@ -32,7 +30,6 @@ final class ProjectionPersistenceCompilerPass implements CompilerPassInterface
         if (class_exists(MappedTableExtension::class)) {
             $this->validateRowSetInjections($container, $projectionRowSets);
         }
-        $this->configurePostgresTablePrefix($container);
         $this->validatePostgresConnections($container, array_any(
             $projectionRowSets,
             static fn(array $rowSets): bool => [] !== $rowSets,
@@ -62,40 +59,6 @@ final class ProjectionPersistenceCompilerPass implements CompilerPassInterface
                 }
             }
         }
-    }
-
-    private function configurePostgresTablePrefix(ContainerBuilder $container): void
-    {
-        if (!$container->hasDefinition(ProjectionSchemaCompilerPass::PROVIDER)) {
-            return;
-        }
-
-        $implementation = $container->findDefinition(ProjectionImplementationInterface::class);
-        while (
-            PostgresProjectionImplementation::class !== $implementation->getClass()
-            && null !== $implementation->innerServiceId
-        ) {
-            $implementation = $container->findDefinition($implementation->innerServiceId);
-        }
-        if (PostgresProjectionImplementation::class !== $implementation->getClass()) {
-            throw new \LogicException(
-                'The PostgreSQL projection schema needs the configured PostgreSQL implementation.',
-            );
-        }
-
-        $parameter = ProjectionExtension::POSTGRES_TABLE_PREFIX_PARAMETER;
-        if (!$container->hasParameter($parameter)) {
-            $prefix = $implementation->getArguments()[1] ?? PostgresProjectionImplementation::DEFAULT_TABLE_PREFIX;
-            if ($prefix instanceof Parameter) {
-                $prefix = $container->getParameter((string) $prefix);
-            }
-            assert(is_string($prefix), 'The PostgreSQL projection table prefix is a string.');
-            $container->setParameter($parameter, $prefix);
-        }
-
-        $prefix = new Parameter($parameter);
-        $implementation->setArgument(1, $prefix);
-        $container->getDefinition(ProjectionSchemaCompilerPass::PROVIDER)->setArgument(0, $prefix);
     }
 
     private function validatePostgresConnections(ContainerBuilder $container, bool $withPrivateRowSets): void

@@ -6,11 +6,14 @@ namespace Ultra\SymfonyBundle;
 
 use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
-use Symfony\Component\DependencyInjection\Kernel\AbstractBundle;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\Filesystem\Path;
+use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 use Ultra\Container\ContainerExtension;
-use Ultra\EventStore_Postgres\Symfony\PostgresEventStoreConfiguration;
+use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
+use Ultra\Projection_Postgres\PostgresProjectionImplementation;
+use Ultra\SymfonyBundle\EventStore\PostgresEventStoreConfiguration;
+use Ultra\SymfonyBundle\Projection\PostgresProjectionConfiguration;
 
 final class UltraBundle extends AbstractBundle
 {
@@ -42,8 +45,11 @@ final class UltraBundle extends AbstractBundle
             ->defaultValue('migrations/schema')
             ->cannotBeEmpty();
 
-        if (class_exists(PostgresEventStoreConfiguration::class)) {
+        if (class_exists(PostgresEventStoreHStore::class)) {
             PostgresEventStoreConfiguration::configure($definition);
+        }
+        if (class_exists(PostgresProjectionImplementation::class)) {
+            PostgresProjectionConfiguration::configure($definition);
         }
     }
 
@@ -66,6 +72,12 @@ final class UltraBundle extends AbstractBundle
         $postgres = is_array($eventStore) ? $eventStore['postgres'] ?? null : null;
         if (is_array($postgres)) {
             PostgresEventStoreConfiguration::load($postgres, $container);
+        }
+
+        $projection = $config['projection'] ?? null;
+        $postgres = is_array($projection) ? $projection['postgres'] ?? null : null;
+        if (is_array($postgres)) {
+            PostgresProjectionConfiguration::load($postgres, $container);
         }
     }
 

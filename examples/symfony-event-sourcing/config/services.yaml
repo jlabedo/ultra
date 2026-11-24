@@ -23,9 +23,6 @@ services:
     Ultra\MappedTable\MappedTableAdapter:
         class: Ultra\MappedTable\PostgresMappedTableAdapter
 
-    Ultra\Projection\Bundle\ProjectionImplementationInterface:
-        class: Ultra\Projection_Postgres\PostgresProjectionImplementation
-
     # The worker polls durable activity; command dispatch must not run projections.
     Ultra\Projection\Coordination\ProjectionActivatorInterface:
         class: Ultra\Projection\InMemory\InMemoryProjectionActivator
