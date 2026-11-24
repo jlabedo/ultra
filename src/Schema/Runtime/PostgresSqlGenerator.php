@@ -32,7 +32,7 @@ final class PostgresSqlGenerator
         $sql = [];
 
         foreach ($operations as $operation) {
-            $sql[] = match (true) {
+            $statements = match (true) {
                 $operation instanceof CreateTable => $this->createTable($operation),
                 $operation instanceof DropTable => sprintf(
                     'DROP TABLE %s;',
@@ -52,7 +52,7 @@ final class PostgresSqlGenerator
                     $this->quoteIdentifier($operation->referencedTableName),
                     $this->quoteIdentifiers(array_values($operation->columns)),
                 ),
-                $operation instanceof AddIndex => $this->createIndex($operation),
+                $operation instanceof AddIndex => $this->createIndex($operation->tableName, $operation->index),
                 $operation instanceof DropColumn => sprintf(
                     'ALTER TABLE %s DROP COLUMN %s;',
                     $this->quoteIdentifier($operation->tableName),
@@ -81,39 +81,36 @@ final class PostgresSqlGenerator
                 $operation instanceof AlterColumn => $this->alterColumn($operation),
                 default => throw new \LogicException(sprintf('Unsupported schema operation: %s', $operation::class)),
             };
+
+            if (is_array($statements)) {
+                array_push($sql, ...$statements);
+            } else {
+                $sql[] = $statements;
+            }
         }
 
         return $sql;
     }
 
-    private function createIndex(AddIndex $operation): string
+    /** @return list<string> */
+    private function createIndex(string $tableName, IndexDefinition $index): array
     {
-        if (null !== $operation->index->rawSql) {
-            return sprintf(
-                '%s%s%s',
-                $this->terminateStatement($operation->index->rawSql),
-                $this->lineSeparator(),
-                $this->commentOnIndex($operation->index->name),
-            );
-        }
-
-        $columns = array_map($this->quoteIdentifier(...), $operation->index->columns);
-
-        return sprintf(
-            '%s%s%s',
-            sprintf(
-                'CREATE %sINDEX %s ON %s (%s);',
-                $operation->index->unique ? 'UNIQUE ' : '',
-                $this->quoteIdentifier($operation->index->name),
-                $this->quoteIdentifier($operation->tableName),
-                implode(', ', $columns),
-            ),
-            $this->lineSeparator(),
-            $this->commentOnIndex($operation->index->name),
-        );
+        return [
+            null !== $index->rawSql
+                ? $this->terminateStatement($index->rawSql)
+                : sprintf(
+                    'CREATE %sINDEX %s ON %s (%s);',
+                    $index->unique ? 'UNIQUE ' : '',
+                    $this->quoteIdentifier($index->name),
+                    $this->quoteIdentifier($tableName),
+                    $this->quoteIdentifiers($index->columns),
+                ),
+            $this->commentOnIndex($index->name),
+        ];
     }
 
-    private function createTable(CreateTable $operation): string
+    /** @return list<string> */
+    private function createTable(CreateTable $operation): array
     {
         $table = $operation->table;
         $columnDefinitions = array_map($this->renderColumnDefinition(...), $table->columns);
@@ -123,21 +120,23 @@ final class PostgresSqlGenerator
             $columnDefinitions[] = sprintf('PRIMARY KEY (%s)', $this->quoteIdentifiers($names));
         }
 
-        $sql = sprintf(
-            "CREATE TABLE %s (\n    %s\n);",
-            $this->quoteIdentifier($operation->table->name),
-            implode(",\n    ", $columnDefinitions),
-        );
-
-        $comments = [
-            $this->commentOnTable($operation->table->name),
+        $sql = [
+            sprintf(
+                "CREATE TABLE %s (\n    %s\n);",
+                $this->quoteIdentifier($table->name),
+                implode(",\n    ", $columnDefinitions),
+            ),
+            $this->commentOnTable($table->name),
         ];
 
-        foreach ($operation->table->columns as $column) {
-            $comments[] = $this->commentOnColumn($operation->table->name, $column->name);
+        foreach ($table->columns as $column) {
+            $sql[] = $this->commentOnColumn($table->name, $column->name);
+        }
+        foreach ($table->indexes as $index) {
+            array_push($sql, ...$this->createIndex($table->name, $index));
         }
 
-        return sprintf('%s%s%s', $sql, $this->lineSeparator(), implode($this->lineSeparator(), $comments));
+        return $sql;
     }
 
     private function alterColumn(AlterColumn $operation): string
@@ -226,18 +225,17 @@ final class PostgresSqlGenerator
         return str_ends_with($sql, ';') ? $sql : sprintf('%s;', $sql);
     }
 
-    private function addColumn(AddColumn $operation): string
+    /** @return list<string> */
+    private function addColumn(AddColumn $operation): array
     {
-        return sprintf(
-            '%s%s%s',
+        return [
             sprintf(
                 'ALTER TABLE %s ADD COLUMN %s;',
                 $this->quoteIdentifier($operation->tableName),
                 $this->renderColumnDefinition($operation->column),
             ),
-            $this->lineSeparator(),
             $this->commentOnColumn($operation->tableName, $operation->column->name),
-        );
+        ];
     }
 
     private function commentOnTable(string $tableName): string
@@ -271,10 +269,5 @@ final class PostgresSqlGenerator
     private function quoteLiteral(string $literal): string
     {
         return sprintf('\'%s\'', str_replace('\'', '\'\'', $literal));
-    }
-
-    private function lineSeparator(): string
-    {
-        return "\n";
     }
 }

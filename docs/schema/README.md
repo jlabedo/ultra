@@ -17,6 +17,10 @@ local column IDs to the complete referenced primary key in key order. The reconc
 before removing tables or columns and adds new references once tables and columns are in place. References
 are resolved after composing schema fragments. Changing the primary key of an existing table is unsupported.
 
+A `CreateTable` operation generates the table and its declared indexes. The table is created before its indexes,
+including structured and raw SQL indexes. Later index additions use `AddIndex`.
+The PostgreSQL generator returns an ordered list of individual statements, including management comments.
+
 `ColumnType::Text`, `Int32`, `Int64` and `Boolean` are portable column types with a PostgreSQL translation.
 Column definitions also accept SQL type strings and SQL constraints for dialect-specific declarations.
 [MappedTable](../stored-state/mapped-table.md#compile-row-sets-from-schema) can compile row sets from these
@@ -49,8 +53,11 @@ The tests live together under [src/Schema/Runtime/Tests](../../src/Schema/Tests)
 
 Operation payloads are inspectable before execution. SQL cases execute the generated statements against PostgreSQL and inspect data and catalog metadata. Whitespace and the layout of generated SQL are not frozen. The raw-index inspection case checks the supplied statement after surrounding whitespace and statement termination are normalized.
 
-The [migration fixture](../../src/Schema/Tests/Support/MigrationTestCase.php) uses a unique database schema in a transaction and rolls it back after each case. It uses PDO PostgreSQL to consume operations containing several statements, such as DDL followed by comments. See [development verification](../development.md#refactoring-tests) for the shared audit workflow.
+The [migration fixture](../../src/Schema/Tests/Support/MigrationTestCase.php) uses PDO PostgreSQL and a unique
+database schema in a transaction that it rolls back after each case. See
+[development verification](../development.md#refactoring-tests) for the shared audit workflow.
 
 ## Current limitations
 
-New-table reconciliation currently emits a CreateTable operation whose SQL omits declared indexes; callers must supply AddIndex operations separately. Removing a column and its dependent index currently places the column drop first, after which PostgreSQL has already removed that index and the later index drop fails. These are incomplete reconciliation paths, with follow-up tracked in [TODO](../../TODO.md); the executable guarantee cases do not promise those migrations work.
+Removing a column and its dependent index currently places the column drop first. PostgreSQL has already
+removed the index when the later index drop runs, so that operation fails. See [TODO](../../TODO.md).

@@ -1,9 +1,5 @@
 # TODO
 
-- [ ] Créer les index déclarés lors de la création d'une table dans Schema.
-  `CreateTable` conserve les définitions d'index, mais son SQL les omet ; couvrir
-  l'effet réel sur Postgres, voir [Schema](docs/schema/README.md).
-
 - [ ] Ordonner les suppressions de colonnes et de leurs index dépendants dans
   Schema. Postgres supprime l'index avec la colonne ; le `DropIndex` émis ensuite
   échoue. Couvrir l'exécution complète de cette migration, voir [Schema](docs/schema/README.md).

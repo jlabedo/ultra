@@ -9,6 +9,7 @@ use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
+use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
 
@@ -30,6 +31,13 @@ final class ComplianceSchema
                     new ColumnDefinition('evidence_id', type: ColumnType::Text),
                     new ColumnDefinition('document_type', type: ColumnType::Text),
                 ],
+                indexes: [
+                    new IndexDefinition('compliance_evidence_by_type', columns: [
+                        'account_id',
+                        'subject_id',
+                        'document_type',
+                    ]),
+                ],
                 primaryKey: ['account_id', 'subject_id', 'evidence_id'],
             ),
             new TableDefinition(
@@ -47,6 +55,13 @@ final class ComplianceSchema
                     new ColumnDefinition('account_id', type: ColumnType::Text),
                     new ColumnDefinition('subject_id', type: ColumnType::Text),
                     new ColumnDefinition('qualification_id', type: ColumnType::Text),
+                ],
+                indexes: [
+                    new IndexDefinition('compliance_eligibility_by_qualification', columns: [
+                        'account_id',
+                        'qualification_id',
+                        'subject_id',
+                    ]),
                 ],
                 primaryKey: ['account_id', 'subject_id', 'qualification_id'],
             ),

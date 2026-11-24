@@ -28,6 +28,10 @@ Le [kernel Symfony](src/Kernel.php) compile le conteneur avec `UltraBundle`. Le
 d’écriture, de projection et de rafraîchissement. La démo et les tests démarrent
 ce même kernel sur leur connexion de test.
 
+Le [schéma Compliance](src/ComplianceSchema.php) déclare les clés et les index des tables
+de justificatifs, d’exigences et d’habilitations. Cette même définition fournit le DDL
+PostgreSQL à [l’installation](src/Schema.php) et les métadonnées à MappedTable.
+
 ## Parcours
 
 1. `define`, `provide` et `withdraw` envoient des commandes typées au médiateur. Les

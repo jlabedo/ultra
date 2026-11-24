@@ -45,6 +45,32 @@ final class ComplianceFlowTest extends TestCase
         }
     }
 
+    public function test_install_creates_the_mapped_table_keys_and_indexes_in_column_order(): void
+    {
+        self::assertSame(
+            [
+                ['compliance_eligibility_by_qualification', false, false, 'account_id,qualification_id,subject_id'],
+                ['compliance_eligibility_pkey',             true,  true,  'account_id,subject_id,qualification_id'],
+                ['compliance_evidence_by_type',             false, false, 'account_id,subject_id,document_type'],
+                ['compliance_evidence_pkey',                true,  true,  'account_id,subject_id,evidence_id'],
+                ['compliance_qualifications_pkey',          true,  true,  'account_id,qualification_id'],
+            ],
+            $this->connection->fetchAllNumeric(<<<'SQL'
+                SELECT index_class.relname, idx.indisprimary, idx.indisunique,
+                       string_agg(col.attname, ',' ORDER BY key_columns.position)
+                FROM pg_index idx
+                JOIN pg_class table_class ON table_class.oid = idx.indrelid
+                JOIN pg_class index_class ON index_class.oid = idx.indexrelid
+                CROSS JOIN LATERAL unnest(idx.indkey) WITH ORDINALITY AS key_columns(column_number, position)
+                JOIN pg_attribute col ON col.attrelid = table_class.oid AND col.attnum = key_columns.column_number
+                WHERE table_class.relnamespace = current_schema()::regnamespace
+                  AND table_class.relname IN ('compliance_eligibility', 'compliance_evidence', 'compliance_qualifications')
+                GROUP BY index_class.relname, idx.indisprimary, idx.indisunique
+                ORDER BY index_class.relname
+                SQL),
+        );
+    }
+
     public function test_source_projection_and_materialization_advance_separately(): void
     {
         $compliance = $this->runtime->compliance;

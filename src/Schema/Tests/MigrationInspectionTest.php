@@ -44,7 +44,12 @@ final class MigrationInspectionTest extends TestCase
         $sql = new PostgresSqlGenerator()->generate([
             new AddIndex('documents', new IndexDefinition('i', 'gin_idx', rawSql: " \n" . $raw . "; \n")),
         ]);
-        static::assertCount(1, $sql);
-        static::assertStringStartsWith($raw . ';', $sql[0]);
+        static::assertSame(
+            [
+                $raw . ';',
+                'COMMENT ON INDEX "gin_idx" IS \'managed by: ultra\';',
+            ],
+            $sql,
+        );
     }
 }

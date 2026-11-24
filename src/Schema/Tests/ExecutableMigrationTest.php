@@ -130,7 +130,19 @@ final class ExecutableMigrationTest extends MigrationTestCase
                 new IndexDefinition('old', 'old_idx', ['keep']),
             ],
         );
-        $new = new TableDefinition('new', 'accounts', [new ColumnDefinition('id', type: 'uuid')]);
+        $new = new TableDefinition(
+            'new',
+            'accounts',
+            [new ColumnDefinition('id', type: 'uuid')],
+            [
+                new IndexDefinition('lookup', 'accounts_id_idx', ['id'], unique: true),
+                new IndexDefinition(
+                    'hash',
+                    'accounts_hash_idx',
+                    rawSql: 'CREATE INDEX accounts_hash_idx ON accounts USING HASH (id)',
+                ),
+            ],
+        );
         $target = new TableDefinition(
             't',
             'users',
@@ -172,11 +184,18 @@ final class ExecutableMigrationTest extends MigrationTestCase
             ),
         );
         static::assertSame(
-            ['keep_renamed_idx', 'new_idx'],
+            ['accounts_hash_idx', 'accounts_id_idx', 'keep_renamed_idx', 'new_idx'],
             $this->connection->fetchFirstColumn(
                 'SELECT indexname FROM pg_indexes WHERE schemaname = current_schema() ORDER BY indexname',
             ),
         );
+        static::assertTrue($this->connection->fetchOne(
+            "SELECT indisunique FROM pg_index WHERE indexrelid = 'accounts_id_idx'::regclass",
+        ));
+        static::assertSame(['managed by: ultra', 'managed by: ultra'], $this->connection->fetchFirstColumn(<<<'SQL'
+            SELECT obj_description(indexname::regclass, 'pg_class')
+            FROM pg_indexes WHERE schemaname = current_schema() AND tablename = 'accounts' ORDER BY indexname
+            SQL));
     }
 
     /** @param array<string, mixed> $changes @param array<string, mixed> $before */
