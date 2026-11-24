@@ -11,6 +11,5 @@
   Étudier séparément les nouvelles livraisons de messages : backoff, plafond
   de tentatives et renouvellement des leases pendant les traitements longs.
 
-- [ ] Étendre la génération DDL de Schema pour couvrir les contraintes et les
-  index utilisés par Coworking et IAM. Ces exemples déclarent leurs row sets
-  dans Schema et conservent leurs scripts DDL pour les migrations.
+- [ ] Générer le DDL d'IAM depuis Schema, notamment le `CHECK` de table sur le
+  périmètre des attributions. Préserver la réinstallation sur une base déjà peuplée.

@@ -9,6 +9,9 @@ use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
+use Ultra\Schema\ForeignKeyDefinition;
+use Ultra\Schema\ForeignKeyTiming;
+use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
 
@@ -35,7 +38,31 @@ final class BookingSchema
                     new ColumnDefinition('status', type: ColumnType::Text),
                     new ColumnDefinition('charged', type: ColumnType::Boolean),
                 ],
+                indexes: [
+                    new IndexDefinition('cw_direct_bookings_room_id_start_at_idx', columns: ['room_id', 'start_at']),
+                    new IndexDefinition('cw_direct_bookings_company_id_start_at_idx', columns: [
+                        'company_id',
+                        'start_at',
+                    ]),
+                ],
                 primaryKey: ['id'],
+                foreignKeys: [
+                    'cw_direct_bookings_room_id_fkey' => new ForeignKeyDefinition(
+                        self::ROOMS,
+                        ['room_id' => 'id'],
+                        ForeignKeyTiming::InitiallyDeferred,
+                    ),
+                    'cw_direct_bookings_member_id_fkey' => new ForeignKeyDefinition(
+                        self::MEMBERS,
+                        ['member_id' => 'id'],
+                        ForeignKeyTiming::InitiallyDeferred,
+                    ),
+                    'cw_direct_bookings_company_id_fkey' => new ForeignKeyDefinition(
+                        self::COMPANIES,
+                        ['company_id' => 'id'],
+                        ForeignKeyTiming::InitiallyDeferred,
+                    ),
+                ],
             ),
             new TableDefinition(
                 self::COMPANIES,
@@ -51,9 +78,16 @@ final class BookingSchema
                 columns: [
                     new ColumnDefinition('id', type: ColumnType::Text),
                     new ColumnDefinition('company_id', type: ColumnType::Text),
-                    new ColumnDefinition('email', type: ColumnType::Text),
+                    new ColumnDefinition('email', type: ColumnType::Text, constraints: ['UNIQUE']),
                 ],
                 primaryKey: ['id'],
+                foreignKeys: [
+                    'cw_direct_members_company_id_fkey' => new ForeignKeyDefinition(
+                        self::COMPANIES,
+                        ['company_id' => 'id'],
+                        ForeignKeyTiming::InitiallyDeferred,
+                    ),
+                ],
             ),
             new TableDefinition(
                 self::ROOMS,

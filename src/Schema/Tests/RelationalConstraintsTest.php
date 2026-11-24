@@ -10,6 +10,7 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
+use Ultra\Schema\ForeignKeyTiming;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
 use Ultra\Schema\TableDefinition;
@@ -19,6 +20,45 @@ use Ultra\Schema\Tests\Support\MigrationTestCase;
 #[CoversNamespace('Ultra\Schema')]
 final class RelationalConstraintsTest extends MigrationTestCase
 {
+    public function test_changing_foreign_key_timing_updates_when_postgres_checks_the_reference(): void
+    {
+        $parent = new TableDefinition(
+            'parents',
+            columns: [
+                new ColumnDefinition('id', type: ColumnType::Int32),
+            ],
+            primaryKey: ['id'],
+        );
+        $schema = static fn(ForeignKeyTiming $timing): SchemaDefinition => new SchemaDefinition([
+            $parent,
+            new TableDefinition(
+                'children',
+                columns: [
+                    new ColumnDefinition('id', type: ColumnType::Int32),
+                    new ColumnDefinition('parent_id', type: ColumnType::Int32),
+                ],
+                primaryKey: ['id'],
+                foreignKeys: [
+                    'parent_reference' => new ForeignKeyDefinition('parents', ['parent_id' => 'id'], $timing),
+                ],
+            ),
+        ]);
+        $reconciler = new SchemaReconciler();
+        $immediate = $schema(ForeignKeyTiming::InitiallyImmediate);
+        $deferred = $schema(ForeignKeyTiming::InitiallyDeferred);
+        $timing = "SELECT condeferrable, condeferred FROM pg_constraint
+            WHERE conrelid = 'children'::regclass AND conname = 'parent_reference'";
+        $this->execute($reconciler->reconcile(new SchemaDefinition([]), $immediate));
+        self::assertSame([true, false], $this->connection->fetchNumeric($timing));
+
+        $this->execute($reconciler->reconcile($immediate, $deferred));
+        self::assertSame([true, true], $this->connection->fetchNumeric($timing));
+        $this->connection->insert('children', ['id' => 1, 'parent_id' => 2]);
+        $this->connection->insert('parents', ['id' => 2]);
+        $this->connection->executeStatement('SET CONSTRAINTS parent_reference IMMEDIATE');
+        self::assertSame(2, $this->connection->fetchOne('SELECT parent_id FROM children WHERE id = 1'));
+    }
+
     public function test_composite_keys_resolve_declared_ids_to_physical_names_and_enforce_references(): void
     {
         $parent = new TableDefinition(

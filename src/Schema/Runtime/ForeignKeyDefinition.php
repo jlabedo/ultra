@@ -10,12 +10,18 @@ final readonly class ForeignKeyDefinition
     public function __construct(
         public string $table,
         public array $columns,
+        public ForeignKeyTiming $timing = ForeignKeyTiming::NotDeferrable,
     ) {}
 
     /** @internal */
     public function equivalentTo(?self $other): bool
     {
-        return null !== $other && $this->table === $other->table && $this->columns === $other->columns;
+        return (
+            null !== $other
+            && $this->table === $other->table
+            && $this->columns === $other->columns
+            && $this->timing === $other->timing
+        );
     }
 
     /** @return array<string, string> Local to referenced physical column names. */

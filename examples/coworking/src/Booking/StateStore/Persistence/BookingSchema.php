@@ -9,6 +9,9 @@ use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
+use Ultra\Schema\ForeignKeyDefinition;
+use Ultra\Schema\ForeignKeyTiming;
+use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
 
@@ -36,7 +39,28 @@ final class BookingSchema
                     new ColumnDefinition('status', type: ColumnType::Text),
                     new ColumnDefinition('charged', type: ColumnType::Boolean),
                 ],
+                indexes: [
+                    new IndexDefinition('cw_ss_bookings_room_id_start_at_idx', columns: ['room_id', 'start_at']),
+                    new IndexDefinition('cw_ss_bookings_company_id_start_at_idx', columns: ['company_id', 'start_at']),
+                ],
                 primaryKey: ['booking_id'],
+                foreignKeys: [
+                    'cw_ss_bookings_room_id_fkey' => new ForeignKeyDefinition(
+                        self::ROOMS,
+                        ['room_id' => 'room_id'],
+                        ForeignKeyTiming::InitiallyDeferred,
+                    ),
+                    'cw_ss_bookings_member_id_fkey' => new ForeignKeyDefinition(
+                        self::MEMBERS,
+                        ['member_id' => 'member_id'],
+                        ForeignKeyTiming::InitiallyDeferred,
+                    ),
+                    'cw_ss_bookings_company_id_fkey' => new ForeignKeyDefinition(
+                        self::COMPANIES,
+                        ['company_id' => 'company_id'],
+                        ForeignKeyTiming::InitiallyDeferred,
+                    ),
+                ],
             ),
             new TableDefinition(
                 self::COMPANIES,

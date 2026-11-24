@@ -4,29 +4,19 @@ declare(strict_types=1);
 
 namespace App\Infrastructure;
 
+use App\Booking\StateStore\Persistence\BookingSchema;
+use App\Booking\StateStoreDirect\Persistence\BookingSchema as DirectBookingSchema;
 use Doctrine\DBAL\Connection;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStoreSchema;
+use Ultra\Schema\PostgresSqlGenerator;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SchemaReconciler;
 
-/**
- * Creates the tables of the four flavors side by side. The state-store tables are written by hand: nothing
- * derives DDL from #[State] metadata.
- */
+/** Creates the tables of the four flavors side by side. */
 final readonly class CoworkingSchema
 {
-    private const array STATE_STORE_TABLES = [
-        'cw_direct_companies' => 'id TEXT PRIMARY KEY, name TEXT NOT NULL, monthly_minutes INTEGER NOT NULL',
-        'cw_direct_members' => 'id TEXT PRIMARY KEY, company_id TEXT NOT NULL REFERENCES cw_direct_companies DEFERRABLE INITIALLY DEFERRED, email TEXT NOT NULL UNIQUE',
-        'cw_direct_rooms' => 'id TEXT PRIMARY KEY, name TEXT NOT NULL',
-        'cw_direct_bookings' => 'id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES cw_direct_rooms DEFERRABLE INITIALLY DEFERRED, member_id TEXT NOT NULL REFERENCES cw_direct_members DEFERRABLE INITIALLY DEFERRED, company_id TEXT NOT NULL REFERENCES cw_direct_companies DEFERRABLE INITIALLY DEFERRED, start_at TIMESTAMPTZ NOT NULL, end_at TIMESTAMPTZ NOT NULL, status TEXT NOT NULL, charged BOOLEAN NOT NULL',
-        'cw_ss_companies' => 'company_id TEXT PRIMARY KEY, name TEXT NOT NULL, monthly_minutes INTEGER NOT NULL',
-        'cw_ss_members' => 'member_id TEXT PRIMARY KEY, company_id TEXT NOT NULL, email TEXT NOT NULL',
-        'cw_ss_member_emails' => 'email TEXT PRIMARY KEY, member_id TEXT NOT NULL',
-        'cw_ss_rooms' => 'room_id TEXT PRIMARY KEY, name TEXT NOT NULL',
-        'cw_ss_bookings' => 'booking_id TEXT PRIMARY KEY, room_id TEXT NOT NULL REFERENCES cw_ss_rooms DEFERRABLE INITIALLY DEFERRED, member_id TEXT NOT NULL REFERENCES cw_ss_members DEFERRABLE INITIALLY DEFERRED, company_id TEXT NOT NULL REFERENCES cw_ss_companies DEFERRABLE INITIALLY DEFERRED, start_at TIMESTAMPTZ NOT NULL, end_at TIMESTAMPTZ NOT NULL, status TEXT NOT NULL, charged BOOLEAN NOT NULL',
-    ];
-
     public function __construct(
         private Connection $connection,
         private EntityManagerInterface $entityManager,
@@ -35,20 +25,29 @@ final readonly class CoworkingSchema
 
     public function reset(): void
     {
+        $stateStoreSchema = SchemaDefinition::merge(BookingSchema::definition(), DirectBookingSchema::definition());
+        $operations = new SchemaReconciler()->reconcile(new SchemaDefinition([]), $stateStoreSchema);
+        $statements = new PostgresSqlGenerator()->generate($operations);
+
         $eventStore = new PostgresEventStoreHStoreSchema($this->eventStoreTablePrefix);
         foreach ([...$eventStore->dropStatements(), ...$eventStore->createStatements()] as $statement) {
             $this->connection->executeStatement($statement);
         }
 
-        foreach (self::STATE_STORE_TABLES as $table => $columns) {
-            $this->connection->executeStatement(sprintf('DROP TABLE IF EXISTS %s CASCADE', $table));
-            $this->connection->executeStatement(sprintf('CREATE TABLE %s (%s)', $table, $columns));
-        }
-
-        $this->connection->executeStatement('CREATE INDEX ON cw_direct_bookings (room_id, start_at)');
-        $this->connection->executeStatement('CREATE INDEX ON cw_direct_bookings (company_id, start_at)');
-        $this->connection->executeStatement('CREATE INDEX ON cw_ss_bookings (room_id, start_at)');
-        $this->connection->executeStatement('CREATE INDEX ON cw_ss_bookings (company_id, start_at)');
+        $this->connection->transactional(static function (Connection $connection) use (
+            $stateStoreSchema,
+            $statements,
+        ): void {
+            foreach ($stateStoreSchema->tables as $table) {
+                $connection->executeStatement(sprintf(
+                    'DROP TABLE IF EXISTS %s CASCADE',
+                    $connection->quoteSingleIdentifier($table->name),
+                ));
+            }
+            foreach ($statements as $statement) {
+                $connection->executeStatement($statement);
+            }
+        });
 
         // SchemaTool::dropSchema() introspects the whole database and cannot read the event store column types.
         $metadata = $this->entityManager->getMetadataFactory()->getAllMetadata();

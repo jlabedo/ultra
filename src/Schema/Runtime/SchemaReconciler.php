@@ -88,6 +88,7 @@ final class SchemaReconciler
                     $name,
                     $referenced->name,
                     $foreignKey->physicalColumns($targetTable, $referenced),
+                    $foreignKey->timing,
                 );
             }
         }

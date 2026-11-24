@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\Schema\Operations;
 
+use Ultra\Schema\ForeignKeyTiming;
+
 final readonly class AddForeignKey implements SchemaOperation
 {
     /** @param array<string, string> $columns Local to referenced physical column names. */
@@ -12,6 +14,7 @@ final readonly class AddForeignKey implements SchemaOperation
         public string $name,
         public string $referencedTableName,
         public array $columns,
+        public ForeignKeyTiming $timing = ForeignKeyTiming::NotDeferrable,
     ) {
         if ([] === $columns) {
             throw new \InvalidArgumentException('A foreign key needs at least one column.');

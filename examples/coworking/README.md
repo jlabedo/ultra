@@ -11,6 +11,11 @@ The same booking domain is implemented four times against one Postgres database,
 
 `src/Booking/Domain` holds the pure rules (`BookingPolicy`, `Slot`) shared by all four, so the flavors only differ in how state is loaded, checked and saved.
 
+The [StateStore schema](src/Booking/StateStore/Persistence/BookingSchema.php) and
+[direct StateStore schema](src/Booking/StateStoreDirect/Persistence/BookingSchema.php) drive both
+MappedTable compilation and PostgreSQL DDL. The test reset recreates their nine tables in one
+transaction, including the booking indexes and the foreign keys checked at commit by default.
+
 The decision-based StateStore variant also queries bookings directly for usage and availability. It stores no
 room-day schedules or company-month charges. `BookingState::charged` distinguishes refunded bookings from late
 cancellations. `EmailClaimState` remains the uniqueness anchor for member registration.

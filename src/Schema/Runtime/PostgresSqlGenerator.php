@@ -45,12 +45,17 @@ final class PostgresSqlGenerator
                 ),
                 $operation instanceof AddColumn => $this->addColumn($operation),
                 $operation instanceof AddForeignKey => sprintf(
-                    'ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s);',
+                    'ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)%s;',
                     $this->quoteIdentifier($operation->tableName),
                     $this->quoteIdentifier($operation->name),
                     $this->quoteIdentifiers(array_keys($operation->columns)),
                     $this->quoteIdentifier($operation->referencedTableName),
                     $this->quoteIdentifiers(array_values($operation->columns)),
+                    match ($operation->timing) {
+                        ForeignKeyTiming::NotDeferrable => '',
+                        ForeignKeyTiming::InitiallyImmediate => ' DEFERRABLE INITIALLY IMMEDIATE',
+                        ForeignKeyTiming::InitiallyDeferred => ' DEFERRABLE INITIALLY DEFERRED',
+                    },
                 ),
                 $operation instanceof AddIndex => $this->createIndex($operation->tableName, $operation->index),
                 $operation instanceof DropColumn => sprintf(
