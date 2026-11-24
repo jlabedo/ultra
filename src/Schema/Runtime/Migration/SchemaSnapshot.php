@@ -22,7 +22,7 @@ final readonly class SchemaSnapshot
             [
                 'format' => self::FORMAT,
                 'previous' => $this->previous,
-                'tables' => SchemaDefinitionData::encode($this->schema),
+                ...SchemaDefinitionData::encode($this->schema),
             ],
             JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE,
         ) . "\n";
@@ -41,6 +41,6 @@ final readonly class SchemaSnapshot
             throw new \UnexpectedValueException('Invalid schema snapshot field "previous".');
         }
 
-        return new self($previous, SchemaDefinitionData::decode($fields['tables'] ?? null));
+        return new self($previous, SchemaDefinitionData::decode($snapshot));
     }
 }

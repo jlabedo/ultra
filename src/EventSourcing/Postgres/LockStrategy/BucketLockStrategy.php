@@ -7,6 +7,8 @@ namespace Ultra\EventStore_Postgres\LockStrategy;
 use Doctrine\DBAL\Connection;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\StreamQuery;
+use Ultra\Schema\PostgresFunctionDefinition;
+use Ultra\Schema\PostgresSqlGenerator;
 
 /**
  * Same-side operations share a bucket; opposing sides exclude each other.
@@ -15,21 +17,22 @@ use Ultra\EventStore\StreamQuery;
  * A read/write operation takes both keys exclusively, while a one-sided operation
  * briefly locks the opposite key before taking its own shared transaction lock.
  */
-final readonly class BucketLockStrategy implements LockStrategy
+final readonly class BucketLockStrategy implements SchemaLockStrategy
 {
     public function name(): string
     {
         return 'bucket';
     }
 
-    public function createStatements(string $tablePrefix): array
+    public function functionDefinitions(string $tablePrefix): array
     {
-        return [
-            <<<SQL
-                CREATE FUNCTION {$tablePrefix}acquire_multi_xact(lock_ids bigint[], modes smallint[])
-                RETURNS void
-                LANGUAGE plpgsql
-                AS $$
+        return [new PostgresFunctionDefinition(
+            id: 'event_store.lock.bucket',
+            name: strtolower($tablePrefix . 'acquire_multi_xact'),
+            arguments: ['lock_ids' => 'bigint[]', 'modes' => 'smallint[]'],
+            returnType: 'void',
+            language: 'plpgsql',
+            body: <<<'SQL'
                 DECLARE
                     position integer;
                     read_key bigint;
@@ -81,9 +84,16 @@ final readonly class BucketLockStrategy implements LockStrategy
                         END LOOP;
                     END LOOP;
                 END;
-                $$;
                 SQL,
-        ];
+        )];
+    }
+
+    public function createStatements(string $tablePrefix): array
+    {
+        return array_map(
+            new PostgresSqlGenerator()->createFunctionStatement(...),
+            $this->functionDefinitions($tablePrefix),
+        );
     }
 
     public function dropStatements(string $tablePrefix): array

@@ -31,7 +31,7 @@ final class PostgresEventStoreHStore implements EventStore
 {
     public function __construct(
         private readonly Connection $connection,
-        private readonly string $tablePrefix = 'event_store_',
+        private readonly string $tablePrefix = PostgresEventStoreSchema::DEFAULT_TABLE_PREFIX,
         private readonly LoggerInterface $logger = new NullLogger(),
         private readonly LockStrategy $lockStrategy = new SharedExclusiveLockStrategy(),
     ) {}

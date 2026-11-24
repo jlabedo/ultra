@@ -17,9 +17,6 @@ services:
         resource: '../src/Event/'
         autowire: false
 
-    Ultra\EventStore\EventStore:
-        class: Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams
-
     Ultra\UnitOfWork\TransactionManager:
         class: Ultra\UnitOfWork\DbalTransactionManager
 

@@ -9,28 +9,55 @@ use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\ForeignKeyTiming;
 use Ultra\Schema\IndexDefinition;
+use Ultra\Schema\PostgresFunctionDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
 
 /** @internal */
 final class SchemaDefinitionData
 {
-    /** @return list<array<string, mixed>> */
+    /** @return array{tables: list<array<string, mixed>>, requiredExtensions: list<string>, functions: list<array<string, mixed>>} */
     public static function encode(SchemaDefinition $schema): array
     {
-        return array_map(self::encodeTable(...), $schema->tables);
+        return [
+            'tables' => array_map(self::encodeTable(...), $schema->tables),
+            'requiredExtensions' => $schema->requiredExtensions,
+            'functions' => array_map(static fn(PostgresFunctionDefinition $function): array => [
+                'id' => $function->id,
+                'name' => $function->name,
+                'arguments' => (object) $function->arguments,
+                'returnType' => $function->returnType,
+                'language' => $function->language,
+                'body' => $function->body,
+            ], $schema->functions),
+        ];
     }
 
-    public static function decode(mixed $tables): SchemaDefinition
+    public static function decode(mixed $data): SchemaDefinition
     {
-        if (!is_array($tables) || !array_is_list($tables)) {
-            throw self::invalidField('tables');
-        }
-
-        $schema = new SchemaDefinition(array_map(self::decodeTable(...), $tables));
+        $record = self::record($data, 'schema') + ['requiredExtensions' => [], 'functions' => []];
+        $schema = new SchemaDefinition(
+            array_map(self::decodeTable(...), self::items($record, 'tables')),
+            self::stringList($record, 'requiredExtensions'),
+            array_map(self::decodeFunction(...), self::items($record, 'functions')),
+        );
         $schema->validateForeignKeys();
 
         return $schema;
+    }
+
+    private static function decodeFunction(mixed $value): PostgresFunctionDefinition
+    {
+        $function = self::record($value, 'function');
+
+        return new PostgresFunctionDefinition(
+            id: self::string($function, 'id'),
+            name: self::string($function, 'name'),
+            arguments: self::stringMap($function, 'arguments'),
+            returnType: self::string($function, 'returnType'),
+            language: self::string($function, 'language'),
+            body: self::string($function, 'body'),
+        );
     }
 
     /** @return array<string, mixed> */
@@ -56,6 +83,7 @@ final class SchemaDefinitionData
                 'columns' => $index->columns,
                 'unique' => $index->unique,
                 'rawSql' => $index->rawSql,
+                'method' => $index->method,
             ], $table->indexes),
             'primaryKey' => $table->primaryKey,
             'foreignKeys' => (object) array_map(static fn(ForeignKeyDefinition $foreignKey): array => [
@@ -121,6 +149,7 @@ final class SchemaDefinitionData
             columns: self::stringList($index, 'columns'),
             unique: self::bool($index, 'unique'),
             rawSql: self::nullableString($index, 'rawSql'),
+            method: self::nullableString($index + ['method' => null], 'method'),
             hasExplicitName: self::bool($index, 'hasExplicitName'),
         );
     }

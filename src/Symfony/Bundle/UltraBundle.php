@@ -10,6 +10,7 @@ use Symfony\Component\DependencyInjection\Kernel\AbstractBundle;
 use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
 use Symfony\Component\Filesystem\Path;
 use Ultra\Container\ContainerExtension;
+use Ultra\EventStore_Postgres\Symfony\PostgresEventStoreConfiguration;
 
 final class UltraBundle extends AbstractBundle
 {
@@ -40,6 +41,10 @@ final class UltraBundle extends AbstractBundle
             ->scalarNode('migrations_directory')
             ->defaultValue('migrations/schema')
             ->cannotBeEmpty();
+
+        if (class_exists(PostgresEventStoreConfiguration::class)) {
+            PostgresEventStoreConfiguration::configure($definition);
+        }
     }
 
     public function loadExtension(array $config, ContainerConfigurator $configurator, ContainerBuilder $container): void
@@ -56,6 +61,12 @@ final class UltraBundle extends AbstractBundle
         }
 
         $configurator->parameters()->set('ultra.schema.migrations_directory', $directory);
+
+        $eventStore = $config['event_store'] ?? null;
+        $postgres = is_array($eventStore) ? $eventStore['postgres'] ?? null : null;
+        if (is_array($postgres)) {
+            PostgresEventStoreConfiguration::load($postgres, $container);
+        }
     }
 
     /**

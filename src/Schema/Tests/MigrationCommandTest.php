@@ -94,6 +94,19 @@ final class MigrationCommandTest extends TestCase
         self::assertTrue($snapshot['tables'][0]['hasExplicitName']);
         self::assertFalse($snapshot['tables'][1]['hasExplicitName']);
 
+        // Existing format-1 snapshots predate PostgreSQL functions, extensions and index methods.
+        $snapshot = json_decode($this->read($first . '/snapshot.json'), flags: JSON_THROW_ON_ERROR);
+        unset($snapshot->requiredExtensions, $snapshot->functions);
+        foreach ($snapshot->tables as $table) {
+            foreach ($table->indexes as $index) {
+                unset($index->method);
+            }
+        }
+        file_put_contents(
+            $this->directory . '/' . $first . '/snapshot.json',
+            json_encode($snapshot, JSON_THROW_ON_ERROR),
+        );
+
         $this->writeDefinition([
             "'account', 'accounts'" => "'account', 'members'",
             "'login', 'username'" => "'login', 'handle'",

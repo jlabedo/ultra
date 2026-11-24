@@ -20,6 +20,7 @@ final readonly class IndexDefinition
         public bool $unique = false,
         public ?string $rawSql = null,
         ?bool $hasExplicitName = null,
+        public ?string $method = null,
     ) {
         $this->name = $name ?? $this->id;
         $this->hasExplicitName = $hasExplicitName ?? null !== $name;
@@ -31,6 +32,7 @@ final readonly class IndexDefinition
             $this->columns === $other->columns
             && $this->unique === $other->unique
             && $this->rawSql === $other->rawSql
+            && $this->method === $other->method
         );
     }
 }

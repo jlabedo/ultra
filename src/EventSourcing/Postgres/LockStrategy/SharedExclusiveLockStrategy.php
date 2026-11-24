@@ -7,22 +7,28 @@ namespace Ultra\EventStore_Postgres\LockStrategy;
 use Doctrine\DBAL\Connection;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\StreamQuery;
+use Ultra\Schema\PostgresFunctionDefinition;
+use Ultra\Schema\PostgresSqlGenerator;
 
 /**
  * Former lock strategy: read keys use shared advisory locks, write keys use exclusive advisory locks.
  */
-final readonly class SharedExclusiveLockStrategy implements LockStrategy
+final readonly class SharedExclusiveLockStrategy implements SchemaLockStrategy
 {
     public function name(): string
     {
         return 'shared-exclusive';
     }
 
-    public function createStatements(string $tablePrefix): array
+    public function functionDefinitions(string $tablePrefix): array
     {
-        return [
-            sprintf(<<<'SQL'
-                CREATE FUNCTION %1$sacquire_advisory_locks(lock_ids BIGINT[], exclusive_modes BOOLEAN[]) RETURNS void AS $$
+        return [new PostgresFunctionDefinition(
+            id: 'event_store.lock.shared_exclusive',
+            name: strtolower($tablePrefix . 'acquire_advisory_locks'),
+            arguments: ['lock_ids' => 'bigint[]', 'exclusive_modes' => 'boolean[]'],
+            returnType: 'void',
+            language: 'plpgsql',
+            body: <<<'SQL'
                 DECLARE
                     position INTEGER;
                 BEGIN
@@ -39,9 +45,16 @@ final readonly class SharedExclusiveLockStrategy implements LockStrategy
                         END IF;
                     END LOOP;
                 END;
-                $$ LANGUAGE plpgsql
-                SQL, $tablePrefix),
-        ];
+                SQL,
+        )];
+    }
+
+    public function createStatements(string $tablePrefix): array
+    {
+        return array_map(
+            new PostgresSqlGenerator()->createFunctionStatement(...),
+            $this->functionDefinitions($tablePrefix),
+        );
     }
 
     public function dropStatements(string $tablePrefix): array

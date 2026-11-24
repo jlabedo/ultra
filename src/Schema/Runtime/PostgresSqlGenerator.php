@@ -8,6 +8,8 @@ use Ultra\Schema\Operations\AddColumn;
 use Ultra\Schema\Operations\AddForeignKey;
 use Ultra\Schema\Operations\AddIndex;
 use Ultra\Schema\Operations\AlterColumn;
+use Ultra\Schema\Operations\CreateExtension;
+use Ultra\Schema\Operations\CreateFunction;
 use Ultra\Schema\Operations\CreateTable;
 use Ultra\Schema\Operations\DropColumn;
 use Ultra\Schema\Operations\DropForeignKey;
@@ -33,6 +35,14 @@ final class PostgresSqlGenerator
 
         foreach ($operations as $operation) {
             $statements = match (true) {
+                $operation instanceof CreateExtension => sprintf(
+                    'CREATE EXTENSION IF NOT EXISTS %s;',
+                    $this->quoteIdentifier($operation->name),
+                ),
+                $operation instanceof CreateFunction => $this->createFunctionStatement(
+                    $operation->function,
+                    $operation->replace,
+                ) . ';',
                 $operation instanceof CreateTable => $this->createTable($operation),
                 $operation instanceof DropTable => sprintf(
                     'DROP TABLE %s;',
@@ -104,14 +114,42 @@ final class PostgresSqlGenerator
             null !== $index->rawSql
                 ? $this->terminateStatement($index->rawSql)
                 : sprintf(
-                    'CREATE %sINDEX %s ON %s (%s);',
+                    'CREATE %sINDEX %s ON %s%s (%s);',
                     $index->unique ? 'UNIQUE ' : '',
                     $this->quoteIdentifier($index->name),
                     $this->quoteIdentifier($tableName),
+                    null === $index->method ? '' : ' USING ' . $this->quoteIdentifier($index->method),
                     $this->quoteIdentifiers($index->columns),
                 ),
             $this->commentOnIndex($index->name),
         ];
+    }
+
+    /** Render one unterminated function statement for bootstrap or migration SQL. */
+    public function createFunctionStatement(PostgresFunctionDefinition $function, bool $replace = false): string
+    {
+        $arguments = [];
+        foreach ($function->arguments as $name => $type) {
+            $arguments[] = $this->quoteIdentifier($name) . ' ' . $type;
+        }
+
+        $tag = 'ultra_function';
+        while (str_contains($function->body, '$' . $tag . '$')) {
+            $tag .= '_';
+        }
+        $delimiter = '$' . $tag . '$';
+
+        return sprintf(
+            "CREATE %sFUNCTION %s(%s) RETURNS %s LANGUAGE %s AS %s\n%s\n%s",
+            $replace ? 'OR REPLACE ' : '',
+            $this->quoteIdentifier($function->name),
+            implode(', ', $arguments),
+            $function->returnType,
+            $this->quoteIdentifier($function->language),
+            $delimiter,
+            $function->body,
+            $delimiter,
+        );
     }
 
     /** Render an unterminated bootstrap statement using the storage adapter's trusted table reference. */

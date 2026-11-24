@@ -15,6 +15,41 @@ Both implementations share the same public contract:
 The events table uses a `sequence BIGINT` identity primary key and an explicit `xid XID8` capture column.
 Unbounded reads use one SQL statement with `pg_current_snapshot()` to build a gap-aware checkpoint in sequence space.
 
+## Schema migrations
+
+Declare the installation under `ultra.event_store.postgres` in `config/packages/ultra.yaml`:
+
+```yaml
+ultra:
+    event_store:
+        postgres:
+            variant: query-streams
+            connection: doctrine.dbal.default_connection
+            table_prefix: journal_
+            lock_strategy: bucket
+```
+
+The bundle configures `EventStore` and its schema provider from this block. Both services receive the
+same prefix and strategy. The connection is a Symfony service ID and is injected into the storage.
+Choose `hstore` or `query-streams` as the variant. The prefix defaults to `event_store_` and the strategy
+defaults to `shared-exclusive`. Use an unqualified prefix and select the target PostgreSQL schema
+through `search_path` when applying the migration.
+
+Run the [Schema migration command](../schema/README.md#from-symfony) to generate SQL without opening
+the connection. For an Event Store wired manually, register its schema method as a separate
+[Schema contribution](../schema/README.md#symfony-discovery).
+
+HStore requires `hstore` and `btree_gin` before its tables and GIN index can be created. The migration
+emits idempotent extension creation. The server must have the extensions available and the deployment
+role must be able to install them, or an operator can preinstall them. QueryStreams adds
+`event_domain_ids` and uses PostgreSQL's built-in `jsonb` type. Both variants include the configured
+lock strategy's function. The table and function definitions also supply the standalone creation scripts.
+
+Set `lock_strategy` to a service ID to use a custom strategy that implements `SchemaLockStrategy`
+and declares its functions for migration generation. Coordinate writers when switching lock strategies, and plan a data migration when changing
+storage variants. The integration is exercised by
+[PostgresEventStoreSchemaTest](../../src/EventSourcing/Tests/PostgresEventStoreSchemaTest.php).
+
 ## Concurrency Model
 
 `append()` is responsible for:
@@ -27,7 +62,7 @@ Unbounded reads use one SQL statement with `pg_current_snapshot()` to build a ga
 
 That means one append can guard multiple stream snapshots at once.
 
-The lock mechanism is selected through `PostgresEventStoreLockStrategy` and must match the schema DDL:
+The configured `LockStrategy` determines which lock function the Event Store calls:
 
 - `shared-exclusive` is the former strategy: read namespaces take shared advisory locks and write namespaces take exclusive advisory locks.
 - `bucket` uses separate read/write buckets per namespace. Same-bucket operations can run together, so unguarded writes to the same namespace can overlap, while guarded read/write conflicts still serialize.

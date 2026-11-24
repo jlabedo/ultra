@@ -11,9 +11,13 @@ final readonly class SchemaDefinition
 {
     /**
      * @param list<TableDefinition> $tables
+     * @param list<string> $requiredExtensions
+     * @param list<PostgresFunctionDefinition> $functions
      */
     public function __construct(
         public array $tables,
+        public array $requiredExtensions = [],
+        public array $functions = [],
     ) {
         $tableIds = [];
         $tableNames = [];
@@ -30,13 +34,42 @@ final readonly class SchemaDefinition
             $tableIds[$table->id] = true;
             $tableNames[$table->name] = true;
         }
+
+        $functionIds = [];
+        $signatures = [];
+        foreach ($this->functions as $function) {
+            $signature = $function->name . '(' . implode(', ', array_values($function->arguments)) . ')';
+            if (isset($functionIds[$function->id]) || isset($signatures[$signature])) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Duplicate function "%s" with signature "%s".',
+                    $function->id,
+                    $signature,
+                ));
+            }
+            $functionIds[$function->id] = true;
+            $signatures[$signature] = true;
+        }
     }
 
     public static function merge(self ...$schemas): self
     {
         $tables = [];
+        $extensions = [];
+        $functions = [];
 
         foreach ($schemas as $schema) {
+            foreach ($schema->requiredExtensions as $extension) {
+                $extensions[$extension] = $extension;
+            }
+            foreach ($schema->functions as $function) {
+                if (isset($functions[$function->id]) && !$functions[$function->id]->equivalentTo($function)) {
+                    throw new \InvalidArgumentException(sprintf(
+                        'Conflicting function definition for "%s".',
+                        $function->id,
+                    ));
+                }
+                $functions[$function->id] = $function;
+            }
             foreach ($schema->tables as $table) {
                 $tables[$table->id] = isset($tables[$table->id])
                     ? self::mergeTable($tables[$table->id], $table)
@@ -44,7 +77,7 @@ final readonly class SchemaDefinition
             }
         }
 
-        return new self(array_values($tables));
+        return new self(array_values($tables), array_values($extensions), array_values($functions));
     }
 
     /**
@@ -214,6 +247,7 @@ final readonly class SchemaDefinition
                 columns: $index->columns,
                 unique: $index->unique,
                 rawSql: $index->rawSql,
+                method: $index->method,
                 hasExplicitName: $existing->hasExplicitName || $index->hasExplicitName,
             );
         }

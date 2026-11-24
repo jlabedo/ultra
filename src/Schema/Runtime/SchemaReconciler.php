@@ -8,6 +8,8 @@ use Ultra\Schema\Operations\AddColumn;
 use Ultra\Schema\Operations\AddForeignKey;
 use Ultra\Schema\Operations\AddIndex;
 use Ultra\Schema\Operations\AlterColumn;
+use Ultra\Schema\Operations\CreateExtension;
+use Ultra\Schema\Operations\CreateFunction;
 use Ultra\Schema\Operations\CreateTable;
 use Ultra\Schema\Operations\DropColumn;
 use Ultra\Schema\Operations\DropForeignKey;
@@ -31,6 +33,10 @@ final class SchemaReconciler
         $targetTables = $target->tablesById();
 
         $operations = [];
+        foreach (array_unique(array_diff($target->requiredExtensions, $current->requiredExtensions)) as $extension) {
+            $operations[] = new CreateExtension($extension);
+        }
+
         foreach ($currentTables as $tableId => $currentTable) {
             foreach ($currentTable->foreignKeys as $name => $foreignKey) {
                 if ($foreignKey->equivalentTo($targetTables[$tableId]->foreignKeys[$name] ?? null)) {
@@ -109,6 +115,32 @@ final class SchemaReconciler
                     $foreignKey->timing,
                 );
             }
+        }
+
+        return [...$operations, ...$this->reconcileFunctions($current, $target)];
+    }
+
+    /** @return list<CreateFunction> */
+    private function reconcileFunctions(SchemaDefinition $current, SchemaDefinition $target): array
+    {
+        $previous = array_column($current->functions, null, 'id');
+        $operations = [];
+        foreach ($target->functions as $function) {
+            $existing = $previous[$function->id] ?? null;
+            unset($previous[$function->id]);
+            if (null !== $existing && !$function->hasSameSignature($existing)) {
+                throw new \LogicException(sprintf(
+                    'Changing the signature of function "%s" requires a manual migration.',
+                    $function->id,
+                ));
+            }
+            if (null === $existing || !$function->equivalentTo($existing)) {
+                $operations[] = new CreateFunction($function, replace: null !== $existing);
+            }
+        }
+        if ([] !== $previous) {
+            $removed = implode(', ', array_keys($previous));
+            throw new \LogicException(sprintf('Removing functions requires a manual migration: %s.', $removed));
         }
 
         return $operations;

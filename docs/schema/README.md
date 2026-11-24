@@ -65,7 +65,7 @@ over any reviewed SQL edits.
 
 ### Coexist with Doctrine
 
-Schema compares only the tables in its snapshots and supplied definition. An application can keep
+Schema reconciles the objects declared in its snapshots and supplied definition. An application can keep
 separate Schema and Doctrine histories on the same PostgreSQL database. Assign each table to one
 generator and configure Doctrine's schema introspection to exclude tables outside its scope. An
 application can use its own naming or ownership convention. Add foreign keys across the two scopes
@@ -96,6 +96,16 @@ including structured and raw SQL indexes. Later index additions use `AddIndex`.
 On a retained table, the reconciler drops removed or replaced indexes before changing columns, then adds or
 renames indexes after the column changes.
 The PostgreSQL generator returns an ordered list of individual statements, including management comments.
+Structured indexes can declare a PostgreSQL access method with `IndexDefinition::method`.
+
+A `SchemaDefinition` can declare PostgreSQL extension names in `requiredExtensions` and routines in
+`functions`. Schema deduplicates extension requirements and emits `CREATE EXTENSION IF NOT EXISTS` for
+new requirements before creating tables and indexes. Manage extension upgrades and removals explicitly.
+
+`PostgresFunctionDefinition` records a stable identity, SQL name, ordered named arguments, return type,
+language and body. The generator creates new functions and replaces changed definitions with
+`CREATE OR REPLACE FUNCTION` when their signature is unchanged. Signature changes and removals
+require an explicit migration. Existing table-only snapshots can still be read.
 
 `ColumnType::Text`, `Int32`, `Int64` and `Boolean` are portable column types with a PostgreSQL translation.
 Column definitions also accept SQL type strings and SQL constraints for dialect-specific declarations.
@@ -135,6 +145,7 @@ The tests live together under [src/Schema/Tests](../../src/Schema/Tests), organi
 | Column changes have minimal inspectable payloads; renames preserve stored rows; dependent operations address resolved names; generated SQL applies types, defaults, constraints, indexes and management comments | [ExecutableMigrationTest](../../src/Schema/Tests/ExecutableMigrationTest.php) |
 | Composite keys resolve column IDs to physical names, foreign keys enforce references with the declared timing and named table checks enforce rules across columns | [RelationalConstraintsTest](../../src/Schema/Tests/RelationalConstraintsTest.php) |
 | Static fragments compose at compilation and tagged service methods contribute to the migration target when the Symfony command runs | [SymfonySchemaDiscoveryTest](../../src/Schema/Tests/SymfonySchemaDiscoveryTest.php) |
+| PostgreSQL functions are replaceable at the same signature, with signature changes and removals delegated to explicit migrations | [PostgresFunctionMigrationTest](../../src/Schema/Tests/PostgresFunctionMigrationTest.php) |
 | Invalid operations fail before a script is returned; caller-provided index SQL retains its clauses and is terminated | [MigrationInspectionTest](../../src/Schema/Tests/MigrationInspectionTest.php) |
 | CLI generation uses the versioned history, requires approval for table and column drops, and rejects incomplete or divergent histories | [MigrationCommandTest](../../src/Schema/Tests/MigrationCommandTest.php) |
 
