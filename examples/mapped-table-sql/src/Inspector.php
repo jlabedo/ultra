@@ -5,10 +5,13 @@ declare(strict_types=1);
 namespace MappedTableSqlExample;
 
 use Doctrine\DBAL\Connection;
-use Ultra\MappedTable\MappedColumn;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\SchemaMappedRowSet;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\Testing\SqlTrace;
 use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
@@ -27,17 +30,22 @@ final readonly class Inspector
         $tableName = 'ultra_sql_' . bin2hex(random_bytes(8));
         $quoted = $this->connection->quoteSingleIdentifier($tableName);
         $adapter = new PostgresMappedTableAdapter($this->connection);
-        $rows = $adapter->createDefined(
-            new MappedRowSetMapping(
+        $schema = new SchemaDefinition([
+            new TableDefinition(
                 $tableName,
-                [
-                    'id' => new MappedColumn('string'),
-                    'status' => new MappedColumn('string', nullable: true),
-                    'note' => new MappedColumn('string', nullable: true),
-                ] + $scenario->extraColumns,
-                ['id'],
+                columns: [
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text, nullable: true),
+                    new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
+                    ...$scenario->extraColumns,
+                ],
+                primaryKey: ['id'],
             ),
-        );
+        ]);
+        $rows = new SchemaMappedRowSet($tableName, representations: $scenario->representations)->compileFor(
+            $adapter,
+            $schema,
+        )();
         $runner = new TransactionalUnitOfWorkRunner(new MappedTableUnitOfWork([
             $tableName => $rows,
         ], $adapter), new DbalTransactionManager($this->connection));

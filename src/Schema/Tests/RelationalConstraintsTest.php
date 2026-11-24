@@ -27,6 +27,8 @@ final class RelationalConstraintsTest extends MigrationTestCase
             [
                 new ColumnDefinition('site', 'site_id', ColumnType::Text),
                 new ColumnDefinition('number', 'workshop_no', ColumnType::Int32),
+                new ColumnDefinition('budget', type: ColumnType::Int64),
+                new ColumnDefinition('open', type: ColumnType::Boolean),
             ],
             primaryKey: ['site', 'number'],
         );
@@ -48,7 +50,8 @@ final class RelationalConstraintsTest extends MigrationTestCase
         $this->execute($reconciler->reconcile(new SchemaDefinition([]), $schema));
 
         $db = $this->connection;
-        $db->insert('workshops', ['site_id' => 'north', 'workshop_no' => 3]);
+        $db->executeStatement("INSERT INTO workshops VALUES ('north', 3, 3000000000, true)");
+        self::assertSame(3000000000, (int) $db->fetchOne('SELECT budget FROM workshops WHERE open'));
         $booking = ['workshop_site' => 'north', 'workshop_no' => 3, 'booking_ref' => 'team'];
         $db->insert('reservations', $booking);
 

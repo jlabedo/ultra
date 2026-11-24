@@ -7,7 +7,7 @@ namespace Ultra\StateStore\Tests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
-use Ultra\StateStore\Tests\Support\OrdersDefinition;
+use Ultra\StateStore\Tests\Support\StateStoreSchema;
 use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 
 /** @internal */
@@ -35,7 +35,7 @@ final class FlushCoordinationTest extends StateStoreTestCase
         $fixture->unitOfWork->clear();
         [$store, $registry] = $fixture->newStore([OrderWithLinesState::class], guards: [
             new QueryGuardDefinition('usage', [
-                new QueryGuardDependency(OrdersDefinition::class, 'status', ['status']),
+                new QueryGuardDependency(StateStoreSchema::ORDERS, 'status', ['status']),
             ]),
         ]);
         $store->delete(OrderWithLinesState::class, 'one');

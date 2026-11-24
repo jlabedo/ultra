@@ -17,14 +17,12 @@ use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetDefinition;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
-use Ultra\MappedTable\Symfony\SchemaMappedRowSet;
 use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
 use Ultra\Schema\Attribute\DefineSchema;
@@ -41,8 +39,7 @@ use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\Exception\InvalidStateConfigurationException;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore\Tests\Support\NullEventStore;
-use Ultra\StateStore\Tests\Support\OrderLinesDefinition;
-use Ultra\StateStore\Tests\Support\OrdersDefinition;
+use Ultra\StateStore\Tests\Support\StateStoreSchema;
 use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 use Ultra\StateStore_Bundle\DependencyInjection\Compiler\StateStoreCompilerPass;
 use Ultra\StateStore_Bundle\StateStoreExtension;
@@ -279,7 +276,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         $container->get('test.lines')->reconcileForOwner(['order_id' => 'one'], []);
 
         $this->expectException(PendingQueryChangesException::class);
-        $this->expectExceptionMessage(OrderLinesDefinition::class);
+        $this->expectExceptionMessage(StateStoreSchema::ORDER_LINES);
         $container->get(BundleLinesGuardRepository::class)->observe('one');
     }
 
@@ -397,14 +394,14 @@ final class ContainerIntegrationTest extends StateStoreTestCase
     {
         $this->expectException(InvalidStateConfigurationException::class);
         $this->expectExceptionMessage('must match the owner dependency');
-        $this->createContainer(rowSets: [OrdersDefinition::class, BundleLinesWithoutDependency::class]);
+        $this->createContainer(withoutOwnerDependency: true);
     }
 
     public function test_states_cannot_bind_projection_owned_tables(): void
     {
         $this->expectException(InvalidStateConfigurationException::class);
         $this->expectExceptionMessage('StateStore cannot bind table');
-        $this->createContainer(privateRowSets: [OrdersDefinition::class, OrderLinesDefinition::class]);
+        $this->createContainer(privateRowSets: [StateStoreSchema::ORDERS, StateStoreSchema::ORDER_LINES]);
     }
 
     public function test_bundle_autoconfiguration_marks_states_as_normalizable_resources(): void
@@ -431,28 +428,31 @@ final class ContainerIntegrationTest extends StateStoreTestCase
     }
 
     /**
-     * @param list<class-string<MappedRowSetDefinition>> $rowSets
      * @param list<class-string> $extraStates
-     * @param list<class-string<MappedRowSetDefinition>> $privateRowSets
+     * @param list<string> $privateRowSets
      */
     private function createContainer(
         bool $withQueryGuard = false,
         ?string $extraGuardRepository = null,
-        array $rowSets = [OrdersDefinition::class, OrderLinesDefinition::class],
+        bool $withoutOwnerDependency = false,
         array $extraStates = [],
         ?Connection $postgres = null,
         array $privateRowSets = [],
     ): ContainerBuilder {
         $container = $this->stateStoreContainer($postgres);
-        new MappedTableExtension()->build($container);
+        new SchemaExtension()->build($container);
+        $container->register(StateStoreSchema::class)->setAutoconfigured(true);
+        new MappedTableExtension(schemaRowSets: [
+            StateStoreSchema::selection(StateStoreSchema::ORDERS),
+            $withoutOwnerDependency
+                ? new SchemaMappedRowSet(StateStoreSchema::ORDER_LINES, ownerColumns: ['order_id'])
+                : StateStoreSchema::selection(StateStoreSchema::ORDER_LINES),
+        ])->build($container);
         if ([] !== $privateRowSets) {
             MappedTableExtension::privateUnitOfWork($container, 'test.projection', $privateRowSets);
         }
-        foreach ($rowSets as $definition) {
-            $container->register($definition)->setAutoconfigured(true);
-        }
-        $container->setAlias('test.orders', OrdersDefinition::class)->setPublic(true);
-        $container->setAlias('test.lines', OrderLinesDefinition::class)->setPublic(true);
+        $container->setAlias('test.orders', StateStoreSchema::ORDERS)->setPublic(true);
+        $container->setAlias('test.lines', StateStoreSchema::ORDER_LINES)->setPublic(true);
 
         $container->setDefinition(
             BundleOrderState::class,
@@ -538,7 +538,7 @@ final readonly class BundleGuardedRepository
     public function __construct(
         private InMemoryRowDatabase $database,
         #[DefineQueryGuard('orders_status', [
-            new QueryGuardDependency(OrdersDefinition::class, 'order_id', ['status']),
+            new QueryGuardDependency(StateStoreSchema::ORDERS, 'order_id', ['status']),
         ])]
         private QueryGuard $statusGuard,
     ) {}
@@ -556,7 +556,7 @@ final readonly class BundleInvalidGuardRepository
 {
     public function __construct(
         #[DefineQueryGuard('invalid', [
-            new QueryGuardDependency(OrdersDefinition::class, 'order_id', ['missing']),
+            new QueryGuardDependency(StateStoreSchema::ORDERS, 'order_id', ['missing']),
         ])]
         private QueryGuard $guard,
     ) {}
@@ -566,7 +566,7 @@ final readonly class BundleWrongGuardParameter
 {
     public function __construct(
         #[DefineQueryGuard('invalid_type', [
-            new QueryGuardDependency(OrdersDefinition::class, 'order_id'),
+            new QueryGuardDependency(StateStoreSchema::ORDERS, 'order_id'),
         ])]
         private string $guard,
     ) {}
@@ -576,7 +576,7 @@ final readonly class BundleLinesGuardRepository
 {
     public function __construct(
         #[DefineQueryGuard('order_lines', [
-            new QueryGuardDependency(OrderLinesDefinition::class, 'order_id'),
+            new QueryGuardDependency(StateStoreSchema::ORDER_LINES, 'order_id'),
         ])]
         private QueryGuard $guard,
     ) {}
@@ -591,20 +591,10 @@ final readonly class BundleConflictingGuardRepository
 {
     public function __construct(
         #[DefineQueryGuard('orders_status', [
-            new QueryGuardDependency(OrdersDefinition::class, 'order_id', ['note']),
+            new QueryGuardDependency(StateStoreSchema::ORDERS, 'order_id', ['note']),
         ])]
         private QueryGuard $guard,
     ) {}
-}
-
-final class BundleLinesWithoutDependency implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
-    {
-        $lines = new OrderLinesDefinition()->mapping();
-
-        return new MappedRowSetMapping($lines->table, $lines->columns, $lines->keyColumns, ['order_id']);
-    }
 }
 
 #[State(table: 'missing_orders')]

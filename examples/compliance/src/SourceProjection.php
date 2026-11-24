@@ -20,7 +20,7 @@ use Ultra\UnitOfWork\UnitOfWork;
 #[Projection(
     name: self::NAME,
     partitionBy: 'account',
-    rowSets: [EvidenceRowsDefinition::class, QualificationRowsDefinition::class],
+    rowSets: [ComplianceSchema::EVIDENCE, ComplianceSchema::QUALIFICATIONS],
 )]
 final class SourceProjection implements UnitOfWork
 {
@@ -30,9 +30,9 @@ final class SourceProjection implements UnitOfWork
     private array $invalidations = [];
 
     public function __construct(
-        #[Autowire(service: EvidenceRowsDefinition::class)]
+        #[Autowire(service: ComplianceSchema::EVIDENCE)]
         private readonly MappedRowSet $evidence,
-        #[Autowire(service: QualificationRowsDefinition::class)]
+        #[Autowire(service: ComplianceSchema::QUALIFICATIONS)]
         private readonly MappedRowSet $qualifications,
         private readonly DirtyKeyTracker $dirty,
     ) {}

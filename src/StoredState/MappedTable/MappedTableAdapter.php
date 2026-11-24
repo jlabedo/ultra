@@ -14,6 +14,7 @@ abstract class MappedTableAdapter
     /** @var array<string, RowSetStorage> */
     private array $tables = [];
 
+    /** @internal Bind metadata produced from Schema. */
     abstract public function createDefined(MappedRowSetMetadata $mapping): MappedRowSet;
 
     /** @internal Require a transaction on the storage used by this adapter. */

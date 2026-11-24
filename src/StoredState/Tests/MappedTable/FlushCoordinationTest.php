@@ -13,12 +13,17 @@ use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Tests\Support\RowSetFixture;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\ForeignKeyDefinition;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
@@ -234,24 +239,24 @@ final class FlushCoordinationTest extends RowSetTestCase
         $parent = $this->fixture('memory', ['owner', 'id']);
         $child = $this->fixture('memory', ['owner', 'id'], storage: $parent->storage, adapter: $parent->adapter);
         $columns = ['owner' => new MappedColumn('string'), 'id' => new MappedColumn('string')];
-        $orders = $parent->defined(new MappedRowSetMapping(
+        $orders = $parent->adapter->createDefined(new MappedRowSetMapping(
             $parent->tableName,
             $columns,
             ['owner', 'id'],
-            owner: new MappedRowSetOwner(FlushLineDefinition::class, ['owner' => 'id']),
+            owner: new MappedRowSetOwner(FlushSchema::LINES, ['owner' => 'id']),
         ));
-        $lines = $child->defined(new MappedRowSetMapping(
+        $lines = $child->adapter->createDefined(new MappedRowSetMapping(
             $child->tableName,
             $columns,
             ['owner', 'id'],
-            owner: new MappedRowSetOwner(FlushOrderDefinition::class, ['owner' => 'id']),
+            owner: new MappedRowSetOwner(FlushSchema::ORDERS, ['owner' => 'id']),
         ));
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('Cyclic mapped row set ownership');
         new MappedTableUnitOfWork([
-            FlushOrderDefinition::class => $orders,
-            FlushLineDefinition::class => $lines,
+            FlushSchema::ORDERS => $orders,
+            FlushSchema::LINES => $lines,
         ], $parent->adapter);
     }
 
@@ -280,23 +285,13 @@ final class FlushCoordinationTest extends RowSetTestCase
     /** @return array{MappedRowSet, MappedRowSet, MappedTableUnitOfWork} */
     private function coordinate(RowSetFixture $parent, RowSetFixture $child): array
     {
-        $parentMapping = new FlushOrderDefinition()->mapping();
-        $childMapping = new FlushLineDefinition()->mapping();
-        $orders = $parent->defined(
-            new MappedRowSetMapping($parent->tableName, $parentMapping->columns, $parentMapping->keyColumns),
-        );
-        $lines = $child->defined(
-            new MappedRowSetMapping(
-                $child->tableName,
-                $childMapping->columns,
-                $childMapping->keyColumns,
-                owner: $childMapping->owner,
-            ),
-        );
+        $schema = FlushSchema::definition($parent->tableName, $child->tableName);
+        $orders = new SchemaMappedRowSet(FlushSchema::ORDERS)->compileFor($parent->adapter, $schema)();
+        $lines = new SchemaMappedRowSet(FlushSchema::LINES, owner: 'owner')->compileFor($child->adapter, $schema)();
 
         $flush = new MappedTableUnitOfWork([
-            FlushLineDefinition::class => $lines,
-            FlushOrderDefinition::class => $orders,
+            FlushSchema::LINES => $lines,
+            FlushSchema::ORDERS => $orders,
         ], $parent->adapter);
 
         return [$orders, $lines, $flush];
@@ -331,39 +326,39 @@ final class FlushCoordinationTest extends RowSetTestCase
     }
 }
 
-final class FlushOrderDefinition implements MappedRowSetDefinition
+final class FlushSchema
 {
-    public function mapping(): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping(
-            'orders',
-            [
-                'tenant' => new MappedColumn('string'),
-                'id' => new MappedColumn('string'),
-                'status' => new MappedColumn('string', nullable: true),
-            ],
-            ['tenant', 'id'],
-        );
-    }
-}
+    public const string ORDERS = 'orders';
+    public const string LINES = 'lines';
 
-final class FlushLineDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
+    public static function definition(string $orders, string $lines): SchemaDefinition
     {
-        return new MappedRowSetMapping(
-            'lines',
-            [
-                'order_tenant' => new MappedColumn('string'),
-                'order_id' => new MappedColumn('string'),
-                'id' => new MappedColumn('string'),
-                'status' => new MappedColumn('string', nullable: true),
-            ],
-            ['order_tenant', 'order_id', 'id'],
-            owner: new MappedRowSetOwner(FlushOrderDefinition::class, [
-                'order_tenant' => 'tenant',
-                'order_id' => 'id',
-            ]),
-        );
+        return new SchemaDefinition([
+            new TableDefinition(
+                self::ORDERS,
+                $orders,
+                [
+                    new ColumnDefinition('tenant', type: ColumnType::Text),
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text, nullable: true),
+                ],
+                primaryKey: ['tenant', 'id'],
+            ),
+            new TableDefinition(
+                self::LINES,
+                $lines,
+                [
+                    new ColumnDefinition('order_tenant', type: ColumnType::Text),
+                    new ColumnDefinition('order_id', type: ColumnType::Text),
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text, nullable: true),
+                ],
+                primaryKey: ['order_tenant', 'order_id', 'id'],
+                foreignKeys: ['owner' => new ForeignKeyDefinition(self::ORDERS, [
+                    'order_tenant' => 'tenant',
+                    'order_id' => 'id',
+                ])],
+            ),
+        ]);
     }
 }

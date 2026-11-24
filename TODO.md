@@ -15,8 +15,6 @@
   Étudier séparément les nouvelles livraisons de messages : backoff, plafond
   de tentatives et renouvellement des leases pendant les traitements longs.
 
-- [ ] Relier les métadonnées StateStore à Schema pour dériver le schéma de base
-  (identifiants composites, colonnes et tables des collections), avec déclaration
-  des index, contraintes uniques et références. Les exemples coworking et IAM
-  maintiennent actuellement le DDL à la main, en parallèle des attributs PHP.
-  Ne pas déduire automatiquement les index métier depuis les requêtes SQL.
+- [ ] Étendre la génération DDL de Schema pour couvrir les contraintes et les
+  index utilisés par Coworking et IAM. Ces exemples déclarent leurs row sets
+  dans Schema et conservent leurs scripts DDL pour les migrations.

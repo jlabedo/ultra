@@ -17,7 +17,7 @@ local column IDs to the complete referenced primary key in key order. The reconc
 before removing tables or columns and adds new references once tables and columns are in place. References
 are resolved after composing schema fragments. Changing the primary key of an existing table is unsupported.
 
-`ColumnType::Text` and `ColumnType::Int32` are portable column definitions with a PostgreSQL translation.
+`ColumnType::Text`, `Int32`, `Int64` and `Boolean` are portable column types with a PostgreSQL translation.
 Column definitions also accept SQL type strings and SQL constraints for dialect-specific declarations.
 [MappedTable](../stored-state/mapped-table.md#compile-row-sets-from-schema) can compile row sets from these
 same table definitions.

@@ -15,12 +15,15 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\SchemaMappedRowSet;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\SqlTrace;
 use Ultra\Testing\SqlTraceEntry;
@@ -106,18 +109,19 @@ final class SqlInspectionTest extends TestCase
         $this->connection->executeStatement(
             'CREATE TEMP TABLE owner_read_rows (owner_id TEXT, id TEXT, status TEXT, PRIMARY KEY (owner_id, id))',
         );
-        $rows = new PostgresMappedTableAdapter($this->connection)->createDefined(
-            new MappedRowSetMapping(
+        $adapter = new PostgresMappedTableAdapter($this->connection);
+        $schema = new SchemaDefinition([
+            new TableDefinition(
                 'owner_read_rows',
-                [
-                    'owner_id' => new MappedColumn('string'),
-                    'id' => new MappedColumn('string'),
-                    'status' => new MappedColumn('string', nullable: true),
+                columns: [
+                    new ColumnDefinition('owner_id', type: ColumnType::Text),
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text, nullable: true),
                 ],
-                ['owner_id', 'id'],
-                ownerColumns: ['owner_id'],
+                primaryKey: ['owner_id', 'id'],
             ),
-        );
+        ]);
+        $rows = new SchemaMappedRowSet('owner_read_rows', ownerColumns: ['owner_id'])->compileFor($adapter, $schema)();
         $this->trace->clear();
 
         $rows->rowsForOwner(['owner_id' => 'order'], []);
@@ -135,13 +139,20 @@ final class SqlInspectionTest extends TestCase
         $this->connection->insert('observed_uuids', ['id' => $first, 'status' => 'first']);
         $this->connection->insert('observed_uuids', ['id' => $second, 'status' => 'second']);
         $adapter = new PostgresMappedTableAdapter($this->connection);
-        $rows = $adapter->createDefined(
-            new MappedRowSetMapping(
+        $schema = new SchemaDefinition([
+            new TableDefinition(
                 'observed_uuids',
-                ['id' => new MappedColumn('string'), 'status' => new MappedColumn('string')],
-                ['id'],
+                columns: [
+                    new ColumnDefinition('id', type: 'uuid'),
+                    new ColumnDefinition('status', type: ColumnType::Text),
+                ],
+                primaryKey: ['id'],
             ),
-        );
+        ]);
+        $rows = new SchemaMappedRowSet('observed_uuids', representations: ['id' => 'string'])->compileFor(
+            $adapter,
+            $schema,
+        )();
         $unit = new MappedTableUnitOfWork(['observed_uuids' => $rows], $adapter);
         $this->trace->clear();
 
@@ -235,7 +246,7 @@ final class SqlInspectionTest extends TestCase
                     . ' ADD COLUMN attempts INTEGER NOT NULL DEFAULT 0',
                 );
             },
-            extraColumns: ['attempts' => new MappedColumn('int')],
+            extraColumns: [new ColumnDefinition('attempts', type: ColumnType::Int32)],
         ));
 
         static::assertTrue($inspection->succeeded());

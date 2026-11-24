@@ -6,11 +6,14 @@ namespace Ultra\Testing;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
-use Ultra\MappedTable\MappedColumn;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\SchemaMappedRowSet;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 
 abstract class PostgresRowSetTestCase extends TestCase
 {
@@ -40,23 +43,27 @@ abstract class PostgresRowSetTestCase extends TestCase
                 )', $connection->quoteSingleIdentifier($tableName)));
 
             $adapter = new PostgresMappedTableAdapter($connection);
-            $rows = $adapter->createDefined(
-                new MappedRowSetMapping(
+            $schema = new SchemaDefinition([
+                new TableDefinition(
                     $tableName,
-                    [
-                        'id' => new MappedColumn('string'),
-                        'status' => new MappedColumn('string', nullable: true),
-                        'note' => new MappedColumn('string', nullable: true),
-                        'version_a' => new MappedColumn('string', nullable: true),
-                        'version_b' => new MappedColumn('string', nullable: true),
-                        'tags' => new MappedColumn('array', nullable: true),
-                        'payload' => new MappedColumn('array', nullable: true),
-                        'expires_on' => new MappedColumn('string', nullable: true),
+                    columns: [
+                        new ColumnDefinition('id', type: ColumnType::Text),
+                        new ColumnDefinition('status', type: ColumnType::Text, nullable: true),
+                        new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
+                        new ColumnDefinition('version_a', type: ColumnType::Text, nullable: true),
+                        new ColumnDefinition('version_b', type: ColumnType::Text, nullable: true),
+                        new ColumnDefinition('tags', type: 'text[]', nullable: true),
+                        new ColumnDefinition('payload', type: 'jsonb', nullable: true),
+                        new ColumnDefinition('expires_on', type: 'date', nullable: true),
                     ],
-                    ['id'],
+                    primaryKey: ['id'],
                 ),
-                $columnTypes,
-            );
+            ]);
+            $rows = new SchemaMappedRowSet(
+                $tableName,
+                representations: ['tags' => 'array', 'payload' => 'array', 'expires_on' => 'string'],
+                postgresColumnTypes: $columnTypes,
+            )->compileFor($adapter, $schema)();
             $callback($connection, $rows, $tableName, new MappedTableUnitOfWork([$tableName => $rows], $adapter));
         } finally {
             PostgresConnectionSupport::resetSharedConnection($connection);

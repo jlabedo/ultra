@@ -9,16 +9,17 @@ use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\MappedTable\Exception\UnknownQueryGuardException;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetDefinition;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
-use Ultra\StateStore\Tests\Support\OrderLinesDefinition;
-use Ultra\StateStore\Tests\Support\OrdersDefinition;
+use Ultra\MappedTable\SchemaMappedRowSet;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
+use Ultra\StateStore\Tests\Support\StateStoreSchema;
 use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 
 /** @internal */
@@ -85,7 +86,7 @@ final class QueryReadOrderingTest extends StateStoreTestCase
         } catch (PendingQueryChangesException $exception) {
             static::assertSame('company_usage', $exception->guardName);
             static::assertSame($scope, $exception->guardValue);
-            static::assertSame(QueryReadBookingsDefinition::class, $exception->rowSet);
+            static::assertSame(QueryReadSchema::BOOKINGS, $exception->rowSet);
             static::assertSame('booking-1', $exception->key->value('id'));
             static::assertStringContainsString('before changing mapped row set', $exception->getMessage());
         }
@@ -181,17 +182,18 @@ final class QueryReadOrderingTest extends StateStoreTestCase
     {
         $database = new InMemoryRowDatabase();
         $adapter = new InMemoryMappedTableAdapter($database);
-        $table = $adapter->createDefined(new QueryReadBookingsDefinition($numeric)->mapping());
-        $notes = $adapter->createDefined(new QueryReadNotesDefinition()->mapping());
+        $schema = QueryReadSchema::definition($numeric);
+        $table = new SchemaMappedRowSet(QueryReadSchema::BOOKINGS)->compileFor($adapter, $schema)();
+        $notes = new SchemaMappedRowSet(QueryReadSchema::NOTES)->compileFor($adapter, $schema)();
         $unitOfWork = new MappedTableUnitOfWork(
-            [QueryReadBookingsDefinition::class => $table, QueryReadNotesDefinition::class => $notes],
+            [QueryReadSchema::BOOKINGS => $table, QueryReadSchema::NOTES => $notes],
             $adapter,
             queryGuards: [
                 new QueryGuardDefinition('company_usage', [
-                    new QueryGuardDependency(QueryReadBookingsDefinition::class, 'company_id', ['charged', 'minutes']),
+                    new QueryGuardDependency(QueryReadSchema::BOOKINGS, 'company_id', ['charged', 'minutes']),
                 ]),
                 new QueryGuardDefinition('room_bookings', [
-                    new QueryGuardDependency(QueryReadBookingsDefinition::class, 'room_id', ['status']),
+                    new QueryGuardDependency(QueryReadSchema::BOOKINGS, 'room_id', ['status']),
                 ]),
             ],
         );
@@ -208,8 +210,8 @@ final class QueryReadOrderingTest extends StateStoreTestCase
         $fixture->unitOfWork->clear();
         [$store, $registry] = $fixture->newStore([OrderWithLinesState::class], guards: [
             new QueryGuardDefinition('usage', [
-                new QueryGuardDependency(OrdersDefinition::class, 'order_id', []),
-                new QueryGuardDependency(OrderLinesDefinition::class, 'order_id'),
+                new QueryGuardDependency(StateStoreSchema::ORDERS, 'order_id', []),
+                new QueryGuardDependency(StateStoreSchema::ORDER_LINES, 'order_id'),
             ]),
         ]);
         $guard = $registry->queryGuard('usage');
@@ -240,41 +242,35 @@ final class QueryReadOrderingTest extends StateStoreTestCase
     }
 }
 
-final readonly class QueryReadBookingsDefinition implements MappedRowSetDefinition
+final class QueryReadSchema
 {
-    public function __construct(
-        private bool $numeric = false,
-    ) {}
+    public const string BOOKINGS = 'bookings';
+    public const string NOTES = 'notes';
 
-    public function mapping(): MappedRowSetMapping
+    public static function definition(bool $numeric): SchemaDefinition
     {
-        return new MappedRowSetMapping(
-            'bookings',
-            [
-                'id' => new MappedColumn('string'),
-                'company_id' => new MappedColumn($this->numeric ? 'int' : 'string'),
-                'room_id' => new MappedColumn('string'),
-                'charged' => new MappedColumn('bool'),
-                'minutes' => new MappedColumn('int'),
-                'status' => new MappedColumn('string'),
-                'note' => new MappedColumn('string'),
-            ],
-            ['id'],
-        );
-    }
-}
-
-final class QueryReadNotesDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping(
-            'notes',
-            [
-                'id' => new MappedColumn('string'),
-                'text' => new MappedColumn('string'),
-            ],
-            ['id'],
-        );
+        return new SchemaDefinition([
+            new TableDefinition(
+                self::BOOKINGS,
+                columns: [
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('company_id', type: $numeric ? ColumnType::Int32 : ColumnType::Text),
+                    new ColumnDefinition('room_id', type: ColumnType::Text),
+                    new ColumnDefinition('charged', type: ColumnType::Boolean),
+                    new ColumnDefinition('minutes', type: ColumnType::Int32),
+                    new ColumnDefinition('status', type: ColumnType::Text),
+                    new ColumnDefinition('note', type: ColumnType::Text),
+                ],
+                primaryKey: ['id'],
+            ),
+            new TableDefinition(
+                self::NOTES,
+                columns: [
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('text', type: ColumnType::Text),
+                ],
+                primaryKey: ['id'],
+            ),
+        ]);
     }
 }

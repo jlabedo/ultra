@@ -9,16 +9,18 @@ use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\MappedTable\GuardLockMode;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedColumn;
-use Ultra\MappedTable\MappedRowSetDefinition;
-use Ultra\MappedTable\MappedRowSetMapping;
-use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Tests\Support\RecordingGuardMappedTableAdapter;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\ForeignKeyDefinition;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateColumn;
@@ -208,16 +210,18 @@ final class QueryDependencyTest extends TestCase
         ) use ($trace): void {
             $trace[] = [$namespace, $key, $mode];
         });
-        $roleMapping = new GuardRolesDefinition()->mapping();
-        $permissionMapping = new GuardPermissionsDefinition()->mapping();
-        $roles = $factory->createDefined($roleMapping);
-        $permissions = $factory->createDefined($permissionMapping);
+        $schema = GuardStateSchema::definition();
+        $roles = new SchemaMappedRowSet(GuardStateSchema::ROLES)->compileFor($factory, $schema)();
+        $permissions = new SchemaMappedRowSet(GuardStateSchema::PERMISSIONS, owner: 'owner')->compileFor(
+            $factory,
+            $schema,
+        )();
         $registry = new MappedTableUnitOfWork(
-            [GuardRolesDefinition::class => $roles, GuardPermissionsDefinition::class => $permissions],
+            [GuardStateSchema::ROLES => $roles, GuardStateSchema::PERMISSIONS => $permissions],
             $factory,
             queryGuards: [new QueryGuardDefinition('iam', [
-                new QueryGuardDependency(GuardRolesDefinition::class, 'tenant_id', ['enabled']),
-                new QueryGuardDependency(GuardPermissionsDefinition::class, 'owner_tenant'),
+                new QueryGuardDependency(GuardStateSchema::ROLES, 'tenant_id', ['enabled']),
+                new QueryGuardDependency(GuardStateSchema::PERMISSIONS, 'owner_tenant'),
             ])],
         );
         $store = new StateStore(
@@ -246,41 +250,39 @@ final class QueryDependencyTest extends TestCase
     }
 }
 
-final class GuardRolesDefinition implements MappedRowSetDefinition
+final class GuardStateSchema
 {
-    public function mapping(): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping(
-            'guard_roles',
-            [
-                'tenant_id' => new MappedColumn('string'),
-                'role_id' => new MappedColumn('string'),
-                'enabled' => new MappedColumn('bool'),
-                'note' => new MappedColumn('string'),
-                'display_name' => new MappedColumn('string'),
-            ],
-            ['tenant_id', 'role_id'],
-        );
-    }
-}
+    public const string ROLES = 'guard_roles';
+    public const string PERMISSIONS = 'guard_permissions';
 
-final class GuardPermissionsDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
+    public static function definition(): SchemaDefinition
     {
-        return new MappedRowSetMapping(
-            'guard_permissions',
-            [
-                'owner_tenant' => new MappedColumn('string'),
-                'owner_role' => new MappedColumn('string'),
-                'permission_name' => new MappedColumn('string'),
-                'description' => new MappedColumn('string'),
-            ],
-            ['owner_tenant', 'owner_role', 'permission_name'],
-            owner: new MappedRowSetOwner(GuardRolesDefinition::class, [
-                'owner_tenant' => 'tenant_id',
-                'owner_role' => 'role_id',
-            ]),
-        );
+        return new SchemaDefinition([
+            new TableDefinition(
+                self::ROLES,
+                columns: [
+                    new ColumnDefinition('tenant_id', type: ColumnType::Text),
+                    new ColumnDefinition('role_id', type: ColumnType::Text),
+                    new ColumnDefinition('enabled', type: ColumnType::Boolean),
+                    new ColumnDefinition('note', type: ColumnType::Text),
+                    new ColumnDefinition('display_name', type: ColumnType::Text),
+                ],
+                primaryKey: ['tenant_id', 'role_id'],
+            ),
+            new TableDefinition(
+                self::PERMISSIONS,
+                columns: [
+                    new ColumnDefinition('owner_tenant', type: ColumnType::Text),
+                    new ColumnDefinition('owner_role', type: ColumnType::Text),
+                    new ColumnDefinition('permission_name', type: ColumnType::Text),
+                    new ColumnDefinition('description', type: ColumnType::Text),
+                ],
+                primaryKey: ['owner_tenant', 'owner_role', 'permission_name'],
+                foreignKeys: ['owner' => new ForeignKeyDefinition(self::ROLES, [
+                    'owner_tenant' => 'tenant_id',
+                    'owner_role' => 'role_id',
+                ])],
+            ),
+        ]);
     }
 }

@@ -1,0 +1,68 @@
+<?php
+
+declare(strict_types=1);
+
+namespace ComplianceExample;
+
+use Ultra\MappedTable\PostgresMappedColumnType;
+use Ultra\MappedTable\SchemaMappedRowSet;
+use Ultra\Schema\Attribute\DefineSchema;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
+
+final class ComplianceSchema
+{
+    public const string EVIDENCE = 'compliance_evidence';
+    public const string QUALIFICATIONS = 'compliance_qualifications';
+    public const string ELIGIBILITY = 'compliance_eligibility';
+
+    #[DefineSchema]
+    public static function definition(): SchemaDefinition
+    {
+        return new SchemaDefinition([
+            new TableDefinition(
+                self::EVIDENCE,
+                columns: [
+                    new ColumnDefinition('account_id', type: ColumnType::Text),
+                    new ColumnDefinition('subject_id', type: ColumnType::Text),
+                    new ColumnDefinition('evidence_id', type: ColumnType::Text),
+                    new ColumnDefinition('document_type', type: ColumnType::Text),
+                ],
+                primaryKey: ['account_id', 'subject_id', 'evidence_id'],
+            ),
+            new TableDefinition(
+                self::QUALIFICATIONS,
+                columns: [
+                    new ColumnDefinition('account_id', type: ColumnType::Text),
+                    new ColumnDefinition('qualification_id', type: ColumnType::Text),
+                    new ColumnDefinition('requirements', type: 'jsonb'),
+                ],
+                primaryKey: ['account_id', 'qualification_id'],
+            ),
+            new TableDefinition(
+                self::ELIGIBILITY,
+                columns: [
+                    new ColumnDefinition('account_id', type: ColumnType::Text),
+                    new ColumnDefinition('subject_id', type: ColumnType::Text),
+                    new ColumnDefinition('qualification_id', type: ColumnType::Text),
+                ],
+                primaryKey: ['account_id', 'subject_id', 'qualification_id'],
+            ),
+        ]);
+    }
+
+    /** @return list<SchemaMappedRowSet> */
+    public static function rowSets(): array
+    {
+        return [
+            new SchemaMappedRowSet(self::EVIDENCE),
+            new SchemaMappedRowSet(
+                self::QUALIFICATIONS,
+                representations: ['requirements' => 'array'],
+                postgresColumnTypes: ['requirements' => PostgresMappedColumnType::Jsonb],
+            ),
+        ];
+    }
+}

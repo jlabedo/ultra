@@ -5,15 +5,18 @@ declare(strict_types=1);
 namespace Ultra\MappedTable\Tests\Support;
 
 use Ultra\MappedTable\GuardLockMode;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Plan\RowSetUpdatePlan;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Storage\RowSetStorage;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 
 final class RecordingRowSetStorage implements RowSetStorage
 {
@@ -67,17 +70,18 @@ final class RecordingRowSetStorage implements RowSetStorage
 
             public function acquireGuardLock(string $namespace, string $key, GuardLockMode $mode): void {}
         };
-        $rows = $adapter->createDefined(
-            new MappedRowSetMapping(
+        $schema = new SchemaDefinition([
+            new TableDefinition(
                 'rows',
-                [
-                    'id' => new MappedColumn('string'),
-                    'status' => new MappedColumn('string', nullable: true),
-                    'note' => new MappedColumn('string', nullable: true),
+                columns: [
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text, nullable: true),
+                    new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
                 ],
-                ['id'],
+                primaryKey: ['id'],
             ),
-        );
+        ]);
+        $rows = new SchemaMappedRowSet('rows')->compileFor($adapter, $schema)();
 
         return [$rows, new MappedTableUnitOfWork(['rows' => $rows], $adapter)];
     }

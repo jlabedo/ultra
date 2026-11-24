@@ -18,7 +18,9 @@ use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MediatorInterface;
 use Ultra\MessageHandling\MessageHandlingExtension;
+use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension;
+use Ultra\StatefulMessageHandling\Tests\DecisionSchema;
 use Ultra\StateStore\StateStore;
 use Ultra\StateStore_Bundle\StateStoreExtension;
 use Ultra\Testing\UltraLight;
@@ -70,15 +72,12 @@ abstract class DecisionTestCase extends TestCase
         if ($stored) {
             $database = new InMemoryRowDatabase();
             $application = $application
-                ->withBundle(new MappedTableExtension(), new StateStoreExtension())
-                ->withClass(
-                    \Ultra\StatefulMessageHandling\Tests\DecisionOrdersDefinition::class,
-                    \Ultra\StatefulMessageHandling\Tests\DecisionTermsDefinition::class,
-                    \Ultra\StatefulMessageHandling\Tests\DecisionAcceptancesDefinition::class,
-                    \Ultra\StatefulMessageHandling\Tests\DependentMembersDefinition::class,
-                    \Ultra\StatefulMessageHandling\Tests\DependentCompaniesDefinition::class,
-                    \Ultra\StatefulMessageHandling\Tests\DependentUsagesDefinition::class,
+                ->withBundle(
+                    new SchemaExtension(),
+                    new MappedTableExtension(schemaRowSets: DecisionSchema::rowSets()),
+                    new StateStoreExtension(),
                 )
+                ->withClass(DecisionSchema::class)
                 ->withService($database, InMemoryRowDatabase::class)
                 ->withService(new InMemoryMappedTableAdapter($database), InMemoryMappedTableAdapter::class)
                 ->withAlias(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)

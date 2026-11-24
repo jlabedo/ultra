@@ -8,14 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\TransactionIsolationLevel;
 use IamExample\Administration;
 use IamExample\Authorization;
-use IamExample\Infrastructure\Rows\AuditDefinition;
-use IamExample\Infrastructure\Rows\BindingsDefinition;
-use IamExample\Infrastructure\Rows\GroupsDefinition;
-use IamExample\Infrastructure\Rows\MembershipsDefinition;
-use IamExample\Infrastructure\Rows\RolePermissionsDefinition;
-use IamExample\Infrastructure\Rows\RolesDefinition;
-use IamExample\Infrastructure\Rows\SubjectsDefinition;
-use IamExample\Infrastructure\Rows\TenantsDefinition;
+use IamExample\Infrastructure\Rows\IamSchema;
 use IamExample\Provisioning;
 use IamExample\State\AuditEntry;
 use IamExample\State\BindingState;
@@ -31,7 +24,6 @@ use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
-use Ultra\MappedTable\Storage\PostgresRowSetSql;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\StateId;
@@ -84,30 +76,23 @@ final readonly class Runtime
 
         $rowSets = [];
         $tables = [];
-        foreach ([
-            TenantsDefinition::class,
-            SubjectsDefinition::class,
-            GroupsDefinition::class,
-            RolesDefinition::class,
-            RolePermissionsDefinition::class,
-            MembershipsDefinition::class,
-            BindingsDefinition::class,
-            AuditDefinition::class,
-        ] as $definition) {
-            $mapping = new $definition()->mapping();
-            $rowSets[$definition] = $adapter->createCompiled($mapping, PostgresRowSetSql::compile($mapping, []));
-            $tables[$mapping->table] = $rowSets[$definition];
+        $schema = IamSchema::definition();
+        $schemaTables = $schema->tablesById();
+        foreach (IamSchema::rowSets() as $selection) {
+            $row = $selection->compileFor($adapter, $schema)();
+            $rowSets[$selection->table] = $row;
+            $tables[$schemaTables[$selection->table]->name] = $row;
         }
         $unitOfWork = new MappedTableUnitOfWork(
             $rowSets,
             $adapter,
             queryGuards: [new QueryGuardDefinition('iam_authorization', [
-                new QueryGuardDependency(SubjectsDefinition::class, 'tenant_id', ['active']),
-                new QueryGuardDependency(GroupsDefinition::class, 'tenant_id', ['active']),
-                new QueryGuardDependency(MembershipsDefinition::class, 'tenant_id', ['active']),
-                new QueryGuardDependency(BindingsDefinition::class, 'tenant_id', ['active', 'expires_at']),
-                new QueryGuardDependency(RolesDefinition::class, 'tenant_id', ['active']),
-                new QueryGuardDependency(RolePermissionsDefinition::class, 'tenant_id'),
+                new QueryGuardDependency(IamSchema::SUBJECTS, 'tenant_id', ['active']),
+                new QueryGuardDependency(IamSchema::GROUPS, 'tenant_id', ['active']),
+                new QueryGuardDependency(IamSchema::MEMBERSHIPS, 'tenant_id', ['active']),
+                new QueryGuardDependency(IamSchema::BINDINGS, 'tenant_id', ['active', 'expires_at']),
+                new QueryGuardDependency(IamSchema::ROLES, 'tenant_id', ['active']),
+                new QueryGuardDependency(IamSchema::ROLE_PERMISSIONS, 'tenant_id'),
             ])],
         );
         $this->states = new StateStore(

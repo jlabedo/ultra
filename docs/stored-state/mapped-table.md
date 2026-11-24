@@ -24,39 +24,12 @@ Adapters own:
 
 ## Defined row sets and owner collections
 
-A `MappedRowSetDefinition` declares the physical table, its complete key and the columns exposed to callers.
-Each `MappedColumn` declares the PHP representation after decoding and whether it accepts null. The supported
-representations are `int`, `string`, `bool`, `float` and normalized arrays of scalar values, null and nested
-arrays. A key column is a non-null integer or string with a single declared representation. Row writes assign
-only non-key columns. The database still owns defaults and constraints. A value supplied by a database default
-becomes available after persistence.
-
-```php
-final class OrderLinesDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping('order_lines', [
-            'order_id' => new MappedColumn('string'),
-            'line_id' => new MappedColumn('string'),
-            'sku' => new MappedColumn('string'),
-        ], ['order_id', 'line_id'], ownerColumns: ['order_id']);
-    }
-}
-```
-
-With Symfony, add `Ultra\MappedTable\Symfony\MappedTableExtension`, register definitions as autoconfigured
-resources and bind `MappedTableAdapter` to a shared service for the application's storage resource. Symfony
-instantiates each definition without constructor parameters at compilation. Its class name identifies the shared
-`MappedRowSet` service, which can be injected using `#[Autowire(service: OrderLinesDefinition::class)]` on a
-`MappedRowSet` parameter. The extension allows one definition per physical table. It compiles key and owner
-columns, their lookup sets and the default read projections. The dumped container uses those validated values.
-
-Declare the concrete adapter class in Symfony, including for synthetic services. When the application selects
-`PostgresMappedTableAdapter`, the row set definition can implement `PostgresMappedRowSetConfiguration`
-and return a map of physical column names to `PostgresMappedColumnType` cases. Symfony validates the codecs
-against the declared PHP representations and emits the codec map and SQL fragments for read projections,
-columns, keys and owners in the container. Runtime binding uses this compiled configuration directly.
+A row set selects a table declared in [Schema](../schema/README.md) by its stable ID. Schema
+provides the physical column names, nullability and complete primary key. The row set selection can expose a
+subset of columns and always includes the primary key. After decoding, supported PHP representations are
+`int`, `string`, `bool`, `float` and normalized arrays of scalar values, null and nested arrays. A key column
+is a non-null integer or string. Row writes assign only non-key columns. A value supplied by a database
+default becomes available after persistence.
 
 The owner columns, when present, identify one collection for each complete owner key in the child table's
 column names. They leave at least one further key column for the item. Reads by owner and direct writes by
@@ -84,32 +57,32 @@ A reconciliation validates all supplied rows before modifying the buffer. Differ
 Use `MappedTableExtension(schemaRowSets: [...])` to compile row sets from the schema assembled through
 [`#[DefineSchema]`](../schema/README.md#symfony-discovery). Each `SchemaMappedRowSet` selects
 a table by its stable ID. This ID is the Symfony service ID and can be used for injection, query guard
-dependencies and projection ownership.
+dependencies and projection ownership. Bind `MappedTableAdapter` to a shared service for the chosen storage
+resource and declare its concrete class, including for synthetic services.
 
 A selected table needs a structured primary key. MappedTable uses its physical column names and nullability.
-It maps `ColumnType::Text` to PHP `string` and `ColumnType::Int32` to `int` by default. Native SQL types
-need an explicit PHP representation for each exposed column, and may need a PostgreSQL codec. The optional
-column selection, representations and codecs are configured by column ID. All primary key columns are
-always included.
+It maps `Text` to PHP `string`, `Int32` and `Int64` to `int`, and `Boolean` to `bool` by default.
+Native SQL types need an explicit PHP representation for each exposed column and may need a PostgreSQL codec.
+The optional column selection, representations and codecs use column IDs.
 
 Set `owner` to the name of a declared foreign key to make it a MappedTable owner relationship. Select the
 parent row set too. The usual owner validation applies, including the requirement that the foreign key use
-immutable child key columns and leave at least one item key column. The dumped container uses the same
-compiled metadata and SQL fragments as class-based definitions.
+immutable child key columns and leave at least one item key column. For collections without a mapped
+persistence dependency, set `ownerColumns` to those immutable child key column IDs.
+
+For manual assembly, call `$selection->compileFor($adapter, $schema)`. The returned factory binds the row
+set to the adapter and creates a fresh buffer on each invocation. Compilation prepares the mapping and,
+for PostgreSQL, the SQL fragments once. Reuse the bound row set inside its unit of work.
 
 The [Symfony workshop example](../../examples/mapped-table-symfony/README.md) generates the PostgreSQL DDL
 and compiles two row sets from one schema, then exercises owner collections and a query guard.
 
 ## Coordinated flush
 
-Declare an owner dependency when a child row set references another defined row set. For example, when
-`OrdersDefinition` declares the key `id`, the mapping for `OrderLinesDefinition` can pass
-`owner: new MappedRowSetOwner(OrdersDefinition::class, ['order_id' => 'id'])` in place of `ownerColumns`.
-The reference maps the complete parent key to immutable child key columns of the same PHP representation.
-Symfony validates that the parent definitions exist and dependencies are acyclic, then emits the dependency
-order and the set of referenced definitions in the container. Manual assembly computes the same
-schedule during assembly. Fixed owner columns remain available for collections whose owners do not impose a
-dependency between row sets.
+An owner dependency maps the complete parent key to immutable child key columns of the same PHP
+representation. Symfony validates that the parent row sets exist, then emits the dependency order and the
+set of referenced definitions in the container. Manual assembly validates the same dependencies and computes
+the order when creating the unit of work.
 
 With Symfony, `MappedTableExtension` enrolls one application `MappedTableUnitOfWork` in the composite
 registered by `UnitOfWorkExtension`. Row sets declared as
@@ -183,16 +156,22 @@ one unit of work, including when the unit of work contains a single row set.
 ```php
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedColumn;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\SchemaMappedRowSet;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 
 $database = new InMemoryRowDatabase();
 $adapter = new InMemoryMappedTableAdapter($database);
-$table = $adapter->createDefined(new MappedRowSetMapping('users', [
-    'id' => new MappedColumn('string'),
-    'status' => new MappedColumn('string'),
-], ['id']));
+$schema = new SchemaDefinition([
+    new TableDefinition('users', columns: [
+        new ColumnDefinition('id', type: ColumnType::Text),
+        new ColumnDefinition('status', type: ColumnType::Text),
+    ], primaryKey: ['id']),
+]);
+$table = new SchemaMappedRowSet('users')->compileFor($adapter, $schema)();
 $unitOfWork = new MappedTableUnitOfWork(['users' => $table], $adapter);
 $database->seedRow('users', 'id', ['id' => 'user-1', 'status' => 'pending']);
 
@@ -316,7 +295,7 @@ When `doctrine/dbal` is installed, you can use `Ultra\MappedTable\PostgresMapped
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 
 $adapter = new PostgresMappedTableAdapter($connection);
-$table = $adapter->createDefined($mapping);
+$table = new SchemaMappedRowSet($tableId)->compileFor($adapter, $schema)();
 ```
 
 The Postgres adapter checks expected column values with `IS NOT DISTINCT FROM`, so `null` expectations are handled correctly.
@@ -336,8 +315,8 @@ are managed by the adapter.
 
 ### Column types
 
-For manual assembly, pass a map of physical column names to `PostgresMappedColumnType` cases to
-`createDefined()`. The adapter validates the codecs and prepares SQL fragments at assembly time.
+Set `SchemaMappedRowSet::postgresColumnTypes` to a map from column IDs to `PostgresMappedColumnType`
+cases. Compilation validates these codecs and prepares SQL fragments when PostgreSQL is selected.
 Configured codecs handle encoding, decoding and SQL casts for writes and optimistic comparisons.
 Other columns use the adapter's ordinary scalar bindings and the driver's decoded values.
 
@@ -348,13 +327,17 @@ strings to the row set, or null for a nullable column. PostgreSQL validates stri
 
 ```php
 $adapter = new PostgresMappedTableAdapter($connection);
-$acceptances = $adapter->createDefined(
-    new MappedRowSetMapping('acceptances', [
-        'id' => new MappedColumn('string'),
-        'accepted_at' => new MappedColumn('string'),
-    ], ['id']),
-    columnTypes: ['accepted_at' => PostgresMappedColumnType::TimestampWithTimeZone],
-);
+$schema = new SchemaDefinition([
+    new TableDefinition('acceptances', columns: [
+        new ColumnDefinition('id', type: ColumnType::Text),
+        new ColumnDefinition('accepted_at', type: 'timestamptz'),
+    ], primaryKey: ['id']),
+]);
+$acceptances = new SchemaMappedRowSet(
+    'acceptances',
+    representations: ['accepted_at' => 'string'],
+    postgresColumnTypes: ['accepted_at' => PostgresMappedColumnType::TimestampWithTimeZone],
+)->compileFor($adapter, $schema)();
 ```
 
 The other codecs are `Text`, `Date`, `Jsonb`, `TextArray`, `UuidArray` and `IntArray`.

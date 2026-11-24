@@ -4,16 +4,17 @@ declare(strict_types=1);
 
 use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Connection;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetDefinition;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
-use Ultra\MappedTable\Storage\PostgresRowSetSql;
+use Ultra\MappedTable\SchemaMappedRowSet;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\SqlTrace;
 use Ultra\Testing\SqlTraceMiddleware;
@@ -128,31 +129,26 @@ function benchmark(Connection $connection, string $workload, int $warmups, int $
     $connection->executeStatement(
         "CREATE TEMP TABLE IF NOT EXISTS {$table} (owner TEXT, id INTEGER, status TEXT NOT NULL, PRIMARY KEY (owner, id))",
     );
-    $definition = new class implements MappedRowSetDefinition {
-        public function mapping(): MappedRowSetMapping
-        {
-            return new MappedRowSetMapping(
-                BENCHMARK_TABLE,
-                [
-                    'owner' => new MappedColumn('string'),
-                    'id' => new MappedColumn('int'),
-                    'status' => new MappedColumn('string'),
-                ],
-                ['owner', 'id'],
-                ownerColumns: ['owner'],
-            );
-        }
-    };
-    $mapping = $definition->mapping();
+    $schema = new SchemaDefinition([
+        new TableDefinition(
+            BENCHMARK_TABLE,
+            columns: [
+                new ColumnDefinition('owner', type: ColumnType::Text),
+                new ColumnDefinition('id', type: ColumnType::Int32),
+                new ColumnDefinition('status', type: ColumnType::Text),
+            ],
+            primaryKey: ['owner', 'id'],
+        ),
+    ]);
     $adapter = new PostgresMappedTableAdapter($connection);
-    $rows = $adapter->createCompiled($mapping, PostgresRowSetSql::compile($mapping, []));
+    $rows = new SchemaMappedRowSet(BENCHMARK_TABLE, ownerColumns: ['owner'])->compileFor($adapter, $schema)();
     $guarded = 'guarded-100' === $workload;
     $unit = new MappedTableUnitOfWork(
-        [$definition::class => $rows],
+        [BENCHMARK_TABLE => $rows],
         $adapter,
         queryGuards: $guarded
             ? [new QueryGuardDefinition('mapped-table-benchmark', [
-                new QueryGuardDependency($definition::class, 'owner'),
+                new QueryGuardDependency(BENCHMARK_TABLE, 'owner'),
             ])] : [],
     );
     $runner = new TransactionalUnitOfWorkRunner($unit, new DbalTransactionManager($connection));

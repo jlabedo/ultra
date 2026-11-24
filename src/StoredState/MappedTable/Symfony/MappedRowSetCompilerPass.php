@@ -10,7 +10,6 @@ use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\MappedRowSetOwner;
@@ -18,8 +17,8 @@ use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Plan\RowSetDependencies;
 use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Storage\PostgresRowSetSql;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\UnitOfWork\TagNames;
@@ -27,8 +26,6 @@ use Ultra\UnitOfWork\TagNames;
 /** @internal */
 final class MappedRowSetCompilerPass implements CompilerPassInterface
 {
-    public const string DEFINITION_TAG = 'ultra.mapped_table.definition';
-
     public const string MAPPINGS = 'ultra.mapped_table.compiling.mappings';
     public const string COORDINATORS = 'ultra.mapped_table.compiling.coordinators';
     public const string PRIVATE_COORDINATOR_TAG = 'ultra.mapped_table.private_coordinator';
@@ -36,14 +33,13 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
 
     public function process(ContainerBuilder $container): void
     {
-        $resources = $container->findTaggedResourceIds(self::DEFINITION_TAG);
         $selections = [];
         if ($container->hasParameter(self::SCHEMA_ROW_SETS)) {
             /** @var list<SchemaMappedRowSet> $selections */
             $selections = $container->getParameter(self::SCHEMA_ROW_SETS);
             $container->getParameterBag()->remove(self::SCHEMA_ROW_SETS);
         }
-        if ([] === $resources && [] === $selections) {
+        if ([] === $selections) {
             $container->setParameter(self::MAPPINGS, []);
             $container->setParameter(self::COORDINATORS, $this->coordinators($container, []));
 
@@ -63,50 +59,19 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         }
         $postgres = is_a($adapterClass, PostgresMappedTableAdapter::class, true);
 
+        $tables = SchemaExtension::compiledSchema($container)->tablesById();
         $mappings = [];
-        $codecs = [];
-        foreach ($resources as $id => $tags) {
-            $class = $tags[0]['class'] ?? $container->findDefinition($id)->getClass();
-            if (!is_string($class) || !is_a($class, MappedRowSetDefinition::class, true)) {
+        $rowSets = [];
+        foreach ($selections as $selection) {
+            $id = $selection->table;
+            if ($container->has($id)) {
                 throw new \LogicException(sprintf(
-                    'Mapped row set resource "%s" must implement MappedRowSetDefinition.',
+                    'Mapped schema table "%s" conflicts with another service or row set.',
                     $id,
                 ));
             }
-            if (isset($mappings[$class])) {
-                continue;
-            }
-            $reflection = new \ReflectionClass($class);
-            if (!$reflection->isInstantiable() || [] !== ($reflection->getConstructor()?->getParameters() ?? [])) {
-                throw new \LogicException(sprintf(
-                    'Mapped row set definition "%s" must be instantiable without constructor parameters.',
-                    $class,
-                ));
-            }
-
-            $definition = $reflection->newInstance();
-            $mappings[$class] = $definition->mapping();
-            if ($postgres && $definition instanceof PostgresMappedRowSetConfiguration) {
-                $codecs[$class] = $definition->postgresColumnTypes();
-            }
-        }
-
-        if ([] !== $selections) {
-            $tables = SchemaExtension::compiledSchema($container)->tablesById();
-            foreach ($selections as $selection) {
-                $id = $selection->table;
-                if (isset($mappings[$id]) || $container->has($id)) {
-                    throw new \LogicException(sprintf(
-                        'Mapped schema table "%s" conflicts with another service or row set.',
-                        $id,
-                    ));
-                }
-                [$mappings[$id], $codecs[$id]] = $selection->compile($tables, $postgres);
-            }
-        }
-
-        $rowSets = [];
-        foreach ($mappings as $id => $mapping) {
+            [$mapping, $codecs] = $selection->compile($tables, $postgres);
+            $mappings[$id] = $mapping;
             $rowSets[$id] = new Reference($id);
             $metadata = new Definition(MappedRowSetMetadata::class, [
                 $mapping->table,
@@ -128,7 +93,7 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
                 $mapping->ownerColumnSet,
             ]);
             $rowSet = $postgres
-                ? $this->postgresRowSet($mapping, $codecs[$id] ?? [], $metadata)
+                ? $this->postgresRowSet($mapping, $codecs, $metadata)
                 : new Definition(MappedRowSet::class)->setFactory([
                     new Reference(MappedTableAdapter::class),
                     'createDefined',

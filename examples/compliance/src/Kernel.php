@@ -26,6 +26,7 @@ use Ultra\EventStore\EventStore;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Projection\Bundle\ProjectionImplementationInterface;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
@@ -60,6 +61,7 @@ final class Kernel extends BaseKernel
     public function registerContainerConfiguration(LoaderInterface $loader): void
     {
         $loader->load(static function (ContainerBuilder $container): void {
+            new MappedTableExtension(schemaRowSets: ComplianceSchema::rowSets())->build($container);
             $container->register(Connection::class)->setSynthetic(true)->setPublic(true);
 
             foreach ([
@@ -89,8 +91,7 @@ final class Kernel extends BaseKernel
                 QualificationDefined::class,
                 EvidenceState::class,
                 QualificationState::class,
-                EvidenceRowsDefinition::class,
-                QualificationRowsDefinition::class,
+                ComplianceSchema::class,
                 SourceProjection::class,
             ] as $class) {
                 $container

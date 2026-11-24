@@ -23,7 +23,6 @@ use Ultra\StateStore\StateStore;
 use Ultra\Testing\PostgresConnectionSupport;
 
 require_once __DIR__ . '/States.php';
-require_once __DIR__ . '/FixtureRowSetDefinitions.php';
 
 /** Shared object mappings over memory or an isolated Postgres schema, with immediate foreign keys. */
 final class StateStoreFixture
@@ -118,23 +117,14 @@ final class StateStoreFixture
         $required = $this->requiredTables($stateClasses);
         $rowSets = [];
         $tables = [];
-        foreach ([
-            OrdersDefinition::class,
-            OrderLinesDefinition::class,
-            CompositeOrdersDefinition::class,
-            CompositeOrderLinesDefinition::class,
-            CountersDefinition::class,
-            ArchivedCountersDefinition::class,
-            TermsAcceptancesDefinition::class,
-            ConventionalNamesDefinition::class,
-        ] as $definition) {
-            $mapping = new $definition()->mapping();
-            if (!isset($required[$mapping->table])) {
+        $schema = StateStoreSchema::definition();
+        foreach ($schema->tables as $table) {
+            if (!isset($required[$table->name])) {
                 continue;
             }
-            $rowSet = $factory->createDefined($mapping);
-            $rowSets[$definition] = $rowSet;
-            $tables[$mapping->table] = $rowSet;
+            $rowSet = StateStoreSchema::selection($table->id)->compileFor($factory, $schema)();
+            $rowSets[$table->id] = $rowSet;
+            $tables[$table->name] = $rowSet;
         }
         $unitOfWork = new MappedTableUnitOfWork($rowSets, $factory, queryGuards: $guards);
         $bindings = new StateRowSets($tables, $unitOfWork);
@@ -171,12 +161,12 @@ final class StateStoreFixture
         $factory = $this->storage instanceof Connection
             ? new PostgresMappedTableAdapter($this->storage)
             : new InMemoryMappedTableAdapter($this->storage);
-        $definition = match ($collection->tableName) {
-            'order_lines' => new OrderLinesDefinition(),
-            'composite_order_lines' => new CompositeOrderLinesDefinition(),
-        };
+        $rows = StateStoreSchema::selection($collection->tableName)->compileFor(
+            $factory,
+            StateStoreSchema::definition(),
+        )();
 
-        return $factory->createDefined($definition->mapping())->rowsForOwner($collection->ownerKey($normalizedId));
+        return $rows->rowsForOwner($collection->ownerKey($normalizedId));
     }
 
     public function close(): void

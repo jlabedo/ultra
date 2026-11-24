@@ -99,21 +99,20 @@ Projection handlers must not append new domain events or perform irreversible ex
 
 ### Mapped row sets in Symfony
 
-With `MappedTableExtension`, list the service IDs of the row sets the projection
-writes in `rowSets` and use the same IDs for injection. The ID is the definition class for a
-class-based row set or the table ID for a [row set compiled from Schema](../stored-state/mapped-table.md#compile-row-sets-from-schema).
+With `MappedTableExtension`, list the Schema table IDs of the row sets the projection writes in
+`rowSets` and use the same IDs for injection. [Select the tables in MappedTable](../stored-state/mapped-table.md#compile-row-sets-from-schema).
 
 ```php
 #[Projection(
     name: 'account_balance',
     partitionBy: 'accountId',
     mode: ProjectionMode::Synchronous,
-    rowSets: [AccountBalanceDefinition::class],
+    rowSets: [AccountSchema::BALANCES],
 )]
 final readonly class AccountBalanceProjection
 {
     public function __construct(
-        #[Autowire(service: AccountBalanceDefinition::class)]
+        #[Autowire(service: AccountSchema::BALANCES)]
         private MappedRowSet $balances,
     ) {}
 }

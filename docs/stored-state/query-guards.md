@@ -6,7 +6,7 @@ are replayed under the guards inside the flush transaction.
 
 ## MappedTable query guards
 
-A dependency identifies a row set definition, the physical column that supplies the guard value and the
+A dependency identifies a row set by its Schema table ID, the physical column that supplies the guard value and the
 physical columns read by the query. The [mapped table adapter](mapped-table.md#adapter-contract) handles
 guard locks on the same resource as row writes.
 
@@ -21,7 +21,7 @@ use Ultra\MappedTable\QueryGuardDependency;
 
 public function __construct(
     #[DefineQueryGuard('company_usage', [
-        new QueryGuardDependency(BookingsDefinition::class, 'company_id', ['charged', 'start_at', 'end_at']),
+        new QueryGuardDependency(BookingSchema::BOOKINGS, 'company_id', ['charged', 'start_at', 'end_at']),
     ])]
     private QueryGuard $companyUsage,
 ) {}
@@ -40,8 +40,8 @@ use Ultra\MappedTable\QueryGuardDependency;
 
 $guardDefinitions = [
     new QueryGuardDefinition('company_usage', [
-        new QueryGuardDependency(BookingsDefinition::class, 'company_id', ['charged', 'start_at', 'end_at']),
-        new QueryGuardDependency(BookingLinesDefinition::class, 'company_id'),
+        new QueryGuardDependency(BookingSchema::BOOKINGS, 'company_id', ['charged', 'start_at', 'end_at']),
+        new QueryGuardDependency(BookingSchema::LINES, 'company_id'),
     ]),
 ];
 ```

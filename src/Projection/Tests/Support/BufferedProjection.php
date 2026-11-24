@@ -5,15 +5,18 @@ declare(strict_types=1);
 namespace Ultra\Projection\Tests\Support;
 
 use Doctrine\DBAL\Connection;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Attribute\ProjectionResetter;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\UnitOfWork\UnitOfWork;
 
 #[Projection(name: 'buffered_projection', partitionBy: 'courseId')]
@@ -31,9 +34,16 @@ final class BufferedProjection implements UnitOfWork
         public readonly string $indexTable,
     ) {
         $adapter = new PostgresMappedTableAdapter($connection);
-        $columns = ['id' => new MappedColumn('string'), 'name' => new MappedColumn('string')];
-        $this->courses = $adapter->createDefined(new MappedRowSetMapping($coursesTable, $columns, ['id']));
-        $this->index = $adapter->createDefined(new MappedRowSetMapping($indexTable, $columns, ['id']));
+        $columns = [
+            new ColumnDefinition('id', type: ColumnType::Text),
+            new ColumnDefinition('name', type: ColumnType::Text),
+        ];
+        $schema = new SchemaDefinition([
+            new TableDefinition($coursesTable, columns: $columns, primaryKey: ['id']),
+            new TableDefinition($indexTable, columns: $columns, primaryKey: ['id']),
+        ]);
+        $this->courses = new SchemaMappedRowSet($coursesTable)->compileFor($adapter, $schema)();
+        $this->index = new SchemaMappedRowSet($indexTable)->compileFor($adapter, $schema)();
         $this->persistence = new MappedTableUnitOfWork([
             $coursesTable => $this->courses,
             $indexTable => $this->index,

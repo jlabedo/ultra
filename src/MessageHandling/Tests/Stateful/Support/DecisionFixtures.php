@@ -14,13 +14,16 @@ use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
 use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\EventStore;
-use Ultra\MappedTable\MappedColumn;
-use Ultra\MappedTable\MappedRowSetDefinition;
-use Ultra\MappedTable\MappedRowSetMapping;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\MessageHandling\MessageContext;
+use Ultra\Schema\Attribute\DefineSchema;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\StatefulMessageHandling\Attribute\BindTo;
 use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StatefulMessageHandling\Attribute\StateReader;
@@ -946,93 +949,81 @@ final readonly class InspectMixedDecision
     }
 }
 
-final class DecisionOrdersDefinition implements MappedRowSetDefinition
+final class DecisionSchema
 {
-    public function mapping(): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping(
-            'decision_orders',
-            [
-                'order_id' => new MappedColumn('string'),
-                'status' => new MappedColumn('string'),
-            ],
-            ['order_id'],
-        );
-    }
-}
+    public const string ORDERS = 'decision_orders';
+    public const string TERMS = 'decision_terms';
+    public const string ACCEPTANCES = 'decision_acceptances';
+    public const string DEPENDENT_MEMBERS = 'dependent_members';
+    public const string DEPENDENT_COMPANIES = 'dependent_companies';
+    public const string DEPENDENT_USAGES = 'dependent_usages';
 
-final class DecisionTermsDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
+    #[DefineSchema]
+    public static function definition(): SchemaDefinition
     {
-        return new MappedRowSetMapping(
-            'decision_terms',
-            [
-                'terms_id' => new MappedColumn('string'),
-                'status' => new MappedColumn('string'),
-            ],
-            ['terms_id'],
-        );
+        return new SchemaDefinition([
+            new TableDefinition(
+                self::ORDERS,
+                columns: [
+                    new ColumnDefinition('order_id', type: ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text),
+                ],
+                primaryKey: ['order_id'],
+            ),
+            new TableDefinition(
+                self::TERMS,
+                columns: [
+                    new ColumnDefinition('terms_id', type: ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text),
+                ],
+                primaryKey: ['terms_id'],
+            ),
+            new TableDefinition(
+                self::ACCEPTANCES,
+                columns: [
+                    new ColumnDefinition('identity_id', type: ColumnType::Text),
+                    new ColumnDefinition('terms_id', type: ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text),
+                ],
+                primaryKey: ['identity_id', 'terms_id'],
+            ),
+            new TableDefinition(
+                self::DEPENDENT_MEMBERS,
+                columns: [
+                    new ColumnDefinition('member_id', type: ColumnType::Text),
+                    new ColumnDefinition('company_id', type: ColumnType::Text),
+                ],
+                primaryKey: ['member_id'],
+            ),
+            new TableDefinition(
+                self::DEPENDENT_COMPANIES,
+                columns: [
+                    new ColumnDefinition('company_id', type: ColumnType::Text),
+                    new ColumnDefinition('monthly_minutes', type: ColumnType::Int32),
+                ],
+                primaryKey: ['company_id'],
+            ),
+            new TableDefinition(
+                self::DEPENDENT_USAGES,
+                columns: [
+                    new ColumnDefinition('company_month_id', type: ColumnType::Text),
+                    new ColumnDefinition('used_minutes', type: ColumnType::Int32),
+                ],
+                primaryKey: ['company_month_id'],
+            ),
+        ]);
     }
-}
 
-final class DecisionAcceptancesDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
+    /** @return list<SchemaMappedRowSet> */
+    public static function rowSets(): array
     {
-        return new MappedRowSetMapping(
-            'decision_acceptances',
-            [
-                'identity_id' => new MappedColumn('string'),
-                'terms_id' => new MappedColumn('string'),
-                'status' => new MappedColumn('string'),
-            ],
-            ['identity_id', 'terms_id'],
-        );
-    }
-}
-
-final class DependentMembersDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping(
-            'dependent_members',
-            [
-                'member_id' => new MappedColumn('string'),
-                'company_id' => new MappedColumn('string'),
-            ],
-            ['member_id'],
-        );
-    }
-}
-
-final class DependentCompaniesDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping(
-            'dependent_companies',
-            [
-                'company_id' => new MappedColumn('string'),
-                'monthly_minutes' => new MappedColumn('int'),
-            ],
-            ['company_id'],
-        );
-    }
-}
-
-final class DependentUsagesDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping(
-            'dependent_usages',
-            [
-                'company_month_id' => new MappedColumn('string'),
-                'used_minutes' => new MappedColumn('int'),
-            ],
-            ['company_month_id'],
-        );
+        return array_map(static fn(string $table): SchemaMappedRowSet => new SchemaMappedRowSet($table), [
+            self::ORDERS,
+            self::TERMS,
+            self::ACCEPTANCES,
+            self::DEPENDENT_MEMBERS,
+            self::DEPENDENT_COMPANIES,
+            self::DEPENDENT_USAGES,
+        ]);
     }
 }

@@ -134,8 +134,8 @@ La définition couvre `active` sur les sujets, groupes et appartenances,
 `active` et `expires_at` sur les attributions, ainsi que les rôles et leurs permissions.
 
 ```php
-new QueryGuardDependency(RolesDefinition::class, 'tenant_id', ['active']);
-new QueryGuardDependency(RolePermissionsDefinition::class, 'tenant_id');
+new QueryGuardDependency(IamSchema::ROLES, 'tenant_id', ['active']);
+new QueryGuardDependency(IamSchema::ROLE_PERMISSIONS, 'tenant_id');
 ```
 
 Les lecteurs demandent une garde partagée. MappedTable déduit les

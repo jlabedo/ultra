@@ -4,23 +4,24 @@ declare(strict_types=1);
 
 namespace ComplianceExample\Refresh;
 
+use ComplianceExample\ComplianceSchema;
 use ComplianceExample\ReferenceQueries;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
 use Ultra\Coordination\Refresh\RefreshStep;
 use Ultra\Coordination\Refresh\RefreshWorker;
 use Ultra\Coordination\Tracking\PendingKey;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\SchemaMappedRowSet;
 
 final readonly class EligibilityRefresh
 {
-    private MappedRowSetMapping $resultMapping;
+    /** @var \Closure(): MappedRowSet */
+    private \Closure $resultRows;
 
     public function __construct(
         private Connection $connection,
@@ -28,13 +29,10 @@ final readonly class EligibilityRefresh
         private RefreshWorker $worker,
         private MappedTableAdapter $adapter,
     ) {
-        $key = ['account_id', 'subject_id', 'qualification_id'];
-        $this->resultMapping = new MappedRowSetMapping(
-            'compliance_eligibility',
-            array_fill_keys($key, new MappedColumn('string')),
-            $key,
-            ownerColumns: ['account_id', 'subject_id'],
-        );
+        $this->resultRows = new SchemaMappedRowSet(ComplianceSchema::ELIGIBILITY, ownerColumns: [
+            'account_id',
+            'subject_id',
+        ])->compileFor($adapter, ComplianceSchema::definition());
     }
 
     public function run(string $account, int $maxSteps, int $subjectBatchSize): int
@@ -134,8 +132,8 @@ final readonly class EligibilityRefresh
     /** @return array{MappedRowSet, MappedTableUnitOfWork} */
     private function results(): array
     {
-        $rows = $this->adapter->createDefined($this->resultMapping);
+        $rows = ($this->resultRows)();
 
-        return [$rows, new MappedTableUnitOfWork([$this->resultMapping->table => $rows], $this->adapter)];
+        return [$rows, new MappedTableUnitOfWork([ComplianceSchema::ELIGIBILITY => $rows], $this->adapter)];
     }
 }

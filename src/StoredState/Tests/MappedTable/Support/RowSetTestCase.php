@@ -7,11 +7,14 @@ namespace Ultra\MappedTable\Tests\Support;
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\PostgresMappedColumnType;
+use Ultra\MappedTable\SchemaMappedRowSet;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 
 abstract class RowSetTestCase extends TestCase
@@ -61,23 +64,22 @@ abstract class RowSetTestCase extends TestCase
         $keys = ['tenant', 'owner', 'id'];
         $fixture = $this->fixture($backend, $keys);
 
-        return [
-            $fixture,
-            $fixture->defined(
-                new MappedRowSetMapping(
-                    $fixture->tableName,
-                    [
-                        'tenant' => new MappedColumn('string'),
-                        'owner' => new MappedColumn('string'),
-                        'id' => new MappedColumn('string'),
-                        'status' => new MappedColumn('string', nullable: true),
-                        'note' => new MappedColumn('string', nullable: true),
-                    ],
-                    $keys,
-                    ownerColumns: ['tenant', 'owner'],
-                ),
+        $schema = new SchemaDefinition([
+            new TableDefinition(
+                $fixture->tableName,
+                columns: [
+                    new ColumnDefinition('tenant', type: ColumnType::Text),
+                    new ColumnDefinition('owner', type: ColumnType::Text),
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text, nullable: true),
+                    new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
+                ],
+                primaryKey: $keys,
             ),
-        ];
+        ]);
+        $selection = new SchemaMappedRowSet($fixture->tableName, ownerColumns: ['tenant', 'owner']);
+
+        return [$fixture, $selection->compileFor($fixture->adapter, $schema)()];
     }
 
     protected function tearDown(): void

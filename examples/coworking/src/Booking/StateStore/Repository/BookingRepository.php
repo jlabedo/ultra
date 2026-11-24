@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Booking\StateStore\Repository;
 
 use App\Booking\Domain\Slot;
-use App\Booking\StateStore\Persistence\BookingsDefinition;
+use App\Booking\StateStore\Persistence\BookingSchema;
 use App\Booking\StateStore\State\BookingState;
 use App\Booking\StateStore\State\CompanyState;
 use App\Booking\StateStore\State\RoomState;
@@ -23,11 +23,11 @@ final readonly class BookingRepository
         private Connection $connection,
         private StateStore $states,
         #[DefineQueryGuard('state_store_company_usage', [
-            new QueryGuardDependency(BookingsDefinition::class, 'company_id', ['charged', 'start_at', 'end_at']),
+            new QueryGuardDependency(BookingSchema::BOOKINGS, 'company_id', ['charged', 'start_at', 'end_at']),
         ])]
         private QueryGuard $companyUsage,
         #[DefineQueryGuard('state_store_room_bookings', [
-            new QueryGuardDependency(BookingsDefinition::class, 'room_id', ['status', 'start_at', 'end_at']),
+            new QueryGuardDependency(BookingSchema::BOOKINGS, 'room_id', ['status', 'start_at', 'end_at']),
         ])]
         private QueryGuard $roomBookings,
     ) {}

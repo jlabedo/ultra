@@ -32,10 +32,9 @@ final class PostgresMappedTableAdapter extends MappedTableAdapter
         $this->connection->executeQuery($sql, [$namespace, $key]);
     }
 
-    /** @param array<string, PostgresMappedColumnType> $columnTypes */
-    public function createDefined(MappedRowSetMetadata $mapping, array $columnTypes = []): MappedRowSet
+    public function createDefined(MappedRowSetMetadata $mapping): MappedRowSet
     {
-        return $this->createCompiled($mapping, PostgresRowSetSql::compile($mapping, $columnTypes));
+        return $this->createCompiled($mapping, PostgresRowSetSql::compile($mapping, []));
     }
 
     /** @internal */

@@ -8,4 +8,6 @@ enum ColumnType
 {
     case Text;
     case Int32;
+    case Int64;
+    case Boolean;
 }

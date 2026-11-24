@@ -7,9 +7,9 @@ namespace Ultra\MappedTable\Symfony;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Reference;
 use Ultra\Container\ContainerExtension;
-use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\QueryGuardDefinition;
+use Ultra\MappedTable\SchemaMappedRowSet;
 
 final readonly class MappedTableExtension implements ContainerExtension
 {
@@ -32,9 +32,6 @@ final readonly class MappedTableExtension implements ContainerExtension
             /** @var list<QueryGuardDefinition> $configured */
             $configured = $container->getParameter(MappedQueryGuardCompilerPass::CONFIGURED_GUARDS);
         } else {
-            $container
-                ->registerForAutoconfiguration(MappedRowSetDefinition::class)
-                ->addResourceTag(MappedRowSetCompilerPass::DEFINITION_TAG);
             // Collect projection ownership before assembling row sets and before StateStore binds them.
             $container->addCompilerPass(new MappedRowSetCompilerPass(), priority: -5);
             $container->addCompilerPass(new MappedQueryGuardCompilerPass(), priority: -30);

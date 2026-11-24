@@ -7,15 +7,18 @@ namespace Ultra\MappedTable\Tests\Support;
 use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\SchemaMappedRowSet;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\UnitOfWork\UnitOfWork;
 
@@ -23,7 +26,7 @@ use Ultra\UnitOfWork\UnitOfWork;
 final class RowSetFixture
 {
     public MappedRowSet $rows {
-        get => $this->defaultRows ??= $this->defined($this->mapping());
+        get => $this->defaultRows ??= $this->newRows();
     }
 
     private ?MappedRowSet $defaultRows = null;
@@ -79,32 +82,31 @@ final class RowSetFixture
         $this->units = new \WeakMap();
     }
 
-    public function mapping(): MappedRowSetMapping
+    public function newRows(?MappedTableAdapter $adapter = null): MappedRowSet
     {
-        return new MappedRowSetMapping(
-            $this->tableName,
-            array_fill_keys($this->keyColumns, new MappedColumn('string'))
-            + [
-                'status' => new MappedColumn('string', nullable: true),
-                'note' => new MappedColumn('string', nullable: true),
-                'version_a' => new MappedColumn('string', nullable: true),
-                'version_b' => new MappedColumn('string', nullable: true),
-                'tags' => new MappedColumn('array', nullable: true),
-                'payload' => new MappedColumn('array', nullable: true),
-                'expires_on' => new MappedColumn('string', nullable: true),
-                'active' => new MappedColumn('bool', nullable: true),
-            ],
-            $this->keyColumns,
-        );
-    }
-
-    public function defined(MappedRowSetMapping $mapping): MappedRowSet
-    {
-        if ($this->adapter instanceof PostgresMappedTableAdapter) {
-            return $this->adapter->createDefined($mapping, $this->columnTypes);
+        $columns = [];
+        foreach ($this->keyColumns as $key) {
+            $columns[$key] = new ColumnDefinition($key, type: ColumnType::Text);
         }
+        $columns += [
+            'status' => new ColumnDefinition('status', type: ColumnType::Text, nullable: true),
+            'note' => new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
+            'version_a' => new ColumnDefinition('version_a', type: ColumnType::Text, nullable: true),
+            'version_b' => new ColumnDefinition('version_b', type: ColumnType::Text, nullable: true),
+            'tags' => new ColumnDefinition('tags', type: 'text[]', nullable: true),
+            'payload' => new ColumnDefinition('payload', type: 'jsonb', nullable: true),
+            'expires_on' => new ColumnDefinition('expires_on', type: 'date', nullable: true),
+            'active' => new ColumnDefinition('active', type: ColumnType::Boolean, nullable: true),
+        ];
+        $schema = new SchemaDefinition([
+            new TableDefinition($this->tableName, columns: array_values($columns), primaryKey: $this->keyColumns),
+        ]);
 
-        return $this->adapter->createDefined($mapping);
+        return new SchemaMappedRowSet(
+            $this->tableName,
+            representations: ['tags' => 'array', 'payload' => 'array', 'expires_on' => 'string'],
+            postgresColumnTypes: $this->columnTypes,
+        )->compileFor($adapter ?? $this->adapter, $schema)();
     }
 
     /** @param array<string, mixed> $row */

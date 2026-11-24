@@ -203,6 +203,8 @@ final class PostgresSqlGenerator
         return match ($type) {
             ColumnType::Text => 'text',
             ColumnType::Int32 => 'integer',
+            ColumnType::Int64 => 'bigint',
+            ColumnType::Boolean => 'boolean',
             default => $type,
         };
     }

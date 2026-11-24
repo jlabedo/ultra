@@ -11,8 +11,8 @@ use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedTableAdapter;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
-use Ultra\MappedTable\Symfony\SchemaMappedRowSet;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
@@ -25,6 +25,20 @@ use Ultra\Schema\TableDefinition;
 #[CoversNamespace('Ultra\MappedTable')]
 final class SchemaMappedRowSetsTest extends TestCase
 {
+    public function test_manually_compiled_row_set_can_create_independent_buffers(): void
+    {
+        $adapter = new InMemoryMappedTableAdapter(new InMemoryRowDatabase());
+        $factory = new SchemaMappedRowSet('test.entries', columns: ['name'])->compileFor(
+            $adapter,
+            MappedRowSetsSchema::entries(),
+        );
+
+        $first = $factory()->withKey(7);
+        $first->insert()->setColumn('entry_name', 'Workshop');
+        self::assertSame(['entry_name' => 'Workshop'], $first->get(['entry_name']));
+        self::assertNull($factory()->withKey(7)->get());
+    }
+
     public function test_dumped_container_uses_physical_names_the_inferred_key_and_the_requested_columns(): void
     {
         $container = self::container(

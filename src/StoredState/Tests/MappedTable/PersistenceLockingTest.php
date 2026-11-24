@@ -46,7 +46,7 @@ final class PersistenceLockingTest extends RowSetTestCase
         $adapter = new PostgresMappedTableAdapter($other, tablePolicies: [
             $fixture->tableName => new MappedTablePolicy($allowAbsentObservations),
         ]);
-        $competing = $adapter->createDefined($fixture->mapping());
+        $competing = $fixture->newRows($adapter);
         $writer = new MappedTableUnitOfWork([$fixture->tableName => $competing], $adapter);
         if ('update' === $operation) {
             $competing->withKey('row')->setColumn('status', 'paid');
@@ -98,7 +98,7 @@ final class PersistenceLockingTest extends RowSetTestCase
         $factory = new PostgresMappedTableAdapter($connection, tablePolicies: [
             $protected ? 'another_table' : $fixture->tableName => new MappedTablePolicy(allowAbsentObservations: false),
         ]);
-        $rows = $factory->createDefined($fixture->mapping());
+        $rows = $fixture->newRows($factory);
         $unit = new MappedTableUnitOfWork([$fixture->tableName => $rows], $factory);
         foreach (['first', 'second'] as $id) {
             $rows

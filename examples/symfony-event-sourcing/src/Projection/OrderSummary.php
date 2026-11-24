@@ -12,11 +12,11 @@ use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionResetter;
 
-#[Projection(name: 'order_summary', partitionBy: 'order', rowSets: [OrderSummaryDefinition::class])]
+#[Projection(name: 'order_summary', partitionBy: 'order', rowSets: [OrderSummarySchema::ORDER_SUMMARY])]
 final readonly class OrderSummary
 {
     public function __construct(
-        #[Autowire(service: OrderSummaryDefinition::class)]
+        #[Autowire(service: OrderSummarySchema::ORDER_SUMMARY)]
         private MappedRowSet $rows,
     ) {}
 

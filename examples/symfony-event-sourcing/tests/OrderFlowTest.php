@@ -7,7 +7,7 @@ namespace App\Tests;
 use App\Command\PlaceOrder;
 use App\Command\ShipOrder;
 use App\Kernel;
-use App\Projection\OrderSummaryDefinition;
+use App\Projection\OrderSummarySchema;
 use App\Schema;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception as DbalException;
@@ -146,7 +146,7 @@ final class OrderFlowTest extends KernelTestCase
         } catch (DbalException) {
             self::assertSame([], $this->rows());
             self::assertSame($before, $runner->listSegments('order_summary')[0]->checkpoint->serialize());
-            self::assertFalse(self::getContainer()->get(OrderSummaryDefinition::class)->hasPendingChanges());
+            self::assertFalse(self::getContainer()->get(OrderSummarySchema::ORDER_SUMMARY)->hasPendingChanges());
         }
         $this->connection->executeStatement('DROP TRIGGER checkpoint_failure ON projection_segments');
         self::assertSame(1, $runner->backfillClaimedOnce($runtime, 'order_summary', 0, 'test-worker')->processedEvents);

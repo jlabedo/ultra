@@ -2,13 +2,11 @@
 
 declare(strict_types=1);
 
-namespace Ultra\MappedTable\Symfony;
+namespace Ultra\MappedTable;
 
-use Ultra\MappedTable\MappedColumn;
-use Ultra\MappedTable\MappedRowSetMapping;
-use Ultra\MappedTable\MappedRowSetOwner;
-use Ultra\MappedTable\PostgresMappedColumnType;
+use Ultra\MappedTable\Storage\PostgresRowSetSql;
 use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
 
 /** Select a Schema table for MappedTable. The table ID is also the Symfony service ID. */
@@ -18,6 +16,7 @@ final readonly class SchemaMappedRowSet
      * @param ?list<string> $columns Exposed column IDs. Defaults to all columns, and always includes the primary key.
      * @param array<string, string> $representations PHP representations by column ID.
      * @param array<string, PostgresMappedColumnType> $postgresColumnTypes Codecs by column ID.
+     * @param list<string> $ownerColumns Collection key columns without a mapped persistence dependency.
      */
     public function __construct(
         public string $table,
@@ -25,10 +24,29 @@ final readonly class SchemaMappedRowSet
         public ?array $columns = null,
         public array $representations = [],
         public array $postgresColumnTypes = [],
+        public array $ownerColumns = [],
     ) {
         if ('' === $table || is_numeric($table)) {
             throw new \InvalidArgumentException('A mapped schema table needs a non-empty, non-numeric ID.');
         }
+    }
+
+    /**
+     * Compile once during manual assembly, then call the factory for each fresh buffer.
+     *
+     * @return \Closure(): MappedRowSet
+     */
+    public function compileFor(MappedTableAdapter $adapter, SchemaDefinition $schema): \Closure
+    {
+        $schema->validateForeignKeys();
+        [$mapping, $codecs] = $this->compile($schema->tablesById(), $adapter instanceof PostgresMappedTableAdapter);
+        if ($adapter instanceof PostgresMappedTableAdapter) {
+            $sql = PostgresRowSetSql::compile($mapping, $codecs);
+
+            return static fn(): MappedRowSet => $adapter->createCompiled($mapping, $sql);
+        }
+
+        return static fn(): MappedRowSet => $adapter->createDefined($mapping);
     }
 
     /**
@@ -60,7 +78,8 @@ final readonly class SchemaMappedRowSet
             ));
             $representation = $this->representations[$id] ?? match ($column->type) {
                 ColumnType::Text => 'string',
-                ColumnType::Int32 => 'int',
+                ColumnType::Int32, ColumnType::Int64 => 'int',
+                ColumnType::Boolean => 'bool',
                 default => throw new \LogicException(sprintf(
                     'Select a PHP representation for column "%s" on schema table "%s".',
                     $id,
@@ -83,9 +102,19 @@ final readonly class SchemaMappedRowSet
         }
 
         $keys = array_map(static fn(string $id): string => $declared[$id]->name, $table->primaryKey);
+        $ownerColumns = array_map(
+            static fn(string $id): string => (
+                $declared[$id] ?? throw new \LogicException(sprintf(
+                    'Unknown owner column "%s" on schema table "%s".',
+                    $id,
+                    $table->id,
+                ))
+            )->name,
+            $this->ownerColumns,
+        );
 
         return [
-            new MappedRowSetMapping($table->name, $mapping, $keys, owner: $this->compileOwner($table, $tables)),
+            new MappedRowSetMapping($table->name, $mapping, $keys, $ownerColumns, $this->compileOwner($table, $tables)),
             $codecs,
         ];
     }

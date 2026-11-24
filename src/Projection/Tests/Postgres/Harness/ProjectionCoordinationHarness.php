@@ -23,12 +23,11 @@ use Ultra\EventStore\Event;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
@@ -45,6 +44,10 @@ use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 
 #[EventAttribute('harness.course.created')]
@@ -69,16 +72,17 @@ final readonly class HarnessCourseNamesProjection
         $adapter = new PostgresMappedTableAdapter($connection, tablePolicies: [
             $tableName => new MappedTablePolicy(allowAbsentObservations: false),
         ]);
-        $this->table = $adapter->createDefined(
-            new MappedRowSetMapping(
+        $schema = new SchemaDefinition([
+            new TableDefinition(
                 $tableName,
-                [
-                    'course_id' => new MappedColumn('string'),
-                    'name' => new MappedColumn('string'),
+                columns: [
+                    new ColumnDefinition('course_id', type: ColumnType::Text),
+                    new ColumnDefinition('name', type: ColumnType::Text),
                 ],
-                ['course_id'],
+                primaryKey: ['course_id'],
             ),
-        );
+        ]);
+        $this->table = new SchemaMappedRowSet($tableName)->compileFor($adapter, $schema)();
         $this->persistence = new MappedTableUnitOfWork([$tableName => $this->table], $adapter);
     }
 

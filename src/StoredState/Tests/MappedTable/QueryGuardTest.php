@@ -11,18 +11,21 @@ use Ultra\MappedTable\Exception\PendingQueryChangesException;
 use Ultra\MappedTable\GuardLockMode;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetDefinition;
-use Ultra\MappedTable\MappedRowSetMapping;
+use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Tests\Support\RecordingGuardMappedTableAdapter;
 use Ultra\MappedTable\Tests\Support\RowSetFixture;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
@@ -42,17 +45,17 @@ final class QueryGuardTest extends RowSetTestCase
             $trace[] = str_replace('ultra:query_guard:', '', $namespace) . ':' . $key . ':' . $mode->name;
         });
         $root = $this->fixture(storage: $storage, adapter: $adapter);
-        $rows = $root->defined(GuardedBookingDefinition::at($root->tableName));
+        $rows = GuardedSchema::bookings($root->adapter, $root->tableName);
         [$owned, $lines] = $this->lineCollection(sharedWith: $root);
         $unit = new MappedTableUnitOfWork(
-            [GuardedBookingDefinition::class => $rows, GuardedLineDefinition::class => $lines],
+            [GuardedSchema::BOOKINGS => $rows, GuardedSchema::LINES => $lines],
             $root->adapter,
             queryGuards: [
                 new QueryGuardDefinition('z', [
-                    new QueryGuardDependency(GuardedBookingDefinition::class, 'status', ['note']),
-                    new QueryGuardDependency(GuardedLineDefinition::class, 'owner', []),
+                    new QueryGuardDependency(GuardedSchema::BOOKINGS, 'status', ['note']),
+                    new QueryGuardDependency(GuardedSchema::LINES, 'owner', []),
                 ]),
-                new QueryGuardDefinition('a', [new QueryGuardDependency(GuardedBookingDefinition::class, 'id', [])]),
+                new QueryGuardDefinition('a', [new QueryGuardDependency(GuardedSchema::BOOKINGS, 'id', [])]),
             ],
         );
 
@@ -153,7 +156,7 @@ final class QueryGuardTest extends RowSetTestCase
             if ($exception instanceof PendingQueryChangesException) {
                 static::assertSame('booking', $exception->guardName);
                 static::assertSame($value, $exception->guardValue);
-                static::assertSame(GuardedBookingDefinition::class, $exception->rowSet);
+                static::assertSame(GuardedSchema::BOOKINGS, $exception->rowSet);
                 static::assertSame('booking', $exception->key->value('id'));
             }
             static::assertSame(0, $calls);
@@ -210,12 +213,9 @@ final class QueryGuardTest extends RowSetTestCase
     {
         [$fixture, $lines] = $this->lineCollection();
         $unit = new MappedTableUnitOfWork(
-            [GuardedLineDefinition::class => $lines],
+            [GuardedSchema::LINES => $lines],
             $fixture->adapter,
-            queryGuards: [new QueryGuardDefinition('item', [new QueryGuardDependency(
-                GuardedLineDefinition::class,
-                'id',
-            )])],
+            queryGuards: [new QueryGuardDefinition('item', [new QueryGuardDependency(GuardedSchema::LINES, 'id')])],
         );
         $lines->reconcileForOwner(new MappedKey(['owner' => 'one']), []);
         $this->expectExceptionMessage('requires reconciliation to fix its value column "id" in the owner key');
@@ -227,10 +227,10 @@ final class QueryGuardTest extends RowSetTestCase
         [$fixture, $lines] = $this->lineCollection();
         $owner = new MappedKey(['owner' => 'one']);
         $unit = new MappedTableUnitOfWork(
-            [GuardedLineDefinition::class => $lines],
+            [GuardedSchema::LINES => $lines],
             $fixture->adapter,
             queryGuards: [new QueryGuardDefinition('membership', [
-                new QueryGuardDependency(GuardedLineDefinition::class, 'owner', []),
+                new QueryGuardDependency(GuardedSchema::LINES, 'owner', []),
             ])],
         );
         $lines->reconcileForOwner($owner, []);
@@ -283,13 +283,9 @@ final class QueryGuardTest extends RowSetTestCase
         [$fixture, $lines] = $this->lineCollection('postgres');
         $connection = $fixture->connection();
         $name = 'membership_' . $fixture->tableName;
-        $definitions = [new QueryGuardDefinition($name, [new QueryGuardDependency(
-            GuardedLineDefinition::class,
-            'owner',
-            [],
-        )])];
+        $definitions = [new QueryGuardDefinition($name, [new QueryGuardDependency(GuardedSchema::LINES, 'owner', [])])];
         $reader = new MappedTableUnitOfWork(
-            [GuardedLineDefinition::class => $lines],
+            [GuardedSchema::LINES => $lines],
             $fixture->adapter,
             queryGuards: $definitions,
         );
@@ -305,9 +301,9 @@ final class QueryGuardTest extends RowSetTestCase
 
         try {
             $otherAdapter = new PostgresMappedTableAdapter($other);
-            $otherLines = $otherAdapter->createDefined(GuardedLineDefinition::at($fixture->tableName));
+            $otherLines = GuardedSchema::lines($otherAdapter, $fixture->tableName);
             $writer = new MappedTableUnitOfWork(
-                [GuardedLineDefinition::class => $otherLines],
+                [GuardedSchema::LINES => $otherLines],
                 $otherAdapter,
                 queryGuards: $definitions,
             );
@@ -349,12 +345,12 @@ final class QueryGuardTest extends RowSetTestCase
     private function bookings(): array
     {
         $fixture = $this->fixture();
-        $rows = $fixture->defined(GuardedBookingDefinition::at($fixture->tableName));
+        $rows = GuardedSchema::bookings($fixture->adapter, $fixture->tableName);
         $unit = new MappedTableUnitOfWork(
-            [GuardedBookingDefinition::class => $rows],
+            [GuardedSchema::BOOKINGS => $rows],
             $fixture->adapter,
             queryGuards: [new QueryGuardDefinition('booking', [
-                new QueryGuardDependency(GuardedBookingDefinition::class, 'status', ['note']),
+                new QueryGuardDependency(GuardedSchema::BOOKINGS, 'status', ['note']),
             ])],
         );
 
@@ -371,50 +367,49 @@ final class QueryGuardTest extends RowSetTestCase
             adapter: $sharedWith?->adapter,
         );
 
-        return [$fixture, $fixture->defined(GuardedLineDefinition::at($fixture->tableName))];
+        return [$fixture, GuardedSchema::lines($fixture->adapter, $fixture->tableName)];
     }
 }
 
-final class GuardedBookingDefinition implements MappedRowSetDefinition
+final class GuardedSchema
 {
-    public function mapping(): MappedRowSetMapping
+    public const string BOOKINGS = 'guarded_booking';
+    public const string LINES = 'guarded_line';
+
+    public static function bookings(MappedTableAdapter $adapter, string $table): MappedRowSet
     {
-        return self::at('guarded_booking');
+        $schema = new SchemaDefinition([
+            new TableDefinition(
+                self::BOOKINGS,
+                $table,
+                [
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text),
+                    new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
+                    new ColumnDefinition('version_a', type: ColumnType::Text, nullable: true),
+                ],
+                primaryKey: ['id'],
+            ),
+        ]);
+
+        return new SchemaMappedRowSet(self::BOOKINGS)->compileFor($adapter, $schema)();
     }
 
-    public static function at(string $table): MappedRowSetMapping
+    public static function lines(MappedTableAdapter $adapter, string $table): MappedRowSet
     {
-        return new MappedRowSetMapping(
-            $table,
-            [
-                'id' => new MappedColumn('string'),
-                'status' => new MappedColumn('string'),
-                'note' => new MappedColumn('string', nullable: true),
-                'version_a' => new MappedColumn('string', nullable: true),
-            ],
-            ['id'],
-        );
-    }
-}
+        $schema = new SchemaDefinition([
+            new TableDefinition(
+                self::LINES,
+                $table,
+                [
+                    new ColumnDefinition('owner', type: ColumnType::Text),
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
+                ],
+                primaryKey: ['owner', 'id'],
+            ),
+        ]);
 
-final class GuardedLineDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
-    {
-        return self::at('guarded_line');
-    }
-
-    public static function at(string $table): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping(
-            $table,
-            [
-                'owner' => new MappedColumn('string'),
-                'id' => new MappedColumn('string'),
-                'note' => new MappedColumn('string', nullable: true),
-            ],
-            ['owner', 'id'],
-            ownerColumns: ['owner'],
-        );
+        return new SchemaMappedRowSet(self::LINES, ownerColumns: ['owner'])->compileFor($adapter, $schema)();
     }
 }

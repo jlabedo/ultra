@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+/** @internal Produced by compiling a SchemaMappedRowSet. */
 final readonly class MappedRowSetMapping extends MappedRowSetMetadata
 {
     /**

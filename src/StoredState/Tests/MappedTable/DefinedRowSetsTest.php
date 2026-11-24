@@ -16,23 +16,26 @@ use Ultra\MappedTable\Attribute\DefineQueryGuard;
 use Ultra\MappedTable\Guard\QueryGuardRules;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetDefinition;
-use Ultra\MappedTable\MappedRowSetMapping;
-use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\PostgresMappedRowSetConfiguration;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Storage\PostgresRowSetSql;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
+use Ultra\Schema\Attribute\DefineSchema;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\ForeignKeyDefinition;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\Symfony\SchemaExtension;
+use Ultra\Schema\TableDefinition;
 use Ultra\UnitOfWork\UnitOfWork;
 use Ultra\UnitOfWork\UnitOfWorkExtension;
 
@@ -64,17 +67,15 @@ final class DefinedRowSetsTest extends RowSetTestCase
             );
             $adapter = new PostgresMappedTableAdapter($storage);
         }
-        CompileTimeLineDefinition::$mappingCalls = 0;
-        CompileTimeLineDefinition::$postgresCalls = 0;
+        CompileTimeRowsSchema::$definitions = 0;
 
         try {
-            $container = new ContainerBuilder();
-            new MappedTableExtension([
+            $container = self::container([CompileTimeRowsSchema::orders(), CompileTimeRowsSchema::lines()], [
                 new QueryGuardDefinition('lines', [
-                    new QueryGuardDependency(CompileTimeLineDefinition::class, 'owner', ['tags']),
-                    new QueryGuardDependency(CompileTimeLineDefinition::class, 'owner', ['aliases']),
+                    new QueryGuardDependency(CompileTimeRowsSchema::LINES, 'owner', ['tags']),
+                    new QueryGuardDependency(CompileTimeRowsSchema::LINES, 'owner', ['aliases']),
                 ]),
-            ])->build($container);
+            ]);
             new UnitOfWorkExtension()->build($container);
             if ($syntheticAdapter) {
                 $container->register(MappedTableAdapter::class, $adapter::class)->setSynthetic(true)->setPublic(true);
@@ -85,11 +86,9 @@ final class DefinedRowSetsTest extends RowSetTestCase
                     ->register(MappedTableAdapter::class, '%test.adapter_class%')
                     ->setArguments([new Reference(Connection::class)]);
             }
-            $container->register(CompileTimeLineDefinition::class)->setAutoconfigured(true);
-            $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
             $container->register(DirectLineWriter::class)->setAutowired(true)->setPublic(true);
-            $container->setAlias('test.lines', CompileTimeLineDefinition::class)->setPublic(true);
-            $container->setAlias('test.orders', CompileTimeOrderDefinition::class)->setPublic(true);
+            $container->setAlias('test.lines', CompileTimeRowsSchema::LINES)->setPublic(true);
+            $container->setAlias('test.orders', CompileTimeRowsSchema::ORDERS)->setPublic(true);
             $container->setAlias('test.unit_of_work', UnitOfWork::class)->setPublic(true);
             $container->setAlias('test.coordination', MappedTableUnitOfWork::class)->setPublic(true);
             $container->compile();
@@ -106,14 +105,14 @@ final class DefinedRowSetsTest extends RowSetTestCase
             $coordination = $container->findDefinition('test.coordination');
             static::assertSame(MappedTableAdapter::class, (string) $coordination->getArgument(1));
             static::assertSame(
-                [CompileTimeOrderDefinition::class => true, CompileTimeLineDefinition::class => false],
+                [CompileTimeRowsSchema::ORDERS => true, CompileTimeRowsSchema::LINES => false],
                 $coordination->getArgument(2),
             );
             $guardRules = $coordination->getArgument(3);
             static::assertInstanceOf(Definition::class, $guardRules);
             static::assertSame(QueryGuardRules::class, $guardRules->getClass());
-            static::assertSame(['lines' => [CompileTimeLineDefinition::class => [0]]], $guardRules->getArgument(1));
-            static::assertSame([CompileTimeLineDefinition::class => [0]], $guardRules->getArgument(2));
+            static::assertSame(['lines' => [CompileTimeRowsSchema::LINES => [0]]], $guardRules->getArgument(1));
+            static::assertSame([CompileTimeRowsSchema::LINES => [0]], $guardRules->getArgument(2));
             static::assertSame(
                 ['owner' => true, 'tags' => true, 'aliases' => true],
                 $guardRules->getArgument(0)[0]->getArgument(4),
@@ -172,8 +171,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
             $lines->reconcileForOwner($owner, []);
             $fixture->flush($unitOfWork);
             static::assertSame([], $lines->rowsForOwner($owner));
-            static::assertSame(1, CompileTimeLineDefinition::$mappingCalls);
-            static::assertSame('postgres' === $backend ? 1 : 0, CompileTimeLineDefinition::$postgresCalls);
+            static::assertSame(1, CompileTimeRowsSchema::$definitions);
         } finally {
             if (!$storage instanceof InMemoryRowDatabase) {
                 $storage->executeStatement(
@@ -185,20 +183,16 @@ final class DefinedRowSetsTest extends RowSetTestCase
 
     public function test_compilation_rejects_a_missing_owner_definition(): void
     {
-        $container = new ContainerBuilder();
-        new MappedTableExtension()->build($container);
+        $container = self::container([CompileTimeRowsSchema::lines()]);
         $container->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setSynthetic(true);
-        $container->register(CompileTimeLineDefinition::class)->setAutoconfigured(true);
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('Owner definition "' . CompileTimeOrderDefinition::class . '"');
+        $this->expectExceptionMessage('Owner definition "' . CompileTimeRowsSchema::ORDERS . '"');
         $container->compile();
     }
 
     public function test_compilation_requires_a_shared_adapter(): void
     {
-        $container = new ContainerBuilder();
-        new MappedTableExtension()->build($container);
-        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
+        $container = self::container([CompileTimeRowsSchema::orders()]);
         $container->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setShared(false);
 
         $this->expectException(\LogicException::class);
@@ -208,9 +202,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
 
     public function test_compilation_rejects_a_service_that_cannot_bind_mapped_row_sets(): void
     {
-        $container = new ContainerBuilder();
-        new MappedTableExtension()->build($container);
-        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
+        $container = self::container([CompileTimeRowsSchema::orders()]);
         $container->register(MappedTableAdapter::class, InMemoryRowDatabase::class);
 
         $this->expectException(\LogicException::class);
@@ -220,13 +212,11 @@ final class DefinedRowSetsTest extends RowSetTestCase
 
     public function test_attribute_declares_a_guard_in_a_mapped_table_only_container(): void
     {
-        $container = new ContainerBuilder();
-        new MappedTableExtension()->build($container);
+        $container = self::container([CompileTimeRowsSchema::orders()]);
         $container->register(InMemoryRowDatabase::class, InMemoryRowDatabase::class);
         $container
             ->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)
             ->setArguments([new Reference(InMemoryRowDatabase::class)]);
-        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
         $container
             ->register(AttributeGuardReader::class, AttributeGuardReader::class)
             ->setAutowired(true)
@@ -251,26 +241,26 @@ final class DefinedRowSetsTest extends RowSetTestCase
         yield 'empty dependencies' => [[new QueryGuardDefinition('guard', [])], 'at least one dependency'];
         yield 'missing dependency' => [
             [new QueryGuardDefinition('guard', [
-                new QueryGuardDependency(CompileTimeLineDefinition::class, 'owner'),
+                new QueryGuardDependency(CompileTimeRowsSchema::LINES, 'owner'),
             ])],
             'watches unknown row set definition',
         ];
         yield 'unknown watched column' => [
             [new QueryGuardDefinition('guard', [
-                new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id', ['unknown']),
+                new QueryGuardDependency(CompileTimeRowsSchema::ORDERS, 'id', ['unknown']),
             ])],
             'Unknown column "unknown"',
         ];
         yield 'ambiguous guard name' => [
             [
-                new QueryGuardDefinition('guard', [new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id')]),
-                new QueryGuardDefinition('guard', [new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id')]),
+                new QueryGuardDefinition('guard', [new QueryGuardDependency(CompileTimeRowsSchema::ORDERS, 'id')]),
+                new QueryGuardDefinition('guard', [new QueryGuardDependency(CompileTimeRowsSchema::ORDERS, 'id')]),
             ],
             'unique, non-empty name',
         ];
         yield 'invalid value column' => [
             [new QueryGuardDefinition('guard', [
-                new QueryGuardDependency(CompileTimeLineDefinition::class, 'tags'),
+                new QueryGuardDependency(CompileTimeRowsSchema::LINES, 'tags'),
             ])],
             'needs a non-null int or string value column',
             true,
@@ -283,12 +273,11 @@ final class DefinedRowSetsTest extends RowSetTestCase
         string $message,
         bool $registerLines = false,
     ): void {
-        $container = new ContainerBuilder();
-        new MappedTableExtension($guards)->build($container);
-        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
+        $selections = [CompileTimeRowsSchema::orders()];
         if ($registerLines) {
-            $container->register(CompileTimeLineDefinition::class)->setAutoconfigured(true);
+            $selections[] = CompileTimeRowsSchema::lines();
         }
+        $container = self::container($selections, $guards);
 
         $container->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setSynthetic(true);
 
@@ -307,8 +296,8 @@ final class DefinedRowSetsTest extends RowSetTestCase
         ];
         yield 'unknown column' => [
             ['missing' => PostgresMappedColumnType::Text],
-            \InvalidArgumentException::class,
-            'Unknown column "missing" in mapped table "mapped_definition_orders".',
+            \LogicException::class,
+            'Column "missing" is not exposed by mapped schema table "mapped_definition_orders".',
         ];
         yield 'invalid codec declaration' => [
             ['id' => 'TEXT'],
@@ -324,26 +313,20 @@ final class DefinedRowSetsTest extends RowSetTestCase
         string $exception,
         string $message,
     ): void {
-        $container = new ContainerBuilder();
-        new MappedTableExtension()->build($container);
-        $container->register(InvalidPostgresCodecDefinition::class)->setAutoconfigured(true);
+        $container = self::container([new SchemaMappedRowSet(
+            CompileTimeRowsSchema::ORDERS,
+            postgresColumnTypes: $codecs,
+        )]);
         $container->register(MappedTableAdapter::class, PostgresMappedTableAdapter::class)->setSynthetic(true);
-        InvalidPostgresCodecDefinition::$codecs = $codecs;
 
         $this->expectException($exception);
         $this->expectExceptionMessage($message);
-        try {
-            $container->compile();
-        } finally {
-            InvalidPostgresCodecDefinition::$codecs = [];
-        }
+        $container->compile();
     }
 
     public function test_compilation_requires_the_concrete_backend_of_a_synthetic_adapter(): void
     {
-        $container = new ContainerBuilder();
-        new MappedTableExtension()->build($container);
-        $container->register(CompileTimeOrderDefinition::class)->setAutoconfigured(true);
+        $container = self::container([CompileTimeRowsSchema::orders()]);
         $container->register(MappedTableAdapter::class, MappedTableAdapter::class)->setSynthetic(true);
 
         $this->expectException(\LogicException::class);
@@ -383,24 +366,33 @@ final class DefinedRowSetsTest extends RowSetTestCase
         $owner = ['owner' => 'order'];
         $key = new MappedKey([...$owner, 'id' => 'line']);
         $fixture->seed([...$key->values, 'status' => 'outside the definition']);
-        $keyColumns = ['id' => new MappedColumn('string'), 'owner' => new MappedColumn('string')];
+        $table = $fixture->tableName;
+        $schema = new SchemaDefinition([
+            new TableDefinition(
+                $table,
+                columns: [
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('owner', type: ColumnType::Text),
+                    new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
+                    new ColumnDefinition('status', type: ColumnType::Text, nullable: true),
+                ],
+                primaryKey: ['id', 'owner'],
+            ),
+        ]);
         $keyOnlyAdapter = $fixture->storage instanceof Connection
             ? new PostgresMappedTableAdapter($fixture->storage)
             : new InMemoryMappedTableAdapter($fixture->storage);
-        $keys = $keyOnlyAdapter->createDefined(
-            new MappedRowSetMapping($fixture->tableName, $keyColumns, ['id', 'owner'], ownerColumns: ['owner']),
-        );
+        $keys = new SchemaMappedRowSet($table, columns: [], ownerColumns: ['owner'])->compileFor(
+            $keyOnlyAdapter,
+            $schema,
+        )();
         static::assertSame([], $keys->rowsForOwner($owner)[0]->columns);
         static::assertSame($key->values, $keys->withKey($key)->get());
 
-        $rows = $fixture->defined(
-            new MappedRowSetMapping(
-                $fixture->tableName,
-                $keyColumns + ['note' => new MappedColumn('string', nullable: true)],
-                ['id', 'owner'],
-                ownerColumns: ['owner'],
-            ),
-        );
+        $rows = new SchemaMappedRowSet($table, columns: ['note'], ownerColumns: ['owner'])->compileFor(
+            $fixture->adapter,
+            $schema,
+        )();
         static::assertSame(['note' => null], $rows->rowsForOwner($owner)[0]->columns);
         $rows->withKey($key)->expectColumnValue('note', null);
         $fixture->flush($rows);
@@ -417,72 +409,81 @@ final class DefinedRowSetsTest extends RowSetTestCase
     public function test_key_columns_must_be_known_and_non_nullable(): void
     {
         $this->expectException(\InvalidArgumentException::class);
-        new MappedRowSetMapping('line', ['id' => new MappedColumn('string', nullable: true)], ['id']);
-    }
-}
-
-final class CompileTimeOrderDefinition implements MappedRowSetDefinition
-{
-    public function mapping(): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping('mapped_definition_orders', ['id' => new MappedColumn('string')], ['id']);
-    }
-}
-
-final class InvalidPostgresCodecDefinition implements MappedRowSetDefinition, PostgresMappedRowSetConfiguration
-{
-    /** @var array<string, mixed> */
-    public static array $codecs = [];
-
-    public function mapping(): MappedRowSetMapping
-    {
-        return new CompileTimeOrderDefinition()->mapping();
-    }
-
-    public function postgresColumnTypes(): array
-    {
-        return self::$codecs;
-    }
-}
-
-final class CompileTimeLineDefinition implements MappedRowSetDefinition, PostgresMappedRowSetConfiguration
-{
-    public static int $mappingCalls = 0;
-    public static int $postgresCalls = 0;
-
-    public function mapping(): MappedRowSetMapping
-    {
-        ++self::$mappingCalls;
-
-        return new MappedRowSetMapping(
-            'mapped_definition_lines',
-            [
-                'owner' => new MappedColumn('string'),
-                'id' => new MappedColumn('string'),
-                'tags' => new MappedColumn('array', nullable: true),
-                'aliases' => new MappedColumn('array', nullable: true),
-            ],
-            ['owner', 'id'],
-            owner: new MappedRowSetOwner(CompileTimeOrderDefinition::class, ['owner' => 'id']),
+        new TableDefinition(
+            'line',
+            columns: [new ColumnDefinition('id', type: ColumnType::Text, nullable: true)],
+            primaryKey: ['id'],
         );
     }
 
-    public function postgresColumnTypes(): array
+    /** @param list<SchemaMappedRowSet> $selections @param list<QueryGuardDefinition> $guards */
+    private static function container(array $selections, array $guards = []): ContainerBuilder
     {
-        ++self::$postgresCalls;
+        $container = new ContainerBuilder();
+        new SchemaExtension()->build($container);
+        new MappedTableExtension($guards, $selections)->build($container);
+        $container->register(CompileTimeRowsSchema::class)->setAutoconfigured(true);
 
-        return [
-            'owner' => PostgresMappedColumnType::Text,
-            'tags' => PostgresMappedColumnType::TextArray,
-            'aliases' => PostgresMappedColumnType::TextArray,
-        ];
+        return $container;
+    }
+}
+
+final class CompileTimeRowsSchema
+{
+    public const string ORDERS = 'mapped_definition_orders';
+    public const string LINES = 'mapped_definition_lines';
+
+    public static int $definitions = 0;
+
+    #[DefineSchema]
+    public static function definition(): SchemaDefinition
+    {
+        ++self::$definitions;
+
+        return new SchemaDefinition([
+            new TableDefinition(
+                self::ORDERS,
+                columns: [new ColumnDefinition('id', type: ColumnType::Text)],
+                primaryKey: ['id'],
+            ),
+            new TableDefinition(
+                self::LINES,
+                columns: [
+                    new ColumnDefinition('owner', type: ColumnType::Text),
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('tags', type: 'text[]', nullable: true),
+                    new ColumnDefinition('aliases', type: 'text[]', nullable: true),
+                ],
+                primaryKey: ['owner', 'id'],
+                foreignKeys: ['owner' => new ForeignKeyDefinition(self::ORDERS, ['owner' => 'id'])],
+            ),
+        ]);
+    }
+
+    public static function orders(): SchemaMappedRowSet
+    {
+        return new SchemaMappedRowSet(self::ORDERS);
+    }
+
+    public static function lines(): SchemaMappedRowSet
+    {
+        return new SchemaMappedRowSet(
+            self::LINES,
+            owner: 'owner',
+            representations: ['tags' => 'array', 'aliases' => 'array'],
+            postgresColumnTypes: [
+                'owner' => PostgresMappedColumnType::Text,
+                'tags' => PostgresMappedColumnType::TextArray,
+                'aliases' => PostgresMappedColumnType::TextArray,
+            ],
+        );
     }
 }
 
 final readonly class DirectLineWriter
 {
     public function __construct(
-        #[Autowire(service: CompileTimeLineDefinition::class)]
+        #[Autowire(service: CompileTimeRowsSchema::LINES)]
         public MappedRowSet $lines,
         #[Autowire(service: QueryGuard::class . '.lines')]
         public QueryGuard $guard,
@@ -492,7 +493,7 @@ final readonly class DirectLineWriter
 final readonly class AttributeGuardReader
 {
     public function __construct(
-        #[DefineQueryGuard('orders', [new QueryGuardDependency(CompileTimeOrderDefinition::class, 'id')])]
+        #[DefineQueryGuard('orders', [new QueryGuardDependency(CompileTimeRowsSchema::ORDERS, 'id')])]
         private QueryGuard $guard,
         private InMemoryRowDatabase $storage,
         private MappedTableUnitOfWork $unitOfWork,

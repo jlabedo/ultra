@@ -8,23 +8,24 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetDefinition;
-use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Mapper\UltraNormalizer;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
 use Ultra\StateStore\StateMetadata;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateRowSets;
 use Ultra\StateStore\StateStore;
-use Ultra\StateStore\Tests\Support\OrderLinesDefinition;
-use Ultra\StateStore\Tests\Support\OrdersDefinition;
 use Ultra\StateStore\Tests\Support\StateStoreFixture;
+use Ultra\StateStore\Tests\Support\StateStoreSchema;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\PostgresRowSetTestCase;
 
@@ -287,16 +288,14 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
     /** @return array{MappedRowSet, MappedTableUnitOfWork} */
     private function guardedRows(Connection $connection, string $table, bool $collection = false): array
     {
-        $mapping = new CooperativeRowsDefinition()->mappingFor($table, $collection);
         $adapter = new PostgresMappedTableAdapter($connection);
-        $rows = $adapter->createDefined($mapping);
-        $unitOfWork = new MappedTableUnitOfWork(
-            [CooperativeRowsDefinition::class => $rows],
-            $adapter,
-            queryGuards: [new QueryGuardDefinition($collection ? 'collection_usage' : 'usage', [
-                new QueryGuardDependency(CooperativeRowsDefinition::class, 'status', ['note']),
-            ])],
-        );
+        $rows = CooperativeSchema::rows($adapter, $table, $collection);
+        $unitOfWork = new MappedTableUnitOfWork([$table => $rows], $adapter, queryGuards: [new QueryGuardDefinition(
+            $collection ? 'collection_usage' : 'usage',
+            [
+                new QueryGuardDependency($table, 'status', ['note']),
+            ],
+        )]);
 
         return [$rows, $unitOfWork];
     }
@@ -421,11 +420,10 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
                 ['status' => 'status'],
                 ['status' => 'status'],
             );
-            $mapping = new CooperativeRowsDefinition()->mappingFor($tableName, collection: false);
             $adapter = new PostgresMappedTableAdapter($connection);
-            $table = $adapter->createDefined($mapping);
+            $table = CooperativeSchema::rows($adapter, $tableName, false);
             $registry = new MappedTableUnitOfWork([
-                CooperativeRowsDefinition::class => $table,
+                $tableName => $table,
             ], $adapter);
             $store = new StateStore(
                 new StateMetadataRegistry([ManualQueryState::class => $metadata]),
@@ -489,8 +487,8 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
             $fixture->flush();
             $fixture->unitOfWork->clear();
             $definitions = [new QueryGuardDefinition('usage', [
-                new QueryGuardDependency(OrdersDefinition::class, 'order_id', []),
-                new QueryGuardDependency(OrderLinesDefinition::class, 'order_id'),
+                new QueryGuardDependency(StateStoreSchema::ORDERS, 'order_id', []),
+                new QueryGuardDependency(StateStoreSchema::ORDER_LINES, 'order_id'),
             ])];
             [, $reader] = $fixture->newStore([OrderWithLinesState::class], guards: $definitions);
             $reader->queryGuard('usage')->lock('one');
@@ -542,25 +540,26 @@ final class CooperativeLockingTest extends PostgresRowSetTestCase
     }
 }
 
-final class CooperativeRowsDefinition implements MappedRowSetDefinition
+final class CooperativeSchema
 {
-    public function mapping(): MappedRowSetMapping
+    public static function rows(PostgresMappedTableAdapter $adapter, string $table, bool $collection): MappedRowSet
     {
-        return $this->mappingFor('cooperative_test_rows', false);
-    }
+        $schema = new SchemaDefinition([
+            new TableDefinition(
+                $table,
+                columns: [
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('status', type: ColumnType::Text),
+                    new ColumnDefinition('version_a', type: ColumnType::Text, nullable: !$collection),
+                    new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
+                ],
+                primaryKey: $collection ? ['id', 'status', 'version_a'] : ['id'],
+            ),
+        ]);
 
-    public function mappingFor(string $table, bool $collection): MappedRowSetMapping
-    {
-        return new MappedRowSetMapping(
-            $table,
-            [
-                'id' => new MappedColumn('string'),
-                'status' => new MappedColumn('string'),
-                'version_a' => new MappedColumn('string', nullable: !$collection),
-                'note' => new MappedColumn('string', nullable: true),
-            ],
-            $collection ? ['id', 'status', 'version_a'] : ['id'],
-            ownerColumns: $collection ? ['status', 'version_a'] : [],
-        );
+        return new SchemaMappedRowSet($table, ownerColumns: $collection ? ['status', 'version_a'] : [])->compileFor(
+            $adapter,
+            $schema,
+        )();
     }
 }
