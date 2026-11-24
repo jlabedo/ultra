@@ -113,16 +113,29 @@ final class PostgresSqlGenerator
         return [
             null !== $index->rawSql
                 ? $this->terminateStatement($index->rawSql)
-                : sprintf(
-                    'CREATE %sINDEX %s ON %s%s (%s);',
-                    $index->unique ? 'UNIQUE ' : '',
-                    $this->quoteIdentifier($index->name),
-                    $this->quoteIdentifier($tableName),
-                    null === $index->method ? '' : ' USING ' . $this->quoteIdentifier($index->method),
-                    $this->quoteIdentifiers($index->columns),
-                ),
+                : $this->renderIndex($index, $this->quoteIdentifier($tableName)) . ';',
             $this->commentOnIndex($index->name),
         ];
+    }
+
+    /** Render an unterminated structured index using the storage adapter's trusted table reference. */
+    public function createIndexIfNotExists(IndexDefinition $index, string $tableReference): string
+    {
+        return $this->renderIndex($index, $tableReference, ifNotExists: true);
+    }
+
+    private function renderIndex(IndexDefinition $index, string $tableReference, bool $ifNotExists = false): string
+    {
+        return sprintf(
+            'CREATE %sINDEX %s%s ON %s%s (%s)%s',
+            $index->unique ? 'UNIQUE ' : '',
+            $ifNotExists ? 'IF NOT EXISTS ' : '',
+            $this->quoteIdentifier($index->name),
+            $tableReference,
+            null === $index->method ? '' : ' USING ' . $this->quoteIdentifier($index->method),
+            $this->quoteIdentifiers($index->columns),
+            null === $index->predicate ? '' : ' WHERE ' . $index->predicate,
+        );
     }
 
     /** Render one unterminated function statement for bootstrap or migration SQL. */

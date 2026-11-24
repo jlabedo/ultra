@@ -248,6 +248,7 @@ final readonly class SchemaDefinition
                 unique: $index->unique,
                 rawSql: $index->rawSql,
                 method: $index->method,
+                predicate: $index->predicate,
                 hasExplicitName: $existing->hasExplicitName || $index->hasExplicitName,
             );
         }

@@ -20,13 +20,15 @@ use Ultra\Time\SystemClock;
 
 final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMessageReceiver
 {
+    public const string DEFAULT_TABLE_PREFIX = 'async_queue_';
+
     private string $workerId;
 
     public function __construct(
         private Connection $connection,
         private AsyncEnvelopeCodecInterface $codec,
         private string $queueName = 'default',
-        private string $tablePrefix = 'async_queue_',
+        private string $tablePrefix = self::DEFAULT_TABLE_PREFIX,
         private ClockInterface $clock = new SystemClock(),
         ?string $workerId = null,
     ) {

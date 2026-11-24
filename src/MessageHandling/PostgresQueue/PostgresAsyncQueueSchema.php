@@ -4,50 +4,90 @@ declare(strict_types=1);
 
 namespace Ultra\MessageHandling_PostgresQueue;
 
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\IndexDefinition;
+use Ultra\Schema\PostgresSqlGenerator;
+use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\TableDefinition;
+
 final readonly class PostgresAsyncQueueSchema
 {
     public function __construct(
-        private string $tablePrefix = 'async_queue_',
+        private string $tablePrefix = PostgresAsyncQueue::DEFAULT_TABLE_PREFIX,
     ) {}
 
-    /**
-     * @return list<string>
-     */
+    public function definition(): SchemaDefinition
+    {
+        if (str_contains($this->tablePrefix, '.')) {
+            throw new \InvalidArgumentException(
+                'Async queue migrations require an unqualified table prefix. Select the PostgreSQL schema through search_path.',
+            );
+        }
+
+        return new SchemaDefinition([$this->tableDefinition()]);
+    }
+
+    private function tableDefinition(): TableDefinition
+    {
+        $table = strtolower($this->messagesTable());
+        $name = str_contains($table, '.') ? substr($table, (int) strrpos($table, '.') + 1) : $table;
+
+        return new TableDefinition(
+            'async_queue.messages',
+            $name,
+            columns: [
+                new ColumnDefinition('id', type: ColumnType::Text),
+                new ColumnDefinition('queue_name', type: ColumnType::Text),
+                new ColumnDefinition('body', type: 'bytea'),
+                new ColumnDefinition('headers', type: 'jsonb', defaultExpression: "'{}'::jsonb"),
+                new ColumnDefinition('attributes', type: 'jsonb', defaultExpression: "'{}'::jsonb"),
+                new ColumnDefinition('schedule_key', type: ColumnType::Text, nullable: true),
+                new ColumnDefinition('available_at', type: 'timestamptz'),
+                new ColumnDefinition('lease_id', type: ColumnType::Text, nullable: true),
+                new ColumnDefinition('leased_until', type: 'timestamptz', nullable: true),
+                new ColumnDefinition('leased_by', type: ColumnType::Text, nullable: true),
+                new ColumnDefinition('attempts', type: ColumnType::Int32, defaultExpression: '0'),
+                new ColumnDefinition('created_at', type: 'timestamptz', defaultExpression: 'statement_timestamp()'),
+                new ColumnDefinition('updated_at', type: 'timestamptz', defaultExpression: 'statement_timestamp()'),
+            ],
+            indexes: [
+                new IndexDefinition(
+                    'schedule_key',
+                    $name . '_schedule_key_idx',
+                    columns: ['queue_name', 'schedule_key'],
+                    predicate: 'schedule_key IS NOT NULL',
+                ),
+                new IndexDefinition(
+                    'available_unleased',
+                    $name . '_available_unleased_idx',
+                    columns: ['queue_name', 'available_at', 'id'],
+                    predicate: 'lease_id IS NULL',
+                ),
+                new IndexDefinition(
+                    'available_leased',
+                    $name . '_available_leased_idx',
+                    columns: ['queue_name', 'leased_until', 'available_at', 'id'],
+                    predicate: 'lease_id IS NOT NULL',
+                ),
+            ],
+            primaryKey: ['id'],
+        );
+    }
+
+    /** @return list<string> */
     public function createStatements(): array
     {
+        $table = $this->tableDefinition();
+        $reference = $this->messagesTable();
+        $generator = new PostgresSqlGenerator();
+
         return [
-            sprintf("CREATE TABLE IF NOT EXISTS %s (
-                    id             TEXT        NOT NULL PRIMARY KEY,
-                    queue_name     TEXT        NOT NULL,
-                    body           BYTEA       NOT NULL,
-                    headers        JSONB       NOT NULL DEFAULT '{}'::jsonb,
-                    attributes     JSONB       NOT NULL DEFAULT '{}'::jsonb,
-                    schedule_key   TEXT        NULL,
-                    available_at   TIMESTAMPTZ NOT NULL,
-                    lease_id       TEXT        NULL,
-                    leased_until   TIMESTAMPTZ NULL,
-                    leased_by      TEXT        NULL,
-                    attempts       INT         NOT NULL DEFAULT 0,
-                    created_at     TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp(),
-                    updated_at     TIMESTAMPTZ NOT NULL DEFAULT statement_timestamp()
-                )", $this->messagesTable()),
-            sprintf(
-                'CREATE INDEX IF NOT EXISTS %s_schedule_key_idx
-                 ON %s (queue_name, schedule_key)
-                 WHERE schedule_key IS NOT NULL',
-                $this->tablePrefix . 'messages',
-                $this->messagesTable(),
-            ),
-            sprintf('CREATE INDEX IF NOT EXISTS %s_available_unleased_idx
-                 ON %s (queue_name, available_at, id)
-                 WHERE lease_id IS NULL', $this->tablePrefix . 'messages', $this->messagesTable()),
-            sprintf(
-                'CREATE INDEX IF NOT EXISTS %s_available_leased_idx
-                 ON %s (queue_name, leased_until, available_at, id)
-                 WHERE lease_id IS NOT NULL',
-                $this->tablePrefix . 'messages',
-                $this->messagesTable(),
-            ),
+            $generator->createTableIfNotExists($table, $reference),
+            ...array_map(static fn(IndexDefinition $index): string => $generator->createIndexIfNotExists(
+                $index,
+                $reference,
+            ), $table->indexes),
         ];
     }
 

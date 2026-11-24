@@ -97,6 +97,7 @@ On a retained table, the reconciler drops removed or replaced indexes before cha
 renames indexes after the column changes.
 The PostgreSQL generator returns an ordered list of individual statements, including management comments.
 Structured indexes can declare a PostgreSQL access method with `IndexDefinition::method`.
+Use `IndexDefinition::predicate` to supply the SQL `WHERE` expression for a partial index.
 
 A `SchemaDefinition` can declare PostgreSQL extension names in `requiredExtensions` and routines in
 `functions`. Schema deduplicates extension requirements and emits `CREATE EXTENSION IF NOT EXISTS` for

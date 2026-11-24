@@ -43,7 +43,8 @@ or inspect pending keys to distinguish a conflict from a drained queue. The work
 schedules activation nor guarantees a fresh answer to a reader. The application decides when
 results are readable and whether to fall back to the source query.
 
-Use `PostgresRefreshPublicationSchema` for the revision table. The tracker, publication
+Declare the revision table in [UltraBundle's migration configuration](README.md#postgresql-migrations)
+or use `PostgresRefreshPublicationSchema` to install it directly. The tracker, publication
 adapter and result writes must share a database connection. Keep revisions while workers run,
 and route all overlapping result writes through the same publication channel. Resetting
 materialized rows or progress outside that protocol is an offline operation.

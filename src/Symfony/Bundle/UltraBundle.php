@@ -10,9 +10,13 @@ use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigura
 use Symfony\Component\Filesystem\Path;
 use Symfony\Component\HttpKernel\Bundle\AbstractBundle;
 use Ultra\Container\ContainerExtension;
+use Ultra\Coordination_Postgres\PostgresCoordinationSchema;
 use Ultra\EventStore_Postgres\PostgresEventStoreHStore;
+use Ultra\MessageHandling_PostgresQueue\PostgresAsyncQueueSchema;
 use Ultra\Projection_Postgres\PostgresProjectionImplementation;
+use Ultra\SymfonyBundle\Coordination\PostgresCoordinationConfiguration;
 use Ultra\SymfonyBundle\EventStore\PostgresEventStoreConfiguration;
+use Ultra\SymfonyBundle\MessageHandling\PostgresAsyncQueueConfiguration;
 use Ultra\SymfonyBundle\Projection\PostgresProjectionConfiguration;
 
 final class UltraBundle extends AbstractBundle
@@ -51,6 +55,12 @@ final class UltraBundle extends AbstractBundle
         if (class_exists(PostgresProjectionImplementation::class)) {
             PostgresProjectionConfiguration::configure($definition);
         }
+        if (class_exists(PostgresAsyncQueueSchema::class)) {
+            PostgresAsyncQueueConfiguration::configure($definition);
+        }
+        if (class_exists(PostgresCoordinationSchema::class)) {
+            PostgresCoordinationConfiguration::configure($definition);
+        }
     }
 
     public function loadExtension(array $config, ContainerConfigurator $configurator, ContainerBuilder $container): void
@@ -78,6 +88,18 @@ final class UltraBundle extends AbstractBundle
         $postgres = is_array($projection) ? $projection['postgres'] ?? null : null;
         if (is_array($postgres)) {
             PostgresProjectionConfiguration::load($postgres, $container);
+        }
+
+        $queue = $config['async_queue'] ?? null;
+        $postgres = is_array($queue) ? $queue['postgres'] ?? null : null;
+        if (is_array($postgres)) {
+            PostgresAsyncQueueConfiguration::load($postgres, $container);
+        }
+
+        $coordination = $config['coordination'] ?? null;
+        $postgres = is_array($coordination) ? $coordination['postgres'] ?? null : null;
+        if (is_array($postgres)) {
+            PostgresCoordinationConfiguration::load($postgres, $container);
         }
     }
 

@@ -84,6 +84,7 @@ final class SchemaDefinitionData
                 'unique' => $index->unique,
                 'rawSql' => $index->rawSql,
                 'method' => $index->method,
+                'predicate' => $index->predicate,
             ], $table->indexes),
             'primaryKey' => $table->primaryKey,
             'foreignKeys' => (object) array_map(static fn(ForeignKeyDefinition $foreignKey): array => [
@@ -150,6 +151,7 @@ final class SchemaDefinitionData
             unique: self::bool($index, 'unique'),
             rawSql: self::nullableString($index, 'rawSql'),
             method: self::nullableString($index + ['method' => null], 'method'),
+            predicate: self::nullableString($index + ['predicate' => null], 'predicate'),
             hasExplicitName: self::bool($index, 'hasExplicitName'),
         );
     }

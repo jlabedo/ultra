@@ -21,6 +21,7 @@ final readonly class IndexDefinition
         public ?string $rawSql = null,
         ?bool $hasExplicitName = null,
         public ?string $method = null,
+        public ?string $predicate = null,
     ) {
         $this->name = $name ?? $this->id;
         $this->hasExplicitName = $hasExplicitName ?? null !== $name;
@@ -33,6 +34,7 @@ final readonly class IndexDefinition
             && $this->unique === $other->unique
             && $this->rawSql === $other->rawSql
             && $this->method === $other->method
+            && $this->predicate === $other->predicate
         );
     }
 }

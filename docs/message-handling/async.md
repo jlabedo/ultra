@@ -14,6 +14,20 @@ An external action can succeed before queue acknowledgement fails. An outbox doe
 
 ## Deployment compatibility
 
+To include the PostgreSQL queue table and its three partial indexes in
+[`bin/console ultra:schema:generate`](../schema/README.md#from-symfony), declare the schema in `UltraBundle`:
+
+```yaml
+ultra:
+    async_queue:
+        postgres:
+            table_prefix: async_queue_
+```
+
+`table_prefix` defaults to `async_queue_`. Use the same unqualified prefix when constructing
+`PostgresAsyncQueue`. The bundle setting controls migration generation. The application wires the
+queue, its codec and its unit-of-work buffers.
+
 Applications must handle duplicate delivery and preserve compatibility with handler routes referenced by messages already in the queue during deployments. See [TODO](../../TODO.md) for planned retry work.
 
 See [QueueWorker](../../src/MessageHandling/Runtime/Async/QueueWorker.php) and [PostgresAsyncQueue](../../src/MessageHandling/PostgresQueue/PostgresAsyncQueue.php).

@@ -75,6 +75,24 @@ with any application that wires its own coordination services for an unrelated
 job. (The projection runtime follows this: see
 `ProjectionExtension::DIRTY_KEY_TRACKER_ID` / `COORDINATOR_LEASE_ID`.)
 
+## PostgreSQL migrations
+
+For standalone coordination, declare the tables managed by
+[`bin/console ultra:schema:generate`](../schema/README.md#from-symfony) in `UltraBundle`:
+
+```yaml
+ultra:
+    coordination:
+        postgres:
+            dirty_keys: coordination_dirty_keys
+            leases: coordination_leases
+            refresh_revisions: coordination_refresh_revisions
+```
+
+Each entry is optional. Use the same unqualified table names when constructing the adapters.
+The [projection configuration](../projections/README.md#storage-and-deployment) already includes its
+own tracker and lease tables.
+
 ## Guarantee suites
 
 Runtime and Postgres guarantees live together under
