@@ -100,10 +100,11 @@ transaction du reset.
 Voir le contrat de [persistance propre aux projections](../../docs/projections/README.md#mapped-row-sets-in-symfony)
 et celui de [Mapped Table](../../docs/stored-state/mapped-table.md).
 
-[Schema](src/Schema.php) assemble les DDL fournis par les packages et la table de
-lecture. L'event store utilise QueryStreams, sans extension `hstore`. L'exemple
-utilise les packages locaux via le dépôt Composer `../../src/*/*` ; pour installer
-Ultra hors du monorepo, suivre le [guide d'installation](../../docs/development.md#installing-in-an-application).
+[Schema](src/Schema.php) assemble les DDL fournis par les packages et génère la
+table de lecture depuis `OrderSummarySchema`. L'event store utilise QueryStreams,
+sans extension `hstore`. L'exemple utilise les packages locaux via le dépôt Composer
+`../../src/*/*` ; pour installer Ultra hors du monorepo, suivre le
+[guide d'installation](../../docs/development.md#installing-in-an-application).
 
 ## Vérification
 
