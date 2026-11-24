@@ -105,15 +105,24 @@ same table definitions.
 ## Symfony discovery
 
 `UltraBundle` includes `Ultra\Schema\Symfony\SchemaExtension` when Schema is installed. When assembling a
-container directly, register that extension. On an autoconfigured resource, mark a public static method
-with `#[Ultra\Schema\Attribute\DefineSchema]`. The method takes no parameters and declares
-`SchemaDefinition` as its return type. A method may provide any number of tables.
+container directly, register that extension. Use `#[Ultra\Schema\Attribute\DefineSchema]` on a public method of an autoconfigured
+class. A bundle can also declare the method directly on a service definition:
 
-Symfony invokes each discovered method once during compilation. It merges the fragments by table and
-column ID and validates foreign keys across the assembled schema. Compiler passes such as MappedTable
-consume the result during compilation. The compiler injects the schema data into the Symfony migration
-command before discarding the temporary definition. For DDL generation outside Symfony, the same fragment
-methods can be called directly.
+```php
+$container->register(ProjectionSchema::class)
+    ->addTag('ultra.schema.fragment', ['method' => 'projectionSchema']);
+```
+
+Each declared method takes no parameters and returns a `SchemaDefinition`. A service can declare multiple
+methods. Symfony invokes static methods once during compilation, even when several service definitions
+declare the same method. Static fragments must resolve their foreign keys during compilation so that
+compiler passes such as MappedTable can use them.
+
+For instance methods, the compiler passes service factories and method names to the Symfony migration
+command. The command calls those methods when it generates a migration and merges their fragments with the
+compiled static definition. Instance methods can use service configuration to name their tables and can
+reference tables in either set of fragments. Keep their construction and schema methods independent of
+database access so generation works offline.
 
 ## Guarantee suites
 
@@ -125,7 +134,7 @@ The tests live together under [src/Schema/Tests](../../src/Schema/Tests), organi
 | Comparison preserves index identities and rejects unsupported constraint changes | [SchemaComparisonTest](../../src/Schema/Tests/SchemaComparisonTest.php) |
 | Column changes have minimal inspectable payloads; renames preserve stored rows; dependent operations address resolved names; generated SQL applies types, defaults, constraints, indexes and management comments | [ExecutableMigrationTest](../../src/Schema/Tests/ExecutableMigrationTest.php) |
 | Composite keys resolve column IDs to physical names, foreign keys enforce references with the declared timing and named table checks enforce rules across columns | [RelationalConstraintsTest](../../src/Schema/Tests/RelationalConstraintsTest.php) |
-| Autoconfigured fragments compose at compilation, including cross-fragment references, and supply the migration target to Symfony Console | [SymfonySchemaDiscoveryTest](../../src/Schema/Tests/SymfonySchemaDiscoveryTest.php) |
+| Static fragments compose at compilation and tagged service methods contribute to the migration target when the Symfony command runs | [SymfonySchemaDiscoveryTest](../../src/Schema/Tests/SymfonySchemaDiscoveryTest.php) |
 | Invalid operations fail before a script is returned; caller-provided index SQL retains its clauses and is terminated | [MigrationInspectionTest](../../src/Schema/Tests/MigrationInspectionTest.php) |
 | CLI generation uses the versioned history, requires approval for table and column drops, and rejects incomplete or divergent histories | [MigrationCommandTest](../../src/Schema/Tests/MigrationCommandTest.php) |
 

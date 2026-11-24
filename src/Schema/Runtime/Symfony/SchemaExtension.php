@@ -28,15 +28,12 @@ final class SchemaExtension implements ContainerExtension
             \Reflector $reflector,
         ): void {
             assert($reflector instanceof \ReflectionMethod, 'DefineSchema applies to methods.');
-            $definition->addResourceTag(SchemaCompilerPass::FRAGMENT_TAG, [
-                'class' => $reflector->getDeclaringClass()->getName(),
-                'method' => $reflector->getName(),
-            ]);
+            $definition->addTag(SchemaCompilerPass::FRAGMENT_TAG, ['method' => $reflector->getName()]);
         });
 
         $container
             ->register(GenerateMigrationCommand::class)
-            ->setArgument(0, self::GENERATE_COMMAND)
+            ->setArguments([self::GENERATE_COMMAND, null, null])
             ->addTag('console.command', ['command' => self::GENERATE_COMMAND]);
 
         $container->addCompilerPass(new SchemaCompilerPass());

@@ -85,17 +85,7 @@ final class SymfonySchemaDiscoveryTest extends TestCase
             $builder->register(MigrationTargetSchema::class)->setAutoconfigured(true);
             $builder->compile();
 
-            $class = 'SchemaMigrationContainer' . $suffix;
-            $file = $directory . '/container.php';
-            file_put_contents($file, new PhpDumper($builder)->dump(['class' => $class]));
-            require $file;
-            $loader = new $class()->get('console.command_loader');
-            self::assertInstanceOf(CommandLoaderInterface::class, $loader);
-
-            $application = new Application();
-            $application->setAutoExit(false);
-            $application->setCommandLoader($loader);
-            $tester = new ApplicationTester($application);
+            $tester = $this->console($builder, $directory, $suffix);
             $arguments = [
                 'command' => 'ultra:schema:generate',
                 'name' => 'rename-items',
@@ -125,7 +115,64 @@ final class SymfonySchemaDiscoveryTest extends TestCase
         yield 'configured path' => [['schema' => ['migrations_directory' => 'database/ultra']], 'database/ultra'];
     }
 
-    public function test_schema_discovery_rejects_instance_methods_during_compilation(): void
+    public function test_generate_invokes_only_the_discovered_service_methods(): void
+    {
+        $suffix = bin2hex(random_bytes(8));
+        $directory = sys_get_temp_dir() . '/ultra_schema_service_methods_' . $suffix;
+        mkdir($directory);
+
+        try {
+            $builder = new ContainerBuilder();
+            $builder->setParameter('ultra.schema.migrations_directory', $directory . '/migrations');
+            new SchemaExtension()->build($builder);
+            $builder->addCompilerPass(new AddConsoleCommandPass());
+            $builder
+                ->register('test.schema', ConfiguredSchema::class)
+                ->setArguments(['fixture'])
+                ->setAutoconfigured(true)
+                ->addTag('ultra.schema.fragment', ['method' => 'parentTable'])
+                ->addTag('ultra.schema.fragment', ['method' => 'relatedTable'])
+                ->addTag('ultra.schema.fragment', ['method' => 'relatedTable']);
+            ConfiguredSchema::$calls = [];
+            ConfiguredSchema::$instances = 0;
+            $builder->compile();
+
+            $tester = $this->console($builder, $directory, $suffix);
+            self::assertSame(0, $tester->run(['command' => 'ultra:schema:generate', '--help' => true]));
+            self::assertSame(0, ConfiguredSchema::$instances);
+            self::assertSame([], ConfiguredSchema::$calls);
+
+            $arguments = ['command' => 'ultra:schema:generate', 'name' => 'create-tables'];
+            self::assertSame(0, $tester->run($arguments), $tester->getDisplay());
+            $sql = file_get_contents($directory . '/migrations/000001-create-tables/migration.sql');
+            self::assertStringContainsString('CREATE TABLE "parents"', $sql);
+            self::assertStringContainsString('CREATE TABLE "fixture_messages"', $sql);
+            self::assertStringContainsString('CREATE TABLE "fixture_related"', $sql);
+            self::assertStringContainsString('REFERENCES "parents" ("id")', $sql);
+            self::assertSame(1, ConfiguredSchema::$instances);
+            self::assertEqualsCanonicalizing(['messages', 'relatedTable'], ConfiguredSchema::$calls);
+        } finally {
+            new Filesystem()->remove($directory);
+        }
+    }
+
+    private function console(ContainerBuilder $builder, string $directory, string $suffix): ApplicationTester
+    {
+        $class = 'SchemaMigrationContainer' . $suffix;
+        $file = $directory . '/container.php';
+        file_put_contents($file, new PhpDumper($builder)->dump(['class' => $class]));
+        require $file;
+        $loader = new $class()->get('console.command_loader');
+        self::assertInstanceOf(CommandLoaderInterface::class, $loader);
+
+        $application = new Application();
+        $application->setAutoExit(false);
+        $application->setCommandLoader($loader);
+
+        return new ApplicationTester($application);
+    }
+
+    public function test_schema_discovery_rejects_instance_methods_with_parameters_during_compilation(): void
     {
         $container = new ContainerBuilder();
         new SchemaExtension()->build($container);
@@ -189,7 +236,7 @@ final class ChildSchema
 final class BadSchema
 {
     #[DefineSchema]
-    public function definition(): SchemaDefinition
+    public function definition(string $name): SchemaDefinition
     {
         return new SchemaDefinition([]);
     }
@@ -212,5 +259,55 @@ final class MigrationTargetSchema
         return new TableDefinition('items', $name, [
             new ColumnDefinition('label', type: ColumnType::Text, defaultExpression: "'%schema_test_token%'"),
         ]);
+    }
+}
+
+final class ConfiguredSchema
+{
+    public static int $instances = 0;
+
+    /** @var list<string> */
+    public static array $calls = [];
+
+    public function __construct(
+        private readonly string $prefix,
+    ) {
+        ++self::$instances;
+    }
+
+    public static function parentTable(): SchemaDefinition
+    {
+        return ParentSchema::definition();
+    }
+
+    #[DefineSchema]
+    public function messages(): SchemaDefinition
+    {
+        self::$calls[] = __FUNCTION__;
+
+        return new SchemaDefinition([
+            new TableDefinition(
+                'test_messages',
+                $this->prefix . '_messages',
+                [new ColumnDefinition('parent_id', type: ColumnType::Int32)],
+                foreignKeys: ['message_parent' => new ForeignKeyDefinition('parents', ['parent_id' => 'id'])],
+            ),
+        ]);
+    }
+
+    public function relatedTable(): SchemaDefinition
+    {
+        self::$calls[] = __FUNCTION__;
+
+        return new SchemaDefinition([
+            new TableDefinition('test_related', $this->prefix . '_related', [
+                new ColumnDefinition('id', type: ColumnType::Int32),
+            ]),
+        ]);
+    }
+
+    public function untagged(): SchemaDefinition
+    {
+        throw new \LogicException('An untagged method must not be called.');
     }
 }

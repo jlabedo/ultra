@@ -9,14 +9,17 @@ use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Input\InputOption;
 use Symfony\Component\Console\Output\OutputInterface;
+use Ultra\Schema\SchemaDefinition;
 
 /** @internal */
 final class GenerateMigrationCommand extends Command
 {
+    /** @param list<array{service: \Closure(): object, methods: list<string>}> $providers */
     public function __construct(
         string $name,
         private readonly ?string $compiledSchema = null,
         private readonly ?string $historyDirectory = null,
+        private readonly array $providers = [],
     ) {
         parent::__construct($name);
     }
@@ -46,9 +49,26 @@ final class GenerateMigrationCommand extends Command
         $schema = null === $this->compiledSchema
             ? SchemaDefinitionFile::load((string) $input->getArgument('schema'))
             : SchemaDefinitionData::decode(json_decode($this->compiledSchema, flags: JSON_THROW_ON_ERROR));
+        $fragments = [$schema];
+        foreach ($this->providers as $provider) {
+            $service = $provider['service']();
+            foreach ($provider['methods'] as $name) {
+                $method = [$service, $name];
+                if (!is_callable($method) || !($fragment = $method()) instanceof SchemaDefinition) {
+                    throw new \LogicException(sprintf(
+                        'Schema fragment "%s::%s" must return %s.',
+                        $service::class,
+                        $name,
+                        SchemaDefinition::class,
+                    ));
+                }
+                $fragments[] = $fragment;
+            }
+        }
+
         $history = $this->historyDirectory ?? (string) $input->getArgument('history-directory');
         $migration = new MigrationGenerator($history)->generate(
-            $schema,
+            SchemaDefinition::merge(...$fragments),
             (string) $input->getArgument('name'),
             true === $input->getOption('allow-destructive'),
         );
