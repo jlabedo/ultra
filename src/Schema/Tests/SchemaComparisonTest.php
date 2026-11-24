@@ -49,8 +49,7 @@ final class SchemaComparisonTest extends TestCase
             $old,
             $unique,
             [
-                new RenameIndex('users', 'lookup', 'email_lookup'),
-                new DropIndex('users', 'email_lookup'),
+                new DropIndex('users', 'lookup'),
                 new AddIndex('users', $unique),
             ],
         ];

@@ -45,7 +45,7 @@ final class ExecutableMigrationTest extends MigrationTestCase
                 new ColumnDefinition('retired', type: 'text', nullable: true),
             ],
             [
-                new IndexDefinition('lookup', 'users_name_idx', ['full_name']),
+                new IndexDefinition('lookup', 'users_name_idx', ['full_name', 'retired']),
                 new IndexDefinition('retired-idx', 'users_id_idx', ['id']),
             ],
         );
@@ -78,16 +78,15 @@ final class ExecutableMigrationTest extends MigrationTestCase
         static::assertEquals(
             [
                 new RenameTable('users', 'app"users'),
+                new DropIndex('app"users', 'users_name_idx'),
+                new DropIndex('app"users', 'users_id_idx'),
                 new RenameColumn('app"users', 'full_name', 'display"name'),
                 new RenameColumn('app"users', 'score', 'points'),
                 new AlterColumn('app"users', 'points', 'bigint', true, '42'),
                 new AddColumn('app"users', $created),
                 new AddColumn('app"users', $target->columns[4]),
                 new DropColumn('app"users', 'retired'),
-                new RenameIndex('app"users', 'users_name_idx', 'app"name_idx'),
-                new DropIndex('app"users', 'app"name_idx'),
                 new AddIndex('app"users', $target->indexes[0]),
-                new DropIndex('app"users', 'users_id_idx'),
             ],
             $operations,
         );
@@ -127,7 +126,11 @@ final class ExecutableMigrationTest extends MigrationTestCase
             [new ColumnDefinition('keep', type: 'text'), new ColumnDefinition('old', type: 'text')],
             [
                 new IndexDefinition('keep', 'keep_idx', ['keep']),
-                new IndexDefinition('old', 'old_idx', ['keep']),
+                new IndexDefinition(
+                    'old',
+                    'old_idx',
+                    rawSql: 'CREATE INDEX old_idx ON users (keep) WHERE old IS NOT NULL',
+                ),
             ],
         );
         $new = new TableDefinition(
@@ -148,11 +151,12 @@ final class ExecutableMigrationTest extends MigrationTestCase
             'users',
             [$current->columns[0], new ColumnDefinition('new', type: 'bigint', nullable: true)],
             [
-                new IndexDefinition('new', 'new_idx', ['keep']),
+                new IndexDefinition('new', 'new_idx', ['new']),
                 new IndexDefinition('keep', 'keep_renamed_idx', ['keep']),
             ],
         );
         $this->create($current);
+        $this->connection->insert('users', ['keep' => 'Ada', 'old' => 'obsolete']);
         $this->create(new TableDefinition('old', 'retired', [new ColumnDefinition('id', type: 'uuid')]));
         $operations = new SchemaReconciler()->reconcile(new SchemaDefinition([
             $current,
@@ -171,6 +175,10 @@ final class ExecutableMigrationTest extends MigrationTestCase
             $operations,
         );
         $this->execute($operations);
+        static::assertSame(
+            ['keep' => 'Ada', 'new' => null],
+            $this->connection->fetchAssociative('SELECT * FROM users'),
+        );
         static::assertSame(
             ['accounts', 'users'],
             $this->connection->fetchFirstColumn(

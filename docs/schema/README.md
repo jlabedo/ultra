@@ -28,6 +28,8 @@ tables are rejected during reconciliation.
 
 A `CreateTable` operation generates the table and its declared indexes. The table is created before its indexes,
 including structured and raw SQL indexes. Later index additions use `AddIndex`.
+On a retained table, the reconciler drops removed or replaced indexes before changing columns, then adds or
+renames indexes after the column changes.
 The PostgreSQL generator returns an ordered list of individual statements, including management comments.
 
 `ColumnType::Text`, `Int32`, `Int64` and `Boolean` are portable column types with a PostgreSQL translation.
@@ -49,7 +51,7 @@ from the dumped container. For DDL generation outside Symfony, the same methods 
 
 ## Guarantee suites
 
-The tests live together under [src/Schema/Runtime/Tests](../../src/Schema/Tests), organized by observable guarantees:
+The tests live together under [src/Schema/Tests](../../src/Schema/Tests), organized by observable guarantees:
 
 | Guarantee | Suite |
 | --- | --- |
@@ -65,8 +67,3 @@ Operation payloads are inspectable before execution. SQL cases execute the gener
 The [migration fixture](../../src/Schema/Tests/Support/MigrationTestCase.php) uses PDO PostgreSQL and a unique
 database schema in a transaction that it rolls back after each case. See
 [development verification](../development.md#refactoring-tests) for the shared audit workflow.
-
-## Current limitations
-
-Removing a column and its dependent index currently places the column drop first. PostgreSQL has already
-removed the index when the later index drop runs, so that operation fails. See [TODO](../../TODO.md).

@@ -72,8 +72,17 @@ final class SchemaReconciler
                 $resolvedTableName = $targetTable->name;
             }
 
-            $operations = [...$operations, ...$this->reconcileColumns($resolvedTableName, $currentTable, $targetTable)];
-            $operations = [...$operations, ...$this->reconcileIndexes($resolvedTableName, $currentTable, $targetTable)];
+            [$indexDrops, $remainingIndexChanges] = $this->reconcileIndexes(
+                $resolvedTableName,
+                $currentTable,
+                $targetTable,
+            );
+            $operations = [
+                ...$operations,
+                ...$indexDrops,
+                ...$this->reconcileColumns($resolvedTableName, $currentTable, $targetTable),
+                ...$remainingIndexChanges,
+            ];
         }
 
         foreach ($currentTables as $tableId => $currentTable) {
@@ -166,11 +175,12 @@ final class SchemaReconciler
     }
 
     /**
-     * @return list<SchemaOperation>
+     * @return array{list<DropIndex>, list<AddIndex|RenameIndex>}
      */
     private function reconcileIndexes(string $tableName, TableDefinition $current, TableDefinition $target): array
     {
-        $operations = [];
+        $drops = [];
+        $changes = [];
 
         $currentIndexes = $current->indexesById();
         $targetIndexes = $target->indexesById();
@@ -179,21 +189,12 @@ final class SchemaReconciler
             $currentIndex = $currentIndexes[$indexId] ?? null;
 
             if (null === $currentIndex) {
-                $operations[] = new AddIndex($tableName, $targetIndex);
-
-                continue;
-            }
-
-            $resolvedIndexName = $currentIndex->name;
-
-            if ($currentIndex->name !== $targetIndex->name) {
-                $operations[] = new RenameIndex($tableName, $currentIndex->name, $targetIndex->name);
-                $resolvedIndexName = $targetIndex->name;
-            }
-
-            if (!$currentIndex->equivalentTo($targetIndex)) {
-                $operations[] = new DropIndex($tableName, $resolvedIndexName);
-                $operations[] = new AddIndex($tableName, $targetIndex);
+                $changes[] = new AddIndex($tableName, $targetIndex);
+            } elseif (!$currentIndex->equivalentTo($targetIndex)) {
+                $drops[] = new DropIndex($tableName, $currentIndex->name);
+                $changes[] = new AddIndex($tableName, $targetIndex);
+            } elseif ($currentIndex->name !== $targetIndex->name) {
+                $changes[] = new RenameIndex($tableName, $currentIndex->name, $targetIndex->name);
             }
         }
 
@@ -202,9 +203,9 @@ final class SchemaReconciler
                 continue;
             }
 
-            $operations[] = new DropIndex($tableName, $currentIndex->name);
+            $drops[] = new DropIndex($tableName, $currentIndex->name);
         }
 
-        return $operations;
+        return [$drops, $changes];
     }
 }

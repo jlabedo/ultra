@@ -1,9 +1,5 @@
 # TODO
 
-- [ ] Ordonner les suppressions de colonnes et de leurs index dépendants dans
-  Schema. Postgres supprime l'index avec la colonne ; le `DropIndex` émis ensuite
-  échoue. Couvrir l'exécution complète de cette migration, voir [Schema](docs/schema/README.md).
-
 - [ ] Ajouter un module de retry au framework. La politique de retry reste
   actuellement à la charge de l'appelant ; définir le périmètre du module,
   notamment les conflits optimistes et son éventuelle articulation avec la
