@@ -5,17 +5,25 @@ declare(strict_types=1);
 namespace Ultra\Schema\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
+use Symfony\Component\Console\Application;
+use Symfony\Component\Console\CommandLoader\CommandLoaderInterface;
+use Symfony\Component\Console\DependencyInjection\AddConsoleCommandPass;
+use Symfony\Component\Console\Tester\ApplicationTester;
 use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
+use Symfony\Component\Filesystem\Filesystem;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
+use Ultra\Schema\Migration\MigrationGenerator;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
+use Ultra\SymfonyBundle\UltraBundle;
 
 /** @internal */
 #[CoversNamespace('Ultra\Schema')]
@@ -48,6 +56,73 @@ final class SymfonySchemaDiscoveryTest extends TestCase
         self::assertStringNotContainsString(ParentSchema::class, $php);
         self::assertStringNotContainsString(ChildSchema::class, $php);
         self::assertStringNotContainsString(SchemaDefinition::class, $php);
+    }
+
+    /** @param array{schema?: array{migrations_directory: string}} $config */
+    #[DataProvider('migrationDirectories')]
+    public function test_symfony_command_generates_from_compiled_fragments_and_the_recorded_history(
+        array $config,
+        string $projectRelativeHistory,
+    ): void {
+        $suffix = bin2hex(random_bytes(8));
+        $directory = sys_get_temp_dir() . '/ultra_schema_symfony_' . $suffix;
+        mkdir($directory);
+
+        try {
+            $history = $directory . '/' . $projectRelativeHistory;
+            $previous = new SchemaDefinition([MigrationTargetSchema::table('items_v1')]);
+            new MigrationGenerator($history)->initialize($previous);
+            MigrationTargetSchema::$calls = 0;
+
+            $builder = new ContainerBuilder();
+            $builder->setParameter('kernel.project_dir', $directory);
+            $bundle = new UltraBundle([new SchemaExtension()]);
+            $bundle->build($builder);
+            $builder->registerExtension($bundle->getContainerExtension());
+            $builder->loadFromExtension('ultra', $config);
+            $builder->addCompilerPass(new AddConsoleCommandPass());
+            $builder->setParameter('schema_test_token', 'unexpected substitution');
+            $builder->register(MigrationTargetSchema::class)->setAutoconfigured(true);
+            $builder->compile();
+
+            $class = 'SchemaMigrationContainer' . $suffix;
+            $file = $directory . '/container.php';
+            file_put_contents($file, new PhpDumper($builder)->dump(['class' => $class]));
+            require $file;
+            $loader = new $class()->get('console.command_loader');
+            self::assertInstanceOf(CommandLoaderInterface::class, $loader);
+
+            $application = new Application();
+            $application->setAutoExit(false);
+            $application->setCommandLoader($loader);
+            $tester = new ApplicationTester($application);
+            $arguments = [
+                'command' => 'ultra:schema:generate',
+                'name' => 'rename-items',
+            ];
+            self::assertSame(0, $tester->run($arguments), $tester->getDisplay());
+
+            $path = $history . '/000001-rename-items';
+            $sql = file_get_contents($path . '/migration.sql');
+            self::assertStringContainsString('ALTER TABLE "items_v1" RENAME TO "items_v2";', $sql);
+            self::assertStringNotContainsString('SET DEFAULT', $sql);
+            self::assertStringContainsString(
+                '"previous": "000000-baseline"',
+                file_get_contents($path . '/snapshot.json'),
+            );
+            self::assertSame(0, $tester->run($arguments), $tester->getDisplay());
+            self::assertStringContainsString('No schema changes.', $tester->getDisplay());
+            self::assertSame(1, MigrationTargetSchema::$calls);
+        } finally {
+            new Filesystem()->remove($directory);
+        }
+    }
+
+    /** @return iterable<string, array{array{schema?: array{migrations_directory: string}}, string}> */
+    public static function migrationDirectories(): iterable
+    {
+        yield 'bundle default' => [[], 'migrations/schema'];
+        yield 'configured path' => [['schema' => ['migrations_directory' => 'database/ultra']], 'database/ultra'];
     }
 
     public function test_schema_discovery_rejects_instance_methods_during_compilation(): void
@@ -117,5 +192,25 @@ final class BadSchema
     public function definition(): SchemaDefinition
     {
         return new SchemaDefinition([]);
+    }
+}
+
+final class MigrationTargetSchema
+{
+    public static int $calls = 0;
+
+    #[DefineSchema]
+    public static function definition(): SchemaDefinition
+    {
+        ++self::$calls;
+
+        return new SchemaDefinition([self::table('items_v2')]);
+    }
+
+    public static function table(string $name): TableDefinition
+    {
+        return new TableDefinition('items', $name, [
+            new ColumnDefinition('label', type: ColumnType::Text, defaultExpression: "'%schema_test_token%'"),
+        ]);
     }
 }

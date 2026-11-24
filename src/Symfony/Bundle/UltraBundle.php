@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace Ultra\SymfonyBundle;
 
+use Symfony\Component\Config\Definition\Configurator\DefinitionConfigurator;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Kernel\AbstractBundle;
+use Symfony\Component\DependencyInjection\Loader\Configurator\ContainerConfigurator;
+use Symfony\Component\Filesystem\Path;
 use Ultra\Container\ContainerExtension;
 
 final class UltraBundle extends AbstractBundle
@@ -24,6 +27,35 @@ final class UltraBundle extends AbstractBundle
         foreach ([] === $this->extensions ? self::defaultExtensions() : $this->extensions as $extension) {
             $extension->build($container);
         }
+    }
+
+    public function configure(DefinitionConfigurator $definition): void
+    {
+        $definition
+            ->rootNode()
+            ->children()
+            ->arrayNode('schema')
+            ->addDefaultsIfNotSet()
+            ->children()
+            ->scalarNode('migrations_directory')
+            ->defaultValue('migrations/schema')
+            ->cannotBeEmpty();
+    }
+
+    public function loadExtension(array $config, ContainerConfigurator $configurator, ContainerBuilder $container): void
+    {
+        $schema = $config['schema'] ?? null;
+        $directory = is_array($schema) ? $schema['migrations_directory'] ?? null : null;
+        if (!is_string($directory)) {
+            throw new \InvalidArgumentException('The schema migrations directory must be a string.');
+        }
+        if (!Path::isAbsolute($directory) && $container->hasParameter('kernel.project_dir')) {
+            $projectDirectory = $container->getParameter('kernel.project_dir');
+            assert(is_string($projectDirectory), 'The Symfony project directory is a string.');
+            $directory = Path::makeAbsolute($directory, $projectDirectory);
+        }
+
+        $configurator->parameters()->set('ultra.schema.migrations_directory', $directory);
     }
 
     /**

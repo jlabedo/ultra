@@ -5,6 +5,28 @@ own definitions and can compose them from fragments.
 
 ## Generate a migration
 
+### From Symfony
+
+With `UltraBundle` and [autoconfigured schema fragments](#symfony-discovery), run:
+
+```bash
+bin/console ultra:schema:generate create-tables
+```
+
+The command gets its target definition from the compiled container and compares it offline with the
+latest snapshot in `migrations/schema` under the project directory. It accepts `--allow-destructive`.
+To use another history directory, set `ultra.schema.migrations_directory` in the bundle configuration.
+Relative paths are resolved from the project directory.
+
+```yaml
+# config/packages/ultra.yaml
+ultra:
+    schema:
+        migrations_directory: database/ultra
+```
+
+### From a PHP definition
+
 Create a PHP file that returns the target `SchemaDefinition`. It can call the same fragment methods that
 [Symfony discovery](#symfony-discovery) uses. Run the Composer binary from the application:
 
@@ -13,15 +35,17 @@ vendor/bin/ultra-schema generate config/schema.php migrations/schema create-tabl
 ```
 
 The command uses Symfony Console 7.4 or 8.x. Run `vendor/bin/ultra-schema generate --help` to see the
-arguments and options. The command starts from an empty schema when the history is empty. For an existing database, first use
-a definition that describes its current Ultra-managed tables:
+arguments and options. Generation starts from an empty schema when the history is empty. For an existing
+database, first pass a definition that describes its current Ultra-managed tables:
 
 ```bash
 vendor/bin/ultra-schema init config/schema.php migrations/schema
 ```
 
 `init` records `000000-baseline/snapshot.json` in an empty history. Verify the baseline against the database
-before generating further changes. Both commands run offline.
+before generating further changes.
+
+### Review and deploy
 
 Each generation compares the target with the latest versioned snapshot, including when the corresponding
 SQL is still pending deployment. It writes `migration.sql` and a versioned JSON `snapshot.json` together in a
@@ -87,8 +111,9 @@ with `#[Ultra\Schema\Attribute\DefineSchema]`. The method takes no parameters an
 
 Symfony invokes each discovered method once during compilation. It merges the fragments by table and
 column ID and validates foreign keys across the assembled schema. Compiler passes such as MappedTable
-consume the result during compilation. The fragment providers and the assembled schema are discarded
-from the dumped container. For DDL generation outside Symfony, the same methods can be called directly.
+consume the result during compilation. The compiler injects the schema data into the Symfony migration
+command before discarding the temporary definition. For DDL generation outside Symfony, the same fragment
+methods can be called directly.
 
 ## Guarantee suites
 
@@ -100,7 +125,7 @@ The tests live together under [src/Schema/Tests](../../src/Schema/Tests), organi
 | Comparison preserves index identities and rejects unsupported constraint changes | [SchemaComparisonTest](../../src/Schema/Tests/SchemaComparisonTest.php) |
 | Column changes have minimal inspectable payloads; renames preserve stored rows; dependent operations address resolved names; generated SQL applies types, defaults, constraints, indexes and management comments | [ExecutableMigrationTest](../../src/Schema/Tests/ExecutableMigrationTest.php) |
 | Composite keys resolve column IDs to physical names, foreign keys enforce references with the declared timing and named table checks enforce rules across columns | [RelationalConstraintsTest](../../src/Schema/Tests/RelationalConstraintsTest.php) |
-| Autoconfigured fragments compose at compilation, including cross-fragment references | [SymfonySchemaDiscoveryTest](../../src/Schema/Tests/SymfonySchemaDiscoveryTest.php) |
+| Autoconfigured fragments compose at compilation, including cross-fragment references, and supply the migration target to Symfony Console | [SymfonySchemaDiscoveryTest](../../src/Schema/Tests/SymfonySchemaDiscoveryTest.php) |
 | Invalid operations fail before a script is returned; caller-provided index SQL retains its clauses and is terminated | [MigrationInspectionTest](../../src/Schema/Tests/MigrationInspectionTest.php) |
 | CLI generation uses the versioned history, requires approval for table and column drops, and rejects incomplete or divergent histories | [MigrationCommandTest](../../src/Schema/Tests/MigrationCommandTest.php) |
 
