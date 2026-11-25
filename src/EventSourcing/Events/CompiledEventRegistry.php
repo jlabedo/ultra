@@ -9,16 +9,37 @@ namespace Ultra\Events;
  */
 final readonly class CompiledEventRegistry implements EventRegistryInterface
 {
+    /** @var array<class-string, string> */
+    private array $namesByClass;
+
     /**
      * @param array<array-key, class-string>                $events
      * @param array<class-string, array<string, string>> $domainIdentifiers
      * @param array<class-string, bool>                  $domainIdentifierRequiresScope
+     * @param array<class-string, string>|null $namesByClass
      */
     public function __construct(
         private array $events,
         private array $domainIdentifiers = [],
         private array $domainIdentifierRequiresScope = [],
-    ) {}
+        ?array $namesByClass = null,
+    ) {
+        $this->namesByClass = $namesByClass ?? self::indexNamesByClass($events);
+    }
+
+    /**
+     * @param array<array-key, class-string> $events
+     * @return array<class-string, string>
+     */
+    public static function indexNamesByClass(array $events): array
+    {
+        $names = [];
+        foreach ($events as $name => $class) {
+            $names[$class] ??= (string) $name;
+        }
+
+        return $names;
+    }
 
     public function getClass(string $eventName): ?string
     {
@@ -27,9 +48,7 @@ final readonly class CompiledEventRegistry implements EventRegistryInterface
 
     public function getName(string $eventClass): ?string
     {
-        $name = array_search($eventClass, $this->events, true);
-
-        return false === $name ? null : (string) $name;
+        return $this->namesByClass[$eventClass] ?? null;
     }
 
     public function getDomainIdentifiers(object $event): array

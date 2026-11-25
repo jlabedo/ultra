@@ -54,6 +54,19 @@ final class EventIdentityTest extends TestCase
         yield 'numeric string' => ['17'];
     }
 
+    public function test_reverse_lookup_uses_the_first_registered_name_when_a_class_has_aliases(): void
+    {
+        $container = new ContainerBuilder();
+        $container->setDefinition(MetadataNamedEvent::class, new Definition(MetadataNamedEvent::class)
+            ->addResourceTag(EventsExtension::EVENT_TAG, ['name' => '0'])
+            ->addResourceTag(EventsExtension::EVENT_TAG, ['name' => 'alias']));
+        new EventRegistryCompilerPass()->process($container);
+        $registry = $this->compileRegistry($container);
+
+        static::assertSame('0', $registry->getName(MetadataNamedEvent::class));
+        static::assertSame(MetadataNamedEvent::class, $registry->getClass('alias'));
+    }
+
     #[DataProvider('identifierValues')]
     public function test_autoconfiguration_compiles_names_and_string_identifiers_for_all_property_visibilities(
         string|\Stringable $value,

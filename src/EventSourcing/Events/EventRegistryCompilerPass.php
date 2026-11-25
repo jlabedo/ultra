@@ -44,14 +44,12 @@ class EventRegistryCompilerPass implements CompilerPassInterface
             }
         }
 
-        $container->setDefinition(
-            EventRegistryInterface::class,
-            new Definition(CompiledEventRegistry::class, [
-                $eventMap,
-                $domainIdentifierMap,
-                $domainIdentifierRequiresScope,
-            ]),
-        );
+        $container->setDefinition(EventRegistryInterface::class, new Definition(CompiledEventRegistry::class, [
+            $eventMap,
+            $domainIdentifierMap,
+            $domainIdentifierRequiresScope,
+            CompiledEventRegistry::indexNamesByClass($eventMap),
+        ]));
     }
 
     /**
