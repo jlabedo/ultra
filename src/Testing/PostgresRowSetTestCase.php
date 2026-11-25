@@ -9,7 +9,6 @@ use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
@@ -17,10 +16,7 @@ use Ultra\Schema\TableDefinition;
 
 abstract class PostgresRowSetTestCase extends TestCase
 {
-    /**
-     * @param array<string, PostgresMappedColumnType> $columnTypes
-     */
-    protected function withMappedRowSet(callable $callback, array $columnTypes = []): void
+    protected function withMappedRowSet(callable $callback): void
     {
         $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
         if (false === $dsn || '' === $dsn) {
@@ -59,11 +55,7 @@ abstract class PostgresRowSetTestCase extends TestCase
                     primaryKey: ['id'],
                 ),
             ]);
-            $rows = new SchemaMappedRowSet(
-                $tableName,
-                representations: ['tags' => 'array', 'payload' => 'array', 'expires_on' => 'string'],
-                postgresColumnTypes: $columnTypes,
-            )->compileFor($adapter, $schema)();
+            $rows = $adapter->compileRowSet($schema, $tableName)();
             $callback($connection, $rows, $tableName, new MappedTableUnitOfWork([$tableName => $rows], $adapter));
         } finally {
             PostgresConnectionSupport::resetSharedConnection($connection);

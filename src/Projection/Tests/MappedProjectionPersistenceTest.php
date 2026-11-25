@@ -24,7 +24,6 @@ use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
@@ -81,7 +80,7 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
                 new PostgresProjectionImplementation($connection, $fixture->prefix),
                 extensionsBefore: [
                     new SchemaExtension(),
-                    new MappedTableExtension(schemaRowSets: ProjectionTablesSchema::rowSets()),
+                    new MappedTableExtension(rowSets: ProjectionTablesSchema::rowSets()),
                 ],
             )
             ->withExtension(new UnitOfWorkExtension())
@@ -158,12 +157,12 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
                 ConflictingMappedProjection::class,
                 ProjectionTablesSchema::class,
             ],
-            new MappedTableExtension(schemaRowSets: ProjectionTablesSchema::rowSets()),
+            new MappedTableExtension(rowSets: ProjectionTablesSchema::rowSets()),
             'must have a single owner',
         ];
         yield 'owner dependency split between coordinators' => [
             [ConflictingMappedProjection::class, ProjectionTablesSchema::class],
-            new MappedTableExtension(schemaRowSets: ProjectionTablesSchema::rowSets()),
+            new MappedTableExtension(rowSets: ProjectionTablesSchema::rowSets()),
             'must use the same coordinator',
         ];
         yield 'guard split between coordinators' => [
@@ -176,7 +175,7 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
                     new QueryGuardDependency(ProjectionTablesSchema::COURSES, 'id'),
                     new QueryGuardDependency(ProjectionTablesSchema::APPLICATION, 'id'),
                 ]),
-            ], schemaRowSets: ProjectionTablesSchema::rowSets()),
+            ], rowSets: ProjectionTablesSchema::rowSets()),
             'must watch row sets in the same coordinator',
         ];
     }
@@ -210,9 +209,7 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
         $this
             ->projectionUltraLight()
             ->withExtension(new SchemaExtension())
-            ->withExtension(new MappedTableExtension(schemaRowSets: [new SchemaMappedRowSet(
-                ProjectionTablesSchema::COURSES,
-            )]))
+            ->withExtension(new MappedTableExtension(rowSets: [ProjectionTablesSchema::COURSES]))
             ->withService(new InMemoryMappedTableAdapter(new InMemoryRowDatabase()), MappedTableAdapter::class)
             ->withClass(UndeclaredMappedProjection::class, ProjectionTablesSchema::class)
             ->withAlias('test.course_table_alias', ProjectionTablesSchema::COURSES)
@@ -247,9 +244,7 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
         $container = new ContainerBuilder();
         new ProjectionExtension()->build($container);
         new SchemaExtension()->build($container);
-        new MappedTableExtension(schemaRowSets: [new SchemaMappedRowSet(ProjectionTablesSchema::COURSES)])->build(
-            $container,
-        );
+        new MappedTableExtension(rowSets: [ProjectionTablesSchema::COURSES])->build($container);
         new UnitOfWorkExtension()->build($container);
         $container->register(UltraNormalizer::class);
         $container->register('test.projection_connection', Connection::class)->setSynthetic(true)->setPublic(true);
@@ -385,13 +380,13 @@ final class ProjectionTablesSchema
         ]);
     }
 
-    /** @return list<SchemaMappedRowSet> */
+    /** @return array<array-key, string|array{owner: string}> */
     public static function rowSets(): array
     {
         return [
-            new SchemaMappedRowSet(self::COURSES),
-            new SchemaMappedRowSet(self::DETAILS, owner: 'owner'),
-            new SchemaMappedRowSet(self::APPLICATION),
+            self::COURSES,
+            self::DETAILS => ['owner' => 'owner'],
+            self::APPLICATION,
         ];
     }
 }

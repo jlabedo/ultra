@@ -75,6 +75,12 @@ in a hand-written migration and account for their dependencies when ordering dep
 
 The caller supplies current and target SchemaDefinition values. Stable table and column identities are distinct from SQL names: keeping an identity while changing its name expresses a rename; removing an identity expresses a drop, and adding one expresses creation. SchemaReconciler produces operations, and PostgresSqlGenerator produces SQL statements. StateStore does not currently derive or create its SQL schema automatically.
 
+Column definitions describe the SQL type, including modifiers such as timestamp precision. Schema treats
+the PostgreSQL spellings listed in [Mapped Table's type mappings](../stored-state/mapped-table.md#column-types)
+as equivalent when their SQL type and precision agree. A spelling change alone produces no DDL. A precision
+change still generates an `ALTER COLUMN TYPE`. PostgreSQL generation preserves the declared SQL spelling for
+new or changed columns. Mapped Table derives its PHP and storage behavior from the column type.
+
 See [SchemaReconciler](../../src/Schema/Runtime/SchemaReconciler.php) and [PostgresSqlGenerator](../../src/Schema/Runtime/PostgresSqlGenerator.php).
 
 Tables can declare a primary key by ordered column IDs and foreign keys by constraint name. A foreign key maps

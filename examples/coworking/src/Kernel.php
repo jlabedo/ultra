@@ -18,7 +18,7 @@ class Kernel extends BaseKernel
     protected function build(ContainerBuilder $container): void
     {
         parent::build($container);
-        new MappedTableExtension(schemaRowSets: [
+        new MappedTableExtension(rowSets: [
             ...BookingSchema::rowSets(),
             ...DirectBookingSchema::rowSets(),
         ])->build($container);

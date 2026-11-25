@@ -13,7 +13,6 @@ use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MessageHandling\EventBusInterface;
 use Ultra\Schema\Symfony\SchemaExtension;
@@ -52,7 +51,7 @@ final class ContainerAssemblyTest extends DecisionTestCase
             $builder->setAlias(\Ultra\MappedTable\MappedTableAdapter::class, InMemoryMappedTableAdapter::class);
             $builder->setAlias('test.state_store', \Ultra\StateStore\StateStore::class)->setPublic(true);
             $extensions[] = new SchemaExtension();
-            $extensions[] = new MappedTableExtension(schemaRowSets: [new SchemaMappedRowSet(DecisionSchema::ORDERS)]);
+            $extensions[] = new MappedTableExtension(rowSets: [DecisionSchema::ORDERS]);
             $extensions[] = new \Ultra\StateStore_Bundle\StateStoreExtension();
         }
         $classes[] = match ($family) {

@@ -21,7 +21,7 @@ final class RecordingGuardMappedTableAdapter extends MappedTableAdapter
 
     public function createDefined(MappedRowSetMetadata $mapping): MappedRowSet
     {
-        return $this->bind($mapping, new InMemoryRowSetStorage($this->database, $mapping->table, $mapping->keyColumns));
+        return $this->bind($mapping, new InMemoryRowSetStorage($this->database, $mapping));
     }
 
     public function assertActiveTransaction(): void

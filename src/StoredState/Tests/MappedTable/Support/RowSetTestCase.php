@@ -9,8 +9,6 @@ use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableAdapter;
-use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
@@ -29,7 +27,7 @@ abstract class RowSetTestCase extends TestCase
         yield 'Postgres' => ['postgres'];
     }
 
-    /** @param list<string> $keyColumns @param array<string, PostgresMappedColumnType> $columnTypes */
+    /** @param list<string> $keyColumns @param array<string, string> $columnTypes */
     protected function fixture(
         string $backend = 'memory',
         array $keyColumns = ['id'],
@@ -77,9 +75,9 @@ abstract class RowSetTestCase extends TestCase
                 primaryKey: $keys,
             ),
         ]);
-        $selection = new SchemaMappedRowSet($fixture->tableName, ownerColumns: ['tenant', 'owner']);
+        $rows = $fixture->adapter->compileRowSet($schema, $fixture->tableName, ownerColumns: ['tenant', 'owner'])();
 
-        return [$fixture, $selection->compileFor($fixture->adapter, $schema)()];
+        return [$fixture, $rows];
     }
 
     protected function tearDown(): void

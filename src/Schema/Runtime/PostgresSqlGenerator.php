@@ -211,7 +211,7 @@ final class PostgresSqlGenerator
         $clauses = [];
 
         if (null !== $operation->type) {
-            $clauses[] = sprintf('ALTER COLUMN %s TYPE %s', $columnName, $this->renderType($operation->type));
+            $clauses[] = sprintf('ALTER COLUMN %s TYPE %s', $columnName, PostgresColumnType::sql($operation->type));
         }
 
         if (null !== $operation->nullable) {
@@ -242,7 +242,7 @@ final class PostgresSqlGenerator
     {
         $parts = [
             $this->quoteIdentifier($column->name),
-            $this->renderType($column->type),
+            PostgresColumnType::sql($column->type),
         ];
 
         if (!$column->nullable) {
@@ -261,17 +261,6 @@ final class PostgresSqlGenerator
     private function quoteIdentifier(string $identifier): string
     {
         return sprintf('"%s"', str_replace('"', '""', $identifier));
-    }
-
-    private function renderType(ColumnType|string $type): string
-    {
-        return match ($type) {
-            ColumnType::Text => 'text',
-            ColumnType::Int32 => 'integer',
-            ColumnType::Int64 => 'bigint',
-            ColumnType::Boolean => 'boolean',
-            default => $type,
-        };
     }
 
     /** @param list<string> $identifiers */

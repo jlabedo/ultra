@@ -6,13 +6,42 @@ namespace Ultra\MappedTable;
 
 use Ultra\MappedTable\Plan\RowSetUpdatePlan;
 use Ultra\MappedTable\Plan\RowUpdatePlan;
+use Ultra\MappedTable\Storage\PostgresRowSetSql;
 use Ultra\MappedTable\Storage\RowSetStorage;
+use Ultra\Schema\SchemaDefinition;
 
 /** Binds tables to one storage resource and applies an entire mapped-table flush. */
 abstract class MappedTableAdapter
 {
     /** @var array<string, RowSetStorage> */
     private array $tables = [];
+
+    /**
+     * Compile a selected schema table once and return a factory for fresh row buffers.
+     *
+     * @param ?list<string> $columns Exposed column IDs. The primary key is always included.
+     * @param ?string $owner Foreign key ID for a mapped parent.
+     * @param list<string> $ownerColumns Collection key columns without a mapped parent.
+     * @return \Closure(): MappedRowSet
+     */
+    final public function compileRowSet(
+        SchemaDefinition $schema,
+        string $table,
+        ?array $columns = null,
+        ?string $owner = null,
+        array $ownerColumns = [],
+    ): \Closure {
+        $schema->validateForeignKeys();
+        $mapping = MappedRowSetCompiler::compile($schema->tablesById(), $table, $columns, $owner, $ownerColumns);
+        $adapter = $this;
+        if ($adapter instanceof PostgresMappedTableAdapter) {
+            $sql = PostgresRowSetSql::compile($mapping);
+
+            return static fn(): MappedRowSet => $adapter->createCompiled($mapping, $sql);
+        }
+
+        return fn(): MappedRowSet => $this->createDefined($mapping);
+    }
 
     /** @internal Bind metadata produced from Schema. */
     abstract public function createDefined(MappedRowSetMetadata $mapping): MappedRowSet;

@@ -82,8 +82,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
     {
         $columns = array_values(array_unique($columns));
         $projection = implode(', ', array_map($this->quoteColumn(...), $columns));
-        // Associate each result with the input key that PostgreSQL matched, even when PostgreSQL
-        // canonicalizes its spelling (for example, an uppercase UUID).
+        // Associate each result with the requested key independently of the result order.
         $querySuffix = sprintf(', %s FROM %s WHERE %s', $projection, $this->sql->table, $this->sql->keyPredicate);
         $fingerprints = array_keys($keys);
         $branches = [];
@@ -115,7 +114,8 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
                     $column,
                 ));
             }
-            $key[$column] = $value;
+            $codec = $this->sql->columnTypes[$column] ?? null;
+            $key[$column] = $codec?->normalize($value, 6, preserveTimestampOffset: false) ?? $value;
         }
 
         return new MappedKey($key);

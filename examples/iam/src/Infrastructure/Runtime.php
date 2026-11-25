@@ -78,10 +78,10 @@ final readonly class Runtime
         $tables = [];
         $schema = IamSchema::definition();
         $schemaTables = $schema->tablesById();
-        foreach (IamSchema::rowSets() as $selection) {
-            $row = $selection->compileFor($adapter, $schema)();
-            $rowSets[$selection->table] = $row;
-            $tables[$schemaTables[$selection->table]->name] = $row;
+        foreach (IamSchema::rowSets() as $table => $options) {
+            $row = $adapter->compileRowSet($schema, $table, ...$options)();
+            $rowSets[$table] = $row;
+            $tables[$schemaTables[$table]->name] = $row;
         }
         $unitOfWork = new MappedTableUnitOfWork(
             $rowSets,

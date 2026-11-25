@@ -12,7 +12,6 @@ use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\UnitOfWork\DbalTransactionManager;
@@ -27,9 +26,9 @@ new SchemaExtension()->build($container);
 $capacityGuard = new QueryGuardDefinition(WorkshopRegistration::CAPACITY_GUARD, [
     new QueryGuardDependency(WorkshopSchema::RESERVATIONS, 'workshop_id', ['seats']),
 ]);
-new MappedTableExtension(queryGuards: [$capacityGuard], schemaRowSets: [
-    new SchemaMappedRowSet(WorkshopSchema::WORKSHOPS),
-    new SchemaMappedRowSet(WorkshopSchema::RESERVATIONS, owner: WorkshopSchema::WORKSHOP_REFERENCE),
+new MappedTableExtension(queryGuards: [$capacityGuard], rowSets: [
+    WorkshopSchema::WORKSHOPS,
+    WorkshopSchema::RESERVATIONS => ['owner' => WorkshopSchema::WORKSHOP_REFERENCE],
 ])->build($container);
 
 $container->register(Connection::class)->setSynthetic(true)->setPublic(true);

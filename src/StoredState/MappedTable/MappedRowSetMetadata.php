@@ -28,20 +28,33 @@ readonly class MappedRowSetMetadata
         public array $ownerColumnSet,
     ) {}
 
-    public function assertKey(MappedKey $key): void
+    public function normalizeKey(MappedKey $key): MappedKey
     {
         $key->assertColumns($this->keyColumns);
-        $this->assertValues($key->values);
+
+        return $this->normalizeKeyValues($key);
     }
 
-    public function assertOwner(MappedKey $owner): void
+    public function normalizeOwner(MappedKey $owner): MappedKey
     {
         if ([] === $this->ownerColumns) {
             throw new \LogicException('This mapped row set has no declared owner.');
         }
-
         $owner->assertColumns($this->ownerColumns);
-        $this->assertValues($owner->values);
+
+        return $this->normalizeKeyValues($owner);
+    }
+
+    private function normalizeKeyValues(MappedKey $key): MappedKey
+    {
+        $values = $key->values;
+        foreach ($values as $name => $value) {
+            $normalized = $this->normalizeValue($name, $value);
+            assert(is_int($normalized) || is_string($normalized), 'Mapped keys have scalar representations.');
+            $values[$name] = $normalized;
+        }
+
+        return $values === $key->values ? $key : new MappedKey($values);
     }
 
     public function ownerKey(MappedKey $key): MappedKey
@@ -49,15 +62,7 @@ readonly class MappedRowSetMetadata
         return new MappedKey(array_intersect_key($key->values, $this->ownerColumnSet));
     }
 
-    /** @param array<string, mixed> $values */
-    public function assertValues(array $values): void
-    {
-        foreach ($values as $name => $value) {
-            $this->assertValue($name, $value);
-        }
-    }
-
-    public function assertValue(string $name, mixed $value): void
+    public function normalizeValue(string $name, mixed $value, bool $preserveTimestampOffset = false): mixed
     {
         $column = $this->column($name);
         if (!$column->accepts($value)) {
@@ -70,15 +75,33 @@ readonly class MappedRowSetMetadata
                 get_debug_type($value),
             ));
         }
+
+        return $column->normalize($value, $preserveTimestampOffset);
     }
 
-    public function assertWritableValue(string $name, mixed $value): void
+    public function normalizeWritableValue(string $name, mixed $value): mixed
     {
         if (isset($this->keyColumnSet[$name])) {
             throw new \InvalidArgumentException(sprintf('Mapped key column "%s" cannot be written.', $name));
         }
 
-        $this->assertValue($name, $value);
+        return $this->normalizeValue($name, $value);
+    }
+
+    /**
+     * @param array<string, mixed> $values
+     * @return array<string, mixed>
+     */
+    public function copyValues(array $values): array
+    {
+        foreach ($values as $column => $value) {
+            $mapping = $this->column($column);
+            if (PostgresMappedColumnType::Jsonb === $mapping->codec) {
+                $values[$column] = $mapping->normalize($value);
+            }
+        }
+
+        return $values;
     }
 
     public function column(string $name): MappedColumn

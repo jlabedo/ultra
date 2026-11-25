@@ -16,7 +16,6 @@ use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\SchemaMappedRowSet;
 
 final readonly class EligibilityRefresh
 {
@@ -29,10 +28,11 @@ final readonly class EligibilityRefresh
         private RefreshWorker $worker,
         private MappedTableAdapter $adapter,
     ) {
-        $this->resultRows = new SchemaMappedRowSet(ComplianceSchema::ELIGIBILITY, ownerColumns: [
-            'account_id',
-            'subject_id',
-        ])->compileFor($adapter, ComplianceSchema::definition());
+        $this->resultRows = $adapter->compileRowSet(
+            ComplianceSchema::definition(),
+            ComplianceSchema::ELIGIBILITY,
+            ownerColumns: ['account_id', 'subject_id'],
+        );
     }
 
     public function run(string $account, int $maxSteps, int $subjectBatchSize): int

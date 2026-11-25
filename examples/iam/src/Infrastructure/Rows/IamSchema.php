@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace IamExample\Infrastructure\Rows;
 
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
@@ -174,18 +173,18 @@ final class IamSchema
         ]);
     }
 
-    /** @return list<SchemaMappedRowSet> */
+    /** @return array<string, array{owner?: string}> */
     public static function rowSets(): array
     {
         return [
-            new SchemaMappedRowSet(self::AUDIT),
-            new SchemaMappedRowSet(self::BINDINGS),
-            new SchemaMappedRowSet(self::GROUPS, owner: self::GROUP_OWNER),
-            new SchemaMappedRowSet(self::MEMBERSHIPS),
-            new SchemaMappedRowSet(self::ROLE_PERMISSIONS, owner: self::PERMISSION_OWNER),
-            new SchemaMappedRowSet(self::ROLES, owner: self::ROLE_OWNER),
-            new SchemaMappedRowSet(self::SUBJECTS, owner: self::SUBJECT_OWNER),
-            new SchemaMappedRowSet(self::TENANTS),
+            self::AUDIT => [],
+            self::BINDINGS => [],
+            self::GROUPS => ['owner' => self::GROUP_OWNER],
+            self::MEMBERSHIPS => [],
+            self::ROLE_PERMISSIONS => ['owner' => self::PERMISSION_OWNER],
+            self::ROLES => ['owner' => self::ROLE_OWNER],
+            self::SUBJECTS => ['owner' => self::SUBJECT_OWNER],
+            self::TENANTS => [],
         ];
     }
 }

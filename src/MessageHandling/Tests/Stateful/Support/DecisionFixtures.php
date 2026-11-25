@@ -14,7 +14,6 @@ use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
 use Ultra\EventSourcedState\Tests\Example\State\CourseCapacityState;
 use Ultra\EventStore\Event as StoredEvent;
 use Ultra\EventStore\EventStore;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MessageHandling\Attribute\Handles;
 use Ultra\MessageHandling\Attribute\SelfHandler;
 use Ultra\MessageHandling\EventBusInterface;
@@ -1014,16 +1013,16 @@ final class DecisionSchema
         ]);
     }
 
-    /** @return list<SchemaMappedRowSet> */
+    /** @return list<string> */
     public static function rowSets(): array
     {
-        return array_map(static fn(string $table): SchemaMappedRowSet => new SchemaMappedRowSet($table), [
+        return [
             self::ORDERS,
             self::TERMS,
             self::ACCEPTANCES,
             self::DEPENDENT_MEMBERS,
             self::DEPENDENT_COMPANIES,
             self::DEPENDENT_USAGES,
-        ]);
+        ];
     }
 }

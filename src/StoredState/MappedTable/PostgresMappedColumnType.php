@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+use Ultra\MappedTable\Storage\JsonbValue;
+
+/** @internal Wire codecs selected by the mapped row set compiler. */
 enum PostgresMappedColumnType: string
 {
-    case Text = 'TEXT';
+    case Uuid = 'UUID';
     case TextArray = 'TEXT[]';
     case UuidArray = 'UUID[]';
     case IntArray = 'INTEGER[]';
@@ -15,23 +18,26 @@ enum PostgresMappedColumnType: string
     case Timestamp = 'TIMESTAMP(6) WITHOUT TIME ZONE';
     case TimestampWithTimeZone = 'TIMESTAMP(6) WITH TIME ZONE';
 
-    /** @internal Validates the declared PHP representation before a codec is wired into a row set. */
-    public function assertSupports(string $column, MappedColumn $mapping): void
+    public function phpType(): string
     {
-        $type = match ($this) {
+        return match ($this) {
             self::TextArray, self::UuidArray, self::IntArray => 'array',
-            self::Text, self::Date, self::Timestamp, self::TimestampWithTimeZone => 'string',
-            self::Jsonb => $mapping->type,
+            self::Jsonb => 'JSON',
+            default => 'string',
         };
-        if ($mapping->type !== $type) {
-            throw new \LogicException(sprintf(
-                'PostgreSQL codec "%s" for column "%s" expects PHP %s, declared %s.',
-                $this->value,
-                $column,
-                $type,
-                $mapping->type,
-            ));
+    }
+
+    public function normalize(mixed $value, int $timestampPrecision, bool $preserveTimestampOffset): mixed
+    {
+        if (null === $value) {
+            return null;
         }
+
+        return match ($this) {
+            self::Jsonb => JsonbValue::copy($value),
+            self::TextArray, self::UuidArray, self::IntArray => $this->normalizeArray($value),
+            default => $this->normalizeString($value, $timestampPrecision, $preserveTimestampOffset),
+        };
     }
 
     public function encode(mixed $value): mixed
@@ -41,162 +47,159 @@ enum PostgresMappedColumnType: string
         }
 
         return match ($this) {
-            self::Text => self::encodeText($value),
-            self::Date => self::encodeDate($value),
-            self::Timestamp, self::TimestampWithTimeZone => self::encodeTimestamp($value),
-            self::Jsonb => self::encodeJson($value),
-            self::TextArray, self::UuidArray, self::IntArray => $this->encodeArray($value),
+            self::Jsonb => JsonbValue::encode($value),
+            self::TextArray, self::UuidArray, self::IntArray => $this->encodeArray($this->normalizeArray($value)),
+            default => $this->normalizeString($value, 6),
         };
     }
 
     public function decode(mixed $value): mixed
     {
-        if (null === $value || is_array($value) || self::Text === $this) {
-            return $value;
-        }
-        if (self::Date === $this) {
-            return self::decodeDate($value);
-        }
-        if (self::Timestamp === $this || self::TimestampWithTimeZone === $this) {
-            return new \DateTimeImmutable(self::encodeTimestamp($value), new \DateTimeZone('UTC'))->format(
-                'Y-m-d\TH:i:s.uP',
-            );
+        if (null === $value) {
+            return null;
         }
         if (!is_string($value)) {
-            throw new \InvalidArgumentException(sprintf(
-                'Postgres column type "%s" expects a database string or null.',
-                $this->value,
-            ));
-        }
-        if (self::Jsonb === $this) {
-            return self::decodeJson($value);
+            throw new \InvalidArgumentException(sprintf('PostgreSQL %s expects a database string.', $this->value));
         }
 
-        $values = self::decodeArray($value);
-
-        return self::IntArray === $this
-            ? array_map(static fn(?string $item): ?int => null === $item ? null : (int) $item, $values)
-            : $values;
+        return match ($this) {
+            self::Jsonb => JsonbValue::decode($value),
+            self::TextArray, self::UuidArray => $this->normalizeArray(self::decodeArray($value)),
+            self::IntArray => array_map(static fn(?string $item): ?int => null === $item
+                ? null
+                : (int) $item, self::decodeArray($value)),
+            default => $this->normalizeString($value, 6, preserveTimestampOffset: true),
+        };
     }
 
-    private function encodeArray(mixed $value): string
+    private function normalizeString(mixed $value, int $precision, bool $preserveTimestampOffset = false): string
     {
-        if (!is_array($value)) {
-            throw new \InvalidArgumentException(sprintf(
-                'Postgres column type "%s" expects a PHP array or null.',
-                $this->value,
-            ));
+        if (!is_string($value)) {
+            throw new \InvalidArgumentException(sprintf('PostgreSQL %s expects a PHP string.', $this->value));
         }
 
-        return self::IntArray === $this ? self::encodeIntArray($value) : self::encodeTextArray($value);
+        return match ($this) {
+            self::Uuid => self::uuid($value),
+            self::Date => self::date($value),
+            self::Timestamp, self::TimestampWithTimeZone => $this->timestamp(
+                $value,
+                $precision,
+                $preserveTimestampOffset,
+            ),
+            default => $value,
+        };
     }
 
-    private static function encodeText(mixed $value): string
+    private static function uuid(string $value): string
     {
-        if (!is_string($value) && !is_int($value)) {
-            throw new \InvalidArgumentException('Postgres TEXT column value must be a string, int, or null.');
+        $pattern = '/^(?:[0-9a-f]{4}-?){7}[0-9a-f]{4}$/iD';
+        if (str_starts_with($value, '{') && str_ends_with($value, '}')) {
+            $value = substr($value, 1, -1);
+        }
+        if (1 !== preg_match($pattern, $value)) {
+            throw new \InvalidArgumentException('Mapped UUID must use a valid hexadecimal UUID spelling.');
         }
 
-        return (string) $value;
+        $digits = strtolower(str_replace('-', '', $value));
+
+        return (
+            substr($digits, 0, 8)
+            . '-'
+            . substr($digits, 8, 4)
+            . '-'
+            . substr($digits, 12, 4)
+            . '-'
+            . substr($digits, 16, 4)
+            . '-'
+            . substr($digits, 20)
+        );
     }
 
-    private static function encodeDate(mixed $value): string
+    private static function date(string $value): string
     {
-        if ($value instanceof \DateTimeInterface) {
-            return $value->format('Y-m-d');
-        }
-
-        if (!is_string($value) || !preg_match('/^\d{4}-\d{2}-\d{2}$/', $value)) {
-            throw new \InvalidArgumentException(
-                'Postgres DATE column value must be a YYYY-MM-DD string, DateTimeInterface, or null.',
-            );
+        $parts = [];
+        if (
+            1 !== preg_match('/^(\d{4})-(\d{2})-(\d{2})$/D', $value, $parts)
+            || !checkdate((int) $parts[2], (int) $parts[3], (int) $parts[1])
+        ) {
+            throw new \InvalidArgumentException('Mapped DATE must be a valid YYYY-MM-DD string.');
         }
 
         return $value;
     }
 
-    private static function encodeTimestamp(mixed $value): string
+    private function timestamp(string $value, int $precision, bool $preserveOffset): string
     {
-        if ($value instanceof \DateTimeInterface) {
-            return $value->format('Y-m-d\TH:i:s.uP');
-        }
-
-        if (!is_string($value)) {
+        $parts = [];
+        if (
+            1 !== preg_match(
+                '/^(\d{4}-\d{2}-\d{2})[T ]((?:[01]\d|2[0-3]):[0-5]\d:[0-5]\d)(?:\.(\d{1,6}))?(Z|[+-](?:0\d|1[0-5])(?::?[0-5]\d)?(?::[0-5]\d)?)?$/iD',
+                $value,
+                $parts,
+            )
+        ) {
             throw new \InvalidArgumentException(
-                'Postgres TIMESTAMP column value must be a string, DateTimeInterface, or null.',
+                'Mapped timestamp must contain an ISO date and time with up to six fractional digits.',
             );
         }
-
-        return $value;
-    }
-
-    private static function decodeDate(mixed $value): string
-    {
-        if ($value instanceof \DateTimeInterface) {
-            return $value->format('Y-m-d');
+        self::date($parts[1]);
+        $utc = new \DateTimeZone('UTC');
+        $offset = self::Timestamp === $this ? '' : $parts[4] ?? '';
+        $seconds = new \DateTimeImmutable($parts[1] . 'T' . $parts[2] . $offset, $utc);
+        $micros = (int) str_pad($parts[3] ?? '', 6, '0');
+        if ($precision < 6) {
+            $unit = 10 ** (6 - $precision);
+            // PostgreSQL rounds halfway values away from its epoch (2000-01-01).
+            $half = intdiv($unit, 2) - (int) ($seconds->getTimestamp() < 946_684_800);
+            $micros = intdiv($micros + $half, $unit) * $unit;
+            if (1_000_000 === $micros) {
+                $seconds = $seconds->modify('+1 second');
+                $micros = 0;
+            }
         }
 
-        if (!is_string($value)) {
-            throw new \InvalidArgumentException(
-                'Postgres DATE column value must decode from a database string, DateTimeInterface, or null.',
-            );
+        if (!$preserveOffset || 0 !== ($seconds->getOffset() % 60)) {
+            $seconds = $seconds->setTimezone($utc);
         }
 
-        return substr($value, 0, 10);
+        return sprintf('%s.%06d%s', $seconds->format('Y-m-d\TH:i:s'), $micros, $seconds->format('P'));
     }
 
-    private static function encodeJson(mixed $value): string
+    /** @return list<string|int|null> */
+    private function normalizeArray(mixed $value): array
     {
-        try {
-            return json_encode($value, JSON_THROW_ON_ERROR);
-        } catch (\JsonException $e) {
-            throw new \InvalidArgumentException('Postgres JSONB column value must be JSON encodable.', previous: $e);
+        if (!is_array($value) || !array_is_list($value)) {
+            throw new \InvalidArgumentException(sprintf('PostgreSQL %s expects a PHP list.', $this->value));
         }
-    }
 
-    private static function decodeJson(string $value): mixed
-    {
-        try {
-            return json_decode($value, true, flags: JSON_THROW_ON_ERROR);
-        } catch (\JsonException $e) {
-            throw new \InvalidArgumentException('Postgres JSONB column value must contain valid JSON.', previous: $e);
+        $items = [];
+        foreach ($value as $item) {
+            if (null === $item) {
+                $items[] = null;
+            } elseif (self::IntArray === $this && is_int($item)) {
+                MappedColumn::assertInt32($item);
+                $items[] = $item;
+            } elseif (self::IntArray !== $this && is_string($item)) {
+                MappedColumn::assertText($item);
+                $items[] = self::UuidArray === $this ? self::uuid($item) : $item;
+            } else {
+                throw new \InvalidArgumentException(sprintf('Invalid element in PostgreSQL %s list.', $this->value));
+            }
         }
+
+        return $items;
     }
 
-    /**
-     * @param array<mixed> $values
-     */
-    private static function encodeTextArray(array $values): string
+    /** @param list<string|int|null> $items */
+    private function encodeArray(array $items): string
     {
-        return '{' . implode(',', array_map(static function (mixed $value): string {
-            if (null === $value) {
-                return 'NULL';
-            }
+        $encoded = array_map(static fn(string|int|null $item): string => match (true) {
+            null === $item => 'NULL',
+            is_int($item) => (string) $item,
+            default => '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], $item) . '"',
+        }, $items);
 
-            if (!is_string($value) && !is_int($value)) {
-                throw new \InvalidArgumentException('Postgres text array values must be strings, ints, or null.');
-            }
-
-            return '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], (string) $value) . '"';
-        }, array_values($values))) . '}';
-    }
-
-    /**
-     * @param array<mixed> $values
-     */
-    private static function encodeIntArray(array $values): string
-    {
-        return '{' . implode(',', array_map(static function (mixed $value): string {
-            if (null === $value) {
-                return 'NULL';
-            }
-
-            if (!is_int($value)) {
-                throw new \InvalidArgumentException('Postgres integer array values must be ints or null.');
-            }
-
-            return (string) $value;
-        }, array_values($values))) . '}';
+        return '{' . implode(',', $encoded) . '}';
     }
 
     /**
@@ -242,6 +245,9 @@ enum PostgresMappedColumnType: string
                 continue;
             }
 
+            if (!$quoted && ('{' === $char || '}' === $char)) {
+                throw new \InvalidArgumentException('Mapped PostgreSQL arrays must be one-dimensional.');
+            }
             if (!$quoted && ',' === $char) {
                 $items[] = !$wasQuoted && 'NULL' === $buffer ? null : $buffer;
                 $buffer = '';

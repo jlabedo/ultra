@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\TermsOfUse\Persistence;
 
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
@@ -41,12 +40,12 @@ final class TermsSchema
         ]);
     }
 
-    /** @return list<SchemaMappedRowSet> */
+    /** @return list<string> */
     public static function rowSets(): array
     {
         return [
-            new SchemaMappedRowSet(self::ACCEPTED_TERMS),
-            new SchemaMappedRowSet(self::CURRENT_TERMS),
+            self::ACCEPTED_TERMS,
+            self::CURRENT_TERMS,
         ];
     }
 }

@@ -21,7 +21,6 @@ use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDependency;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
@@ -225,7 +224,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
     {
         $builder = $this->stateStoreContainer();
         new SchemaExtension()->build($builder);
-        new MappedTableExtension(schemaRowSets: [new SchemaMappedRowSet(BundleOrdersSchema::ORDERS)])->build($builder);
+        new MappedTableExtension(rowSets: [BundleOrdersSchema::ORDERS])->build($builder);
         $builder->register(BundleOrdersSchema::class)->setAutoconfigured(true);
         $builder->register(BundleOrderState::class)->setAutoconfigured(true);
         $builder->setAlias('test.orders', BundleOrdersSchema::ORDERS)->setPublic(true);
@@ -442,11 +441,11 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         $container = $this->stateStoreContainer($postgres);
         new SchemaExtension()->build($container);
         $container->register(StateStoreSchema::class)->setAutoconfigured(true);
-        new MappedTableExtension(schemaRowSets: [
-            StateStoreSchema::selection(StateStoreSchema::ORDERS),
-            $withoutOwnerDependency
-                ? new SchemaMappedRowSet(StateStoreSchema::ORDER_LINES, ownerColumns: ['order_id'])
-                : StateStoreSchema::selection(StateStoreSchema::ORDER_LINES),
+        new MappedTableExtension(rowSets: [
+            StateStoreSchema::ORDERS,
+            StateStoreSchema::ORDER_LINES => $withoutOwnerDependency
+                ? ['ownerColumns' => ['order_id']]
+                : ['owner' => 'owner'],
         ])->build($container);
         if ([] !== $privateRowSets) {
             MappedTableExtension::privateUnitOfWork($container, 'test.projection', $privateRowSets);

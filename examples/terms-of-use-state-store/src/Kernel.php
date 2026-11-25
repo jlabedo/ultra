@@ -17,7 +17,7 @@ final class Kernel extends BaseKernel
     protected function build(ContainerBuilder $container): void
     {
         parent::build($container);
-        new MappedTableExtension(schemaRowSets: TermsSchema::rowSets())->build($container);
+        new MappedTableExtension(rowSets: TermsSchema::rowSets())->build($container);
     }
 
     public function getProjectDir(): string

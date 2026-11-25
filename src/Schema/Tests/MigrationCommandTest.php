@@ -124,6 +124,35 @@ final class MigrationCommandTest extends TestCase
         self::assertDirectoryDoesNotExist($this->directory . '/migrations/000003-unchanged');
     }
 
+    public function test_equivalent_type_spellings_do_not_generate_a_migration_but_precision_changes_do(): void
+    {
+        $this->writeDefinition([
+            'type: ColumnType::Text, nullable' => "type: 'timestamptz', nullable",
+            ", defaultExpression: \"'none'\"" => '',
+        ]);
+        $this->command('generate', 'schema.php', 'migrations', 'create-tables')->mustRun();
+
+        $this->writeDefinition([
+            'type: ColumnType::Int32' => "type: 'INT4'",
+            ", defaultExpression: \"'none'\"" => '',
+            'type: ColumnType::Text, nullable' => "type: 'timestamp(6) with time zone', nullable",
+        ]);
+        $result = $this->command('generate', 'schema.php', 'migrations', 'aliases')->mustRun();
+        self::assertStringContainsString('No schema changes.', $result->getOutput());
+        self::assertDirectoryDoesNotExist($this->directory . '/migrations/000002-aliases');
+
+        $this->writeDefinition([
+            'type: ColumnType::Int32' => "type: 'INT4'",
+            ", defaultExpression: \"'none'\"" => '',
+            'type: ColumnType::Text, nullable' => "type: 'timestamp(3) with time zone', nullable",
+        ]);
+        $this->command('generate', 'schema.php', 'migrations', 'change-precision')->mustRun();
+        self::assertStringContainsString(
+            'ALTER TABLE "accounts" ALTER COLUMN "email" TYPE timestamp(3) with time zone;',
+            $this->read('migrations/000002-change-precision/migration.sql'),
+        );
+    }
+
     public function test_adopts_an_existing_definition_and_requires_approval_for_table_and_column_removals(): void
     {
         $this->command('init', 'schema.php', 'migrations')->mustRun();

@@ -27,7 +27,6 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
@@ -82,7 +81,7 @@ final readonly class HarnessCourseNamesProjection
                 primaryKey: ['course_id'],
             ),
         ]);
-        $this->table = new SchemaMappedRowSet($tableName)->compileFor($adapter, $schema)();
+        $this->table = $adapter->compileRowSet($schema, $tableName)();
         $this->persistence = new MappedTableUnitOfWork([$tableName => $this->table], $adapter);
     }
 

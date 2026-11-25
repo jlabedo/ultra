@@ -56,7 +56,7 @@ final class BufferedRowUpdate
     /** @return array<string, mixed> */
     public function writtenColumns(): array
     {
-        return $this->setColumns;
+        return $this->mapping->copyValues($this->setColumns);
     }
 
     public function excludeFromReconciliation(): void
@@ -212,9 +212,10 @@ final class BufferedRowUpdate
 
     public function expectColumnValue(string $column, mixed $value): void
     {
-        $this->mapping->assertValue($column, $value);
+        $value = $this->mapping->normalizeValue($column, $value);
+        $type = $this->mapping->column($column);
         if ($this->key->contains($column)) {
-            if ($this->key->value($column) !== $value) {
+            if (!$type->equivalent($this->key->value($column), $value)) {
                 throw new ConcurrencyException('Expected key column value differs from the mapped row key.');
             }
 
@@ -233,7 +234,7 @@ final class BufferedRowUpdate
 
         if (array_key_exists($column, $this->setColumns) || $this->replacesStoredRow()) {
             // Inserted and replaced rows are entirely written by this unit of work: unset columns are null.
-            if (($this->setColumns[$column] ?? null) !== $value) {
+            if (!$type->equivalent($this->setColumns[$column] ?? null, $value)) {
                 throw new ConcurrencyException(sprintf(
                     'Expected value for table "%s", row "%s", column "%s" differs from the value written in this unit of work.',
                     $this->mapping->table,
@@ -258,7 +259,10 @@ final class BufferedRowUpdate
             $this->mode = RowUpdatePlan::MODE_UPDATE;
         }
 
-        if (array_key_exists($column, $this->expectedColumns) && $this->expectedColumns[$column] !== $value) {
+        if (
+            array_key_exists($column, $this->expectedColumns)
+            && !$type->equivalent($this->expectedColumns[$column], $value)
+        ) {
             throw new ConcurrencyException(sprintf(
                 'Conflicting expected values were registered for table "%s", row "%s", column "%s".',
                 $this->mapping->table,
@@ -267,12 +271,12 @@ final class BufferedRowUpdate
             ));
         }
 
-        $this->expectedColumns[$column] = $value;
+        $this->expectedColumns[$column] ??= $value;
     }
 
     public function setColumn(string $column, mixed $value): void
     {
-        $this->mapping->assertWritableValue($column, $value);
+        $value = $this->mapping->normalizeWritableValue($column, $value);
         if ($this->isDeleted()) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register column updates for table "%s", row "%s" because it is already marked for delete.',
@@ -315,8 +319,8 @@ final class BufferedRowUpdate
             key: $this->key,
             expectedPresence: $this->expectedPresence,
             mode: $mode ?? RowUpdatePlan::MODE_EXPECT,
-            expectedColumns: $this->expectedColumns,
-            setColumns: null === $mode ? [] : $this->setColumns,
+            expectedColumns: $this->mapping->copyValues($this->expectedColumns),
+            setColumns: null === $mode ? [] : $this->writtenColumns(),
         );
     }
 
@@ -336,7 +340,10 @@ final class BufferedRowUpdate
     private function updatesOnlyExpectedValues(): bool
     {
         foreach ($this->setColumns as $column => $value) {
-            if (!array_key_exists($column, $this->expectedColumns) || $this->expectedColumns[$column] !== $value) {
+            if (
+                !array_key_exists($column, $this->expectedColumns)
+                || !$this->mapping->column($column)->equivalent($this->expectedColumns[$column], $value)
+            ) {
                 return false;
             }
         }

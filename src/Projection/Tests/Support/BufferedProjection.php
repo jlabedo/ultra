@@ -8,7 +8,6 @@ use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
@@ -42,8 +41,8 @@ final class BufferedProjection implements UnitOfWork
             new TableDefinition($coursesTable, columns: $columns, primaryKey: ['id']),
             new TableDefinition($indexTable, columns: $columns, primaryKey: ['id']),
         ]);
-        $this->courses = new SchemaMappedRowSet($coursesTable)->compileFor($adapter, $schema)();
-        $this->index = new SchemaMappedRowSet($indexTable)->compileFor($adapter, $schema)();
+        $this->courses = $adapter->compileRowSet($schema, $coursesTable)();
+        $this->index = $adapter->compileRowSet($schema, $indexTable)();
         $this->persistence = new MappedTableUnitOfWork([
             $coursesTable => $this->courses,
             $indexTable => $this->index,
@@ -66,10 +65,10 @@ final class BufferedProjection implements UnitOfWork
     public function apply(RunnerCourseCreated $event): void
     {
         $this->courses->withKey($event->courseId)->insert()->setColumn('name', $event->name);
-        $this->index->withKey($event->courseId)->insert()->setColumn(
-            'name',
-            'buffer' === $this->failAt ? 'rejected' : $event->name,
-        );
+        $this->index
+            ->withKey($event->courseId)
+            ->insert()
+            ->setColumn('name', 'buffer' === $this->failAt ? 'rejected' : $event->name);
         $this->failIf('apply');
     }
 

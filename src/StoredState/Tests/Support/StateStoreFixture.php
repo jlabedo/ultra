@@ -122,7 +122,7 @@ final class StateStoreFixture
             if (!isset($required[$table->name])) {
                 continue;
             }
-            $rowSet = StateStoreSchema::selection($table->id)->compileFor($factory, $schema)();
+            $rowSet = $factory->compileRowSet($schema, $table->id, owner: StateStoreSchema::ownerOf($table->id))();
             $rowSets[$table->id] = $rowSet;
             $tables[$table->name] = $rowSet;
         }
@@ -161,9 +161,10 @@ final class StateStoreFixture
         $factory = $this->storage instanceof Connection
             ? new PostgresMappedTableAdapter($this->storage)
             : new InMemoryMappedTableAdapter($this->storage);
-        $rows = StateStoreSchema::selection($collection->tableName)->compileFor(
-            $factory,
+        $rows = $factory->compileRowSet(
             StateStoreSchema::definition(),
+            $collection->tableName,
+            owner: StateStoreSchema::ownerOf($collection->tableName),
         )();
 
         return $rows->rowsForOwner($collection->ownerKey($normalizedId));

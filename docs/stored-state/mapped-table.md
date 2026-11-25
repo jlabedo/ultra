@@ -54,25 +54,33 @@ A reconciliation validates all supplied rows before modifying the buffer. Differ
 
 ## Compile row sets from Schema
 
-Use `MappedTableExtension(schemaRowSets: [...])` to compile row sets from the schema assembled through
-[`#[DefineSchema]`](../schema/README.md#symfony-discovery). Each `SchemaMappedRowSet` selects
-a table by its stable ID. This ID is the Symfony service ID and can be used for injection, query guard
-dependencies and projection ownership. Bind `MappedTableAdapter` to a shared service for the chosen storage
-resource and declare its concrete class, including for synthetic services.
+With Symfony, activate each row set by its stable Schema table ID. The ID is also the Symfony service ID
+for injection, query guards and projection ownership. Symfony assembles the schema through
+[`#[DefineSchema]`](../schema/README.md#symfony-discovery).
 
-A selected table needs a structured primary key. MappedTable uses its physical column names and nullability.
-It maps `Text` to PHP `string`, `Int32` and `Int64` to `int`, and `Boolean` to `bool` by default.
-Native SQL types need an explicit PHP representation for each exposed column and may need a PostgreSQL codec.
-The optional column selection, representations and codecs use column IDs.
+```php
+new MappedTableExtension(rowSets: [
+    WorkshopSchema::WORKSHOPS,
+    WorkshopSchema::RESERVATIONS => ['owner' => WorkshopSchema::WORKSHOP_REFERENCE],
+])->build($container);
+```
 
-Set `owner` to the name of a declared foreign key to make it a MappedTable owner relationship. Select the
-parent row set too. The usual owner validation applies, including the requirement that the foreign key use
-immutable child key columns and leave at least one item key column. For collections without a mapped
-persistence dependency, set `ownerColumns` to those immutable child key column IDs.
+Bind `MappedTableAdapter` to a shared service for the chosen storage and declare its concrete class,
+including for synthetic services. A table used only for migrations needs no row-set activation.
 
-For manual assembly, call `$selection->compileFor($adapter, $schema)`. The returned factory binds the row
-set to the adapter and creates a fresh buffer on each invocation. Compilation prepares the mapping and,
-for PostgreSQL, the SQL fragments once. Reuse the bound row set inside its unit of work.
+A selected table needs a structured primary key. Mapped Table takes the physical names, nullability, PHP
+representations and PostgreSQL codecs from the schema declaration and the [supported type mappings](#column-types).
+The row set exposes every column by default. To limit exposure, set `columns` to a list of column IDs.
+The primary key is always exposed. Compilation rejects unsupported SQL types on exposed columns and
+identifies the table and column in the error.
+
+Set `owner` to the name of a declared foreign key to make it a Mapped Table owner relationship. Activate the
+parent row set too. The foreign key must use immutable child key columns and leave at least one item key column.
+For collections without a mapped persistence dependency, set `ownerColumns` to those immutable child key IDs.
+
+For manual assembly, call `$adapter->compileRowSet($schema, $tableId)`. Use the same options as named arguments.
+The factory binds the mapping to the adapter and creates a fresh buffer on each invocation. Compilation prepares
+the mapping and, for PostgreSQL, the SQL fragments once. Reuse the bound row set inside its unit of work.
 
 The [Symfony workshop example](../../examples/mapped-table-symfony/README.md) generates the PostgreSQL DDL
 and compiles two row sets from one schema, then exercises owner collections and a query guard.
@@ -157,7 +165,6 @@ one unit of work, including when the unit of work contains a single row set.
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
@@ -171,7 +178,7 @@ $schema = new SchemaDefinition([
         new ColumnDefinition('status', type: ColumnType::Text),
     ], primaryKey: ['id']),
 ]);
-$table = new SchemaMappedRowSet('users')->compileFor($adapter, $schema)();
+$table = $adapter->compileRowSet($schema, 'users')();
 $unitOfWork = new MappedTableUnitOfWork(['users' => $table], $adapter);
 $database->seedRow('users', 'id', ['id' => 'user-1', 'status' => 'pending']);
 
@@ -295,7 +302,7 @@ When `doctrine/dbal` is installed, you can use `Ultra\MappedTable\PostgresMapped
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 
 $adapter = new PostgresMappedTableAdapter($connection);
-$table = new SchemaMappedRowSet($tableId)->compileFor($adapter, $schema)();
+$table = $adapter->compileRowSet($schema, $tableId)();
 ```
 
 The Postgres adapter checks expected column values with `IS NOT DISTINCT FROM`, so `null` expectations are handled correctly.
@@ -307,7 +314,7 @@ When the table policy disables [absence observations](#table-policy), inserts an
 advisory locks. SQL constraints, affected-row checks, present-row locks, row-set expectations and caller-owned
 transactions remain in force.
 
-`MappedRowSet` buffers row mutations and optimistic expectations. `updatePlan()` exposes an immutable snapshot
+`MappedRowSet` buffers row mutations and optimistic expectations. `updatePlan()` exposes a detached snapshot
 for inspection. Defined row sets in a coordinated unit of work can participate in
 [compiled query guards](query-guards.md#mappedtable-query-guards). The coordinator acquires these guards and
 replays the recorded queries before checking and applying the writes. The persistence locks described above
@@ -315,32 +322,50 @@ are managed by the adapter.
 
 ### Column types
 
-Set `SchemaMappedRowSet::postgresColumnTypes` to a map from column IDs to `PostgresMappedColumnType`
-cases. Compilation validates these codecs and prepares SQL fragments when PostgreSQL is selected.
-Configured codecs handle encoding, decoding and SQL casts for writes and optimistic comparisons.
-Other columns use the adapter's ordinary scalar bindings and the driver's decoded values.
+Mapped Table infers the PHP representation and any PostgreSQL codec for each exposed column.
 
-`Timestamp` preserves wall-clock values in `TIMESTAMP(6) WITHOUT TIME ZONE` and returns them as
-RFC 3339 strings with a UTC offset. `TimestampWithTimeZone` preserves instants and microseconds in
-`TIMESTAMP(6) WITH TIME ZONE`. Returned offsets follow the database session's timezone. Pass normalized
-strings to the row set, or null for a nullable column. PostgreSQL validates string timestamp values.
+| Schema declaration or PostgreSQL spelling | PHP representation |
+| --- | --- |
+| `ColumnType::Text`, `text` | `string` |
+| `ColumnType::Int32`, `integer`, `int`, `int4` | `int` in the 32-bit signed range |
+| `ColumnType::Int64`, `bigint`, `int8` | `int` |
+| `ColumnType::Boolean`, `boolean`, `bool` | `bool` |
+| `uuid` | Canonical lowercase UUID `string` |
+| `date` | `YYYY-MM-DD` string |
+| `timestamp`, `timestamp without time zone` | Wall-clock time as an RFC 3339 string with `+00:00` |
+| `timestamptz`, `timestamp with time zone` | An instant as an RFC 3339 string |
+| `text[]`, `uuid[]`, `integer[]`, `int[]`, `int4[]` | PHP list of elements of the corresponding scalar type or `null` |
+| `jsonb` | Decoded JSON value |
+
+Type names are case insensitive. A nullable column accepts PHP `null` for SQL `NULL`. PostgreSQL
+codecs handle parameter encoding, result decoding and SQL casts for writes and optimistic comparisons.
+The buffer and in-memory adapter use the same value equality as PostgreSQL for the supported representations.
+
+UUID spellings for the same value address the same row, including in collection keys and buffered updates.
+Use a date and time with seconds and up to six fractional digits for timestamps. A wall-clock timestamp
+keeps its local time. An instant without an explicit offset is interpreted as UTC. Timestamp strings are
+returned with six fractional digits. The declared PostgreSQL precision controls rounding and defaults to six.
+Buffered instants use UTC and committed PostgreSQL reads use the session offset. Optimistic checks compare
+instants independently of their offsets.
+
+A `jsonb` column accepts lists, associative arrays, `stdClass` objects, strings, booleans, and finite
+PHP integers or floats. Objects decode as associative arrays when those arrays encode back to objects.
+Use `stdClass` for objects such as `{}` or `{"0":"a"}`, whose PHP arrays would encode as lists.
+Use `Ultra\MappedTable\JsonNull::Value` for JSON `null` at the root. Inside a JSON document, use PHP
+`null` for JSON `null`. JSON object property order is ignored in comparisons. List order matters.
+Reading a JSON number fails if decoding it as a PHP `int` or `float` and encoding it again changes its
+decimal value.
 
 ```php
-$adapter = new PostgresMappedTableAdapter($connection);
 $schema = new SchemaDefinition([
     new TableDefinition('acceptances', columns: [
-        new ColumnDefinition('id', type: ColumnType::Text),
-        new ColumnDefinition('accepted_at', type: 'timestamptz'),
+        new ColumnDefinition('id', type: 'uuid'),
+        new ColumnDefinition('accepted_at', type: 'timestamptz(3)'),
+        new ColumnDefinition('evidence', type: 'jsonb', nullable: true),
     ], primaryKey: ['id']),
 ]);
-$acceptances = new SchemaMappedRowSet(
-    'acceptances',
-    representations: ['accepted_at' => 'string'],
-    postgresColumnTypes: ['accepted_at' => PostgresMappedColumnType::TimestampWithTimeZone],
-)->compileFor($adapter, $schema)();
+$acceptances = $adapter->compileRowSet($schema, 'acceptances')();
 ```
-
-The other codecs are `Text`, `Date`, `Jsonb`, `TextArray`, `UuidArray` and `IntArray`.
 
 ## SQL inspection
 
@@ -359,7 +384,9 @@ same scenario exercises the in-memory and Postgres adapters.
 
 | Guarantee | Suite | Cases |
 | --- | --- | --- |
-| Definitions compile to shared, adapter-backed row sets with a declared representation | [DefinedRowSetsTest](../../src/StoredState/Tests/MappedTable/DefinedRowSetsTest.php) | Dumped container, shared adapter, codec selection and column validation. |
+| Definitions compile to shared, adapter-backed row sets with inferred representations | [DefinedRowSetsTest](../../src/StoredState/Tests/MappedTable/DefinedRowSetsTest.php) | Dumped container, shared adapter and schema-derived SQL. |
+| Schema tables are activated and compiled explicitly | [SchemaRowSetCompilationTest](../../src/StoredState/Tests/MappedTable/SchemaRowSetCompilationTest.php) | Manual factories, a service alias, unsupported exposed columns and owner selection. |
+| Supported values round-trip with matching key and expectation semantics | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | UUID aliases, timestamp precision, arrays, JSONB values and optimistic comparisons. |
 | Reads expose the unit-of-work view without changing storage | [BufferedViewTest](../../src/StoredState/Tests/MappedTable/BufferedViewTest.php) | Committed projections and structured rows, shared owner and direct overlays, check-only observations. |
 | Writes have distinct insert, update, upsert, replacement and deletion semantics | [WriteSemanticsTest](../../src/StoredState/Tests/MappedTable/WriteSemanticsTest.php) | Preservation of unspecified values, conflicts, multiple deletions, replacement expectations, cancellation and merging. |
 | Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/StoredState/Tests/MappedTable/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, final-plan table policies, concurrent insertions/deletions and first-expectation retention. |

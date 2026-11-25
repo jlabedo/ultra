@@ -11,7 +11,6 @@ use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Plan\RowSetUpdatePlan;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Storage\RowSetStorage;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
@@ -81,7 +80,7 @@ final class RecordingRowSetStorage implements RowSetStorage
                 primaryKey: ['id'],
             ),
         ]);
-        $rows = new SchemaMappedRowSet('rows')->compileFor($adapter, $schema)();
+        $rows = $adapter->compileRowSet($schema, 'rows')();
 
         return [$rows, new MappedTableUnitOfWork(['rows' => $rows], $adapter)];
     }

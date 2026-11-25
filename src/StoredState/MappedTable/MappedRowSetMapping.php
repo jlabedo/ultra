@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-/** @internal Produced by compiling a SchemaMappedRowSet. */
+/** @internal Produced by compiling a selected Schema table. */
 final readonly class MappedRowSetMapping extends MappedRowSetMetadata
 {
     /**
@@ -26,9 +26,6 @@ final readonly class MappedRowSetMapping extends MappedRowSetMetadata
         foreach ($columns as $name => $column) {
             if (!is_string($name) || '' === $name || !$column instanceof MappedColumn) {
                 throw new \InvalidArgumentException('Mapped columns must have non-empty names and representations.');
-            }
-            if (!in_array($column->type, ['int', 'string', 'bool', 'float', 'array'], true)) {
-                throw new \InvalidArgumentException('Unsupported mapped column type "' . $column->type . '".');
             }
         }
         /** @var array<string, MappedColumn> $columns */

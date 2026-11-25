@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\StateStore\Tests\Support;
 
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
@@ -111,11 +110,11 @@ final class StateStoreSchema
         ]);
     }
 
-    public static function selection(string $table): SchemaMappedRowSet
+    public static function ownerOf(string $table): ?string
     {
         return match ($table) {
-            self::ORDER_LINES, self::COMPOSITE_ORDER_LINES => new SchemaMappedRowSet($table, owner: 'owner'),
-            default => new SchemaMappedRowSet($table),
+            self::ORDER_LINES, self::COMPOSITE_ORDER_LINES => 'owner',
+            default => null,
         };
     }
 }

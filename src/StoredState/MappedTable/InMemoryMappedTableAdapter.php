@@ -29,8 +29,7 @@ final class InMemoryMappedTableAdapter extends MappedTableAdapter
             $mapping,
             new InMemoryRowSetStorage(
                 $this->database,
-                $mapping->table,
-                $mapping->keyColumns,
+                $mapping,
                 policy: $this->tablePolicies[$mapping->table] ?? new MappedTablePolicy(),
             ),
         );

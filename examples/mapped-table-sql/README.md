@@ -76,7 +76,8 @@ Pass the file path as the argument: `php examples/mapped-table-sql/bin/inspect.p
 The callback also receives the DBAL connection and generated table name as optional second and third
 arguments. A `prepare` callback receives the connection and table name before initial rows are inserted.
 When it adds a column, include its `ColumnDefinition` in the scenario's `extraColumns` list and
-provide a PHP representation in `representations` for native SQL types. Scenario files execute as ordinary PHP.
+use a [SQL type supported by Mapped Table](../../docs/stored-state/mapped-table.md#column-types) for exposed
+columns. Scenario files execute as ordinary PHP.
 
 The example creates a fresh temporary table with `id TEXT PRIMARY KEY`, `status TEXT` and `note TEXT` on a
 dedicated connection. Reads and decisions run before the flush transaction; success commits and failure

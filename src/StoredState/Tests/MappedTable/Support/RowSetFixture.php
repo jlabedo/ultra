@@ -7,16 +7,17 @@ namespace Ultra\MappedTable\Tests\Support;
 use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
+use Ultra\Schema\Operations\CreateTable;
+use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
@@ -31,50 +32,47 @@ final class RowSetFixture
 
     private ?MappedRowSet $defaultRows = null;
     public readonly MappedTableAdapter $adapter;
+    private readonly TableDefinition $definition;
     /** @var \WeakMap<MappedRowSet, MappedTableUnitOfWork> */
     private \WeakMap $units;
 
     /**
      * @param list<string> $keyColumns
-     * @param array<string, PostgresMappedColumnType> $columnTypes
+     * @param array<string, string> $columnTypes
      */
     public function __construct(
         public readonly Connection|InMemoryRowDatabase $storage,
         public readonly string $tableName,
         private readonly array $keyColumns = ['id'],
-        private readonly array $columnTypes = [],
+        array $columnTypes = [],
         bool $allowAbsentObservations = true,
         ?MappedTableAdapter $adapter = null,
     ) {
+        $types = array_replace(
+            array_fill_keys($keyColumns, ColumnType::Text)
+            + [
+                'status' => ColumnType::Text,
+                'note' => ColumnType::Text,
+                'version_a' => ColumnType::Text,
+                'version_b' => ColumnType::Text,
+                'tags' => 'text[]',
+                'payload' => 'jsonb',
+                'expires_on' => 'date',
+                'active' => ColumnType::Boolean,
+            ],
+            $columnTypes,
+        );
+        $columns = [];
+        foreach ($types as $column => $type) {
+            $columns[] = new ColumnDefinition($column, type: $type, nullable: !in_array($column, $keyColumns, true));
+        }
+        $this->definition = new TableDefinition($tableName, columns: $columns, primaryKey: $keyColumns);
+
         $tablePolicies = [$tableName => new MappedTablePolicy($allowAbsentObservations)];
         if ($storage instanceof Connection) {
-            $columns = array_fill_keys($keyColumns, 'TEXT NOT NULL');
-            $columns += [
-                'status' => 'TEXT',
-                'note' => 'TEXT',
-                'version_a' => 'TEXT',
-                'version_b' => 'TEXT',
-                'tags' => 'TEXT[]',
-                'payload' => 'JSONB',
-                'expires_on' => 'DATE',
-                'active' => 'BOOLEAN',
-            ];
-            foreach ($columnTypes as $column => $type) {
-                $columns[$column] = $type->value;
+            foreach (new PostgresSqlGenerator()->generate([new CreateTable($this->definition)]) as $sql) {
+                $storage->executeStatement($sql);
             }
-            $definitions = [];
-            foreach ($columns as $column => $type) {
-                $definitions[] = $storage->quoteSingleIdentifier($column) . ' ' . $type;
-            }
-            $definitions[] =
-                'PRIMARY KEY (' . implode(', ', array_map($storage->quoteSingleIdentifier(...), $keyColumns)) . ')';
-            $storage->executeStatement(
-                'CREATE TABLE '
-                . $storage->quoteSingleIdentifier($tableName)
-                . ' ('
-                . implode(', ', $definitions)
-                . ')',
-            );
             $this->adapter = $adapter ?? new PostgresMappedTableAdapter($storage, $tablePolicies);
         } else {
             $this->adapter = $adapter ?? new InMemoryMappedTableAdapter($storage, $tablePolicies);
@@ -84,29 +82,9 @@ final class RowSetFixture
 
     public function newRows(?MappedTableAdapter $adapter = null): MappedRowSet
     {
-        $columns = [];
-        foreach ($this->keyColumns as $key) {
-            $columns[$key] = new ColumnDefinition($key, type: ColumnType::Text);
-        }
-        $columns += [
-            'status' => new ColumnDefinition('status', type: ColumnType::Text, nullable: true),
-            'note' => new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
-            'version_a' => new ColumnDefinition('version_a', type: ColumnType::Text, nullable: true),
-            'version_b' => new ColumnDefinition('version_b', type: ColumnType::Text, nullable: true),
-            'tags' => new ColumnDefinition('tags', type: 'text[]', nullable: true),
-            'payload' => new ColumnDefinition('payload', type: 'jsonb', nullable: true),
-            'expires_on' => new ColumnDefinition('expires_on', type: 'date', nullable: true),
-            'active' => new ColumnDefinition('active', type: ColumnType::Boolean, nullable: true),
-        ];
-        $schema = new SchemaDefinition([
-            new TableDefinition($this->tableName, columns: array_values($columns), primaryKey: $this->keyColumns),
-        ]);
-
-        return new SchemaMappedRowSet(
-            $this->tableName,
-            representations: ['tags' => 'array', 'payload' => 'array', 'expires_on' => 'string'],
-            postgresColumnTypes: $this->columnTypes,
-        )->compileFor($adapter ?? $this->adapter, $schema)();
+        return ($adapter ?? $this->adapter)->compileRowSet(new SchemaDefinition([
+            $this->definition,
+        ]), $this->tableName)();
     }
 
     /** @param array<string, mixed> $row */
@@ -154,12 +132,13 @@ final class RowSetFixture
             array_values($key->values),
         );
         if (false !== $row) {
-            foreach ($this->columnTypes as $column => $type) {
-                if (!array_key_exists($column, $row)) {
-                    continue;
+            foreach ($this->definition->columns as $column) {
+                if (array_key_exists($column->name, $row)) {
+                    $codec = MappedColumn::fromSchema($column, $this->tableName)->codec;
+                    if (null !== $codec) {
+                        $row[$column->name] = $codec->decode($row[$column->name]);
+                    }
                 }
-
-                $row[$column] = $type->decode($row[$column]);
             }
         }
         return $row;

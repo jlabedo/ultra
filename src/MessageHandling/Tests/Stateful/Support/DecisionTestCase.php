@@ -74,7 +74,7 @@ abstract class DecisionTestCase extends TestCase
             $application = $application
                 ->withBundle(
                     new SchemaExtension(),
-                    new MappedTableExtension(schemaRowSets: DecisionSchema::rowSets()),
+                    new MappedTableExtension(rowSets: DecisionSchema::rowSets()),
                     new StateStoreExtension(),
                 )
                 ->withClass(DecisionSchema::class)

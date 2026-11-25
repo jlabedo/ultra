@@ -37,15 +37,17 @@ final readonly class PostgresRowSetSql
         public array $columnTypes,
     ) {}
 
-    /** @param array<string, PostgresMappedColumnType> $types */
-    public static function compile(MappedRowSetMetadata $mapping, array $types): self
+    public static function compile(MappedRowSetMetadata $mapping): self
     {
-        self::validateColumnTypes($mapping, $types);
+        $types = [];
         $quote = new PostgreSQLPlatform()->quoteSingleIdentifier(...);
         $columns = [];
         foreach ($mapping->columnNames as $column) {
             $identifier = $quote($column);
-            $type = $types[$column] ?? null;
+            $type = $mapping->column($column)->codec;
+            if (null !== $type) {
+                $types[$column] = $type;
+            }
             $parameter = null === $type ? '?' : '?::' . $type->value;
             $columns[$column] = [
                 'identifier' => $identifier,
@@ -81,19 +83,5 @@ final readonly class PostgresRowSetSql
             $mapping->table . ':row',
             $types,
         );
-    }
-
-    /** @param array<array-key, mixed> $types */
-    private static function validateColumnTypes(MappedRowSetMetadata $mapping, array $types): void
-    {
-        foreach ($types as $column => $type) {
-            if (!is_string($column) || !$type instanceof PostgresMappedColumnType) {
-                throw new \InvalidArgumentException(sprintf(
-                    'PostgreSQL codecs for table "%s" must map column names to PostgresMappedColumnType cases.',
-                    $mapping->table,
-                ));
-            }
-            $type->assertSupports($column, $mapping->column($column));
-        }
     }
 }

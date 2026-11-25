@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace ComplianceExample;
 
-use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
@@ -68,16 +66,12 @@ final class ComplianceSchema
         ]);
     }
 
-    /** @return list<SchemaMappedRowSet> */
+    /** @return list<string> */
     public static function rowSets(): array
     {
         return [
-            new SchemaMappedRowSet(self::EVIDENCE),
-            new SchemaMappedRowSet(
-                self::QUALIFICATIONS,
-                representations: ['requirements' => 'array'],
-                postgresColumnTypes: ['requirements' => PostgresMappedColumnType::Jsonb],
-            ),
+            self::EVIDENCE,
+            self::QUALIFICATIONS,
         ];
     }
 }

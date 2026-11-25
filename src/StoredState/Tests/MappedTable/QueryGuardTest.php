@@ -18,7 +18,6 @@ use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\MappedTable\Tests\Support\RecordingGuardMappedTableAdapter;
 use Ultra\MappedTable\Tests\Support\RowSetFixture;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
@@ -392,7 +391,7 @@ final class GuardedSchema
             ),
         ]);
 
-        return new SchemaMappedRowSet(self::BOOKINGS)->compileFor($adapter, $schema)();
+        return $adapter->compileRowSet($schema, self::BOOKINGS)();
     }
 
     public static function lines(MappedTableAdapter $adapter, string $table): MappedRowSet
@@ -410,6 +409,6 @@ final class GuardedSchema
             ),
         ]);
 
-        return new SchemaMappedRowSet(self::LINES, ownerColumns: ['owner'])->compileFor($adapter, $schema)();
+        return $adapter->compileRowSet($schema, self::LINES, ownerColumns: ['owner'])();
     }
 }

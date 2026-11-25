@@ -33,7 +33,7 @@ final readonly class ColumnDefinition
     public function equivalentTo(self $other): bool
     {
         return (
-            $this->type === $other->type
+            PostgresColumnType::equivalent($this->type, $other->type)
             && $this->nullable === $other->nullable
             && $this->defaultExpression === $other->defaultExpression
             && $this->constraints === $other->constraints

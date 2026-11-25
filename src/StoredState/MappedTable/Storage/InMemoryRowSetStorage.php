@@ -6,6 +6,7 @@ namespace Ultra\MappedTable\Storage;
 
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\Plan\RowMembershipPlan;
 use Ultra\MappedTable\Plan\RowSetUpdatePlan;
@@ -15,39 +16,37 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 /** @internal */
 final readonly class InMemoryRowSetStorage implements RowSetStorage
 {
-    /** @param list<string> $keyColumns Validated and ordered by the mapping. */
     public function __construct(
         private InMemoryRowDatabase $database,
-        private string $tableName,
-        private array $keyColumns,
+        private MappedRowSetMetadata $mapping,
         private MappedTablePolicy $policy = new MappedTablePolicy(),
     ) {}
 
     public function keyColumns(): array
     {
-        return $this->keyColumns;
+        return $this->mapping->keyColumns;
     }
 
     public function row(MappedKey $key, array $columns): array|false
     {
         $this->assertKey($key);
 
-        return $this->database->rowByKey($this->tableName, $key, $columns);
+        return $this->database->rowByKey($this->mapping->table, $key, $columns);
     }
 
     public function rows(array $columns, ?MappedKey $owner): array
     {
-        return $this->database->rowsByKey($this->tableName, $this->keyColumns(), $columns, $owner);
+        return $this->database->rowsByKey($this->mapping->table, $this->keyColumns(), $columns, $owner);
     }
 
     public function rowsByKeys(array $keys, array $columns): array
     {
-        return $this->database->rowsForKeys($this->tableName, $keys, $columns);
+        return $this->database->rowsForKeys($this->mapping->table, $keys, $columns);
     }
 
     public function check(RowSetUpdatePlan $plan): void
     {
-        $this->policy->assertSupported($plan, $this->tableName);
+        $this->policy->assertSupported($plan, $this->mapping->table);
 
         foreach ($plan->rowUpdates as $update) {
             $this->assertKey($update->key);
@@ -105,7 +104,7 @@ final readonly class InMemoryRowSetStorage implements RowSetStorage
                 continue;
             }
 
-            $this->database->deleteRowByKey($this->tableName, $row->key);
+            $this->database->deleteRowByKey($this->mapping->table, $row->key);
         }
     }
 
@@ -119,7 +118,7 @@ final readonly class InMemoryRowSetStorage implements RowSetStorage
         if (!$membership->matchesExpectedRows($rows)) {
             throw new ConcurrencyException(sprintf(
                 'Row-set expectation failed for table "%s": row keys changed.',
-                $this->tableName,
+                $this->mapping->table,
             ));
         }
     }
@@ -127,7 +126,7 @@ final readonly class InMemoryRowSetStorage implements RowSetStorage
     private function checkRow(RowUpdatePlan $update): void
     {
         if (RowUpdatePlan::EXPECTED_ABSENT === $update->expectedPresence) {
-            if (false !== $this->database->rowByKey($this->tableName, $update->key)) {
+            if (false !== $this->database->rowByKey($this->mapping->table, $update->key)) {
                 throw $this->concurrency('Expected absent row exists', $update);
             }
 
@@ -140,47 +139,47 @@ final readonly class InMemoryRowSetStorage implements RowSetStorage
     private function applyDelete(RowUpdatePlan $update): void
     {
         $this->requireMatchingRow($update, 'Conditional delete failed');
-        $this->database->deleteRowByKey($this->tableName, $update->key);
+        $this->database->deleteRowByKey($this->mapping->table, $update->key);
     }
 
     private function applyInsert(RowUpdatePlan $update): void
     {
-        if (false !== $this->database->rowByKey($this->tableName, $update->key)) {
+        if (false !== $this->database->rowByKey($this->mapping->table, $update->key)) {
             throw $this->concurrency('Insert failed because the row already exists', $update);
         }
 
-        $this->database->writeRowByKey($this->tableName, $update->key, $update->setColumns);
+        $this->database->writeRowByKey($this->mapping->table, $update->key, $update->setColumns);
     }
 
     private function applyReplace(RowUpdatePlan $update): void
     {
         $this->requireMatchingRow($update, 'Conditional replace failed');
-        $this->database->writeRowByKey($this->tableName, $update->key, $update->setColumns);
+        $this->database->writeRowByKey($this->mapping->table, $update->key, $update->setColumns);
     }
 
     private function applyUpsert(RowUpdatePlan $update): void
     {
-        $row = $this->database->rowByKey($this->tableName, $update->key);
+        $row = $this->database->rowByKey($this->mapping->table, $update->key);
         $row = false === $row ? [] : $row;
-        $this->database->writeRowByKey($this->tableName, $update->key, [...$row, ...$update->setColumns]);
+        $this->database->writeRowByKey($this->mapping->table, $update->key, [...$row, ...$update->setColumns]);
     }
 
     private function applyUpdate(RowUpdatePlan $update): void
     {
         $row = $this->requireMatchingRow($update, 'Conditional update failed');
-        $this->database->writeRowByKey($this->tableName, $update->key, [...$row, ...$update->setColumns]);
+        $this->database->writeRowByKey($this->mapping->table, $update->key, [...$row, ...$update->setColumns]);
     }
 
     /** @return array<string, mixed> */
     private function requireMatchingRow(RowUpdatePlan $update, string $message): array
     {
-        $row = $this->database->rowByKey($this->tableName, $update->key);
+        $row = $this->database->rowByKey($this->mapping->table, $update->key);
         if (false === $row) {
             throw $this->concurrency($message, $update);
         }
 
         foreach ($update->expectedColumns as $column => $value) {
-            if (($row[$column] ?? null) !== $value) {
+            if (!$this->mapping->column($column)->equivalent($row[$column] ?? null, $value)) {
                 throw $this->concurrency($message, $update);
             }
         }
@@ -193,7 +192,7 @@ final readonly class InMemoryRowSetStorage implements RowSetStorage
         return new ConcurrencyException(sprintf(
             '%s for table "%s" and key %s.',
             $message,
-            $this->tableName,
+            $this->mapping->table,
             $update->key,
         ));
     }

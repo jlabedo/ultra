@@ -14,7 +14,6 @@ use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
@@ -183,8 +182,8 @@ final class QueryReadOrderingTest extends StateStoreTestCase
         $database = new InMemoryRowDatabase();
         $adapter = new InMemoryMappedTableAdapter($database);
         $schema = QueryReadSchema::definition($numeric);
-        $table = new SchemaMappedRowSet(QueryReadSchema::BOOKINGS)->compileFor($adapter, $schema)();
-        $notes = new SchemaMappedRowSet(QueryReadSchema::NOTES)->compileFor($adapter, $schema)();
+        $table = $adapter->compileRowSet($schema, QueryReadSchema::BOOKINGS)();
+        $notes = $adapter->compileRowSet($schema, QueryReadSchema::NOTES)();
         $unitOfWork = new MappedTableUnitOfWork(
             [QueryReadSchema::BOOKINGS => $table, QueryReadSchema::NOTES => $notes],
             $adapter,

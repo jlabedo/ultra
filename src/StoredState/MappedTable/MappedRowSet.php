@@ -42,7 +42,7 @@ final class MappedRowSet
     /** @internal True when a buffered deletion, cancellation or reconciliation removes the row. */
     public function hasPendingDeletion(MappedKey $key): bool
     {
-        $update = $this->updates[$key->fingerprint()] ?? null;
+        $update = $this->updates[$this->mapping->normalizeKey($key)->fingerprint()] ?? null;
 
         return $update?->isDeleted() ?? false;
     }
@@ -176,12 +176,13 @@ final class MappedRowSet
                 throw new \InvalidArgumentException('Mapped row key does not belong to the declared owner.');
             }
 
+            $values = [];
             foreach ($row->columns as $column => $value) {
-                $this->mapping->assertWritableValue($column, $value);
+                $values[$column] = $this->mapping->normalizeWritableValue($column, $value);
             }
             $fingerprint = $key->fingerprint();
             $desiredKeys[$fingerprint] = $key;
-            $desiredColumns[$fingerprint] = [...($desiredColumns[$fingerprint] ?? []), ...$row->columns];
+            $desiredColumns[$fingerprint] = [...($desiredColumns[$fingerprint] ?? []), ...$values];
         }
 
         foreach ($desiredKeys as $fingerprint => $key) {
@@ -302,14 +303,14 @@ final class MappedRowSet
         $selected = [] === $projection ? $this->mapping->keyColumns : $projection;
         $rows = [];
         foreach ($this->adapter->rows($this->mapping->table, $selected, $owner) as $row) {
-            $fingerprint = $row->key->fingerprint();
+            $storedKey = $this->mapping->normalizeKey($row->key);
+            $fingerprint = $storedKey->fingerprint();
             $update = $this->updates[$fingerprint] ?? null;
-            if (!$this->isVisible($row->key, $update)) {
+            if (!$this->isVisible($storedKey, $update)) {
                 continue;
             }
 
-            $this->mapping->assertKey($row->key);
-            $key = true === $update?->writes() ? $update->key : $row->key;
+            $key = true === $update?->writes() ? $update->key : $storedKey;
             $view = $this->overlayRow($key, $row->columns, $update, $projection);
             assert(null !== $view, 'A visible stored row remains present.');
             $rows[$fingerprint] = new MappedRow($key, $view['values']);
@@ -359,7 +360,11 @@ final class MappedRowSet
             $isKey = $key->contains($column);
             $fromStorage = array_key_exists($column, $stored);
             if ($fromStorage) {
-                $this->mapping->assertValue($column, $stored[$column]);
+                $stored[$column] = $this->mapping->normalizeValue(
+                    $column,
+                    $stored[$column],
+                    preserveTimestampOffset: true,
+                );
             }
             if (array_key_exists($column, $written)) {
                 $values[$column] = $written[$column];
@@ -479,9 +484,7 @@ final class MappedRowSet
     private function normalizeOwner(MappedKey|array $owner): MappedKey
     {
         $key = $owner instanceof MappedKey ? $owner : new MappedKey($owner);
-        $this->mapping->assertOwner($key);
-
-        return $key;
+        return $this->mapping->normalizeOwner($key);
     }
 
     private function membership(?MappedKey $owner): BufferedMembership
@@ -554,9 +557,7 @@ final class MappedRowSet
             $key = new MappedKey([$keyColumns[0] => $key]);
         }
 
-        $this->mapping->assertKey($key);
-
-        return $key;
+        return $this->mapping->normalizeKey($key);
     }
 
     /** @return list<RowUpdatePlan> */

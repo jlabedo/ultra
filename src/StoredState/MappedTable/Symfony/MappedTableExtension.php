@@ -9,7 +9,6 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\Container\ContainerExtension;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\QueryGuardDefinition;
-use Ultra\MappedTable\SchemaMappedRowSet;
 
 final readonly class MappedTableExtension implements ContainerExtension
 {
@@ -18,11 +17,11 @@ final readonly class MappedTableExtension implements ContainerExtension
 
     /**
      * @param list<QueryGuardDefinition> $queryGuards
-     * @param list<SchemaMappedRowSet> $schemaRowSets
+     * @param array<array-key, string|array{columns?: list<string>, owner?: string, ownerColumns?: list<string>}> $rowSets
      */
     public function __construct(
         private array $queryGuards = [],
-        private array $schemaRowSets = [],
+        private array $rowSets = [],
     ) {}
 
     public function build(ContainerBuilder $container): void
@@ -40,12 +39,23 @@ final readonly class MappedTableExtension implements ContainerExtension
             ...$configured,
             ...$this->queryGuards,
         ]);
-        if ([] !== $this->schemaRowSets) {
-            /** @var list<SchemaMappedRowSet> $rowSets */
-            $rowSets = $container->hasParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS)
+        if ([] !== $this->rowSets) {
+            /** @var list<array{string, array{columns?: list<string>, owner?: string, ownerColumns?: list<string>}}> $selections */
+            $selections = $container->hasParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS)
                 ? $container->getParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS)
                 : [];
-            $container->setParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS, [...$rowSets, ...$this->schemaRowSets]);
+            foreach ($this->rowSets as $id => $options) {
+                if (is_int($id) && is_string($options)) {
+                    $selections[] = [$options, []];
+                } elseif (is_string($id) && is_array($options)) {
+                    $selections[] = [$id, $options];
+                } else {
+                    throw new \InvalidArgumentException(
+                        'Mapped row sets require a table ID or options keyed by table ID.',
+                    );
+                }
+            }
+            $container->setParameter(MappedRowSetCompilerPass::SCHEMA_ROW_SETS, $selections);
         }
     }
 

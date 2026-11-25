@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\Projection;
 
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
@@ -31,11 +30,11 @@ final class OrderSummarySchema
         ]);
     }
 
-    /** @return list<SchemaMappedRowSet> */
+    /** @return list<string> */
     public static function rowSets(): array
     {
         return [
-            new SchemaMappedRowSet(self::ORDER_SUMMARY),
+            self::ORDER_SUMMARY,
         ];
     }
 }

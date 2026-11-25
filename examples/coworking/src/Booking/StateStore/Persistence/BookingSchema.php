@@ -4,8 +4,6 @@ declare(strict_types=1);
 
 namespace App\Booking\StateStore\Persistence;
 
-use Ultra\MappedTable\PostgresMappedColumnType;
-use Ultra\MappedTable\SchemaMappedRowSet;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
@@ -99,22 +97,15 @@ final class BookingSchema
         ]);
     }
 
-    /** @return list<SchemaMappedRowSet> */
+    /** @return list<string> */
     public static function rowSets(): array
     {
         return [
-            new SchemaMappedRowSet(
-                self::BOOKINGS,
-                representations: ['start_at' => 'string', 'end_at' => 'string'],
-                postgresColumnTypes: [
-                    'start_at' => PostgresMappedColumnType::TimestampWithTimeZone,
-                    'end_at' => PostgresMappedColumnType::TimestampWithTimeZone,
-                ],
-            ),
-            new SchemaMappedRowSet(self::COMPANIES),
-            new SchemaMappedRowSet(self::MEMBER_EMAILS),
-            new SchemaMappedRowSet(self::MEMBERS),
-            new SchemaMappedRowSet(self::ROOMS),
+            self::BOOKINGS,
+            self::COMPANIES,
+            self::MEMBER_EMAILS,
+            self::MEMBERS,
+            self::ROOMS,
         ];
     }
 }

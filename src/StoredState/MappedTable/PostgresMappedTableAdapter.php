@@ -34,7 +34,7 @@ final class PostgresMappedTableAdapter extends MappedTableAdapter
 
     public function createDefined(MappedRowSetMetadata $mapping): MappedRowSet
     {
-        return $this->createCompiled($mapping, PostgresRowSetSql::compile($mapping, []));
+        return $this->createCompiled($mapping, PostgresRowSetSql::compile($mapping));
     }
 
     /** @internal */
