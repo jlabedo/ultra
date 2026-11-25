@@ -37,7 +37,6 @@ final class DecisionMode
             return new ProceedResult($violation->violations, $context);
         }
 
-        // Another decision aspect wrapping the same handler may already have turned violations into the value.
         $violations = is_array($result->value)
             ? array_values(array_filter($result->value, static fn(mixed $item): bool => $item instanceof Violation))
             : [];

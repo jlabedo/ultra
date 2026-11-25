@@ -75,7 +75,8 @@ final class ContainerAssemblyTest extends DecisionTestCase
         file_put_contents($file, new PhpDumper($builder)->dump(['class' => $class]));
         require $file;
         $container = new $class();
-        $container->set(EventBusInterface::class, new DecisionEventBus());
+        $bus = new DecisionEventBus();
+        $container->set(EventBusInterface::class, $bus);
         $event = new CourseCreated('course', 'Math', 12);
         $state = new DecisionOrderState('order', 'paid');
         $command = match ($family) {
@@ -100,11 +101,12 @@ final class ContainerAssemblyTest extends DecisionTestCase
                 $container->get('test.mediator')->send(new InspectDecisionCourse('course', $foreignState)),
             );
             static::assertNull($container->get('test.state_store')->load(DecisionOrderState::class, 'foreign'));
-            $foreignEvent = new CourseCreated('foreign', 'Ignored', 1);
+            $foreignEvent = new CourseCreated('foreign', 'Published', 1);
             static::assertSame(
                 $foreignEvent,
                 $container->get('test.mediator')->send(new InspectDecisionOrder('order', $foreignEvent)),
             );
+            static::assertSame([$event, $foreignEvent], $bus->events);
             static::assertCount(1, $container->get(InMemoryEventStore::class)->load(StreamQuery::all())->events);
         }
     }

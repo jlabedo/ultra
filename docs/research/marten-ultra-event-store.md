@@ -136,7 +136,7 @@ Le benchmark Ultra existant fournit les variantes HStore/QueryStreams et shared-
 - **U4** : [EventStoreUnitOfWork](../../src/EventSourcing/EventStore/EventStoreUnitOfWork.php), [BufferedEventsTest](../../src/EventSourcing/Tests/BufferedEventsTest.php).
 - **U5** : [états](../event-sourcing/states.md), [EventSourcedStateStore](../../src/EventSourcing/State/EventSourcedStateStore.php), [StateReconstructionTest](../../src/EventSourcing/Tests/StateReconstructionTest.php).
 - **U6** : [contrat Projection](../projections/README.md), [ProjectionRunner](../../src/Projection/Runtime/ProjectionRunner.php), [BatchAtomicityTest](../../src/Projection/Tests/BatchAtomicityTest.php), [OperatorCommandsTest](../../src/Projection/Tests/OperatorCommandsTest.php).
-- **U7** : [Event](../../src/EventSourcing/EventStore/Event.php), [EventPublicationTest](../../src/MessageHandling/Tests/Stateful/EventPublicationTest.php), [EventSourcedDecisionAspect](../../src/MessageHandling/Stateful/EventSourcedDecisionAspect.php).
+- **U7** : [Event](../../src/EventSourcing/EventStore/Event.php), [EventPublicationTest](../../src/MessageHandling/Tests/Stateful/EventPublicationTest.php), [DecisionAspect](../../src/MessageHandling/Stateful/DecisionAspect.php).
 - **U8** : [identité événement](../../src/EventSourcing/Tests/EventIdentityTest.php), [runtime de projection](../../src/Projection/Runtime/ProjectionRuntime.php).
 - **U9** : [livraison async](../message-handling/async.md), [TODO](../../TODO.md).
 

@@ -21,7 +21,8 @@
         "symfony/dependency-injection": "Required to use Ultra\\StatefulMessageHandling\\StatefulMessageHandlingExtension.",
         "ultra/event-sourced-state": "Required for event-sourced decision handlers.",
         "ultra/event-sourced-state-compiler": "Compiles event-sourced entity loaders for the Symfony bundle.",
-        "ultra/event-store": "Required for event-sourced decision handlers."
+        "ultra/event-store": "Required for event-sourced decision handlers.",
+        "ultra/events": "Recognizes events returned by stored-state decisions for publication."
     },
     "autoload": {
         "psr-4": {

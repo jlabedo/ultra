@@ -7,54 +7,40 @@ namespace Ultra\StatefulMessageHandling;
 use Ultra\Events\EventRegistryInterface;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\EventSourcedStateStore;
+use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\DomainIdentifier;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
-use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
-use Ultra\MessageHandling\Attribute\MatchResult;
-use Ultra\MessageHandling\EventBusInterface;
-use Ultra\MessageHandling\MessageContext;
-use Ultra\MessageHandling\MessageContextPropagatorInterface;
-use Ultra\MessageHandling\ProceedResult;
-use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 
 /** @phpstan-import-type Plan from StateBindings */
-final class EventSourcedDecisionAspect
+final readonly class EventSourcedDecisionStates
 {
     public function __construct(
-        private readonly EventSourcedStateStore $stateStore,
-        private readonly EventStore $eventStore,
-        private readonly EventRegistryInterface $eventClassRegistry,
-        private readonly UltraNormalizer $normalizer,
-        private readonly MessageContextPropagatorInterface $messageContextPropagator,
-        private readonly ?EventBusInterface $eventBus = null,
+        private EventSourcedStateStore $stateStore,
+        private EventStore $eventStore,
+        private EventRegistryInterface $eventClassRegistry,
+        private UltraNormalizer $normalizer,
     ) {}
+
+    /** @return Plan|null */
+    public static function bindings(HandlerMatchContext $ctx): ?array
+    {
+        return StateBindings::analyze(
+            $ctx,
+            self::isStateClass(...),
+            self::getTagProperties(...),
+            nullableStates: false,
+        );
+    }
 
     /**
      * @param Plan $config
-     * @param callable(...): \Ultra\MessageHandling\ProceedResult $proceed
+     * @return array{list<?object>, list<AppendCondition>}
      */
-    #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
-        if ([] === $ctx->method()->getAttributes(DecisionHandler::class)) {
-            return null;
-        }
-
-        $plan = StateBindings::analyze(
-            $ctx,
-            EventSourcedDecisionAspect::isStateClass(...),
-            EventSourcedDecisionAspect::getTagProperties(...),
-            nullableStates: false,
-        );
-        if (null === $plan) {
-            return null;
-        }
-
-        return MatchResult::apply(config: $plan, provides: array_column($plan['bindings'], 'index'));
-    })]
-    public function around(callable $proceed, object $message, MessageContext $context, array $config): ProceedResult
+    public function load(array $config, object $message): array
     {
         // One load per round; every round's append condition guards the final append, so a concurrent change to a
         // source state (whose content decided a dependent id) makes the append fail.
@@ -95,104 +81,28 @@ final class EventSourcedDecisionAspect
             ), $prepared);
         });
 
-        if (DecisionMode::isCheck($context)) {
-            return DecisionMode::check(static fn(): ProceedResult => $proceed(provided: $states), $context);
-        }
-
-        $proceedResult = $proceed(provided: $states);
-        $emittedEvents = $this->eventEffectsFrom($proceedResult->value);
-        if ([] === $emittedEvents) {
-            return $proceedResult;
-        }
-
-        $eventRecords = $this->prepareEventRecords($emittedEvents, $proceedResult->context);
-
-        $this->eventStore->append(array_column($eventRecords, 'storedEvent'), ...$appendConditions);
-        if (null !== $this->eventBus) {
-            foreach ($eventRecords as $eventRecord) {
-                $this->eventBus->publish($eventRecord['event'], $eventRecord['context']);
-            }
-        }
-
-        return $proceedResult;
+        return [$states, $appendConditions];
     }
 
     /**
-     * @return list<object>
+     * @param list<array{event: object, name: string, context: \Ultra\MessageHandling\MessageContext}> $events
+     * @param list<AppendCondition> $appendConditions
      */
-    private function eventEffectsFrom(mixed $value): array
+    public function append(array $events, array $appendConditions): void
     {
-        $effects = [];
-        foreach ($this->objectsFrom($value) as $object) {
-            if (null === $this->eventClassRegistry->getName($object::class)) {
-                continue;
-            }
-
-            $effects[] = $object;
+        $stored = [];
+        foreach ($events as $record) {
+            $stored[] = $this->toEvent($record['event'], $record['name'], $record['context']->propagated()->all());
         }
 
-        return $effects;
-    }
-
-    /**
-     * @return list<object>
-     */
-    private function objectsFrom(mixed $value): array
-    {
-        if (null === $value) {
-            return [];
-        }
-
-        if (is_object($value)) {
-            return [$value];
-        }
-
-        if (!is_array($value)) {
-            return [];
-        }
-
-        $objects = [];
-        foreach ($value as $item) {
-            if (!is_object($item)) {
-                continue;
-            }
-
-            $objects[] = $item;
-        }
-
-        return $objects;
-    }
-
-    /**
-     * @param list<object> $events
-     *
-     * @return list<array{event: object, context: MessageContext, storedEvent: Event}>
-     */
-    private function prepareEventRecords(array $events, MessageContext $parentContext): array
-    {
-        $records = [];
-        foreach ($events as $event) {
-            $eventContext = $this->messageContextPropagator->createChildContext($parentContext);
-            $records[] = [
-                'event' => $event,
-                'context' => $eventContext,
-                'storedEvent' => $this->toEvent($event, $eventContext->propagated()->all()),
-            ];
-        }
-
-        return $records;
+        $this->eventStore->append($stored, ...$appendConditions);
     }
 
     /**
      * @param array<array-key, mixed> $metadata
      */
-    private function toEvent(object $event, array $metadata = []): Event
+    private function toEvent(object $event, string $eventType, array $metadata): Event
     {
-        $eventType = $this->eventClassRegistry->getName($event::class);
-        if (null === $eventType) {
-            throw new \LogicException(sprintf('Event class %s has no #[Event] attribute.', $event::class));
-        }
-
         $domainIds = $this->eventClassRegistry->getDomainIdentifiers($event);
         if ([] === $domainIds) {
             throw new \LogicException(sprintf(

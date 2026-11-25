@@ -1,6 +1,6 @@
 # Stateful message handling
 
-Read this contract when changing decision aspects, state injection or CHECK. See [bindings and examples](decisions.md) for configuration.
+Read this contract when changing decision effects, state injection or CHECK. See [bindings and examples](decisions.md) for configuration.
 
 ## Two persistence approaches
 
@@ -16,7 +16,7 @@ Event-sourced decisions reconstruct their states from relevant events and append
 
 For `#[DecisionHandler]`, the signature identifies injected states whose reads receive automatic optimistic concurrency protection. Event-sourced decisions retain append conditions from all loading rounds. Stored-state decisions register expectations for loaded or missing states, including states that are not subsequently saved.
 
-`#[StateReader]` resolves bindings and loads stored states without registering the decision aspects' optimistic expectations. Enroll those dependencies explicitly when a reader participates in a decision.
+`#[StateReader]` resolves bindings and loads stored states without registering the decision handler's optimistic expectations. Enroll those dependencies explicitly when a reader participates in a decision.
 
 This is only part of a decision's consistency boundary. The caller is responsible for additional dependencies, including reads performed by services and queries that need explicit expectations or query guards. See [StateStore](../stored-state/README.md) for those mechanisms.
 
@@ -24,17 +24,35 @@ This is only part of a decision's consistency boundary. The caller is responsibl
 
 CHECK is an early proof of concept whose long-term usefulness and contract remain unresolved. Its current design should not be treated as a settled validation API.
 
-The aspects still load states and execute the decision handler and its services. CHECK returns violations from an InvariantViolation, or an empty list on success, and bypasses the aspects' returned-event append/publication and returned-state saves. Other exceptions propagate. Stored-state expectations are registered before CHECK runs. Effects performed directly by the handler or its services are not prevented by this mode.
+The decision aspect loads states and executes the handler and its services. CHECK returns violations from an InvariantViolation, or an empty list on success, and bypasses the saving, appending and publication of returned effects. Other exceptions propagate. Stored-state expectations are registered before CHECK runs. Effects performed directly by the handler or its services are not prevented by this mode.
 
 ## Event publication and commit
 
-The event-sourced decision aspect calls append before publishing returned events to the optional EventBus. With EventStoreUnitOfWork, append buffers the events, so publication can happen before the flush and database commit. Synchronous event handlers participate in the current processing and can prepare additional unit-of-work changes.
+A decision can return one object or an array containing both mapped states and registered events.
+A stored-state decision can express a change of company plan in one return value.
+
+```php
+return [
+    $company->withMonthlyMinutes($this->monthlyMinutes),
+    new CompanyPlanChanged($this->companyId, $this->monthlyMinutes),
+];
+```
+
+With a stored-state binding, the aspect buffers all returned mapped states. With an event-sourced
+binding, it also appends the registered events as a batch under the decision's append conditions.
+It then publishes each registered event once, in return order, to the configured event bus.
+A mixed decision follows the same sequence. The stored event metadata and bus delivery share
+the child context created for that event.
+
+Stored-state publication requires the event registry (provided by `ultra/events`) and the event bus.
+Only decisions with an event-sourced binding append events. Synchronous subscribers can read
+the buffered changes in the same unit of work before its flush and commit.
 
 For handlers producing external effects, follow the [asynchronous delivery and outbox contract](async.md#outbox-and-external-effects).
 
 ## Mixed decisions
 
-Handlers can involve both event-sourced states and stored states. This capability still has limitations: derived state identifiers can depend only on states of the same persistence family, because the two aspects load their states independently. Broader guarantees for mixed decisions are a desired future direction, rather than an established current contract.
+Handlers can involve both event-sourced states and stored states. This capability still has limitations: derived state identifiers can depend only on states of the same persistence family, because each persistence family loads its states independently. Broader guarantees for mixed decisions are a desired future direction, rather than an established current contract.
 
 ## Flush, conflicts and retries
 
@@ -44,8 +62,9 @@ A concurrency conflict is distinct from a business invariant violation. Retry po
 
 ## Code references
 
-- [EventSourcedDecisionAspect](../../src/MessageHandling/Stateful/EventSourcedDecisionAspect.php)
-- [StateStoreDecisionAspect](../../src/MessageHandling/Stateful/StateStoreDecisionAspect.php)
+- [DecisionAspect](../../src/MessageHandling/Stateful/DecisionAspect.php)
+- [EventSourcedDecisionStates](../../src/MessageHandling/Stateful/EventSourcedDecisionStates.php)
+- [StoredDecisionStates](../../src/MessageHandling/Stateful/StoredDecisionStates.php)
 - [StateStoreReadAspect](../../src/MessageHandling/Stateful/StateStoreReadAspect.php)
 - [DecisionMode](../../src/MessageHandling/Stateful/DecisionMode.php)
 - [EventStoreUnitOfWork](../../src/EventSourcing/EventStore/EventStoreUnitOfWork.php)
@@ -66,8 +85,8 @@ The guarantee suites live in `src/MessageHandling/Tests/Stateful`; persistence p
 | Loaded dependencies guard append or flush, even when they produce no returned save and during CHECK | [ReadConsistencyTest](../../src/MessageHandling/Tests/Stateful/ReadConsistencyTest.php) |
 | CHECK executes the decision and services, preserves violations, propagates other exceptions and bypasses returned effects | [CheckModeTest](../../src/MessageHandling/Tests/Stateful/CheckModeTest.php) |
 | Only registered returned objects are appended or saved; the original result is preserved, including mixed decisions | [DecisionEffectsTest](../../src/MessageHandling/Tests/Stateful/DecisionEffectsTest.php) |
-| Events are appended before publication, with the same final child context in storage and on the bus | [EventPublicationTest](../../src/MessageHandling/Tests/Stateful/EventPublicationTest.php) |
-| Dumped Symfony containers assemble each available persistence family and select aspects from the handler’s state parameters | [ContainerAssemblyTest](../../src/MessageHandling/Tests/Stateful/ContainerAssemblyTest.php) |
+| Stored and mixed decisions publish each event once after preparing states and any append, using the child context recorded in event metadata | [EventPublicationTest](../../src/MessageHandling/Tests/Stateful/EventPublicationTest.php) |
+| Dumped Symfony containers assemble each available persistence family and select returned effects from the handler’s state parameters | [ContainerAssemblyTest](../../src/MessageHandling/Tests/Stateful/ContainerAssemblyTest.php) |
 
 Providers express alternative persistence families, binding forms or result shapes. Shared support assembles
 real extensions and cleans generated files; assertions remain in the suites. Cases run in PHPUnit's main

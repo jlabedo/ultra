@@ -4,12 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\StatefulMessageHandling;
 
-use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
-use Ultra\MessageHandling\Attribute\MatchResult;
-use Ultra\MessageHandling\MessageContext;
-use Ultra\MessageHandling\ProceedResult;
-use Ultra\StatefulMessageHandling\Attribute\DecisionHandler;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateId;
 use Ultra\StateStore\Exception\StateNotFoundException;
@@ -17,36 +12,31 @@ use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateStore;
 
 /** @phpstan-import-type Plan from StateBindings */
-final readonly class StateStoreDecisionAspect
+final readonly class StoredDecisionStates
 {
     public function __construct(
         private StateStore $stateStore,
         private StateMetadataRegistry $metadataRegistry,
     ) {}
 
-    /**
-     * @param Plan $config
-     * @param callable(...): \Ultra\MessageHandling\ProceedResult $proceed
-     */
-    #[Around(static function (HandlerMatchContext $ctx): ?MatchResult {
-        if ([] === $ctx->method()->getAttributes(DecisionHandler::class)) {
-            return null;
-        }
-
-        $plan = StateBindings::analyze(
+    /** @return Plan|null */
+    public static function bindings(HandlerMatchContext $ctx): ?array
+    {
+        return StateBindings::analyze(
             $ctx,
-            StateStoreDecisionAspect::isStateClass(...),
-            StateStoreDecisionAspect::getStateIdProperties(...),
+            self::isStateClass(...),
+            self::getStateIdProperties(...),
             nullableStates: true,
         );
+    }
 
-        return null === $plan
-            ? null
-            : MatchResult::apply(config: $plan, provides: array_column($plan['bindings'], 'index'));
-    })]
-    public function around(callable $proceed, object $message, MessageContext $context, array $config): ProceedResult
+    /**
+     * @param Plan $config
+     * @return list<?object>
+     */
+    public function load(array $config, object $message): array
     {
-        $states = StateBindings::load($config, $message, function (array $ids) use ($config): array {
+        return StateBindings::load($config, $message, function (array $ids) use ($config): array {
             $states = [];
             foreach ($ids as $position => $values) {
                 $id = $values[''];
@@ -70,64 +60,13 @@ final readonly class StateStoreDecisionAspect
 
             return $states;
         });
-
-        if (DecisionMode::isCheck($context)) {
-            return DecisionMode::check(static fn(): ProceedResult => $proceed(provided: $states), $context);
-        }
-
-        $proceedResult = $proceed(provided: $states);
-
-        foreach ($this->stateEffectsFrom($proceedResult->value) as $state) {
-            $this->stateStore->save($state);
-        }
-
-        return $proceedResult;
     }
 
-    /**
-     * @return list<object>
-     */
-    private function stateEffectsFrom(mixed $value): array
+    public function saveIfMapped(object $effect): void
     {
-        $effects = [];
-        foreach ($this->objectsFrom($value) as $object) {
-            if (!$this->metadataRegistry->has($object::class)) {
-                continue;
-            }
-
-            $effects[] = $object;
+        if ($this->metadataRegistry->has($effect::class)) {
+            $this->stateStore->save($effect);
         }
-
-        return $effects;
-    }
-
-    /**
-     * @return list<object>
-     */
-    private function objectsFrom(mixed $value): array
-    {
-        if (null === $value) {
-            return [];
-        }
-
-        if (is_object($value)) {
-            return [$value];
-        }
-
-        if (!is_array($value)) {
-            return [];
-        }
-
-        $objects = [];
-        foreach ($value as $item) {
-            if (!is_object($item)) {
-                continue;
-            }
-
-            $objects[] = $item;
-        }
-
-        return $objects;
     }
 
     private static function stateId(string $parameterName, mixed $id): int|string|object

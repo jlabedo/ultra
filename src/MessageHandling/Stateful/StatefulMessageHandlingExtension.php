@@ -26,28 +26,22 @@ final class StatefulMessageHandlingExtension implements ContainerExtension
         $container->addCompilerPass(new class implements CompilerPassInterface {
             public function process(ContainerBuilder $container): void
             {
+                $eventSourced = null;
                 if ($container->has(EventSourcedStateStore::class)) {
-                    $container->setDefinition(
-                        EventSourcedDecisionAspect::class,
-                        new Definition(EventSourcedDecisionAspect::class, [
-                            new Reference(EventSourcedStateStore::class),
-                            new Reference(EventStore::class),
-                            new Reference(EventRegistryInterface::class),
-                            new Reference(UltraNormalizer::class),
-                            new Reference(MessageContextPropagatorInterface::class),
-                            new Reference(EventBusInterface::class, ContainerBuilder::NULL_ON_INVALID_REFERENCE),
-                        ])->addTag(MessageHandlingTagNames::ASPECT),
-                    );
+                    $eventSourced = new Definition(EventSourcedDecisionStates::class, [
+                        new Reference(EventSourcedStateStore::class),
+                        new Reference(EventStore::class),
+                        new Reference(EventRegistryInterface::class),
+                        new Reference(UltraNormalizer::class),
+                    ]);
                 }
 
+                $stored = null;
                 if ($container->has(StateStore::class)) {
-                    $container->setDefinition(
-                        StateStoreDecisionAspect::class,
-                        new Definition(StateStoreDecisionAspect::class, [
-                            new Reference(StateStore::class),
-                            new Reference(StateMetadataRegistry::class),
-                        ])->addTag(MessageHandlingTagNames::ASPECT),
-                    );
+                    $stored = new Definition(StoredDecisionStates::class, [
+                        new Reference(StateStore::class),
+                        new Reference(StateMetadataRegistry::class),
+                    ]);
 
                     $container->setDefinition(
                         StateStoreReadAspect::class,
@@ -56,6 +50,21 @@ final class StatefulMessageHandlingExtension implements ContainerExtension
                         ])->addTag(MessageHandlingTagNames::ASPECT),
                     );
                 }
+
+                if (null === $eventSourced && null === $stored) {
+                    return;
+                }
+
+                $container->setDefinition(
+                    DecisionAspect::class,
+                    new Definition(DecisionAspect::class, [
+                        $stored,
+                        $eventSourced,
+                        new Reference(EventRegistryInterface::class, ContainerBuilder::NULL_ON_INVALID_REFERENCE),
+                        new Reference(MessageContextPropagatorInterface::class),
+                        new Reference(EventBusInterface::class, ContainerBuilder::NULL_ON_INVALID_REFERENCE),
+                    ])->addTag(MessageHandlingTagNames::ASPECT),
+                );
             }
         }, priority: 40);
     }

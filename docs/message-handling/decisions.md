@@ -1,8 +1,8 @@
 # Decision bindings and examples
 
-Stateful decision handling built on the mediator, with two persistence approaches: event-sourced states and stored states. Decision aspects load state parameters and apply recognized returned effects with optimistic concurrency protection. The signature declares injected state dependencies; callers remain responsible for additional query and service dependencies.
+Stateful decision handling built on the mediator, with two persistence approaches: event-sourced states and stored states. The decision aspect loads state parameters and applies recognized returned effects with optimistic concurrency protection. The signature declares injected state dependencies; callers remain responsible for additional query and service dependencies.
 
-See the [shared concepts and consistency responsibilities](stateful.md). The event-sourced path is described below; the stored-state path uses [StateStore](../stored-state/README.md).
+See the [shared concepts and consistency responsibilities](stateful.md). The event-sourced path is described below; the stored-state path uses [StateStore](../stored-state/README.md) and can [return states and events together](stateful.md#event-publication-and-commit).
 
 ## Design
 

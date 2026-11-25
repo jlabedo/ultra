@@ -937,7 +937,7 @@ final readonly class InspectMixedDecision
 
     #[SelfHandler]
     #[DecisionHandler]
-    public function decide(CourseCapacityState $course, ?DecisionOrderState $order, DecisionService $service): mixed
+    public function decide(?DecisionOrderState $order, DecisionService $service, CourseCapacityState $course): mixed
     {
         $service->called();
         if (null !== $this->failure) {
