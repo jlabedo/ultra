@@ -18,6 +18,7 @@ use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
 
@@ -66,13 +67,29 @@ final class SchemaRowSetCompilationTest extends TestCase
         );
     }
 
-    public function test_an_exposed_unsupported_type_fails_at_compilation(): void
+    public function test_a_row_set_cannot_expose_a_column_of_an_unknown_sql_type(): void
     {
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage(
             'Unsupported SQL type "hstore" for column "internal" on mapped schema table "test.entries".',
         );
         self::container(['test.entries'])->compile();
+    }
+
+    public function test_a_temporal_column_cannot_be_a_mapped_key(): void
+    {
+        $schema = new SchemaDefinition([new TableDefinition(
+            'entries',
+            columns: [
+                new ColumnDefinition('entered_at', type: 'timestamptz'),
+            ],
+            primaryKey: ['entered_at'],
+        )]);
+        $adapter = new InMemoryMappedTableAdapter(new InMemoryRowDatabase());
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage('Key column "entered_at" must be mapped to a non-null int or string key.');
+        $adapter->compileRowSet($schema, 'entries');
     }
 
     public function test_the_owner_foreign_key_requires_its_parent_row_set_to_be_selected(): void
@@ -110,8 +127,8 @@ final class MappedRowSetsSchema
                 [
                     new ColumnDefinition('id', 'entry_id', ColumnType::Int32),
                     new ColumnDefinition('name', 'entry_name', ColumnType::Text),
-                    new ColumnDefinition('note', 'entry_note', 'date', nullable: true),
-                    new ColumnDefinition('internal', type: 'hstore'),
+                    new ColumnDefinition('note', 'entry_note', SqlType::fromSql('date'), nullable: true),
+                    new ColumnDefinition('internal', type: SqlType::fromSql('hstore')),
                 ],
                 primaryKey: ['id'],
             ),

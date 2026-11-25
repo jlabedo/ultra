@@ -75,11 +75,12 @@ in a hand-written migration and account for their dependencies when ordering dep
 
 The caller supplies current and target SchemaDefinition values. Stable table and column identities are distinct from SQL names: keeping an identity while changing its name expresses a rename; removing an identity expresses a drop, and adding one expresses creation. SchemaReconciler produces operations, and PostgresSqlGenerator produces SQL statements. StateStore does not currently derive or create its SQL schema automatically.
 
-Column definitions describe the SQL type, including modifiers such as timestamp precision. Schema treats
-the PostgreSQL spellings listed in [Mapped Table's type mappings](../stored-state/mapped-table.md#column-types)
-as equivalent when their SQL type and precision agree. A spelling change alone produces no DDL. A precision
-change still generates an `ALTER COLUMN TYPE`. PostgreSQL generation preserves the declared SQL spelling for
-new or changed columns. Mapped Table derives its PHP and storage behavior from the column type.
+A column takes a SQL type declaration. Schema resolves it to an immutable `SqlType` for PostgreSQL.
+Equivalent spellings of built-in types resolve to the same identity. A change to a SQL modifier, such as
+timestamp precision or a varchar length, generates an `ALTER COLUMN TYPE`. Snapshots in format 2 record the
+SQL identity. Fragments that declare the same column must agree on its SQL definition.
+For an existing database with a format 1 history, start a format 2 history in a new directory with an
+initial definition matching the deployed database.
 
 See [SchemaReconciler](../../src/Schema/Runtime/SchemaReconciler.php) and [PostgresSqlGenerator](../../src/Schema/Runtime/PostgresSqlGenerator.php).
 
@@ -112,12 +113,20 @@ new requirements before creating tables and indexes. Manage extension upgrades a
 `PostgresFunctionDefinition` records a stable identity, SQL name, ordered named arguments, return type,
 language and body. The generator creates new functions and replaces changed definitions with
 `CREATE OR REPLACE FUNCTION` when their signature is unchanged. Signature changes and removals
-require an explicit migration. Existing table-only snapshots can still be read.
+require an explicit migration.
 
-`ColumnType::Text`, `Int32`, `Int64` and `Boolean` are portable column types with a PostgreSQL translation.
-Column definitions also accept SQL type strings and SQL constraints for dialect-specific declarations.
-[MappedTable](../stored-state/mapped-table.md#compile-row-sets-from-schema) can compile row sets from these
-same table definitions.
+Use `ColumnType` for built-in types, SQL strings for PostgreSQL declarations, and `SqlType` helpers
+for configurable types.
+
+```php
+new ColumnDefinition('id', type: ColumnType::Uuid);
+new ColumnDefinition('name', type: 'varchar(10)');
+new ColumnDefinition('accepted_at', type: SqlType::timestampWithTimeZone(precision: 3));
+new ColumnDefinition('metadata', type: 'hstore');
+```
+
+Schema can reference types supplied by extensions or the application. Create and alter those types
+in explicit SQL migrations. Mapped Table documents the [types it can expose](../stored-state/mapped-table.md#column-types).
 
 ## Symfony discovery
 

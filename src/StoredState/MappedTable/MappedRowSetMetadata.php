@@ -28,33 +28,40 @@ readonly class MappedRowSetMetadata
         public array $ownerColumnSet,
     ) {}
 
-    public function normalizeKey(MappedKey $key): MappedKey
+    /** @param array<array-key, mixed>|MappedKey $values */
+    public function key(array|MappedKey $values): MappedKey
     {
-        $key->assertColumns($this->keyColumns);
-
-        return $this->normalizeKeyValues($key);
+        return $this->canonicalKey($values, $this->keyColumns);
     }
 
-    public function normalizeOwner(MappedKey $owner): MappedKey
+    /** @param array<array-key, mixed>|MappedKey $values */
+    public function owner(array|MappedKey $values): MappedKey
     {
         if ([] === $this->ownerColumns) {
             throw new \LogicException('This mapped row set has no declared owner.');
         }
-        $owner->assertColumns($this->ownerColumns);
 
-        return $this->normalizeKeyValues($owner);
+        return $this->canonicalKey($values, $this->ownerColumns);
     }
 
-    private function normalizeKeyValues(MappedKey $key): MappedKey
+    /**
+     * @param array<array-key, mixed>|MappedKey $values
+     * @param list<string> $columns
+     */
+    private function canonicalKey(array|MappedKey $values, array $columns): MappedKey
     {
-        $values = $key->values;
-        foreach ($values as $name => $value) {
-            $normalized = $this->normalizeValue($name, $value);
-            assert(is_int($normalized) || is_string($normalized), 'Mapped keys have scalar representations.');
-            $values[$name] = $normalized;
+        $key = [];
+        $input = $values instanceof MappedKey ? $values->values : $values;
+        foreach ($input as $name => $value) {
+            if (!is_string($name) || !in_array($name, $columns, true)) {
+                throw new \InvalidArgumentException('Mapped key columns must match the declared key.');
+            }
+            $key[$name] = $this->column($name)->key($value);
         }
+        $mapped = new MappedKey($key);
+        $mapped->assertColumns($columns);
 
-        return $values === $key->values ? $key : new MappedKey($values);
+        return $values instanceof MappedKey && $values->values === $mapped->values ? $values : $mapped;
     }
 
     public function ownerKey(MappedKey $key): MappedKey
@@ -62,21 +69,25 @@ readonly class MappedRowSetMetadata
         return new MappedKey(array_intersect_key($key->values, $this->ownerColumnSet));
     }
 
-    public function normalizeValue(string $name, mixed $value, bool $preserveTimestampOffset = false): mixed
+    public function normalizeValue(string $name, mixed $value): mixed
     {
         $column = $this->column($name);
-        if (!$column->accepts($value)) {
-            throw new \InvalidArgumentException(sprintf(
-                'Column "%s" in mapped table "%s" expects %s%s, got %s.',
-                $name,
-                $this->table,
-                $column->type,
-                $column->nullable ? ' or null' : '',
-                get_debug_type($value),
-            ));
+        try {
+            return $column->normalize($value);
+        } catch (\InvalidArgumentException $exception) {
+            throw new \InvalidArgumentException(
+                sprintf(
+                    'Column "%s" in mapped table "%s" expects %s%s, got %s. %s',
+                    $name,
+                    $this->table,
+                    $column->type,
+                    $column->nullable ? ' or null' : '',
+                    get_debug_type($value),
+                    $exception->getMessage(),
+                ),
+                previous: $exception,
+            );
         }
-
-        return $column->normalize($value, $preserveTimestampOffset);
     }
 
     public function normalizeWritableValue(string $name, mixed $value): mixed
@@ -95,10 +106,7 @@ readonly class MappedRowSetMetadata
     public function copyValues(array $values): array
     {
         foreach ($values as $column => $value) {
-            $mapping = $this->column($column);
-            if (PostgresMappedColumnType::Jsonb === $mapping->codec) {
-                $values[$column] = $mapping->normalize($value);
-            }
+            $values[$column] = $this->column($column)->copy($value);
         }
 
         return $values;

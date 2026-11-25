@@ -68,11 +68,10 @@ new MappedTableExtension(rowSets: [
 Bind `MappedTableAdapter` to a shared service for the chosen storage and declare its concrete class,
 including for synthetic services. A table used only for migrations needs no row-set activation.
 
-A selected table needs a structured primary key. Mapped Table takes the physical names, nullability, PHP
-representations and PostgreSQL codecs from the schema declaration and the [supported type mappings](#column-types).
-The row set exposes every column by default. To limit exposure, set `columns` to a list of column IDs.
-The primary key is always exposed. Compilation rejects unsupported SQL types on exposed columns and
-identifies the table and column in the error.
+A selected table needs a structured primary key. Schema supplies the physical names, nullability and SQL types.
+Each exposed column binds one [codec](#column-codecs) by its SQL type at compilation. The row set exposes
+every column by default. To limit exposure, set `columns` to a list of column IDs. The primary key is always exposed. Compilation
+reports the table, column and type if an exposed column uses an unsupported SQL type.
 
 Set `owner` to the name of a declared foreign key to make it a Mapped Table owner relationship. Activate the
 parent row set too. The foreign key must use immutable child key columns and leave at least one item key column.
@@ -322,31 +321,38 @@ are managed by the adapter.
 
 ### Column types
 
-Mapped Table infers the PHP representation and any PostgreSQL codec for each exposed column.
+Mapped Table provides built-in codecs for these PostgreSQL types. The table shows their non-null PHP values.
 
 | Schema declaration or PostgreSQL spelling | PHP representation |
 | --- | --- |
 | `ColumnType::Text`, `text` | `string` |
+| `varchar`, `varchar(n)`, `character varying` | `string` with the declared character limit |
 | `ColumnType::Int32`, `integer`, `int`, `int4` | `int` in the 32-bit signed range |
 | `ColumnType::Int64`, `bigint`, `int8` | `int` |
 | `ColumnType::Boolean`, `boolean`, `bool` | `bool` |
-| `uuid` | Canonical lowercase UUID `string` |
-| `date` | `YYYY-MM-DD` string |
-| `timestamp`, `timestamp without time zone` | Wall-clock time as an RFC 3339 string with `+00:00` |
-| `timestamptz`, `timestamp with time zone` | An instant as an RFC 3339 string |
+| `uuid` | `string` |
+| `date` | Date string |
+| `timestamp`, `timestamp without time zone` | Local date and time string |
+| `timestamptz`, `timestamp with time zone` | Date and time string with a UTC offset |
 | `text[]`, `uuid[]`, `integer[]`, `int[]`, `int4[]` | PHP list of elements of the corresponding scalar type or `null` |
 | `jsonb` | Decoded JSON value |
 
-Type names are case insensitive. A nullable column accepts PHP `null` for SQL `NULL`. PostgreSQL
-codecs handle parameter encoding, result decoding and SQL casts for writes and optimistic comparisons.
-The buffer and in-memory adapter use the same value equality as PostgreSQL for the supported representations.
+A nullable column accepts PHP `null` for SQL `NULL`. Codecs prepare buffered values, encode SQL parameters,
+and decode database results. Key columns must use a non-null integer, text, varchar or UUID type.
+UUID keys use a canonical lowercase spelling, including in collection keys and buffered updates.
 
-UUID spellings for the same value address the same row, including in collection keys and buffered updates.
-Use a date and time with seconds and up to six fractional digits for timestamps. A wall-clock timestamp
-keeps its local time. An instant without an explicit offset is interpreted as UTC. Timestamp strings are
-returned with six fractional digits. The declared PostgreSQL precision controls rounding and defaults to six.
-Buffered instants use UTC and committed PostgreSQL reads use the session offset. Optimistic checks compare
-instants independently of their offsets.
+UUID columns accept strings and `Stringable` values, including Symfony UUIDs. Date and timestamp columns
+accept strings and `DateTimeInterface`. Mapped Table converts date objects to `YYYY-MM-DD` and timestamp
+objects to SQL date and time strings with microseconds. A `timestamp` keeps the object's local time.
+A `timestamptz` includes the object's offset. Outside UUID keys, supplied strings are kept as written.
+PostgreSQL interprets those strings and applies column precision. Committed reads return the spelling
+provided by PostgreSQL, which depends on the session settings.
+
+Buffered expectations recognize equivalent UUID spellings. ISO timestamps with seconds compare by
+local date and time. ISO `timestamptz` strings with explicit offsets compare by instant.
+Other date and time strings compare as written in the buffer and in the in-memory adapter.
+PostgreSQL evaluates committed expectations using SQL equality. Use the observed value for an
+expectation that depends on SQL rounding or the database session's timezone.
 
 A `jsonb` column accepts lists, associative arrays, `stdClass` objects, strings, booleans, and finite
 PHP integers or floats. Objects decode as associative arrays when those arrays encode back to objects.
@@ -359,13 +365,49 @@ decimal value.
 ```php
 $schema = new SchemaDefinition([
     new TableDefinition('acceptances', columns: [
-        new ColumnDefinition('id', type: 'uuid'),
-        new ColumnDefinition('accepted_at', type: 'timestamptz(3)'),
-        new ColumnDefinition('evidence', type: 'jsonb', nullable: true),
+        new ColumnDefinition('id', type: ColumnType::Uuid),
+        new ColumnDefinition('accepted_at', type: SqlType::timestampWithTimeZone(precision: 3)),
+        new ColumnDefinition('evidence', type: ColumnType::Jsonb, nullable: true),
     ], primaryKey: ['id']),
 ]);
 $acceptances = $adapter->compileRowSet($schema, 'acceptances')();
 ```
+
+### Column codecs
+
+Register a `ColumnCodec` when a SQL type needs a different PHP representation or lacks a built-in
+codec. Schema declarations carry the SQL type. Mapped Table binds the codec when it compiles the row set.
+
+In standalone PHP, supply codec instances keyed by SQL type.
+
+```php
+$rows = $adapter->compileRowSet($schema, 'records', codecs: [
+    'hstore' => $attributesCodec,
+])();
+```
+
+In Symfony, tag a codec service with its SQL type. The compiled row set references that service,
+including its configured constructor dependencies.
+
+```php
+$container->register(AttributesCodec::class)
+    ->setAutowired(true)
+    ->addTag(MappedTableExtension::COLUMN_CODEC_TAG, ['type' => 'hstore']);
+```
+
+An application registration takes precedence over the built-in codec for the same SQL type.
+Schema's canonical type identity determines the association. For example, `int4` and `integer` share
+one registration. SQL modifiers take part in matching, so an association for `varchar(10)` applies
+to that length. Two application codecs for the same canonical type are a configuration error.
+For a type declared as a literal SQL name in Schema, use the same declaration as the registration key.
+
+The codec declares its PHP representation with `representation()` and converts application input
+with `normalize()`. Normalization accepts the codec's own output, and any returned arrays or JSON
+objects must be detached from caller-owned mutable values. By default, scalar values are encoded as
+SQL parameters, database values are normalized on read, and buffered expectations use strict equality.
+Override `encode()`, `decode()` or `equivalent()` when the type needs different behavior. A codec can
+opt into keys with `supportsKeys()` if its `int` or `string` keys share one stable spelling per SQL
+identity. Override `key()` when key canonicalization differs from ordinary normalization.
 
 ## SQL inspection
 
@@ -385,8 +427,9 @@ same scenario exercises the in-memory and Postgres adapters.
 | Guarantee | Suite | Cases |
 | --- | --- | --- |
 | Definitions compile to shared, adapter-backed row sets with inferred representations | [DefinedRowSetsTest](../../src/StoredState/Tests/MappedTable/DefinedRowSetsTest.php) | Dumped container, shared adapter and schema-derived SQL. |
-| Schema tables are activated and compiled explicitly | [SchemaRowSetCompilationTest](../../src/StoredState/Tests/MappedTable/SchemaRowSetCompilationTest.php) | Manual factories, a service alias, unsupported exposed columns and owner selection. |
-| Supported values round-trip with matching key and expectation semantics | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | UUID aliases, timestamp precision, arrays, JSONB values and optimistic comparisons. |
+| Schema tables are activated and compiled explicitly | [SchemaRowSetCompilationTest](../../src/StoredState/Tests/MappedTable/SchemaRowSetCompilationTest.php) | Manual assembly, a service alias, unknown types, temporal keys and owner selection. |
+| Application codecs bind to a canonical SQL type | [ColumnCodecRegistrationTest](../../src/StoredState/Tests/MappedTable/ColumnCodecRegistrationTest.php) | Standalone registration, tagged Symfony services, alias overrides and duplicate registrations. |
+| Supported values round-trip with matching key and expectation semantics | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | UUID keys and object inputs, timestamp comparisons and precision, arrays and JSONB values. |
 | Reads expose the unit-of-work view without changing storage | [BufferedViewTest](../../src/StoredState/Tests/MappedTable/BufferedViewTest.php) | Committed projections and structured rows, shared owner and direct overlays, check-only observations. |
 | Writes have distinct insert, update, upsert, replacement and deletion semantics | [WriteSemanticsTest](../../src/StoredState/Tests/MappedTable/WriteSemanticsTest.php) | Preservation of unspecified values, conflicts, multiple deletions, replacement expectations, cancellation and merging. |
 | Optimistic expectations protect the values, presence and membership a decision observes | [OptimisticConcurrencyTest](../../src/StoredState/Tests/MappedTable/OptimisticConcurrencyTest.php) | Local versus committed expectations, immediate conflicts, check-only flushes, final-plan table policies, concurrent insertions/deletions and first-expectation retention. |

@@ -12,6 +12,7 @@ use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 
@@ -27,7 +28,7 @@ abstract class RowSetTestCase extends TestCase
         yield 'Postgres' => ['postgres'];
     }
 
-    /** @param list<string> $keyColumns @param array<string, string> $columnTypes */
+    /** @param list<string> $keyColumns @param array<string, ColumnDefinition|ColumnType|SqlType|string> $columnTypes */
     protected function fixture(
         string $backend = 'memory',
         array $keyColumns = ['id'],

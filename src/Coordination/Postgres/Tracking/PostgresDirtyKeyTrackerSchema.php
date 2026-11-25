@@ -24,7 +24,11 @@ final readonly class PostgresDirtyKeyTrackerSchema
                 new ColumnDefinition('channel', type: ColumnType::Text),
                 new ColumnDefinition('key', type: ColumnType::Text),
                 new ColumnDefinition('counter', type: ColumnType::Int64, defaultExpression: '0'),
-                new ColumnDefinition('updated_at', type: 'timestamptz', defaultExpression: 'statement_timestamp()'),
+                new ColumnDefinition(
+                    'updated_at',
+                    type: ColumnType::TimestampWithTimeZone,
+                    defaultExpression: 'statement_timestamp()',
+                ),
             ],
             primaryKey: ['channel', 'key'],
         );

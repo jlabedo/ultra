@@ -4,100 +4,91 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-use Ultra\MappedTable\Storage\JsonbValue;
-use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\PostgresColumnType;
+use Ultra\Schema\SqlType;
 
-/** @internal The PHP representation and value semantics inferred for a schema column. */
+/** @internal Column metadata and value semantics derived from Schema. */
 final readonly class MappedColumn
 {
+    public string $type;
+    public ?string $keyType;
+
+    /** @param ColumnCodec|class-string<ColumnCodec> $codec Symfony supplies a class during compilation. */
     public function __construct(
-        public string $type,
-        public bool $nullable = false,
-        public ?PostgresMappedColumnType $codec = null,
-        public int $timestampPrecision = 6,
-        public bool $int32 = false,
-    ) {}
-
-    public static function fromSchema(ColumnDefinition $column, string $table): self
-    {
-        $sql = PostgresColumnType::canonical($column->type);
-        $codec = match ($sql) {
-            'uuid' => PostgresMappedColumnType::Uuid,
-            'date' => PostgresMappedColumnType::Date,
-            'jsonb' => PostgresMappedColumnType::Jsonb,
-            'text[]' => PostgresMappedColumnType::TextArray,
-            'uuid[]' => PostgresMappedColumnType::UuidArray,
-            'integer[]' => PostgresMappedColumnType::IntArray,
-            default => null,
-        };
-        $precision = 6;
-        if (null !== $sql && str_starts_with($sql, 'timestamp(')) {
-            $precision = (int) $sql[10];
-            $codec = str_ends_with($sql, ' with time zone')
-                ? PostgresMappedColumnType::TimestampWithTimeZone
-                : PostgresMappedColumnType::Timestamp;
+        public SqlType $sqlType,
+        public bool $nullable,
+        public ColumnCodec|string $codec,
+    ) {
+        $this->type = $codec::representation();
+        $this->keyType = $codec::supportsKeys() ? $this->type : null;
+        if (null !== $this->keyType && !in_array($this->keyType, ['int', 'string'], true)) {
+            throw new \InvalidArgumentException('A codec supporting keys must use an int or string representation.');
         }
-        $type = match ($sql) {
-            'integer', 'bigint' => 'int',
-            'boolean' => 'bool',
-            'text' => 'string',
-            default => $codec?->phpType() ?? throw new \LogicException(sprintf(
-                'Unsupported SQL type "%s" for column "%s" on mapped schema table "%s".',
-                PostgresColumnType::sql($column->type),
-                $column->id,
-                $table,
-            )),
-        };
-
-        return new self($type, $column->nullable, $codec, $precision, 'integer' === $sql);
     }
 
-    public function accepts(mixed $value): bool
+    public function normalize(mixed $value): mixed
     {
-        return null === $value ? $this->nullable : 'JSON' === $this->type || get_debug_type($value) === $this->type;
+        if (null !== $value) {
+            return $this->checkedValue($this->boundCodec()->normalize($this->sqlType, $value));
+        }
+        if (!$this->nullable) {
+            throw new \InvalidArgumentException('This column is not nullable.');
+        }
+
+        return null;
     }
 
-    public function normalize(mixed $value, bool $preserveTimestampOffset = false): mixed
+    public function key(mixed $value): int|string
     {
-        if (null === $value) {
-            return null;
+        $key = $this->boundCodec()->key($this->sqlType, $value);
+        if (get_debug_type($key) !== $this->keyType) {
+            throw new \InvalidArgumentException('The codec returned a key that does not match its declared type.');
         }
-        if (null !== $this->codec) {
-            return $this->codec->normalize($value, $this->timestampPrecision, $preserveTimestampOffset);
-        }
-        if ($this->int32 && is_int($value)) {
-            self::assertInt32($value);
-        }
-        if (is_string($value)) {
-            self::assertText($value);
+
+        return $key;
+    }
+
+    /** Detach mutable values without changing the representation of scalar reads. */
+    public function copy(mixed $value): mixed
+    {
+        return is_scalar($value) ? $value : $this->normalize($value);
+    }
+
+    public function equivalent(mixed $left, mixed $right): bool
+    {
+        return null === $left || null === $right
+            ? $left === $right
+            : $this->boundCodec()->equivalent($this->sqlType, $left, $right);
+    }
+
+    public function encode(mixed $value): int|string|float|bool|null
+    {
+        return null === $value ? null : $this->boundCodec()->encode($this->sqlType, $value);
+    }
+
+    public function decode(mixed $value): mixed
+    {
+        return null === $value
+            ? $this->normalize(null)
+            : $this->checkedValue($this->boundCodec()->decode($this->sqlType, $value));
+    }
+
+    private function checkedValue(int|string|float|bool|array|\stdClass|JsonNull $value): mixed
+    {
+        if ('JSON' !== $this->type && get_debug_type($value) !== $this->type) {
+            throw new \UnexpectedValueException(sprintf(
+                'Column codec declares %s but returned %s.',
+                $this->type,
+                get_debug_type($value),
+            ));
         }
 
         return $value;
     }
 
-    public function equivalent(mixed $left, mixed $right): bool
+    private function boundCodec(): ColumnCodec
     {
-        if (null === $this->codec) {
-            return $left === $right;
-        }
-
-        return PostgresMappedColumnType::Jsonb === $this->codec
-            ? JsonbValue::equivalent($left, $right)
-            : $this->normalize($left) === $this->normalize($right);
-    }
-
-    public static function assertInt32(int $value): void
-    {
-        if ($value < -2_147_483_648 || $value > 2_147_483_647) {
-            throw new \InvalidArgumentException('Mapped integer is outside the PostgreSQL integer range.');
-        }
-    }
-
-    public static function assertText(string $value): void
-    {
-        if (str_contains($value, "\0") || 1 !== preg_match('//u', $value)) {
-            throw new \InvalidArgumentException('Mapped text must be valid UTF-8 without NUL.');
-        }
+        return $this->codec instanceof ColumnCodec
+            ? $this->codec
+            : throw new \LogicException('A mapped column must be bound to its codec before use.');
     }
 }

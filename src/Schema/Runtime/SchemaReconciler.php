@@ -184,9 +184,7 @@ final class SchemaReconciler
                 $operations[] = new AlterColumn(
                     tableName: $tableName,
                     columnName: $resolvedColumnName,
-                    type: PostgresColumnType::equivalent($currentColumn->type, $targetColumn->type)
-                        ? null
-                        : $targetColumn->type,
+                    type: $currentColumn->type->equivalentTo($targetColumn->type) ? null : $targetColumn->type,
                     nullable: $currentColumn->nullable !== $targetColumn->nullable ? $targetColumn->nullable : null,
                     defaultExpression: $currentColumn->defaultExpression !== $targetColumn->defaultExpression
                         ? $targetColumn->defaultExpression

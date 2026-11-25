@@ -7,6 +7,7 @@ namespace Ultra\Schema;
 final readonly class ColumnDefinition
 {
     public string $name;
+    public SqlType $type;
 
     public bool $hasExplicitName;
 
@@ -16,16 +17,17 @@ final readonly class ColumnDefinition
     public function __construct(
         public string $id,
         ?string $name = null,
-        public ColumnType|string $type = '',
+        ColumnType|SqlType|string|null $type = null,
         public bool $nullable = false,
         public ?string $defaultExpression = null,
         public array $constraints = [],
         ?bool $hasExplicitName = null,
     ) {
-        if ('' === $type) {
+        if (null === $type) {
             throw new \InvalidArgumentException(sprintf('Column "%s" must define a type.', $this->id));
         }
 
+        $this->type = SqlType::resolve($type);
         $this->name = $name ?? $this->id;
         $this->hasExplicitName = $hasExplicitName ?? null !== $name;
     }
@@ -33,7 +35,7 @@ final readonly class ColumnDefinition
     public function equivalentTo(self $other): bool
     {
         return (
-            PostgresColumnType::equivalent($this->type, $other->type)
+            $this->type->equivalentTo($other->type)
             && $this->nullable === $other->nullable
             && $this->defaultExpression === $other->defaultExpression
             && $this->constraints === $other->constraints

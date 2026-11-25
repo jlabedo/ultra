@@ -6,12 +6,13 @@ namespace Ultra\Testing;
 
 use Doctrine\DBAL\Connection;
 use PHPUnit\Framework\TestCase;
+use Ultra\MappedTable\Codec\ArrayCodec;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\MappedTable\PostgresMappedColumnType;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
 
 abstract class PostgresRowSetTestCase extends TestCase
@@ -48,9 +49,9 @@ abstract class PostgresRowSetTestCase extends TestCase
                         new ColumnDefinition('note', type: ColumnType::Text, nullable: true),
                         new ColumnDefinition('version_a', type: ColumnType::Text, nullable: true),
                         new ColumnDefinition('version_b', type: ColumnType::Text, nullable: true),
-                        new ColumnDefinition('tags', type: 'text[]', nullable: true),
-                        new ColumnDefinition('payload', type: 'jsonb', nullable: true),
-                        new ColumnDefinition('expires_on', type: 'date', nullable: true),
+                        new ColumnDefinition('tags', type: SqlType::fromSql('text[]'), nullable: true),
+                        new ColumnDefinition('payload', type: SqlType::fromSql('jsonb'), nullable: true),
+                        new ColumnDefinition('expires_on', type: SqlType::fromSql('date'), nullable: true),
                     ],
                     primaryKey: ['id'],
                 ),
@@ -106,7 +107,7 @@ abstract class PostgresRowSetTestCase extends TestCase
             return $row;
         }
 
-        $row['tags'] = PostgresMappedColumnType::TextArray->decode($row['tags']);
+        $row['tags'] = new ArrayCodec()->decode(ColumnType::TextArray->sqlType(), $row['tags']);
 
         return $row;
     }

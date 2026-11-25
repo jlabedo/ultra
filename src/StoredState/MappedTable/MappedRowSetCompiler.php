@@ -13,6 +13,7 @@ final class MappedRowSetCompiler
      * @param array<string, TableDefinition> $tables
      * @param ?list<string> $columns
      * @param list<string> $ownerColumns
+     * @param array<string, ColumnCodec|class-string<ColumnCodec>> $codecs Indexed by canonical SQL type.
      */
     public static function compile(
         array $tables,
@@ -20,6 +21,7 @@ final class MappedRowSetCompiler
         ?array $columns = null,
         ?string $owner = null,
         array $ownerColumns = [],
+        array $codecs = [],
     ): MappedRowSetMapping {
         if ('' === $tableId || is_numeric($tableId)) {
             throw new \InvalidArgumentException('A mapped schema table needs a non-empty, non-numeric ID.');
@@ -38,7 +40,16 @@ final class MappedRowSetCompiler
                 $id,
                 $tableId,
             ));
-            $mapping[$column->name] = MappedColumn::fromSchema($column, $tableId);
+            $codec = $codecs[$column->type->sql] ?? ColumnCodecs::builtin($column->type);
+            if (null === $codec) {
+                throw new \LogicException(sprintf(
+                    'Unsupported SQL type "%s" for column "%s" on mapped schema table "%s".',
+                    $column->type->sql,
+                    $column->id,
+                    $tableId,
+                ));
+            }
+            $mapping[$column->name] = new MappedColumn($column->type, $column->nullable, $codec);
         }
 
         $keys = array_map(static fn(string $id): string => $declared[$id]->name, $table->primaryKey);

@@ -21,6 +21,7 @@ use Ultra\Schema\Operations\RenameTable;
 use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
 use Ultra\Schema\Tests\Support\MigrationTestCase;
 
@@ -39,10 +40,10 @@ final class ExecutableMigrationTest extends MigrationTestCase
             't',
             'users',
             [
-                new ColumnDefinition('id', type: 'uuid'),
-                new ColumnDefinition('name', 'full_name', 'text'),
-                new ColumnDefinition('score', type: 'integer', defaultExpression: '0'),
-                new ColumnDefinition('retired', type: 'text', nullable: true),
+                new ColumnDefinition('id', type: SqlType::fromSql('uuid')),
+                new ColumnDefinition('name', 'full_name', SqlType::fromSql('text')),
+                new ColumnDefinition('score', type: SqlType::fromSql('integer'), defaultExpression: '0'),
+                new ColumnDefinition('retired', type: SqlType::fromSql('text'), nullable: true),
             ],
             [
                 new IndexDefinition('lookup', 'users_name_idx', ['full_name', 'retired']),
@@ -52,7 +53,7 @@ final class ExecutableMigrationTest extends MigrationTestCase
         $created = new ColumnDefinition(
             'created',
             'created_at',
-            'timestamp with time zone',
+            SqlType::fromSql('timestamp with time zone'),
             defaultExpression: 'now()',
         );
         $target = new TableDefinition(
@@ -60,10 +61,16 @@ final class ExecutableMigrationTest extends MigrationTestCase
             'app"users',
             [
                 $current->columns[0],
-                new ColumnDefinition('name', 'display"name', 'text'),
-                new ColumnDefinition('score', 'points', 'bigint', nullable: true, defaultExpression: '42'),
+                new ColumnDefinition('name', 'display"name', SqlType::fromSql('text')),
+                new ColumnDefinition(
+                    'score',
+                    'points',
+                    SqlType::fromSql('bigint'),
+                    nullable: true,
+                    defaultExpression: '42',
+                ),
                 $created,
-                new ColumnDefinition('extra', type: 'text', nullable: true),
+                new ColumnDefinition('extra', type: SqlType::fromSql('text'), nullable: true),
             ],
             [new IndexDefinition('lookup', 'app"name_idx', ['display"name'], unique: true)],
         );
@@ -82,7 +89,7 @@ final class ExecutableMigrationTest extends MigrationTestCase
                 new DropIndex('app"users', 'users_id_idx'),
                 new RenameColumn('app"users', 'full_name', 'display"name'),
                 new RenameColumn('app"users', 'score', 'points'),
-                new AlterColumn('app"users', 'points', 'bigint', true, '42'),
+                new AlterColumn('app"users', 'points', SqlType::fromSql('bigint'), true, '42'),
                 new AddColumn('app"users', $created),
                 new AddColumn('app"users', $target->columns[4]),
                 new DropColumn('app"users', 'retired'),
@@ -123,7 +130,10 @@ final class ExecutableMigrationTest extends MigrationTestCase
         $current = new TableDefinition(
             't',
             'users',
-            [new ColumnDefinition('keep', type: 'text'), new ColumnDefinition('old', type: 'text')],
+            [
+                new ColumnDefinition('keep', type: SqlType::fromSql('text')),
+                new ColumnDefinition('old', type: SqlType::fromSql('text')),
+            ],
             [
                 new IndexDefinition('keep', 'keep_idx', ['keep']),
                 new IndexDefinition(
@@ -136,7 +146,7 @@ final class ExecutableMigrationTest extends MigrationTestCase
         $new = new TableDefinition(
             'new',
             'accounts',
-            [new ColumnDefinition('id', type: 'uuid')],
+            [new ColumnDefinition('id', type: SqlType::fromSql('uuid'))],
             [
                 new IndexDefinition('lookup', 'accounts_id_idx', ['id'], unique: true),
                 new IndexDefinition(
@@ -149,7 +159,10 @@ final class ExecutableMigrationTest extends MigrationTestCase
         $target = new TableDefinition(
             't',
             'users',
-            [$current->columns[0], new ColumnDefinition('new', type: 'bigint', nullable: true)],
+            [
+                $current->columns[0],
+                new ColumnDefinition('new', type: SqlType::fromSql('bigint'), nullable: true),
+            ],
             [
                 new IndexDefinition('new', 'new_idx', ['new']),
                 new IndexDefinition('keep', 'keep_renamed_idx', ['keep']),
@@ -157,7 +170,10 @@ final class ExecutableMigrationTest extends MigrationTestCase
         );
         $this->create($current);
         $this->connection->insert('users', ['keep' => 'Ada', 'old' => 'obsolete']);
-        $this->create(new TableDefinition('old', 'retired', [new ColumnDefinition('id', type: 'uuid')]));
+        $this->create(new TableDefinition('old', 'retired', [new ColumnDefinition(
+            'id',
+            type: SqlType::fromSql('uuid'),
+        )]));
         $operations = new SchemaReconciler()->reconcile(new SchemaDefinition([
             $current,
             new TableDefinition('old', 'retired'),
@@ -218,11 +234,11 @@ final class ExecutableMigrationTest extends MigrationTestCase
     ): void {
         $current = new TableDefinition('t', 'scores', [new ColumnDefinition(
             'c',
-            ...$before + ['name' => 'score', 'type' => 'integer', 'defaultExpression' => '0'],
+            ...$before + ['name' => 'score', 'type' => SqlType::fromSql('integer'), 'defaultExpression' => '0'],
         )]);
         $target = new TableDefinition('t', 'scores', [new ColumnDefinition(
             'c',
-            ...$changes + ['name' => 'score', 'type' => 'integer', 'defaultExpression' => '0'],
+            ...$changes + ['name' => 'score', 'type' => SqlType::fromSql('integer'), 'defaultExpression' => '0'],
         )]);
         $this->create($current);
         $this->connection->executeStatement('INSERT INTO scores (score) VALUES (0)');
@@ -248,8 +264,8 @@ final class ExecutableMigrationTest extends MigrationTestCase
     {
         yield 'unchanged' => [[], null, 'integer', false, '0'];
         yield 'type only' => [
-            ['type' => 'bigint'],
-            new AlterColumn('scores', 'score', type: 'bigint'),
+            ['type' => SqlType::fromSql('bigint')],
+            new AlterColumn('scores', 'score', type: SqlType::fromSql('bigint')),
             'bigint',
             false,
             '0',
@@ -292,8 +308,8 @@ final class ExecutableMigrationTest extends MigrationTestCase
             null,
         ];
         yield 'all attributes' => [
-            ['type' => 'bigint', 'nullable' => true, 'defaultExpression' => null],
-            new AlterColumn('scores', 'score', 'bigint', true, dropDefault: true),
+            ['type' => SqlType::fromSql('bigint'), 'nullable' => true, 'defaultExpression' => null],
+            new AlterColumn('scores', 'score', SqlType::fromSql('bigint'), true, dropDefault: true),
             'bigint',
             true,
             null,
@@ -306,15 +322,19 @@ final class ExecutableMigrationTest extends MigrationTestCase
         $this->create(new TableDefinition('events', columns: [
             new ColumnDefinition(
                 'sequence',
-                type: 'BIGINT',
+                type: SqlType::fromSql('BIGINT'),
                 nullable: true,
                 constraints: ['GENERATED BY DEFAULT AS IDENTITY', 'PRIMARY KEY'],
             ),
-            new ColumnDefinition('xid', type: 'XID8', defaultExpression: 'pg_current_xact_id()'),
-            new ColumnDefinition('event_type', type: 'TEXT'),
-            new ColumnDefinition('payload', type: 'JSONB'),
-            new ColumnDefinition('domain_ids', type: 'HSTORE'),
-            new ColumnDefinition('recorded_at', type: 'TIMESTAMPTZ', defaultExpression: 'statement_timestamp()'),
+            new ColumnDefinition('xid', type: SqlType::fromSql('XID8'), defaultExpression: 'pg_current_xact_id()'),
+            new ColumnDefinition('event_type', type: SqlType::fromSql('TEXT')),
+            new ColumnDefinition('payload', type: SqlType::fromSql('JSONB')),
+            new ColumnDefinition('domain_ids', type: SqlType::fromSql('HSTORE')),
+            new ColumnDefinition(
+                'recorded_at',
+                type: SqlType::fromSql('TIMESTAMPTZ'),
+                defaultExpression: 'statement_timestamp()',
+            ),
         ]));
         $this->connection->executeStatement(
             "INSERT INTO events(event_type, payload, domain_ids) VALUES ('created', '{\"x\":1}', 'id=>one')",
@@ -361,7 +381,10 @@ final class ExecutableMigrationTest extends MigrationTestCase
     #[DataProvider('rawIndexes')]
     public function test_raw_index_statements_are_executable_and_keep_options_and_comments(string $sql): void
     {
-        $this->create(new TableDefinition('documents', columns: [new ColumnDefinition('locations', type: 'jsonb')]));
+        $this->create(new TableDefinition('documents', columns: [new ColumnDefinition(
+            'locations',
+            type: SqlType::fromSql('jsonb'),
+        )]));
         $this->execute([new AddIndex('documents', new IndexDefinition('i', 'gin_idx', rawSql: $sql))]);
         static::assertSame(
             ['access_method' => 'gin', 'options' => '{fastupdate=off}', 'comment' => 'managed by: ultra'],

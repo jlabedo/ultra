@@ -8,6 +8,8 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\MappedTable\ColumnCodec;
+use Ultra\MappedTable\ColumnCodecs;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetCompiler;
@@ -19,6 +21,7 @@ use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Plan\RowSetDependencies;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\Storage\PostgresRowSetSql;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\UnitOfWork\TagNames;
 
@@ -58,6 +61,7 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         }
         $postgres = is_a($adapterClass, PostgresMappedTableAdapter::class, true);
 
+        [$codecs, $services] = $this->codecs($container);
         $tables = SchemaExtension::compiledSchema($container)->tablesById();
         $mappings = [];
         $rowSets = [];
@@ -68,21 +72,16 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
                     $id,
                 ));
             }
-            $mapping = MappedRowSetCompiler::compile($tables, $id, ...$options);
+            $mapping = MappedRowSetCompiler::compile($tables, $id, ...$options, codecs: $codecs);
             $mappings[$id] = $mapping;
             $rowSets[$id] = new Reference($id);
             $metadata = new Definition(MappedRowSetMetadata::class, [
                 $mapping->table,
-                array_map(
-                    static fn(MappedColumn $column): Definition => new Definition(MappedColumn::class, [
-                        $column->type,
-                        $column->nullable,
-                        $column->codec,
-                        $column->timestampPrecision,
-                        $column->int32,
-                    ]),
-                    $mapping->columns,
-                ),
+                array_map(fn(MappedColumn $column): Definition => $this->column(
+                    $container,
+                    $column,
+                    $services,
+                ), $mapping->columns),
                 $mapping->keyColumns,
                 $mapping->ownerColumns,
                 null === $mapping->owner
@@ -94,7 +93,7 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
                 $mapping->ownerColumnSet,
             ]);
             $rowSet = $postgres
-                ? $this->postgresRowSet($mapping, $metadata)
+                ? $this->postgresRowSet($container, $mapping, $metadata)
                 : new Definition(MappedRowSet::class)->setFactory([
                     new Reference(MappedTableAdapter::class),
                     'createDefined',
@@ -168,25 +167,79 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         return $coordinators;
     }
 
-    private function postgresRowSet(MappedRowSetMapping $mapping, Definition $metadata): Definition
+    /** @return array{array<string, class-string<ColumnCodec>>, array<string, string>} */
+    private function codecs(ContainerBuilder $container): array
     {
-        $sql = PostgresRowSetSql::compile($mapping);
-        $compiledSql = new Definition(PostgresRowSetSql::class, [
-            $sql->table,
-            $sql->columns,
-            $sql->keyPredicates,
-            $sql->keyPredicate,
-            $sql->keyList,
-            $sql->ownerColumns,
-            $sql->ownerPredicates,
-            $sql->ownerWhere,
-            $sql->columnNames,
-            $sql->nonKeyColumns,
-            $sql->rowColumns,
-            $sql->rowSetColumns,
-            $sql->absentRowLockNamespace,
-            $sql->columnTypes,
+        $codecs = [];
+        $services = [];
+        foreach ($container->findTaggedServiceIds(
+            MappedTableExtension::COLUMN_CODEC_TAG,
+            throwOnAbstract: true,
+        ) as $id => $tags) {
+            $definition = $container->getDefinition($id);
+            $class = $container->getParameterBag()->resolveValue($definition->getClass());
+            if (
+                !is_string($class)
+                || !is_subclass_of($class, ColumnCodec::class)
+                || new \ReflectionClass($class)->isAbstract()
+            ) {
+                throw new \LogicException(sprintf(
+                    'Codec service "%s" must declare a concrete ColumnCodec class.',
+                    $id,
+                ));
+            }
+            foreach ($tags as $tag) {
+                $type = $tag['type'] ?? null;
+                if (!is_string($type)) {
+                    throw new \LogicException(sprintf('Codec service "%s" requires a SQL type in its tag.', $id));
+                }
+                $key = ColumnCodecs::registrationKey($type, $codecs);
+                $codecs[$key] = $class;
+                $services[$key] = $id;
+            }
+        }
+
+        return [$codecs, $services];
+    }
+
+    /** @param array<string, string> $services */
+    private function column(ContainerBuilder $container, MappedColumn $column, array $services): Definition
+    {
+        $codec = $column->codec;
+
+        return new Definition(MappedColumn::class, [
+            new Definition(SqlType::class)->setFactory([SqlType::class, 'fromSql'])->setArguments([
+                $container->getParameterBag()->escapeValue($column->sqlType->sql),
+            ]),
+            $column->nullable,
+            is_string($codec) ? new Reference($services[$column->sqlType->sql]) : new Definition($codec::class),
         ]);
+    }
+
+    private function postgresRowSet(
+        ContainerBuilder $container,
+        MappedRowSetMapping $mapping,
+        Definition $metadata,
+    ): Definition {
+        $sql = PostgresRowSetSql::compile($mapping);
+        $compiledSql = new Definition(PostgresRowSetSql::class, array_map(
+            $container->getParameterBag()->escapeValue(...),
+            [
+                $sql->table,
+                $sql->columns,
+                $sql->keyPredicates,
+                $sql->keyPredicate,
+                $sql->keyList,
+                $sql->ownerColumns,
+                $sql->ownerPredicates,
+                $sql->ownerWhere,
+                $sql->columnNames,
+                $sql->nonKeyColumns,
+                $sql->rowColumns,
+                $sql->rowSetColumns,
+                $sql->absentRowLockNamespace,
+            ],
+        ));
 
         return new Definition(MappedRowSet::class)->setFactory([
             new Reference(MappedTableAdapter::class),

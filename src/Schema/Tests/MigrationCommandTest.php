@@ -14,6 +14,7 @@ final class MigrationCommandTest extends TestCase
         <?php
 
         use Ultra\Schema\ColumnDefinition;
+        use Ultra\Schema\SqlType;
         use Ultra\Schema\ColumnType;
         use Ultra\Schema\ForeignKeyDefinition;
         use Ultra\Schema\ForeignKeyTiming;
@@ -28,7 +29,7 @@ final class MigrationCommandTest extends TestCase
                 'account', 'accounts',
                 columns: [
                     new ColumnDefinition('tenant', type: ColumnType::Int32),
-                    new ColumnDefinition('login', 'username', type: 'varchar(50)', constraints: ['COLLATE "C"']),
+                    new ColumnDefinition('login', 'username', type: SqlType::fromSql('varchar(50)'), constraints: ['COLLATE "C"']),
                     ...($includeObsolete ? [
                         new ColumnDefinition('email', type: ColumnType::Text, nullable: true, defaultExpression: "'none'"),
                     ] : []),
@@ -42,7 +43,7 @@ final class MigrationCommandTest extends TestCase
             ...($includeObsolete ? [new TableDefinition(
                 'receipt',
                 columns: [
-                    new ColumnDefinition('login', type: 'varchar(50)'),
+                    new ColumnDefinition('login', type: SqlType::fromSql('varchar(50)')),
                     new ColumnDefinition('tenant', type: ColumnType::Int32),
                 ],
                 indexes: [
@@ -89,12 +90,12 @@ final class MigrationCommandTest extends TestCase
         self::assertStringContainsString('DEFERRABLE INITIALLY DEFERRED', $this->read($first . '/migration.sql'));
 
         $snapshot = $this->snapshot($first);
-        self::assertSame(1, $snapshot['format']);
+        self::assertSame(2, $snapshot['format']);
         self::assertNull($snapshot['previous']);
         self::assertTrue($snapshot['tables'][0]['hasExplicitName']);
         self::assertFalse($snapshot['tables'][1]['hasExplicitName']);
 
-        // Existing format-1 snapshots predate PostgreSQL functions, extensions and index methods.
+        // Optional schema fields can be omitted from a snapshot.
         $snapshot = json_decode($this->read($first . '/snapshot.json'), flags: JSON_THROW_ON_ERROR);
         unset($snapshot->requiredExtensions, $snapshot->functions);
         foreach ($snapshot->tables as $table) {
@@ -127,24 +128,24 @@ final class MigrationCommandTest extends TestCase
     public function test_equivalent_type_spellings_do_not_generate_a_migration_but_precision_changes_do(): void
     {
         $this->writeDefinition([
-            'type: ColumnType::Text, nullable' => "type: 'timestamptz', nullable",
+            'type: ColumnType::Text, nullable' => "type: SqlType::fromSql('timestamptz'), nullable",
             ", defaultExpression: \"'none'\"" => '',
         ]);
         $this->command('generate', 'schema.php', 'migrations', 'create-tables')->mustRun();
 
         $this->writeDefinition([
-            'type: ColumnType::Int32' => "type: 'INT4'",
+            'type: ColumnType::Int32' => "type: SqlType::fromSql('INT4')",
             ", defaultExpression: \"'none'\"" => '',
-            'type: ColumnType::Text, nullable' => "type: 'timestamp(6) with time zone', nullable",
+            'type: ColumnType::Text, nullable' => "type: SqlType::fromSql('timestamp(6) with time zone'), nullable",
         ]);
         $result = $this->command('generate', 'schema.php', 'migrations', 'aliases')->mustRun();
         self::assertStringContainsString('No schema changes.', $result->getOutput());
         self::assertDirectoryDoesNotExist($this->directory . '/migrations/000002-aliases');
 
         $this->writeDefinition([
-            'type: ColumnType::Int32' => "type: 'INT4'",
+            'type: ColumnType::Int32' => "type: SqlType::fromSql('INT4')",
             ", defaultExpression: \"'none'\"" => '',
-            'type: ColumnType::Text, nullable' => "type: 'timestamp(3) with time zone', nullable",
+            'type: ColumnType::Text, nullable' => "type: SqlType::fromSql('timestamp(3) with time zone'), nullable",
         ]);
         $this->command('generate', 'schema.php', 'migrations', 'change-precision')->mustRun();
         self::assertStringContainsString(

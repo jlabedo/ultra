@@ -12,6 +12,8 @@ use Ultra\MappedTable\QueryGuardDefinition;
 
 final readonly class MappedTableExtension implements ContainerExtension
 {
+    public const string COLUMN_CODEC_TAG = 'ultra.mapped_table.column_codec';
+
     /** @internal Identifies compiled row-set services. */
     public const string ROW_SET_TAG = 'ultra.mapped_table.compiled_row_set';
 

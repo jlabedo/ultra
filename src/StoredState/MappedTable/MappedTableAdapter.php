@@ -22,6 +22,7 @@ abstract class MappedTableAdapter
      * @param ?list<string> $columns Exposed column IDs. The primary key is always included.
      * @param ?string $owner Foreign key ID for a mapped parent.
      * @param list<string> $ownerColumns Collection key columns without a mapped parent.
+     * @param array<array-key, mixed> $codecs ColumnCodec instances keyed by SQL type.
      * @return \Closure(): MappedRowSet
      */
     final public function compileRowSet(
@@ -30,9 +31,25 @@ abstract class MappedTableAdapter
         ?array $columns = null,
         ?string $owner = null,
         array $ownerColumns = [],
+        array $codecs = [],
     ): \Closure {
         $schema->validateForeignKeys();
-        $mapping = MappedRowSetCompiler::compile($schema->tablesById(), $table, $columns, $owner, $ownerColumns);
+        $registered = [];
+        foreach ($codecs as $sqlType => $codec) {
+            if (!$codec instanceof ColumnCodec || !is_string($sqlType)) {
+                throw new \InvalidArgumentException('Register codec instances keyed by SQL type.');
+            }
+            $registered[ColumnCodecs::registrationKey($sqlType, $registered)] = $codec;
+        }
+        $mapping = MappedRowSetCompiler::compile(
+            $schema->tablesById(),
+            $table,
+            $columns,
+            $owner,
+            $ownerColumns,
+            $registered,
+        );
+
         $adapter = $this;
         if ($adapter instanceof PostgresMappedTableAdapter) {
             $sql = PostgresRowSetSql::compile($mapping);

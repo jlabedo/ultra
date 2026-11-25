@@ -8,6 +8,7 @@ use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
 
 final readonly class PostgresProjectionSegmentSchema
@@ -31,16 +32,20 @@ final readonly class PostgresProjectionSegmentSchema
             strtolower($this->segmentsTable()),
             columns: [
                 new ColumnDefinition('projection_id', type: ColumnType::Text),
-                new ColumnDefinition('bucket_from', type: 'smallint'),
-                new ColumnDefinition('bucket_to', type: 'smallint'),
+                new ColumnDefinition('bucket_from', type: SqlType::fromSql('smallint')),
+                new ColumnDefinition('bucket_to', type: SqlType::fromSql('smallint')),
                 new ColumnDefinition(
                     'checkpoint',
                     type: ColumnType::Text,
                     defaultExpression: "'{\"gapFloor\":0,\"gapSeqNos\":[]}'",
                 ),
                 new ColumnDefinition('worker_id', type: ColumnType::Text, nullable: true),
-                new ColumnDefinition('lease_expires_at', type: 'timestamptz', nullable: true),
-                new ColumnDefinition('updated_at', type: 'timestamptz', defaultExpression: 'statement_timestamp()'),
+                new ColumnDefinition('lease_expires_at', type: ColumnType::TimestampWithTimeZone, nullable: true),
+                new ColumnDefinition(
+                    'updated_at',
+                    type: ColumnType::TimestampWithTimeZone,
+                    defaultExpression: 'statement_timestamp()',
+                ),
             ],
             primaryKey: ['projection_id', 'bucket_from'],
         );

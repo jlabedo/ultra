@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace Ultra\Schema\Migration;
 
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\ForeignKeyTiming;
 use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\PostgresFunctionDefinition;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
 
 /** @internal */
@@ -71,7 +71,7 @@ final class SchemaDefinitionData
                 'id' => $column->id,
                 'name' => $column->name,
                 'hasExplicitName' => $column->hasExplicitName,
-                'type' => $column->type instanceof ColumnType ? ['portable' => $column->type->name] : $column->type,
+                'type' => $column->type->sql,
                 'nullable' => $column->nullable,
                 'defaultExpression' => $column->defaultExpression,
                 'constraints' => $column->constraints,
@@ -124,15 +124,10 @@ final class SchemaDefinitionData
     private static function decodeColumn(mixed $value): ColumnDefinition
     {
         $column = self::record($value, 'column');
-        $type = $column['type'] ?? null;
-        if (!is_string($type)) {
-            $type = self::enumCase(ColumnType::cases(), self::string(self::record($type, 'type'), 'portable'));
-        }
-
         return new ColumnDefinition(
             id: self::string($column, 'id'),
             name: self::string($column, 'name'),
-            type: $type,
+            type: SqlType::fromSql(self::string($column, 'type')),
             nullable: self::bool($column, 'nullable'),
             defaultExpression: self::nullableString($column, 'defaultExpression'),
             constraints: self::stringList($column, 'constraints'),

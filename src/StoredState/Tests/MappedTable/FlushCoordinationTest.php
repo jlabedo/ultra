@@ -8,6 +8,7 @@ use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Ultra\MappedTable\Codec\TextCodec;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
@@ -237,7 +238,8 @@ final class FlushCoordinationTest extends RowSetTestCase
     {
         $parent = $this->fixture('memory', ['owner', 'id']);
         $child = $this->fixture('memory', ['owner', 'id'], storage: $parent->storage, adapter: $parent->adapter);
-        $columns = ['owner' => new MappedColumn('string'), 'id' => new MappedColumn('string')];
+        $text = new MappedColumn(ColumnType::Text->sqlType(), false, new TextCodec());
+        $columns = ['owner' => $text, 'id' => $text];
         $orders = $parent->adapter->createDefined(new MappedRowSetMapping(
             $parent->tableName,
             $columns,

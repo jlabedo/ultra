@@ -11,6 +11,7 @@ use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
 
 /** @internal */
@@ -26,15 +27,15 @@ final class DefinitionCompositionTest extends TestCase
         $implicit = new SchemaDefinition([new TableDefinition(
             'users',
             columns: [
-                new ColumnDefinition('id', type: 'uuid'),
+                new ColumnDefinition('id', type: SqlType::fromSql('uuid')),
                 new ColumnDefinition(
                     'email',
-                    type: 'text',
+                    type: SqlType::fromSql('text'),
                     nullable: true,
                     defaultExpression: "'unknown'",
                     constraints: ['UNIQUE'],
                 ),
-                new ColumnDefinition('status', type: 'text'),
+                new ColumnDefinition('status', type: SqlType::fromSql('text')),
             ],
             indexes: [new IndexDefinition('lookup', columns: ['email']), new IndexDefinition('ids', columns: ['id'])],
         )]);
@@ -45,7 +46,7 @@ final class DefinitionCompositionTest extends TestCase
                 new ColumnDefinition(
                     'email',
                     'address',
-                    'text',
+                    SqlType::fromSql('text'),
                     nullable: true,
                     defaultExpression: "'unknown'",
                     constraints: ['UNIQUE'],
@@ -95,8 +96,8 @@ final class DefinitionCompositionTest extends TestCase
         match ($kind) {
             'table' => new SchemaDefinition([new TableDefinition('same', 'same'), new TableDefinition($id, $name)]),
             'column' => new TableDefinition('t', 'users', [
-                new ColumnDefinition('same', 'same', 'text'),
-                new ColumnDefinition($id, $name, 'text'),
+                new ColumnDefinition('same', 'same', SqlType::fromSql('text')),
+                new ColumnDefinition($id, $name, SqlType::fromSql('text')),
             ]),
             'index' => new TableDefinition('t', 'users', indexes: [
                 new IndexDefinition('same', 'same'),
@@ -121,14 +122,18 @@ final class DefinitionCompositionTest extends TestCase
     {
         $left = match ($kind) {
             'table' => new TableDefinition('t', 'users'),
-            'column' => new TableDefinition('t', columns: [new ColumnDefinition('c', 'value', 'text')]),
+            'column' => new TableDefinition('t', columns: [new ColumnDefinition(
+                'c',
+                'value',
+                SqlType::fromSql('text'),
+            )]),
             'index' => new TableDefinition('t', indexes: [new IndexDefinition('i', 'lookup', ['value'])]),
         };
         $right = match ($kind) {
             'table' => new TableDefinition('t', ...$changes),
             'column' => new TableDefinition('t', columns: [new ColumnDefinition(
                 'c',
-                ...$changes + ['name' => 'value', 'type' => 'text'],
+                ...$changes + ['name' => 'value', 'type' => SqlType::fromSql('text')],
             )]),
             'index' => new TableDefinition('t', indexes: [new IndexDefinition(
                 'i',
@@ -159,7 +164,7 @@ final class DefinitionCompositionTest extends TestCase
             yield $kind . ' name' => [$kind, ['name' => 'other']];
         }
         foreach ([
-            'type' => 'uuid',
+            'type' => SqlType::fromSql('uuid'),
             'nullable' => true,
             'defaultExpression' => 'now()',
             'constraints' => ['UNIQUE'],

@@ -7,6 +7,7 @@ namespace Ultra\MappedTable\Storage;
 use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRow;
+use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\Plan\RowMembershipPlan;
 use Ultra\MappedTable\Plan\RowSetUpdatePlan;
@@ -22,6 +23,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         private string $tableName,
         private array $keyColumns,
         private PostgresRowSetSql $sql,
+        private MappedRowSetMetadata $mapping,
         private MappedTablePolicy $policy = new MappedTablePolicy(),
     ) {}
 
@@ -104,21 +106,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
     /** @param array<string, mixed> $row */
     private function keyFromRow(array $row): MappedKey
     {
-        $key = [];
-        foreach ($this->keyColumns as $column) {
-            $value = $row[$column] ?? null;
-            if (!is_int($value) && !is_string($value)) {
-                throw new \LogicException(sprintf(
-                    'Table "%s" returned no scalar key column "%s".',
-                    $this->tableName,
-                    $column,
-                ));
-            }
-            $codec = $this->sql->columnTypes[$column] ?? null;
-            $key[$column] = $codec?->normalize($value, 6, preserveTimestampOffset: false) ?? $value;
-        }
-
-        return new MappedKey($key);
+        return $this->mapping->key(array_intersect_key($row, $this->mapping->keyColumnSet));
     }
 
     public function check(RowSetUpdatePlan $plan): void
@@ -611,16 +599,13 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
 
     private function encodeColumnValue(string $column, mixed $value): mixed
     {
-        $type = $this->sql->columnTypes[$column] ?? null;
-        if (null !== $type) {
-            return $type->encode($value);
-        }
+        $encoded = $this->mapping->column($column)->encode($value);
 
-        // PDO binds false as an empty string, which Postgres rejects for boolean columns.
-        return match ($value) {
+        // PDO can bind false as an empty string.
+        return match ($encoded) {
             true => 'true',
             false => 'false',
-            default => $value,
+            default => $encoded,
         };
     }
 
@@ -630,12 +615,8 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
      */
     private function decodeRow(array $row): array
     {
-        foreach ($this->sql->columnTypes as $column => $type) {
-            if (!array_key_exists($column, $row)) {
-                continue;
-            }
-
-            $row[$column] = $type->decode($row[$column]);
+        foreach ($row as $column => $value) {
+            $row[$column] = $this->mapping->column($column)->decode($value);
         }
 
         return $row;

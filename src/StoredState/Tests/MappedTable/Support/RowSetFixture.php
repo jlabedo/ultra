@@ -5,9 +5,10 @@ declare(strict_types=1);
 namespace Ultra\MappedTable\Tests\Support;
 
 use Doctrine\DBAL\Connection;
+use Ultra\MappedTable\ColumnCodec;
+use Ultra\MappedTable\ColumnCodecs;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableAdapter;
@@ -19,6 +20,7 @@ use Ultra\Schema\ColumnType;
 use Ultra\Schema\Operations\CreateTable;
 use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\UnitOfWork\UnitOfWork;
@@ -38,7 +40,7 @@ final class RowSetFixture
 
     /**
      * @param list<string> $keyColumns
-     * @param array<string, string> $columnTypes
+     * @param array<string, ColumnDefinition|ColumnType|SqlType|string> $columnTypes
      */
     public function __construct(
         public readonly Connection|InMemoryRowDatabase $storage,
@@ -64,7 +66,9 @@ final class RowSetFixture
         );
         $columns = [];
         foreach ($types as $column => $type) {
-            $columns[] = new ColumnDefinition($column, type: $type, nullable: !in_array($column, $keyColumns, true));
+            $columns[] = $type instanceof ColumnDefinition
+                ? $type
+                : new ColumnDefinition($column, type: $type, nullable: !in_array($column, $keyColumns, true));
         }
         $this->definition = new TableDefinition($tableName, columns: $columns, primaryKey: $keyColumns);
 
@@ -80,11 +84,14 @@ final class RowSetFixture
         $this->units = new \WeakMap();
     }
 
-    public function newRows(?MappedTableAdapter $adapter = null): MappedRowSet
+    /** @param array<string, ColumnCodec> $codecs */
+    public function newRows(?MappedTableAdapter $adapter = null, array $codecs = []): MappedRowSet
     {
-        return ($adapter ?? $this->adapter)->compileRowSet(new SchemaDefinition([
-            $this->definition,
-        ]), $this->tableName)();
+        return ($adapter ?? $this->adapter)->compileRowSet(
+            new SchemaDefinition([$this->definition]),
+            $this->tableName,
+            codecs: $codecs,
+        )();
     }
 
     /** @param array<string, mixed> $row */
@@ -134,10 +141,11 @@ final class RowSetFixture
         if (false !== $row) {
             foreach ($this->definition->columns as $column) {
                 if (array_key_exists($column->name, $row)) {
-                    $codec = MappedColumn::fromSchema($column, $this->tableName)->codec;
-                    if (null !== $codec) {
-                        $row[$column->name] = $codec->decode($row[$column->name]);
-                    }
+                    $value = $row[$column->name];
+                    $codec = ColumnCodecs::builtin($column->type) ?? throw new \LogicException(
+                        'Unsupported test column.',
+                    );
+                    $row[$column->name] = null === $value ? null : $codec->decode($column->type, $value);
                 }
             }
         }

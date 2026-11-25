@@ -47,6 +47,7 @@ final class PostgresMappedTableAdapter extends MappedTableAdapter
                 $mapping->table,
                 $mapping->keyColumns,
                 $sql,
+                $mapping,
                 policy: $this->tablePolicies[$mapping->table] ?? new MappedTablePolicy(),
             ),
         );

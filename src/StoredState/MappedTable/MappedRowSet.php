@@ -42,7 +42,7 @@ final class MappedRowSet
     /** @internal True when a buffered deletion, cancellation or reconciliation removes the row. */
     public function hasPendingDeletion(MappedKey $key): bool
     {
-        $update = $this->updates[$this->mapping->normalizeKey($key)->fingerprint()] ?? null;
+        $update = $this->updates[$this->mapping->key($key)->fingerprint()] ?? null;
 
         return $update?->isDeleted() ?? false;
     }
@@ -99,8 +99,9 @@ final class MappedRowSet
             return [];
         }
 
-        $keyOnly = [] === $columns;
-        $projection = $keyOnly ? $this->mapping->keyColumns : $this->selectedColumns($columns, includeKeys: true);
+        $projection = [] === $columns
+            ? $this->mapping->keyColumns
+            : $this->selectedColumns($columns, includeKeys: true);
         $toRead = [];
         $visible = [];
         foreach ($requested as $fingerprint => $key) {
@@ -124,7 +125,7 @@ final class MappedRowSet
                 $row['storedValues'] ?? null,
                 $observedColumns,
             );
-            $results[$fingerprint] = $keyOnly && null !== $row ? $key->values : $row['values'] ?? null;
+            $results[$fingerprint] = $row['values'] ?? null;
         }
         foreach ($updates as $fingerprint => $update) {
             $this->updates[$fingerprint] = $update;
@@ -242,8 +243,9 @@ final class MappedRowSet
         ?array $observedColumns = null,
     ): ?array {
         $this->assertHandleGeneration($generation);
-        $keyOnly = [] === $columns;
-        $projection = $keyOnly ? $this->mapping->keyColumns : $this->selectedColumns($columns, includeKeys: true);
+        $projection = [] === $columns
+            ? $this->mapping->keyColumns
+            : $this->selectedColumns($columns, includeKeys: true);
         $fingerprint = $key->fingerprint();
         $update = $this->updates[$fingerprint] ?? null;
         $row = null;
@@ -262,7 +264,7 @@ final class MappedRowSet
             );
         }
 
-        return $keyOnly && null !== $row ? $key->values : $row['values'] ?? null;
+        return $row['values'] ?? null;
     }
 
     /**
@@ -303,7 +305,7 @@ final class MappedRowSet
         $selected = [] === $projection ? $this->mapping->keyColumns : $projection;
         $rows = [];
         foreach ($this->adapter->rows($this->mapping->table, $selected, $owner) as $row) {
-            $storedKey = $this->mapping->normalizeKey($row->key);
+            $storedKey = $this->mapping->key($row->key);
             $fingerprint = $storedKey->fingerprint();
             $update = $this->updates[$fingerprint] ?? null;
             if (!$this->isVisible($storedKey, $update)) {
@@ -353,28 +355,24 @@ final class MappedRowSet
         }
 
         $stored = false === $stored || true === $update?->replacesStoredRow() ? [] : $stored;
-        $written = $writes ? [...$update->writtenColumns(), ...$key->values] : [];
+        $written = $writes ? $update->writtenColumns() : [];
         $values = [];
         $storedValues = [];
         foreach ($projection as $column) {
-            $isKey = $key->contains($column);
-            $fromStorage = array_key_exists($column, $stored);
-            if ($fromStorage) {
-                $stored[$column] = $this->mapping->normalizeValue(
-                    $column,
-                    $stored[$column],
-                    preserveTimestampOffset: true,
-                );
+            if ($key->contains($column)) {
+                $values[$column] = $key->value($column);
+                continue;
+            }
+            if (array_key_exists($column, $stored)) {
+                $stored[$column] = $this->mapping->column($column)->copy($stored[$column]);
             }
             if (array_key_exists($column, $written)) {
                 $values[$column] = $written[$column];
-            } elseif ($fromStorage) {
+            } elseif (array_key_exists($column, $stored)) {
                 $values[$column] = $stored[$column];
-                if ($trackStorage && !$isKey) {
+                if ($trackStorage) {
                     $storedValues[$column] = $stored[$column];
                 }
-            } elseif ($isKey) {
-                $values[$column] = $key->value($column);
             }
         }
 
@@ -483,8 +481,7 @@ final class MappedRowSet
     /** @param MappedKey|array<string, int|string|\Stringable> $owner */
     private function normalizeOwner(MappedKey|array $owner): MappedKey
     {
-        $key = $owner instanceof MappedKey ? $owner : new MappedKey($owner);
-        return $this->mapping->normalizeOwner($key);
+        return $this->mapping->owner($owner);
     }
 
     private function membership(?MappedKey $owner): BufferedMembership
@@ -543,21 +540,18 @@ final class MappedRowSet
     /** @param int|string|MappedKey|\Stringable|array<string, int|string|\Stringable> $key */
     private function normalizeKey(int|string|MappedKey|\Stringable|array $key): MappedKey
     {
+        if ($key instanceof MappedKey || is_array($key)) {
+            return $this->mapping->key($key);
+        }
         $keyColumns = $this->mapping->keyColumns;
-        if (is_array($key)) {
-            $key = new MappedKey($key);
-        } elseif (!$key instanceof MappedKey) {
-            if (1 !== count($keyColumns)) {
-                throw new \InvalidArgumentException(sprintf('A scalar key cannot address row-set key columns [%s].', implode(
-                    ', ',
-                    $keyColumns,
-                )));
-            }
-
-            $key = new MappedKey([$keyColumns[0] => $key]);
+        if (1 !== count($keyColumns)) {
+            throw new \InvalidArgumentException(sprintf('A scalar key cannot address row-set key columns [%s].', implode(
+                ', ',
+                $keyColumns,
+            )));
         }
 
-        return $this->mapping->normalizeKey($key);
+        return $this->mapping->key([$keyColumns[0] => $key]);
     }
 
     /** @return list<RowUpdatePlan> */

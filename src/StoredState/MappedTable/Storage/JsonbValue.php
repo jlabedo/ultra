@@ -14,9 +14,15 @@ final class JsonbValue
         ~"(?:[^"\\]++|\\.)*"|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?~
         REGEX;
 
-    public static function copy(mixed $value): mixed
+    public static function copy(mixed $value): int|string|float|bool|array|\stdClass|JsonNull
     {
-        return JsonNull::Value === $value ? $value : self::document($value);
+        if (JsonNull::Value === $value) {
+            return $value;
+        }
+
+        return (
+            self::document($value) ?? throw new \InvalidArgumentException('Use JsonNull::Value for a root JSON null.')
+        );
     }
 
     public static function encode(mixed $value): string
@@ -24,7 +30,7 @@ final class JsonbValue
         return self::json(JsonNull::Value === $value ? null : self::document($value, forEncoding: true));
     }
 
-    public static function decode(string $json): mixed
+    public static function decode(string $json): int|string|float|bool|array|\stdClass|JsonNull
     {
         try {
             $checked = preg_replace_callback(
@@ -37,7 +43,7 @@ final class JsonbValue
             throw new \InvalidArgumentException('Invalid JSONB document.', previous: $exception);
         }
 
-        return null === $value ? JsonNull::Value : self::document($value);
+        return self::document($value) ?? JsonNull::Value;
     }
 
     private static function checkedNumber(string $number): string
@@ -107,7 +113,7 @@ final class JsonbValue
         int $depth = 0,
         bool $forEncoding = false,
         bool $sortObjects = false,
-    ): mixed {
+    ): int|string|float|bool|array|\stdClass|null {
         if ($depth >= 511) {
             throw new \InvalidArgumentException('JSONB document is recursive or exceeds the supported nesting depth.');
         }

@@ -6,9 +6,9 @@ namespace Ultra\MappedTable\Storage;
 
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Ultra\MappedTable\MappedRowSetMetadata;
-use Ultra\MappedTable\PostgresMappedColumnType;
+use Ultra\Schema\ColumnType;
 
-/** @internal PostgreSQL codecs and SQL fragments compiled from a row set definition. */
+/** @internal PostgreSQL SQL fragments compiled from a row set definition. */
 final readonly class PostgresRowSetSql
 {
     /**
@@ -18,7 +18,6 @@ final readonly class PostgresRowSetSql
      * @param list<string> $ownerPredicates
      * @param list<string> $columnNames
      * @param list<string> $nonKeyColumns
-     * @param array<string, PostgresMappedColumnType> $columnTypes
      */
     public function __construct(
         public string $table,
@@ -34,21 +33,21 @@ final readonly class PostgresRowSetSql
         public string $rowColumns,
         public string $rowSetColumns,
         public string $absentRowLockNamespace,
-        public array $columnTypes,
     ) {}
 
     public static function compile(MappedRowSetMetadata $mapping): self
     {
-        $types = [];
         $quote = new PostgreSQLPlatform()->quoteSingleIdentifier(...);
         $columns = [];
         foreach ($mapping->columnNames as $column) {
             $identifier = $quote($column);
-            $type = $mapping->column($column)->codec;
-            if (null !== $type) {
-                $types[$column] = $type;
-            }
-            $parameter = null === $type ? '?' : '?::' . $type->value;
+            $mapped = $mapping->column($column);
+            $implicit = in_array(
+                $mapped->sqlType->family,
+                [ColumnType::Text, ColumnType::Int32, ColumnType::Int64, ColumnType::Boolean],
+                true,
+            );
+            $parameter = $implicit ? '?' : '?::' . $mapped->sqlType->sql;
             $columns[$column] = [
                 'identifier' => $identifier,
                 'parameter' => $parameter,
@@ -81,7 +80,6 @@ final readonly class PostgresRowSetSql
             implode(', ', array_map($identifier, $mapping->columnNames)),
             $rowSetColumns,
             $mapping->table . ':row',
-            $types,
         );
     }
 }

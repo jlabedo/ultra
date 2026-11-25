@@ -32,6 +32,7 @@ use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
 use Ultra\UnitOfWork\UnitOfWork;
@@ -100,7 +101,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
                 static::assertInstanceOf(Definition::class, $sql);
                 static::assertSame(PostgresRowSetSql::class, $sql->getClass());
                 static::assertSame(' WHERE "owner" = ?', $sql->getArgument(7));
-                static::assertSame('?::TEXT[]', $sql->getArgument(1)['aliases']['parameter']);
+                static::assertSame('?::text[]', $sql->getArgument(1)['aliases']['parameter']);
                 static::assertSame(2, count($lineService->getArguments()));
             }
             $coordination = $container->findDefinition('test.coordination');
@@ -408,8 +409,8 @@ final class CompileTimeRowsSchema
                 columns: [
                     new ColumnDefinition('owner', type: ColumnType::Text),
                     new ColumnDefinition('id', type: ColumnType::Text),
-                    new ColumnDefinition('tags', type: 'text[]', nullable: true),
-                    new ColumnDefinition('aliases', type: 'text[]', nullable: true),
+                    new ColumnDefinition('tags', type: SqlType::fromSql('text[]'), nullable: true),
+                    new ColumnDefinition('aliases', type: SqlType::fromSql('text[]'), nullable: true),
                 ],
                 primaryKey: ['owner', 'id'],
                 foreignKeys: ['owner' => new ForeignKeyDefinition(self::ORDERS, ['owner' => 'id'])],

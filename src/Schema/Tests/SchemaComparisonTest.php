@@ -15,6 +15,7 @@ use Ultra\Schema\Operations\DropIndex;
 use Ultra\Schema\Operations\RenameIndex;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
 
 /** @internal */
@@ -63,12 +64,12 @@ final class SchemaComparisonTest extends TestCase
         $current = new SchemaDefinition([new TableDefinition('t', 'users', [new ColumnDefinition(
             'c',
             'email',
-            'text',
+            SqlType::fromSql('text'),
         )])]);
         $target = new SchemaDefinition([new TableDefinition('t', 'accounts', [new ColumnDefinition(
             'c',
             'address',
-            'text',
+            SqlType::fromSql('text'),
             constraints: ['UNIQUE'],
         )])]);
         $this->expectException(\LogicException::class);

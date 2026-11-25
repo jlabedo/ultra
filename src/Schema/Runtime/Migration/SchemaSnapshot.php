@@ -9,7 +9,7 @@ use Ultra\Schema\SchemaDefinition;
 /** @internal */
 final readonly class SchemaSnapshot
 {
-    private const int FORMAT = 1;
+    private const int FORMAT = 2;
 
     public function __construct(
         public ?string $previous,

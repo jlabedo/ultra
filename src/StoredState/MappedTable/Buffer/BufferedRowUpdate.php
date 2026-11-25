@@ -212,10 +212,10 @@ final class BufferedRowUpdate
 
     public function expectColumnValue(string $column, mixed $value): void
     {
-        $value = $this->mapping->normalizeValue($column, $value);
         $type = $this->mapping->column($column);
+        $value = $this->mapping->normalizeValue($column, $value);
         if ($this->key->contains($column)) {
-            if (!$type->equivalent($this->key->value($column), $value)) {
+            if ($this->key->value($column) !== $type->key($value)) {
                 throw new ConcurrencyException('Expected key column value differs from the mapped row key.');
             }
 

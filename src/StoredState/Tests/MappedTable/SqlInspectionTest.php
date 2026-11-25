@@ -22,6 +22,7 @@ use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\SqlTrace;
@@ -142,7 +143,7 @@ final class SqlInspectionTest extends TestCase
             new TableDefinition(
                 'observed_uuids',
                 columns: [
-                    new ColumnDefinition('id', type: 'uuid'),
+                    new ColumnDefinition('id', type: SqlType::fromSql('uuid')),
                     new ColumnDefinition('status', type: ColumnType::Text),
                 ],
                 primaryKey: ['id'],

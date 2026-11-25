@@ -23,9 +23,13 @@ final readonly class PostgresCoordinatorLeaseSchema
             columns: [
                 new ColumnDefinition('coordinator_key', type: ColumnType::Text),
                 new ColumnDefinition('worker_id', type: ColumnType::Text, nullable: true),
-                new ColumnDefinition('lease_expires_at', type: 'timestamptz', nullable: true),
-                new ColumnDefinition('wake_enqueued_until', type: 'timestamptz', nullable: true),
-                new ColumnDefinition('updated_at', type: 'timestamptz', defaultExpression: 'statement_timestamp()'),
+                new ColumnDefinition('lease_expires_at', type: ColumnType::TimestampWithTimeZone, nullable: true),
+                new ColumnDefinition('wake_enqueued_until', type: ColumnType::TimestampWithTimeZone, nullable: true),
+                new ColumnDefinition(
+                    'updated_at',
+                    type: ColumnType::TimestampWithTimeZone,
+                    defaultExpression: 'statement_timestamp()',
+                ),
             ],
             primaryKey: ['coordinator_key'],
         );

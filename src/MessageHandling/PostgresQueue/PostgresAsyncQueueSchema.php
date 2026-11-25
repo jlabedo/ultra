@@ -9,6 +9,7 @@ use Ultra\Schema\ColumnType;
 use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
 
 final readonly class PostgresAsyncQueueSchema
@@ -39,17 +40,25 @@ final readonly class PostgresAsyncQueueSchema
             columns: [
                 new ColumnDefinition('id', type: ColumnType::Text),
                 new ColumnDefinition('queue_name', type: ColumnType::Text),
-                new ColumnDefinition('body', type: 'bytea'),
-                new ColumnDefinition('headers', type: 'jsonb', defaultExpression: "'{}'::jsonb"),
-                new ColumnDefinition('attributes', type: 'jsonb', defaultExpression: "'{}'::jsonb"),
+                new ColumnDefinition('body', type: SqlType::fromSql('bytea')),
+                new ColumnDefinition('headers', type: ColumnType::Jsonb, defaultExpression: "'{}'::jsonb"),
+                new ColumnDefinition('attributes', type: ColumnType::Jsonb, defaultExpression: "'{}'::jsonb"),
                 new ColumnDefinition('schedule_key', type: ColumnType::Text, nullable: true),
-                new ColumnDefinition('available_at', type: 'timestamptz'),
+                new ColumnDefinition('available_at', type: ColumnType::TimestampWithTimeZone),
                 new ColumnDefinition('lease_id', type: ColumnType::Text, nullable: true),
-                new ColumnDefinition('leased_until', type: 'timestamptz', nullable: true),
+                new ColumnDefinition('leased_until', type: ColumnType::TimestampWithTimeZone, nullable: true),
                 new ColumnDefinition('leased_by', type: ColumnType::Text, nullable: true),
                 new ColumnDefinition('attempts', type: ColumnType::Int32, defaultExpression: '0'),
-                new ColumnDefinition('created_at', type: 'timestamptz', defaultExpression: 'statement_timestamp()'),
-                new ColumnDefinition('updated_at', type: 'timestamptz', defaultExpression: 'statement_timestamp()'),
+                new ColumnDefinition(
+                    'created_at',
+                    type: ColumnType::TimestampWithTimeZone,
+                    defaultExpression: 'statement_timestamp()',
+                ),
+                new ColumnDefinition(
+                    'updated_at',
+                    type: ColumnType::TimestampWithTimeZone,
+                    defaultExpression: 'statement_timestamp()',
+                ),
             ],
             indexes: [
                 new IndexDefinition(

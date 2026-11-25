@@ -211,7 +211,7 @@ final class PostgresSqlGenerator
         $clauses = [];
 
         if (null !== $operation->type) {
-            $clauses[] = sprintf('ALTER COLUMN %s TYPE %s', $columnName, PostgresColumnType::sql($operation->type));
+            $clauses[] = sprintf('ALTER COLUMN %s TYPE %s', $columnName, $operation->type->sql);
         }
 
         if (null !== $operation->nullable) {
@@ -242,7 +242,7 @@ final class PostgresSqlGenerator
     {
         $parts = [
             $this->quoteIdentifier($column->name),
-            PostgresColumnType::sql($column->type),
+            $column->type->sql,
         ];
 
         if (!$column->nullable) {

@@ -43,7 +43,7 @@ final class ComplianceSchema
                 columns: [
                     new ColumnDefinition('account_id', type: ColumnType::Text),
                     new ColumnDefinition('qualification_id', type: ColumnType::Text),
-                    new ColumnDefinition('requirements', type: 'jsonb'),
+                    new ColumnDefinition('requirements', type: ColumnType::Jsonb),
                 ],
                 primaryKey: ['account_id', 'qualification_id'],
             ),
