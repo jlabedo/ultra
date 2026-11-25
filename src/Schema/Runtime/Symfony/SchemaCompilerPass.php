@@ -45,8 +45,6 @@ final class SchemaCompilerPass implements CompilerPassInterface
             }
 
             if ([] === $methods) {
-                $definition->addTag('container.excluded', ['source' => self::FRAGMENT_TAG]);
-
                 continue;
             }
 

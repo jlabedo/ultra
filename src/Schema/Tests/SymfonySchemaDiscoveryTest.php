@@ -58,6 +58,22 @@ final class SymfonySchemaDiscoveryTest extends TestCase
         self::assertStringNotContainsString(SchemaDefinition::class, $php);
     }
 
+    public function test_a_service_with_a_static_fragment_can_be_autowired_and_injected(): void
+    {
+        ParentSchema::$calls = 0;
+        $container = new ContainerBuilder();
+        new SchemaExtension()->build($container);
+        $container->register(\stdClass::class, \stdClass::class);
+        $container->register(SchemaDeclaringService::class)->setAutoconfigured(true)->setAutowired(true);
+        $container->register(SchemaServiceConsumer::class)->setAutowired(true)->setPublic(true);
+        $container->compile();
+
+        self::assertSame(1, ParentSchema::$calls);
+        $consumer = $container->get(SchemaServiceConsumer::class);
+        self::assertInstanceOf(SchemaServiceConsumer::class, $consumer);
+        self::assertInstanceOf(\stdClass::class, $consumer->service->dependency);
+    }
+
     /** @param array{schema?: array{migrations_directory: string}} $config */
     #[DataProvider('migrationDirectories')]
     public function test_symfony_command_generates_from_compiled_fragments_and_the_recorded_history(
@@ -212,6 +228,26 @@ final class ParentSchema
             ),
         ]);
     }
+}
+
+final readonly class SchemaDeclaringService
+{
+    public function __construct(
+        public \stdClass $dependency,
+    ) {}
+
+    #[DefineSchema]
+    public static function definition(): SchemaDefinition
+    {
+        return ParentSchema::definition();
+    }
+}
+
+final readonly class SchemaServiceConsumer
+{
+    public function __construct(
+        public SchemaDeclaringService $service,
+    ) {}
 }
 
 final class ChildSchema

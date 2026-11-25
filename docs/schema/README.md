@@ -141,8 +141,9 @@ $container->register(ProjectionSchema::class)
 
 Each declared method takes no parameters and returns a `SchemaDefinition`. A service can declare multiple
 methods. Symfony invokes static methods once during compilation, even when several service definitions
-declare the same method. Static fragments must resolve their foreign keys during compilation so that
-compiler passes such as MappedTable can use them.
+declare the same method. A service such as a projection can declare a static fragment and still be
+autowired and injected normally. Static fragments must resolve their foreign keys during compilation
+so that compiler passes such as MappedTable can use them.
 
 For instance methods, the compiler passes service factories and method names to the Symfony migration
 command. The command calls those methods when it generates a migration and merges their fragments with the
