@@ -8,12 +8,20 @@ a stream does not require exclusive ownership by a domain entity.
 
 ## Core Model
 
-- **Event** – Neutral event value used for both `append()` input and `load()` output on the write side. It contains `eventType`, `payload`, `domainIds`, and optional `recordedAt`.
+- **Event** – Neutral event value used for both `append()` input and `load()` output on the write side. It contains `eventType`, `payload`, `domainIds`, `metadata`, and optional `recordedAt`.
 - **StreamQuery** – Immutable branch list for stream queries. Each branch matches domain identifiers with AND semantics and event types with OR semantics. An empty event type list means all event types. Use `all()` for unfiltered reads, `forStream(...)->ofTypes(...)` for one branch, and `anyOf(...)` for OR-composition. `none()` has no branches and matches no events.
 - **Sequence** – Persistence ordering value. Sequence `0` is the beginning position; persisted events use positive sequence numbers.
 - **Checkpoint** – Gap-aware sequence position with a stable `gapFloor` plus explicitly observed `gapSeqNos`.
 - **LoadResult** – Result of `load()`: visible `Event` objects, the base `StreamQuery`, the next `Checkpoint`, `hasMore` for pagination, and `appendCondition()` for optimistic writes.
 - **AppendCondition** – Optimistic-concurrency expectation tied to one exact `StreamQuery` and the checkpoint that was loaded for it.
+
+## Event metadata
+
+The `metadata` array defaults to `[]`. For a direct append, supply metadata values
+in the representation that consumers should read after persistence. For example,
+pass a UUID as a canonical string. Events appended by event-sourced decisions
+receive metadata from the propagated message context. See
+[event publication](../message-handling/stateful.md#event-publication-and-commit).
 
 ## Domain identifier values
 

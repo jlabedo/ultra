@@ -125,9 +125,10 @@ final readonly class ProjectionDefinition
             }
 
             $parameters = $method->getParameters();
-            if (1 !== count($parameters)) {
+            $parameterCount = count($parameters);
+            if ($parameterCount < 1 || $parameterCount > 2) {
                 throw new \LogicException(sprintf(
-                    '#[ProjectionHandler] method %s::%s must have exactly one parameter.',
+                    '#[ProjectionHandler] method %s::%s must have one or two parameters.',
                     $reflection->getName(),
                     $method->getName(),
                 ));
@@ -140,6 +141,24 @@ final readonly class ProjectionDefinition
                     $reflection->getName(),
                     $method->getName(),
                 ));
+            }
+
+            $metadataParameter = $parameters[1] ?? null;
+            if (null !== $metadataParameter) {
+                $metadataType = $metadataParameter->getType();
+                if (
+                    !$metadataType instanceof \ReflectionNamedType
+                    || 'array' !== $metadataType->getName()
+                    || $metadataType->allowsNull()
+                    || $metadataParameter->isPassedByReference()
+                    || $metadataParameter->isVariadic()
+                ) {
+                    throw new \LogicException(sprintf(
+                        '#[ProjectionHandler] method %s::%s must declare its second parameter as a non-nullable array passed by value and without variadics.',
+                        $reflection->getName(),
+                        $method->getName(),
+                    ));
+                }
             }
 
             /** @var class-string $eventClass */
@@ -158,6 +177,7 @@ final readonly class ProjectionDefinition
                 eventType: $eventType,
                 eventClass: $eventClass,
                 method: $method->getName(),
+                receivesMetadata: null !== $metadataParameter,
             );
         }
 

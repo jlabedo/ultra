@@ -13,5 +13,6 @@ final readonly class ProjectionHandlerDefinition
         public string $eventType,
         public string $eventClass,
         public string $method,
+        public bool $receivesMetadata,
     ) {}
 }

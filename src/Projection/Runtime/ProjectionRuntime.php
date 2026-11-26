@@ -104,6 +104,13 @@ final class ProjectionRuntime
 
         $deserialized = $this->normalizer->fromScalar($event->payload, $handler->eventClass);
         $method = $handler->method;
+        if ($handler->receivesMetadata) {
+            // @mago-expect analysis:string-member-selector
+            $this->projection->{$method}($deserialized, $event->metadata);
+
+            return;
+        }
+
         // @mago-expect analysis:string-member-selector
         $this->projection->{$method}($deserialized);
     }

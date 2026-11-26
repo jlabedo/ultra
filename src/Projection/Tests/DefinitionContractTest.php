@@ -6,23 +6,29 @@ namespace Ultra\Projection\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Symfony\Component\Uid\Uuid;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionDefinition;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Tests\Support\BuiltinParameterProjection;
+use Ultra\Projection\Tests\Support\ByReferenceMetadataProjection;
 use Ultra\Projection\Tests\Support\DuplicateHandlerProjection;
 use Ultra\Projection\Tests\Support\InvalidFlushProjection;
 use Ultra\Projection\Tests\Support\InvalidInitializerProjection;
+use Ultra\Projection\Tests\Support\InvalidMetadataTypeProjection;
 use Ultra\Projection\Tests\Support\InvalidParameterCountProjection;
 use Ultra\Projection\Tests\Support\InvalidResetterProjection;
 use Ultra\Projection\Tests\Support\MissingEventAttributeProjection;
+use Ultra\Projection\Tests\Support\MissingEventParameterProjection;
+use Ultra\Projection\Tests\Support\NullableMetadataProjection;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Projection\Tests\Support\RuntimeProjection;
 use Ultra\Projection\Tests\Support\StudentSubscribed;
 use Ultra\Projection\Tests\Support\TestProjectionClass;
 use Ultra\Projection\Tests\Support\TestProjectionClassWithoutInitializer;
+use Ultra\Projection\Tests\Support\VariadicMetadataProjection;
 
 /** @internal */
 #[CoversNamespace('Ultra\\Projection')]
@@ -113,24 +119,40 @@ final class DefinitionContractTest extends ProjectionTestCase
         static::assertSame(['dimension' => 'courseId', 'from' => 0, 'to' => 127], $query->branches[0]->bucketRange);
     }
 
-    public function test_payloads_reach_the_matching_handler_and_unhandled_events_are_ignored(): void
+    public function test_payloads_and_declared_metadata_reach_the_matching_handlers(): void
     {
         $projection = new TestProjectionClass();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $metadata = [
+            'correlation_id' => 'trace-1',
+            'actor_id' => Uuid::fromString('26322cfe-332e-4efd-8e07-4f18c627846e'),
+            'labels' => ['first', 'second'],
+        ];
 
         $runtime->apply(
             new Event(
                 'student.subscribed',
                 ['studentId' => 'student-1', 'courseId' => 'course-1'],
                 ['courseId' => 'course-1'],
+                metadata: $metadata,
             ),
         );
         $runtime->apply(
-            new Event('course.created', ['courseId' => 'course-2', 'name' => 'Math'], ['courseId' => 'course-2']),
+            new Event(
+                'course.created',
+                ['courseId' => 'course-2', 'name' => 'Math'],
+                ['courseId' => 'course-2'],
+                metadata: $metadata,
+            ),
+        );
+        $runtime->apply(
+            new Event('course.created', ['courseId' => 'course-3', 'name' => 'Geology'], ['courseId' => 'course-3']),
         );
         $runtime->apply(new Event('unrelated.event', [], ['courseId' => 'course-1']));
 
-        static::assertSame(['subscribed:student-1', 'created:course-2'], $projection->handled);
+        static::assertSame(['subscribed:student-1', 'created:course-2', 'created:course-3'], $projection->handled);
+        static::assertSame(1, $projection->subscriptionArgumentCount);
+        static::assertSame([$metadata, []], $projection->courseMetadata);
     }
 
     public function test_an_explicit_definition_controls_runtime_identity(): void
@@ -197,10 +219,35 @@ final class DefinitionContractTest extends ProjectionTestCase
             \LogicException::class,
             'must type-hint a specific event class',
         ];
-        yield 'wrong handler arity' => [
+        yield 'too many handler parameters' => [
             InvalidParameterCountProjection::class,
             \LogicException::class,
-            'must have exactly one parameter',
+            'must have one or two parameters',
+        ];
+        yield 'missing handler event parameter' => [
+            MissingEventParameterProjection::class,
+            \LogicException::class,
+            'must have one or two parameters',
+        ];
+        yield 'metadata uses the wrong type' => [
+            InvalidMetadataTypeProjection::class,
+            \LogicException::class,
+            'must declare its second parameter as a non-nullable array passed by value',
+        ];
+        yield 'nullable metadata' => [
+            NullableMetadataProjection::class,
+            \LogicException::class,
+            'must declare its second parameter as a non-nullable array passed by value',
+        ];
+        yield 'metadata passed by reference' => [
+            ByReferenceMetadataProjection::class,
+            \LogicException::class,
+            'must declare its second parameter as a non-nullable array passed by value',
+        ];
+        yield 'variadic metadata' => [
+            VariadicMetadataProjection::class,
+            \LogicException::class,
+            'must declare its second parameter as a non-nullable array passed by value',
         ];
         yield 'duplicate event handler' => [
             DuplicateHandlerProjection::class,

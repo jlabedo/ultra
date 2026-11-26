@@ -17,7 +17,7 @@ Source code and documentation follow functional contexts. Use the task table to 
 | State mapping, collections or optimistic row expectations | [Stored-state contracts](stored-state/README.md), then [mapping](stored-state/mapping.md) | [StoredState](../src/StoredState) | StateStore, StateStore_Bundle, MappedTable |
 | Set-based invariants, query observations or cooperative locking | [Query guards](stored-state/query-guards.md) | [StoredState](../src/StoredState) | MappedTable |
 | Manual SQL expectations or explicit guards | [Manual queries](stored-state/manual-queries.md) | [StoredState](../src/StoredState) | StateStore |
-| Projection ordering, claims, checkpoints or scaling | [Projections](projections/README.md) | [Projection](../src/Projection) | Projection, Projection_Postgres |
+| Projection handlers, ordering, claims, checkpoints or scaling | [Projections](projections/README.md) | [Projection](../src/Projection) | Projection, Projection_Postgres |
 | Normalization, custom types or generated normalizers | [Mapping](mapping/README.md) | [Mapper](../src/Mapper) | Mapper, Mapper_Compiler, Mapper_Bundle |
 | Schema comparison, renames or migration generation | [Schema](schema/README.md) | [Schema](../src/Schema) | Schema |
 | Materialized query refresh, scoped invalidation or publication conflicts | [Materialized queries](coordination/refresh.md) | [Coordination](../src/Coordination) | Coordination, Coordination_Postgres |

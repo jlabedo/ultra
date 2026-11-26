@@ -56,6 +56,11 @@ final class TestProjectionClass
     /** @var list<string> */
     public array $handled = [];
 
+    /** @var list<array<array-key, mixed>> */
+    public array $courseMetadata = [];
+
+    public int $subscriptionArgumentCount = 0;
+
     #[ProjectionInitializer]
     public function initialize(): void
     {
@@ -78,12 +83,15 @@ final class TestProjectionClass
     public function onStudentSubscribed(StudentSubscribed $event): void
     {
         $this->handled[] = 'subscribed:' . $event->studentId;
+        $this->subscriptionArgumentCount = func_num_args();
     }
 
+    /** @param array<array-key, mixed> $eventMetadata */
     #[ProjectionHandler]
-    public function onCourseCreated(CourseCreatedEvent $event): void
+    public function onCourseCreated(CourseCreatedEvent $event, array $eventMetadata): void
     {
         $this->handled[] = 'created:' . $event->courseId;
+        $this->courseMetadata[] = $eventMetadata;
     }
 }
 
@@ -120,7 +128,42 @@ final class BuiltinParameterProjection
 final class InvalidParameterCountProjection
 {
     #[ProjectionHandler]
+    public function onInvalid(StudentSubscribed $event, array $metadata, CourseCreatedEvent $other): void {}
+}
+
+#[Projection(name: 'missing_event_parameter_projection', partitionBy: 'courseId')]
+final class MissingEventParameterProjection
+{
+    #[ProjectionHandler]
+    public function onInvalid(): void {}
+}
+
+#[Projection(name: 'invalid_metadata_type_projection', partitionBy: 'courseId')]
+final class InvalidMetadataTypeProjection
+{
+    #[ProjectionHandler]
     public function onInvalid(StudentSubscribed $event, CourseCreatedEvent $other): void {}
+}
+
+#[Projection(name: 'nullable_metadata_projection', partitionBy: 'courseId')]
+final class NullableMetadataProjection
+{
+    #[ProjectionHandler]
+    public function onInvalid(StudentSubscribed $event, ?array $metadata): void {}
+}
+
+#[Projection(name: 'by_reference_metadata_projection', partitionBy: 'courseId')]
+final class ByReferenceMetadataProjection
+{
+    #[ProjectionHandler]
+    public function onInvalid(StudentSubscribed $event, array &$metadata): void {}
+}
+
+#[Projection(name: 'variadic_metadata_projection', partitionBy: 'courseId')]
+final class VariadicMetadataProjection
+{
+    #[ProjectionHandler]
+    public function onInvalid(StudentSubscribed $event, array ...$metadata): void {}
 }
 
 #[Projection(name: 'duplicate_handler_projection', partitionBy: 'courseId')]

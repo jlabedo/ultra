@@ -101,6 +101,7 @@ final class ProjectionCompilerPass implements CompilerPassInterface
                 $handler->eventType,
                 $handler->eventClass,
                 $handler->method,
+                $handler->receivesMetadata,
             ]);
         }
 

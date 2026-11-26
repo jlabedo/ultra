@@ -47,13 +47,15 @@ final class SynchronousExecutionTest extends ProjectionTestCase
     ): void {
         $f = $this->liveProjection($backend, $projectionBuffer);
         $store = $applicationBuffer ? new EventStoreUnitOfWork($f->store) : $f->store;
-        $store->append([self::courseCreatedEvent('c', 'one'), self::courseCreatedEvent('c', 'two')]);
+        $event = self::courseCreatedEvent('c', 'one', ['actor_id' => 'actor-1']);
+        $store->append([$event, self::courseCreatedEvent('c', 'two')]);
         if ($applicationBuffer) {
             static::assertSame([], $f->projection->names());
             $f->fixture->transactions->transactional($store->flush(...));
             $store->clear();
         }
         static::assertSame(['one', 'two'], $f->projection->names());
+        static::assertSame([$event->metadata, []], $f->projection->receivedMetadata);
         static::assertCount(2, $f->fixture->store->load(StreamQuery::all())->events);
         static::assertSame([], $f->fixture->activity->affected());
         if ($projectionBuffer) {
