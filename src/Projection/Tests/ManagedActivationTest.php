@@ -7,14 +7,15 @@ namespace Ultra\Projection\Tests;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\EventStore\BucketHasher;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\StreamQuery;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionMode;
 use Ultra\Projection\ProjectionPhase;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\ProjectionState;
 use Ultra\Projection\Tests\Support\AsyncModeProjection;
-use Ultra\Projection\Tests\Support\ManagedModeProjection;
 use Ultra\Projection\Tests\Support\ProjectionModeFixture;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 
@@ -143,18 +144,37 @@ final class ManagedActivationTest extends ProjectionTestCase
         static::assertFalse($f->runner->runClaimedOnce($f->runtime, 'mode_projection', 0, 'queued')->claimedSegment);
     }
 
-    public function test_a_writer_changing_a_registered_managed_projection_to_async_is_rejected(): void
+    public function test_a_writer_uses_its_local_async_mode_when_recording_activity(): void
     {
         $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous);
         $f->rebuilder->activate($f->runtime);
         $f->catalog->add(new ProjectionRuntime(new AsyncModeProjection(), new UltraNormalizer()));
+        $f->store->append([self::courseCreatedEvent('c', 'written')]);
+        static::assertCount(1, $f->fixture->store->load(StreamQuery::all())->events);
+        static::assertSame([], $f->projection->names());
+        static::assertNotEmpty($f->fixture->activity->affected());
+    }
+
+    public function test_writer_checks_a_stored_fingerprint_only_when_its_projection_handles_the_event(): void
+    {
+        $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous);
+        $id = $f->runtime->projectionId();
+        $f->fixture->transactions->transactional(function () use ($f, $id): void {
+            $f->states->lockExclusive($id);
+            $f->states->save(new ProjectionState($id, 1, ProjectionPhase::Live, 'previous-definition'));
+        });
+
+        $f->store->append([new Event('unrelated', [], ['courseId' => 'c'])]);
         try {
-            $f->store->append([self::courseCreatedEvent('c', 'bad')]);
+            $f->store->append([self::courseCreatedEvent('c', 'incompatible')]);
             static::fail('Expected incompatible writer rejection.');
         } catch (\LogicException $e) {
             static::assertStringContainsString('incompatible managed projection', $e->getMessage());
         }
-        static::assertSame([], $f->fixture->store->load(StreamQuery::all())->events);
+        $events = $f->fixture->store->load(StreamQuery::all())->events;
+        static::assertCount(1, $events);
+        static::assertSame('unrelated', $events[0]->eventType);
+        static::assertSame([], $f->projection->names());
     }
 
     public function test_one_append_routes_mixed_modes_and_the_coordinator_discards_obsolete_live_activity(): void

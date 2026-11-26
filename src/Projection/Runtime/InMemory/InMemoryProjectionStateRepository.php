@@ -26,6 +26,19 @@ final class InMemoryProjectionStateRepository implements ProjectionStateReposito
         return $this->states[$projectionId] ?? null;
     }
 
+    public function findMany(array $projectionIds): array
+    {
+        $found = [];
+        foreach ($projectionIds as $id) {
+            if (!isset($this->states[$id])) {
+                continue;
+            }
+            $found[$id] = $this->states[$id];
+        }
+
+        return $found;
+    }
+
     public function all(): array
     {
         return array_values($this->states);

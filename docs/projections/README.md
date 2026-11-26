@@ -204,13 +204,18 @@ When wiring storage by hand in Symfony, register `PostgresProjectionSchema::defi
 the four tables to a manually composed schema. Its table definitions are shared with the PostgreSQL
 creation helpers.
 
-Appends and worker application transactions take a shared registration barrier and checks the managed registry.
-First registration takes its exclusive counterpart so older appends finish before
-registration commits. Writers missing a registered managed projection, changing its
-mode, or changing its partition/handled event types are rejected. Workers recheck their
-definition inside application transactions, including after asynchronous prefetch, so
-obsolete asynchronous workers cannot replay or reset a managed projection. This check requires
-all writers to use `ProjectingEventStore`; direct writes to its underlying store bypass it.
+Every nonempty append holds a shared registration barrier. First registration takes its
+exclusive counterpart so earlier appends finish before registration commits. For each
+locally declared synchronous projection handling the batch, the writer acquires a shared
+projection barrier in ID order, then reads all their states together. It checks the
+fingerprint of each registered match and applies the live matches in the same order.
+
+Before activating a projection, deploy compatible definitions to every writer and drain
+older writers. Keep those definitions aligned while the projection is live. A writer
+that omits the projection, declares it asynchronous or no longer handles the event can
+commit the event without updating the read model. Workers recheck their definition inside
+application transactions, including after asynchronous prefetch, so obsolete asynchronous
+workers cannot replay or reset a managed projection.
 The fingerprint does not detect handler-body changes: coordinate code deployments and
 explicitly rebuild when semantics change. Managed definitions are not silently unregistered.
 

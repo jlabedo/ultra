@@ -20,6 +20,12 @@ interface ProjectionStateRepository
 
     public function find(string $projectionId): ?ProjectionState;
 
+    /**
+     * @param list<string> $projectionIds
+     * @return array<array-key, ProjectionState> Registered states keyed by projection ID.
+     */
+    public function findMany(array $projectionIds): array;
+
     /** @return list<ProjectionState> */
     public function all(): array;
 

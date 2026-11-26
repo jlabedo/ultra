@@ -43,7 +43,8 @@ final readonly class ProjectingEventStore implements EventStore
         }
         $this->transactions->transactional(function () use ($events, $appendConditions): void {
             $this->states->lockRegistrationShared();
-            $live = [];
+            $candidates = [];
+            $projectionIds = [];
             foreach ($this->catalog->synchronousRuntimes() as $runtime) {
                 $definition = $runtime->definition();
                 $matching = array_values(array_filter($events, $definition->handles(...)));
@@ -59,11 +60,25 @@ final readonly class ProjectingEventStore implements EventStore
                 }
                 // Lock even an uninitialized projection: registration must not race this append.
                 $this->states->lockShared($definition->projectionId);
-                if (ProjectionPhase::Live === $this->states->find($definition->projectionId)?->phase) {
+                $candidates[] = [$runtime, $matching];
+                $projectionIds[] = $definition->projectionId;
+            }
+
+            $live = [];
+            $states = $this->states->findMany($projectionIds);
+            foreach ($candidates as [$runtime, $matching]) {
+                $id = $runtime->projectionId();
+                $state = $states[$id] ?? null;
+                if (null === $state) {
+                    continue;
+                }
+                if ($runtime->definition()->fingerprint !== $state->fingerprint) {
+                    throw new \LogicException('Writer has an incompatible managed projection "' . $id . '".');
+                }
+                if (ProjectionPhase::Live === $state->phase) {
                     $live[] = [$runtime, $matching];
                 }
             }
-            $this->assertCompatibleWriter();
             $this->inner->append($events, ...$appendConditions);
             $applied = [];
             foreach ($live as [$runtime, $matching]) {
@@ -72,24 +87,5 @@ final readonly class ProjectingEventStore implements EventStore
             }
             $this->activityRecorder->record($events, $applied);
         });
-    }
-
-    private function assertCompatibleWriter(): void
-    {
-        foreach ($this->states->all() as $state) {
-            try {
-                $definition = $this->catalog->definition($state->projectionId);
-            } catch (\InvalidArgumentException $e) {
-                throw new \LogicException(
-                    'Writer is missing managed projection "' . $state->projectionId . '".',
-                    previous: $e,
-                );
-            }
-            if (ProjectionMode::Synchronous !== $definition->mode || $definition->fingerprint !== $state->fingerprint) {
-                throw new \LogicException(
-                    'Writer has an incompatible managed projection "' . $state->projectionId . '".',
-                );
-            }
-        }
     }
 }

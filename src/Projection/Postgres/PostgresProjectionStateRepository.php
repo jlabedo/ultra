@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Projection_Postgres;
 
+use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
 use Ultra\Projection\ProjectionPhase;
 use Ultra\Projection\ProjectionState;
@@ -46,6 +47,27 @@ final readonly class PostgresProjectionStateRepository implements ProjectionStat
         );
 
         return false === $row ? null : $this->hydrate($row);
+    }
+
+    public function findMany(array $projectionIds): array
+    {
+        if ([] === $projectionIds) {
+            return [];
+        }
+        $rows = $this->connection->fetchAllAssociative(
+            'SELECT projection_id, generation, phase, fingerprint FROM '
+            . $this->tablePrefix
+            . 'states WHERE projection_id IN (?)',
+            [$projectionIds],
+            [ArrayParameterType::STRING],
+        );
+        $states = [];
+        foreach ($rows as $row) {
+            $state = $this->hydrate($row);
+            $states[$state->projectionId] = $state;
+        }
+
+        return $states;
     }
 
     public function all(): array

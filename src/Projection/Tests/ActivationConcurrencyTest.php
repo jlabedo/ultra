@@ -170,7 +170,7 @@ final class ActivationConcurrencyTest extends PostgresProjectionTestCase
         }
     }
 
-    public function test_registration_waits_for_an_older_writer_and_rejects_its_later_appends(): void
+    public function test_registration_waits_for_an_older_writer_and_appends_use_the_local_catalog(): void
     {
         $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous, true);
         $peer = PostgresConnectionSupport::sharedConnection($this->postgresDsn(), 'projection-old-writer');
@@ -203,14 +203,9 @@ final class ActivationConcurrencyTest extends PostgresProjectionTestCase
             $peer->commit();
             $connection->executeStatement('RESET lock_timeout');
             static::assertSame(1, $f->rebuilder->activate($f->runtime));
-            try {
-                $oldStore->append([self::courseCreatedEvent('c', 'rejected')]);
-                static::fail('An older writer must not silently skip the projection.');
-            } catch (\LogicException $e) {
-                static::assertStringContainsString('missing managed projection', $e->getMessage());
-            }
+            $oldStore->append([self::courseCreatedEvent('c', 'after-registration')]);
             static::assertSame(['before-registration'], $f->projection->names());
-            static::assertCount(1, $f->fixture->store->load(\Ultra\EventStore\StreamQuery::all())->events);
+            static::assertCount(2, $f->fixture->store->load(\Ultra\EventStore\StreamQuery::all())->events);
         } finally {
             PostgresConnectionSupport::resetSharedConnection($connection);
             PostgresConnectionSupport::resetSharedConnection($peer);
