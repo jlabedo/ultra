@@ -5,12 +5,14 @@ declare(strict_types=1);
 namespace Ultra\MappedTable\Codec;
 
 use Ultra\MappedTable\ColumnCodec;
-use Ultra\Schema\ColumnType;
-use Ultra\Schema\SqlType;
 
-/** @internal */
 final class TextCodec extends ColumnCodec
 {
+    public function __construct(
+        public readonly ?int $maxLength = null,
+        public readonly bool $stringableKeys = true,
+    ) {}
+
     public static function representation(): string
     {
         return 'string';
@@ -21,12 +23,12 @@ final class TextCodec extends ColumnCodec
         return true;
     }
 
-    public function normalize(SqlType $type, mixed $value): string
+    public function normalize(mixed $value): string
     {
         if (!is_string($value) || str_contains($value, "\0") || 1 !== preg_match('//u', $value)) {
             throw new \InvalidArgumentException('Mapped text must be a valid UTF-8 string without NUL.');
         }
-        $limit = $type->length;
+        $limit = $this->maxLength;
         if (null !== $limit && strlen($value) > $limit) {
             $length = preg_match_all('/./us', $value);
             if (false === $length || $length > $limit) {
@@ -37,11 +39,8 @@ final class TextCodec extends ColumnCodec
         return $value;
     }
 
-    public function key(SqlType $type, mixed $value): string
+    public function key(mixed $value): string
     {
-        return $this->normalize(
-            $type,
-            ColumnType::Text === $type->family && $value instanceof \Stringable ? (string) $value : $value,
-        );
+        return $this->normalize($this->stringableKeys && $value instanceof \Stringable ? (string) $value : $value);
     }
 }

@@ -24,6 +24,7 @@ use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Storage\PostgresRowSetSql;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
@@ -101,7 +102,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
                 static::assertInstanceOf(Definition::class, $sql);
                 static::assertSame(PostgresRowSetSql::class, $sql->getClass());
                 static::assertSame(' WHERE "owner" = ?', $sql->getArgument(7));
-                static::assertSame('?::text[]', $sql->getArgument(1)['aliases']['parameter']);
+                static::assertSame('"aliases" = ?', $sql->getArgument(1)['aliases']['assign']);
                 static::assertSame(2, count($lineService->getArguments()));
             }
             $coordination = $container->findDefinition('test.coordination');
@@ -346,11 +347,21 @@ final class DefinedRowSetsTest extends RowSetTestCase
         $keyOnlyAdapter = $fixture->storage instanceof Connection
             ? new PostgresMappedTableAdapter($fixture->storage)
             : new InMemoryMappedTableAdapter($fixture->storage);
-        $keys = $keyOnlyAdapter->compileRowSet($schema, $table, columns: [], ownerColumns: ['owner'])();
+        $keys = $keyOnlyAdapter->compileRowSet(SchemaRowSet::fromTable(
+            $schema,
+            $table,
+            columns: [],
+            ownerColumns: ['owner'],
+        ))();
         static::assertSame([], $keys->rowsForOwner($owner)[0]->columns);
         static::assertSame($key->values, $keys->withKey($key)->get());
 
-        $rows = $fixture->adapter->compileRowSet($schema, $table, columns: ['note'], ownerColumns: ['owner'])();
+        $rows = $fixture->adapter->compileRowSet(SchemaRowSet::fromTable(
+            $schema,
+            $table,
+            columns: ['note'],
+            ownerColumns: ['owner'],
+        ))();
         static::assertSame(['note' => null], $rows->rowsForOwner($owner)[0]->columns);
         $rows->withKey($key)->expectColumnValue('note', null);
         $fixture->flush($rows);

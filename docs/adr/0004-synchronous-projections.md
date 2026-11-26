@@ -17,9 +17,9 @@ The append integration routes synchronous event types before opening a transacti
 
 Handler execution follows append validation and stays under the activation barrier. Running handlers before the transaction could shorten it, but would require validating that the projection is still live in the same generation and that its prepared writes still satisfy any assumptions made by the handlers.
 
-`ProjectionBatchExecutor` provides common batch application, the optional projection flush hook, and flushing of projection-owned units of work. Projections may instead write directly through the shared transactional connection. Projection persistence participants must not also be registered in the parent composite unit of work; they are exclusively owned and cleared by projection execution. There is no global prepare phase, stabilization loop, specialized application runner or dependency on parent participant order. Projection handlers do not append new domain events.
+`ProjectionRuntime::applyBatch()` provides common batch application, the optional projection flush hook, and flushing of projection-owned units of work. Projections may instead write directly through the shared transactional connection. Projection persistence participants must not also be registered in the parent composite unit of work; they are exclusively owned and cleared by projection execution. There is no global prepare phase, stabilization loop, specialized application runner or dependency on parent participant order. Projection handlers do not append new domain events.
 
-Symfony compiles projection-owned mapped row sets into a private persistence participant. The row-set definitions and adapter configuration use the ordinary MappedTable assembly. Exclusive buffer ownership lets append, replay and reset share the projection batch lifecycle.
+The application can supply a named MappedTable coordinator as an ordinary persistence participant. Its repositories receive dedicated buffers through constructor injection. This keeps storage selection in the persistence assembly and lets append, replay and reset share the same projection services. Each runtime uses its participants for one operation at a time.
 
 ## Reconstruction and activation
 

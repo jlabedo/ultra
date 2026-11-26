@@ -22,7 +22,6 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
-use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Mapper\UltraNormalizer;
@@ -80,7 +79,11 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
                 new PostgresProjectionImplementation($connection, $fixture->prefix),
                 extensionsBefore: [
                     new SchemaExtension(),
-                    new MappedTableExtension(rowSets: ProjectionTablesSchema::rowSets()),
+                    new MappedTableExtension(rowSets: [ProjectionTablesSchema::APPLICATION]),
+                    new MappedTableExtension(
+                        rowSets: ProjectionTablesSchema::rowSets(),
+                        unitOfWork: 'courses.persistence',
+                    ),
                 ],
             )
             ->withExtension(new UnitOfWorkExtension())
@@ -115,7 +118,10 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
 
         $runner->run(static fn() => $store->append([self::courseCreatedEvent('b', 'buffered')]));
         $directStore = $container->get('test.direct_store');
+        $applicationRows->withKey('pending')->insert();
         $directStore->append([self::courseCreatedEvent('c', 'direct')]);
+        static::assertTrue($applicationRows->hasPendingChanges());
+        static::assertSame(['app'], $connection->fetchFirstColumn('SELECT id FROM mapped_projection_application'));
         static::assertSame(['history', 'buffered', 'direct'], $names());
 
         try {
@@ -128,7 +134,13 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
         static::assertCount(3, $fixture->store->load(StreamQuery::all())->events);
         static::assertSame(['history', 'buffered', 'direct'], $names());
 
+        static::assertTrue($applicationRows->hasPendingChanges());
         $directStore->append([self::courseCreatedEvent('d', 'retry')]);
+        $runner->run(static fn() => null);
+        static::assertSame(
+            ['app', 'pending'],
+            $connection->fetchFirstColumn('SELECT id FROM mapped_projection_application ORDER BY id'),
+        );
         $container->projectionRunner()->deleteProjection($runtime);
         static::assertSame([], $names());
         static::assertSame(0, (int) $connection->fetchOne('SELECT count(*) FROM mapped_projection_details'));
@@ -138,81 +150,23 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
         static::assertFalse($projectionRows->hasPendingChanges());
     }
 
-    /** @return iterable<string, array{list<class-string>, ?MappedTableExtension, string}> */
-    public static function invalidOwnership(): iterable
-    {
-        yield 'missing extension' => [
-            [CompiledMappedProjection::class],
-            null,
-            'require MappedTableExtension',
-        ];
-        yield 'missing definition' => [
-            [CompiledMappedProjection::class],
-            new MappedTableExtension(),
-            'requires a registered mapped row set definition',
-        ];
-        yield 'two projections claiming one row set' => [
-            [
-                CompiledMappedProjection::class,
-                ConflictingMappedProjection::class,
-                ProjectionTablesSchema::class,
-            ],
-            new MappedTableExtension(rowSets: ProjectionTablesSchema::rowSets()),
-            'must have a single owner',
-        ];
-        yield 'owner dependency split between coordinators' => [
-            [ConflictingMappedProjection::class, ProjectionTablesSchema::class],
-            new MappedTableExtension(rowSets: ProjectionTablesSchema::rowSets()),
-            'must use the same coordinator',
-        ];
-        yield 'guard split between coordinators' => [
-            [
-                CompiledMappedProjection::class,
-                ProjectionTablesSchema::class,
-            ],
-            new MappedTableExtension([
-                new QueryGuardDefinition('split', [
-                    new QueryGuardDependency(ProjectionTablesSchema::COURSES, 'id'),
-                    new QueryGuardDependency(ProjectionTablesSchema::APPLICATION, 'id'),
-                ]),
-            ], rowSets: ProjectionTablesSchema::rowSets()),
-            'must watch row sets in the same coordinator',
-        ];
-    }
-
-    /**
-     * @param list<class-string> $classes
-     */
-    #[DataProvider('invalidOwnership')]
-    public function test_invalid_mapped_table_ownership_is_rejected_during_compilation(
-        array $classes,
-        ?MappedTableExtension $mappedTable,
-        string $message,
-    ): void {
-        $builder = $this
-            ->projectionUltraLight()
-            ->withExtension(new SchemaExtension())
-            ->withClass(...$classes)
-            ->withService(new InMemoryMappedTableAdapter(new InMemoryRowDatabase()), MappedTableAdapter::class);
-        if (null !== $mappedTable) {
-            $builder = $builder->withExtension($mappedTable);
-        }
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage($message);
-        $builder->boot();
-    }
-
-    public function test_direct_injection_requires_the_projection_to_declare_the_row_set(): void
+    public function test_two_projections_cannot_share_the_same_participant(): void
     {
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('and must declare it in rowSets');
+        $this->expectExceptionMessage('Projection persistence participants must have a single owner.');
         $this
             ->projectionUltraLight()
             ->withExtension(new SchemaExtension())
-            ->withExtension(new MappedTableExtension(rowSets: [ProjectionTablesSchema::COURSES]))
+            ->withExtension(new MappedTableExtension(
+                rowSets: ProjectionTablesSchema::rowSets(),
+                unitOfWork: 'courses.persistence',
+            ))
             ->withService(new InMemoryMappedTableAdapter(new InMemoryRowDatabase()), MappedTableAdapter::class)
-            ->withClass(UndeclaredMappedProjection::class, ProjectionTablesSchema::class)
-            ->withAlias('test.course_table_alias', ProjectionTablesSchema::COURSES)
+            ->withClass(
+                CompiledMappedProjection::class,
+                ConflictingMappedProjection::class,
+                ProjectionTablesSchema::class,
+            )
             ->boot();
     }
 
@@ -244,7 +198,9 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
         $container = new ContainerBuilder();
         new ProjectionExtension()->build($container);
         new SchemaExtension()->build($container);
-        new MappedTableExtension(rowSets: [ProjectionTablesSchema::COURSES])->build($container);
+        new MappedTableExtension(rowSets: [ProjectionTablesSchema::COURSES], unitOfWork: 'courses.persistence')->build(
+            $container,
+        );
         new UnitOfWorkExtension()->build($container);
         $container->register(UltraNormalizer::class);
         $container->register('test.projection_connection', Connection::class)->setSynthetic(true)->setPublic(true);
@@ -283,7 +239,7 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
     name: 'compiled_mapped_projection',
     partitionBy: 'courseId',
     mode: ProjectionMode::Synchronous,
-    rowSets: [ProjectionTablesSchema::DETAILS, ProjectionTablesSchema::COURSES],
+    unitOfWork: ['courses.persistence'],
 )]
 final readonly class CompiledMappedProjection
 {
@@ -327,21 +283,8 @@ final readonly class CompiledMappedProjection
     }
 }
 
-#[Projection(
-    name: 'conflicting_mapped_projection',
-    partitionBy: 'courseId',
-    rowSets: [ProjectionTablesSchema::COURSES],
-)]
+#[Projection(name: 'conflicting_mapped_projection', partitionBy: 'courseId', unitOfWork: ['courses.persistence'])]
 final class ConflictingMappedProjection {}
-
-#[Projection(name: 'undeclared_mapped_projection', partitionBy: 'courseId')]
-final readonly class UndeclaredMappedProjection
-{
-    public function __construct(
-        #[Autowire(service: 'test.course_table_alias')]
-        public MappedRowSet $courses,
-    ) {}
-}
 
 final class ProjectionTablesSchema
 {
@@ -386,7 +329,6 @@ final class ProjectionTablesSchema
         return [
             self::COURSES,
             self::DETAILS => ['owner' => 'owner'],
-            self::APPLICATION,
         ];
     }
 }

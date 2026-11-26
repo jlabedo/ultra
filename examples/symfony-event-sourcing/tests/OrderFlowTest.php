@@ -46,11 +46,13 @@ final class OrderFlowTest extends KernelTestCase
 
     public function test_commands_share_pending_history_and_projection_resumes_and_rebuilds(): void
     {
-        self::getContainer()->get(UnitOfWorkRunner::class)->run(function (): void {
-            $this->mediator->send(new PlaceOrder('order-1', 'Ada'));
-            $this->mediator->send(new ShipOrder('order-1'));
-            self::assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM event_store_events'));
-        });
+        self::getContainer()
+            ->get(UnitOfWorkRunner::class)
+            ->run(function (): void {
+                $this->mediator->send(new PlaceOrder('order-1', 'Ada'));
+                $this->mediator->send(new ShipOrder('order-1'));
+                self::assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM event_store_events'));
+            });
         self::assertSame(2, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM event_store_events'));
         self::assertSame([], $this->rows());
 
@@ -94,23 +96,30 @@ final class OrderFlowTest extends KernelTestCase
     public function test_failed_work_discards_events_and_activity_and_runner_can_be_reused(): void
     {
         try {
-            self::getContainer()->get(UnitOfWorkRunner::class)->run(function (): void {
-                $this->mediator->send(new PlaceOrder('order-1', 'Ada'));
-                $this->mediator->send(new PlaceOrder('order-1', 'Duplicate'));
-            });
+            self::getContainer()
+                ->get(UnitOfWorkRunner::class)
+                ->run(function (): void {
+                    $this->mediator->send(new PlaceOrder('order-1', 'Ada'));
+                    $this->mediator->send(new PlaceOrder('order-1', 'Duplicate'));
+                });
             self::fail('The duplicate order must fail.');
         } catch (\DomainException) {
             self::assertSame([], self::getContainer()->get(EventStore::class)->load(StreamQuery::all())->events);
             self::assertSame(0, (int) $this->connection->fetchOne('SELECT COUNT(*) FROM projection_dirty_keys'));
         }
         $this->mediator->send(new PlaceOrder('order-1', 'Ada'));
-        self::assertSame(1, self::getContainer()->get(ProjectionCoordinator::class)->run('test-worker')->processedEvents);
+        self::assertSame(
+            1,
+            self::getContainer()->get(ProjectionCoordinator::class)->run('test-worker')->processedEvents,
+        );
         self::assertCount(1, $this->rows());
     }
 
     public function test_activity_failure_rolls_back_the_event_append(): void
     {
-        $this->connection->executeStatement('ALTER TABLE projection_dirty_keys ADD CONSTRAINT reject_activity CHECK (counter < 0)');
+        $this->connection->executeStatement(
+            'ALTER TABLE projection_dirty_keys ADD CONSTRAINT reject_activity CHECK (counter < 0)',
+        );
         try {
             $this->mediator->send(new PlaceOrder('order-1', 'Ada'));
             self::fail('The activity write must fail.');
@@ -120,7 +129,10 @@ final class OrderFlowTest extends KernelTestCase
         }
         $this->connection->executeStatement('ALTER TABLE projection_dirty_keys DROP CONSTRAINT reject_activity');
         $this->mediator->send(new PlaceOrder('order-1', 'Ada'));
-        self::assertSame(1, self::getContainer()->get(ProjectionCoordinator::class)->run('test-worker')->processedEvents);
+        self::assertSame(
+            1,
+            self::getContainer()->get(ProjectionCoordinator::class)->run('test-worker')->processedEvents,
+        );
     }
 
     public function test_checkpoint_failure_rolls_back_flushed_rows_and_same_worker_can_retry(): void
@@ -139,7 +151,9 @@ final class OrderFlowTest extends KernelTestCase
                 RETURN NEW;
             END $$
             SQL);
-        $this->connection->executeStatement('CREATE TRIGGER checkpoint_failure BEFORE UPDATE ON projection_segments FOR EACH ROW EXECUTE FUNCTION reject_checkpoint()');
+        $this->connection->executeStatement(
+            'CREATE TRIGGER checkpoint_failure BEFORE UPDATE ON projection_segments FOR EACH ROW EXECUTE FUNCTION reject_checkpoint()',
+        );
         try {
             $runner->backfillClaimedOnce($runtime, 'order_summary', 0, 'test-worker');
             self::fail('The checkpoint write must fail.');

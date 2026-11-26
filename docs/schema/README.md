@@ -115,7 +115,7 @@ language and body. The generator creates new functions and replaces changed defi
 `CREATE OR REPLACE FUNCTION` when their signature is unchanged. Signature changes and removals
 require an explicit migration.
 
-Use `ColumnType` for built-in types, SQL strings for PostgreSQL declarations, and `SqlType` helpers
+Use `Ultra\Schema\ColumnType` for built-in types, SQL strings for PostgreSQL declarations, and `Ultra\Schema\SqlType` helpers
 for configurable types.
 
 ```php

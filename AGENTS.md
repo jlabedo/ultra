@@ -13,7 +13,6 @@ Contexts live in `src/<Context>/`, with Composer packages in role directories an
 - Backward compatibility is not required.
 - Keep changes coherent with package responsibilities. Nearby cleanup is welcome when it supports the change.
 - Follow the surrounding style. Use docblocks for generics, shapes and intent that PHP types cannot express.
-- Leave formatting-only changes to CI. Use `bin/mago format --check` for read-only formatting verification.
 
 ## Commit messages
 

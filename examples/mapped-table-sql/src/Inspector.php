@@ -7,6 +7,7 @@ namespace MappedTableSqlExample;
 use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
@@ -41,7 +42,7 @@ final readonly class Inspector
                 primaryKey: ['id'],
             ),
         ]);
-        $rows = $adapter->compileRowSet($schema, $tableName)();
+        $rows = $adapter->compileRowSet(SchemaRowSet::fromTable($schema, $tableName))();
         $runner = new TransactionalUnitOfWorkRunner(new MappedTableUnitOfWork([
             $tableName => $rows,
         ], $adapter), new DbalTransactionManager($this->connection));

@@ -84,7 +84,7 @@ final class QueryGuardWork
     public function lockRow(string $table, MappedKey $key): void
     {
         $this->assertCollecting();
-        $this->rowLocks[$table][$key->fingerprint()] = true;
+        $this->rowLocks[$table][$key->lockIdentifier()] = true;
     }
 
     /** @param callable(): mixed $query */

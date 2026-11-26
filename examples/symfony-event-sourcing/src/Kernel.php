@@ -4,21 +4,12 @@ declare(strict_types=1);
 
 namespace App;
 
-use App\Projection\OrderSummarySchema;
 use Symfony\Bundle\FrameworkBundle\Kernel\MicroKernelTrait;
-use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\HttpKernel\Kernel as BaseKernel;
-use Ultra\MappedTable\Symfony\MappedTableExtension;
 
 final class Kernel extends BaseKernel
 {
     use MicroKernelTrait;
-
-    protected function build(ContainerBuilder $container): void
-    {
-        parent::build($container);
-        new MappedTableExtension(rowSets: OrderSummarySchema::rowSets())->build($container);
-    }
 
     public function getProjectDir(): string
     {

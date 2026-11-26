@@ -17,6 +17,7 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Tests\Support\RowSetFixture;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\Schema\ColumnDefinition;
@@ -238,7 +239,7 @@ final class FlushCoordinationTest extends RowSetTestCase
     {
         $parent = $this->fixture('memory', ['owner', 'id']);
         $child = $this->fixture('memory', ['owner', 'id'], storage: $parent->storage, adapter: $parent->adapter);
-        $text = new MappedColumn(ColumnType::Text->sqlType(), false, new TextCodec());
+        $text = new MappedColumn(false, new TextCodec());
         $columns = ['owner' => $text, 'id' => $text];
         $orders = $parent->adapter->createDefined(new MappedRowSetMapping(
             $parent->tableName,
@@ -287,8 +288,8 @@ final class FlushCoordinationTest extends RowSetTestCase
     private function coordinate(RowSetFixture $parent, RowSetFixture $child): array
     {
         $schema = FlushSchema::definition($parent->tableName, $child->tableName);
-        $orders = $parent->adapter->compileRowSet($schema, FlushSchema::ORDERS)();
-        $lines = $child->adapter->compileRowSet($schema, FlushSchema::LINES, owner: 'owner')();
+        $orders = $parent->adapter->compileRowSet(SchemaRowSet::fromTable($schema, FlushSchema::ORDERS))();
+        $lines = $child->adapter->compileRowSet(SchemaRowSet::fromTable($schema, FlushSchema::LINES, owner: 'owner'))();
 
         $flush = new MappedTableUnitOfWork([
             FlushSchema::LINES => $lines,

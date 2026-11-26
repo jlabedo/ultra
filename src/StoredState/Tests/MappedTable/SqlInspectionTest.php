@@ -19,6 +19,7 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
@@ -121,7 +122,11 @@ final class SqlInspectionTest extends TestCase
                 primaryKey: ['owner_id', 'id'],
             ),
         ]);
-        $rows = $adapter->compileRowSet($schema, 'owner_read_rows', ownerColumns: ['owner_id'])();
+        $rows = $adapter->compileRowSet(SchemaRowSet::fromTable(
+            $schema,
+            'owner_read_rows',
+            ownerColumns: ['owner_id'],
+        ))();
         $this->trace->clear();
 
         $rows->rowsForOwner(['owner_id' => 'order'], []);
@@ -149,7 +154,7 @@ final class SqlInspectionTest extends TestCase
                 primaryKey: ['id'],
             ),
         ]);
-        $rows = $adapter->compileRowSet($schema, 'observed_uuids')();
+        $rows = $adapter->compileRowSet(SchemaRowSet::fromTable($schema, 'observed_uuids'))();
         $unit = new MappedTableUnitOfWork(['observed_uuids' => $rows], $adapter);
         $this->trace->clear();
 

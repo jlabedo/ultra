@@ -259,7 +259,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
     private function flushBatchInsert(array $updates): void
     {
         [$columns] = $this->insertValues($updates[0]);
-        $rowPlaceholder = '(' . implode(', ', array_map($this->placeholder(...), $columns)) . ')';
+        $rowPlaceholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
         $params = [];
         foreach ($updates as $update) {
             [, $rowParams] = $this->insertValues($update);
@@ -295,7 +295,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
     private function flushBatchUpsert(array $updates): void
     {
         [$columns] = $this->insertValues($updates[0]);
-        $rowPlaceholder = '(' . implode(', ', array_map($this->placeholder(...), $columns)) . ')';
+        $rowPlaceholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
         $params = [];
         foreach ($updates as $update) {
             [, $rowParams] = $this->insertValues($update);
@@ -340,14 +340,14 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
                 continue;
             }
 
-            $lockKeys[] = $check->key->fingerprint();
+            $lockKeys[] = $check->key->lockIdentifier();
         }
         foreach ($writes as $write) {
             if (!(RowUpdatePlan::MODE_INSERT === $write->mode || RowUpdatePlan::MODE_UPSERT === $write->mode)) {
                 continue;
             }
 
-            $lockKeys[] = $write->key->fingerprint();
+            $lockKeys[] = $write->key->lockIdentifier();
         }
 
         if ([] === $lockKeys) {
@@ -466,7 +466,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
                 'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) DO NOTHING',
                 $this->sql->table,
                 implode(', ', array_map($this->quoteColumn(...), $columns)),
-                implode(', ', array_map($this->placeholder(...), $columns)),
+                implode(', ', array_fill(0, count($columns), '?')),
                 $this->sql->keyList,
             ),
             $params,
@@ -487,7 +487,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
     {
         [$columns, $params] = $this->insertValues($update);
         $quotedColumns = implode(', ', array_map($this->quoteColumn(...), $columns));
-        $placeholders = implode(', ', array_map($this->placeholder(...), $columns));
+        $placeholders = implode(', ', array_fill(0, count($columns), '?'));
 
         $action = 'DO NOTHING';
         if ([] !== $update->setColumns) {
@@ -590,11 +590,6 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
     private function conflictAssignment(string $column): string
     {
         return $this->sql->columns[$column]['excluded'];
-    }
-
-    private function placeholder(string $column): string
-    {
-        return $this->sql->columns[$column]['parameter'];
     }
 
     private function encodeColumnValue(string $column, mixed $value): mixed

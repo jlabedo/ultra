@@ -28,6 +28,7 @@ use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Projection\Bundle\ProjectionImplementationInterface;
+use Ultra\Projection\Bundle\TagNames;
 use Ultra\Projection\Coordination\ProjectionActivatorInterface;
 use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
@@ -61,7 +62,10 @@ final class Kernel extends BaseKernel
     public function registerContainerConfiguration(LoaderInterface $loader): void
     {
         $loader->load(static function (ContainerBuilder $container): void {
-            new MappedTableExtension(rowSets: ComplianceSchema::rowSets())->build($container);
+            new MappedTableExtension(
+                rowSets: ComplianceSchema::rowSets(),
+                unitOfWork: 'compliance.sources.persistence',
+            )->build($container);
             $container->register(Connection::class)->setSynthetic(true)->setPublic(true);
 
             foreach ([
@@ -99,6 +103,9 @@ final class Kernel extends BaseKernel
                     ->setAutoconfigured(true)
                     ->setAutowired(SourceProjection::class === $class);
             }
+            $container->getDefinition(SourceProjection::class)->addTag(TagNames::PERSISTENCE, [
+                'service' => 'compliance.sources.persistence',
+            ]);
             $container->register(RefreshWorker::class)->setAutowired(true);
             foreach ([
                 Compliance::class,

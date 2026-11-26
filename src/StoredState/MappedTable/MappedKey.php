@@ -110,6 +110,12 @@ final readonly class MappedKey implements \Stringable
 
     public function fingerprint(): string
     {
+        return json_encode($this->values, JSON_THROW_ON_ERROR);
+    }
+
+    /** Shared lock identity for PHP values that can address the same database row. */
+    public function lockIdentifier(): string
+    {
         return json_encode(
             array_map(static fn(int|string $value): string => (string) $value, $this->values),
             JSON_THROW_ON_ERROR,

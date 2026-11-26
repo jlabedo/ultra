@@ -10,8 +10,8 @@ use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
-use Ultra\MappedTable\MappedRowSetCompiler;
 use Ultra\MappedTable\MappedTableAdapter;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
@@ -29,7 +29,11 @@ final class SchemaRowSetCompilationTest extends TestCase
     public function test_manually_compiled_row_set_can_create_independent_buffers(): void
     {
         $adapter = new InMemoryMappedTableAdapter(new InMemoryRowDatabase());
-        $factory = $adapter->compileRowSet(MappedRowSetsSchema::entries(), 'test.entries', columns: ['name']);
+        $factory = $adapter->compileRowSet(SchemaRowSet::fromTable(
+            MappedRowSetsSchema::entries(),
+            'test.entries',
+            columns: ['name'],
+        ));
 
         $first = $factory()->withKey(7);
         $first->insert()->setColumn('entry_name', 'Workshop');
@@ -46,7 +50,7 @@ final class SchemaRowSetCompilationTest extends TestCase
         $class = 'CompiledSchemaRowSetsContainer' . bin2hex(random_bytes(6));
         $php = new PhpDumper($container)->dump(['class' => $class]);
         self::assertStringNotContainsString(SchemaDefinition::class, $php);
-        self::assertStringNotContainsString(MappedRowSetCompiler::class, $php);
+        self::assertStringNotContainsString(SchemaRowSet::class, $php);
         $file = tempnam(sys_get_temp_dir(), 'schema-mapped-table-');
         assert(is_string($file));
         try {
@@ -67,13 +71,13 @@ final class SchemaRowSetCompilationTest extends TestCase
         );
     }
 
-    public function test_a_row_set_cannot_expose_a_column_of_an_unknown_sql_type(): void
+    public function test_a_column_of_an_unknown_sql_type_accepts_raw_values(): void
     {
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage(
-            'Unsupported SQL type "hstore" for column "internal" on mapped schema table "test.entries".',
-        );
-        self::container(['test.entries'])->compile();
+        $adapter = new InMemoryMappedTableAdapter(new InMemoryRowDatabase());
+        $definition = SchemaRowSet::fromTable(MappedRowSetsSchema::entries(), 'test.entries');
+        $row = $adapter->compileRowSet($definition)()->withKey(7)->insert();
+        $row->setColumn('internal', 'raw value');
+        self::assertSame(['internal' => 'raw value'], $row->get(['internal']));
     }
 
     public function test_a_temporal_column_cannot_be_a_mapped_key(): void
@@ -89,7 +93,7 @@ final class SchemaRowSetCompilationTest extends TestCase
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Key column "entered_at" must be mapped to a non-null int or string key.');
-        $adapter->compileRowSet($schema, 'entries');
+        $adapter->compileRowSet(SchemaRowSet::fromTable($schema, 'entries'));
     }
 
     public function test_the_owner_foreign_key_requires_its_parent_row_set_to_be_selected(): void
