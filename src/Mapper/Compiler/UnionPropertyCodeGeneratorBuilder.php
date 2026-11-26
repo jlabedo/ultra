@@ -8,8 +8,10 @@ use Symfony\Component\TypeInfo\Type;
 use Symfony\Component\TypeInfo\Type\ArrayShapeType;
 use Symfony\Component\TypeInfo\Type\BuiltinType;
 use Symfony\Component\TypeInfo\Type\CollectionType;
+use Symfony\Component\TypeInfo\Type\NullableType;
 use Symfony\Component\TypeInfo\Type\ObjectType;
 use Symfony\Component\TypeInfo\Type\UnionType;
+use Symfony\Component\TypeInfo\TypeIdentifier;
 use Ultra\CodeGeneration\PhpCode;
 use Ultra\Mapper\Exception\DenormalizationException;
 use Ultra\Mapper\Path;
@@ -38,13 +40,19 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
             ];
         }
 
-        return new class($typeCodeGens) implements CodeGenerator {
+        $wrappedType = $type instanceof NullableType ? $type->getWrappedType() : null;
+        $isNullableArray =
+            $wrappedType instanceof CollectionType && $wrappedType->isIdentifiedBy(TypeIdentifier::ARRAY);
+
+        return new class($typeCodeGens, $isNullableArray) implements CodeGenerator {
             /** @var array<array{type: Type, codegen: CodeGenerator}> */
             private array $typeCodeGens;
 
             /** @param array<array{type: Type, codegen: CodeGenerator}> $typeCodeGens */
-            public function __construct(array $typeCodeGens)
-            {
+            public function __construct(
+                array $typeCodeGens,
+                private bool $isNullableArray,
+            ) {
                 $this->typeCodeGens = $typeCodeGens;
             }
 
@@ -60,6 +68,10 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
                         $cases[] = "    {$objectVar} instanceof \\{$className} => {$codegen->generateNormalization(
      $objectVar,
  )}";
+                        continue;
+                    }
+                    if ($subType instanceof CollectionType && $this->isNullableArray) {
+                        $cases[] = "    is_array({$objectVar}) => {$codegen->generateNormalization($objectVar)}";
                         continue;
                     }
                     if ($subType instanceof BuiltinType) {

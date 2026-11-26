@@ -22,6 +22,7 @@ use Ultra\Mapper\Tests\Fixtures\MultiUnion;
 use Ultra\Mapper\Tests\Fixtures\RuntimeEmailNormalizer;
 use Ultra\Mapper\Tests\Fixtures\User;
 use Ultra\Mapper\Tests\Fixtures\UuidList;
+use Ultra\Mapper\Tests\Fixtures\UuidListRecords;
 use Ultra\Mapper\Tests\Fixtures\UuidRecord;
 use Ultra\Mapper\Tests\Support\MapperTestCase;
 
@@ -86,6 +87,13 @@ final class DenormalizationErrorsTest extends MapperTestCase
             '[optional]',
         ];
         yield 'UUID collection element' => [UuidList::class, ['primary' => 'invalid'], 'Invalid UUID', '[primary]'];
+        yield 'nullable UUID list element inside a keyed collection' => [
+            UuidListRecords::class,
+            ['records' => ['source' => ['ids' => ['12345678-1234-4234-8234-123456789abc', 'invalid']]]],
+            'Invalid UUID',
+            '[payload][records][source][ids][1]',
+            true,
+        ];
         yield 'required property' => [Foo::class, ['name' => 'bar'], 'Missing required property', '[id]'];
         yield 'missing nullable property' => [MaybeAddress::class, [], 'Missing required property', '[address]'];
         yield 'collection element' => [EmailList::class, ['a@example.test', 123], 'expected string', '[1]'];

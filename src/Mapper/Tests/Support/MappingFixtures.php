@@ -102,6 +102,22 @@ readonly class UuidList
     ) {}
 }
 
+readonly class UuidListRecord
+{
+    /** @param list<Uuid>|null $ids */
+    public function __construct(
+        public ?array $ids = null,
+    ) {}
+}
+
+readonly class UuidListRecords
+{
+    /** @param array<string, UuidListRecord> $records */
+    public function __construct(
+        public array $records,
+    ) {}
+}
+
 readonly class DeepNest
 {
     public function __construct(

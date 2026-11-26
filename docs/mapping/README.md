@@ -34,8 +34,10 @@ automatically, both at the root and in properties and collections. They normaliz
 hyphenated UUID strings, such as `12345678-1234-4234-8234-123456789abc`.
 Denormalization accepts canonical UUID strings and reconstructs the declared type; a property declared
 as `Uuid` resolves the concrete UUID version through Symfony's `Uuid::fromString()`.
-Nullable UUID properties preserve null. Invalid representations and version mismatches throw
-`DenormalizationException` with the affected path. Nil and Max UUIDs preserve their special values.
+Nullable UUID properties preserve `null`. A nullable UUID list (`list<Uuid>|null`) preserves the
+distinction between `null`, an empty list, and a populated list. Invalid representations and version
+mismatches throw `DenormalizationException` with the affected path. Nil and Max UUIDs preserve their
+special values.
 
 UUID normalization shapes are scalar strings, including when used by storage compilers.
 Explicit runtime normalizers for an exact UUID type override this built-in behavior.

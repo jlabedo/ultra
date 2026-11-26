@@ -40,6 +40,8 @@ use Ultra\Mapper\Tests\Fixtures\Status;
 use Ultra\Mapper\Tests\Fixtures\TemporalValue;
 use Ultra\Mapper\Tests\Fixtures\User;
 use Ultra\Mapper\Tests\Fixtures\UuidList;
+use Ultra\Mapper\Tests\Fixtures\UuidListRecord;
+use Ultra\Mapper\Tests\Fixtures\UuidListRecords;
 use Ultra\Mapper\Tests\Fixtures\UuidRecord;
 use Ultra\Mapper\Tests\Support\MapperTestCase;
 
@@ -168,6 +170,25 @@ final class RepresentationTest extends MapperTestCase
         yield 'UUID collection preserves keys' => [
             new UuidList(['primary' => $uuid, 7 => new NilUuid()]),
             ['primary' => '12345678-1234-4234-8234-123456789abc', 7 => '00000000-0000-0000-0000-000000000000'],
+        ];
+        $ids = [$uuid, new UuidV7('12345678-1234-7234-8234-123456789abc')];
+        $idsData = ['12345678-1234-4234-8234-123456789abc', '12345678-1234-7234-8234-123456789abc'];
+        yield 'nullable UUID list with elements' => [new UuidListRecord($ids), ['ids' => $idsData]];
+        yield 'nullable UUID list empty' => [new UuidListRecord([]), ['ids' => []]];
+        yield 'nullable UUID list null' => [new UuidListRecord(), ['ids' => null]];
+        yield 'nullable UUID lists inside a keyed collection' => [
+            new UuidListRecords([
+                'populated' => new UuidListRecord($ids),
+                'empty' => new UuidListRecord([]),
+                'historical' => new UuidListRecord(),
+            ]),
+            [
+                'records' => [
+                    'populated' => ['ids' => $idsData],
+                    'empty' => ['ids' => []],
+                    'historical' => ['ids' => null],
+                ],
+            ],
         ];
         yield 'nested AsValue wrappers' => [new OuterValue(new InnerValue(42)), 42];
         yield 'backed enum and nullable enum absent' => [
