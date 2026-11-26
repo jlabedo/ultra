@@ -8,7 +8,6 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
-use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Bundle\TagNames;
@@ -24,10 +23,11 @@ final class ProjectionCompilerPass implements CompilerPassInterface
     {
         $runtimes = [];
         $owners = [];
-        $projectionRowSets = [];
+        $providers = [];
 
         foreach (array_keys($container->findTaggedServiceIds(TagNames::PROJECTION)) as $serviceId) {
-            $class = $container->findDefinition($serviceId)->getClass();
+            $projection = $container->findDefinition($serviceId);
+            $class = $projection->getClass();
             if (null === $class || !class_exists($class)) {
                 throw new \LogicException('Projection services must declare a class.');
             }
@@ -38,19 +38,27 @@ final class ProjectionCompilerPass implements CompilerPassInterface
             }
             $attribute = $attributes[0]->newInstance();
             $participants = $attribute->unitOfWork;
+            foreach ($projection->getTag(TagNames::PERSISTENCE) as $tag) {
+                if (!is_string($tag['service'] ?? null)) {
+                    throw new \LogicException(sprintf('Projection "%s" must name a persistence service.', $serviceId));
+                }
+                $participants[] = $tag['service'];
+            }
             if (is_a($class, UnitOfWork::class, true)) {
                 $participants[] = $serviceId;
             }
-            $projectionRowSets[$serviceId] = $attribute->rowSets;
             $references = [];
-            if ([] !== $attribute->rowSets) {
-                if (!class_exists(MappedTableExtension::class)) {
-                    throw new \LogicException('Projection row sets require MappedTableExtension.');
-                }
-                $references[] = MappedTableExtension::privateUnitOfWork($container, $serviceId, $attribute->rowSets);
-            }
             foreach (array_unique($participants) as $participant) {
                 $definition = $container->findDefinition($participant);
+                if (!$definition->isShared()) {
+                    throw new \LogicException(sprintf('Projection persistence participant "%s" must be shared.', $participant));
+                }
+                foreach ($definition->getTag(\Ultra\UnitOfWork\TagNames::DBAL_CONNECTION_PROVIDER) as $provider) {
+                    if (!is_array($provider) || !is_string($provider['service'] ?? null)) {
+                        throw new \LogicException(sprintf('Participant "%s" must name its DBAL connection provider.', $participant));
+                    }
+                    $providers[] = $provider['service'];
+                }
                 $identity = spl_object_id($definition);
                 if (isset($owners[$identity]) && $owners[$identity] !== $serviceId) {
                     throw new \LogicException('Projection persistence participants must have a single owner.');
@@ -73,7 +81,7 @@ final class ProjectionCompilerPass implements CompilerPassInterface
             $runtimes[] = new Reference($runtimeId);
         }
 
-        $container->setParameter(ProjectionPersistenceCompilerPass::ROW_SETS, $projectionRowSets);
+        $container->setParameter(ProjectionPersistenceCompilerPass::CONNECTION_PROVIDERS, array_unique($providers));
         $container->register(ProjectionCatalog::class, ProjectionCatalog::class)->setArguments($runtimes);
     }
 

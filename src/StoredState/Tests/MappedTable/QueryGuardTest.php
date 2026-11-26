@@ -18,13 +18,14 @@ use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Tests\Support\RecordingGuardMappedTableAdapter;
 use Ultra\MappedTable\Tests\Support\RowSetFixture;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
@@ -391,7 +392,7 @@ final class GuardedSchema
             ),
         ]);
 
-        return $adapter->compileRowSet($schema, self::BOOKINGS)();
+        return $adapter->compileRowSet(SchemaRowSet::fromTable($schema, self::BOOKINGS))();
     }
 
     public static function lines(MappedTableAdapter $adapter, string $table): MappedRowSet
@@ -409,6 +410,6 @@ final class GuardedSchema
             ),
         ]);
 
-        return $adapter->compileRowSet($schema, self::LINES, ownerColumns: ['owner'])();
+        return $adapter->compileRowSet(SchemaRowSet::fromTable($schema, self::LINES, ownerColumns: ['owner']))();
     }
 }

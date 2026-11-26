@@ -13,14 +13,15 @@ use Ultra\MappedTable\ColumnCodec;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedTableAdapter;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\SqlType;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\SqlType;
 
 #[CoversNamespace('Ultra\MappedTable')]
 final class ColumnCodecRegistrationTest extends RowSetTestCase
@@ -77,7 +78,7 @@ final class ColumnCodecRegistrationTest extends RowSetTestCase
         $adapter = new InMemoryMappedTableAdapter(new InMemoryRowDatabase());
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Multiple codecs registered for SQL type "integer".');
-        $adapter->compileRowSet(CodecRegistrationSchema::definition(), 'test.levels', codecs: [
+        $adapter->compileRowSet(SchemaRowSet::fromTable(CodecRegistrationSchema::definition(), 'test.levels'), codecs: [
             'int4' => new LevelCodec(new LevelPrefix('first:')),
             'integer' => new LevelCodec(new LevelPrefix('second:')),
         ]);

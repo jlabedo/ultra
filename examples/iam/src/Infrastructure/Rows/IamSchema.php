@@ -5,12 +5,12 @@ declare(strict_types=1);
 namespace IamExample\Infrastructure\Rows;
 
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\ForeignKeyTiming;
 use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
 
 final class IamSchema
 {

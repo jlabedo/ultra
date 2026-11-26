@@ -8,7 +8,7 @@ In a custom container, build both extensions before compilation, alongside the m
 
 Register the independent [MappedTable definitions](mapped-table.md#defined-row-sets-and-owner-collections)
 and `#[Ultra\StateStore\Attribute\State]` classes as autoconfigured resources. Register repositories as
-autowired services. The compiler binds each state and collection to the definition for its physical table.
+autowired services. The compiler binds each state and collection to the definition in the application coordinator for its physical table.
 StateStore and services injecting the row set by definition share the same instance. The composite unit of
 work enrolls a single `MappedTableUnitOfWork` for these row sets.
 

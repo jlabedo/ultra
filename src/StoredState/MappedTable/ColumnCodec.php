@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-use Ultra\Schema\SqlType;
+use Ultra\Sql\SqlType;
 
 /** Converts non-null values for a SQL column. Instances can be shared across columns and buffers. */
 abstract class ColumnCodec

@@ -16,7 +16,6 @@ final readonly class ProjectionRunner
         private ProjectionTransactionManagerInterface $transactionManager = new NoOpProjectionTransactionManager(),
         private ?ProjectionActivity $activityRepository = null,
         private ProjectionStateRepository $states = new \Ultra\Projection\InMemory\InMemoryProjectionStateRepository(),
-        private ProjectionBatchExecutor $batches = new ProjectionBatchExecutor(),
     ) {}
 
     public function recoverExpiredClaims(string $projectionId): int
@@ -90,7 +89,7 @@ final readonly class ProjectionRunner
                 $result = $this->eventStore->load($query, $checkpoint, $targetCheckpoint, $limit);
                 $this->transactionManager->transactional(function () use ($runtime, $result): void {
                     $this->assertWorkerDefinition($runtime);
-                    $this->batches->execute($runtime, $result->events);
+                    $runtime->applyBatch($result->events);
                 });
 
                 if ($result->checkpoint->serialize() === $checkpoint->serialize()) {
@@ -181,7 +180,7 @@ final readonly class ProjectionRunner
             }
             $created = $this->segmentRepository->ensureInitialized($definition->projectionId);
             if ($created) {
-                $this->batches->lifecycle($runtime, $runtime->initialize(...));
+                $runtime->initialize();
             }
         });
     }
@@ -210,11 +209,11 @@ final readonly class ProjectionRunner
                     ),
                 );
             }
-            $this->batches->lifecycle($runtime, $runtime->reset(...));
+            $runtime->reset();
             $this->segmentRepository->deleteProjection($definition->projectionId);
             if (ProjectionMode::Synchronous === $definition->mode) {
                 $this->segmentRepository->ensureInitialized($definition->projectionId);
-                $this->batches->lifecycle($runtime, $runtime->initialize(...));
+                $runtime->initialize();
             }
         });
     }
@@ -324,7 +323,7 @@ final readonly class ProjectionRunner
                 $seenCounters,
             ): void {
                 $this->assertWorkerDefinition($runtime);
-                $this->batches->execute($runtime, $result->events);
+                $runtime->applyBatch($result->events);
                 $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
 
                 if ($caughtUp && [] !== $seenCounters) {
@@ -461,7 +460,7 @@ final readonly class ProjectionRunner
                 $caughtUp,
             ): void {
                 $this->assertWorkerDefinition($runtime);
-                $this->batches->execute($runtime, $result->events);
+                $runtime->applyBatch($result->events);
                 $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
             });
 

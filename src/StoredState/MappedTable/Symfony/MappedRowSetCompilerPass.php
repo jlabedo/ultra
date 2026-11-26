@@ -12,7 +12,7 @@ use Ultra\MappedTable\ColumnCodec;
 use Ultra\MappedTable\ColumnCodecs;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
-use Ultra\MappedTable\MappedRowSetCompiler;
+use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\MappedRowSetOwner;
@@ -20,9 +20,10 @@ use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Plan\RowSetDependencies;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Storage\PostgresRowSetSql;
-use Ultra\Schema\SqlType;
 use Ultra\Schema\Symfony\SchemaExtension;
+use Ultra\Sql\SqlType;
 use Ultra\UnitOfWork\TagNames;
 
 /** @internal */
@@ -30,20 +31,15 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
 {
     public const string MAPPINGS = 'ultra.mapped_table.compiling.mappings';
     public const string COORDINATORS = 'ultra.mapped_table.compiling.coordinators';
-    public const string PRIVATE_COORDINATOR_TAG = 'ultra.mapped_table.private_coordinator';
-    public const string SCHEMA_ROW_SETS = 'ultra.mapped_table.compiling.schema_row_sets';
+    public const string FACTORY_TAG = 'ultra.mapped_table.row_set_factory';
+    public const string ROW_SETS = 'ultra.mapped_table.compiling.row_sets';
 
     public function process(ContainerBuilder $container): void
     {
-        $selections = [];
-        if ($container->hasParameter(self::SCHEMA_ROW_SETS)) {
-            /** @var list<array{string, array{columns?: list<string>, owner?: string, ownerColumns?: list<string>}}> $selections */
-            $selections = $container->getParameter(self::SCHEMA_ROW_SETS);
-            $container->getParameterBag()->remove(self::SCHEMA_ROW_SETS);
-        }
+        $selections = $this->selections($container);
         if ([] === $selections) {
             $container->setParameter(self::MAPPINGS, []);
-            $container->setParameter(self::COORDINATORS, $this->coordinators($container, []));
+            $container->setParameter(self::COORDINATORS, []);
 
             return;
         }
@@ -62,17 +58,29 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         $postgres = is_a($adapterClass, PostgresMappedTableAdapter::class, true);
 
         [$codecs, $services] = $this->codecs($container);
-        $tables = SchemaExtension::compiledSchema($container)->tablesById();
+        $coordinators = [];
         $mappings = [];
         $rowSets = [];
-        foreach ($selections as [$id, $options]) {
+        foreach ($selections as [$id, $source, $coordinator]) {
+            if ('' === $id || is_numeric($id) || '' === $coordinator || is_numeric($coordinator)) {
+                throw new \InvalidArgumentException(
+                    'Row sets and their coordinators need non-empty, non-numeric service IDs.',
+                );
+            }
             if ($container->has($id)) {
                 throw new \LogicException(sprintf(
-                    'Mapped schema table "%s" conflicts with another service or row set.',
+                    'Mapped row set "%s" conflicts with another service or row set.',
                     $id,
                 ));
             }
-            $mapping = MappedRowSetCompiler::compile($tables, $id, ...$options, codecs: $codecs);
+            if (is_array($source)) {
+                if (!class_exists(SchemaExtension::class)) {
+                    throw new \LogicException(sprintf('Schema-backed row set "%s" requires ultra/schema.', $id));
+                }
+                $source = SchemaRowSet::fromTable(SchemaExtension::compiledSchema($container), $id, ...$source);
+            }
+            $mapping = $source->compile($codecs);
+            $coordinators[$id] = $coordinator;
             $mappings[$id] = $mapping;
             $rowSets[$id] = new Reference($id);
             $metadata = new Definition(MappedRowSetMetadata::class, [
@@ -98,73 +106,92 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
                     new Reference(MappedTableAdapter::class),
                     'createDefined',
                 ])->setArguments([$metadata]);
-            $container->setDefinition($id, $rowSet->addTag(MappedTableExtension::ROW_SET_TAG));
+            $container->setDefinition($id, $rowSet);
         }
 
-        $coordinators = $this->coordinators($container, $mappings);
-        $schedules = [MappedTableUnitOfWork::class => []];
-        foreach (RowSetDependencies::compile($mappings) as $rowSet => $referenced) {
+        $groups = [MappedTableUnitOfWork::class => []];
+        foreach ($mappings as $rowSet => $mapping) {
             $coordinator = $coordinators[$rowSet];
-            $parent = $mappings[$rowSet]->owner?->definition;
-            if (null !== $parent && $coordinator !== $coordinators[$parent]) {
+            $parent = $mapping->owner?->definition;
+            if (null !== $parent && isset($coordinators[$parent]) && $coordinator !== $coordinators[$parent]) {
                 throw new \LogicException(sprintf(
                     'Mapped row set "%s" and its owner "%s" must use the same coordinator.',
                     $rowSet,
                     $parent,
                 ));
             }
-            $schedules[$coordinator][$rowSet] = $referenced;
+            $groups[$coordinator][$rowSet] = $mapping;
         }
-
         $container->setParameter(self::MAPPINGS, $mappings);
         $container->setParameter(self::COORDINATORS, $coordinators);
-        $container
-            ->register(MappedTableUnitOfWork::class, MappedTableUnitOfWork::class)
-            ->addTag(TagNames::UNIT_OF_WORK);
-        foreach ($schedules as $id => $schedule) {
-            $container
-                ->getDefinition($id)
-                ->setArguments([
-                    array_intersect_key($rowSets, $schedule),
-                    new Reference(MappedTableAdapter::class),
-                    $schedule,
-                ]);
+        foreach ($groups as $id => $group) {
+            $schedule = RowSetDependencies::compile($group);
+            if ($container->has($id)) {
+                throw new \LogicException(sprintf(
+                    'Mapped table coordinator "%s" conflicts with an existing service.',
+                    $id,
+                ));
+            }
+            $unit = $container->register($id, MappedTableUnitOfWork::class);
+            if (MappedTableUnitOfWork::class === $id) {
+                $unit->addTag(TagNames::UNIT_OF_WORK);
+            }
+            if ($postgres) {
+                $unit->addTag(TagNames::DBAL_CONNECTION_PROVIDER, ['service' => MappedTableAdapter::class]);
+            }
+            $unit->setArguments([
+                array_intersect_key($rowSets, $schedule),
+                new Reference(MappedTableAdapter::class),
+                $schedule,
+            ]);
         }
     }
 
-    /**
-     * @param array<string, MappedRowSetMapping> $mappings
-     * @return array<string, string>
-     */
-    private function coordinators(ContainerBuilder $container, array $mappings): array
+    /** @return list<array{string, MappedRowSetDefinition|array{columns?: list<string>, owner?: string, ownerColumns?: list<string>}, string}> */
+    private function selections(ContainerBuilder $container): array
     {
-        $coordinators = array_fill_keys(array_keys($mappings), MappedTableUnitOfWork::class);
-        foreach ($container->findTaggedServiceIds(self::PRIVATE_COORDINATOR_TAG) as $id => $tags) {
-            $tag = $tags[0] ?? null;
-            if (!is_array($tag) || !is_array($tag['rowSets'] ?? null) || [] === $tag['rowSets']) {
-                throw new \LogicException(sprintf('Private coordinator "%s" must declare its mapped row sets.', $id));
-            }
-            foreach ($tag['rowSets'] as $rowSet) {
-                if (!is_string($rowSet) || !isset($mappings[$rowSet])) {
+        /** @var list<array{string, MappedRowSetDefinition|array{columns?: list<string>, owner?: string, ownerColumns?: list<string>}, string}> $selections */
+        $selections = $container->getParameter(self::ROW_SETS);
+        $container->getParameterBag()->remove(self::ROW_SETS);
+        foreach ($container->findTaggedServiceIds(self::FACTORY_TAG, throwOnAbstract: true) as $service => $tags) {
+            $class = $container->getDefinition($service)->getClass();
+            $reflection = $container->getReflectionClass($class);
+            foreach ($tags as $tag) {
+                if (
+                    !is_array($tag)
+                    || !is_string($tag['method'] ?? null)
+                    || !is_string($tag['id'] ?? null)
+                    || !is_string($tag['unitOfWork'] ?? null)
+                ) {
+                    throw new \LogicException(sprintf('Invalid mapped row set factory tag on "%s".', $service));
+                }
+                $method = $reflection?->getMethod($tag['method']);
+                if (
+                    null === $method
+                    || !$method->isPublic()
+                    || !$method->isStatic()
+                    || $method->isAbstract()
+                    || 0 !== $method->getNumberOfParameters()
+                ) {
                     throw new \LogicException(sprintf(
-                        'Private coordinator "%s" requires a registered mapped row set definition, got "%s".',
-                        $id,
-                        is_string($rowSet) ? $rowSet : get_debug_type($rowSet),
+                        'Row set factory "%s::%s" must be public, concrete, static and parameterless.',
+                        $class,
+                        $tag['method'],
                     ));
                 }
-                if (MappedTableUnitOfWork::class !== $coordinators[$rowSet] && $id !== $coordinators[$rowSet]) {
+                $definition = $method->invoke(null);
+                if (!$definition instanceof MappedRowSetDefinition) {
                     throw new \LogicException(sprintf(
-                        'Mapped row set "%s" must have a single owner, claimed by "%s" and "%s".',
-                        $rowSet,
-                        $coordinators[$rowSet],
-                        $id,
+                        'Row set factory "%s::%s" must return a MappedRowSetDefinition.',
+                        $class,
+                        $method->getName(),
                     ));
                 }
-                $coordinators[$rowSet] = $id;
+                $selections[] = [$tag['id'], $definition, $tag['unitOfWork']];
             }
         }
 
-        return $coordinators;
+        return $selections;
     }
 
     /** @return array{array<string, class-string<ColumnCodec>>, array<string, string>} */

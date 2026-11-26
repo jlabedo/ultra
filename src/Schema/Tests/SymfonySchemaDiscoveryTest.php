@@ -17,12 +17,12 @@ use Symfony\Component\DependencyInjection\Dumper\PhpDumper;
 use Symfony\Component\Filesystem\Filesystem;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\Migration\MigrationGenerator;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
 use Ultra\SymfonyBundle\UltraBundle;
 
 /** @internal */

@@ -11,6 +11,7 @@ use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\StateCollection;
@@ -122,7 +123,7 @@ final class StateStoreFixture
             if (!isset($required[$table->name])) {
                 continue;
             }
-            $rowSet = $factory->compileRowSet($schema, $table->id, owner: StateStoreSchema::ownerOf($table->id))();
+            $rowSet = $factory->compileRowSet(SchemaRowSet::fromTable($schema, $table->id, owner: StateStoreSchema::ownerOf($table->id)))();
             $rowSets[$table->id] = $rowSet;
             $tables[$table->name] = $rowSet;
         }
@@ -161,11 +162,11 @@ final class StateStoreFixture
         $factory = $this->storage instanceof Connection
             ? new PostgresMappedTableAdapter($this->storage)
             : new InMemoryMappedTableAdapter($this->storage);
-        $rows = $factory->compileRowSet(
+        $rows = $factory->compileRowSet(SchemaRowSet::fromTable(
             StateStoreSchema::definition(),
             $collection->tableName,
             owner: StateStoreSchema::ownerOf($collection->tableName),
-        )();
+        ))();
 
         return $rows->rowsForOwner($collection->ownerKey($normalizedId));
     }

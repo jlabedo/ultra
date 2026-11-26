@@ -9,15 +9,41 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Checkpoint;
 use Ultra\Mapper\UltraNormalizer;
+use Ultra\Projection\Attribute\Projection;
+use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\Tests\Support\OwnedProjectionRows;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Testing\PostgresConnectionSupport;
+
+require_once __DIR__ . '/Support/ProjectionModes.php';
 
 /** @internal */
 #[CoversNamespace('Ultra\\Projection')]
 #[CoversNamespace('Ultra\\Projection_Postgres')]
 final class BatchAtomicityTest extends ProjectionTestCase
 {
+    public function test_reentrant_batch_cannot_flush_or_clear_an_active_participant(): void
+    {
+        $rows = new OwnedProjectionRows();
+        $projection = new PausingProjection($rows);
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer(), unitOfWork: [$rows]);
+        $outer = new \Fiber($runtime->initialize(...));
+        $outer->start();
+
+        try {
+            $runtime->applyBatch([]);
+            self::fail('Expected an overlapping projection batch to be rejected.');
+        } catch (\LogicException $e) {
+            self::assertStringContainsString('already has an active batch', $e->getMessage());
+        }
+        self::assertSame(['outer'], $rows->pending);
+        self::assertSame(0, $rows->flushes);
+        $outer->resume();
+        self::assertSame(['outer'], $rows->stored);
+        self::assertFalse($rows->hasPendingChanges());
+    }
+
     #[DataProvider('failedBatches')]
     public function test_failed_application_or_flush_leaves_model_checkpoint_and_activity_retryable(
         string $mode,
@@ -160,5 +186,20 @@ final class BatchAtomicityTest extends ProjectionTestCase
                 yield $mode . ' ' . $stage => [$mode, $stage];
             }
         }
+    }
+}
+
+#[Projection(name: 'pausing', partitionBy: 'courseId')]
+final readonly class PausingProjection
+{
+    public function __construct(
+        private OwnedProjectionRows $rows,
+    ) {}
+
+    #[ProjectionInitializer]
+    public function initialize(): void
+    {
+        $this->rows->pending[] = 'outer';
+        \Fiber::suspend();
     }
 }

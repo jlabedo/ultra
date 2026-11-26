@@ -11,8 +11,8 @@ use Ultra\MappedTable\Codec\JsonbCodec;
 use Ultra\MappedTable\Codec\TemporalCodec;
 use Ultra\MappedTable\Codec\TextCodec;
 use Ultra\MappedTable\Codec\UuidCodec;
-use Ultra\Schema\ColumnType;
-use Ultra\Schema\SqlType;
+use Ultra\Sql\ColumnType;
+use Ultra\Sql\SqlType;
 
 /** @internal Built-in associations and canonical registration keys. */
 final class ColumnCodecs

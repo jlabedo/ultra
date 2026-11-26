@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace Ultra\Projection_Postgres;
 
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
+use Ultra\Sql\SqlType;
 
 final readonly class PostgresProjectionSegmentSchema
 {

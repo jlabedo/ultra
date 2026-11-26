@@ -24,17 +24,18 @@ use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Storage\PostgresRowSetSql;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\SqlType;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
+use Ultra\Sql\SqlType;
 use Ultra\UnitOfWork\UnitOfWork;
 use Ultra\UnitOfWork\UnitOfWorkExtension;
 
@@ -346,11 +347,11 @@ final class DefinedRowSetsTest extends RowSetTestCase
         $keyOnlyAdapter = $fixture->storage instanceof Connection
             ? new PostgresMappedTableAdapter($fixture->storage)
             : new InMemoryMappedTableAdapter($fixture->storage);
-        $keys = $keyOnlyAdapter->compileRowSet($schema, $table, columns: [], ownerColumns: ['owner'])();
+        $keys = $keyOnlyAdapter->compileRowSet(SchemaRowSet::fromTable($schema, $table, columns: [], ownerColumns: ['owner']))();
         static::assertSame([], $keys->rowsForOwner($owner)[0]->columns);
         static::assertSame($key->values, $keys->withKey($key)->get());
 
-        $rows = $fixture->adapter->compileRowSet($schema, $table, columns: ['note'], ownerColumns: ['owner'])();
+        $rows = $fixture->adapter->compileRowSet(SchemaRowSet::fromTable($schema, $table, columns: ['note'], ownerColumns: ['owner']))();
         static::assertSame(['note' => null], $rows->rowsForOwner($owner)[0]->columns);
         $rows->withKey($key)->expectColumnValue('note', null);
         $fixture->flush($rows);

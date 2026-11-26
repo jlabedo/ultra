@@ -37,11 +37,28 @@ final class ComposerConsumerTest extends TestCase
             ],
             'config' => ['allow-plugins' => false],
         ];
+        $this->runConsumer($manifest, 'smoke.php');
+    }
+
+    public function test_mapped_table_installs_and_writes_without_schema_or_projection(): void
+    {
+        $this->runConsumer([
+            'name' => 'ultra-verification/mapped-table-consumer',
+            'repositories' => [['type' => 'path', 'url' => dirname(__DIR__, 3) . '/src/*/*']],
+            'minimum-stability' => 'dev',
+            'prefer-stable' => true,
+            'require' => ['ultra/mapped-table' => '*'],
+        ], 'mapped-table.php');
+    }
+
+    /** @param array<string, mixed> $manifest */
+    private function runConsumer(array $manifest, string $script): void
+    {
         file_put_contents(
             $this->directory . '/composer.json',
             json_encode($manifest, JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT),
         );
-        copy(__DIR__ . '/Fixtures/ComposerConsumer/smoke.php', $this->directory . '/smoke.php');
+        copy(__DIR__ . '/Fixtures/ComposerConsumer/' . $script, $this->directory . '/smoke.php');
 
         $installation = new Process(
             ['composer', 'install', '--no-dev', '--no-interaction', '--no-progress', '--prefer-dist'],

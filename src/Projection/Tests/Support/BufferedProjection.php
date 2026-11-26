@@ -6,16 +6,13 @@ namespace Ultra\Projection\Tests\Support;
 
 use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionInitializer;
 use Ultra\Projection\Attribute\ProjectionResetter;
-use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
-use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\TableDefinition;
 use Ultra\UnitOfWork\UnitOfWork;
 
 #[Projection(name: 'buffered_projection', partitionBy: 'courseId')]
@@ -33,16 +30,9 @@ final class BufferedProjection implements UnitOfWork
         public readonly string $indexTable,
     ) {
         $adapter = new PostgresMappedTableAdapter($connection);
-        $columns = [
-            new ColumnDefinition('id', type: ColumnType::Text),
-            new ColumnDefinition('name', type: ColumnType::Text),
-        ];
-        $schema = new SchemaDefinition([
-            new TableDefinition($coursesTable, columns: $columns, primaryKey: ['id']),
-            new TableDefinition($indexTable, columns: $columns, primaryKey: ['id']),
-        ]);
-        $this->courses = $adapter->compileRowSet($schema, $coursesTable)();
-        $this->index = $adapter->compileRowSet($schema, $indexTable)();
+        $columns = ['id' => 'text', 'name' => 'text'];
+        $this->courses = $adapter->compileRowSet(new MappedRowSetDefinition($coursesTable, $columns, ['id']))();
+        $this->index = $adapter->compileRowSet(new MappedRowSetDefinition($indexTable, $columns, ['id']))();
         $this->persistence = new MappedTableUnitOfWork([
             $coursesTable => $this->courses,
             $indexTable => $this->index,

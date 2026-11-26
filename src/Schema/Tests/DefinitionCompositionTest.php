@@ -11,8 +11,8 @@ use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
-use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\SqlType;
 
 /** @internal */
 #[CoversClass(SchemaDefinition::class)]

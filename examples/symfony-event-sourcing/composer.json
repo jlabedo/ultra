@@ -35,6 +35,7 @@
         "ultra/message-handling-compiler": "dev-main",
         "ultra/projection": "dev-main",
         "ultra/projection-postgres": "dev-main",
+        "ultra/schema": "dev-main",
         "ultra/stateful-message-handling": "dev-main",
         "ultra/symfony-bundle": "dev-main",
         "ultra/unit-of-work": "dev-main"

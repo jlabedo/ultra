@@ -4,8 +4,8 @@ declare(strict_types=1);
 
 namespace Ultra\Schema\Operations;
 
-use Ultra\Schema\ColumnType;
-use Ultra\Schema\SqlType;
+use Ultra\Sql\ColumnType;
+use Ultra\Sql\SqlType;
 
 final readonly class AlterColumn implements SchemaOperation
 {

@@ -26,7 +26,6 @@ use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\Coordination\ProjectionScalingPolicyInterface;
 use Ultra\Projection\MessageHandling\ProjectionMessageHandler;
 use Ultra\Projection\ProjectingEventStore;
-use Ultra\Projection\ProjectionBatchExecutor;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRebuilder;
 use Ultra\Projection\ProjectionRunner;
@@ -54,7 +53,6 @@ final class ProjectionExtension implements ContainerExtension
 
         $factory = new Reference(ProjectionImplementationInterface::class);
 
-        $container->register(ProjectionBatchExecutor::class);
         $container->register(ProjectionStateRepository::class)->setFactory([$factory, 'createStateRepository']);
 
         $container
@@ -99,7 +97,6 @@ final class ProjectionExtension implements ContainerExtension
                 new Reference(ProjectionActivityRecorder::class),
                 new Reference(ProjectionTransactionManagerInterface::class),
                 new Reference(ProjectionStateRepository::class),
-                new Reference(ProjectionBatchExecutor::class),
             ]);
 
         $container
@@ -110,7 +107,6 @@ final class ProjectionExtension implements ContainerExtension
                 new Reference(ProjectionTransactionManagerInterface::class),
                 new Reference(ProjectionActivity::class),
                 new Reference(ProjectionStateRepository::class),
-                new Reference(ProjectionBatchExecutor::class),
             ]);
 
         $container
@@ -121,7 +117,6 @@ final class ProjectionExtension implements ContainerExtension
                 new Reference(ProjectionStateRepository::class),
                 new Reference(ProjectionTransactionManagerInterface::class),
                 new Reference(ProjectionRunner::class),
-                new Reference(ProjectionBatchExecutor::class),
             ]);
 
         $container
@@ -156,7 +151,7 @@ final class ProjectionExtension implements ContainerExtension
 
         $this->registerMessageHandlingIntegration($container);
 
-        $container->addCompilerPass(new ProjectionCompilerPass());
+        $container->addCompilerPass(new ProjectionCompilerPass(), priority: -20);
         $container->addCompilerPass(new ProjectionDefaultsCompilerPass());
         $container->addCompilerPass(new ProjectionPersistenceCompilerPass(), PassConfig::TYPE_BEFORE_REMOVING);
     }

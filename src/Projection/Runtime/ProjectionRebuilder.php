@@ -14,7 +14,6 @@ final readonly class ProjectionRebuilder
         private ProjectionStateRepository $states,
         private ProjectionTransactionManagerInterface $transactions,
         private ProjectionRunner $runner,
-        private ProjectionBatchExecutor $batches = new ProjectionBatchExecutor(),
     ) {}
 
     /** Start or resume without requiring event-arrival activity. Does not reset existing progress. */
@@ -76,7 +75,7 @@ final readonly class ProjectionRebuilder
                         null,
                         $batchSize,
                     );
-                    $this->batches->execute($runtime, $result->events);
+                    $runtime->applyBatch($result->events);
                     $processed += count($result->events);
                     $checkpoint = $result->checkpoint;
                 } while ($result->hasMore);

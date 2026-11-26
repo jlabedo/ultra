@@ -6,7 +6,7 @@ namespace Ultra\MappedTable\Storage;
 
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Ultra\MappedTable\MappedRowSetMetadata;
-use Ultra\Schema\ColumnType;
+use Ultra\Sql\ColumnType;
 
 /** @internal PostgreSQL SQL fragments compiled from a row set definition. */
 final readonly class PostgresRowSetSql

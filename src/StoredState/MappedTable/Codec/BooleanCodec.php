@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Ultra\MappedTable\Codec;
 
 use Ultra\MappedTable\ColumnCodec;
-use Ultra\Schema\SqlType;
+use Ultra\Sql\SqlType;
 
 /** @internal */
 final class BooleanCodec extends ColumnCodec

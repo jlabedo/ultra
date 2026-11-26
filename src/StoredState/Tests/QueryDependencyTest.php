@@ -12,14 +12,15 @@ use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Tests\Support\RecordingGuardMappedTableAdapter;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateColumn;
@@ -210,8 +211,8 @@ final class QueryDependencyTest extends TestCase
             $trace[] = [$namespace, $key, $mode];
         });
         $schema = GuardStateSchema::definition();
-        $roles = $factory->compileRowSet($schema, GuardStateSchema::ROLES)();
-        $permissions = $factory->compileRowSet($schema, GuardStateSchema::PERMISSIONS, owner: 'owner')();
+        $roles = $factory->compileRowSet(SchemaRowSet::fromTable($schema, GuardStateSchema::ROLES))();
+        $permissions = $factory->compileRowSet(SchemaRowSet::fromTable($schema, GuardStateSchema::PERMISSIONS, owner: 'owner'))();
         $registry = new MappedTableUnitOfWork(
             [GuardStateSchema::ROLES => $roles, GuardStateSchema::PERMISSIONS => $permissions],
             $factory,

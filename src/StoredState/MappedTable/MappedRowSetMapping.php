@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-/** @internal Produced by compiling a selected Schema table. */
+/** @internal Validated row-set definition with bound column codecs. */
 final readonly class MappedRowSetMapping extends MappedRowSetMetadata
 {
     /**

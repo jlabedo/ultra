@@ -5,8 +5,8 @@ declare(strict_types=1);
 namespace Ultra\MappedTable\Codec;
 
 use Ultra\MappedTable\ColumnCodec;
-use Ultra\Schema\ColumnType;
-use Ultra\Schema\SqlType;
+use Ultra\Sql\ColumnType;
+use Ultra\Sql\SqlType;
 
 /** @internal */
 final class TextCodec extends ColumnCodec

@@ -14,11 +14,12 @@ use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
 use Ultra\StateStore\StateMetadata;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateRowSets;
@@ -556,6 +557,6 @@ final class CooperativeSchema
             ),
         ]);
 
-        return $adapter->compileRowSet($schema, $table, ownerColumns: $collection ? ['status', 'version_a'] : [])();
+        return $adapter->compileRowSet(SchemaRowSet::fromTable($schema, $table, ownerColumns: $collection ? ['status', 'version_a'] : []))();
     }
 }

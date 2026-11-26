@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-use Ultra\Schema\SqlType;
+use Ultra\Sql\SqlType;
 
-/** @internal Column metadata and value semantics derived from Schema. */
+/** @internal Column metadata and value semantics for a compiled row set. */
 final readonly class MappedColumn
 {
     public string $type;

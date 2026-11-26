@@ -17,13 +17,14 @@ use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetMapping;
 use Ultra\MappedTable\MappedRowSetOwner;
 use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Tests\Support\RowSetFixture;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
 use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
@@ -287,8 +288,8 @@ final class FlushCoordinationTest extends RowSetTestCase
     private function coordinate(RowSetFixture $parent, RowSetFixture $child): array
     {
         $schema = FlushSchema::definition($parent->tableName, $child->tableName);
-        $orders = $parent->adapter->compileRowSet($schema, FlushSchema::ORDERS)();
-        $lines = $child->adapter->compileRowSet($schema, FlushSchema::LINES, owner: 'owner')();
+        $orders = $parent->adapter->compileRowSet(SchemaRowSet::fromTable($schema, FlushSchema::ORDERS))();
+        $lines = $child->adapter->compileRowSet(SchemaRowSet::fromTable($schema, FlushSchema::LINES, owner: 'owner'))();
 
         $flush = new MappedTableUnitOfWork([
             FlushSchema::LINES => $lines,

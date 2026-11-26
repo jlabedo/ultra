@@ -4,11 +4,14 @@ declare(strict_types=1);
 
 namespace App\Projection;
 
+use Ultra\MappedTable\Attribute\DefineMappedRowSet;
+use Ultra\MappedTable\MappedRowSetDefinition;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
 
 final class OrderSummarySchema
 {
@@ -30,11 +33,9 @@ final class OrderSummarySchema
         ]);
     }
 
-    /** @return list<string> */
-    public static function rowSets(): array
+    #[DefineMappedRowSet(self::ORDER_SUMMARY, unitOfWork: 'order_summary.persistence')]
+    public static function rows(): MappedRowSetDefinition
     {
-        return [
-            self::ORDER_SUMMARY,
-        ];
+        return SchemaRowSet::fromTable(self::definition(), self::ORDER_SUMMARY);
     }
 }

@@ -24,6 +24,7 @@ use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreams;
 use Ultra\EventStore_Postgres\PostgresEventStoreQueryStreamsSchema;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
@@ -43,10 +44,6 @@ use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentRepository;
 use Ultra\Projection_Postgres\PostgresProjectionSegmentSchema;
 use Ultra\Projection_Postgres\PostgresProjectionTransactionManager;
-use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
-use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 
 #[EventAttribute('harness.course.created')]
@@ -71,17 +68,8 @@ final readonly class HarnessCourseNamesProjection
         $adapter = new PostgresMappedTableAdapter($connection, tablePolicies: [
             $tableName => new MappedTablePolicy(allowAbsentObservations: false),
         ]);
-        $schema = new SchemaDefinition([
-            new TableDefinition(
-                $tableName,
-                columns: [
-                    new ColumnDefinition('course_id', type: ColumnType::Text),
-                    new ColumnDefinition('name', type: ColumnType::Text),
-                ],
-                primaryKey: ['course_id'],
-            ),
-        ]);
-        $this->table = $adapter->compileRowSet($schema, $tableName)();
+        $definition = new MappedRowSetDefinition($tableName, ['course_id' => 'text', 'name' => 'text'], ['course_id']);
+        $this->table = $adapter->compileRowSet($definition)();
         $this->persistence = new MappedTableUnitOfWork([$tableName => $this->table], $adapter);
     }
 
@@ -128,7 +116,11 @@ final class ProjectionCoordinationHarness
         $segments = new PostgresProjectionSegmentRepository($connection, $projectionPrefix);
         $activity = new ProjectionActivity(new PostgresDirtyKeyTracker($connection, $projectionPrefix . 'dirty_keys'));
         $leases = new PostgresCoordinatorLease($connection, $projectionPrefix . 'coordinator_lease');
-        $runtime = self::runtime($connection, $projectionPrefix);
+        $normalizer = new UltraNormalizer(dirname(__DIR__, 5) . '/var/projection_harness_normalizers');
+        $runtime = new ProjectionRuntime(
+            new HarnessCourseNamesProjection($connection, self::readModelTable($projectionPrefix)),
+            $normalizer,
+        );
         $catalog = new ProjectionCatalog($runtime);
         $runner = new ProjectionRunner(
             $eventStore,
@@ -160,6 +152,7 @@ final class ProjectionCoordinationHarness
                     lockStrategy: new NoopLockStrategy(),
                 ),
                 $activity,
+                $normalizer,
             ),
             new BackfillProjectionCommand($catalog, $runner, $processActivator),
             new ResetProjectionCommand($catalog, $runner),
@@ -189,14 +182,6 @@ final class ProjectionCoordinationHarness
             new PostgresCoordinatorLeaseSchema($projectionPrefix . 'coordinator_lease'),
             new PostgresDirtyKeyTrackerSchema($projectionPrefix . 'dirty_keys'),
         ];
-    }
-
-    private static function runtime(Connection $connection, string $projectionPrefix): ProjectionRuntime
-    {
-        return new ProjectionRuntime(
-            new HarnessCourseNamesProjection($connection, self::readModelTable($projectionPrefix)),
-            new UltraNormalizer(),
-        );
     }
 }
 
@@ -285,6 +270,7 @@ final class SeedProjectionEventsCommand extends Command
     public function __construct(
         private readonly PostgresEventStoreQueryStreams $eventStore,
         private readonly ProjectionActivity $activity,
+        private readonly UltraNormalizer $normalizer,
     ) {
         parent::__construct('harness:projection-seed');
     }
@@ -306,9 +292,11 @@ final class SeedProjectionEventsCommand extends Command
         $buckets = [];
         for ($i = 1; $i <= $eventCount; ++$i) {
             $courseId = sprintf('course-%03d', $i);
+            $payload = $this->normalizer->toScalar(new HarnessCourseCreated($courseId, sprintf('Course %03d', $i)));
+            assert(is_array($payload), 'Course-created events normalize to a record.');
             $events[] = new Event(
                 eventType: 'harness.course.created',
-                payload: ['courseId' => $courseId, 'name' => sprintf('Course %03d', $i)],
+                payload: $payload,
                 domainIds: ['courseId' => $courseId],
             );
             $buckets[BucketHasher::bucketFor($courseId)] = true;

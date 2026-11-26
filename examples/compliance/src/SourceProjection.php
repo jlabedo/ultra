@@ -17,11 +17,7 @@ use Ultra\Projection\Attribute\ProjectionHandler;
 use Ultra\Projection\Attribute\ProjectionResetter;
 use Ultra\UnitOfWork\UnitOfWork;
 
-#[Projection(
-    name: self::NAME,
-    partitionBy: 'account',
-    rowSets: [ComplianceSchema::EVIDENCE, ComplianceSchema::QUALIFICATIONS],
-)]
+#[Projection(name: self::NAME, partitionBy: 'account')]
 final class SourceProjection implements UnitOfWork
 {
     public const string NAME = 'compliance_sources';

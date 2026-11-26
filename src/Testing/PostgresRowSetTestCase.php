@@ -9,11 +9,12 @@ use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\Codec\ArrayCodec;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
+use Ultra\Sql\SqlType;
 
 abstract class PostgresRowSetTestCase extends TestCase
 {
@@ -56,7 +57,7 @@ abstract class PostgresRowSetTestCase extends TestCase
                     primaryKey: ['id'],
                 ),
             ]);
-            $rows = $adapter->compileRowSet($schema, $tableName)();
+            $rows = $adapter->compileRowSet(SchemaRowSet::fromTable($schema, $tableName))();
             $callback($connection, $rows, $tableName, new MappedTableUnitOfWork([$tableName => $rows], $adapter));
         } finally {
             PostgresConnectionSupport::resetSharedConnection($connection);

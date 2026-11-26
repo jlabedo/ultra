@@ -24,9 +24,8 @@ Adapters own:
 
 ## Defined row sets and owner collections
 
-A row set selects a table declared in [Schema](../schema/README.md) by its stable ID. Schema
-provides the physical column names, nullability and complete primary key. The row set selection can expose a
-subset of columns and always includes the primary key. After decoding, supported PHP representations are
+A row-set definition describes the physical table, exposed columns, nullability and complete key.
+It can be declared directly or derived from a [Schema](../schema/README.md) table. After decoding, supported PHP representations are
 `int`, `string`, `bool`, `float` and normalized arrays of scalar values, null and nested arrays. A key column
 is a non-null integer or string. Row writes assign only non-key columns. A value supplied by a database
 default becomes available after persistence.
@@ -52,10 +51,39 @@ excluded items while keeping earlier expectations. Later writes by complete key 
 from the desired membership, including an unchanged item whose row update becomes a check only.
 A reconciliation validates all supplied rows before modifying the buffer. Different owner keys are disjoint.
 
+## Declare a row set
+
+An autoconfigured service can expose a public static method that takes no arguments and returns
+a `MappedRowSetDefinition`. The compiler calls this method during container compilation.
+The attribute names the shared buffer service. The optional `unitOfWork` names its coordinator.
+
+```php
+use Ultra\MappedTable\Attribute\DefineMappedRowSet;
+use Ultra\MappedTable\MappedRowSetDefinition;
+
+final class DocumentRows
+{
+    #[DefineMappedRowSet('library.documents', unitOfWork: 'library.persistence')]
+    public static function documents(): MappedRowSetDefinition
+    {
+        return new MappedRowSetDefinition(
+            table: 'document_library',
+            columns: ['id' => 'uuid', 'title' => 'text'],
+            primaryKey: ['id'],
+        );
+    }
+}
+```
+
+Inject `library.documents` into the repository as a `MappedRowSet`. Consumers of that ID share a buffer.
+The owner of `library.persistence` controls its flush and cleanup. Omitting `unitOfWork` enrolls the
+buffer in the application coordinator. PHP configuration can also pass definitions to
+`MappedTableExtension(rowSets: ...)` keyed by buffer service ID.
+
 ## Compile row sets from Schema
 
 With Symfony, activate each row set by its stable Schema table ID. The ID is also the Symfony service ID
-for injection, query guards and projection ownership. Symfony assembles the schema through
+for injection and query guards. Symfony assembles the schema through
 [`#[DefineSchema]`](../schema/README.md#symfony-discovery).
 
 ```php
@@ -77,7 +105,11 @@ Set `owner` to the name of a declared foreign key to make it a Mapped Table owne
 parent row set too. The foreign key must use immutable child key columns and leave at least one item key column.
 For collections without a mapped persistence dependency, set `ownerColumns` to those immutable child key IDs.
 
-For manual assembly, call `$adapter->compileRowSet($schema, $tableId)`. Use the same options as named arguments.
+A factory can also return `SchemaRowSet::fromTable($schema, $tableId)`. The selected table and
+referenced keys must be available at compilation. Instance-method migration fragments are resolved
+when the migration command runs. Use a direct definition for tables supplied only by such fragments.
+
+For manual assembly, pass the resulting definition to `$adapter->compileRowSet($definition)`.
 The factory binds the mapping to the adapter and creates a fresh buffer on each invocation. Compilation prepares
 the mapping and, for PostgreSQL, the SQL fragments once. Reuse the bound row set inside its unit of work.
 
@@ -92,12 +124,12 @@ set of referenced definitions in the container. Manual assembly validates the sa
 the order when creating the unit of work.
 
 With Symfony, `MappedTableExtension` enrolls one application `MappedTableUnitOfWork` in the composite
-registered by `UnitOfWorkExtension`. Row sets declared as
-[projection-owned](../projections/README.md#mapped-row-sets-in-symfony) use the projection's private
-coordinator. Inject the row sets by their Symfony service IDs to prepare operations. In manual assembly, create
+registered by `UnitOfWorkExtension`. A named coordinator is flushed by its caller, for example a
+[projection](../projections/README.md#mapped-row-sets-in-symfony). Inject the row sets by their Symfony service IDs to prepare operations. In manual assembly, create
 the row sets through one adapter and pass them with that adapter to `MappedTableUnitOfWork`. For declared
-dependencies and guards, key the map by row set ID. A row set belongs to one coordinator. Call
-the coordinator through the runner or explicitly inside a transaction active on the adapter's resource.
+dependencies and guards, key the map by row set ID. Each buffer belongs to one coordinator. Distinct
+buffers can map the same physical table in different coordinators. Their pending changes are independent.
+Call the coordinator through the runner or explicitly inside a transaction active on the adapter's resource.
 
 For each flush, the coordinator takes a snapshot of every pending plan, validates the combined plan and
 acquires the query guards before replaying observed queries. It calls its adapter with the complete ordered
@@ -164,20 +196,12 @@ one unit of work, including when the unit of work contains a single row set.
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedTableUnitOfWork;
-use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
-use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\TableDefinition;
+use Ultra\MappedTable\MappedRowSetDefinition;
 
 $database = new InMemoryRowDatabase();
 $adapter = new InMemoryMappedTableAdapter($database);
-$schema = new SchemaDefinition([
-    new TableDefinition('users', columns: [
-        new ColumnDefinition('id', type: ColumnType::Text),
-        new ColumnDefinition('status', type: ColumnType::Text),
-    ], primaryKey: ['id']),
-]);
-$table = $adapter->compileRowSet($schema, 'users')();
+$users = new MappedRowSetDefinition('users', ['id' => 'text', 'status' => 'text'], ['id']);
+$table = $adapter->compileRowSet($users)();
 $unitOfWork = new MappedTableUnitOfWork(['users' => $table], $adapter);
 $database->seedRow('users', 'id', ['id' => 'user-1', 'status' => 'pending']);
 
@@ -301,7 +325,7 @@ When `doctrine/dbal` is installed, you can use `Ultra\MappedTable\PostgresMapped
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 
 $adapter = new PostgresMappedTableAdapter($connection);
-$table = $adapter->compileRowSet($schema, $tableId)();
+$table = $adapter->compileRowSet($definition)();
 ```
 
 The Postgres adapter checks expected column values with `IS NOT DISTINCT FROM`, so `null` expectations are handled correctly.
@@ -370,7 +394,7 @@ $schema = new SchemaDefinition([
         new ColumnDefinition('evidence', type: ColumnType::Jsonb, nullable: true),
     ], primaryKey: ['id']),
 ]);
-$acceptances = $adapter->compileRowSet($schema, 'acceptances')();
+$acceptances = $adapter->compileRowSet(SchemaRowSet::fromTable($schema, 'acceptances'))();
 ```
 
 ### Column codecs
@@ -381,7 +405,7 @@ codec. Schema declarations carry the SQL type. Mapped Table binds the codec when
 In standalone PHP, supply codec instances keyed by SQL type.
 
 ```php
-$rows = $adapter->compileRowSet($schema, 'records', codecs: [
+$rows = $adapter->compileRowSet($definition, codecs: [
     'hstore' => $attributesCodec,
 ])();
 ```
@@ -396,7 +420,7 @@ $container->register(AttributesCodec::class)
 ```
 
 An application registration takes precedence over the built-in codec for the same SQL type.
-Schema's canonical type identity determines the association. For example, `int4` and `integer` share
+The canonical SQL type in `ultra/sql-type` determines the association. For example, `int4` and `integer` share
 one registration. SQL modifiers take part in matching, so an association for `varchar(10)` applies
 to that length. Two application codecs for the same canonical type are a configuration error.
 For a type declared as a literal SQL name in Schema, use the same declaration as the registration key.
@@ -427,6 +451,7 @@ same scenario exercises the in-memory and Postgres adapters.
 | Guarantee | Suite | Cases |
 | --- | --- | --- |
 | Definitions compile to shared, adapter-backed row sets with inferred representations | [DefinedRowSetsTest](../../src/StoredState/Tests/MappedTable/DefinedRowSetsTest.php) | Dumped container, shared adapter and schema-derived SQL. |
+| Dedicated coordinators flush independent buffers | [NamedCoordinatorTest](../../src/StoredState/Tests/MappedTable/NamedCoordinatorTest.php) | Native discovery, shared database table, isolated flush and cleanup, parent and guard validation. |
 | Schema tables are activated and compiled explicitly | [SchemaRowSetCompilationTest](../../src/StoredState/Tests/MappedTable/SchemaRowSetCompilationTest.php) | Manual assembly, a service alias, unknown types, temporal keys and owner selection. |
 | Application codecs bind to a canonical SQL type | [ColumnCodecRegistrationTest](../../src/StoredState/Tests/MappedTable/ColumnCodecRegistrationTest.php) | Standalone registration, tagged Symfony services, alias overrides and duplicate registrations. |
 | Supported values round-trip with matching key and expectation semantics | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | UUID keys and object inputs, timestamp comparisons and precision, arrays and JSONB values. |

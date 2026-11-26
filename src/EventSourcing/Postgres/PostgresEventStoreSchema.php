@@ -7,13 +7,13 @@ namespace Ultra\EventStore_Postgres;
 use Ultra\EventStore_Postgres\LockStrategy\LockStrategy;
 use Ultra\EventStore_Postgres\LockStrategy\SchemaLockStrategy;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
-use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
+use Ultra\Sql\SqlType;
 
 /** @internal Shared storage definitions for both PostgreSQL Event Store variants. */
 final readonly class PostgresEventStoreSchema

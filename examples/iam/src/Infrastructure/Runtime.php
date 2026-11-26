@@ -24,6 +24,7 @@ use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Mapper_Compiler\NormalizationShapeAnalyzer;
 use Ultra\StateStore\Attribute\StateId;
@@ -79,7 +80,7 @@ final readonly class Runtime
         $schema = IamSchema::definition();
         $schemaTables = $schema->tablesById();
         foreach (IamSchema::rowSets() as $table => $options) {
-            $row = $adapter->compileRowSet($schema, $table, ...$options)();
+            $row = $adapter->compileRowSet(SchemaRowSet::fromTable($schema, $table, ...$options))();
             $rowSets[$table] = $row;
             $tables[$schemaTables[$table]->name] = $row;
         }

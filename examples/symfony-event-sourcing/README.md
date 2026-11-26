@@ -85,11 +85,11 @@ et la même connexion DBAL, fournie par DoctrineBundle et configurée dans
 [l'Unit of Work](../../docs/transactions/README.md) et de son
 [intégration Symfony](../../docs/transactions/symfony.md).
 
-[OrderSummary](src/Projection/OrderSummary.php) déclare
-la table `OrderSummarySchema::ORDER_SUMMARY` dans `rowSets`
-([déclaration Schema](src/Projection/OrderSummarySchema.php))
-et reçoit le `MappedRowSet` par injection. Le conteneur compile une unité de travail
-privée pour la projection. L'adaptateur PostgreSQL utilise la connexion DBAL de
+[OrderSummary](src/Projection/OrderSummary.php) reçoit son [dépôt](src/Projection/OrderSummaryRepository.php)
+par constructeur. Le dépôt reçoit le buffer partagé défini par
+[OrderSummarySchema](src/Projection/OrderSummarySchema.php).
+Le [câblage Symfony](config/services.yaml) rattache le coordinateur `order_summary.persistence` à la projection.
+L'adaptateur PostgreSQL utilise la connexion DBAL de
 l'event store et du runner de projection.
 
 Les handlers traitent `OrderPlaced` et `OrderShipped` dans l'ordre de chaque

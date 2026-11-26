@@ -7,7 +7,7 @@ namespace Ultra\MappedTable\Codec;
 use Ultra\MappedTable\ColumnCodec;
 use Ultra\MappedTable\JsonNull;
 use Ultra\MappedTable\Storage\JsonbValue;
-use Ultra\Schema\SqlType;
+use Ultra\Sql\SqlType;
 
 /** @internal */
 final class JsonbCodec extends ColumnCodec

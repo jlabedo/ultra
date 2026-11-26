@@ -11,10 +11,11 @@
     ],
     "require": {
         "php": ">=8.5",
-        "ultra/schema": "*",
+        "ultra/sql-type": "*",
         "ultra/unit-of-work": "*"
     },
     "suggest": {
+        "ultra/schema": "Build row set definitions from Schema tables.",
         "doctrine/dbal": "Required to use the PostgresMappedTableAdapter.",
         "symfony/dependency-injection": "Required for compiling mapped row set definitions with Symfony.",
         "ultra/container": "Required to register MappedTableExtension."

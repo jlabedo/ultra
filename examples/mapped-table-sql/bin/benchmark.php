@@ -10,10 +10,11 @@ use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\SqlTrace;
 use Ultra\Testing\SqlTraceMiddleware;
@@ -140,7 +141,7 @@ function benchmark(Connection $connection, string $workload, int $warmups, int $
         ),
     ]);
     $adapter = new PostgresMappedTableAdapter($connection);
-    $rows = $adapter->compileRowSet($schema, BENCHMARK_TABLE, ownerColumns: ['owner'])();
+    $rows = $adapter->compileRowSet(SchemaRowSet::fromTable($schema, BENCHMARK_TABLE, ownerColumns: ['owner']))();
     $guarded = 'guarded-100' === $workload;
     $unit = new MappedTableUnitOfWork(
         [BENCHMARK_TABLE => $rows],

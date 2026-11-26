@@ -37,6 +37,7 @@
         "ultra/mapper-compiler": "dev-main",
         "ultra/message-handling": "dev-main",
         "ultra/message-handling-compiler": "dev-main",
+        "ultra/schema": "dev-main",
         "ultra/state-store": "dev-main",
         "ultra/state-store-bundle": "dev-main",
         "ultra/stateful-message-handling": "dev-main",

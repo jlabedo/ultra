@@ -20,6 +20,7 @@
         "ultra/mapped-table": "dev-main",
         "ultra/mapper": "dev-main",
         "ultra/mapper-compiler": "dev-main",
+        "ultra/schema": "dev-main",
         "ultra/state-store": "dev-main",
         "ultra/unit-of-work": "dev-main",
         "ultra/time": "dev-main"

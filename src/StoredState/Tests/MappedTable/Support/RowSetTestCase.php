@@ -9,11 +9,12 @@ use PHPUnit\Framework\TestCase;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableAdapter;
+use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
+use Ultra\Sql\SqlType;
 use Ultra\Testing\PostgresConnectionSupport;
 
 abstract class RowSetTestCase extends TestCase
@@ -76,7 +77,7 @@ abstract class RowSetTestCase extends TestCase
                 primaryKey: $keys,
             ),
         ]);
-        $rows = $fixture->adapter->compileRowSet($schema, $fixture->tableName, ownerColumns: ['tenant', 'owner'])();
+        $rows = $fixture->adapter->compileRowSet(SchemaRowSet::fromTable($schema, $fixture->tableName, ownerColumns: ['tenant', 'owner']))();
 
         return [$fixture, $rows];
     }

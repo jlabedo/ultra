@@ -18,6 +18,7 @@
         "doctrine/dbal": "^4.0",
         "symfony/console": "7.*|8.*",
         "ultra/mapped-table": "dev-main",
+        "ultra/schema": "dev-main",
         "ultra/testing-postgres": "dev-main",
         "ultra/unit-of-work": "dev-main"
     },

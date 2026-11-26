@@ -21,7 +21,6 @@ final readonly class ProjectingEventStore implements EventStore
         private ProjectionActivityRecorder $activityRecorder,
         private ProjectionTransactionManagerInterface $transactions,
         private ProjectionStateRepository $states,
-        private ProjectionBatchExecutor $batches = new ProjectionBatchExecutor(),
     ) {}
 
     public function load(
@@ -67,7 +66,7 @@ final readonly class ProjectingEventStore implements EventStore
             $this->inner->append($events, ...$appendConditions);
             $applied = [];
             foreach ($live as [$runtime, $matching]) {
-                $this->batches->execute($runtime, $matching);
+                $runtime->applyBatch($matching);
                 $applied[] = $runtime->projectionId();
             }
             $this->activityRecorder->record($events, $applied);

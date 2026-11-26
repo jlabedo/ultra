@@ -70,7 +70,7 @@ phase or dependency on parent composite participant order is introduced.
 
 ## Projection-owned persistence
 
-[ProjectionBatchExecutor](../../src/Projection/Runtime/ProjectionBatchExecutor.php)
+[ProjectionRuntime::applyBatch()](../../src/Projection/Runtime/ProjectionRuntime.php)
 shares batch application between append, worker execution and activation. It calls
 `apply()` for each event, the optional `ProjectionFlush` hook, and then the projection's
 persistence participants. Buffers are cleared on both success and failure. All writes
@@ -99,46 +99,29 @@ Projection handlers must not append new domain events or perform irreversible ex
 
 ### Mapped row sets in Symfony
 
-With `MappedTableExtension`, list the Schema table IDs of the row sets the projection writes in
-`rowSets` and use the same IDs for injection. [Select the tables in MappedTable](../stored-state/mapped-table.md#compile-row-sets-from-schema).
+Compile the projection's buffers into a [named MappedTable coordinator](../stored-state/mapped-table.md#declare-a-row-set).
+Inject a buffer into a repository by its service ID. The projection receives the repository by constructor
+injection. Register the coordinator as a persistence participant on the projection service.
 
-```php
-#[Projection(
-    name: 'account_balance',
-    partitionBy: 'accountId',
-    mode: ProjectionMode::Synchronous,
-    rowSets: [AccountSchema::BALANCES],
-)]
-final readonly class AccountBalanceProjection
-{
-    public function __construct(
-        #[Autowire(service: AccountSchema::BALANCES)]
-        private MappedRowSet $balances,
-    ) {}
-}
+```yaml
+services:
+    App\Projection\DocumentLibraryProjection:
+        autowire: true
+        autoconfigure: true
+        tags:
+            - { name: ultra.projection.persistence, service: library.persistence }
 ```
 
-Symfony compiles a private `MappedTableUnitOfWork` for those row sets and gives it to
-the projection runtime. The handler, replay and reset paths flush the same private
-buffers through `ProjectionBatchExecutor`. The private mapped-table participant flushes
-before additional participants of that projection. The application composite flushes the
-remaining mapped row sets.
+The runtime runs participants in declaration order (attribute entries, service tags,
+then the projection itself if it implements `UnitOfWork`). A runtime processes one batch at a time.
+Handlers, replay, initialization and reset reuse the same services. The application coordinator retains
+its own buffers throughout a synchronous append. Configure the projection's repository with its dedicated
+buffer. Commands can use a separate read interface for the projected data.
 
-A direct constructor injection of a compiled `MappedRowSet` requires a matching entry
-in `rowSets`. For an informational read of another writer's table, use a read service.
-Configure PostgreSQL persistence on one connection. Symfony checks direct connection
-service references of the built-in PostgreSQL projection implementation, event-store
-adapters and the adapter for private mapped tables. Custom factories and instances
-supplied by the application must use the same connection as well.
-
-A row set has one writer coordinator. A parent and child linked by a declared owner
-dependency must belong to the same coordinator. All dependencies of a query guard must
-also belong to one coordinator, and code observing the guard must use that coordinator's
-unit of work. Symfony rejects split dependencies, competing projection owners, and
-StateStore bindings to projection-owned row sets at compilation.
-
-The [Symfony event sourcing example](../../examples/symfony-event-sourcing/README.md)
-shows the injection and a transactional row-set reset.
+PostgreSQL participants must use the transaction's connection. Symfony checks the built-in PostgreSQL
+adapters' direct connection references. Custom factories and supplied instances must use the same connection.
+The [Symfony event sourcing example](../../examples/symfony-event-sourcing/README.md) exercises a
+repository, a shared projection buffer and a transactional reset.
 
 ## Managed reconstruction
 

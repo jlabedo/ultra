@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Schema;
+namespace Ultra\Sql;
 
 /** Structured SQL identity resolved for PostgreSQL. */
 final readonly class SqlType

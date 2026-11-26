@@ -18,6 +18,7 @@ use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedTableAdapter;
+use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\QueryGuard;
 use Ultra\MappedTable\QueryGuardDependency;
@@ -26,10 +27,10 @@ use Ultra\Mapper_Bundle\MapperExtension;
 use Ultra\Mapper_Bundle\TagNames as MapperTagNames;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
+use Ultra\Sql\ColumnType;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateColumn;
@@ -399,8 +400,8 @@ final class ContainerIntegrationTest extends StateStoreTestCase
     public function test_states_cannot_bind_projection_owned_tables(): void
     {
         $this->expectException(InvalidStateConfigurationException::class);
-        $this->expectExceptionMessage('StateStore cannot bind table');
-        $this->createContainer(privateRowSets: [StateStoreSchema::ORDERS, StateStoreSchema::ORDER_LINES]);
+        $this->expectExceptionMessage('needs a mapped row set definition');
+        $this->createContainer(unitOfWork: 'test.private');
     }
 
     public function test_bundle_autoconfiguration_marks_states_as_normalizable_resources(): void
@@ -428,7 +429,6 @@ final class ContainerIntegrationTest extends StateStoreTestCase
 
     /**
      * @param list<class-string> $extraStates
-     * @param list<string> $privateRowSets
      */
     private function createContainer(
         bool $withQueryGuard = false,
@@ -436,7 +436,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
         bool $withoutOwnerDependency = false,
         array $extraStates = [],
         ?Connection $postgres = null,
-        array $privateRowSets = [],
+        string $unitOfWork = MappedTableUnitOfWork::class,
     ): ContainerBuilder {
         $container = $this->stateStoreContainer($postgres);
         new SchemaExtension()->build($container);
@@ -446,10 +446,7 @@ final class ContainerIntegrationTest extends StateStoreTestCase
             StateStoreSchema::ORDER_LINES => $withoutOwnerDependency
                 ? ['ownerColumns' => ['order_id']]
                 : ['owner' => 'owner'],
-        ])->build($container);
-        if ([] !== $privateRowSets) {
-            MappedTableExtension::privateUnitOfWork($container, 'test.projection', $privateRowSets);
-        }
+        ], unitOfWork: $unitOfWork)->build($container);
         $container->setAlias('test.orders', StateStoreSchema::ORDERS)->setPublic(true);
         $container->setAlias('test.lines', StateStoreSchema::ORDER_LINES)->setPublic(true);
 
