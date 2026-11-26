@@ -32,19 +32,17 @@ final readonly class QueueWorker
             return false;
         }
 
-        $envelope = $delivery->envelope;
-        $route = $envelope->headers->getString(AsyncHeaderNames::ROUTE);
-        if (null === $route || '' === $route) {
-            $this->receiver->release($delivery);
-
-            throw new \LogicException(sprintf(
-                'Async delivery "%s" is missing the "%s" route header.',
-                $delivery->messageId->value,
-                AsyncHeaderNames::ROUTE,
-            ));
-        }
-
         try {
+            $envelope = $delivery->envelope;
+            $route = $envelope->headers->getString(AsyncHeaderNames::ROUTE);
+            if (null === $route || '' === $route) {
+                throw new \LogicException(sprintf(
+                    'Async delivery "%s" is missing the "%s" route header.',
+                    $delivery->messageId->value,
+                    AsyncHeaderNames::ROUTE,
+                ));
+            }
+
             /** @var MessageHandlerInterface $handler */
             $handler = $this->container->get($route);
 

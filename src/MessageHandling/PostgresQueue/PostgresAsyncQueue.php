@@ -13,12 +13,16 @@ use Ultra\MessageHandling\Async\AsyncHeaders;
 use Ultra\MessageHandling\Async\AsyncMessageId;
 use Ultra\MessageHandling\Async\AsyncMessageReceiver;
 use Ultra\MessageHandling\Async\AsyncMessageSender;
+use Ultra\MessageHandling\Async\AsyncRetryPolicy;
+use Ultra\MessageHandling\Async\DeadLetter;
+use Ultra\MessageHandling\Async\DeadLetterQueue;
 use Ultra\Time\ClockInterface;
 use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
 use Ultra\Time\SystemClock;
 
-final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMessageReceiver
+/** @implements DeadLetterQueue<EncodedAsyncEnvelope> */
+final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMessageReceiver, DeadLetterQueue
 {
     public const string DEFAULT_TABLE_PREFIX = 'async_queue_';
 
@@ -31,6 +35,7 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         private string $tablePrefix = self::DEFAULT_TABLE_PREFIX,
         private ClockInterface $clock = new SystemClock(),
         ?string $workerId = null,
+        private AsyncRetryPolicy $retryPolicy = new AsyncRetryPolicy(),
     ) {
         $this->workerId = $workerId ?? (string) gethostname() . '-' . bin2hex(random_bytes(8));
     }
@@ -44,14 +49,33 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         $availableAt =
             $options->availableAt ?? ($options->delay instanceof Duration ? $now->add($options->delay) : $now);
 
-        if ($options->replace && null !== $options->key) {
-            $this->connection->executeStatement(
-                sprintf('DELETE FROM %s WHERE queue_name = ? AND schedule_key = ?', $this->messagesTable()),
-                [$this->queueName, $options->key],
-                [ParameterType::STRING, ParameterType::STRING],
-            );
+        $key = $options->key;
+        if ($options->replace && null !== $key) {
+            $this->connection->transactional(function () use ($messageId, $encoded, $key, $availableAt, $now): void {
+                $this->connection->executeStatement(
+                    sprintf(
+                        'DELETE FROM %s WHERE queue_name = ? AND schedule_key = ? AND failed_at IS NULL',
+                        $this->messagesTable(),
+                    ),
+                    [$this->queueName, $key],
+                    [ParameterType::STRING, ParameterType::STRING],
+                );
+                $this->insertMessage($messageId, $encoded, $key, $availableAt, $now);
+            });
+        } else {
+            $this->insertMessage($messageId, $encoded, $key, $availableAt, $now);
         }
 
+        return $messageId;
+    }
+
+    private function insertMessage(
+        AsyncMessageId $messageId,
+        EncodedAsyncEnvelope $encoded,
+        ?string $key,
+        DatePoint $availableAt,
+        DatePoint $now,
+    ): void {
         $this->connection->executeStatement(
             sprintf('INSERT INTO %s (
                     id, queue_name, body, headers, attributes, schedule_key, available_at, created_at, updated_at
@@ -64,7 +88,7 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
                 $encoded->body,
                 $this->encodeJsonObject($encoded->headers->all(), 'async headers'),
                 $this->encodeJsonObject($encoded->attributes, 'async attributes'),
-                $options->key,
+                $key,
                 $availableAt,
                 $now,
                 $now,
@@ -81,82 +105,46 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
                 ParameterType::STRING,
             ],
         );
-
-        return $messageId;
     }
 
     public function reserve(Duration $leaseDuration = new Duration(seconds: 30)): ?AsyncDelivery
     {
-        $now = $this->clock->now();
         $leaseId = bin2hex(random_bytes(16));
-        $leasedUntil = $now->add($leaseDuration);
 
-        $row = $this->connection
-            ->executeQuery(
-                sprintf(
-                    'WITH next_message AS (
-                    SELECT id
-                    FROM %s
-                    WHERE queue_name = ?
-                      AND available_at <= CAST(? AS TIMESTAMPTZ)
-                      AND (lease_id IS NULL OR leased_until < CAST(? AS TIMESTAMPTZ))
-                    ORDER BY available_at ASC, id ASC
-                    FOR UPDATE SKIP LOCKED
-                    LIMIT 1
-                )
-                UPDATE %s q
-                SET lease_id = ?,
-                    leased_until = CAST(? AS TIMESTAMPTZ),
-                    leased_by = ?,
-                    attempts = attempts + 1,
-                    updated_at = CAST(? AS TIMESTAMPTZ)
-                FROM next_message
-                WHERE q.id = next_message.id
-                RETURNING q.id, q.body, q.headers, q.attributes, q.attempts, q.leased_until',
-                    $this->messagesTable(),
-                    $this->messagesTable(),
-                ),
-                [
-                    $this->queueName,
-                    $now,
-                    $now,
-                    $leaseId,
-                    $leasedUntil,
-                    $this->workerId,
-                    $now,
-                ],
-                [
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                ],
-            )
-            ->fetchAssociative();
+        do {
+            $row = $this->leaseNextMessage($leaseId, $leaseDuration);
+        } while (false !== $row && null !== $row['failed_at']);
 
         if (false === $row) {
             return null;
         }
 
-        $headers = AsyncHeaders::fromArray($this->decodeJsonObject($row['headers'], 'async headers'));
-        $attributes = $this->decodeJsonObject($row['attributes'], 'async attributes');
+        $messageId = new AsyncMessageId((string) $row['id']);
+        try {
+            $encoded = $this->readEncodedEnvelope($row);
+            $envelope = $this->codec->decode($encoded->body, $encoded->headers, $encoded->attributes);
 
-        return new AsyncDelivery(
-            new AsyncMessageId((string) $row['id']),
-            $this->codec->decode($this->normalizeBody($row['body']), $headers, $attributes),
-            $leaseId,
-            (int) $row['attempts'],
-            new DatePoint((string) $row['leased_until']),
-        );
+            return new AsyncDelivery(
+                $messageId,
+                $envelope,
+                $leaseId,
+                (int) $row['attempts'],
+                new DatePoint((string) $row['leased_until']),
+            );
+        } catch (\Throwable $exception) {
+            $this->releaseLease($messageId, $leaseId, null, $exception);
+
+            throw $exception;
+        }
     }
 
     public function acknowledge(AsyncDelivery $delivery): void
     {
         $this->connection->executeStatement(
-            sprintf('DELETE FROM %s WHERE id = ? AND queue_name = ? AND lease_id = ?', $this->messagesTable()),
+            sprintf(
+                'DELETE FROM %s WHERE id = ? AND queue_name = ? AND lease_id = ? AND failed_at IS NULL',
+                $this->messagesTable(),
+            ),
             [$delivery->messageId->value, $this->queueName, $delivery->leaseId],
             [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
         );
@@ -164,26 +152,7 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
 
     public function release(AsyncDelivery $delivery, ?Duration $delay = null, ?\Throwable $reason = null): void
     {
-        $now = $this->clock->now();
-        $availableAt = $delay instanceof Duration ? $now->add($delay) : $now;
-
-        $this->connection->executeStatement(
-            sprintf('UPDATE %s
-                 SET lease_id = NULL,
-                     leased_until = NULL,
-                     leased_by = NULL,
-                     available_at = CAST(? AS TIMESTAMPTZ),
-                     updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE id = ? AND queue_name = ? AND lease_id = ?', $this->messagesTable()),
-            [$availableAt, $now, $delivery->messageId->value, $this->queueName, $delivery->leaseId],
-            [
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-            ],
-        );
+        $this->releaseLease($delivery->messageId, $delivery->leaseId, $delay, $reason);
     }
 
     public function renew(AsyncDelivery $delivery, Duration $leaseDuration = new Duration(seconds: 30)): void
@@ -191,10 +160,13 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         $now = $this->clock->now();
 
         $this->connection->executeStatement(
-            sprintf('UPDATE %s
+            sprintf(
+                'UPDATE %s
                  SET leased_until = CAST(? AS TIMESTAMPTZ),
                      updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE id = ? AND queue_name = ? AND lease_id = ?', $this->messagesTable()),
+                 WHERE id = ? AND queue_name = ? AND lease_id = ? AND failed_at IS NULL',
+                $this->messagesTable(),
+            ),
             [$now->add($leaseDuration), $now, $delivery->messageId->value, $this->queueName, $delivery->leaseId],
             [
                 ParameterType::STRING,
@@ -203,6 +175,232 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
                 ParameterType::STRING,
                 ParameterType::STRING,
             ],
+        );
+    }
+
+    public function countFailed(): int
+    {
+        return (int) $this->connection->fetchOne(
+            sprintf('SELECT COUNT(*) FROM %s WHERE queue_name = ? AND failed_at IS NOT NULL', $this->messagesTable()),
+            [$this->queueName],
+            [ParameterType::STRING],
+        );
+    }
+
+    /** @return list<DeadLetter<EncodedAsyncEnvelope>> */
+    public function listFailed(int $limit = 100, int $offset = 0): array
+    {
+        if ($limit < 1 || $offset < 0) {
+            throw new \InvalidArgumentException('Dead-letter limit must be positive and offset must be non-negative.');
+        }
+
+        $rows = $this->connection->fetchAllAssociative(
+            sprintf('SELECT id, body, headers, attributes, attempts, failed_at, failure_class, failure_message
+                 FROM %s
+                 WHERE queue_name = ? AND failed_at IS NOT NULL
+                 ORDER BY failed_at ASC, id ASC
+                 LIMIT ? OFFSET ?', $this->messagesTable()),
+            [$this->queueName, $limit, $offset],
+            [ParameterType::STRING, ParameterType::INTEGER, ParameterType::INTEGER],
+        );
+
+        return array_map($this->readDeadLetter(...), $rows);
+    }
+
+    /** @return DeadLetter<EncodedAsyncEnvelope>|null */
+    public function inspectFailed(AsyncMessageId $messageId): ?DeadLetter
+    {
+        $row = $this->connection->fetchAssociative(
+            sprintf(
+                'SELECT id, body, headers, attributes, attempts, failed_at, failure_class, failure_message
+                 FROM %s
+                 WHERE queue_name = ? AND id = ? AND failed_at IS NOT NULL',
+                $this->messagesTable(),
+            ),
+            [$this->queueName, $messageId->value],
+            [ParameterType::STRING, ParameterType::STRING],
+        );
+
+        return false === $row ? null : $this->readDeadLetter($row);
+    }
+
+    public function replayFailed(AsyncMessageId $messageId): bool
+    {
+        $now = $this->clock->now();
+
+        return 1 === (int) $this->connection->executeStatement(
+            sprintf(
+                'UPDATE %s
+                 SET failed_at = NULL,
+                     failure_class = NULL,
+                     failure_message = NULL,
+                     schedule_key = NULL,
+                     attempts = 0,
+                     available_at = CAST(? AS TIMESTAMPTZ),
+                     updated_at = CAST(? AS TIMESTAMPTZ)
+                 WHERE queue_name = ? AND id = ? AND failed_at IS NOT NULL',
+                $this->messagesTable(),
+            ),
+            [$now, $now, $this->queueName, $messageId->value],
+            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
+        );
+    }
+
+    /** @return array<string, mixed>|false */
+    private function leaseNextMessage(string $leaseId, Duration $leaseDuration): array|false
+    {
+        // The selected row is locked before either granting a new lease or quarantining an exhausted delivery.
+        $now = $this->clock->now();
+
+        return $this->connection->fetchAssociative(
+            sprintf(
+                "WITH next_message AS (
+                    SELECT id, attempts >= ? AS exhausted
+                    FROM %s
+                    WHERE queue_name = ?
+                      AND failed_at IS NULL
+                      AND available_at <= CAST(? AS TIMESTAMPTZ)
+                      AND (lease_id IS NULL OR leased_until < CAST(? AS TIMESTAMPTZ))
+                    ORDER BY available_at ASC, id ASC
+                    FOR UPDATE SKIP LOCKED
+                    LIMIT 1
+                )
+                UPDATE %s q
+                SET lease_id = CASE WHEN next_message.exhausted THEN NULL ELSE ? END,
+                    leased_until = CASE WHEN next_message.exhausted THEN NULL ELSE CAST(? AS TIMESTAMPTZ) END,
+                    leased_by = CASE WHEN next_message.exhausted THEN NULL ELSE ? END,
+                    attempts = CASE WHEN next_message.exhausted THEN q.attempts ELSE q.attempts + 1 END,
+                    failed_at = CASE WHEN next_message.exhausted THEN CAST(? AS TIMESTAMPTZ) END,
+                    failure_message = CASE WHEN next_message.exhausted THEN
+                        CASE WHEN q.lease_id IS NULL THEN 'Delivery attempt limit was reached.'
+                        ELSE 'Delivery lease expired after its final attempt.' END
+                    END,
+                    updated_at = CAST(? AS TIMESTAMPTZ)
+                FROM next_message
+                WHERE q.id = next_message.id
+                RETURNING q.id, q.attempts, q.leased_until, q.failed_at,
+                    CASE WHEN NOT next_message.exhausted THEN q.body END AS body,
+                    CASE WHEN NOT next_message.exhausted THEN q.headers END AS headers,
+                    CASE WHEN NOT next_message.exhausted THEN q.attributes END AS attributes",
+                $this->messagesTable(),
+                $this->messagesTable(),
+            ),
+            [
+                $this->retryPolicy->maxAttempts,
+                $this->queueName,
+                $now,
+                $now,
+                $leaseId,
+                $now->add($leaseDuration),
+                $this->workerId,
+                $now,
+                $now,
+            ],
+            [
+                ParameterType::INTEGER,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+            ],
+        );
+    }
+
+    private function releaseLease(
+        AsyncMessageId $messageId,
+        string $leaseId,
+        ?Duration $delay,
+        ?\Throwable $reason,
+    ): void {
+        $now = $this->clock->now();
+        if (null !== $reason) {
+            $delay ??= $this->retryPolicy->retryDelay;
+        }
+        $availableAt = null !== $delay ? $now->add($delay) : $now;
+        $failureClass = null !== $reason ? $this->postgresText($reason::class) : null;
+        $failureMessage = null !== $reason
+            ? $this->postgresText($reason->getMessage())
+            : 'Delivery was released after its final attempt.';
+
+        $this->connection->executeStatement(
+            sprintf(
+                'UPDATE %s
+                 SET lease_id = NULL,
+                     leased_until = NULL,
+                     leased_by = NULL,
+                     available_at = CAST(? AS TIMESTAMPTZ),
+                     updated_at = release.at,
+                     failed_at = CASE WHEN attempts >= release.max_attempts THEN release.at END,
+                     failure_class = CASE WHEN attempts >= release.max_attempts THEN ? END,
+                     failure_message = CASE WHEN attempts >= release.max_attempts THEN ? END
+                 FROM (VALUES (CAST(? AS TIMESTAMPTZ), CAST(? AS INTEGER))) AS release(at, max_attempts)
+                 WHERE id = ? AND queue_name = ? AND lease_id = ? AND failed_at IS NULL',
+                $this->messagesTable(),
+            ),
+            [
+                $availableAt,
+                $failureClass,
+                $failureMessage,
+                $now,
+                $this->retryPolicy->maxAttempts,
+                $messageId->value,
+                $this->queueName,
+                $leaseId,
+            ],
+            [
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::INTEGER,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+            ],
+        );
+    }
+
+    /**
+     * @param array<string, mixed> $row
+     * @return DeadLetter<EncodedAsyncEnvelope>
+     */
+    private function readDeadLetter(array $row): DeadLetter
+    {
+        return new DeadLetter(
+            new AsyncMessageId((string) $row['id']),
+            $this->readEncodedEnvelope($row),
+            (int) $row['attempts'],
+            new DatePoint((string) $row['failed_at']),
+            null === $row['failure_class'] ? null : (string) $row['failure_class'],
+            (string) $row['failure_message'],
+        );
+    }
+
+    /** @param array<string, mixed> $row */
+    private function readEncodedEnvelope(array $row): EncodedAsyncEnvelope
+    {
+        return new EncodedAsyncEnvelope(
+            $this->normalizeBody($row['body']),
+            AsyncHeaders::fromArray($this->decodeJsonObject($row['headers'], 'async headers')),
+            $this->decodeJsonObject($row['attributes'], 'async attributes'),
+        );
+    }
+
+    private function postgresText(string $text): string
+    {
+        $text = str_replace("\0", '\0', $text);
+        if (1 === preg_match('//u', $text)) {
+            return $text;
+        }
+
+        /** @var string */
+        return json_decode(
+            json_encode($text, JSON_INVALID_UTF8_SUBSTITUTE | JSON_THROW_ON_ERROR),
+            flags: JSON_THROW_ON_ERROR,
         );
     }
 

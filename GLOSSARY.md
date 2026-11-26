@@ -19,3 +19,9 @@ The information whose concurrent modification must invalidate a decision. It can
 
 **Stream**:
 An ordered, filtered sequence of events. Filters currently select events by domain identifiers and event names.
+
+**Async delivery attempt**:
+One reservation of an asynchronous message. An attempt counts even if the message cannot be decoded or the lease expires before the worker reports an outcome.
+
+**Dead letter**:
+An asynchronous message quarantined after its attempt budget is exhausted. It retains its envelope and terminal failure details for inspection and replay.

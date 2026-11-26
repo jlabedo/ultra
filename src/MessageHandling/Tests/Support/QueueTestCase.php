@@ -8,6 +8,7 @@ use PHPUnit\Framework\TestCase;
 use Ultra\MessageHandling\Async\AsyncEnvelope;
 use Ultra\MessageHandling\Async\AsyncHeaderNames;
 use Ultra\MessageHandling\Async\AsyncHeaders;
+use Ultra\MessageHandling\Async\AsyncRetryPolicy;
 use Ultra\MessageHandling\MessageContext;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Time\StatickClock;
@@ -24,8 +25,10 @@ abstract class QueueTestCase extends TestCase
         yield 'Postgres' => ['postgres'];
     }
 
-    protected function fixture(string $backend = 'memory'): QueueFixture
-    {
+    protected function fixture(
+        string $backend = 'memory',
+        AsyncRetryPolicy $retryPolicy = new AsyncRetryPolicy(),
+    ): QueueFixture {
         $connection = null;
         if ('postgres' === $backend) {
             $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
@@ -34,7 +37,11 @@ abstract class QueueTestCase extends TestCase
             }
             $connection = PostgresConnectionSupport::sharedConnection($dsn);
         }
-        $fixture = new QueueFixture(new StatickClock(new \DateTimeImmutable('2026-01-01 00:00:00')), $connection);
+        $fixture = new QueueFixture(
+            new StatickClock(new \DateTimeImmutable('2026-01-01 00:00:00')),
+            $connection,
+            $retryPolicy,
+        );
         $this->fixtures[] = $fixture;
         return $fixture;
     }

@@ -63,8 +63,8 @@ final class DeliveryOutcomeTest extends QueueTestCase
                 static::assertStringContainsString('route', $caught->getMessage());
             } else {
                 static::assertSame($failure, $caught);
-                static::assertSame($failure, $receiver->reason);
             }
+            static::assertSame($caught, $receiver->reason);
         }
         static::assertSame(2, $f->count());
         static::assertSame(in_array($stage, ['handler', 'acknowledge'], true) ? ['first'] : [], $handler->messages);

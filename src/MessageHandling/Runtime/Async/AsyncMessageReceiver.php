@@ -12,6 +12,7 @@ interface AsyncMessageReceiver
 
     public function acknowledge(AsyncDelivery $delivery): void;
 
+    /** Release the lease or quarantine the delivery when its attempt limit is reached. */
     public function release(AsyncDelivery $delivery, ?Duration $delay = null, ?\Throwable $reason = null): void;
 
     public function renew(AsyncDelivery $delivery, Duration $leaseDuration = new Duration(seconds: 30)): void;

@@ -7,6 +7,7 @@ namespace Ultra\MessageHandling\Tests;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MessageHandling\Async\AsyncEnqueueOptions;
+use Ultra\MessageHandling\Async\AsyncRetryPolicy;
 use Ultra\MessageHandling\Tests\Support\QueueTestCase;
 use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
@@ -43,14 +44,25 @@ final class QueueSchedulingTest extends QueueTestCase
         static::assertSame('scheduled', $delivery->envelope->message->value);
     }
 
-    #[DataProvider('backends')]
-    public function test_release_can_delay_redelivery(string $backend): void
+    /** @return iterable<string, array{string, bool}> */
+    public static function releaseOutcomes(): iterable
     {
-        $f = $this->fixture($backend);
+        foreach (self::backends() as $backend => [$implementation]) {
+            yield $backend . ' explicit postponement' => [$implementation, false];
+            yield $backend . ' override policy after failure' => [$implementation, true];
+        }
+    }
+
+    #[DataProvider('releaseOutcomes')]
+    public function test_release_uses_explicit_delay_even_when_a_retry_delay_is_configured(
+        string $backend,
+        bool $failed,
+    ): void {
+        $f = $this->fixture($backend, new AsyncRetryPolicy(retryDelay: Duration::seconds(30)));
         $f->queue->enqueue($this->envelope('retry'));
         $delivery = $f->queue->reserve();
         static::assertNotNull($delivery);
-        $f->queue->release($delivery, Duration::seconds(20));
+        $f->queue->release($delivery, Duration::seconds(20), $failed ? new \RuntimeException('failed') : null);
         static::assertNull($f->queue->reserve());
         $f->clock->sleep(Duration::seconds(20));
         $retry = $f->queue->reserve();
