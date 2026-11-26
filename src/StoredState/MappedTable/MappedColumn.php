@@ -64,7 +64,14 @@ final readonly class MappedColumn
 
     public function decode(mixed $value): mixed
     {
-        return null === $value ? $this->normalize($value) : $this->checkedValue($this->boundCodec()->decode($value));
+        if (null === $value) {
+            return $this->normalize($value);
+        }
+
+        $codec = $this->boundCodec();
+        $decoded = $this->checkedValue($codec->decode($value));
+
+        return is_scalar($decoded) || $codec->decodesDetachedValues() ? $decoded : $this->normalize($decoded);
     }
 
     private function checkedValue(int|string|float|bool|array|\stdClass|JsonNull $value): mixed

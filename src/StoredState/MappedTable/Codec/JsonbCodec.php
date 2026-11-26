@@ -30,6 +30,11 @@ final class JsonbCodec extends ColumnCodec
         return JsonbValue::encode($value);
     }
 
+    public function decodesDetachedValues(): bool
+    {
+        return true;
+    }
+
     public function decode(mixed $value): int|string|float|bool|array|\stdClass|JsonNull
     {
         return is_string($value)

@@ -363,9 +363,6 @@ final class MappedRowSet
                 $values[$column] = $key->value($column);
                 continue;
             }
-            if (array_key_exists($column, $stored)) {
-                $stored[$column] = $this->mapping->column($column)->copy($stored[$column]);
-            }
             if (array_key_exists($column, $written)) {
                 $values[$column] = $written[$column];
             } elseif (array_key_exists($column, $stored)) {

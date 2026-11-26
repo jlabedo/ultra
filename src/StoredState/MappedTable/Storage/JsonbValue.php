@@ -33,40 +33,31 @@ final class JsonbValue
     public static function decode(string $json): int|string|float|bool|array|\stdClass|JsonNull
     {
         try {
-            $checked = preg_replace_callback(
-                self::TOKENS,
-                static fn(array $match): string => '"' === $match[0][0] ? $match[0] : self::checkedNumber($match[0]),
-                $json,
-            ) ?? throw new \InvalidArgumentException('Could not inspect JSONB numbers.');
-            $value = json_decode($checked, flags: JSON_THROW_ON_ERROR);
+            /** @var int|string|float|bool|array|\stdClass|null $value */
+            $value = json_decode($json, flags: JSON_THROW_ON_ERROR);
         } catch (\JsonException $exception) {
             throw new \InvalidArgumentException('Invalid JSONB document.', previous: $exception);
         }
 
-        return self::document($value) ?? JsonNull::Value;
+        return self::decodedDocument($value) ?? JsonNull::Value;
     }
 
-    private static function checkedNumber(string $number): string
+    private static function decodedDocument(int|string|float|bool|array|\stdClass|null $value): int|string|float|bool|array|\stdClass|null
     {
-        $decoded = json_decode($number, flags: JSON_THROW_ON_ERROR);
-        if (
-            !is_float($decoded)
-            || is_finite($decoded) && self::decimal($number) === self::decimal(self::json($decoded))
-        ) {
-            return $number;
+        if (!is_array($value) && !$value instanceof \stdClass) {
+            return $value;
         }
 
-        // PostgreSQL can print an exact PHP integer with a fractional scale, e.g. PHP_INT_MAX followed by .00.
-        [$digits, $power] = array_pad(explode('e', self::decimal($number), 2), 2, '0');
-        $zeros = (int) $power;
-        if ($zeros >= 0 && $zeros <= 19 && (strlen(ltrim($digits, '-')) + $zeros) <= 19) {
-            $integer = $digits . str_repeat('0', $zeros);
-            if (false !== filter_var($integer, FILTER_VALIDATE_INT)) {
-                return $integer;
+        $entries = $value instanceof \stdClass ? get_object_vars($value) : $value;
+        foreach ($entries as $key => $entry) {
+            if (!is_array($entry) && !$entry instanceof \stdClass) {
+                continue;
             }
+
+            $entries[$key] = self::decodedDocument($entry);
         }
 
-        throw new \InvalidArgumentException('A JSONB number loses precision in PHP.');
+        return $value instanceof \stdClass && self::hasListKeys($entries) ? (object) $entries : $entries;
     }
 
     public static function equivalent(mixed $left, mixed $right): bool
@@ -121,12 +112,6 @@ final class JsonbValue
             return $value;
         }
         if (is_float($value) && is_finite($value)) {
-            if (json_decode(self::json($value), flags: JSON_THROW_ON_ERROR) !== $value) {
-                throw new \InvalidArgumentException(
-                    'JSONB number loses precision with the PHP serialization settings.',
-                );
-            }
-
             return $value;
         }
         if (is_string($value)) {

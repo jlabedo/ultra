@@ -232,9 +232,18 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
                 0.125,
                 '0',
                 (object) [1 => 'b', 0 => 'a'],
+                1234567.12345678,
+                '900719925474099.3e+500',
             ],
         ];
-        $rows->withKey('doc')->insert()->setColumn('payload', $document);
+        $input = $document;
+        $input['values'][0] = clone $input['values'][0];
+        $doc = $rows->withKey('doc')->insert()->setColumn('payload', $input);
+        $input['values'][0]->changed = true;
+        $buffered = $doc->get(['payload'])['payload'];
+        static::assertEquals($document, $buffered);
+        $buffered['values'][0]->changed = true;
+
         $rows->withKey('json')->insert()->setColumn('payload', JsonNull::Value);
         $rows->withKey('sql')->insert()->setColumn('payload', null);
         $rows->withKey('scalar')->insert()->setColumn('payload', 'a string');
@@ -247,7 +256,12 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
         static::assertSame([], $received['values'][1]);
         static::assertInstanceOf(\stdClass::class, $received['values'][2]);
         static::assertSame(['a'], $received['values'][3]);
+        static::assertSame(false, $received['values'][5]);
+        static::assertSame(0.125, $received['values'][6]);
+        static::assertSame('0', $received['values'][7]);
         static::assertInstanceOf(\stdClass::class, $received['values'][8]);
+        static::assertSame(1234567.12345678, $received['values'][9]);
+        static::assertSame('900719925474099.3e+500', $received['values'][10]);
         static::assertSame(['payload' => 'a string'], $rows->withKey('scalar')->get(['payload']));
         static::assertSame(['payload' => JsonNull::Value], $rows->withKey('json')->get(['payload']));
         static::assertSame(['payload' => null], $rows->withKey('sql')->get(['payload']));
@@ -288,33 +302,15 @@ final class ColumnValueRoundTripTest extends RowSetTestCase
         $fixture->flush();
     }
 
-    /** @return iterable<string, array{string}> */
-    public static function unrepresentableNumbers(): iterable
-    {
-        yield 'large integer' => ['9223372036854775809'];
-        yield 'precise decimal' => ['0.10000000000000001'];
-        yield 'float overflow' => ['1e500'];
-        yield 'float underflow' => ['1e-500'];
-    }
-
-    #[DataProvider('unrepresentableNumbers')]
-    public function test_reading_jsonb_rejects_numbers_that_would_change_on_round_trip(string $number): void
+    public function test_reading_jsonb_uses_native_php_number_conversion(): void
     {
         $fixture = $this->fixture('postgres');
-        $fixture->seed(['id' => 'doc', 'payload' => '{"inside":[' . $number . ']}']);
+        $fixture->seed(['id' => 'doc', 'payload' => '[42,0.125,0.10000000000000001,' . PHP_INT_MAX . '.00]']);
 
-        $this->expectException(\InvalidArgumentException::class);
-        $this->expectExceptionMessage('loses precision in PHP');
-        $fixture->rows->withKey('doc')->observe(['payload']);
-    }
-
-    public function test_reading_jsonb_retains_an_exact_native_integer_with_decimal_scale(): void
-    {
-        $fixture = $this->fixture('postgres');
-        $fixture->seed(['id' => 'doc', 'payload' => '{"number":' . PHP_INT_MAX . '.00}']);
-        $row = $fixture->rows->withKey('doc');
-        static::assertSame(['payload' => ['number' => PHP_INT_MAX]], $row->observe(['payload']));
-        $fixture->flush();
+        static::assertSame(
+            ['payload' => [42, 0.125, 0.1, (float) PHP_INT_MAX]],
+            $fixture->rows->withKey('doc')->get(['payload']),
+        );
     }
 
     public function test_postgres_timestamp_reads_use_the_session_offset(): void

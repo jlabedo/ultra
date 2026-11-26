@@ -6,6 +6,7 @@ namespace Ultra\MappedTable\Storage;
 
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\Plan\RowMembershipPlan;
@@ -31,17 +32,26 @@ final readonly class InMemoryRowSetStorage implements RowSetStorage
     {
         $this->assertKey($key);
 
-        return $this->database->rowByKey($this->mapping->table, $key, $columns);
+        $row = $this->database->rowByKey($this->mapping->table, $key, $columns);
+
+        return false === $row ? false : $this->mapping->copyValues($row);
     }
 
     public function rows(array $columns, ?MappedKey $owner): array
     {
-        return $this->database->rowsByKey($this->mapping->table, $this->keyColumns(), $columns, $owner);
+        $rows = $this->database->rowsByKey($this->mapping->table, $this->keyColumns(), $columns, $owner);
+
+        return array_map(
+            fn(MappedRow $row): MappedRow => new MappedRow($row->key, $this->mapping->copyValues($row->columns)),
+            $rows,
+        );
     }
 
     public function rowsByKeys(array $keys, array $columns): array
     {
-        return $this->database->rowsForKeys($this->mapping->table, $keys, $columns);
+        $rows = $this->database->rowsForKeys($this->mapping->table, $keys, $columns);
+
+        return array_map($this->mapping->copyValues(...), $rows);
     }
 
     public function check(RowSetUpdatePlan $plan): void

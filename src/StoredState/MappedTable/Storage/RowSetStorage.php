@@ -9,7 +9,12 @@ use Ultra\MappedTable\MappedRow;
 use Ultra\MappedTable\Plan\RowSetUpdatePlan;
 use Ultra\MappedTable\Plan\RowUpdatePlan;
 
-/** @internal Table-specific storage operations used by the common adapter. */
+/**
+ * Table-specific storage operations used by the common adapter.
+ * Read results must detach mutable values from storage, codec state and other rows.
+ *
+ * @internal
+ */
 interface RowSetStorage
 {
     /** @return list<string> */

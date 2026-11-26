@@ -44,6 +44,50 @@ final class ColumnCodecRegistrationTest extends RowSetTestCase
         self::assertSame(['level' => 'level:8'], $rows->withKey('entry')->get(['level']));
     }
 
+    public function test_postgres_reads_detach_nested_values_reused_by_a_custom_codec(): void
+    {
+        $fixture = $this->fixture('postgres');
+        $fixture->seed(['id' => 'a', 'note' => 'first']);
+        $fixture->seed(['id' => 'b', 'note' => 'second']);
+        $codec = new class extends ColumnCodec {
+            private readonly \stdClass $decoded;
+
+            public function __construct()
+            {
+                $this->decoded = (object) ['nested' => (object) ['value' => '']];
+            }
+
+            public function normalize(mixed $value): \stdClass
+            {
+                return (object) ['nested' => clone $value->nested];
+            }
+
+            public function decode(mixed $value): \stdClass
+            {
+                $this->decoded->nested->value = (string) $value;
+
+                return $this->decoded;
+            }
+
+            public function encode(mixed $value): string
+            {
+                return $value->nested->value;
+            }
+        };
+        $rows = $fixture->newRows(codecs: ['note' => $codec]);
+
+        $first = $rows->withKey('a')->get(['note']);
+        $second = $rows->withKey('b')->get(['note']);
+        self::assertSame('first', $first['note']->nested->value);
+        self::assertSame('second', $second['note']->nested->value);
+
+        [$first, $second] = $rows->observeMany(['a', 'b'], ['note']);
+        self::assertSame('first', $first['note']->nested->value);
+        self::assertSame('second', $second['note']->nested->value);
+        $first['note']->nested->value = 'changed by the caller';
+        $fixture->flush($rows);
+    }
+
     public function test_the_dumped_container_uses_a_private_codec_service_for_one_mapped_column(): void
     {
         $builder = new ContainerBuilder();

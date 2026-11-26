@@ -105,11 +105,12 @@ readonly class MappedRowSetMetadata
      */
     public function copyValues(array $values): array
     {
+        $copy = [];
         foreach ($values as $column => $value) {
-            $values[$column] = $this->column($column)->copy($value);
+            $copy[$column] = $this->column($column)->copy($value);
         }
 
-        return $values;
+        return $copy;
     }
 
     public function column(string $name): MappedColumn

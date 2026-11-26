@@ -47,6 +47,12 @@ abstract class ColumnCodec
             : throw new \InvalidArgumentException('A non-scalar column value requires explicit parameter encoding.');
     }
 
+    /** Whether decode() returns mutable values detached from codec state and other results. */
+    public function decodesDetachedValues(): bool
+    {
+        return false;
+    }
+
     /** Decode a value returned by the SQL driver. */
     public function decode(mixed $value): int|string|float|bool|array|\stdClass|JsonNull
     {

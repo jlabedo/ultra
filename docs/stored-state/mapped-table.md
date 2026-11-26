@@ -263,6 +263,9 @@ verifies the active transaction for every non-empty flush and passes the adapter
 pending plans by physical table in dependency order. The adapter owns the execution phases and table-level
 storage operations.
 
+Committed reads return mutable values detached from storage and other rows. Each observation also records
+an independent snapshot for its optimistic expectation.
+
 The immutable types under `Ultra\MappedTable\Plan` describe the sorted row operations and membership entries. Each membership entry carries
 its owner key (or `null` for the whole table), the expected and ignored keys, and the final retained keys
 when reconciliation was requested. An empty retained set removes all rows covered by the entry.
@@ -386,8 +389,9 @@ PHP integers or floats. Objects decode as associative arrays when those arrays e
 Use `stdClass` for objects such as `{}` or `{"0":"a"}`, whose PHP arrays would encode as lists.
 Use `Ultra\MappedTable\JsonNull::Value` for JSON `null` at the root. Inside a JSON document, use PHP
 `null` for JSON `null`. JSON object property order is ignored in comparisons. List order matters.
-Reading a JSON number fails if decoding it as a PHP `int` or `float` and encoding it again changes its
-decimal value.
+JSON numbers follow PHP's native JSON decoding and encoding, so large integers and precise decimals
+can be rounded. Numbers used in optimistic observations must round-trip at PHP's configured
+serialization precision. Otherwise, flushing the observation can report a conflict.
 
 ```php
 $schema = new SchemaDefinition([
@@ -421,7 +425,9 @@ $definition = new MappedRowSetDefinition(
 
 A `ColumnCodec` normalizes non-null application input and can override `encode()`, `decode()`
 and `equivalent()`. Normalization must accept the codec's own output and detach mutable values
-from caller-owned objects. The default comparison uses strict PHP equality. A key codec opts in
+from caller-owned objects. PostgreSQL uses normalization to detach non-scalar decoded values.
+A codec can return `true` from `decodesDetachedValues()` when every result of `decode()` already owns
+its mutable contents. The default comparison uses strict PHP equality. A key codec opts in
 with `supportsKeys()` and must produce a stable integer or string for each database identity.
 A codec may declare its normalized PHP representation with `representation()` for StateStore
 validation. Native declarations require only the column names and key.
