@@ -49,22 +49,7 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         $availableAt =
             $options->availableAt ?? ($options->delay instanceof Duration ? $now->add($options->delay) : $now);
 
-        $key = $options->key;
-        if ($options->replace && null !== $key) {
-            $this->connection->transactional(function () use ($messageId, $encoded, $key, $availableAt, $now): void {
-                $this->connection->executeStatement(
-                    sprintf(
-                        'DELETE FROM %s WHERE queue_name = ? AND schedule_key = ? AND failed_at IS NULL',
-                        $this->messagesTable(),
-                    ),
-                    [$this->queueName, $key],
-                    [ParameterType::STRING, ParameterType::STRING],
-                );
-                $this->insertMessage($messageId, $encoded, $key, $availableAt, $now);
-            });
-        } else {
-            $this->insertMessage($messageId, $encoded, $key, $availableAt, $now);
-        }
+        $this->insertMessage($messageId, $encoded, $options->key, $availableAt, $now, $options->replace);
 
         return $messageId;
     }
@@ -75,36 +60,63 @@ final readonly class PostgresAsyncQueue implements AsyncMessageSender, AsyncMess
         ?string $key,
         DatePoint $availableAt,
         DatePoint $now,
+        bool $replace,
     ): void {
-        $this->connection->executeStatement(
-            sprintf('INSERT INTO %s (
-                    id, queue_name, body, headers, attributes, schedule_key, available_at, created_at, updated_at
-                ) VALUES (
-                    ?, ?, ?, CAST(? AS JSONB), CAST(? AS JSONB), ?, CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ)
-                )', $this->messagesTable()),
-            [
-                $messageId->value,
-                $this->queueName,
-                $encoded->body,
-                $this->encodeJsonObject($encoded->headers->all(), 'async headers'),
-                $this->encodeJsonObject($encoded->attributes, 'async attributes'),
-                $key,
-                $availableAt,
-                $now,
-                $now,
-            ],
-            [
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::BINARY,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-            ],
-        );
+        $table = $this->messagesTable();
+        $insert = "INSERT INTO {$table} (
+            id, queue_name, body, headers, attributes, schedule_key, available_at, created_at, updated_at
+        )";
+        $values = '?, ?, ?, CAST(? AS JSONB), CAST(? AS JSONB), ?,
+            CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ)';
+        $parameters = [
+            $messageId->value,
+            $this->queueName,
+            $encoded->body,
+            $this->encodeJsonObject($encoded->headers->all(), 'async headers'),
+            $this->encodeJsonObject($encoded->attributes, 'async attributes'),
+            $key,
+            $availableAt,
+            $now,
+            $now,
+        ];
+        $types = [
+            ParameterType::STRING,
+            ParameterType::STRING,
+            ParameterType::BINARY,
+            ParameterType::STRING,
+            ParameterType::STRING,
+            ParameterType::STRING,
+            ParameterType::STRING,
+            ParameterType::STRING,
+            ParameterType::STRING,
+        ];
+        if (!$replace) {
+            $this->connection->executeStatement("{$insert} VALUES ({$values})", $parameters, $types);
+
+            return;
+        }
+
+        // Consume the complete DELETE result before inserting so the replacement can reuse a deleted ID.
+        $sql = "WITH removed AS (
+            DELETE FROM {$table} WHERE queue_name = ? AND schedule_key = ? AND failed_at IS NULL
+            RETURNING 1
+        )
+        {$insert}
+        SELECT {$values}
+        WHERE (SELECT count(*) FROM removed) >= 0";
+        $parameters = [$this->queueName, $key, ...$parameters];
+        $types = [ParameterType::STRING, ParameterType::STRING, ...$types];
+
+        // A failed replacement must leave the caller's transaction usable.
+        if (!$this->connection->isAutoCommit() || $this->connection->isTransactionActive()) {
+            $this->connection->transactional(function () use ($sql, $parameters, $types): void {
+                $this->connection->executeStatement($sql, $parameters, $types);
+            });
+
+            return;
+        }
+
+        $this->connection->executeStatement($sql, $parameters, $types);
     }
 
     public function reserve(Duration $leaseDuration = new Duration(seconds: 30)): ?AsyncDelivery
