@@ -62,7 +62,10 @@ final class Kernel extends BaseKernel
     public function registerContainerConfiguration(LoaderInterface $loader): void
     {
         $loader->load(static function (ContainerBuilder $container): void {
-            new MappedTableExtension(rowSets: ComplianceSchema::rowSets(), unitOfWork: 'compliance.sources.persistence')->build($container);
+            new MappedTableExtension(
+                rowSets: ComplianceSchema::rowSets(),
+                unitOfWork: 'compliance.sources.persistence',
+            )->build($container);
             $container->register(Connection::class)->setSynthetic(true)->setPublic(true);
 
             foreach ([

@@ -218,9 +218,12 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
             $codec instanceof IntegerCodec => [$codec->int32],
             $codec instanceof TemporalCodec => [$codec->format],
             $codec instanceof TextCodec => [$codec->maxLength, $codec->stringableKeys],
-            [] === get_mangled_object_vars($codec) && 0 === (new \ReflectionClass($codec)->getConstructor()?->getNumberOfRequiredParameters() ?? 0) => [],
+            [] === get_mangled_object_vars($codec)
+                && 0 === (new \ReflectionClass($codec)->getConstructor()?->getNumberOfRequiredParameters() ?? 0)
+                => [],
             default => throw new \LogicException(sprintf(
-                'Register the configured codec %s as a Symfony service and use its ID for the column.', $codec::class,
+                'Register the configured codec %s as a Symfony service and use its ID for the column.',
+                $codec::class,
             )),
         };
 

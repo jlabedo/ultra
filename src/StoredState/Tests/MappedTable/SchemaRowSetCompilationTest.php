@@ -15,12 +15,12 @@ use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
-use Ultra\Schema\ColumnType;
-use Ultra\Schema\SqlType;
 
 /** @internal */
 #[CoversNamespace('Ultra\MappedTable')]
@@ -29,7 +29,11 @@ final class SchemaRowSetCompilationTest extends TestCase
     public function test_manually_compiled_row_set_can_create_independent_buffers(): void
     {
         $adapter = new InMemoryMappedTableAdapter(new InMemoryRowDatabase());
-        $factory = $adapter->compileRowSet(SchemaRowSet::fromTable(MappedRowSetsSchema::entries(), 'test.entries', columns: ['name']));
+        $factory = $adapter->compileRowSet(SchemaRowSet::fromTable(
+            MappedRowSetsSchema::entries(),
+            'test.entries',
+            columns: ['name'],
+        ));
 
         $first = $factory()->withKey(7);
         $first->insert()->setColumn('entry_name', 'Workshop');

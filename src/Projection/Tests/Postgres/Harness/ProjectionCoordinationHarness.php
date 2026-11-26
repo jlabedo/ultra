@@ -294,11 +294,9 @@ final class SeedProjectionEventsCommand extends Command
             $courseId = sprintf('course-%03d', $i);
             $payload = $this->normalizer->toScalar(new HarnessCourseCreated($courseId, sprintf('Course %03d', $i)));
             assert(is_array($payload), 'Course-created events normalize to a record.');
-            $events[] = new Event(
-                eventType: 'harness.course.created',
-                payload: $payload,
-                domainIds: ['courseId' => $courseId],
-            );
+            $events[] = new Event(eventType: 'harness.course.created', payload: $payload, domainIds: [
+                'courseId' => $courseId,
+            ]);
             $buckets[BucketHasher::bucketFor($courseId)] = true;
 
             if (self::BATCH_SIZE === count($events)) {

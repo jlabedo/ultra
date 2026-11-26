@@ -25,10 +25,9 @@ final class NamedCoordinatorTest extends TestCase
     public function test_named_coordinators_isolate_buffers_for_the_same_mapping(): void
     {
         $builder = $this->builder();
-        new MappedTableExtension(
-            rowSets: ['second.rows' => NamedRowSets::records()],
-            unitOfWork: 'second.persistence',
-        )->build($builder);
+        new MappedTableExtension(rowSets: [
+            'second.rows' => NamedRowSets::records(),
+        ], unitOfWork: 'second.persistence')->build($builder);
         foreach (['first.rows', 'first.persistence', 'second.rows', 'second.persistence'] as $id) {
             $builder->setAlias('test.' . $id, $id)->setPublic(true);
         }
@@ -79,13 +78,10 @@ final class NamedCoordinatorTest extends TestCase
     public function test_guard_dependencies_require_the_same_coordinator(): void
     {
         $builder = $this->builder();
-        new MappedTableExtension(
-            queryGuards: [new QueryGuardDefinition('records', [
-                new QueryGuardDependency('first.rows', 'id'),
-                new QueryGuardDependency('second.rows', 'id'),
-            ])],
-            rowSets: ['second.rows' => NamedRowSets::records()],
-        )->build($builder);
+        new MappedTableExtension(queryGuards: [new QueryGuardDefinition('records', [
+            new QueryGuardDependency('first.rows', 'id'),
+            new QueryGuardDependency('second.rows', 'id'),
+        ])], rowSets: ['second.rows' => NamedRowSets::records()])->build($builder);
 
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('must watch row sets in the same coordinator');
@@ -97,7 +93,10 @@ final class NamedCoordinatorTest extends TestCase
         $builder = new ContainerBuilder();
         new MappedTableExtension()->build($builder);
         $builder->register(NamedRowSets::class)->setAutoconfigured(true);
-        $builder->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setSynthetic(true)->setPublic(true);
+        $builder
+            ->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)
+            ->setSynthetic(true)
+            ->setPublic(true);
 
         return $builder;
     }

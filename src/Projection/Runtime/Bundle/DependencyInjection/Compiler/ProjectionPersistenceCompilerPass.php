@@ -41,7 +41,10 @@ final class ProjectionPersistenceCompilerPass implements CompilerPassInterface
                 continue;
             }
             $definition = $container->findDefinition($id);
-            if (null !== $definition->getFactory() || [] !== $classes && !in_array($definition->getClass(), $classes, true)) {
+            if (
+                null !== $definition->getFactory()
+                || [] !== $classes && !in_array($definition->getClass(), $classes, true)
+            ) {
                 continue;
             }
             $reference = $definition->getArguments()[0] ?? null;

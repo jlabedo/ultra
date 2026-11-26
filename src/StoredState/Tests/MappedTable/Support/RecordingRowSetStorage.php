@@ -14,9 +14,9 @@ use Ultra\MappedTable\Plan\RowSetUpdatePlan;
 use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Storage\RowSetStorage;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Schema\ColumnType;
 
 final class RecordingRowSetStorage implements RowSetStorage
 {

@@ -8,7 +8,9 @@ use Ultra\MappedTable\ColumnCodec;
 
 final class IntegerCodec extends ColumnCodec
 {
-    public function __construct(public readonly bool $int32 = false) {}
+    public function __construct(
+        public readonly bool $int32 = false,
+    ) {}
 
     public static function representation(): string
     {

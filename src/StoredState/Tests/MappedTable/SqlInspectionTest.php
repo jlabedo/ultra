@@ -21,10 +21,10 @@ use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\TableDefinition;
 use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SqlType;
+use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\SqlTrace;
 use Ultra\Testing\SqlTraceEntry;
@@ -122,7 +122,11 @@ final class SqlInspectionTest extends TestCase
                 primaryKey: ['owner_id', 'id'],
             ),
         ]);
-        $rows = $adapter->compileRowSet(SchemaRowSet::fromTable($schema, 'owner_read_rows', ownerColumns: ['owner_id']))();
+        $rows = $adapter->compileRowSet(SchemaRowSet::fromTable(
+            $schema,
+            'owner_read_rows',
+            ownerColumns: ['owner_id'],
+        ))();
         $this->trace->clear();
 
         $rows->rowsForOwner(['owner_id' => 'order'], []);

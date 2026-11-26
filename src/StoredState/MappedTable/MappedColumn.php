@@ -54,9 +54,7 @@ final readonly class MappedColumn
 
     public function equivalent(mixed $left, mixed $right): bool
     {
-        return null === $left || null === $right
-            ? $left === $right
-            : $this->boundCodec()->equivalent($left, $right);
+        return null === $left || null === $right ? $left === $right : $this->boundCodec()->equivalent($left, $right);
     }
 
     public function encode(mixed $value): int|string|float|bool|null
@@ -66,9 +64,7 @@ final readonly class MappedColumn
 
     public function decode(mixed $value): mixed
     {
-        return null === $value
-            ? $this->normalize($value)
-            : $this->checkedValue($this->boundCodec()->decode($value));
+        return null === $value ? $this->normalize($value) : $this->checkedValue($this->boundCodec()->decode($value));
     }
 
     private function checkedValue(int|string|float|bool|array|\stdClass|JsonNull $value): mixed

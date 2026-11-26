@@ -12,10 +12,10 @@ use Symfony\Component\DependencyInjection\Reference;
 use Ultra\MappedTable\ColumnCodec;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
+use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedTableAdapter;
 use Ultra\MappedTable\Symfony\MappedTableExtension;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
-use Ultra\MappedTable\MappedRowSetDefinition;
 
 #[CoversNamespace('Ultra\MappedTable')]
 final class ColumnCodecRegistrationTest extends RowSetTestCase
@@ -24,9 +24,14 @@ final class ColumnCodecRegistrationTest extends RowSetTestCase
     public function test_manual_registration_configures_one_column_with_its_own_representation(string $backend): void
     {
         $fixture = $this->fixture($backend, columnTypes: ['level' => 'smallint']);
-        $definition = new MappedRowSetDefinition($fixture->tableName, ['id', 'level', 'note'], ['id'], codecs: [
-            'level' => new LevelCodec(new LevelPrefix('level:')),
-        ]);
+        $definition = new MappedRowSetDefinition(
+            $fixture->tableName,
+            ['id', 'level', 'note'],
+            ['id'],
+            codecs: [
+                'level' => new LevelCodec(new LevelPrefix('level:')),
+            ],
+        );
         $rows = $fixture->adapter->compileRowSet($definition)();
         $row = $rows->withKey('entry')->insert()->setColumns(['level' => 7, 'note' => '007']);
         self::assertSame(['level' => 'level:7'], $row->get(['level']));
@@ -43,16 +48,19 @@ final class ColumnCodecRegistrationTest extends RowSetTestCase
     {
         $builder = new ContainerBuilder();
         new MappedTableExtension(rowSets: [
-            'test.levels' => new MappedRowSetDefinition('levels', ['id', 'level'], ['id'], codecs: [
-                'level' => 'test.level_codec',
-            ]),
+            'test.levels' => new MappedRowSetDefinition(
+                'levels',
+                ['id', 'level'],
+                ['id'],
+                codecs: [
+                    'level' => 'test.level_codec',
+                ],
+            ),
         ])->build($builder);
         $builder->register(MappedTableAdapter::class, InMemoryMappedTableAdapter::class)->setSynthetic(true);
         $builder->setAlias('public.levels', 'test.levels')->setPublic(true);
         $builder->register('test.level_prefix', LevelPrefix::class)->setArguments(['rank:']);
-        $builder
-            ->register('test.level_codec', LevelCodec::class)
-            ->setArguments([new Reference('test.level_prefix')]);
+        $builder->register('test.level_codec', LevelCodec::class)->setArguments([new Reference('test.level_prefix')]);
         $builder->compile();
 
         $class = 'CompiledCodecRowSets' . bin2hex(random_bytes(6));
@@ -73,14 +81,18 @@ final class ColumnCodecRegistrationTest extends RowSetTestCase
 
     public function test_a_codec_requires_a_declared_column(): void
     {
-        $definition = new MappedRowSetDefinition('levels', ['id', 'level'], ['id'], codecs: [
-            'typo' => new LevelCodec(new LevelPrefix('level:')),
-        ]);
+        $definition = new MappedRowSetDefinition(
+            'levels',
+            ['id', 'level'],
+            ['id'],
+            codecs: [
+                'typo' => new LevelCodec(new LevelPrefix('level:')),
+            ],
+        );
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage('Unknown column "typo"');
-        (new InMemoryMappedTableAdapter(new InMemoryRowDatabase()))->compileRowSet($definition);
+        new InMemoryMappedTableAdapter(new InMemoryRowDatabase())->compileRowSet($definition);
     }
-
 }
 
 final readonly class LevelPrefix

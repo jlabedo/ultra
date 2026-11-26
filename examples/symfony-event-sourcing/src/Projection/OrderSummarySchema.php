@@ -9,9 +9,9 @@ use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Schema\ColumnType;
 
 final class OrderSummarySchema
 {

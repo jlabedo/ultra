@@ -8,7 +8,10 @@ use Ultra\MappedTable\ColumnCodec;
 
 final class TextCodec extends ColumnCodec
 {
-    public function __construct(public readonly ?int $maxLength = null, public readonly bool $stringableKeys = true) {}
+    public function __construct(
+        public readonly ?int $maxLength = null,
+        public readonly bool $stringableKeys = true,
+    ) {}
 
     public static function representation(): string
     {
@@ -38,8 +41,6 @@ final class TextCodec extends ColumnCodec
 
     public function key(mixed $value): string
     {
-        return $this->normalize(
-            $this->stringableKeys && $value instanceof \Stringable ? (string) $value : $value,
-        );
+        return $this->normalize($this->stringableKeys && $value instanceof \Stringable ? (string) $value : $value);
     }
 }

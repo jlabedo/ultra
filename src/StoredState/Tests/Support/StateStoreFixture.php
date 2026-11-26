@@ -123,7 +123,11 @@ final class StateStoreFixture
             if (!isset($required[$table->name])) {
                 continue;
             }
-            $rowSet = $factory->compileRowSet(SchemaRowSet::fromTable($schema, $table->id, owner: StateStoreSchema::ownerOf($table->id)))();
+            $rowSet = $factory->compileRowSet(SchemaRowSet::fromTable(
+                $schema,
+                $table->id,
+                owner: StateStoreSchema::ownerOf($table->id),
+            ))();
             $rowSets[$table->id] = $rowSet;
             $tables[$table->name] = $rowSet;
         }

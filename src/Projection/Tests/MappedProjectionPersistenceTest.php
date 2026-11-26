@@ -37,11 +37,11 @@ use Ultra\Projection\Tests\Support\RunnerCourseCreated;
 use Ultra\Projection_Postgres\PostgresProjectionImplementation;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\TransactionManager;
 use Ultra\UnitOfWork\UnitOfWorkExtension;
@@ -80,7 +80,10 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
                 extensionsBefore: [
                     new SchemaExtension(),
                     new MappedTableExtension(rowSets: [ProjectionTablesSchema::APPLICATION]),
-                    new MappedTableExtension(rowSets: ProjectionTablesSchema::rowSets(), unitOfWork: 'courses.persistence'),
+                    new MappedTableExtension(
+                        rowSets: ProjectionTablesSchema::rowSets(),
+                        unitOfWork: 'courses.persistence',
+                    ),
                 ],
             )
             ->withExtension(new UnitOfWorkExtension())
@@ -134,7 +137,10 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
         static::assertTrue($applicationRows->hasPendingChanges());
         $directStore->append([self::courseCreatedEvent('d', 'retry')]);
         $runner->run(static fn() => null);
-        static::assertSame(['app', 'pending'], $connection->fetchFirstColumn('SELECT id FROM mapped_projection_application ORDER BY id'));
+        static::assertSame(
+            ['app', 'pending'],
+            $connection->fetchFirstColumn('SELECT id FROM mapped_projection_application ORDER BY id'),
+        );
         $container->projectionRunner()->deleteProjection($runtime);
         static::assertSame([], $names());
         static::assertSame(0, (int) $connection->fetchOne('SELECT count(*) FROM mapped_projection_details'));
@@ -148,11 +154,19 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
     {
         $this->expectException(\LogicException::class);
         $this->expectExceptionMessage('Projection persistence participants must have a single owner.');
-        $this->projectionUltraLight()
+        $this
+            ->projectionUltraLight()
             ->withExtension(new SchemaExtension())
-            ->withExtension(new MappedTableExtension(rowSets: ProjectionTablesSchema::rowSets(), unitOfWork: 'courses.persistence'))
+            ->withExtension(new MappedTableExtension(
+                rowSets: ProjectionTablesSchema::rowSets(),
+                unitOfWork: 'courses.persistence',
+            ))
             ->withService(new InMemoryMappedTableAdapter(new InMemoryRowDatabase()), MappedTableAdapter::class)
-            ->withClass(CompiledMappedProjection::class, ConflictingMappedProjection::class, ProjectionTablesSchema::class)
+            ->withClass(
+                CompiledMappedProjection::class,
+                ConflictingMappedProjection::class,
+                ProjectionTablesSchema::class,
+            )
             ->boot();
     }
 
@@ -184,7 +198,9 @@ final class MappedProjectionPersistenceTest extends ProjectionTestCase
         $container = new ContainerBuilder();
         new ProjectionExtension()->build($container);
         new SchemaExtension()->build($container);
-        new MappedTableExtension(rowSets: [ProjectionTablesSchema::COURSES], unitOfWork: 'courses.persistence')->build($container);
+        new MappedTableExtension(rowSets: [ProjectionTablesSchema::COURSES], unitOfWork: 'courses.persistence')->build(
+            $container,
+        );
         new UnitOfWorkExtension()->build($container);
         $container->register(UltraNormalizer::class);
         $container->register('test.projection_connection', Connection::class)->setSynthetic(true)->setPublic(true);
@@ -267,11 +283,7 @@ final readonly class CompiledMappedProjection
     }
 }
 
-#[Projection(
-    name: 'conflicting_mapped_projection',
-    partitionBy: 'courseId',
-    unitOfWork: ['courses.persistence'],
-)]
+#[Projection(name: 'conflicting_mapped_projection', partitionBy: 'courseId', unitOfWork: ['courses.persistence'])]
 final class ConflictingMappedProjection {}
 
 final class ProjectionTablesSchema

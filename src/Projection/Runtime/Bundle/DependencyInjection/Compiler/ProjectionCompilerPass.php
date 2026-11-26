@@ -51,11 +51,17 @@ final class ProjectionCompilerPass implements CompilerPassInterface
             foreach (array_unique($participants) as $participant) {
                 $definition = $container->findDefinition($participant);
                 if (!$definition->isShared()) {
-                    throw new \LogicException(sprintf('Projection persistence participant "%s" must be shared.', $participant));
+                    throw new \LogicException(sprintf(
+                        'Projection persistence participant "%s" must be shared.',
+                        $participant,
+                    ));
                 }
                 foreach ($definition->getTag(\Ultra\UnitOfWork\TagNames::DBAL_CONNECTION_PROVIDER) as $provider) {
                     if (!is_array($provider) || !is_string($provider['service'] ?? null)) {
-                        throw new \LogicException(sprintf('Participant "%s" must name its DBAL connection provider.', $participant));
+                        throw new \LogicException(sprintf(
+                            'Participant "%s" must name its DBAL connection provider.',
+                            $participant,
+                        ));
                     }
                     $providers[] = $provider['service'];
                 }

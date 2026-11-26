@@ -43,7 +43,10 @@ final readonly class MappedRowSetDefinition
             $codec = $this->codecs[$name] ?? null;
             if (is_string($codec)) {
                 $codec = $codecServices[$codec] ?? throw new \InvalidArgumentException(sprintf(
-                    'Unresolved codec service "%s" for mapped column "%s.%s".', $codec, $this->table, $name,
+                    'Unresolved codec service "%s" for mapped column "%s.%s".',
+                    $codec,
+                    $this->table,
+                    $name,
                 ));
             }
             $nullable = null === $this->nullable ? null : in_array($name, $this->nullable, true);
@@ -51,7 +54,11 @@ final readonly class MappedRowSetDefinition
         }
         foreach ([...array_keys($this->codecs), ...($this->nullable ?? [])] as $name) {
             if (!isset($columns[$name])) {
-                throw new \InvalidArgumentException(sprintf('Unknown column "%s" in mapping for "%s".', $name, $this->table));
+                throw new \InvalidArgumentException(sprintf(
+                    'Unknown column "%s" in mapping for "%s".',
+                    $name,
+                    $this->table,
+                ));
             }
         }
 

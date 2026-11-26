@@ -12,7 +12,9 @@ final class TemporalCodec extends ColumnCodec
     public const string LOCAL_TIMESTAMP = 'Y-m-d H:i:s.u';
     public const string OFFSET_TIMESTAMP = 'Y-m-d H:i:s.uP';
 
-    public function __construct(public readonly string $format = self::OFFSET_TIMESTAMP) {}
+    public function __construct(
+        public readonly string $format = self::OFFSET_TIMESTAMP,
+    ) {}
 
     public static function representation(): string
     {

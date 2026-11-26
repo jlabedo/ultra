@@ -11,10 +11,10 @@ use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
-use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\TableDefinition;
 use Ultra\Schema\ColumnType;
+use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SqlType;
+use Ultra\Schema\TableDefinition;
 
 abstract class PostgresRowSetTestCase extends TestCase
 {

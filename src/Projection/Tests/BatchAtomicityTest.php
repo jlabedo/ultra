@@ -112,13 +112,14 @@ final class BatchAtomicityTest extends ProjectionTestCase
         try {
             $runner->{$mode}($runtime, 'buffered_projection', 0, 'worker');
             static::fail('Expected batch failure.');
-        } catch (\RuntimeException | \Doctrine\DBAL\Exception) {
+        } catch (\RuntimeException|\Doctrine\DBAL\Exception) {
             static::assertFalse($projection->hasPendingChanges());
             static::assertSame(0, $runner->listSegments('buffered_projection')[0]->checkpoint->gapFloor->value);
             foreach ([$projection->coursesTable, $projection->indexTable] as $table) {
-                static::assertSame([['id' => 'init', 'name' => 'initialized']], $fixture->connection->fetchAllAssociative(
-                    'SELECT * FROM ' . $table,
-                ));
+                static::assertSame(
+                    [['id' => 'init', 'name' => 'initialized']],
+                    $fixture->connection->fetchAllAssociative('SELECT * FROM ' . $table),
+                );
             }
         }
         $projection->failAt = null;

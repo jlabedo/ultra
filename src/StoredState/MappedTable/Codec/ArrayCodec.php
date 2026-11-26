@@ -9,7 +9,9 @@ use Ultra\MappedTable\ColumnCodec;
 /** PostgreSQL one-dimensional arrays. */
 final class ArrayCodec extends ColumnCodec
 {
-    public function __construct(public readonly TextCodec|IntegerCodec|UuidCodec $element = new TextCodec()) {}
+    public function __construct(
+        public readonly TextCodec|IntegerCodec|UuidCodec $element = new TextCodec(),
+    ) {}
 
     public static function representation(): string
     {
@@ -44,14 +46,11 @@ final class ArrayCodec extends ColumnCodec
 
     public function encode(mixed $value): string
     {
-        $encoded = array_map(
-            static fn(string|int|null $item): string => match (true) {
-                null === $item => 'NULL',
-                is_int($item) => (string) $item,
-                default => '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], $item) . '"',
-            },
-            $this->normalize($value),
-        );
+        $encoded = array_map(static fn(string|int|null $item): string => match (true) {
+            null === $item => 'NULL',
+            is_int($item) => (string) $item,
+            default => '"' . str_replace(['\\', '"'], ['\\\\', '\\"'], $item) . '"',
+        }, $this->normalize($value));
 
         return '{' . implode(',', $encoded) . '}';
     }

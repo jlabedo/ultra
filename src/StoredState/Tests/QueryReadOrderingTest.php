@@ -16,9 +16,9 @@ use Ultra\MappedTable\QueryGuardDefinition;
 use Ultra\MappedTable\QueryGuardDependency;
 use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\StateStore\Tests\Support\StateStoreSchema;
 use Ultra\StateStore\Tests\Support\StateStoreTestCase;
 

@@ -16,12 +16,12 @@ use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Schema\Operations\CreateTable;
 use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\SchemaDefinition;
-use Ultra\Schema\TableDefinition;
-use Ultra\Schema\ColumnType;
 use Ultra\Schema\SqlType;
+use Ultra\Schema\TableDefinition;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\UnitOfWork\UnitOfWork;
 
@@ -87,7 +87,11 @@ final class RowSetFixture
     /** @param array<string, ColumnCodec> $codecs */
     public function newRows(?MappedTableAdapter $adapter = null, array $codecs = []): MappedRowSet
     {
-        $definition = SchemaRowSet::fromTable(new SchemaDefinition([$this->definition]), $this->tableName, codecs: $codecs);
+        $definition = SchemaRowSet::fromTable(
+            new SchemaDefinition([$this->definition]),
+            $this->tableName,
+            codecs: $codecs,
+        );
 
         return ($adapter ?? $this->adapter)->compileRowSet($definition)();
     }
