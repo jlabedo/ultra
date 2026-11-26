@@ -1,5 +1,7 @@
 # State Store
 
+For a first persisted state with Symfony and PostgreSQL, follow [getting started](getting-started.md).
+
 Mapper-backed object state loading, saving and deletion on top of `Ultra\MappedTable\MappedRowSet`.
 
 ## Purpose

@@ -1,5 +1,7 @@
 # Message handling
 
+For a first handler and advice, follow [getting started](getting-started.md). For a persistent queue and consumer process, follow [async setup](async-setup.md).
+
 MessageHandling and MessageHandling_Compiler provide compiled routing and handler wrappers. MediatorInterface::send performs single dispatch to a matching handler and returns its result. EventBusInterface::publish performs multiple dispatch to matching event handlers with configured priorities.
 
 Decision logic can be on the message itself or a separate handler. The stateful layer adds loading and optimistic protection for declared state parameters.

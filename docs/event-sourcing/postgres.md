@@ -1,5 +1,7 @@
 # Event Store Postgres
 
+For a runnable schema, connection, append and read recipe, follow [getting started](getting-started.md).
+
 PostgreSQL implementations of `Ultra\EventStore\EventStore`.
 
 ## Implementations

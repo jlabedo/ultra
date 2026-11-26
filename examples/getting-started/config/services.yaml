@@ -1,0 +1,23 @@
+services:
+    _defaults:
+        autowire: true
+        autoconfigure: true
+
+    GettingStarted\Command\:
+        resource: '../src/Command/'
+
+    GettingStarted\Domain\Contact:
+        autowire: false
+
+    Doctrine\DBAL\Connection:
+        factory: ['GettingStarted\Database', 'connect']
+
+    Ultra\MappedTable\MappedRowSetAdapterFactory:
+        class: Ultra\MappedTable\PostgresMappedRowSetAdapterFactory
+        arguments:
+            $connection: '@Doctrine\DBAL\Connection'
+
+    Ultra\UnitOfWork\TransactionManager:
+        class: Ultra\UnitOfWork\DoctrineTransactionManager
+        arguments:
+            $connection: '@Doctrine\DBAL\Connection'
