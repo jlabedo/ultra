@@ -13,9 +13,9 @@ final readonly class PostgresProjectionTransactionManager implements ProjectionT
         private Connection $connection,
     ) {}
 
-    public function transactional(callable $operation): mixed
+    public function transactional(callable $operation, bool $startIfNeeded = true): mixed
     {
-        $ownsTransaction = !$this->connection->isTransactionActive();
+        $ownsTransaction = $startIfNeeded && !$this->connection->isTransactionActive();
         if ($ownsTransaction) {
             $this->connection->beginTransaction();
         }

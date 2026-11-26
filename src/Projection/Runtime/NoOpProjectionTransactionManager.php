@@ -6,7 +6,7 @@ namespace Ultra\Projection;
 
 final readonly class NoOpProjectionTransactionManager implements ProjectionTransactionManagerInterface
 {
-    public function transactional(callable $operation): mixed
+    public function transactional(callable $operation, bool $startIfNeeded = true): mixed
     {
         return $operation();
     }

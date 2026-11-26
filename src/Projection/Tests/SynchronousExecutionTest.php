@@ -6,8 +6,12 @@ namespace Ultra\Projection\Tests;
 
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
+use Ultra\EventStore\Event;
+use Ultra\EventStore\EventStore;
 use Ultra\EventStore\EventStoreUnitOfWork;
 use Ultra\EventStore\StreamQuery;
+use Ultra\Projection\Coordination\ProjectionActivityRecorder;
+use Ultra\Projection\ProjectingEventStore;
 use Ultra\Projection\ProjectionMode;
 use Ultra\Projection\Tests\Support\ProjectionModeFixture;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
@@ -108,6 +112,55 @@ final class SynchronousExecutionTest extends ProjectionTestCase
         $f->projection->failAt = null;
         $f->store->append([self::courseCreatedEvent('c', 'retry')]);
         static::assertSame(['retry'], $f->projection->names());
+    }
+
+    public function test_only_recordable_async_activity_requires_a_transaction_around_the_inner_append(): void
+    {
+        $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Asynchronous);
+        $fixture = $f->fixture;
+        $inner = $this->createMock(EventStore::class);
+        $transactions = [];
+        $inner
+            ->expects(self::exactly(3))
+            ->method('append')
+            ->willReturnCallback(static function (array $events) use ($fixture, &$transactions): void {
+                $transactions[] = $fixture->connection->isTransactionActive();
+                $fixture->store->append($events);
+            });
+        $store = new ProjectingEventStore(
+            $inner,
+            $f->catalog,
+            new ProjectionActivityRecorder($f->catalog, $fixture->activity, $fixture->leases, $fixture->activator),
+            $fixture->transactions,
+            $f->states,
+        );
+
+        $store->append([new Event('unrelated', [], ['courseId' => 'c'])]);
+        $store->append([new Event('runner.course.created', [], ['otherId' => 'x'])]);
+        $store->append([self::courseCreatedEvent('c', 'recorded')]);
+
+        static::assertSame([false, false, true], $transactions);
+        static::assertCount(3, $fixture->store->load(StreamQuery::all())->events);
+        static::assertCount(1, $fixture->activity->affected());
+    }
+
+    public function test_an_unmatched_append_conflict_marks_the_outer_transaction_rollback_only(): void
+    {
+        $f = $this->liveProjection('postgres');
+        $event = new Event('unrelated', [], ['courseId' => 'c']);
+        $query = StreamQuery::forStream(new \Ultra\EventStore\DomainIdentifier('courseId', 'c'));
+        $condition = $f->store->load($query)->appendCondition();
+        $f->store->append([$event]);
+        $connection = $f->fixture->connection;
+        $connection->beginTransaction();
+        try {
+            $f->store->append([$event], $condition);
+            static::fail('Expected optimistic conflict.');
+        } catch (\Ultra\EventStore\Exception\ConcurrencyException) {
+            static::assertTrue($connection->isRollbackOnly());
+        } finally {
+            $connection->rollBack();
+        }
     }
 
     public function test_append_conditions_fail_before_projection_execution(): void

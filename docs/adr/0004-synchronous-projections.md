@@ -13,7 +13,7 @@ Projection declarations select one of two modes through `ProjectionMode`:
 
 `ProjectingEventStore` wraps the persistent event store. With buffering, `EventStoreUnitOfWork` wraps `ProjectingEventStore`, so immediate and buffered appends reach the same integration point. Application unit-of-work runners remain generic.
 
-The append integration opens or joins the shared transaction, obtains activation barriers, reads projection state, persists events under the original append conditions, applies live synchronous projections, flushes their private persistence participants, and records asynchronous activity. It commits only when it owns the transaction. All durable effects use the same connection. A projection failure must abort the entire write transaction.
+The append integration routes synchronous event types before opening a transaction. With no synchronous match or activity to record, the event store manages its ordinary append transaction. For projection work the append integration opens or joins the shared transaction, obtains activation barriers, reads projection state, persists events under the original append conditions, applies live synchronous projections, flushes their private persistence participants, and records asynchronous activity. It commits only when it owns the transaction. All durable effects use the same connection. A projection failure must abort the entire write transaction.
 
 Handler execution follows append validation and stays under the activation barrier. Running handlers before the transaction could shorten it, but would require validating that the projection is still live in the same generation and that its prepared writes still satisfy any assumptions made by the handlers.
 

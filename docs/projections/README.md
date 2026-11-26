@@ -57,7 +57,12 @@ Direct application -> ProjectingEventStore -> persistent EventStore
 Buffered application -> EventStoreUnitOfWork -> ProjectingEventStore -> persistent EventStore
 ```
 
-It opens or joins a projection transaction, acquires managed activation barriers,
+It matches synchronous event types before opening a projection transaction. With no
+synchronous match, it computes the touched activity buckets in memory. If these are
+also empty, the inner event store owns its ordinary standalone append transaction.
+An existing caller transaction still becomes rollback-only on an append failure in PostgreSQL.
+
+When there is projection work, the decorator opens or joins a transaction, acquires any required activation barriers,
 persists the events under their original append conditions, applies live synchronous
 projections and flushes their private persistence participants, then records activity
 for asynchronous/building projections. An inner store's standalone append transaction
@@ -342,7 +347,7 @@ The coordination model is intentionally separate from segment execution.
 
 ### Activity Recording
 
-[ProjectionActivityRecorder.php](../../src/Projection/Runtime/Coordination/ProjectionActivityRecorder.php) runs inside the append transaction after event insertion and synchronous application. Live synchronous projections are excluded.
+[ProjectionActivityRecorder.php](../../src/Projection/Runtime/Coordination/ProjectionActivityRecorder.php) records bucket activity and wake-ups inside the append transaction after event insertion and synchronous application. Live synchronous projections are excluded. With no synchronous match, the decorator computes the touched buckets before the append and reuses them when recording activity.
 
 It:
 

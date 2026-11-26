@@ -8,9 +8,11 @@ namespace Ultra\Projection;
 interface ProjectionTransactionManagerInterface
 {
     /**
+     * With $startIfNeeded disabled, join an active transaction or let the operation manage its own.
+     *
      * @template T
      * @param callable(): T $operation
      * @return T
      */
-    public function transactional(callable $operation): mixed;
+    public function transactional(callable $operation, bool $startIfNeeded = true): mixed;
 }

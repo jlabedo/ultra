@@ -25,6 +25,16 @@ final readonly class ProjectionActivityRecorder
      */
     public function record(array $events, array $excludedProjections = []): void
     {
+        $this->recordBuckets($this->touchedBuckets($events, $excludedProjections));
+    }
+
+    /**
+     * @param list<Event> $events
+     * @param list<string> $excludedProjections
+     * @return array<array-key, non-empty-array<int, true>>
+     */
+    public function touchedBuckets(array $events, array $excludedProjections = []): array
+    {
         $touchedBuckets = [];
 
         foreach ($this->catalog->definitions() as $definition) {
@@ -45,17 +55,20 @@ final readonly class ProjectionActivityRecorder
             }
         }
 
-        $recordedAnyBucket = false;
+        return $touchedBuckets;
+    }
 
+    /** @param array<array-key, non-empty-array<int, true>> $touchedBuckets */
+    public function recordBuckets(array $touchedBuckets): void
+    {
         foreach ($touchedBuckets as $projectionId => $buckets) {
             foreach (array_keys($buckets) as $bucket) {
-                $this->activity->bump($projectionId, (int) $bucket);
-                $recordedAnyBucket = true;
+                $this->activity->bump((string) $projectionId, $bucket);
             }
         }
 
         if (
-            $recordedAnyBucket
+            [] !== $touchedBuckets
             && $this->leaseRepository->markWakeEnqueued(
                 ProjectionCoordinator::COORDINATOR_KEY,
                 $this->wakeDebounceSeconds,
