@@ -107,7 +107,6 @@ Validation boundaries take unvalidated inputs and describe the narrower type onl
 analysis fixes against the guarantee suites before retaining them.
 
 Use `bin/mago format` to apply formatting with the same configuration.
-Leave formatting-only changes to CI, as required by the [contributor rules](../AGENTS.md).
 
 ## Tests
 
