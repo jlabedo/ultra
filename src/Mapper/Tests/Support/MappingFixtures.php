@@ -118,6 +118,14 @@ readonly class UuidListRecords
     ) {}
 }
 
+readonly class NullableUuidShape
+{
+    /** @param array{uuid: Uuid, label: string}|null $record */
+    public function __construct(
+        public ?array $record,
+    ) {}
+}
+
 readonly class DeepNest
 {
     public function __construct(

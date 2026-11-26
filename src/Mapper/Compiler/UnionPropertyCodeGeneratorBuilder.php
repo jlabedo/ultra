@@ -42,7 +42,9 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
 
         $wrappedType = $type instanceof NullableType ? $type->getWrappedType() : null;
         $isNullableArray =
-            $wrappedType instanceof CollectionType && $wrappedType->isIdentifiedBy(TypeIdentifier::ARRAY);
+            $wrappedType instanceof CollectionType
+            && !$wrappedType instanceof ArrayShapeType
+            && $wrappedType->isIdentifiedBy(TypeIdentifier::ARRAY);
 
         return new class($typeCodeGens, $isNullableArray) implements CodeGenerator {
             /** @var array<array{type: Type, codegen: CodeGenerator}> */

@@ -34,6 +34,7 @@ use Ultra\Mapper\Tests\Fixtures\MaybeAddressList;
 use Ultra\Mapper\Tests\Fixtures\MaybeEmail;
 use Ultra\Mapper\Tests\Fixtures\MultiUnion;
 use Ultra\Mapper\Tests\Fixtures\MutableTemporalValue;
+use Ultra\Mapper\Tests\Fixtures\NullableUuidShape;
 use Ultra\Mapper\Tests\Fixtures\OuterValue;
 use Ultra\Mapper\Tests\Fixtures\PromotedAndNonPromoted;
 use Ultra\Mapper\Tests\Fixtures\Status;
@@ -57,6 +58,17 @@ final class RepresentationTest extends MapperTestCase
 
         static::assertSame($representation, $normalizer->toScalar($object));
         static::assertEquals($object, $normalizer->fromScalar($representation, $object::class));
+    }
+
+    public function test_nullable_array_shapes_are_rejected_during_normalization(): void
+    {
+        $object = new NullableUuidShape([
+            'uuid' => new UuidV4('12345678-1234-4234-8234-123456789abc'),
+            'label' => 'primary',
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->normalizer()->toScalar($object);
     }
 
     /** @return iterable<string, array{object, mixed}> */
