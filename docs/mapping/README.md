@@ -46,6 +46,8 @@ The UID component is optional at runtime; it is a development dependency for the
 Register RuntimeNormalizerInterface implementations during configuration, before normalization or code generation. Registration uses exact handled types. Already generated normalizers take precedence in the in-memory cache, and registered runtime types influence generated code for nested values.
 
 Denormalization checks representation structure, including required properties and scalar types; it is not a business-rule validation engine.
+In an object's array representation, the keys for nullable properties are required. Their values may
+be `null`, including when the object is nested inside another object or a collection.
 
 Normalization rejects references to objects still in the active traversal. An object can be shared
 by several properties and normalized at each occurrence once its previous normalization has completed.

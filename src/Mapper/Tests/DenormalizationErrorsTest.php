@@ -16,6 +16,8 @@ use Ultra\Mapper\Tests\Fixtures\CustomerWithRuntimeEmail;
 use Ultra\Mapper\Tests\Fixtures\DeepNest;
 use Ultra\Mapper\Tests\Fixtures\EmailList;
 use Ultra\Mapper\Tests\Fixtures\Foo;
+use Ultra\Mapper\Tests\Fixtures\MaybeAddress;
+use Ultra\Mapper\Tests\Fixtures\MaybeAddressList;
 use Ultra\Mapper\Tests\Fixtures\MultiUnion;
 use Ultra\Mapper\Tests\Fixtures\RuntimeEmailNormalizer;
 use Ultra\Mapper\Tests\Fixtures\User;
@@ -85,7 +87,15 @@ final class DenormalizationErrorsTest extends MapperTestCase
         ];
         yield 'UUID collection element' => [UuidList::class, ['primary' => 'invalid'], 'Invalid UUID', '[primary]'];
         yield 'required property' => [Foo::class, ['name' => 'bar'], 'Missing required property', '[id]'];
+        yield 'missing nullable property' => [MaybeAddress::class, [], 'Missing required property', '[address]'];
         yield 'collection element' => [EmailList::class, ['a@example.test', 123], 'expected string', '[1]'];
+        yield 'nested nullable collection element' => [
+            MaybeAddressList::class,
+            ['addresses' => ['primary' => ['address' => ['street' => 'Main', 'city' => 'Paris', 'zip' => 75_000]]]],
+            'expected string',
+            '[payload][addresses][primary][address][zip]',
+            true,
+        ];
         yield 'nested object' => [
             User::class,
             [

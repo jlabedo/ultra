@@ -165,6 +165,21 @@ readonly class MaybeEmail
     ) {}
 }
 
+readonly class MaybeAddress
+{
+    public function __construct(
+        public ?Address $address,
+    ) {}
+}
+
+readonly class MaybeAddressList
+{
+    /** @param array<array-key, MaybeAddress|null> $addresses */
+    public function __construct(
+        public array $addresses,
+    ) {}
+}
+
 #[AsValue]
 readonly class OuterValue
 {
@@ -176,6 +191,7 @@ readonly class OuterValue
 class PromotedAndNonPromoted
 {
     public string $nonPromoted;
+    public ?Address $address = null;
 
     public function __construct(
         public string $promoted,

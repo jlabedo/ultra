@@ -29,6 +29,8 @@ use Ultra\Mapper\Tests\Fixtures\Foo;
 use Ultra\Mapper\Tests\Fixtures\HookedEmail;
 use Ultra\Mapper\Tests\Fixtures\HookedSlot;
 use Ultra\Mapper\Tests\Fixtures\InnerValue;
+use Ultra\Mapper\Tests\Fixtures\MaybeAddress;
+use Ultra\Mapper\Tests\Fixtures\MaybeAddressList;
 use Ultra\Mapper\Tests\Fixtures\MaybeEmail;
 use Ultra\Mapper\Tests\Fixtures\MultiUnion;
 use Ultra\Mapper\Tests\Fixtures\MutableTemporalValue;
@@ -69,6 +71,14 @@ final class RepresentationTest extends MapperTestCase
         ];
         yield 'nullable value present' => [new MaybeEmail(new Email('a@example.test')), ['email' => 'a@example.test']];
         yield 'nullable value absent' => [new MaybeEmail(null), ['email' => null]];
+        $address = new Address('Main', 'Paris', '75000');
+        $addressData = ['street' => 'Main', 'city' => 'Paris', 'zip' => '75000'];
+        yield 'nullable object present' => [new MaybeAddress($address), ['address' => $addressData]];
+        yield 'nullable object absent' => [new MaybeAddress(null), ['address' => null]];
+        yield 'nullable objects in a keyed collection' => [
+            new MaybeAddressList(['primary' => new MaybeAddress($address), 7 => new MaybeAddress(null), 9 => null]),
+            ['addresses' => ['primary' => ['address' => $addressData], 7 => ['address' => null], 9 => null]],
+        ];
         yield 'union object' => [new MultiUnion(new Email('a@example.test')), ['value' => 'a@example.test']];
         yield 'union scalar' => [new MultiUnion(42), ['value' => 42]];
         yield 'union null' => [new MultiUnion(null), ['value' => null]];
@@ -170,7 +180,16 @@ final class RepresentationTest extends MapperTestCase
         ];
         $properties = new PromotedAndNonPromoted('foo');
         $properties->nonPromoted = 'bar';
-        yield 'constructor and non-promoted properties' => [$properties, ['nonPromoted' => 'bar', 'promoted' => 'foo']];
+        yield 'constructor and nullable non-promoted property absent' => [
+            $properties,
+            ['nonPromoted' => 'bar', 'address' => null, 'promoted' => 'foo'],
+        ];
+        $withAddress = clone $properties;
+        $withAddress->address = $address;
+        yield 'constructor and nullable non-promoted property present' => [
+            $withAddress,
+            ['nonPromoted' => 'bar', 'address' => $addressData, 'promoted' => 'foo'],
+        ];
         yield 'virtual properties are derived rather than persisted' => [
             new HookedSlot('2026-09-10 10:00', new HookedEmail('ada@example.test')),
             [

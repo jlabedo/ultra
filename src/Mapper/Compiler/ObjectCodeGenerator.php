@@ -44,8 +44,6 @@ class ObjectCodeGenerator implements CodeGenerator
             break;
         }
 
-        $internalDataVar = $hasNonPromotedProperties ? '$value' : $dataVar;
-
         $code = "new \\{$this->refClass->getName()}(";
         /** @var array<array-key, string> $constructorArgs */
         $constructorArgs = [];
@@ -54,7 +52,7 @@ class ObjectCodeGenerator implements CodeGenerator
                 $name = $param->getName();
                 if (isset($this->properties[$name])) {
                     $constructorArgs[$name] = $this->properties[$name]->generateDenormalization(
-                        $internalDataVar,
+                        $dataVar,
                         $bodyBuilder,
                         $path,
                     );
@@ -67,34 +65,26 @@ class ObjectCodeGenerator implements CodeGenerator
         }
         $code .= $constructorArgs ? "\n" . implode(",\n", $constructorArgs) . "\n)" : ')';
 
-        if ($hasNonPromotedProperties) {
-            $code = "\$obj = {$code};\n";
-
-            foreach ($this->properties as $name => $generator) {
-                if (isset($constructorArgs[$name])) {
-                    continue;
-                }
-
-                $code .=
-                    "\$obj->{$name} = "
-                    . $generator->generateDenormalization($internalDataVar, $bodyBuilder, $path)
-                    . ";\n";
-            }
-
-            return <<<PHP
-                (static function (
-                    {$internalDataVar}, 
-                    \$type, 
-                    \$normalizer, 
-                    \$context,
-                ) {
-                {$code}
-                return \$obj;
-                })({$dataVar}, \$type, \$normalizer, \$context)
-                PHP;
+        if (!$hasNonPromotedProperties) {
+            return $code;
         }
 
-        return $code;
+        $objectVar = $bodyBuilder->newVariable();
+        $assignments = [];
+        foreach ($this->properties as $name => $generator) {
+            if (isset($constructorArgs[$name])) {
+                continue;
+            }
+
+            $value = $generator->generateDenormalization($dataVar, $bodyBuilder, $path);
+            $assignments[] = "{$objectVar}->{$name} = {$value}";
+        }
+        $bodyBuilder->addStatement("{$objectVar} = {$code}");
+        foreach ($assignments as $assignment) {
+            $bodyBuilder->addStatement($assignment);
+        }
+
+        return $objectVar;
     }
 
     public function getExpectedDenormalizedType(): Type

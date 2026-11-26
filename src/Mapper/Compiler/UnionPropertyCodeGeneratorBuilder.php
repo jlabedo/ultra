@@ -10,6 +10,7 @@ use Symfony\Component\TypeInfo\Type\BuiltinType;
 use Symfony\Component\TypeInfo\Type\CollectionType;
 use Symfony\Component\TypeInfo\Type\ObjectType;
 use Symfony\Component\TypeInfo\Type\UnionType;
+use Ultra\CodeGeneration\PhpCode;
 use Ultra\Mapper\Exception\DenormalizationException;
 use Ultra\Mapper\Path;
 
@@ -76,26 +77,28 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
 
             public function generateDenormalization(string $dataVar, MethodBodyBuilder $bodyBuilder, Path $path): string
             {
-                $denormalizationException = DenormalizationException::class;
-                $cases = [];
+                $result = $bodyBuilder->newVariable();
+                $branches = [];
+                $keyword = 'if';
                 foreach ($this->typeCodeGens as $entry) {
-                    $type = $entry['codegen']->getExpectedDenormalizedType();
                     $codegen = $entry['codegen'];
-                    $cond = $this->getDiscriminatorCondition($dataVar, $type);
-                    $cases[] = [
-                        'cond' => $cond,
-                        'code' => $codegen->generateDenormalization($dataVar, $bodyBuilder, $path),
-                    ];
+                    $condition = $this->getDiscriminatorCondition($dataVar, $codegen->getExpectedDenormalizedType());
+                    $branchBody = $bodyBuilder->newScope();
+                    $value = $codegen->generateDenormalization($dataVar, $branchBody, $path);
+                    $branchBody->addStatement("{$result} = {$value}");
+                    $code = PhpCode::from($branchBody->getCode())->indent();
+                    $branches[] = "{$keyword} ({$condition}) {\n{$code}\n}";
+                    $keyword = 'elseif';
                 }
-                $lines = [];
-                $lines[] = 'match (true) {';
-                foreach ($cases as $case) {
-                    $lines[] = "    {$case['cond']} => {$case['code']},";
-                }
-                $lines[] = "    default => throw new \\{$denormalizationException}('Data does not match any type in union at path ' . {$path->generateRuntimeContextCall()}),";
-                $lines[] = '}';
+                $denormalizationException = DenormalizationException::class;
+                $branches[] = <<<PHP
+                    else {
+                        throw new \\{$denormalizationException}('Data does not match any type in union at path ' . {$path->generateRuntimeContextCall()});
+                    }
+                    PHP;
+                $bodyBuilder->addStatement(implode(' ', $branches));
 
-                return implode("\n", $lines);
+                return $result;
             }
 
             private function getDiscriminatorCondition(string $var, Type $type): string
@@ -122,14 +125,16 @@ class UnionPropertyCodeGeneratorBuilder implements CodeGeneratorBuilder
                 }
                 // Array shape (object)
                 if ($type instanceof ArrayShapeType) {
-                    $shape = $type->getShape();
-                    if ([] !== $shape) {
-                        $isset = implode(' && ', array_map(static fn($k) => "isset({$var}[{$k}])", array_keys($shape)));
-
-                        return "is_array({$var}) && {$isset}";
+                    $conditions = ["is_array({$var})"];
+                    foreach ($type->getShape() as $key => $field) {
+                        if ($field['optional']) {
+                            continue;
+                        }
+                        $literal = PhpCode::exportValue($key);
+                        $conditions[] = "\\array_key_exists({$literal}, {$var})";
                     }
 
-                    return "is_array({$var})";
+                    return implode(' && ', $conditions);
                 }
                 // Array (collection)
                 if ($type instanceof CollectionType) {
