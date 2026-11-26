@@ -6,7 +6,6 @@ namespace Ultra\MappedTable\Tests\Support;
 
 use Doctrine\DBAL\Connection;
 use Ultra\MappedTable\ColumnCodec;
-use Ultra\MappedTable\ColumnCodecs;
 use Ultra\MappedTable\InMemoryMappedTableAdapter;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
@@ -21,8 +20,8 @@ use Ultra\Schema\Operations\CreateTable;
 use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
-use Ultra\Sql\SqlType;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SqlType;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\UnitOfWork\UnitOfWork;
 
@@ -88,9 +87,9 @@ final class RowSetFixture
     /** @param array<string, ColumnCodec> $codecs */
     public function newRows(?MappedTableAdapter $adapter = null, array $codecs = []): MappedRowSet
     {
-        $definition = SchemaRowSet::fromTable(new SchemaDefinition([$this->definition]), $this->tableName);
+        $definition = SchemaRowSet::fromTable(new SchemaDefinition([$this->definition]), $this->tableName, codecs: $codecs);
 
-        return ($adapter ?? $this->adapter)->compileRowSet($definition, codecs: $codecs)();
+        return ($adapter ?? $this->adapter)->compileRowSet($definition)();
     }
 
     /** @param array<string, mixed> $row */
@@ -141,10 +140,10 @@ final class RowSetFixture
             foreach ($this->definition->columns as $column) {
                 if (array_key_exists($column->name, $row)) {
                     $value = $row[$column->name];
-                    $codec = ColumnCodecs::builtin($column->type) ?? throw new \LogicException(
+                    $codec = SchemaRowSet::defaultCodec($column->type) ?? throw new \LogicException(
                         'Unsupported test column.',
                     );
-                    $row[$column->name] = null === $value ? null : $codec->decode($column->type, $value);
+                    $row[$column->name] = null === $value ? null : $codec->decode($value);
                 }
             }
         }

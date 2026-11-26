@@ -12,7 +12,7 @@ autowired services. The compiler binds each state and collection to the definiti
 StateStore and services injecting the row set by definition share the same instance. The composite unit of
 work enrolls a single `MappedTableUnitOfWork` for these row sets.
 
-Compilation verifies the complete key, mapped columns, normalized PHP representations and nullability.
+Compilation verifies the complete key and exposed column names. It also checks PHP representations declared by codecs and nullability when the mapping provides that information.
 A state may map a subset of the non-key columns. An item table needs its complete owner and item key
 and a declared owner dependency matching the parent state and column mapping. Declare collection items in
 the property's Mapper type, for example `list<OrderLineState>`.

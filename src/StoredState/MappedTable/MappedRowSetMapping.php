@@ -35,7 +35,7 @@ final readonly class MappedRowSetMapping extends MappedRowSetMetadata
         }
         foreach ($keyColumns as $name) {
             $column = $columns[$name] ?? null;
-            if (null === $column || $column->nullable || !in_array($column->keyType, ['int', 'string'], true)) {
+            if (null === $column || true === $column->nullable || !$column->codec::supportsKeys()) {
                 throw new \InvalidArgumentException(sprintf(
                     'Key column "%s" must be mapped to a non-null int or string key.',
                     $name,

@@ -30,7 +30,7 @@ final class BufferedProjection implements UnitOfWork
         public readonly string $indexTable,
     ) {
         $adapter = new PostgresMappedTableAdapter($connection);
-        $columns = ['id' => 'text', 'name' => 'text'];
+        $columns = ['id', 'name'];
         $this->courses = $adapter->compileRowSet(new MappedRowSetDefinition($coursesTable, $columns, ['id']))();
         $this->index = $adapter->compileRowSet(new MappedRowSetDefinition($indexTable, $columns, ['id']))();
         $this->persistence = new MappedTableUnitOfWork([

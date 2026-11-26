@@ -4,49 +4,55 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-use Ultra\Sql\ColumnType;
-use Ultra\Sql\SqlType;
+use Ultra\MappedTable\Codec\ScalarCodec;
 
-/** Physical columns and key used by a row buffer, independent of its storage and coordinator. */
+/** The physical columns exposed by one row buffer. */
 final readonly class MappedRowSetDefinition
 {
     /**
-     * @param array<string, ColumnType|SqlType|string> $columns Physical column name to SQL type.
+     * @param array<array-key, mixed> $columns An ordered list of physical column names, validated at compilation.
      * @param non-empty-list<string> $primaryKey
-     * @param list<string> $nullable
+     * @param array<string, ColumnCodec|string> $codecs Column names mapped to codec instances or Symfony service IDs.
      * @param list<string> $ownerColumns
+     * @param ?list<string> $nullable Known nullable columns when supplied by a schema.
      */
     public function __construct(
         public string $table,
         public array $columns,
         public array $primaryKey,
-        public array $nullable = [],
+        public array $codecs = [],
         public array $ownerColumns = [],
         public ?MappedRowSetOwner $owner = null,
+        public ?array $nullable = null,
     ) {}
 
     /**
      * @internal
-     * @param array<string, ColumnCodec|class-string<ColumnCodec>> $codecs
+     * @param array<string, class-string<ColumnCodec>> $codecServices Resolved service classes during Symfony compilation.
      */
-    public function compile(array $codecs): MappedRowSetMapping
+    public function compile(array $codecServices = []): MappedRowSetMapping
     {
-        if ([] !== array_diff($this->nullable, array_keys($this->columns))) {
-            throw new \InvalidArgumentException(sprintf('Unknown nullable column on mapped table "%s".', $this->table));
+        if (!array_is_list($this->columns)) {
+            throw new \InvalidArgumentException('Mapped columns must be a list of names.');
         }
         $columns = [];
-        foreach ($this->columns as $name => $type) {
-            $sql = SqlType::resolve($type);
-            $codec = $codecs[$sql->sql] ?? ColumnCodecs::builtin($sql);
-            if (null === $codec) {
-                throw new \LogicException(sprintf(
-                    'Unsupported SQL type "%s" for column "%s" on mapped table "%s".',
-                    $sql->sql,
-                    $name,
-                    $this->table,
+        foreach ($this->columns as $name) {
+            if (!is_string($name) || '' === $name || isset($columns[$name])) {
+                throw new \InvalidArgumentException('Mapped columns require distinct, non-empty names.');
+            }
+            $codec = $this->codecs[$name] ?? null;
+            if (is_string($codec)) {
+                $codec = $codecServices[$codec] ?? throw new \InvalidArgumentException(sprintf(
+                    'Unresolved codec service "%s" for mapped column "%s.%s".', $codec, $this->table, $name,
                 ));
             }
-            $columns[$name] = new MappedColumn($sql, in_array($name, $this->nullable, true), $codec);
+            $nullable = null === $this->nullable ? null : in_array($name, $this->nullable, true);
+            $columns[$name] = new MappedColumn($nullable, $codec ?? new ScalarCodec());
+        }
+        foreach ([...array_keys($this->codecs), ...($this->nullable ?? [])] as $name) {
+            if (!isset($columns[$name])) {
+                throw new \InvalidArgumentException(sprintf('Unknown column "%s" in mapping for "%s".', $name, $this->table));
+            }
         }
 
         return new MappedRowSetMapping($this->table, $columns, $this->primaryKey, $this->ownerColumns, $this->owner);

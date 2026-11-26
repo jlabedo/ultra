@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MappedTable\InMemoryRowDatabase;
 use Ultra\MappedTable\MappedKey;
+use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 
 /** @internal */
@@ -47,6 +48,21 @@ final class KeyIsolationTest extends RowSetTestCase
         static::assertSame(['id' => 'row'], $rows->withKey($key)->get([]));
         $rows->expectSameRowKeys([$key]);
         $fixture->flush($rows);
+    }
+
+    public function test_keys_without_a_codec_preserve_integer_and_string_identity(): void
+    {
+        $fixture = $this->fixture('memory');
+        $definition = new MappedRowSetDefinition($fixture->tableName, ['id', 'status'], ['id']);
+        $rows = $fixture->adapter->compileRowSet($definition)();
+        $rows->withKey(1)->insert()->setColumn('status', 'integer');
+        $rows->withKey('1')->insert()->setColumn('status', 'string');
+
+        static::assertSame(['status' => 'integer'], $rows->withKey(1)->get(['status']));
+        static::assertSame(['status' => 'string'], $rows->withKey('1')->get(['status']));
+        $fixture->flush($rows);
+        static::assertSame(['status' => 'integer'], $rows->withKey(1)->get(['status']));
+        static::assertSame(['status' => 'string'], $rows->withKey('1')->get(['status']));
     }
 
     #[DataProvider('backends')]

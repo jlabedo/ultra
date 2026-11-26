@@ -19,8 +19,8 @@ use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
-use Ultra\Sql\SqlType;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SqlType;
 
 /** @internal */
 #[CoversNamespace('Ultra\MappedTable')]
@@ -67,13 +67,13 @@ final class SchemaRowSetCompilationTest extends TestCase
         );
     }
 
-    public function test_a_row_set_cannot_expose_a_column_of_an_unknown_sql_type(): void
+    public function test_a_column_of_an_unknown_sql_type_accepts_raw_values(): void
     {
-        $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage(
-            'Unsupported SQL type "hstore" for column "internal" on mapped table "physical_entries".',
-        );
-        self::container(['test.entries'])->compile();
+        $adapter = new InMemoryMappedTableAdapter(new InMemoryRowDatabase());
+        $definition = SchemaRowSet::fromTable(MappedRowSetsSchema::entries(), 'test.entries');
+        $row = $adapter->compileRowSet($definition)()->withKey(7)->insert();
+        $row->setColumn('internal', 'raw value');
+        self::assertSame(['internal' => 'raw value'], $row->get(['internal']));
     }
 
     public function test_a_temporal_column_cannot_be_a_mapped_key(): void

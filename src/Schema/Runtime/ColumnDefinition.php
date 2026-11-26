@@ -4,9 +4,6 @@ declare(strict_types=1);
 
 namespace Ultra\Schema;
 
-use Ultra\Sql\ColumnType;
-use Ultra\Sql\SqlType;
-
 final readonly class ColumnDefinition
 {
     public string $name;

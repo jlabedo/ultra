@@ -5,9 +5,9 @@ declare(strict_types=1);
 namespace Ultra\Coordination_Postgres\Refresh;
 
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
 
 final readonly class PostgresRefreshPublicationSchema
 {

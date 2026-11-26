@@ -13,8 +13,8 @@ use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
-use Ultra\Sql\SqlType;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SqlType;
 
 abstract class PostgresRowSetTestCase extends TestCase
 {
@@ -108,7 +108,7 @@ abstract class PostgresRowSetTestCase extends TestCase
             return $row;
         }
 
-        $row['tags'] = new ArrayCodec()->decode(ColumnType::TextArray->sqlType(), $row['tags']);
+        $row['tags'] = new ArrayCodec()->decode($row['tags']);
 
         return $row;
     }

@@ -10,8 +10,8 @@ use Ultra\Schema\ForeignKeyTiming;
 use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\PostgresFunctionDefinition;
 use Ultra\Schema\SchemaDefinition;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\SqlType;
 
 /** @internal */
 final class SchemaDefinitionData

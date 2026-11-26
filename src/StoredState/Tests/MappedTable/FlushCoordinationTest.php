@@ -24,7 +24,7 @@ use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
+use Ultra\Schema\ColumnType;
 use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;
@@ -239,7 +239,7 @@ final class FlushCoordinationTest extends RowSetTestCase
     {
         $parent = $this->fixture('memory', ['owner', 'id']);
         $child = $this->fixture('memory', ['owner', 'id'], storage: $parent->storage, adapter: $parent->adapter);
-        $text = new MappedColumn(ColumnType::Text->sqlType(), false, new TextCodec());
+        $text = new MappedColumn(false, new TextCodec());
         $columns = ['owner' => $text, 'id' => $text];
         $orders = $parent->adapter->createDefined(new MappedRowSetMapping(
             $parent->tableName,

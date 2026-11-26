@@ -92,7 +92,9 @@ final class RowSetDependencies
             ));
         }
         foreach ($owner->columns as $childColumn => $parentColumn) {
-            if ($child->column($childColumn)->keyType !== $parent->column($parentColumn)->keyType) {
+            $childType = $child->column($childColumn)->keyType;
+            $parentType = $parent->column($parentColumn)->keyType;
+            if (null !== $childType && null !== $parentType && $childType !== $parentType) {
                 throw new \LogicException(sprintf(
                     'Owner columns "%s.%s" and "%s.%s" must use the same representation.',
                     $child->table,

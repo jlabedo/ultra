@@ -19,7 +19,7 @@ use Ultra\Mapper\UltraNormalizer;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
+use Ultra\Schema\ColumnType;
 use Ultra\StateStore\StateMetadata;
 use Ultra\StateStore\StateMetadataRegistry;
 use Ultra\StateStore\StateRowSets;

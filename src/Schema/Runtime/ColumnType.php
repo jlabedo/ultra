@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Ultra\Sql;
+namespace Ultra\Schema;
 
 /** Common PostgreSQL type families. */
 enum ColumnType: string

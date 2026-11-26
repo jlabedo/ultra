@@ -21,9 +21,9 @@ use Ultra\Schema\Operations\RenameTable;
 use Ultra\Schema\PostgresSqlGenerator;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
 use Ultra\Schema\Tests\Support\MigrationTestCase;
-use Ultra\Sql\SqlType;
 
 /** @internal */
 #[CoversClass(PostgresSqlGenerator::class)]

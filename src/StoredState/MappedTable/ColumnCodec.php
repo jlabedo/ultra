@@ -4,13 +4,16 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
-use Ultra\Sql\SqlType;
-
-/** Converts non-null values for a SQL column. Instances can be shared across columns and buffers. */
+/** Converts non-null values for one mapped column. */
 abstract class ColumnCodec
 {
-    /** @return 'int'|'string'|'float'|'bool'|'array'|'JSON' */
-    abstract public static function representation(): string;
+    /** Optional normalized PHP representation for consumers that validate their own mappings.
+     * @return 'int'|'string'|'float'|'bool'|'array'|'JSON'|null
+     */
+    public static function representation(): ?string
+    {
+        return null;
+    }
 
     public static function supportsKeys(): bool
     {
@@ -18,12 +21,12 @@ abstract class ColumnCodec
     }
 
     /** Accept application input or an already normalized value. */
-    abstract public function normalize(SqlType $type, mixed $value): int|string|float|bool|array|\stdClass|JsonNull;
+    abstract public function normalize(mixed $value): int|string|float|bool|array|\stdClass|JsonNull;
 
     /** Return a stable int or string for every spelling of the same database key. */
-    public function key(SqlType $type, mixed $value): int|string
+    public function key(mixed $value): int|string
     {
-        $key = $this->normalize($type, $value);
+        $key = $this->normalize($value);
 
         return is_int($key) || is_string($key)
             ? $key
@@ -31,13 +34,13 @@ abstract class ColumnCodec
     }
 
     /** Compare normalized values in the buffer and in the in-memory adapter. */
-    public function equivalent(SqlType $type, mixed $left, mixed $right): bool
+    public function equivalent(mixed $left, mixed $right): bool
     {
         return $left === $right;
     }
 
     /** Encode a normalized value as a SQL parameter. */
-    public function encode(SqlType $type, mixed $value): int|string|float|bool
+    public function encode(mixed $value): int|string|float|bool
     {
         return is_scalar($value)
             ? $value
@@ -45,8 +48,8 @@ abstract class ColumnCodec
     }
 
     /** Decode a value returned by the SQL driver. */
-    public function decode(SqlType $type, mixed $value): int|string|float|bool|array|\stdClass|JsonNull
+    public function decode(mixed $value): int|string|float|bool|array|\stdClass|JsonNull
     {
-        return $this->normalize($type, $value);
+        return $this->normalize($value);
     }
 }

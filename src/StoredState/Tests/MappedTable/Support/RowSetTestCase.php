@@ -13,8 +13,8 @@ use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
-use Ultra\Sql\SqlType;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SqlType;
 use Ultra\Testing\PostgresConnectionSupport;
 
 abstract class RowSetTestCase extends TestCase

@@ -9,13 +9,13 @@ use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\ForeignKeyTiming;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
 use Ultra\Schema\TableDefinition;
 use Ultra\Schema\Tests\Support\MigrationTestCase;
-use Ultra\Sql\ColumnType;
 
 /** @internal */
 #[CoversNamespace('Ultra\Schema')]

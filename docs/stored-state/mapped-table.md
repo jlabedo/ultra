@@ -24,11 +24,12 @@ Adapters own:
 
 ## Defined row sets and owner collections
 
-A row-set definition describes the physical table, exposed columns, nullability and complete key.
-It can be declared directly or derived from a [Schema](../schema/README.md) table. After decoding, supported PHP representations are
-`int`, `string`, `bool`, `float` and normalized arrays of scalar values, null and nested arrays. A key column
-is a non-null integer or string. Row writes assign only non-key columns. A value supplied by a database
-default becomes available after persistence.
+A row-set definition lists the physical table, the exposed column names and the complete primary key.
+Each exposed column can have its own [codec](#column-codecs). With a native definition, ordinary columns
+accept scalar values and null. Reads preserve the driver's representation and the buffer compares values
+using strict PHP equality. Keys normalize to a non-null integer or string. Use a key codec when the same
+database identity has several application representations. Row writes assign only non-key columns.
+A value supplied by a database default becomes available after persistence.
 
 The owner columns, when present, identify one collection for each complete owner key in the child table's
 column names. They leave at least one further key column for the item. Reads by owner and direct writes by
@@ -59,6 +60,7 @@ The attribute names the shared buffer service. The optional `unitOfWork` names i
 
 ```php
 use Ultra\MappedTable\Attribute\DefineMappedRowSet;
+use Ultra\MappedTable\Codec\JsonbCodec;
 use Ultra\MappedTable\MappedRowSetDefinition;
 
 final class DocumentRows
@@ -68,8 +70,9 @@ final class DocumentRows
     {
         return new MappedRowSetDefinition(
             table: 'document_library',
-            columns: ['id' => 'uuid', 'title' => 'text'],
+            columns: ['id', 'title', 'metadata'],
             primaryKey: ['id'],
+            codecs: ['metadata' => new JsonbCodec()],
         );
     }
 }
@@ -96,10 +99,10 @@ new MappedTableExtension(rowSets: [
 Bind `MappedTableAdapter` to a shared service for the chosen storage and declare its concrete class,
 including for synthetic services. A table used only for migrations needs no row-set activation.
 
-A selected table needs a structured primary key. Schema supplies the physical names, nullability and SQL types.
-Each exposed column binds one [codec](#column-codecs) by its SQL type at compilation. The row set exposes
-every column by default. To limit exposure, set `columns` to a list of column IDs. The primary key is always exposed. Compilation
-reports the table, column and type if an exposed column uses an unsupported SQL type.
+A selected table needs a structured primary key. The Schema integration derives the physical names and nullability.
+It supplies a default codec for each recognized SQL type. Other columns pass through raw driver values.
+To limit exposure, set `columns` to a list of schema column IDs. The primary key is always exposed.
+Use `codecs` to override an individual column by its physical name.
 
 Set `owner` to the name of a declared foreign key to make it a Mapped Table owner relationship. Activate the
 parent row set too. The foreign key must use immutable child key columns and leave at least one item key column.
@@ -200,7 +203,7 @@ use Ultra\MappedTable\MappedRowSetDefinition;
 
 $database = new InMemoryRowDatabase();
 $adapter = new InMemoryMappedTableAdapter($database);
-$users = new MappedRowSetDefinition('users', ['id' => 'text', 'status' => 'text'], ['id']);
+$users = new MappedRowSetDefinition('users', ['id', 'status'], ['id']);
 $table = $adapter->compileRowSet($users)();
 $unitOfWork = new MappedTableUnitOfWork(['users' => $table], $adapter);
 $database->seedRow('users', 'id', ['id' => 'user-1', 'status' => 'pending']);
@@ -345,7 +348,7 @@ are managed by the adapter.
 
 ### Column types
 
-Mapped Table provides built-in codecs for these PostgreSQL types. The table shows their non-null PHP values.
+When deriving a row set from Schema, the following SQL declarations select built-in codecs. The table shows their non-null PHP values.
 
 | Schema declaration or PostgreSQL spelling | PHP representation |
 | --- | --- |
@@ -362,7 +365,7 @@ Mapped Table provides built-in codecs for these PostgreSQL types. The table show
 | `jsonb` | Decoded JSON value |
 
 A nullable column accepts PHP `null` for SQL `NULL`. Codecs prepare buffered values, encode SQL parameters,
-and decode database results. Key columns must use a non-null integer, text, varchar or UUID type.
+and decode database results. The built-in integer, text, varchar and UUID codecs support keys.
 UUID keys use a canonical lowercase spelling, including in collection keys and buffered updates.
 
 UUID columns accept strings and `Stringable` values, including Symfony UUIDs. Date and timestamp columns
@@ -399,39 +402,29 @@ $acceptances = $adapter->compileRowSet(SchemaRowSet::fromTable($schema, 'accepta
 
 ### Column codecs
 
-Register a `ColumnCodec` when a SQL type needs a different PHP representation or lacks a built-in
-codec. Schema declarations carry the SQL type. Mapped Table binds the codec when it compiles the row set.
+Declare codecs per physical column. Two columns of the same SQL type can have different codecs.
+The compiler checks that every codec and key names an exposed column. An unknown column in a read
+or write is rejected when preparing the operation. PostgreSQL precompiles quoted identifiers,
+assignments and comparisons, with parameter types determined by the SQL column context.
 
-In standalone PHP, supply codec instances keyed by SQL type.
-
-```php
-$rows = $adapter->compileRowSet($definition, codecs: [
-    'hstore' => $attributesCodec,
-])();
-```
-
-In Symfony, tag a codec service with its SQL type. The compiled row set references that service,
-including its configured constructor dependencies.
+In standalone PHP, supply a configured instance. In Symfony, a column can refer to a codec by
+service ID. This preserves its injected dependencies in the compiled container.
 
 ```php
-$container->register(AttributesCodec::class)
-    ->setAutowired(true)
-    ->addTag(MappedTableExtension::COLUMN_CODEC_TAG, ['type' => 'hstore']);
+$definition = new MappedRowSetDefinition(
+    table: 'documents',
+    columns: ['id', 'title', 'attributes'],
+    primaryKey: ['id'],
+    codecs: ['attributes' => AttributesCodec::class], // Symfony service ID
+);
 ```
 
-An application registration takes precedence over the built-in codec for the same SQL type.
-The canonical SQL type in `ultra/sql-type` determines the association. For example, `int4` and `integer` share
-one registration. SQL modifiers take part in matching, so an association for `varchar(10)` applies
-to that length. Two application codecs for the same canonical type are a configuration error.
-For a type declared as a literal SQL name in Schema, use the same declaration as the registration key.
-
-The codec declares its PHP representation with `representation()` and converts application input
-with `normalize()`. Normalization accepts the codec's own output, and any returned arrays or JSON
-objects must be detached from caller-owned mutable values. By default, scalar values are encoded as
-SQL parameters, database values are normalized on read, and buffered expectations use strict equality.
-Override `encode()`, `decode()` or `equivalent()` when the type needs different behavior. A codec can
-opt into keys with `supportsKeys()` if its `int` or `string` keys share one stable spelling per SQL
-identity. Override `key()` when key canonicalization differs from ordinary normalization.
+A `ColumnCodec` normalizes non-null application input and can override `encode()`, `decode()`
+and `equivalent()`. Normalization must accept the codec's own output and detach mutable values
+from caller-owned objects. The default comparison uses strict PHP equality. A key codec opts in
+with `supportsKeys()` and must produce a stable integer or string for each database identity.
+A codec may declare its normalized PHP representation with `representation()` for StateStore
+validation. Native declarations require only the column names and key.
 
 ## SQL inspection
 
@@ -453,7 +446,7 @@ same scenario exercises the in-memory and Postgres adapters.
 | Definitions compile to shared, adapter-backed row sets with inferred representations | [DefinedRowSetsTest](../../src/StoredState/Tests/MappedTable/DefinedRowSetsTest.php) | Dumped container, shared adapter and schema-derived SQL. |
 | Dedicated coordinators flush independent buffers | [NamedCoordinatorTest](../../src/StoredState/Tests/MappedTable/NamedCoordinatorTest.php) | Native discovery, shared database table, isolated flush and cleanup, parent and guard validation. |
 | Schema tables are activated and compiled explicitly | [SchemaRowSetCompilationTest](../../src/StoredState/Tests/MappedTable/SchemaRowSetCompilationTest.php) | Manual assembly, a service alias, unknown types, temporal keys and owner selection. |
-| Application codecs bind to a canonical SQL type | [ColumnCodecRegistrationTest](../../src/StoredState/Tests/MappedTable/ColumnCodecRegistrationTest.php) | Standalone registration, tagged Symfony services, alias overrides and duplicate registrations. |
+| Application codecs bind to individual columns | [ColumnCodecRegistrationTest](../../src/StoredState/Tests/MappedTable/ColumnCodecRegistrationTest.php) | Standalone and Symfony bindings, raw values beside a configured codec, and unknown column names. |
 | Supported values round-trip with matching key and expectation semantics | [ColumnValueRoundTripTest](../../src/StoredState/Tests/MappedTable/ColumnValueRoundTripTest.php) | UUID keys and object inputs, timestamp comparisons and precision, arrays and JSONB values. |
 | Reads expose the unit-of-work view without changing storage | [BufferedViewTest](../../src/StoredState/Tests/MappedTable/BufferedViewTest.php) | Committed projections and structured rows, shared owner and direct overlays, check-only observations. |
 | Writes have distinct insert, update, upsert, replacement and deletion semantics | [WriteSemanticsTest](../../src/StoredState/Tests/MappedTable/WriteSemanticsTest.php) | Preservation of unspecified values, conflicts, multiple deletions, replacement expectations, cancellation and merging. |

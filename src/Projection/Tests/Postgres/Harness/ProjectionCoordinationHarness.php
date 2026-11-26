@@ -68,7 +68,7 @@ final readonly class HarnessCourseNamesProjection
         $adapter = new PostgresMappedTableAdapter($connection, tablePolicies: [
             $tableName => new MappedTablePolicy(allowAbsentObservations: false),
         ]);
-        $definition = new MappedRowSetDefinition($tableName, ['course_id' => 'text', 'name' => 'text'], ['course_id']);
+        $definition = new MappedRowSetDefinition($tableName, ['course_id', 'name'], ['course_id']);
         $this->table = $adapter->compileRowSet($definition)();
         $this->persistence = new MappedTableUnitOfWork([$tableName => $this->table], $adapter);
     }

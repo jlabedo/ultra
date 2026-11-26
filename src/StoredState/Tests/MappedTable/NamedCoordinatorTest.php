@@ -65,7 +65,7 @@ final class NamedCoordinatorTest extends TestCase
         new MappedTableExtension(rowSets: [
             'children' => new MappedRowSetDefinition(
                 'children',
-                ['parent' => 'integer', 'item' => 'integer'],
+                ['parent', 'item'],
                 ['parent', 'item'],
                 owner: new MappedRowSetOwner('first.rows', ['parent' => 'id']),
             ),
@@ -108,6 +108,6 @@ final class NamedRowSets
     #[DefineMappedRowSet('first.rows', unitOfWork: 'first.persistence')]
     public static function records(): MappedRowSetDefinition
     {
-        return new MappedRowSetDefinition('records', ['id' => 'integer', 'name' => 'text'], ['id']);
+        return new MappedRowSetDefinition('records', ['id', 'name'], ['id']);
     }
 }

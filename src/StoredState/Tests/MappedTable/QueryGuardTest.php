@@ -25,7 +25,7 @@ use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
+use Ultra\Schema\ColumnType;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 

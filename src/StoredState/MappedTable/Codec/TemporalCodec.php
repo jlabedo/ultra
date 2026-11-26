@@ -5,25 +5,24 @@ declare(strict_types=1);
 namespace Ultra\MappedTable\Codec;
 
 use Ultra\MappedTable\ColumnCodec;
-use Ultra\Sql\ColumnType;
-use Ultra\Sql\SqlType;
 
-/** @internal */
 final class TemporalCodec extends ColumnCodec
 {
+    public const string DATE = 'Y-m-d';
+    public const string LOCAL_TIMESTAMP = 'Y-m-d H:i:s.u';
+    public const string OFFSET_TIMESTAMP = 'Y-m-d H:i:s.uP';
+
+    public function __construct(public readonly string $format = self::OFFSET_TIMESTAMP) {}
+
     public static function representation(): string
     {
         return 'string';
     }
 
-    public function normalize(SqlType $type, mixed $value): string
+    public function normalize(mixed $value): string
     {
         if ($value instanceof \DateTimeInterface) {
-            return $value->format(match ($type->family) {
-                ColumnType::Date => 'Y-m-d',
-                ColumnType::Timestamp => 'Y-m-d H:i:s.u',
-                default => 'Y-m-d H:i:s.uP',
-            });
+            return $value->format($this->format);
         }
 
         return is_string($value)
@@ -31,19 +30,19 @@ final class TemporalCodec extends ColumnCodec
             : throw new \InvalidArgumentException('Expected a date string or DateTimeInterface.');
     }
 
-    public function equivalent(SqlType $type, mixed $left, mixed $right): bool
+    public function equivalent(mixed $left, mixed $right): bool
     {
         return (
             $left === $right
-            || ColumnType::Date !== $type->family
+            || self::DATE !== $this->format
             && is_string($left)
             && is_string($right)
-            && null !== ($canonical = self::comparisonString($type->family, $left))
-            && $canonical === self::comparisonString($type->family, $right)
+            && null !== ($canonical = $this->comparisonString($left))
+            && $canonical === $this->comparisonString($right)
         );
     }
 
-    private static function comparisonString(?ColumnType $family, string $value): ?string
+    private function comparisonString(string $value): ?string
     {
         // Recognize ISO timestamps, including the offset spellings PostgreSQL returns in ISO DateStyle.
         $parts = [];
@@ -53,7 +52,7 @@ final class TemporalCodec extends ColumnCodec
         }
 
         $local = $parts[1] . ' ' . $parts[2] . '.' . str_pad($parts[3] ?? '', 6, '0');
-        if (ColumnType::Timestamp === $family) {
+        if (self::LOCAL_TIMESTAMP === $this->format) {
             return $local;
         }
         if (!isset($parts[4])) {

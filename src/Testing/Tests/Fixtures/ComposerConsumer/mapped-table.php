@@ -16,7 +16,7 @@ if (InstalledVersions::isInstalled('ultra/schema') || InstalledVersions::isInsta
 
 $database = new InMemoryRowDatabase();
 $adapter = new InMemoryMappedTableAdapter($database);
-$definition = new MappedRowSetDefinition('documents', ['id' => 'integer', 'title' => 'text'], ['id']);
+$definition = new MappedRowSetDefinition('documents', ['id', 'title'], ['id']);
 $rows = $adapter->compileRowSet($definition)();
 $writer = new MappedTableUnitOfWork(['documents' => $rows], $adapter);
 $rows->withKey(1)->insert()->setColumn('title', 'Workshop');

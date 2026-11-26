@@ -41,7 +41,7 @@ use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
+use Ultra\Schema\ColumnType;
 use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\TransactionManager;
 use Ultra\UnitOfWork\UnitOfWorkExtension;

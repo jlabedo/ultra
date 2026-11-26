@@ -34,8 +34,8 @@ use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
-use Ultra\Sql\SqlType;
+use Ultra\Schema\ColumnType;
+use Ultra\Schema\SqlType;
 use Ultra\UnitOfWork\UnitOfWork;
 use Ultra\UnitOfWork\UnitOfWorkExtension;
 
@@ -102,7 +102,7 @@ final class DefinedRowSetsTest extends RowSetTestCase
                 static::assertInstanceOf(Definition::class, $sql);
                 static::assertSame(PostgresRowSetSql::class, $sql->getClass());
                 static::assertSame(' WHERE "owner" = ?', $sql->getArgument(7));
-                static::assertSame('?::text[]', $sql->getArgument(1)['aliases']['parameter']);
+                static::assertSame('"aliases" = ?', $sql->getArgument(1)['aliases']['assign']);
                 static::assertSame(2, count($lineService->getArguments()));
             }
             $coordination = $container->findDefinition('test.coordination');

@@ -11,7 +11,7 @@ use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
+use Ultra\Schema\ColumnType;
 
 final class OrderSummarySchema
 {

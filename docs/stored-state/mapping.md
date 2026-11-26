@@ -96,7 +96,7 @@ final readonly class AcceptanceState
 Mapper Compiler resolves whether the identifier normalizes to one scalar or a flat object shape. `column` and `columns` only override conventional column names. Composite components must normalize to `int|string`.
 
 Date properties use [Mapper's date representation](../mapping/README.md#dates). For native PostgreSQL timestamps,
-declare the SQL type in Schema. Mapped Table [infers the column mapping](mapped-table.md#column-types) for reads and writes.
+use a temporal codec on the mapped column, or derive the [default codec from Schema](mapped-table.md#column-types).
 
 Each physical table has one coordinated row set with a complete canonical key. Every StateStore view of
 that table uses the same key columns and shares the row set's buffer. The key must be backed by a unique

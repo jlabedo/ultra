@@ -6,10 +6,10 @@ namespace ComplianceExample;
 
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
 
 final class ComplianceSchema
 {

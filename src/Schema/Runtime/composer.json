@@ -11,8 +11,7 @@
     ],
     "require": {
         "php": ">=8.5",
-        "symfony/console": "7.4.*|8.*",
-        "ultra/sql-type": "*"
+        "symfony/console": "7.4.*|8.*"
     },
     "suggest": {
         "symfony/dependency-injection": "Required to discover schema fragments during Symfony compilation.",

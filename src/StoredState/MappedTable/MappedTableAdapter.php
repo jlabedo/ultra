@@ -18,19 +18,11 @@ abstract class MappedTableAdapter
     /**
      * Compile a definition once and return a factory for fresh row buffers.
      *
-     * @param array<array-key, mixed> $codecs ColumnCodec instances keyed by SQL type.
      * @return \Closure(): MappedRowSet
      */
-    final public function compileRowSet(MappedRowSetDefinition $definition, array $codecs = []): \Closure
+    final public function compileRowSet(MappedRowSetDefinition $definition): \Closure
     {
-        $registered = [];
-        foreach ($codecs as $sqlType => $codec) {
-            if (!$codec instanceof ColumnCodec || !is_string($sqlType)) {
-                throw new \InvalidArgumentException('Register codec instances keyed by SQL type.');
-            }
-            $registered[ColumnCodecs::registrationKey($sqlType, $registered)] = $codec;
-        }
-        $mapping = $definition->compile($registered);
+        $mapping = $definition->compile();
 
         $adapter = $this;
         if ($adapter instanceof PostgresMappedTableAdapter) {

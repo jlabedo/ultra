@@ -6,13 +6,12 @@ namespace Ultra\MappedTable\Storage;
 
 use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 use Ultra\MappedTable\MappedRowSetMetadata;
-use Ultra\Sql\ColumnType;
 
 /** @internal PostgreSQL SQL fragments compiled from a row set definition. */
 final readonly class PostgresRowSetSql
 {
     /**
-     * @param array<string, array{identifier: string, parameter: string, assign: string, compare: string, excluded: string}> $columns
+     * @param array<string, array{identifier: string, assign: string, compare: string, excluded: string}> $columns
      * @param list<string> $keyPredicates
      * @param list<string> $ownerColumns
      * @param list<string> $ownerPredicates
@@ -41,18 +40,10 @@ final readonly class PostgresRowSetSql
         $columns = [];
         foreach ($mapping->columnNames as $column) {
             $identifier = $quote($column);
-            $mapped = $mapping->column($column);
-            $implicit = in_array(
-                $mapped->sqlType->family,
-                [ColumnType::Text, ColumnType::Int32, ColumnType::Int64, ColumnType::Boolean],
-                true,
-            );
-            $parameter = $implicit ? '?' : '?::' . $mapped->sqlType->sql;
             $columns[$column] = [
                 'identifier' => $identifier,
-                'parameter' => $parameter,
-                'assign' => $identifier . ' = ' . $parameter,
-                'compare' => $identifier . ' IS NOT DISTINCT FROM ' . $parameter,
+                'assign' => $identifier . ' = ?',
+                'compare' => $identifier . ' IS NOT DISTINCT FROM ?',
                 'excluded' => $identifier . ' = EXCLUDED.' . $identifier,
             ];
         }

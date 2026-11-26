@@ -8,15 +8,15 @@ use PHPUnit\Framework\Attributes\CoversClass;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Schema\IndexDefinition;
 use Ultra\Schema\Operations\AddIndex;
 use Ultra\Schema\Operations\DropIndex;
 use Ultra\Schema\Operations\RenameIndex;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
+use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
-use Ultra\Sql\SqlType;
 
 /** @internal */
 #[CoversClass(SchemaReconciler::class)]

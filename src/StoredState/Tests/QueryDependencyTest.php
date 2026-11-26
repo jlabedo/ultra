@@ -20,7 +20,7 @@ use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
+use Ultra\Schema\ColumnType;
 use Ultra\StateStore\Attribute\State;
 use Ultra\StateStore\Attribute\StateCollection;
 use Ultra\StateStore\Attribute\StateColumn;

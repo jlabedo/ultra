@@ -11,7 +11,7 @@ use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\TableDefinition;
-use Ultra\Sql\ColumnType;
+use Ultra\Schema\ColumnType;
 use Ultra\Testing\SqlTrace;
 use Ultra\UnitOfWork\DbalTransactionManager;
 use Ultra\UnitOfWork\TransactionalUnitOfWorkRunner;

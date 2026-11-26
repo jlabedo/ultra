@@ -8,8 +8,11 @@ use Symfony\Component\DependencyInjection\Compiler\CompilerPassInterface;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Symfony\Component\DependencyInjection\Definition;
 use Symfony\Component\DependencyInjection\Reference;
+use Ultra\MappedTable\Codec\ArrayCodec;
+use Ultra\MappedTable\Codec\IntegerCodec;
+use Ultra\MappedTable\Codec\TemporalCodec;
+use Ultra\MappedTable\Codec\TextCodec;
 use Ultra\MappedTable\ColumnCodec;
-use Ultra\MappedTable\ColumnCodecs;
 use Ultra\MappedTable\MappedColumn;
 use Ultra\MappedTable\MappedRowSet;
 use Ultra\MappedTable\MappedRowSetDefinition;
@@ -23,7 +26,6 @@ use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\Schema\SchemaRowSet;
 use Ultra\MappedTable\Storage\PostgresRowSetSql;
 use Ultra\Schema\Symfony\SchemaExtension;
-use Ultra\Sql\SqlType;
 use Ultra\UnitOfWork\TagNames;
 
 /** @internal */
@@ -57,7 +59,6 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         }
         $postgres = is_a($adapterClass, PostgresMappedTableAdapter::class, true);
 
-        [$codecs, $services] = $this->codecs($container);
         $coordinators = [];
         $mappings = [];
         $rowSets = [];
@@ -79,17 +80,33 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
                 }
                 $source = SchemaRowSet::fromTable(SchemaExtension::compiledSchema($container), $id, ...$source);
             }
-            $mapping = $source->compile($codecs);
+            $services = [];
+            foreach ($source->codecs as $codec) {
+                if (!is_string($codec)) {
+                    continue;
+                }
+                $class = $container->getParameterBag()->resolveValue($container->findDefinition($codec)->getClass());
+                if (!is_string($class) || !is_a($class, ColumnCodec::class, true)) {
+                    throw new \LogicException(sprintf('Codec service "%s" must declare a ColumnCodec class.', $codec));
+                }
+                $services[$codec] = $class;
+            }
+            $mapping = $source->compile($services);
             $coordinators[$id] = $coordinator;
             $mappings[$id] = $mapping;
             $rowSets[$id] = new Reference($id);
+            $columns = [];
+            foreach ($mapping->columns as $name => $column) {
+                $codec = $source->codecs[$name] ?? null;
+                $arguments = [$column->nullable];
+                if (null !== $codec) {
+                    $arguments[] = is_string($codec) ? new Reference($codec) : $this->inlineCodec($codec);
+                }
+                $columns[$name] = new Definition(MappedColumn::class, $arguments);
+            }
             $metadata = new Definition(MappedRowSetMetadata::class, [
                 $mapping->table,
-                array_map(fn(MappedColumn $column): Definition => $this->column(
-                    $container,
-                    $column,
-                    $services,
-                ), $mapping->columns),
+                $columns,
                 $mapping->keyColumns,
                 $mapping->ownerColumns,
                 null === $mapping->owner
@@ -147,10 +164,10 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         }
     }
 
-    /** @return list<array{string, MappedRowSetDefinition|array{columns?: list<string>, owner?: string, ownerColumns?: list<string>}, string}> */
+    /** @return list<array{string, MappedRowSetDefinition|array{columns?: list<string>, owner?: string, ownerColumns?: list<string>, codecs?: array<string, ColumnCodec|string>}, string}> */
     private function selections(ContainerBuilder $container): array
     {
-        /** @var list<array{string, MappedRowSetDefinition|array{columns?: list<string>, owner?: string, ownerColumns?: list<string>}, string}> $selections */
+        /** @var list<array{string, MappedRowSetDefinition|array{columns?: list<string>, owner?: string, ownerColumns?: list<string>, codecs?: array<string, ColumnCodec|string>}, string}> $selections */
         $selections = $container->getParameter(self::ROW_SETS);
         $container->getParameterBag()->remove(self::ROW_SETS);
         foreach ($container->findTaggedServiceIds(self::FACTORY_TAG, throwOnAbstract: true) as $service => $tags) {
@@ -194,53 +211,20 @@ final class MappedRowSetCompilerPass implements CompilerPassInterface
         return $selections;
     }
 
-    /** @return array{array<string, class-string<ColumnCodec>>, array<string, string>} */
-    private function codecs(ContainerBuilder $container): array
+    private function inlineCodec(ColumnCodec $codec): Definition
     {
-        $codecs = [];
-        $services = [];
-        foreach ($container->findTaggedServiceIds(
-            MappedTableExtension::COLUMN_CODEC_TAG,
-            throwOnAbstract: true,
-        ) as $id => $tags) {
-            $definition = $container->getDefinition($id);
-            $class = $container->getParameterBag()->resolveValue($definition->getClass());
-            if (
-                !is_string($class)
-                || !is_subclass_of($class, ColumnCodec::class)
-                || new \ReflectionClass($class)->isAbstract()
-            ) {
-                throw new \LogicException(sprintf(
-                    'Codec service "%s" must declare a concrete ColumnCodec class.',
-                    $id,
-                ));
-            }
-            foreach ($tags as $tag) {
-                $type = $tag['type'] ?? null;
-                if (!is_string($type)) {
-                    throw new \LogicException(sprintf('Codec service "%s" requires a SQL type in its tag.', $id));
-                }
-                $key = ColumnCodecs::registrationKey($type, $codecs);
-                $codecs[$key] = $class;
-                $services[$key] = $id;
-            }
-        }
+        $arguments = match (true) {
+            $codec instanceof ArrayCodec => [$this->inlineCodec($codec->element)],
+            $codec instanceof IntegerCodec => [$codec->int32],
+            $codec instanceof TemporalCodec => [$codec->format],
+            $codec instanceof TextCodec => [$codec->maxLength, $codec->stringableKeys],
+            [] === get_mangled_object_vars($codec) && 0 === (new \ReflectionClass($codec)->getConstructor()?->getNumberOfRequiredParameters() ?? 0) => [],
+            default => throw new \LogicException(sprintf(
+                'Register the configured codec %s as a Symfony service and use its ID for the column.', $codec::class,
+            )),
+        };
 
-        return [$codecs, $services];
-    }
-
-    /** @param array<string, string> $services */
-    private function column(ContainerBuilder $container, MappedColumn $column, array $services): Definition
-    {
-        $codec = $column->codec;
-
-        return new Definition(MappedColumn::class, [
-            new Definition(SqlType::class)->setFactory([SqlType::class, 'fromSql'])->setArguments([
-                $container->getParameterBag()->escapeValue($column->sqlType->sql),
-            ]),
-            $column->nullable,
-            is_string($codec) ? new Reference($services[$column->sqlType->sql]) : new Definition($codec::class),
-        ]);
+        return new Definition($codec::class, $arguments);
     }
 
     private function postgresRowSet(

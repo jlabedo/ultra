@@ -51,7 +51,7 @@ final readonly class QueryGuardRules
                     $dependency->rowSet,
                 ));
                 $valueColumn = $mapping->column($dependency->valueColumn);
-                if ($valueColumn->nullable || !in_array($valueColumn->type, ['int', 'string'], true)) {
+                if (true === $valueColumn->nullable || null !== $valueColumn->type && !in_array($valueColumn->type, ['int', 'string'], true)) {
                     throw new \InvalidArgumentException(sprintf(
                         'Query guard "%s" needs a non-null int or string value column, got "%s.%s".',
                         $name,

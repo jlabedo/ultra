@@ -8,17 +8,16 @@ use Symfony\Component\DependencyInjection\ChildDefinition;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\Container\ContainerExtension;
 use Ultra\MappedTable\Attribute\DefineMappedRowSet;
+use Ultra\MappedTable\ColumnCodec;
 use Ultra\MappedTable\MappedRowSetDefinition;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\QueryGuardDefinition;
 
 final readonly class MappedTableExtension implements ContainerExtension
 {
-    public const string COLUMN_CODEC_TAG = 'ultra.mapped_table.column_codec';
-
     /**
      * @param list<QueryGuardDefinition> $queryGuards
-     * @param array<array-key, MappedRowSetDefinition|string|array{columns?: list<string>, owner?: string, ownerColumns?: list<string>}> $rowSets
+     * @param array<array-key, MappedRowSetDefinition|string|array{columns?: list<string>, owner?: string, ownerColumns?: list<string>, codecs?: array<string, ColumnCodec|string>}> $rowSets
      */
     public function __construct(
         private array $queryGuards = [],
@@ -53,7 +52,7 @@ final readonly class MappedTableExtension implements ContainerExtension
             ...$this->queryGuards,
         ]);
 
-        /** @var list<array{string, MappedRowSetDefinition|array{columns?: list<string>, owner?: string, ownerColumns?: list<string>}, string}> $selections */
+        /** @var list<array{string, MappedRowSetDefinition|array{columns?: list<string>, owner?: string, ownerColumns?: list<string>, codecs?: array<string, ColumnCodec|string>}, string}> $selections */
         $selections = $container->hasParameter(MappedRowSetCompilerPass::ROW_SETS)
             ? $container->getParameter(MappedRowSetCompilerPass::ROW_SETS)
             : [];

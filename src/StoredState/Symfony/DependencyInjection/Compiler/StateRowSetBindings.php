@@ -250,6 +250,12 @@ final readonly class StateRowSetBindings
             $mapping->table,
             $column,
         ));
+        if (null === $declared->type) {
+            return;
+        }
+        if (null === $declared->nullable) {
+            $types = array_values(array_diff($types, ['null']));
+        }
         $expected = $declared->nullable ? [$declared->type, 'null'] : [$declared->type];
         if ([] !== array_diff($types, $expected) || [] !== array_diff($expected, $types)) {
             throw new InvalidStateConfigurationException(sprintf(

@@ -14,8 +14,8 @@ final class MigrationCommandTest extends TestCase
         <?php
 
         use Ultra\Schema\ColumnDefinition;
-        use Ultra\Sql\SqlType;
-        use Ultra\Sql\ColumnType;
+        use Ultra\Schema\SqlType;
+        use Ultra\Schema\ColumnType;
         use Ultra\Schema\ForeignKeyDefinition;
         use Ultra\Schema\ForeignKeyTiming;
         use Ultra\Schema\IndexDefinition;
