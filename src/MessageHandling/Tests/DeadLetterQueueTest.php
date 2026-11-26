@@ -180,6 +180,27 @@ final class DeadLetterQueueTest extends QueueTestCase
         static::assertEqualsCanonicalizing([$failedId->value, $replacementId->value], $ids);
     }
 
+    public function test_in_memory_replayed_message_survives_replacement_of_all_its_former_keys(): void
+    {
+        $f = $this->fixture(retryPolicy: new AsyncRetryPolicy(maxAttempts: 1));
+        $id = new AsyncMessageId('failed');
+        $keys = ['refresh', 'rebuild'];
+        foreach ($keys as $key) {
+            $f->queue->enqueue($this->envelope('failed'), new AsyncEnqueueOptions(messageId: $id, key: $key));
+        }
+        $delivery = $f->queue->reserve();
+        static::assertNotNull($delivery);
+        $f->queue->release($delivery);
+        static::assertTrue($f->queue->replayFailed($id));
+
+        foreach ($keys as $key) {
+            $f->queue->enqueue($this->envelope('replacement'), new AsyncEnqueueOptions(key: $key, replace: true));
+        }
+
+        static::assertSame(3, $f->count());
+        static::assertSame($id->value, $f->queue->reserve()?->messageId->value);
+    }
+
     public function test_postgres_quarantine_and_replay_are_transactional_and_queue_scoped(): void
     {
         $f = $this->fixture('postgres', new AsyncRetryPolicy(maxAttempts: 1));

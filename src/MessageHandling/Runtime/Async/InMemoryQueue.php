@@ -23,8 +23,11 @@ final class InMemoryQueue implements AsyncMessageSender, AsyncMessageReceiver, D
      */
     private array $messages = [];
 
-    /** @var array<string, AsyncMessageId> */
+    /** @var array<array-key, AsyncMessageId> */
     private array $idsByKey = [];
+
+    /** @var array<array-key, array<array-key, true>> */
+    private array $keysById = [];
 
     /** @var array<array-key, DeadLetter<AsyncEnvelope>> */
     private array $deadLetters = [];
@@ -46,18 +49,25 @@ final class InMemoryQueue implements AsyncMessageSender, AsyncMessageReceiver, D
         $availableAt =
             $options->availableAt ?? ($options->delay instanceof Duration ? $now->add($options->delay) : $now);
 
-        if ($options->replace && null !== $options->key) {
-            $existingId = $this->idsByKey[$options->key] ?? null;
+        $key = $options->key;
+        if (null !== $key) {
+            $existingId = $this->idsByKey[$key] ?? null;
             if (null !== $existingId) {
-                unset($this->messages[$existingId->value], $this->idsByKey[$options->key]);
+                if ($options->replace) {
+                    unset($this->messages[$existingId->value]);
+                }
+                if ($existingId->value !== $messageId->value) {
+                    unset($this->keysById[$existingId->value][$key]);
+                    if ([] === $this->keysById[$existingId->value]) {
+                        unset($this->keysById[$existingId->value]);
+                    }
+                }
             }
+            $this->idsByKey[$key] = $messageId;
+            $this->keysById[$messageId->value][$key] = true;
         }
 
         $this->storeMessage($messageId, $envelope, $availableAt);
-
-        if (null !== $options->key) {
-            $this->idsByKey[$options->key] = $messageId;
-        }
 
         return $messageId;
     }
@@ -115,7 +125,7 @@ final class InMemoryQueue implements AsyncMessageSender, AsyncMessageReceiver, D
         }
 
         unset($this->messages[$delivery->messageId->value]);
-        $this->removeKeyFor($delivery->messageId);
+        $this->removeKeysFor($delivery->messageId);
     }
 
     public function release(AsyncDelivery $delivery, ?Duration $delay = null, ?\Throwable $reason = null): void
@@ -235,17 +245,14 @@ final class InMemoryQueue implements AsyncMessageSender, AsyncMessageReceiver, D
         $messageId = $deadLetter->messageId;
         $this->deadLetters[$messageId->value] = $deadLetter;
         unset($this->messages[$messageId->value]);
-        $this->removeKeyFor($messageId);
+        $this->removeKeysFor($messageId);
     }
 
-    private function removeKeyFor(AsyncMessageId $messageId): void
+    private function removeKeysFor(AsyncMessageId $messageId): void
     {
-        foreach ($this->idsByKey as $key => $id) {
-            if ($id->value !== $messageId->value) {
-                continue;
-            }
-
+        foreach ($this->keysById[$messageId->value] ?? [] as $key => $_) {
             unset($this->idsByKey[$key]);
         }
+        unset($this->keysById[$messageId->value]);
     }
 }

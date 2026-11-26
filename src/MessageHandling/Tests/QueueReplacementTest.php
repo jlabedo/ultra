@@ -8,6 +8,7 @@ use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\MessageHandling\Async\AsyncEnqueueOptions;
+use Ultra\MessageHandling\Async\AsyncMessageId;
 use Ultra\MessageHandling\Async\AsyncRetryPolicy;
 use Ultra\MessageHandling\Tests\Support\QueueTestCase;
 
@@ -28,6 +29,45 @@ final class QueueReplacementTest extends QueueTestCase
         static::assertSame('new', $delivery->envelope->message->value);
         $f->queue->acknowledge($delivery);
         static::assertNull($f->queue->reserve());
+    }
+
+    public function test_in_memory_acknowledgement_clears_all_keys_for_a_message_id(): void
+    {
+        $f = $this->fixture();
+        $id = new AsyncMessageId('1');
+        $keys = ['10', '20'];
+        foreach ($keys as $key) {
+            $f->queue->enqueue($this->envelope('original'), new AsyncEnqueueOptions(messageId: $id, key: $key));
+        }
+        $delivery = $f->queue->reserve();
+        static::assertNotNull($delivery);
+        $f->queue->acknowledge($delivery);
+
+        $f->queue->enqueue($this->envelope('reused ID'), new AsyncEnqueueOptions(messageId: $id));
+        foreach ($keys as $key) {
+            $f->queue->enqueue($this->envelope('replacement'), new AsyncEnqueueOptions(key: $key, replace: true));
+        }
+
+        static::assertSame(3, $f->count());
+        static::assertSame('reused ID', $f->queue->reserve()?->envelope->message->value);
+    }
+
+    public function test_in_memory_acknowledgement_preserves_a_key_reassigned_to_another_message(): void
+    {
+        $f = $this->fixture();
+        $options = new AsyncEnqueueOptions(key: 'refresh');
+        $firstId = $f->queue->enqueue($this->envelope('first'), $options);
+        $f->queue->enqueue($this->envelope('second'), $options);
+
+        $delivery = $f->queue->reserve();
+        static::assertNotNull($delivery);
+        static::assertSame($firstId->value, $delivery->messageId->value);
+        $f->queue->acknowledge($delivery);
+
+        $replacement = new AsyncEnqueueOptions(key: 'refresh', replace: true);
+        $replacementId = $f->queue->enqueue($this->envelope('replacement'), $replacement);
+        static::assertSame(1, $f->count());
+        static::assertSame($replacementId->value, $f->queue->reserve()?->messageId->value);
     }
 
     #[DataProvider('backends')]
