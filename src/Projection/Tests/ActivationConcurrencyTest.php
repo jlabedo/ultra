@@ -170,7 +170,7 @@ final class ActivationConcurrencyTest extends PostgresProjectionTestCase
         }
     }
 
-    public function test_registration_waits_for_an_older_writer_and_appends_use_the_local_catalog(): void
+    public function test_registration_proceeds_while_a_writer_without_synchronous_projections_is_open(): void
     {
         $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous, true);
         $peer = PostgresConnectionSupport::sharedConnection($this->postgresDsn(), 'projection-old-writer');
@@ -193,13 +193,8 @@ final class ActivationConcurrencyTest extends PostgresProjectionTestCase
         try {
             $oldStore->append([self::courseCreatedEvent('c', 'before-registration')]);
             $connection->executeStatement("SET lock_timeout = '20ms'");
-            try {
-                $f->runner->ensureInitialized($f->runtime);
-                static::fail('Registration must wait for the old writer.');
-            } catch (DriverException $e) {
-                static::assertSame('55P03', $e->getSQLState());
-            }
-            static::assertNull($f->states->find('mode_projection'));
+            $f->runner->ensureInitialized($f->runtime);
+            static::assertSame(ProjectionPhase::Building, $f->states->find('mode_projection')->phase);
             $peer->commit();
             $connection->executeStatement('RESET lock_timeout');
             static::assertSame(1, $f->rebuilder->activate($f->runtime));
@@ -216,13 +211,14 @@ final class ActivationConcurrencyTest extends PostgresProjectionTestCase
     public function test_activation_allows_appends_that_do_not_affect_the_projection(): void
     {
         $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous, true);
-        $f->runner->ensureInitialized($f->runtime);
         $peer = PostgresConnectionSupport::sharedConnection($this->postgresDsn(), 'projection-unrelated-writer');
         [$peerStore] = $this->actor($f, $peer);
         $connection = $f->fixture->connection;
         $connection->beginTransaction();
         try {
+            $f->runner->ensureInitialized($f->runtime);
             $f->rebuilder->activate($f->runtime);
+            $connection->executeStatement('LOCK TABLE ' . $f->fixture->prefix . 'states IN ACCESS EXCLUSIVE MODE');
             $peer->executeStatement("SET lock_timeout = '20ms'");
             $peerStore->append([new \Ultra\EventStore\Event('unrelated', [], ['otherId' => 'u'])]);
             static::assertSame([], $f->projection->names());

@@ -29,7 +29,7 @@ Writers and worker application transactions hold a shared transaction-scoped bar
 
 Catch-up uses the event store's gap-aware checkpoints and persistent reads, never the pending-event overlay or a naive maximum sequence. Activity and queue messages remain scheduling hints. Reconstruction must be explicitly started for a new projection even when there are no new appends.
 
-All appends share a registration barrier; first registration holds its exclusive counterpart and waits for old writes to finish. Checking every registered definition on each append required a registry scan even for unrelated events. Writers now check only matching synchronous definitions as part of their phase lookup. Deployment owns compatibility across writers as described in the [projection contract](../projections/README.md#storage-and-deployment). Online replacement while serving an older read-model generation is outside this first design.
+Only appends handling a locally declared synchronous projection acquire the shared registration barrier. First registration can proceed alongside unrelated appends. Checking every registered definition on each append required a registry scan even for unrelated events. Writers now check only matching synchronous definitions as part of their phase lookup. Deployment owns compatibility across writers as described in the [projection contract](../projections/README.md#storage-and-deployment). Online replacement while serving an older read-model generation is outside this first design.
 
 ## Verification and implementation tracking
 

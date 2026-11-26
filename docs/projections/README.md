@@ -204,11 +204,12 @@ When wiring storage by hand in Symfony, register `PostgresProjectionSchema::defi
 the four tables to a manually composed schema. Its table definitions are shared with the PostgreSQL
 creation helpers.
 
-Every nonempty append holds a shared registration barrier. First registration takes its
-exclusive counterpart so earlier appends finish before registration commits. For each
-locally declared synchronous projection handling the batch, the writer acquires a shared
-projection barrier in ID order, then reads all their states together. It checks the
-fingerprint of each registered match and applies the live matches in the same order.
+An append with no locally declared synchronous projection handling the batch skips all
+projection barriers and state reads. Event persistence and asynchronous activity recording
+still share the transaction. When there are matches, the writer takes the shared
+registration barrier, acquires a shared projection barrier for each match in ID order,
+then reads their states together. It checks each registered match's fingerprint and
+applies the live matches in the same order.
 
 Before activating a projection, deploy compatible definitions to every writer and drain
 older writers. Keep those definitions aligned while the projection is live. A writer

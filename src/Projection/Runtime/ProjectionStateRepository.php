@@ -7,7 +7,7 @@ namespace Ultra\Projection;
 /** State reads follow barrier acquisition in a READ COMMITTED transaction. */
 interface ProjectionStateRepository
 {
-    /** Coordinate managed projection registration with every append, including older writers. */
+    /** Coordinate managed projection registration with workers and appends handling synchronous projections. */
     public function lockRegistrationShared(): void;
 
     public function lockRegistrationExclusive(): void;
