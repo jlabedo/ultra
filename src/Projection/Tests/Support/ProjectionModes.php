@@ -29,6 +29,8 @@ abstract class ModeProjection
     public int $initialized = 0;
     /** @var list<array{courseId: string, name: string}> */
     public array $stored = [];
+    /** @var list<array<array-key, mixed>> */
+    public array $receivedMetadata = [];
 
     public function __construct(
         public ?Connection $connection = null,
@@ -48,9 +50,11 @@ abstract class ModeProjection
         $this->connection?->executeStatement('DELETE FROM ' . $this->table);
     }
 
+    /** @param array<array-key, mixed> $metadata */
     #[ProjectionHandler]
-    public function apply(RunnerCourseCreated $event): void
+    public function apply(RunnerCourseCreated $event, array $metadata): void
     {
+        $this->receivedMetadata[] = $metadata;
         $this->write(['courseId' => $event->courseId, 'name' => $event->name]);
         if ('apply' === $this->failAt) {
             throw new \RuntimeException('Failed apply.');

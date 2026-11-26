@@ -24,13 +24,14 @@ use Ultra\Projection\ProjectionRebuilder;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Tests\Support\ConfiguredProjectionActivator;
 use Ultra\Projection\Tests\Support\ConfiguredProjectionScalingPolicy;
-use Ultra\Projection\Tests\Support\InvalidParameterCountProjection;
+use Ultra\Projection\Tests\Support\InvalidMetadataTypeProjection;
 use Ultra\Projection\Tests\Support\OtherStubProjection;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Projection\Tests\Support\RecordingMediator;
 use Ultra\Projection\Tests\Support\RuntimeProjection;
 use Ultra\Projection\Tests\Support\SecondaryRuntimeProjection;
 use Ultra\Projection\Tests\Support\StubProjection;
+use Ultra\Projection\Tests\Support\TestProjectionClass;
 use Ultra\Projection\Tests\Support\ThirdStubProjection;
 use Ultra\Projection_Postgres\PostgresProjectionImplementation;
 
@@ -106,11 +107,38 @@ final class ProjectionRegistrationTest extends ProjectionTestCase
             ->boot();
     }
 
-    public function test_invalid_handler_signatures_are_rejected_when_the_container_compiles(): void
+    public function test_invalid_handler_metadata_is_rejected_when_the_container_compiles(): void
     {
         $this->expectException(\LogicException::class);
-        $this->expectExceptionMessage('must have exactly one parameter');
-        $this->projectionUltraLight()->withClass(InvalidParameterCountProjection::class)->boot();
+        $this->expectExceptionMessage('must declare its second parameter as a non-nullable array passed by value');
+        $this->projectionUltraLight()->withClass(InvalidMetadataTypeProjection::class)->boot();
+    }
+
+    public function test_compiled_projections_pass_metadata_to_handlers_that_declare_it(): void
+    {
+        $container = $this
+            ->projectionUltraLight()
+            ->withClass(TestProjectionClass::class)
+            ->withAlias('test.projection', TestProjectionClass::class)
+            ->boot();
+        $projection = $container->get('test.projection');
+        static::assertInstanceOf(TestProjectionClass::class, $projection);
+
+        $metadata = ['correlation_id' => 'trace-1'];
+        $container
+            ->projectionCatalog()
+            ->runtime('test_projection')
+            ->apply(
+                new StoredEvent(
+                    'course.created',
+                    ['courseId' => 'course-1', 'name' => 'Math'],
+                    ['courseId' => 'course-1'],
+                    metadata: $metadata,
+                ),
+            );
+
+        static::assertSame(['created:course-1'], $projection->handled);
+        static::assertSame([$metadata], $projection->courseMetadata);
     }
 
     public function test_a_mediator_registered_after_the_extension_receives_projection_wakeups(): void

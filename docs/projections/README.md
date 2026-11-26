@@ -47,6 +47,20 @@ handlers updating the same row must use appropriate atomic operations or storage
 locking. Replay can choose a different order between independent events; reproducible
 read models need commutative effects or a deterministic conflict rule.
 
+## Projection handlers
+
+Annotate a public method with `#[ProjectionHandler]` and type its first parameter with the
+event class marked `#[Event]`. The runtime passes the deserialized payload. To access
+metadata, declare a non-nullable, non-variadic second `array` parameter passed by value, as in
+`onAccountCredited(AccountCredited $event, array $metadata)`. The projection definition
+validates the signature, including during Symfony container compilation.
+
+The runtime passes the `Event::$metadata` array as received. For live synchronous
+execution the array comes from the event supplied to `append()`. Workers and managed
+reconstruction receive the array from the event loaded from storage. See the
+[event metadata contract](../event-sourcing/event-store.md#event-metadata) for the default
+value and the responsibilities of direct append callers.
+
 ## Transactional append integration
 
 [ProjectingEventStore](../../src/Projection/Runtime/ProjectingEventStore.php) is the
@@ -166,7 +180,8 @@ Use `--activate` to drain and activate, `--reset` to start a new generation, and
 ### Storage and deployment
 
 `ProjectionStateRepository` stores the managed generation, phase, and structural
-fingerprint. PostgreSQL uses `READ COMMITTED`, transaction-scoped advisory barriers,
+fingerprint. The fingerprint covers the partition dimension and handled event types.
+PostgreSQL uses `READ COMMITTED`, transaction-scoped advisory barriers,
 and the `states` table, included in `PostgresProjectionSegmentSchema::createStatements()`.
 Apply the schema update before using the new append integration, even in an app containing
 only asynchronous projections.

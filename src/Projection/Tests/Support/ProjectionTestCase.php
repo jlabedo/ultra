@@ -38,12 +38,14 @@ abstract class ProjectionTestCase extends ProjectionFunctionalTestCase
         parent::tearDown();
     }
 
-    protected static function courseCreatedEvent(string $courseId, string $name): Event
+    /** @param array<array-key, mixed> $metadata */
+    protected static function courseCreatedEvent(string $courseId, string $name, array $metadata = []): Event
     {
         return new Event(
             'runner.course.created',
             ['courseId' => $courseId, 'name' => $name],
             ['courseId' => $courseId],
+            metadata: $metadata,
         );
     }
 

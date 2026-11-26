@@ -39,11 +39,13 @@ final class ManagedActivationTest extends ProjectionTestCase
     public function test_history_tail_and_live_appends_are_each_applied_once(string $backend, bool $buffered): void
     {
         $f = new ProjectionModeFixture($this->fixture($backend), ProjectionMode::Synchronous, $buffered);
-        $f->fixture->store->append([self::courseCreatedEvent('c', 'history')]);
+        $history = self::courseCreatedEvent('c', 'history', ['correlation_id' => 'history-trace']);
+        $tail = self::courseCreatedEvent('c', 'tail', ['correlation_id' => 'tail-trace']);
+        $f->fixture->store->append([$history]);
         // Construction must not depend on arrival hints.
         static::assertSame(1, $f->rebuilder->catchUp($f->runtime, batchSize: 1));
         static::assertSame(ProjectionPhase::Building, $f->states->find('mode_projection')->phase);
-        $f->store->append([self::courseCreatedEvent('c', 'tail')]);
+        $f->store->append([$tail]);
         static::assertSame(['history'], $f->projection->names());
         static::assertSame(1, $f->rebuilder->activate($f->runtime, 1));
         static::assertSame(ProjectionPhase::Live, $f->states->find('mode_projection')->phase);
@@ -66,6 +68,7 @@ final class ManagedActivationTest extends ProjectionTestCase
             'old-worker',
         )->claimedSegment);
         static::assertSame(['history', 'tail', 'live'], $f->projection->names());
+        static::assertSame([$history->metadata, $tail->metadata, []], $f->projection->receivedMetadata);
         static::assertSame(1, $f->projection->initialized);
     }
 
@@ -75,7 +78,8 @@ final class ManagedActivationTest extends ProjectionTestCase
         bool $buffered,
     ): void {
         $f = new ProjectionModeFixture($this->fixture($backend), ProjectionMode::Asynchronous, $buffered);
-        $f->store->append([self::courseCreatedEvent('c', 'one'), self::courseCreatedEvent('c', 'two')]);
+        $event = self::courseCreatedEvent('c', 'one', ['labels' => ['created', null, 'course']]);
+        $f->store->append([$event, self::courseCreatedEvent('c', 'two')]);
         static::assertSame([], $f->projection->names());
         $f->runner->ensureInitialized($f->runtime);
         $one = $f->runner->runClaimedOnce($f->runtime, 'mode_projection', 0, 'worker', 1);
@@ -84,6 +88,7 @@ final class ManagedActivationTest extends ProjectionTestCase
         $two = $f->runner->runClaimedOnce($f->runtime, 'mode_projection', 0, 'worker', 1);
         static::assertTrue($two->caughtUp);
         static::assertSame(['one', 'two'], $f->projection->names());
+        static::assertSame([$event->metadata, []], $f->projection->receivedMetadata);
         static::assertSame([], $f->states->all());
         static::assertSame([], $f->fixture->activity->affected());
     }
