@@ -168,15 +168,9 @@ final readonly class ProjectionCoordinator
                 continue;
             }
 
-            foreach ($this->localBucketStarts($projectionId) as $bucketFrom) {
+            foreach ($this->localAssignments($runtime, $workerId, $batchSize) as $batches) {
                 $claimed = false;
-                foreach ($this->runner->runClaimedBatches(
-                    $runtime,
-                    $projectionId,
-                    $bucketFrom,
-                    $workerId,
-                    $batchSize,
-                ) as $result) {
+                foreach ($batches as $result) {
                     if (!$result->claimedSegment) {
                         break;
                     }
@@ -191,13 +185,16 @@ final readonly class ProjectionCoordinator
         }
     }
 
-    /** @return \Generator<int, int, void, void> */
-    private function localBucketStarts(string $projectionId): \Generator
+    /** @return \Generator<int, iterable<ProjectionRunResult>, void, void> */
+    private function localAssignments(ProjectionRuntime $runtime, string $workerId, int $batchSize): \Generator
     {
+        yield $this->runner->runFullRangeBatches($runtime, $workerId, $batchSize);
+
+        $projectionId = $runtime->projectionId();
         $this->runner->recoverExpiredClaims($projectionId);
         $segments = $this->runner->listSegments($projectionId);
         if ([] === $segments) {
-            yield 0;
+            yield $this->runner->runClaimedBatches($runtime, $projectionId, 0, $workerId, $batchSize);
 
             return;
         }
@@ -211,7 +208,13 @@ final readonly class ProjectionCoordinator
                 0 === $segment->bucketFrom && 255 === $segment->bucketTo
                 || [] !== $this->activity->pendingInSegment($projectionId, $segment->bucketFrom, $segment->bucketTo)
             ) {
-                yield $segment->bucketFrom;
+                yield $this->runner->runClaimedBatches(
+                    $runtime,
+                    $projectionId,
+                    $segment->bucketFrom,
+                    $workerId,
+                    $batchSize,
+                );
             }
         }
     }

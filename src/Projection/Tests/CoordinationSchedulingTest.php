@@ -28,6 +28,8 @@ use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Projection\Tests\Support\RuntimeProjection;
 use Ultra\Projection\Tests\Support\SecondaryRuntimeProjection;
 use Ultra\Projection\Tests\Support\TrackingProjection;
+use Ultra\Time\Duration;
+use Ultra\Time\StatickClock;
 
 /** @internal */
 #[CoversNamespace('Ultra\\Projection')]
@@ -101,6 +103,40 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         static::assertSame(0, $result->requestedWorkerActivations);
         static::assertSame([], $projection->names);
         static::assertSame([], $activator->workerClaims());
+    }
+
+    public function test_the_leader_respects_a_live_initial_segment_claim_and_takes_it_over_after_expiry(): void
+    {
+        $clock = new StatickClock(new \DateTimeImmutable('2024-01-01T00:00:00+00:00'));
+        $fixture = $this->fixture('memory', $clock);
+        $projection = new CoordinatorProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $coordinator = $fixture->coordinator($runtime);
+        $projectionId = $runtime->projectionId();
+
+        $fixture->store->append([self::courseEvent('alpha', 'Math')]);
+        $fixture->activity->bump($projectionId, BucketHasher::bucketFor('alpha'));
+        $fixture->segments->ensureInitialized($projectionId);
+        static::assertNotNull($fixture->segments->claimSegment($projectionId, 0, 'worker-1', Duration::seconds(30)));
+        $clock->sleep(Duration::seconds(30));
+
+        $live = $coordinator->run('worker-1', maxCycles: 1);
+
+        static::assertTrue($live->acquiredLease);
+        static::assertSame(0, $live->processedEvents);
+        static::assertSame(0, $live->acknowledgedBuckets);
+        static::assertSame([], $projection->names);
+        static::assertSame('worker-1', $fixture->segments->listSegments($projectionId)[0]->workerId);
+
+        $clock->sleep(Duration::seconds(1));
+        $expired = $coordinator->run('worker-2', maxCycles: 1);
+
+        static::assertTrue($expired->acquiredLease);
+        static::assertSame(1, $expired->processedEvents);
+        static::assertSame(1, $expired->acknowledgedBuckets);
+        static::assertSame(['alpha' => 'Math'], $projection->names);
+        static::assertNull($fixture->segments->listSegments($projectionId)[0]->workerId);
+        static::assertSame([], $fixture->activity->pendingInSegment($projectionId, 0, 255));
     }
 
     #[TestWith([true], 'owned with pending buckets')]
