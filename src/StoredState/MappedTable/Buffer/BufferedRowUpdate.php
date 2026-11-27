@@ -335,8 +335,9 @@ final class BufferedRowUpdate
 
     public function incrementColumn(string $column, int $delta): void
     {
-        $type = $this->mapping->column($column);
-        if ($this->key->contains($column) || false !== $type->nullable || !$type->codec instanceof IntegerCodec) {
+        $type = $this->mapping->incrementableColumns[$column] ?? null;
+        if (null === $type) {
+            $this->mapping->column($column);
             throw new \InvalidArgumentException(sprintf(
                 'Increment requires a non-null mapped integer column outside the key, got "%s.%s".',
                 $this->mapping->table,

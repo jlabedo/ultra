@@ -563,27 +563,24 @@ final class MappedRowSet
             )));
         }
 
-        return $this->mapping->key([$keyColumns[0] => $key]);
+        $column = $keyColumns[0];
+
+        return new MappedKey([$column => $this->mapping->column($column)->key($key)]);
     }
 
     /** @return list<RowUpdatePlan> */
     private function sortedPlans(): array
     {
         $plans = [];
-        foreach ($this->updates as $update) {
+        foreach ($this->updates as $fingerprint => $update) {
             $plan = $update->toPlan();
             if (null !== $plan) {
-                $plans[] = $plan;
+                $plans[$fingerprint] = $plan;
             }
         }
 
-        usort(
-            $plans,
-            static fn(RowUpdatePlan $left, RowUpdatePlan $right): int => (
-                $left->key->fingerprint() <=> $right->key->fingerprint()
-            ),
-        );
+        ksort($plans, SORT_STRING);
 
-        return $plans;
+        return array_values($plans);
     }
 }

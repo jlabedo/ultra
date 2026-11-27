@@ -23,6 +23,10 @@ final class ScalarCodec extends ColumnCodec
 
     public function key(mixed $value): int|string
     {
-        return parent::key($value instanceof \Stringable ? (string) $value : $value);
+        if ($value instanceof \Stringable) {
+            return (string) $value;
+        }
+
+        return is_int($value) || is_string($value) ? $value : parent::key($value);
     }
 }

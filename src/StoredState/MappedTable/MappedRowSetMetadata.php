@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+use Ultra\MappedTable\Codec\IntegerCodec;
+
 /** @internal Immutable metadata validated by the row set definition. */
 readonly class MappedRowSetMetadata
 {
+    /** @var array<string, MappedColumn> */
+    public array $incrementableColumns;
+
     /**
      * @param array<string, MappedColumn> $columns
      * @param list<string> $keyColumns Canonical column order.
@@ -26,7 +31,16 @@ readonly class MappedRowSetMetadata
         public array $nonKeyColumns,
         public array $keyColumnSet,
         public array $ownerColumnSet,
-    ) {}
+    ) {
+        $incrementable = [];
+        foreach ($nonKeyColumns as $name) {
+            $column = $columns[$name];
+            if (false === $column->nullable && $column->codec instanceof IntegerCodec) {
+                $incrementable[$name] = $column;
+            }
+        }
+        $this->incrementableColumns = $incrementable;
+    }
 
     /** @param array<array-key, mixed>|MappedKey $values */
     public function key(array|MappedKey $values): MappedKey

@@ -38,7 +38,9 @@ final readonly class MappedKey implements \Stringable
             }
         }
 
-        ksort($values, SORT_STRING);
+        if (count($values) > 1) {
+            ksort($values, SORT_STRING);
+        }
         /** @var array<non-empty-string, int|string> $values */
         $this->values = $values;
     }
