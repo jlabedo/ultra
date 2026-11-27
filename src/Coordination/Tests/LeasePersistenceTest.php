@@ -7,10 +7,13 @@ namespace Ultra\Coordination\Tests;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use PHPUnit\Framework\Attributes\TestWith;
 use Ultra\Coordination\Tests\Support\CoordinationTestCase;
 use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease;
 use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\PostgresConnectionSupport;
+use Ultra\Time\ClockInterface;
+use Ultra\Time\DatePoint;
 use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
 
@@ -18,10 +21,11 @@ use Ultra\Time\StatickClock;
 #[CoversNamespace('Ultra\Coordination_Postgres')]
 final class LeasePersistenceTest extends CoordinationTestCase
 {
-    /** @return iterable<string, array{bool, string, string}> */
+    /** @return iterable<string, array{0: bool, 1: string, 2: string, 3?: bool}> */
     public static function reservations(): iterable
     {
         yield 'first lease' => [false, 'acquire', 'acquire'];
+        yield 'rolled-back first lease' => [false, 'acquire', 'acquire', true];
         yield 'existing lease' => [true, 'acquire', 'acquire'];
         yield 'first wake' => [false, 'wake', 'wake'];
         yield 'existing wake' => [true, 'wake', 'wake'];
@@ -31,10 +35,11 @@ final class LeasePersistenceTest extends CoordinationTestCase
 
     #[DataProvider('reservations')]
     #[Group('slow')]
-    public function test_contenders_wait_for_the_transaction_and_only_the_committed_reservation_succeeds(
+    public function test_waiting_contenders_observe_the_outcome_of_the_reservation_transaction(
         bool $existingRow,
         string $operation,
         string $contenderOperation,
+        bool $rollBackReservation = false,
     ): void {
         [$connection, $table] = $this->postgresTable('leases');
         $clock = new StatickClock(new \DateTimeImmutable('2026-01-01T00:00:00Z'));
@@ -76,15 +81,36 @@ final class LeasePersistenceTest extends CoordinationTestCase
         } while (microtime(true) < $deadline);
         static::assertSame(1, $waiting, 'The contender must wait on the uncommitted reservation.');
         static::assertNull($worker->outcome());
-        $connection->commit();
+        if ($rollBackReservation) {
+            $connection->rollBack();
+        } else {
+            $connection->commit();
+        }
         $outcome = $worker->join();
         static::assertTrue($outcome->isSuccess(), $outcome->exceptionMessage() ?? '');
-        static::assertFalse($outcome->value());
+        static::assertSame($rollBackReservation, $outcome->value());
         static::assertSame(0, $connection->getTransactionNestingLevel());
         if ('acquire' === $operation) {
-            $lease->release('a', 'w2');
+            $lease->release('a', $rollBackReservation ? 'w1' : 'w2');
             static::assertTrue($lease->hasLiveCoordinator('a'));
+            $lease->release('a', $rollBackReservation ? 'w2' : 'w1');
+            static::assertFalse($lease->hasLiveCoordinator('a'));
         }
+    }
+
+    #[TestWith([60, true], 'returns at expiry')]
+    #[TestWith([61, false], 'returns after expiry')]
+    public function test_acquire_checks_that_the_lease_is_still_live_when_the_statement_returns(
+        int $elapsedSeconds,
+        bool $acquired,
+    ): void {
+        [$connection, $table] = $this->postgresTable('leases');
+        $start = new DatePoint('2026-01-01T00:00:00Z');
+        $clock = $this->createStub(ClockInterface::class);
+        $clock->method('now')->willReturn($start, $start->add(new Duration(seconds: $elapsedSeconds)));
+        $lease = new PostgresCoordinatorLease($connection, $table, $clock);
+
+        static::assertSame($acquired, $lease->acquire('a', 'w1', new Duration(seconds: 60)));
     }
 
     public function test_rollback_discards_ownership(): void
