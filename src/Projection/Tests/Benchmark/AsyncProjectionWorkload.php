@@ -7,6 +7,12 @@ namespace Ultra\Projection\Tests\Benchmark;
 use Doctrine\DBAL\Connection;
 use Ultra\Events\Attribute\Event as EventAttribute;
 use Ultra\EventStore\Event;
+use Ultra\MappedTable\Codec\IntegerCodec;
+use Ultra\MappedTable\Codec\TextCodec;
+use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedRowSetDefinition;
+use Ultra\MappedTable\MappedTableUnitOfWork;
+use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Attribute\Projection;
 use Ultra\Projection\Attribute\ProjectionFlush;
@@ -26,6 +32,7 @@ final class AsyncProjectionWorkload
     public function __construct(
         private readonly Connection $connection,
         UltraNormalizer $normalizer,
+        string $itemStock,
     ) {
         foreach ([ItemStockProjection::TABLE, SupplierStockProjection::TABLE] as $table) {
             $connection->executeStatement(sprintf(
@@ -36,11 +43,37 @@ final class AsyncProjectionWorkload
 
         $this->warehouse = new WarehouseStockProjection();
         $this->supplier = new SupplierStockProjection($connection);
+        $itemRuntime = 'mapped' === $itemStock
+            ? $this->mappedItemStockRuntime($normalizer)
+            : new ProjectionRuntime(new ItemStockProjection($connection), $normalizer);
         $this->runtimes = [
             new ProjectionRuntime($this->warehouse, $normalizer),
-            new ProjectionRuntime(new ItemStockProjection($connection), $normalizer),
+            $itemRuntime,
             new ProjectionRuntime($this->supplier, $normalizer),
         ];
+    }
+
+    private function mappedItemStockRuntime(UltraNormalizer $normalizer): ProjectionRuntime
+    {
+        $table = ItemStockProjection::TABLE;
+        $adapter = new PostgresMappedTableAdapter($this->connection);
+        $rows = $adapter->compileRowSet(new MappedRowSetDefinition(
+            table: $table,
+            columns: ['partition_id', 'units', 'event_count'],
+            primaryKey: ['partition_id'],
+            codecs: [
+                'partition_id' => new TextCodec(),
+                'units' => new IntegerCodec(),
+                'event_count' => new IntegerCodec(),
+            ],
+            nullable: [],
+        ))();
+
+        return new ProjectionRuntime(
+            new MappedItemStockProjection($rows),
+            $normalizer,
+            unitOfWork: [new MappedTableUnitOfWork([$table => $rows], $adapter)],
+        );
     }
 
     /** @return list<Event> */
@@ -250,6 +283,31 @@ final readonly class ItemStockProjection
             . '.event_count + EXCLUDED.event_count',
             [$itemId, $units],
         );
+    }
+}
+
+#[Projection(name: 'benchmark_item_stock', partitionBy: 'itemId')]
+final readonly class MappedItemStockProjection
+{
+    public function __construct(
+        private MappedRowSet $rows,
+    ) {}
+
+    #[ProjectionHandler]
+    public function onReceived(StockReceived $event): void
+    {
+        $this->write($event->itemId, $event->units);
+    }
+
+    #[ProjectionHandler]
+    public function onReserved(StockReserved $event): void
+    {
+        $this->write($event->itemId, -$event->units);
+    }
+
+    private function write(string $itemId, int $units): void
+    {
+        $this->rows->withKey($itemId)->upsert()->incrementColumn('units', $units)->incrementColumn('event_count', 1);
     }
 }
 

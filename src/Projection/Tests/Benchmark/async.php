@@ -8,6 +8,7 @@ use Composer\InstalledVersions;
 use Symfony\Component\Process\Process;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
+use Ultra\MappedTable\MappedRowHandle;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRunResult;
@@ -18,6 +19,7 @@ use Ultra\Testing\SqlTrace;
 $options = getopt('', [
     'checkout:',
     'event-store:',
+    'item-stock:',
     'phase:',
     'events:',
     'append-batch:',
@@ -31,6 +33,7 @@ if (isset($options['help'])) {
         Usage: php src/Projection/Tests/Benchmark/async.php [options]
           --checkout=PATH          Revision checkout with Composer dependencies installed
           --event-store=NAME       query-streams (default) or hstore
+          --item-stock=MODE        mapped when supported by the checkout (default), or direct
           --phase=PHASE            all (default), append or worker
           --events=N               Events per workload (default 240, minimum 4)
           --append-batch=N         Events per append (default 16)
@@ -64,6 +67,14 @@ if (
     || !in_array($phase, ['all', 'append', 'worker'], true)
 ) {
     throw new \InvalidArgumentException('Choose query-streams or hstore and an all, append or worker phase.');
+}
+$supportsMappedStock = method_exists(MappedRowHandle::class, 'incrementColumn');
+$itemStock = $options['item-stock'] ?? ($supportsMappedStock ? 'mapped' : 'direct');
+if (!in_array($itemStock, ['direct', 'mapped'], true)) {
+    throw new \InvalidArgumentException('Choose direct or mapped for --item-stock.');
+}
+if ('mapped' === $itemStock && !$supportsMappedStock) {
+    throw new \InvalidArgumentException('The selected checkout does not support MappedTable increments.');
 }
 $eventCount = positiveInteger($options['events'] ?? 240, 'events', 4);
 $appendBatch = positiveInteger($options['append-batch'] ?? 16, 'append-batch');
@@ -132,7 +143,7 @@ for ($sample = $firstSample; $sample <= $lastSample; ++$sample) {
     foreach ($cases as $case) {
         $env = new AsyncProjectionEnvironment($dsn, $implementation, $trace);
         try {
-            $measurements = $case($env, new AsyncProjectionWorkload($env->connection, $env->normalizer));
+            $measurements = $case($env, new AsyncProjectionWorkload($env->connection, $env->normalizer, $itemStock));
             if ($sample > 0) {
                 foreach ($measurements as $label => $measurement) {
                     $observations[$label][] = $measurement;
@@ -148,6 +159,7 @@ echo
     json_encode([
         'environment' => $environment,
         'event_store' => $implementation,
+        'item_stock' => $itemStock,
         'events' => $eventCount,
         'append_batch' => $appendBatch,
         'samples' => $lastSample,

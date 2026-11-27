@@ -473,8 +473,10 @@ The key design choice is:
 
 The [benchmark runner](../../src/Projection/Tests/Benchmark/async.php) uses three asynchronous
 inventory projections with overlapping subscriptions and distinct partition dimensions.
-One accumulates results in PHP, one writes to PostgreSQL for each event, and one groups
-writes in a projection flush. Some events match none of the projections.
+The warehouse projection accumulates results in PHP. The supplier projection groups writes
+in a projection flush. The item projection buffers [MappedTable increments](../stored-state/mapped-table.md#incrementing-integer-columns)
+when the checkout supports them. The `direct` variant writes one PostgreSQL upsert per event
+and is the default on older checkouts. Some events match none of the projections.
 
 | Phase | Timed work |
 | --- | --- |
@@ -505,9 +507,17 @@ for revision in 0cc3682d 9a8c4dbe; do
     composer dump-autoload --working-dir="$comparison/$revision" --no-scripts
 done
 benchmark=src/Projection/Tests/Benchmark/async.php
-php -d opcache.enable_cli=0 "$benchmark" --checkout="$comparison/0cc3682d"
-php -d opcache.enable_cli=0 "$benchmark" --checkout="$comparison/9a8c4dbe"
-php -d opcache.enable_cli=0 "$benchmark"
+php -d opcache.enable_cli=0 "$benchmark" --item-stock=direct --checkout="$comparison/0cc3682d"
+php -d opcache.enable_cli=0 "$benchmark" --item-stock=direct --checkout="$comparison/9a8c4dbe"
+php -d opcache.enable_cli=0 "$benchmark" --item-stock=direct
+```
+
+To compare the item projection's persistence on the same checkout with 128-event batches, run both variants:
+
+```bash
+for item_stock in direct mapped; do
+    php -d opcache.enable_cli=0 "$benchmark" --event-store=hstore --phase=worker --worker-batches=128 --item-stock="$item_stock"
+done
 ```
 
 Use `--event-store=hstore` for the HStore implementation. Use `--phase=append` or
