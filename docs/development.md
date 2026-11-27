@@ -46,6 +46,8 @@ explicitly; skipped tests fail the job.
 After setup, run [bin/phpbench](../bin/phpbench). [phpbench.json](../phpbench.json) owns runner settings;
 `bin/phpbench run --help` lists selection and reporting options. For EventStore scenarios, dataset overrides
 and GIN maintenance comparisons, read [Postgres workloads](event-sourcing/postgres.md#benchmarks).
+For cross-revision measurements of append and worker execution with asynchronous projections,
+see [asynchronous projection benchmarks](projections/README.md#asynchronous-projection-benchmarks).
 
 ```bash
 docker compose up -d

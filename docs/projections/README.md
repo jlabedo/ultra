@@ -469,6 +469,50 @@ The key design choice is:
 
 > For worker processing, checkpoints and segment state are the source of truth; bucket activity and queue messages are liveness hints. Live synchronous projections use the append transaction instead.
 
+## Asynchronous projection benchmarks
+
+The [benchmark runner](../../src/Projection/Tests/Benchmark/async.php) uses three asynchronous
+inventory projections with overlapping subscriptions and distinct partition dimensions.
+One accumulates results in PHP, one writes to PostgreSQL for each event, and one groups
+writes in a projection flush. Some events match none of the projections.
+
+| Phase | Timed work |
+| --- | --- |
+| Append | Raw EventStore, then the revision's projection decorator with matching or unmatched events. The decorated cases also run in caller-owned transactions to control for transaction grouping. |
+| Worker | A single worker per projection claims and processes the same seeded event history to catch-up, in batches of 1, 32 or 128 events by default. Each projection has its own result. |
+
+The worker phase uses `ProjectionRunner::runClaimedBatches()` when available and calls
+`runClaimedOnce()` until catch-up on earlier revisions. Each yielded attempt counts as one
+operation. Activation uses the in-memory signal adapter, so queue transport and worker
+contention are outside the benchmark.
+The runner prepares fixtures and validates actual outputs outside the timed interval.
+It records the environment, median, and individual samples as JSON. Run again with
+`--trace` to count SQL executions, transactions, projection state reads and barriers.
+Each sample owns a PostgreSQL schema that is removed on completion.
+
+To compare the introduction of synchronous projections, use `0cc3682d` as the baseline
+and `9a8c4dbe` as the first revision with synchronous modes. Run the same benchmark
+source against both checkouts and the current tree. Keep dependencies and server settings
+the same across runs. The commands below assume Composer dependencies are installed in
+the current tree and PostgreSQL is available through `ULTRA_TEST_POSTGRES_DSN` or the
+default test DSN from [development verification](../development.md#tests).
+
+```bash
+comparison=$(mktemp -d)
+for revision in 0cc3682d 9a8c4dbe; do
+    git worktree add --detach "$comparison/$revision" "$revision"
+    cp -R vendor "$comparison/$revision/vendor"
+    composer dump-autoload --working-dir="$comparison/$revision" --no-scripts
+done
+benchmark=src/Projection/Tests/Benchmark/async.php
+php -d opcache.enable_cli=0 "$benchmark" --checkout="$comparison/0cc3682d"
+php -d opcache.enable_cli=0 "$benchmark" --checkout="$comparison/9a8c4dbe"
+php -d opcache.enable_cli=0 "$benchmark"
+```
+
+Use `--event-store=hstore` for the HStore implementation. Use `--phase=append` or
+`--phase=worker` to measure one phase, or `--help` for dataset and batch options.
+Reverse the order on a second pass when dispersion is large relative to the difference.
 
 ## Guarantee suites
 
