@@ -30,7 +30,8 @@ final class SegmentTopologyTest extends ProjectionTestCase
         $checkpoint = new Checkpoint(new Sequence(10), [new Sequence(12)]);
         $repository->completeClaimedSegment($segment, $checkpoint, 'worker-1', false);
         if (!$claimed) {
-            $repository->releaseClaimedSegment($segment, 'worker-1');
+            $repository->releaseClaimedSegment($repository->listSegments('courses')[0], 'worker-1');
+            static::assertNull($repository->listSegments('courses')[0]->workerId);
             $segment = null;
         }
 

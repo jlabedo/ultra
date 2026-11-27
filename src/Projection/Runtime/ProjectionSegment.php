@@ -14,5 +14,6 @@ readonly class ProjectionSegment
         public int $bucketTo,
         public Checkpoint $checkpoint,
         public ?string $workerId = null,
+        public ?string $claimVersion = null,
     ) {}
 }

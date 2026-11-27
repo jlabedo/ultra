@@ -180,6 +180,32 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
     }
 
     #[DataProvider('backends')]
+    public function test_catch_up_reports_only_counters_it_reduces(string $backend): void
+    {
+        $fixture = $this->fixture($backend);
+        $runtime = new ProjectionRuntime(new TrackingProjection(), new UltraNormalizer());
+        $projectionId = $runtime->projectionId();
+        $bucket = BucketHasher::bucketFor('course-1');
+        $fixture->store->append([self::courseCreatedEvent('course-1', 'Math')]);
+        $fixture->activity->bump($projectionId, $bucket);
+        $eventStore = new CallbackEventStore($fixture->store, static function () use (
+            $fixture,
+            $projectionId,
+            $bucket,
+        ): void {
+            static::assertSame(1, $fixture->activity->drainSeen($projectionId, [$bucket => 1]));
+        });
+        $runner = new ProjectionRunner($eventStore, $fixture->segments, $fixture->transactions, $fixture->activity);
+
+        $result = $runner->runClaimedOnce($runtime, $projectionId, 0, 'worker-1');
+
+        static::assertTrue($result->claimedSegment);
+        static::assertTrue($result->caughtUp);
+        static::assertSame(0, $result->acknowledgedBuckets);
+        static::assertSame([], $fixture->activity->pendingInSegment($projectionId, 0, 255));
+    }
+
+    #[DataProvider('backends')]
     public function test_failed_processing_releases_the_claim_without_acknowledging_activity(string $backend): void
     {
         $runtime = new ProjectionRuntime(new FailingTrackingProjection(), new UltraNormalizer());

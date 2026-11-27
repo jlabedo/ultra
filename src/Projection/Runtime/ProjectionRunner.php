@@ -301,7 +301,18 @@ final readonly class ProjectionRunner
         $projectionId = $runtime->projectionId();
         $observation = null;
         do {
-            $result = $this->runInitializedBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit, $observation);
+            try {
+                $result = $this->runInitializedBatch(
+                    $runtime,
+                    $projectionId,
+                    $bucketFrom,
+                    $workerId,
+                    $limit,
+                    $observation,
+                );
+            } catch (ProjectionClaimLost) {
+                $result = new ProjectionRunResult(0, false, null);
+            }
             yield $result;
         } while ($result->claimedSegment && !$result->caughtUp);
     }
@@ -396,23 +407,31 @@ final readonly class ProjectionRunner
             $result = $this->eventStore->load($query, $segment->checkpoint, null, $limit);
             $caughtUp = !$result->hasMore;
 
-            $this->transactionManager->transactional(function () use (
+            $acknowledgedBuckets = $this->transactionManager->transactional(function () use (
                 $runtime,
                 $segment,
                 $result,
                 $workerId,
                 $caughtUp,
                 $seenCounters,
-            ): void {
+            ): int {
                 if (ProjectionMode::Synchronous === $runtime->definition()->mode) {
                     $this->assertWorkerDefinition($runtime);
                 }
                 $runtime->applyBatch($result->events);
-                $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
-
-                if ($caughtUp && [] !== $seenCounters) {
-                    $this->activityRepository?->drainSeen($segment->projectionId, $seenCounters);
+                $acknowledged = $this->segmentRepository->completeClaimedSegment(
+                    $segment,
+                    $result->checkpoint,
+                    $workerId,
+                    $caughtUp,
+                    activity: $caughtUp ? $this->activityRepository?->tracker : null,
+                    seenCounters: $seenCounters,
+                );
+                if (null === $acknowledged) {
+                    throw new ProjectionClaimLost();
                 }
+
+                return $acknowledged;
             });
 
             $observation = [
@@ -426,10 +445,12 @@ final readonly class ProjectionRunner
                 claimedSegment: true,
                 segment: $segment,
                 caughtUp: $caughtUp,
-                acknowledgedBuckets: $caughtUp ? count($seenCounters) : 0,
+                acknowledgedBuckets: $acknowledgedBuckets,
             );
         } catch (\Throwable $e) {
-            $this->segmentRepository->releaseClaimedSegment($segment, $workerId);
+            if (!$e instanceof ProjectionClaimLost) {
+                $this->segmentRepository->releaseClaimedSegment($segment, $workerId);
+            }
 
             throw $e;
         }
@@ -502,27 +523,31 @@ final readonly class ProjectionRunner
             throw new \InvalidArgumentException('Runtime and claimed projection must match.');
         }
         $this->ensureInitialized($runtime);
-        if (ProjectionMode::Asynchronous === $runtime->definition()->mode) {
-            return $this->backfillClaimedOnceBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit);
-        }
-
-        return $this->transactionManager->transactional(function () use (
-            $runtime,
-            $projectionId,
-            $bucketFrom,
-            $workerId,
-            $limit,
-        ): ProjectionRunResult {
-            $this->states->lockRegistrationShared();
-            $this->states->lockShared($projectionId);
-            $state = $this->states->find($projectionId);
-            if (null === $state || ProjectionPhase::Live === $state->phase) {
-                return new ProjectionRunResult(0, false, null);
+        try {
+            if (ProjectionMode::Asynchronous === $runtime->definition()->mode) {
+                return $this->backfillClaimedOnceBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit);
             }
-            $this->assertCompatibleState($runtime, $state);
 
-            return $this->backfillClaimedOnceBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit);
-        });
+            return $this->transactionManager->transactional(function () use (
+                $runtime,
+                $projectionId,
+                $bucketFrom,
+                $workerId,
+                $limit,
+            ): ProjectionRunResult {
+                $this->states->lockRegistrationShared();
+                $this->states->lockShared($projectionId);
+                $state = $this->states->find($projectionId);
+                if (null === $state || ProjectionPhase::Live === $state->phase) {
+                    return new ProjectionRunResult(0, false, null);
+                }
+                $this->assertCompatibleState($runtime, $state);
+
+                return $this->backfillClaimedOnceBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit);
+            });
+        } catch (ProjectionClaimLost) {
+            return new ProjectionRunResult(0, false, null);
+        }
     }
 
     private function backfillClaimedOnceBatch(
@@ -553,7 +578,16 @@ final readonly class ProjectionRunner
                     $this->assertWorkerDefinition($runtime);
                 }
                 $runtime->applyBatch($result->events);
-                $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
+                if (
+                    null === $this->segmentRepository->completeClaimedSegment(
+                        $segment,
+                        $result->checkpoint,
+                        $workerId,
+                        $caughtUp,
+                    )
+                ) {
+                    throw new ProjectionClaimLost();
+                }
             });
 
             return new ProjectionRunResult(
@@ -563,7 +597,9 @@ final readonly class ProjectionRunner
                 caughtUp: $caughtUp,
             );
         } catch (\Throwable $e) {
-            $this->segmentRepository->releaseClaimedSegment($segment, $workerId);
+            if (!$e instanceof ProjectionClaimLost) {
+                $this->segmentRepository->releaseClaimedSegment($segment, $workerId);
+            }
 
             throw $e;
         }

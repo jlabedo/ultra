@@ -345,6 +345,14 @@ read the segment in one atomic operation. A claim joins an existing connection
 transaction: other sessions see ownership only after commit, and rollback restores
 the previous owner.
 
+Batch completion checks the worker, the claim's row version and the lease
+expiration. If that check fails, the runner reports a lost claim and PostgreSQL
+rolls back the batch's read-model writes. An enclosing caller transaction becomes
+rollback-only. In PostgreSQL, when the segment repository and dirty-key tracker
+share a connection, catch-up advances the checkpoint, releases the segment and
+subtracts the observed counters in one statement. The counters are updated only
+when the checkpoint write succeeds under the current claim.
+
 `ProjectionRunner` accepts a [ProjectionTransactionManagerInterface.php](../../src/Projection/Runtime/ProjectionTransactionManagerInterface.php).
 The default [NoOpProjectionTransactionManager.php](../../src/Projection/Runtime/NoOpProjectionTransactionManager.php) keeps in-memory and custom
 storage usage lightweight. Postgres-backed read models should wire the DBAL-based transaction manager from

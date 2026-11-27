@@ -23,7 +23,7 @@ use Ultra\Coordination\Tracking\PendingKey;
 final readonly class ProjectionActivity
 {
     public function __construct(
-        private DirtyKeyTracker $tracker,
+        public DirtyKeyTracker $tracker,
     ) {}
 
     public function bump(string $projectionId, int $bucket): void

@@ -87,9 +87,27 @@ final readonly class PostgresDirtyKeyTracker implements DirtyKeyTracker
 
     public function drainSeen(string $channel, array $seen): int
     {
+        $statement = $this->drainSeenStatement($channel, $seen);
+
+        return null === $statement ? 0 : (int) $this->connection->executeStatement(...$statement);
+    }
+
+    /** @internal For composing writes with another PostgreSQL repository. */
+    public function usesConnection(Connection $connection): bool
+    {
+        return $this->connection === $connection;
+    }
+
+    /**
+     * @internal For composing writes with another PostgreSQL repository.
+     * @param array<array-key, int> $seen
+     * @return array{string, list<string|int>, list<ParameterType>}|null
+     */
+    public function drainSeenStatement(string $channel, array $seen): ?array
+    {
         $seen = array_filter($seen, static fn(int $counter): bool => $counter > 0);
         if ([] === $seen) {
-            return 0;
+            return null;
         }
 
         $values = [];
@@ -106,7 +124,7 @@ final readonly class PostgresDirtyKeyTracker implements DirtyKeyTracker
         $params[] = $channel;
         $types[] = ParameterType::STRING;
 
-        return (int) $this->connection->executeStatement(
+        return [
             sprintf(
                 'UPDATE %1$s AS dirty
                  SET counter = GREATEST(dirty.counter - seen.seen_counter, 0),
@@ -118,7 +136,7 @@ final readonly class PostgresDirtyKeyTracker implements DirtyKeyTracker
             ),
             $params,
             $types,
-        );
+        ];
     }
 
     /**

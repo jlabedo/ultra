@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Projection;
 
+use Ultra\Coordination\Tracking\DirtyKeyTracker;
 use Ultra\EventStore\Checkpoint;
 use Ultra\Time\Duration;
 
@@ -29,13 +30,21 @@ interface ProjectionSegmentRepositoryInterface
         Duration $leaseDuration = new Duration(seconds: 60),
     ): ?ProjectionSegment;
 
+    /**
+     * Advance the checkpoint and optionally drain the observed activity after catch-up.
+     * Returns the number of reduced counters, or null if the claim was lost.
+     *
+     * @param array<int, int> $seenCounters
+     */
     public function completeClaimedSegment(
         ProjectionSegment $segment,
         Checkpoint $checkpoint,
         string $workerId,
         bool $caughtUp,
         Duration $leaseDuration = new Duration(seconds: 60),
-    ): void;
+        ?DirtyKeyTracker $activity = null,
+        array $seenCounters = [],
+    ): ?int;
 
     public function releaseClaimedSegment(ProjectionSegment $segment, string $workerId): void;
 

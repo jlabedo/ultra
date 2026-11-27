@@ -6,6 +6,8 @@ namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\ParameterType;
+use Ultra\Coordination\Tracking\DirtyKeyTracker;
+use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTracker;
 use Ultra\EventStore\Checkpoint;
 use Ultra\Projection\ProjectionSegment;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
@@ -15,6 +17,9 @@ use Ultra\Time\SystemClock;
 
 final readonly class PostgresProjectionSegmentRepository implements ProjectionSegmentRepositoryInterface
 {
+    // A claim belongs to the row version written by its UPDATE, even within a caller transaction.
+    private const string CLAIM_VERSION = "(xmin::text || ':' || ctid::text)";
+
     public function __construct(
         private Connection $connection,
         private string $tablePrefix = 'projection_',
@@ -70,9 +75,10 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
                    AND bucket_from = ?
                    AND %s
                    AND (lease_expires_at IS NULL OR lease_expires_at >= CAST(? AS TIMESTAMPTZ) OR worker_id = ?)
-                 RETURNING bucket_from, bucket_to, checkpoint',
+                 RETURNING bucket_from, bucket_to, checkpoint, %s AS claim_version',
                     $this->segmentsTable(),
                     $ownershipPredicate,
+                    self::CLAIM_VERSION,
                 ),
                 [$workerId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom, $workerId, $now, $workerId],
                 [
@@ -98,6 +104,7 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             bucketTo: (int) $row['bucket_to'],
             checkpoint: Checkpoint::deserialize((string) $row['checkpoint']),
             workerId: $workerId,
+            claimVersion: (string) $row['claim_version'],
         );
     }
 
@@ -107,12 +114,16 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         Duration $leaseDuration = new Duration(seconds: 60),
     ): ?ProjectionSegment {
         $now = $this->clock->now();
-        $checkpoint = $this->connection->fetchOne(
-            sprintf('UPDATE %s
+        $row = $this->connection->fetchAssociative(
+            sprintf(
+                'UPDATE %s
                  SET worker_id = ?, lease_expires_at = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
                  WHERE projection_id = ? AND bucket_from = 0 AND bucket_to = 255
                    AND (worker_id IS NULL OR lease_expires_at < CAST(? AS TIMESTAMPTZ))
-                 RETURNING checkpoint', $this->segmentsTable()),
+                 RETURNING checkpoint, %s AS claim_version',
+                $this->segmentsTable(),
+                self::CLAIM_VERSION,
+            ),
             [$workerId, $now->add($leaseDuration), $now, $projectionId, $now],
             [
                 ParameterType::STRING,
@@ -123,84 +134,114 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
             ],
         );
 
-        return false === $checkpoint
+        return false === $row
             ? null
-            : new ProjectionSegment($projectionId, 0, 255, Checkpoint::deserialize((string) $checkpoint), $workerId);
+            : new ProjectionSegment(
+                $projectionId,
+                0,
+                255,
+                Checkpoint::deserialize((string) $row['checkpoint']),
+                $workerId,
+                (string) $row['claim_version'],
+            );
     }
 
+    /** @param array<int, int> $seenCounters */
     public function completeClaimedSegment(
         ProjectionSegment $segment,
         Checkpoint $checkpoint,
         string $workerId,
         bool $caughtUp,
         Duration $leaseDuration = new Duration(seconds: 60),
-    ): void {
+        ?DirtyKeyTracker $activity = null,
+        array $seenCounters = [],
+    ): ?int {
         $now = $this->clock->now();
-
-        if ($caughtUp) {
-            $this->connection->executeStatement(
-                sprintf(
-                    'UPDATE %s
-                     SET worker_id = NULL, lease_expires_at = NULL,
-                         checkpoint = ?, updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?',
-                    $this->segmentsTable(),
-                ),
-                [$checkpoint->serialize(), $now, $segment->projectionId, $segment->bucketFrom, $workerId],
-                [
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::STRING,
-                    ParameterType::INTEGER,
-                    ParameterType::STRING,
-                ],
-            );
-
-            return;
+        $sql = sprintf(
+            'UPDATE %s
+             SET checkpoint = ?, worker_id = ?, lease_expires_at = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
+             WHERE projection_id = ? AND bucket_from = ? AND bucket_to = ? AND worker_id = ?',
+            $this->segmentsTable(),
+        );
+        $params = [
+            $checkpoint->serialize(),
+            $caughtUp ? null : $workerId,
+            $caughtUp ? null : $now->add($leaseDuration),
+            $now,
+            $segment->projectionId,
+            $segment->bucketFrom,
+            $segment->bucketTo,
+            $workerId,
+        ];
+        $types = [
+            ParameterType::STRING,
+            $caughtUp ? ParameterType::NULL : ParameterType::STRING,
+            $caughtUp ? ParameterType::NULL : ParameterType::STRING,
+            ParameterType::STRING,
+            ParameterType::STRING,
+            ParameterType::INTEGER,
+            ParameterType::INTEGER,
+            ParameterType::STRING,
+        ];
+        if (null !== $segment->claimVersion) {
+            $sql .= ' AND ' . self::CLAIM_VERSION . ' = ? AND lease_expires_at >= CAST(? AS TIMESTAMPTZ)';
+            array_push($params, $segment->claimVersion, $now);
+            array_push($types, ParameterType::STRING, ParameterType::STRING);
         }
 
-        $this->connection->executeStatement(
-            sprintf(
-                'UPDATE %s
-                 SET checkpoint = ?,
-                     lease_expires_at = CAST(? AS TIMESTAMPTZ),
-                     updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?',
-                $this->segmentsTable(),
-            ),
-            [
-                $checkpoint->serialize(),
-                $now->add($leaseDuration),
-                $now,
-                $segment->projectionId,
-                $segment->bucketFrom,
-                $workerId,
-            ],
-            [
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::STRING,
-                ParameterType::INTEGER,
-                ParameterType::STRING,
-            ],
-        );
+        if ($caughtUp && $activity instanceof PostgresDirtyKeyTracker && $activity->usesConnection($this->connection)) {
+            $drain = $activity->drainSeenStatement($segment->projectionId, $seenCounters);
+            if (null !== $drain) {
+                [$drainSql, $drainParams, $drainTypes] = $drain;
+                $count = $this->connection->fetchOne(
+                    sprintf(
+                        'WITH completed AS (%s RETURNING 1),
+                         drained AS (%s AND EXISTS (SELECT 1 FROM completed) RETURNING 1)
+                         SELECT (SELECT count(*) FROM drained) FROM completed',
+                        $sql,
+                        $drainSql,
+                    ),
+                    [...$params, ...$drainParams],
+                    [...$types, ...$drainTypes],
+                );
+
+                return false === $count ? null : (int) $count;
+            }
+        }
+
+        if (0 === (int) $this->connection->executeStatement($sql, $params, $types)) {
+            return null;
+        }
+
+        return $caughtUp && [] !== $seenCounters
+            ? $activity?->drainSeen($segment->projectionId, $seenCounters) ?? 0
+            : 0;
     }
 
     public function releaseClaimedSegment(ProjectionSegment $segment, string $workerId): void
     {
         $now = $this->clock->now();
-
-        $this->connection->executeStatement(
-            sprintf(
-                'UPDATE %s
-                 SET worker_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
-                 WHERE projection_id = ? AND bucket_from = ? AND worker_id = ?',
-                $this->segmentsTable(),
-            ),
-            [$now, $segment->projectionId, $segment->bucketFrom, $workerId],
-            [ParameterType::STRING, ParameterType::STRING, ParameterType::INTEGER, ParameterType::STRING],
+        $sql = sprintf(
+            'UPDATE %s
+             SET worker_id = NULL, lease_expires_at = NULL, updated_at = CAST(? AS TIMESTAMPTZ)
+             WHERE projection_id = ? AND bucket_from = ? AND bucket_to = ? AND worker_id = ?',
+            $this->segmentsTable(),
         );
+        $params = [$now, $segment->projectionId, $segment->bucketFrom, $segment->bucketTo, $workerId];
+        $types = [
+            ParameterType::STRING,
+            ParameterType::STRING,
+            ParameterType::INTEGER,
+            ParameterType::INTEGER,
+            ParameterType::STRING,
+        ];
+        if (null !== $segment->claimVersion) {
+            $sql .= ' AND ' . self::CLAIM_VERSION . ' = ?';
+            $params[] = $segment->claimVersion;
+            $types[] = ParameterType::STRING;
+        }
+
+        $this->connection->executeStatement($sql, $params, $types);
     }
 
     public function recoverExpiredClaims(string $projectionId): int

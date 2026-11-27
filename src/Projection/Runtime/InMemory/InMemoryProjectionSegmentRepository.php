@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\InMemory;
 
+use Ultra\Coordination\Tracking\DirtyKeyTracker;
 use Ultra\EventStore\Checkpoint;
 use Ultra\Projection\ProjectionSegment;
 use Ultra\Projection\ProjectionSegmentRepositoryInterface;
@@ -14,8 +15,9 @@ use Ultra\Time\SystemClock;
 
 final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepositoryInterface
 {
-    /** @var array<string, array<int, array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|DatePoint}>> */
+    /** @var array<string, array<int, array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|DatePoint, claimVersion?: string}>> */
     private array $segments = [];
+    private int $claimSequence = 0;
 
     public function __construct(
         private ClockInterface $clock = new SystemClock(),
@@ -60,9 +62,10 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
 
         $row['workerId'] = $workerId;
         $row['leaseExpiresAt'] = $this->clock->now()->add($leaseDuration);
+        $row['claimVersion'] = (string) ++$this->claimSequence;
         $this->segments[$projectionId][$bucketFrom] = $row;
 
-        return $this->toSegment($projectionId, $row);
+        return $this->toSegment($projectionId, $row, $row['claimVersion']);
     }
 
     public function claimFullRangeSegment(
@@ -82,42 +85,68 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
 
         $row['workerId'] = $workerId;
         $row['leaseExpiresAt'] = $now->add($leaseDuration);
+        $row['claimVersion'] = (string) ++$this->claimSequence;
         $this->segments[$projectionId][0] = $row;
 
-        return $this->toSegment($projectionId, $row);
+        return $this->toSegment($projectionId, $row, $row['claimVersion']);
     }
 
+    /** @param array<int, int> $seenCounters */
     public function completeClaimedSegment(
         ProjectionSegment $segment,
         Checkpoint $checkpoint,
         string $workerId,
         bool $caughtUp,
         ?Duration $leaseDuration = null,
-    ): void {
+        ?DirtyKeyTracker $activity = null,
+        array $seenCounters = [],
+    ): ?int {
         $leaseDuration ??= Duration::seconds(60);
         $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
-        if (null === $row || $row['workerId'] !== $workerId) {
-            return;
+        $now = $this->clock->now();
+        if (
+            null === $row
+            || $row['workerId'] !== $workerId
+            || $row['bucketTo'] !== $segment->bucketTo
+            || null !== $segment->claimVersion
+            && (
+                ($row['claimVersion'] ?? null) !== $segment->claimVersion
+                || null === $row['leaseExpiresAt']
+                || $row['leaseExpiresAt'] < $now
+            )
+        ) {
+            return null;
         }
 
         $row['checkpoint'] = $checkpoint;
-        $row['leaseExpiresAt'] = $caughtUp ? null : $this->clock->now()->add($leaseDuration);
+        $row['leaseExpiresAt'] = $caughtUp ? null : $now->add($leaseDuration);
+        unset($row['claimVersion']);
         if ($caughtUp) {
             $row['workerId'] = null;
         }
 
         $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
+
+        return $caughtUp && [] !== $seenCounters
+            ? $activity?->drainSeen($segment->projectionId, $seenCounters) ?? 0
+            : 0;
     }
 
     public function releaseClaimedSegment(ProjectionSegment $segment, string $workerId): void
     {
         $row = $this->segments[$segment->projectionId][$segment->bucketFrom] ?? null;
-        if (null === $row || $row['workerId'] !== $workerId) {
+        if (
+            null === $row
+            || $row['workerId'] !== $workerId
+            || $row['bucketTo'] !== $segment->bucketTo
+            || null !== $segment->claimVersion && ($row['claimVersion'] ?? null) !== $segment->claimVersion
+        ) {
             return;
         }
 
         $row['workerId'] = null;
         $row['leaseExpiresAt'] = null;
+        unset($row['claimVersion']);
         $this->segments[$segment->projectionId][$segment->bucketFrom] = $row;
     }
 
@@ -137,6 +166,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
 
             $row['workerId'] = null;
             $row['leaseExpiresAt'] = null;
+            unset($row['claimVersion']);
             $this->segments[$projectionId][$bucketFrom] = $row;
             ++$recovered;
         }
@@ -184,6 +214,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             $row = $this->segments[$projectionId][$segment->bucketFrom];
             $row['workerId'] = $ownerId;
             $row['leaseExpiresAt'] = $this->clock->now()->add($leaseDuration);
+            unset($row['claimVersion']);
             $this->segments[$projectionId][$segment->bucketFrom] = $row;
         }
 
@@ -314,9 +345,9 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
     }
 
     /**
-     * @param array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|DatePoint} $row
+     * @param array{bucketFrom: int, bucketTo: int, checkpoint: Checkpoint, workerId: null|string, leaseExpiresAt: null|DatePoint, claimVersion?: string} $row
      */
-    private function toSegment(string $projectionId, array $row): ProjectionSegment
+    private function toSegment(string $projectionId, array $row, ?string $claimVersion = null): ProjectionSegment
     {
         return new ProjectionSegment(
             $projectionId,
@@ -324,6 +355,7 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
             $row['bucketTo'],
             $row['checkpoint'],
             $row['workerId'],
+            $claimVersion,
         );
     }
 }
