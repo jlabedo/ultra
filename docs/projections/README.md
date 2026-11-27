@@ -318,8 +318,8 @@ The runner uses [event-store pagination](../event-sourcing/event-store.md#events
 `hasMore = false` completes the claim and permits acknowledgement of observed activity, including for a full final page.
 
 `runClaimedBatches()` checks initialization once and yields one result per attempted batch until the segment
-catches up or a claim fails. The coordinator consumes the sequence for its local segment. The segment message
-handler stops at its configured cycle limit.
+catches up or a claim fails. After the first batch, the sequence renews its existing claim. The coordinator
+consumes the sequence for its local segment. The segment message handler stops at its configured cycle limit.
 
 The segment repository owns runtime state such as:
 
@@ -371,9 +371,11 @@ Important details:
 
 [ProjectionActivity](../../src/Projection/Runtime/Coordination/ProjectionActivity.php)
 adapts Coordination's DirtyKeyTracker to projection IDs and bucket numbers.
-Counters absorb repeated signals. Workers subtract only the counters observed
-before processing once their claimed segment catches up, preserving concurrent
-signals for a later cycle.
+Counters absorb repeated signals. A worker reads the counters after its first
+claim and before loading the first batch. At catch-up, it subtracts only those
+observed counters. Signals recorded during the sequence remain pending for a
+later cycle, even when the worker has already applied their events. A change to
+the segment's range or checkpoint between batches discards the observation.
 
 Activity is a scheduling hint; segment checkpoints remain the source of truth
 for progress. Explicit rebuilds use ProjectionRunner::backfillClaimedOnce without

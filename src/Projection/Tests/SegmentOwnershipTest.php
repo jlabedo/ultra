@@ -7,6 +7,7 @@ namespace Ultra\Projection\Tests;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
+use Ultra\EventStore\BucketHasher;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRuntime;
@@ -173,6 +174,44 @@ final class SegmentOwnershipTest extends ProjectionTestCase
         static::assertFalse($result->claimedSegment);
         static::assertSame(0, $result->processedEvents);
         static::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
+
+        $batches->next();
+        static::assertFalse($batches->valid());
+    }
+
+    #[DataProvider('backends')]
+    public function test_a_batch_sequence_stops_after_its_segment_claim_is_released(string $backend): void
+    {
+        $fixture = $this->fixture($backend);
+        $projection = new TrackingProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $projectionId = $runtime->projectionId();
+        $courseId = 'released-claim-course';
+        $fixture->store->append([
+            self::courseCreatedEvent($courseId, 'First'),
+            self::courseCreatedEvent($courseId, 'Second'),
+        ]);
+        $fixture->activity->bump($projectionId, BucketHasher::bucketFor($courseId));
+
+        $batches = $fixture->runner->runClaimedBatches($runtime, $projectionId, 0, 'worker-1', limit: 1);
+        $first = $batches->current();
+        static::assertInstanceOf(ProjectionRunResult::class, $first);
+        static::assertTrue($first->claimedSegment);
+        static::assertFalse($first->caughtUp);
+        $segment = $fixture->segments->listSegments($projectionId)[0];
+        $fixture->segments->releaseClaimedSegment($segment, 'worker-1');
+
+        $batches->next();
+        $last = $batches->current();
+
+        static::assertInstanceOf(ProjectionRunResult::class, $last);
+        static::assertFalse($last->claimedSegment);
+        static::assertSame(0, $last->acknowledgedBuckets);
+        static::assertSame(['First'], $projection->applied);
+        static::assertNull($fixture->segments->listSegments($projectionId)[0]->workerId);
+        $pending = $fixture->activity->pendingInSegment($projectionId, 0, 255);
+        static::assertCount(1, $pending);
+        static::assertSame(1, $pending[0]->counter);
 
         $batches->next();
         static::assertFalse($batches->valid());

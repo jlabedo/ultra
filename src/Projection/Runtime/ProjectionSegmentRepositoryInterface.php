@@ -13,11 +13,13 @@ interface ProjectionSegmentRepositoryInterface
 
     public function deleteProjection(string $projectionId): void;
 
+    /** Claim an available segment or renew its claim. With $requireOwned, it must already belong to $workerId. */
     public function claimSegment(
         string $projectionId,
         int $bucketFrom,
         string $workerId,
         Duration $leaseDuration = new Duration(seconds: 60),
+        bool $requireOwned = false,
     ): ?ProjectionSegment;
 
     public function completeClaimedSegment(

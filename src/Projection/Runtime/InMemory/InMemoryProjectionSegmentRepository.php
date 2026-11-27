@@ -50,10 +50,11 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         int $bucketFrom,
         string $workerId,
         ?Duration $leaseDuration = null,
+        bool $requireOwned = false,
     ): ?ProjectionSegment {
         $leaseDuration ??= Duration::seconds(60);
         $row = $this->segments[$projectionId][$bucketFrom] ?? null;
-        if (null === $row || null !== $row['workerId'] && $row['workerId'] !== $workerId) {
+        if (null === $row || $row['workerId'] !== $workerId && ($requireOwned || null !== $row['workerId'])) {
             return null;
         }
 

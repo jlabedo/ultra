@@ -65,6 +65,7 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         static::assertFalse($segment->checkpoint->contains(new Sequence(2)));
         static::assertCount(1, $activity->pendingInSegment('tracking_projection', 0, 255));
 
+        $activity->bump('tracking_projection', $bucket);
         $batches->next();
         $secondResult = $batches->current();
 
@@ -76,13 +77,70 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         $segment = $segments->listSegments('tracking_projection')[0];
         static::assertNull($segment->workerId);
         static::assertTrue($segment->checkpoint->contains(new Sequence(2)));
-        static::assertSame([], $activity->pendingInSegment('tracking_projection', 0, 255));
+        $pending = $activity->pendingInSegment('tracking_projection', 0, 255);
+        static::assertCount(1, $pending);
+        static::assertSame($bucket, (int) $pending[0]->key);
+        static::assertSame(1, $pending[0]->counter);
         static::assertSame(1, $projection->initialized);
         static::assertSame(2, $projection->flushes);
         static::assertSame(['course-1' => 'Advanced Math'], $projection->names);
 
         $batches->next();
         static::assertFalse($batches->valid());
+
+        $followUp = $runner->runClaimedBatches($runtime, 'tracking_projection', 0, 'worker-2', limit: 1)->current();
+
+        static::assertInstanceOf(ProjectionRunResult::class, $followUp);
+        static::assertTrue($followUp->caughtUp);
+        static::assertSame(0, $followUp->processedEvents);
+        static::assertSame(1, $followUp->acknowledgedBuckets);
+        static::assertSame([], $activity->pendingInSegment('tracking_projection', 0, 255));
+        static::assertSame(['Math', 'Advanced Math'], $projection->applied);
+    }
+
+    #[DataProvider('backends')]
+    public function test_a_reassigned_worker_id_cannot_acknowledge_activity_from_an_earlier_checkpoint(string $backend): void
+    {
+        $fixture = $this->fixture($backend);
+        $projection = new TrackingProjection();
+        $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
+        $projectionId = $runtime->projectionId();
+        $courseId = 'reassigned-course';
+        $bucket = BucketHasher::bucketFor($courseId);
+        $fixture->store->append([
+            self::courseCreatedEvent($courseId, 'First'),
+            self::courseCreatedEvent($courseId, 'Second'),
+        ]);
+        $fixture->activity->bump($projectionId, $bucket);
+
+        $batches = $fixture->runner->runClaimedBatches($runtime, $projectionId, 0, 'worker-1', limit: 1);
+        $first = $batches->current();
+        static::assertInstanceOf(ProjectionRunResult::class, $first);
+        static::assertFalse($first->caughtUp);
+        $segment = $fixture->segments->listSegments($projectionId)[0];
+        $fixture->segments->releaseClaimedSegment($segment, 'worker-1');
+
+        $other = $fixture->runner->runClaimedOnce($runtime, $projectionId, 0, 'worker-2', limit: 1);
+        static::assertTrue($other->caughtUp);
+        static::assertSame(1, $other->processedEvents);
+        static::assertSame(1, $other->acknowledgedBuckets);
+        static::assertSame([], $fixture->activity->pendingInSegment($projectionId, 0, 255));
+
+        static::assertNotNull($fixture->runner->claimSegment($projectionId, 0, 'worker-1'));
+        $fixture->activity->bump($projectionId, $bucket);
+        $batches->next();
+        $resumed = $batches->current();
+
+        static::assertInstanceOf(ProjectionRunResult::class, $resumed);
+        static::assertTrue($resumed->claimedSegment);
+        static::assertTrue($resumed->caughtUp);
+        static::assertSame(0, $resumed->processedEvents);
+        static::assertSame(0, $resumed->acknowledgedBuckets);
+        $pending = $fixture->activity->pendingInSegment($projectionId, 0, 255);
+        static::assertCount(1, $pending);
+        static::assertSame($bucket, (int) $pending[0]->key);
+        static::assertSame(1, $pending[0]->counter);
+        static::assertSame(['First', 'Second'], $projection->applied);
     }
 
     #[DataProvider('backends')]

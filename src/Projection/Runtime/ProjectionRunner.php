@@ -274,21 +274,24 @@ final readonly class ProjectionRunner
             throw new \InvalidArgumentException('Runtime and claimed projection must match.');
         }
         $this->ensureInitialized($runtime);
+        $observation = null;
         do {
-            $result = $this->runInitializedBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit);
+            $result = $this->runInitializedBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit, $observation);
             yield $result;
         } while ($result->claimedSegment && !$result->caughtUp);
     }
 
+    /** @param array{counters: array<int, int>, bucketTo: int, checkpoint: Checkpoint, ...}|null $observation */
     private function runInitializedBatch(
         ProjectionRuntime $runtime,
         string $projectionId,
         int $bucketFrom,
         string $workerId,
         int $limit,
+        ?array &$observation,
     ): ProjectionRunResult {
         if (ProjectionMode::Asynchronous === $runtime->definition()->mode) {
-            return $this->runClaimedOnceBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit);
+            return $this->runClaimedOnceBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit, $observation);
         }
 
         return $this->transactionManager->transactional(function () use (
@@ -297,6 +300,7 @@ final readonly class ProjectionRunner
             $bucketFrom,
             $workerId,
             $limit,
+            &$observation,
         ): ProjectionRunResult {
             $this->states->lockRegistrationShared();
             $this->states->lockShared($projectionId);
@@ -306,36 +310,52 @@ final readonly class ProjectionRunner
             }
             $this->assertCompatibleState($runtime, $state);
 
-            return $this->runClaimedOnceBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit);
+            return $this->runClaimedOnceBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit, $observation);
         });
     }
 
+    /** @param array{counters: array<int, int>, bucketTo: int, checkpoint: Checkpoint, ...}|null $observation */
     private function runClaimedOnceBatch(
         ProjectionRuntime $runtime,
         string $projectionId,
         int $bucketFrom,
         string $workerId,
         int $limit,
+        ?array &$observation,
     ): ProjectionRunResult {
-        $segment = $this->segmentRepository->claimSegment($projectionId, $bucketFrom, $workerId);
+        // The observation belongs to the first claim. Subsequent batches can only renew it.
+        $segment = $this->segmentRepository->claimSegment(
+            $projectionId,
+            $bucketFrom,
+            $workerId,
+            requireOwned: null !== $observation,
+        );
         if (null === $segment) {
             return new ProjectionRunResult(0, false, null);
         }
 
         try {
-            if (null === $this->activityRepository) {
-                throw new \LogicException(
-                    'ProjectionRunner requires projection activity to run claimed projection work.',
-                );
-            }
+            $seenCounters = $observation['counters'] ?? [];
+            if (null === $observation) {
+                if (null === $this->activityRepository) {
+                    throw new \LogicException(
+                        'ProjectionRunner requires projection activity to run claimed projection work.',
+                    );
+                }
 
-            $seenCounters = [];
-            foreach ($this->activityRepository->pendingInSegment(
-                $segment->projectionId,
-                $segment->bucketFrom,
-                $segment->bucketTo,
-            ) as $pendingKey) {
-                $seenCounters[(int) $pendingKey->key] = $pendingKey->counter;
+                foreach ($this->activityRepository->pendingInSegment(
+                    $segment->projectionId,
+                    $segment->bucketFrom,
+                    $segment->bucketTo,
+                ) as $pendingKey) {
+                    $seenCounters[(int) $pendingKey->key] = $pendingKey->counter;
+                }
+            } elseif (
+                $segment->bucketTo !== $observation['bucketTo']
+                || $segment->checkpoint->serialize() !== $observation['checkpoint']->serialize()
+            ) {
+                // A reused worker ID can resume on a different segment or checkpoint.
+                $seenCounters = [];
             }
 
             $query = $runtime->definition()->streamQueryForSegment($segment->bucketFrom, $segment->bucketTo);
@@ -358,6 +378,12 @@ final readonly class ProjectionRunner
                     $this->activityRepository?->drainSeen($segment->projectionId, $seenCounters);
                 }
             });
+
+            $observation = [
+                'counters' => $seenCounters,
+                'bucketTo' => $segment->bucketTo,
+                'checkpoint' => $result->checkpoint,
+            ];
 
             return new ProjectionRunResult(
                 processedEvents: count($result->events),

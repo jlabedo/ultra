@@ -54,20 +54,26 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         int $bucketFrom,
         string $workerId,
         Duration $leaseDuration = new Duration(seconds: 60),
+        bool $requireOwned = false,
     ): ?ProjectionSegment {
         $now = $this->clock->now();
+        $ownershipPredicate = $requireOwned ? 'worker_id = ?' : '(worker_id IS NULL OR worker_id = ?)';
 
         $row = $this->connection
             ->executeQuery(
-                sprintf('UPDATE %s
+                sprintf(
+                    'UPDATE %s
                  SET worker_id = ?,
                      lease_expires_at = CAST(? AS TIMESTAMPTZ),
                      updated_at = CAST(? AS TIMESTAMPTZ)
                  WHERE projection_id = ?
                    AND bucket_from = ?
-                   AND (worker_id IS NULL OR worker_id = ?)
+                   AND %s
                    AND (lease_expires_at IS NULL OR lease_expires_at >= CAST(? AS TIMESTAMPTZ) OR worker_id = ?)
-                 RETURNING bucket_from, bucket_to, checkpoint', $this->segmentsTable()),
+                 RETURNING bucket_from, bucket_to, checkpoint',
+                    $this->segmentsTable(),
+                    $ownershipPredicate,
+                ),
                 [$workerId, $now->add($leaseDuration), $now, $projectionId, $bucketFrom, $workerId, $now, $workerId],
                 [
                     ParameterType::STRING,
