@@ -20,6 +20,7 @@ final readonly class TableDefinition
      * @param list<string> $primaryKey Column IDs in key order.
      * @param array<string, ForeignKeyDefinition> $foreignKeys By constraint name.
      * @param array<string, string> $checks SQL expressions by constraint name.
+     * @param array<array-key, PostgresPolicyDefinition> $policies By policy name.
      */
     public function __construct(
         public string $id,
@@ -30,6 +31,8 @@ final readonly class TableDefinition
         public array $primaryKey = [],
         public array $foreignKeys = [],
         public array $checks = [],
+        public ?RowLevelSecurity $rowLevelSecurity = null,
+        public array $policies = [],
     ) {
         $this->name = $name ?? $this->id;
         $this->hasExplicitName = $hasExplicitName ?? null !== $name;
@@ -113,6 +116,11 @@ final readonly class TableDefinition
                     $name,
                     $this->id,
                 ));
+            }
+        }
+        foreach (array_keys($this->policies) as $name) {
+            if ('' === trim((string) $name) || str_contains((string) $name, "\0")) {
+                throw new \InvalidArgumentException(sprintf('A policy on table "%s" needs a valid name.', $this->id));
             }
         }
     }

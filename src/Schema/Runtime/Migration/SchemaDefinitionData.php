@@ -8,7 +8,11 @@ use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\ForeignKeyTiming;
 use Ultra\Schema\IndexDefinition;
+use Ultra\Schema\PolicyCommand;
+use Ultra\Schema\PolicyMode;
 use Ultra\Schema\PostgresFunctionDefinition;
+use Ultra\Schema\PostgresPolicyDefinition;
+use Ultra\Schema\RowLevelSecurity;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SqlType;
 use Ultra\Schema\TableDefinition;
@@ -93,12 +97,20 @@ final class SchemaDefinitionData
                 'timing' => $foreignKey->timing->name,
             ], $table->foreignKeys),
             'checks' => (object) $table->checks,
+            'rowLevelSecurity' => $table->rowLevelSecurity?->name,
+            'policies' => (object) array_map(static fn(PostgresPolicyDefinition $policy): array => [
+                'command' => $policy->command->name,
+                'roles' => $policy->roles,
+                'using' => $policy->using,
+                'withCheck' => $policy->withCheck,
+                'mode' => $policy->mode->name,
+            ], $table->policies),
         ];
     }
 
     private static function decodeTable(mixed $value): TableDefinition
     {
-        $table = self::record($value, 'table');
+        $table = self::record($value, 'table') + ['rowLevelSecurity' => null, 'policies' => new \stdClass()];
         $foreignKeys = [];
         foreach (self::record($table['foreignKeys'] ?? null, 'foreignKeys') as $name => $value) {
             $foreignKey = self::record($value, 'foreign key');
@@ -109,6 +121,19 @@ final class SchemaDefinitionData
             );
         }
 
+        $policies = [];
+        foreach (self::record($table['policies'], 'policies') as $name => $value) {
+            $policy = self::record($value, 'policy');
+            $policies[$name] = new PostgresPolicyDefinition(
+                command: self::enumCase(PolicyCommand::cases(), self::string($policy, 'command')),
+                roles: self::stringList($policy, 'roles'),
+                using: self::nullableString($policy, 'using'),
+                withCheck: self::nullableString($policy, 'withCheck'),
+                mode: self::enumCase(PolicyMode::cases(), self::string($policy, 'mode')),
+            );
+        }
+        $rowLevelSecurity = self::nullableString($table, 'rowLevelSecurity');
+
         return new TableDefinition(
             id: self::string($table, 'id'),
             name: self::string($table, 'name'),
@@ -118,6 +143,10 @@ final class SchemaDefinitionData
             primaryKey: self::stringList($table, 'primaryKey'),
             foreignKeys: $foreignKeys,
             checks: self::stringMap($table, 'checks'),
+            rowLevelSecurity: null === $rowLevelSecurity
+                ? null
+                : self::enumCase(RowLevelSecurity::cases(), $rowLevelSecurity),
+            policies: $policies,
         );
     }
 

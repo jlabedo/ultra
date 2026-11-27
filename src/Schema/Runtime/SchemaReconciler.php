@@ -10,15 +10,18 @@ use Ultra\Schema\Operations\AddIndex;
 use Ultra\Schema\Operations\AlterColumn;
 use Ultra\Schema\Operations\CreateExtension;
 use Ultra\Schema\Operations\CreateFunction;
+use Ultra\Schema\Operations\CreatePolicy;
 use Ultra\Schema\Operations\CreateTable;
 use Ultra\Schema\Operations\DropColumn;
 use Ultra\Schema\Operations\DropForeignKey;
 use Ultra\Schema\Operations\DropIndex;
+use Ultra\Schema\Operations\DropPolicy;
 use Ultra\Schema\Operations\DropTable;
 use Ultra\Schema\Operations\RenameColumn;
 use Ultra\Schema\Operations\RenameIndex;
 use Ultra\Schema\Operations\RenameTable;
 use Ultra\Schema\Operations\SchemaOperation;
+use Ultra\Schema\Operations\SetRowLevelSecurity;
 
 final class SchemaReconciler
 {
@@ -38,6 +41,12 @@ final class SchemaReconciler
         }
 
         foreach ($currentTables as $tableId => $currentTable) {
+            foreach ($currentTable->policies as $name => $policy) {
+                if ($policy->equivalentTo($targetTables[$tableId]->policies[$name] ?? null)) {
+                    continue;
+                }
+                $operations[] = new DropPolicy($currentTable->name, (string) $name);
+            }
             foreach ($currentTable->foreignKeys as $name => $foreignKey) {
                 if ($foreignKey->equivalentTo($targetTables[$tableId]->foreignKeys[$name] ?? null)) {
                     continue;
@@ -117,7 +126,26 @@ final class SchemaReconciler
             }
         }
 
-        return [...$operations, ...$this->reconcileFunctions($current, $target)];
+        array_push($operations, ...$this->reconcileFunctions($current, $target));
+
+        // Policy expressions may refer to columns on other tables or to schema functions.
+        $securityChanges = [];
+        foreach ($targetTables as $tableId => $targetTable) {
+            $currentTable = $currentTables[$tableId] ?? null;
+            foreach ($targetTable->policies as $name => $policy) {
+                if ($policy->equivalentTo($currentTable->policies[$name] ?? null)) {
+                    continue;
+                }
+                $operations[] = new CreatePolicy($targetTable->name, (string) $name, $policy);
+            }
+            $currentMode = $currentTable->rowLevelSecurity ?? RowLevelSecurity::Disabled;
+            $targetMode = $targetTable->rowLevelSecurity ?? RowLevelSecurity::Disabled;
+            if ($currentMode !== $targetMode) {
+                $securityChanges[] = new SetRowLevelSecurity($targetTable->name, $targetMode);
+            }
+        }
+
+        return [...$operations, ...$securityChanges];
     }
 
     /** @return list<CreateFunction> */

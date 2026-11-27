@@ -99,6 +99,7 @@ final class MigrationCommandTest extends TestCase
         $snapshot = json_decode($this->read($first . '/snapshot.json'), flags: JSON_THROW_ON_ERROR);
         unset($snapshot->requiredExtensions, $snapshot->functions);
         foreach ($snapshot->tables as $table) {
+            unset($table->rowLevelSecurity, $table->policies);
             foreach ($table->indexes as $index) {
                 unset($index->method);
             }

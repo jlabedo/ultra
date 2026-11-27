@@ -9,6 +9,9 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\IndexDefinition;
+use Ultra\Schema\PolicyCommand;
+use Ultra\Schema\PostgresPolicyDefinition;
+use Ultra\Schema\RowLevelSecurity;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
 use Ultra\Schema\SqlType;
@@ -19,6 +22,7 @@ use Ultra\Schema\TableDefinition;
 #[CoversClass(TableDefinition::class)]
 #[CoversClass(ColumnDefinition::class)]
 #[CoversClass(IndexDefinition::class)]
+#[CoversClass(PostgresPolicyDefinition::class)]
 final class DefinitionCompositionTest extends TestCase
 {
     #[DataProvider('nameOrders')]
@@ -82,6 +86,73 @@ final class DefinitionCompositionTest extends TestCase
     {
         yield 'implicit then explicit' => [false];
         yield 'explicit then implicit' => [true];
+    }
+
+    #[DataProvider('nameOrders')]
+    public function test_fragments_compose_policies_independently_of_activation(bool $explicitFirst): void
+    {
+        $left = new SchemaDefinition([new TableDefinition('documents', policies: [
+            'owners' => new PostgresPolicyDefinition(roles: ['writer', 'reader'], using: 'true'),
+            'insert' => new PostgresPolicyDefinition(command: PolicyCommand::Insert, withCheck: 'true'),
+        ])]);
+        $right = new SchemaDefinition([new TableDefinition(
+            'documents',
+            rowLevelSecurity: RowLevelSecurity::Enabled,
+            policies: [
+                'owners' => new PostgresPolicyDefinition(roles: ['reader', 'writer'], using: 'true'),
+                'delete' => new PostgresPolicyDefinition(command: PolicyCommand::Delete, using: 'false'),
+            ],
+        )]);
+
+        $merged = $explicitFirst ? SchemaDefinition::merge($right, $left) : SchemaDefinition::merge($left, $right);
+        self::assertSame(RowLevelSecurity::Enabled, $merged->tables[0]->rowLevelSecurity);
+        self::assertEqualsCanonicalizing(['owners', 'insert', 'delete'], array_keys($merged->tables[0]->policies));
+    }
+
+    #[DataProvider('policyConflicts')]
+    public function test_conflicting_policy_definitions_or_activation_are_rejected(
+        TableDefinition $other,
+        string $message,
+    ): void {
+        $original = new TableDefinition('documents', rowLevelSecurity: RowLevelSecurity::Enabled, policies: [
+            'owners' => new PostgresPolicyDefinition(using: 'true'),
+        ]);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage($message);
+        SchemaDefinition::merge(new SchemaDefinition([$original]), new SchemaDefinition([$other]));
+    }
+
+    /** @return iterable<string, array{TableDefinition, string}> */
+    public static function policyConflicts(): iterable
+    {
+        yield 'policy expression' => [
+            new TableDefinition('documents', policies: ['owners' => new PostgresPolicyDefinition(using: 'false')]),
+            'Conflicting policy "owners" for table "documents".',
+        ];
+        yield 'explicit activation' => [
+            new TableDefinition('documents', rowLevelSecurity: RowLevelSecurity::Disabled),
+            'Conflicting row-level security for table "documents".',
+        ];
+    }
+
+    #[DataProvider('invalidPolicyExpressions')]
+    public function test_policy_expressions_must_be_valid_for_the_command(
+        PolicyCommand $command,
+        ?string $using,
+        ?string $withCheck,
+    ): void {
+        $this->expectException(\InvalidArgumentException::class);
+        new PostgresPolicyDefinition(command: $command, using: $using, withCheck: $withCheck);
+    }
+
+    /** @return iterable<string, array{PolicyCommand, ?string, ?string}> */
+    public static function invalidPolicyExpressions(): iterable
+    {
+        yield 'insert with USING' => [PolicyCommand::Insert, 'true', null];
+        yield 'select with WITH CHECK' => [PolicyCommand::Select, null, 'true'];
+        yield 'delete with WITH CHECK' => [PolicyCommand::Delete, null, 'true'];
+        yield 'blank expression' => [PolicyCommand::Update, ' ', null];
     }
 
     #[DataProvider('duplicates')]

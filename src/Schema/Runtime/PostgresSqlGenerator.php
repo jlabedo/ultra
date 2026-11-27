@@ -10,15 +10,18 @@ use Ultra\Schema\Operations\AddIndex;
 use Ultra\Schema\Operations\AlterColumn;
 use Ultra\Schema\Operations\CreateExtension;
 use Ultra\Schema\Operations\CreateFunction;
+use Ultra\Schema\Operations\CreatePolicy;
 use Ultra\Schema\Operations\CreateTable;
 use Ultra\Schema\Operations\DropColumn;
 use Ultra\Schema\Operations\DropForeignKey;
 use Ultra\Schema\Operations\DropIndex;
+use Ultra\Schema\Operations\DropPolicy;
 use Ultra\Schema\Operations\DropTable;
 use Ultra\Schema\Operations\RenameColumn;
 use Ultra\Schema\Operations\RenameIndex;
 use Ultra\Schema\Operations\RenameTable;
 use Ultra\Schema\Operations\SchemaOperation;
+use Ultra\Schema\Operations\SetRowLevelSecurity;
 
 final class PostgresSqlGenerator
 {
@@ -43,6 +46,7 @@ final class PostgresSqlGenerator
                     $operation->function,
                     $operation->replace,
                 ) . ';',
+                $operation instanceof CreatePolicy => $this->createPolicy($operation),
                 $operation instanceof CreateTable => $this->createTable($operation),
                 $operation instanceof DropTable => sprintf(
                     'DROP TABLE %s;',
@@ -82,6 +86,11 @@ final class PostgresSqlGenerator
                     $this->quoteIdentifier($operation->tableName),
                     $this->quoteIdentifier($operation->name),
                 ),
+                $operation instanceof DropPolicy => sprintf(
+                    'DROP POLICY %s ON %s;',
+                    $this->quoteIdentifier($operation->name),
+                    $this->quoteIdentifier($operation->tableName),
+                ),
                 $operation instanceof RenameColumn => sprintf(
                     'ALTER TABLE %s RENAME COLUMN %s TO %s;',
                     $this->quoteIdentifier($operation->tableName),
@@ -94,6 +103,15 @@ final class PostgresSqlGenerator
                     $this->quoteIdentifier($operation->toName),
                 ),
                 $operation instanceof AlterColumn => $this->alterColumn($operation),
+                $operation instanceof SetRowLevelSecurity => sprintf(
+                    'ALTER TABLE %s %s;',
+                    $this->quoteIdentifier($operation->tableName),
+                    match ($operation->mode) {
+                        RowLevelSecurity::Disabled => 'DISABLE ROW LEVEL SECURITY, NO FORCE ROW LEVEL SECURITY',
+                        RowLevelSecurity::Enabled => 'ENABLE ROW LEVEL SECURITY, NO FORCE ROW LEVEL SECURITY',
+                        RowLevelSecurity::Forced => 'ENABLE ROW LEVEL SECURITY, FORCE ROW LEVEL SECURITY',
+                    },
+                ),
                 default => throw new \LogicException(sprintf('Unsupported schema operation: %s', $operation::class)),
             };
 
@@ -105,6 +123,22 @@ final class PostgresSqlGenerator
         }
 
         return $sql;
+    }
+
+    private function createPolicy(CreatePolicy $operation): string
+    {
+        $policy = $operation->policy;
+
+        return sprintf(
+            'CREATE POLICY %s ON %s AS %s FOR %s%s%s%s;',
+            $this->quoteIdentifier($operation->name),
+            $this->quoteIdentifier($operation->tableName),
+            $policy->mode->value,
+            $policy->command->value,
+            [] === $policy->roles ? '' : ' TO ' . $this->quoteIdentifiers($policy->roles),
+            null === $policy->using ? '' : ' USING (' . $policy->using . ')',
+            null === $policy->withCheck ? '' : ' WITH CHECK (' . $policy->withCheck . ')',
+        );
     }
 
     /** @return list<string> */
@@ -168,6 +202,13 @@ final class PostgresSqlGenerator
     /** Render an unterminated bootstrap statement using the storage adapter's trusted table reference. */
     public function createTableIfNotExists(TableDefinition $table, string $tableReference): string
     {
+        if (
+            [] !== $table->policies
+            || in_array($table->rowLevelSecurity, [RowLevelSecurity::Enabled, RowLevelSecurity::Forced], true)
+        ) {
+            throw new \LogicException('Use a schema migration to create a table with row-level security or policies.');
+        }
+
         return $this->renderTable($table, 'CREATE TABLE IF NOT EXISTS ' . $tableReference);
     }
 

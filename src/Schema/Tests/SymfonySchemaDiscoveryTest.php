@@ -20,6 +20,9 @@ use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\Migration\MigrationGenerator;
+use Ultra\Schema\PolicyCommand;
+use Ultra\Schema\PostgresPolicyDefinition;
+use Ultra\Schema\RowLevelSecurity;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\Symfony\SchemaExtension;
 use Ultra\Schema\TableDefinition;
@@ -111,6 +114,8 @@ final class SymfonySchemaDiscoveryTest extends TestCase
             $path = $history . '/000001-rename-items';
             $sql = file_get_contents($path . '/migration.sql');
             self::assertStringContainsString('ALTER TABLE "items_v1" RENAME TO "items_v2";', $sql);
+            self::assertStringContainsString('CREATE POLICY "read_items" ON "items_v2"', $sql);
+            self::assertStringContainsString('ALTER TABLE "items_v2" ENABLE ROW LEVEL SECURITY', $sql);
             self::assertStringNotContainsString('SET DEFAULT', $sql);
             self::assertStringContainsString(
                 '"previous": "000000-baseline"',
@@ -287,14 +292,24 @@ final class MigrationTargetSchema
     {
         ++self::$calls;
 
-        return new SchemaDefinition([self::table('items_v2')]);
+        return new SchemaDefinition([self::table('items_v2', RowLevelSecurity::Enabled)]);
     }
 
-    public static function table(string $name): TableDefinition
+    public static function table(string $name, ?RowLevelSecurity $rls = null): TableDefinition
     {
-        return new TableDefinition('items', $name, [
-            new ColumnDefinition('label', type: ColumnType::Text, defaultExpression: "'%schema_test_token%'"),
-        ]);
+        return new TableDefinition(
+            'items',
+            $name,
+            [
+                new ColumnDefinition('label', type: ColumnType::Text, defaultExpression: "'%schema_test_token%'"),
+            ],
+            rowLevelSecurity: $rls,
+            policies: null === $rls
+                ? []
+                : [
+                    'read_items' => new PostgresPolicyDefinition(command: PolicyCommand::Select, using: 'true'),
+                ],
+        );
     }
 }
 

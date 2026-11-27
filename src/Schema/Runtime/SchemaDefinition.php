@@ -152,6 +152,24 @@ final readonly class SchemaDefinition
             }
             $checks[$key] = $expression;
         }
+        if (
+            null !== $left->rowLevelSecurity
+            && null !== $right->rowLevelSecurity
+            && $left->rowLevelSecurity !== $right->rowLevelSecurity
+        ) {
+            throw new \InvalidArgumentException(sprintf('Conflicting row-level security for table "%s".', $left->id));
+        }
+        $policies = $left->policies;
+        foreach ($right->policies as $key => $policy) {
+            if (isset($policies[$key]) && !$policy->equivalentTo($policies[$key])) {
+                throw new \InvalidArgumentException(sprintf(
+                    'Conflicting policy "%s" for table "%s".',
+                    $key,
+                    $left->id,
+                ));
+            }
+            $policies[$key] = $policy;
+        }
 
         return new TableDefinition(
             id: $left->id,
@@ -162,6 +180,8 @@ final readonly class SchemaDefinition
             primaryKey: [] === $left->primaryKey ? $right->primaryKey : $left->primaryKey,
             foreignKeys: $foreignKeys,
             checks: $checks,
+            rowLevelSecurity: $left->rowLevelSecurity ?? $right->rowLevelSecurity,
+            policies: $policies,
         );
     }
 

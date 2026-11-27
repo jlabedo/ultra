@@ -115,6 +115,53 @@ language and body. The generator creates new functions and replaces changed defi
 `CREATE OR REPLACE FUNCTION` when their signature is unchanged. Signature changes and removals
 require an explicit migration.
 
+### Row-level security
+
+Use `TableDefinition::policies` to declare PostgreSQL policies by name on a table. Set
+`TableDefinition::rowLevelSecurity` to `RowLevelSecurity::Enabled` to enforce them or to
+`RowLevelSecurity::Forced` to also enforce them for the table owner. Use `RowLevelSecurity::Disabled`
+to turn off enforcement while keeping declared policies. A fragment that omits the mode leaves the choice
+to the other fragments. Explicit modes must agree, and the default for a table is `Disabled`.
+Fragments can contribute distinct policies and must agree on the definition of a shared policy name.
+
+```php
+new TableDefinition(
+    id: 'documents',
+    columns: [
+        new ColumnDefinition('id', type: ColumnType::Uuid),
+        new ColumnDefinition('owner_role', type: ColumnType::Text),
+    ],
+    primaryKey: ['id'],
+    rowLevelSecurity: RowLevelSecurity::Enabled,
+    policies: [
+        'documents_owner' => new PostgresPolicyDefinition(
+            command: PolicyCommand::All,
+            roles: ['app_user'],
+            using: 'owner_role = current_user::text',
+        ),
+    ],
+);
+```
+
+By default a policy is permissive, applies to all commands and targets `PUBLIC`. Supply role names in
+`roles` to restrict the audience, and use `PolicyMode::Restrictive` for a restrictive policy. `using` and
+`withCheck` are SQL expressions that use physical names. PostgreSQL uses `USING` to filter existing rows
+and `WITH CHECK` to validate new rows. For `ALL` and `UPDATE` policies, PostgreSQL uses `USING` for the
+write check when `WITH CHECK` is omitted. Enabling RLS before a policy grants access denies access by default
+to roles subject to RLS. Create roles and grant table privileges through your deployment tooling.
+
+Snapshots record both the mode and the policies. Older format 2 snapshots without these fields are read as
+RLS disabled with an empty policy list. The reconciler drops removed or changed policies before structural
+changes, creates new and replacement policies after tables and functions, and applies the RLS mode last.
+Apply migrations that change RLS or policies in a single transaction so sessions see the complete change.
+Use a schema migration to create tables with these declarations.
+
+Keep the SQL expressions in the target definition aligned with physical names when renaming objects.
+If an otherwise unchanged policy blocks a structural change, such as changing a referenced column's
+type, edit the generated migration to drop and recreate the policy around that change.
+
+### SQL types
+
 Use `Ultra\Schema\ColumnType` for built-in types, SQL strings for PostgreSQL declarations, and `Ultra\Schema\SqlType` helpers
 for configurable types.
 
@@ -163,11 +210,13 @@ The tests live together under [src/Schema/Tests](../../src/Schema/Tests), organi
 | Composite keys resolve column IDs to physical names, foreign keys enforce references with the declared timing and named table checks enforce rules across columns | [RelationalConstraintsTest](../../src/Schema/Tests/RelationalConstraintsTest.php) |
 | Static fragments compose at compilation and tagged service methods contribute to the migration target when the Symfony command runs | [SymfonySchemaDiscoveryTest](../../src/Schema/Tests/SymfonySchemaDiscoveryTest.php) |
 | PostgreSQL functions are replaceable at the same signature, with signature changes and removals delegated to explicit migrations | [PostgresFunctionMigrationTest](../../src/Schema/Tests/PostgresFunctionMigrationTest.php) |
+| Policies can be deployed before activation, enforce reads and writes for application roles, and can be replaced around structural changes. Forced RLS applies to the owner and disabling RLS preserves policies | [PostgresPolicyMigrationTest](../../src/Schema/Tests/PostgresPolicyMigrationTest.php) |
 | Invalid operations fail before a script is returned; caller-provided index SQL retains its clauses and is terminated | [MigrationInspectionTest](../../src/Schema/Tests/MigrationInspectionTest.php) |
 | CLI generation uses the versioned history, requires approval for table and column drops, and rejects incomplete or divergent histories | [MigrationCommandTest](../../src/Schema/Tests/MigrationCommandTest.php) |
 
 Operation payloads are inspectable before execution. SQL cases execute the generated statements against PostgreSQL and inspect data and catalog metadata. Whitespace and the layout of generated SQL are not frozen. The raw-index inspection case checks the supplied statement after surrounding whitespace and statement termination are normalized.
 
 The [migration fixture](../../src/Schema/Tests/Support/MigrationTestCase.php) uses PDO PostgreSQL and a unique
-database schema in a transaction that it rolls back after each case. See
+database schema in a transaction that it rolls back after each case. The policy suite also creates roles
+inside the transaction, so its database user needs `CREATEROLE`. See
 [development verification](../development.md#refactoring-tests) for the shared audit workflow.
