@@ -278,7 +278,25 @@ final readonly class ProjectionRunner
         if ($projectionId !== $runtime->projectionId()) {
             throw new \InvalidArgumentException('Runtime and claimed projection must match.');
         }
+
+        yield from $this->runBatches($runtime, $bucketFrom, $workerId, $limit);
+    }
+
+    /** @return \Generator<int, ProjectionRunResult, void, void> */
+    public function runFullRangeBatches(ProjectionRuntime $runtime, string $workerId, int $limit = 100): \Generator
+    {
+        return $this->runBatches($runtime, null, $workerId, $limit);
+    }
+
+    /**
+     * A null start requires a free or expired segment covering the full range on the first claim.
+     *
+     * @return \Generator<int, ProjectionRunResult, void, void>
+     */
+    private function runBatches(ProjectionRuntime $runtime, ?int $bucketFrom, string $workerId, int $limit): \Generator
+    {
         $this->ensureInitialized($runtime);
+        $projectionId = $runtime->projectionId();
         $observation = null;
         do {
             $result = $this->runInitializedBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit, $observation);
@@ -290,7 +308,7 @@ final readonly class ProjectionRunner
     private function runInitializedBatch(
         ProjectionRuntime $runtime,
         string $projectionId,
-        int $bucketFrom,
+        ?int $bucketFrom,
         string $workerId,
         int $limit,
         ?array &$observation,
@@ -323,18 +341,21 @@ final readonly class ProjectionRunner
     private function runClaimedOnceBatch(
         ProjectionRuntime $runtime,
         string $projectionId,
-        int $bucketFrom,
+        ?int $bucketFrom,
         string $workerId,
         int $limit,
         ?array &$observation,
     ): ProjectionRunResult {
         // The observation belongs to the first claim. Subsequent batches can only renew it.
-        $segment = $this->segmentRepository->claimSegment(
-            $projectionId,
-            $bucketFrom,
-            $workerId,
-            requireOwned: null !== $observation,
-        );
+        $segment =
+            null === $bucketFrom && null === $observation
+                ? $this->segmentRepository->claimFullRangeSegment($projectionId, $workerId)
+                : $this->segmentRepository->claimSegment(
+                    $projectionId,
+                    $bucketFrom ?? 0,
+                    $workerId,
+                    requireOwned: null !== $observation,
+                );
         if (null === $segment) {
             return new ProjectionRunResult(0, false, null);
         }

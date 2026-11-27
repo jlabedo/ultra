@@ -101,6 +101,33 @@ final readonly class PostgresProjectionSegmentRepository implements ProjectionSe
         );
     }
 
+    public function claimFullRangeSegment(
+        string $projectionId,
+        string $workerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): ?ProjectionSegment {
+        $now = $this->clock->now();
+        $checkpoint = $this->connection->fetchOne(
+            sprintf('UPDATE %s
+                 SET worker_id = ?, lease_expires_at = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
+                 WHERE projection_id = ? AND bucket_from = 0 AND bucket_to = 255
+                   AND (worker_id IS NULL OR lease_expires_at < CAST(? AS TIMESTAMPTZ))
+                 RETURNING checkpoint', $this->segmentsTable()),
+            [$workerId, $now->add($leaseDuration), $now, $projectionId, $now],
+            [
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+                ParameterType::STRING,
+            ],
+        );
+
+        return false === $checkpoint
+            ? null
+            : new ProjectionSegment($projectionId, 0, 255, Checkpoint::deserialize((string) $checkpoint), $workerId);
+    }
+
     public function completeClaimedSegment(
         ProjectionSegment $segment,
         Checkpoint $checkpoint,

@@ -65,6 +65,28 @@ final class InMemoryProjectionSegmentRepository implements ProjectionSegmentRepo
         return $this->toSegment($projectionId, $row);
     }
 
+    public function claimFullRangeSegment(
+        string $projectionId,
+        string $workerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): ?ProjectionSegment {
+        $row = $this->segments[$projectionId][0] ?? null;
+        $now = $this->clock->now();
+        if (
+            null === $row
+            || 255 !== $row['bucketTo']
+            || null !== $row['workerId'] && (null === $row['leaseExpiresAt'] || $row['leaseExpiresAt'] >= $now)
+        ) {
+            return null;
+        }
+
+        $row['workerId'] = $workerId;
+        $row['leaseExpiresAt'] = $now->add($leaseDuration);
+        $this->segments[$projectionId][0] = $row;
+
+        return $this->toSegment($projectionId, $row);
+    }
+
     public function completeClaimedSegment(
         ProjectionSegment $segment,
         Checkpoint $checkpoint,

@@ -8,8 +8,13 @@ use Ultra\Coordination\Lease\CoordinatorLease;
 use Ultra\Coordination\Tracking\PendingKey;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionSegment;
+use Ultra\Time\ClockInterface;
+use Ultra\Time\DatePoint;
+use Ultra\Time\Duration;
+use Ultra\Time\SystemClock;
 
 final readonly class ProjectionCoordinator
 {
@@ -18,6 +23,9 @@ final readonly class ProjectionCoordinator
      */
     public const string COORDINATOR_KEY = 'projection-coordinator';
 
+    private const int LEASE_SECONDS = 60;
+    private const int RENEW_AFTER_SECONDS = 30;
+
     public function __construct(
         private ProjectionCatalog $catalog,
         private ProjectionRunner $runner,
@@ -25,11 +33,17 @@ final readonly class ProjectionCoordinator
         private CoordinatorLease $leaseRepository,
         private ProjectionActivatorInterface $activator,
         private ProjectionScalingPolicyInterface $scalingPolicy = new DefaultProjectionScalingPolicy(),
+        private ClockInterface $clock = new SystemClock(),
     ) {}
 
     public function run(string $workerId, int $batchSize = 100, int $maxCycles = 32): ProjectionCoordinatorResult
     {
-        $acquiredLease = $this->leaseRepository->acquire(self::COORDINATOR_KEY, $workerId);
+        $renewAt = $this->clock->now()->add(Duration::seconds(self::RENEW_AFTER_SECONDS));
+        $acquiredLease = $this->leaseRepository->acquire(
+            self::COORDINATOR_KEY,
+            $workerId,
+            Duration::seconds(self::LEASE_SECONDS),
+        );
         if (!$acquiredLease) {
             return new ProjectionCoordinatorResult(false, 0, 0, 0);
         }
@@ -37,10 +51,33 @@ final readonly class ProjectionCoordinator
         $processedEvents = 0;
         $acknowledgedBuckets = 0;
         $requestedWorkerActivations = 0;
+        $localPlan = [];
 
         try {
             for ($cycle = 0; $cycle < $maxCycles; ++$cycle) {
-                $this->leaseRepository->renew(self::COORDINATOR_KEY, $workerId);
+                $this->renewIfDue($workerId, $renewAt);
+
+                if ($this->scalingPolicy instanceof DefaultProjectionScalingPolicy) {
+                    $freshPlan = [] === $localPlan;
+                    if ($freshPlan) {
+                        $localPlan = $this->groupByProjection($this->activity->affected());
+                    }
+
+                    $claimed = false;
+                    foreach ($this->runLocalAssignment($localPlan, $workerId, $batchSize) as $result) {
+                        $claimed = true;
+                        $processedEvents += $result->processedEvents;
+                        $acknowledgedBuckets += $result->acknowledgedBuckets;
+                        if (!$result->caughtUp) {
+                            $this->renewIfDue($workerId, $renewAt);
+                        }
+                    }
+                    if (!$claimed && $freshPlan) {
+                        break;
+                    }
+
+                    continue;
+                }
 
                 $affectedBuckets = $this->activity->affected();
                 if ([] === $affectedBuckets) {
@@ -52,14 +89,10 @@ final readonly class ProjectionCoordinator
                 $remoteAssignments = 0;
                 $claimedAny = false;
 
-                foreach ($this->groupByProjection($affectedBuckets) as $projectionId => $_projectionBuckets) {
+                foreach ($this->groupByProjection($affectedBuckets) as $projectionId => $projectionBuckets) {
                     $runtime = $this->catalog->runtime($projectionId);
                     if (!$this->runner->isReplayable($runtime)) {
-                        $seen = [];
-                        foreach ($_projectionBuckets as $activity) {
-                            $seen[(int) $activity->key] = $activity->counter;
-                        }
-                        $this->activity->drainSeen($projectionId, $seen);
+                        $this->drainObsoleteActivity($projectionId, $projectionBuckets);
 
                         continue;
                     }
@@ -114,6 +147,9 @@ final readonly class ProjectionCoordinator
                     ) as $result) {
                         $processedEvents += $result->processedEvents;
                         $acknowledgedBuckets += $result->acknowledgedBuckets;
+                        if (!$result->caughtUp) {
+                            $this->renewIfDue($workerId, $renewAt);
+                        }
                     }
                 }
 
@@ -131,6 +167,94 @@ final readonly class ProjectionCoordinator
             $acknowledgedBuckets,
             $requestedWorkerActivations,
         );
+    }
+
+    private function renewIfDue(string $workerId, DatePoint &$renewAt): void
+    {
+        $now = $this->clock->now();
+        if ($now >= $renewAt) {
+            $this->leaseRepository->renew(self::COORDINATOR_KEY, $workerId, Duration::seconds(self::LEASE_SECONDS));
+            $renewAt = $now->add(Duration::seconds(self::RENEW_AFTER_SECONDS));
+        }
+    }
+
+    /**
+     * Consume candidates from the same poll across local assignments. Claim only when ready to run.
+     *
+     * @param array<string, list<PendingKey>> $plan
+     *
+     * @return \Generator<int, ProjectionRunResult, void, void>
+     */
+    private function runLocalAssignment(array &$plan, string $workerId, int $batchSize): \Generator
+    {
+        foreach ($plan as $projectionId => $projectionBuckets) {
+            unset($plan[$projectionId]);
+            $runtime = $this->catalog->runtime($projectionId);
+            if (!$this->runner->isReplayable($runtime)) {
+                $this->drainObsoleteActivity($projectionId, $projectionBuckets);
+
+                continue;
+            }
+
+            foreach ($this->localAssignments($runtime, $workerId, $batchSize) as $batches) {
+                $claimed = false;
+                foreach ($batches as $result) {
+                    if (!$result->claimedSegment) {
+                        break;
+                    }
+                    $claimed = true;
+
+                    yield $result;
+                }
+                if ($claimed) {
+                    return;
+                }
+            }
+        }
+    }
+
+    /** @return \Generator<int, iterable<ProjectionRunResult>, void, void> */
+    private function localAssignments(ProjectionRuntime $runtime, string $workerId, int $batchSize): \Generator
+    {
+        yield $this->runner->runFullRangeBatches($runtime, $workerId, $batchSize);
+
+        $projectionId = $runtime->projectionId();
+        $this->runner->recoverExpiredClaims($projectionId);
+        $segments = $this->runner->listSegments($projectionId);
+        if ([] === $segments) {
+            yield $this->runner->runClaimedBatches($runtime, $projectionId, 0, $workerId, $batchSize);
+
+            return;
+        }
+
+        foreach ($segments as $segment) {
+            if (null !== $segment->workerId) {
+                continue;
+            }
+            // For the full range, the global poll already found work for this segment.
+            if (
+                0 === $segment->bucketFrom && 255 === $segment->bucketTo
+                || [] !== $this->activity->pendingInSegment($projectionId, $segment->bucketFrom, $segment->bucketTo)
+            ) {
+                yield $this->runner->runClaimedBatches(
+                    $runtime,
+                    $projectionId,
+                    $segment->bucketFrom,
+                    $workerId,
+                    $batchSize,
+                );
+            }
+        }
+    }
+
+    /** @param list<PendingKey> $projectionBuckets */
+    private function drainObsoleteActivity(string $projectionId, array $projectionBuckets): void
+    {
+        $seen = [];
+        foreach ($projectionBuckets as $activity) {
+            $seen[(int) $activity->key] = $activity->counter;
+        }
+        $this->activity->drainSeen($projectionId, $seen);
     }
 
     /**

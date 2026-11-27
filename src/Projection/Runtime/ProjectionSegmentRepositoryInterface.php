@@ -22,6 +22,13 @@ interface ProjectionSegmentRepositoryInterface
         bool $requireOwned = false,
     ): ?ProjectionSegment;
 
+    /** Claim the full bucket range if its segment exists and is free or expired. */
+    public function claimFullRangeSegment(
+        string $projectionId,
+        string $workerId,
+        Duration $leaseDuration = new Duration(seconds: 60),
+    ): ?ProjectionSegment;
+
     public function completeClaimedSegment(
         ProjectionSegment $segment,
         Checkpoint $checkpoint,

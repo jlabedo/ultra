@@ -50,12 +50,14 @@ The coordinator key lets independent subsystems each run their own singleton.
 Implementations: `InMemory\InMemoryCoordinatorLease`,
 `Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease`.
 
-Postgres `acquire()` creates a missing coordinator row before reading it under a
-row lock in the same transaction. `markWakeEnqueued()` uses a conditional upsert
-in the caller's transaction when present. PostgreSQL resolves concurrent
-reservations against the current row, including the first reservation for a key.
-The upsert checks expiration and starts the wake TTL at the time the caller
-attempts the reservation. Time spent waiting on the row counts toward the TTL.
+PostgreSQL uses a single conditional upsert for each `acquire()` and
+`markWakeEnqueued()` call. It resolves concurrent attempts against the current
+row, including the first reservation for a key. Acquiring the row clears any
+pending wake. Both methods sample the clock before sending the statement, so
+time spent waiting on the row counts toward the lease duration or wake TTL.
+`acquire()` returns false if the lease has already expired when the statement
+returns. In a caller-owned transaction, the upsert's row lock can survive a
+refused attempt until the transaction ends.
 
 ### `Lease\Activator`
 

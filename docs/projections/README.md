@@ -393,21 +393,30 @@ requiring activity hints.
 
 [ProjectionCoordinator.php](../../src/Projection/Runtime/Coordination/ProjectionCoordinator.php) is a single leader worker for the whole app.
 
-It does not wake per projection. Instead it:
+The coordinator acquires the global lease and polls pending buckets across all
+projections. With the default scaling policy, it plans local assignments for
+the affected projections from that poll and refreshes the plan once it runs
+out of candidates. Each cycle runs at most one local assignment through
+`ProjectionRunner`. The runner first tries to claim a free or expired segment
+covering the full range. The global poll already identified
+work for that range, and the claim checks lease expiry and the range atomically.
+If the claim fails, the coordinator recovers expired claims and checks the
+available segments for pending buckets, including when a projection has split
+segments.
 
-1. acquires the global coordinator lease
-2. reads all affected buckets across all projections
-3. decides the target worker/segment count through a scaling policy
-4. recovers expired segment leases for the touched projections
-5. ensures each touched projection is initialized
-6. splits available segments until the projection has enough segments for the requested workers plus itself
-7. maps pending bucket activity to affected segments
-8. durably claims affected segments for itself or activated workers
-9. processes one local claim itself through `ProjectionRunner`
-10. workers decrement the bucket counters they observed only after their claimed segment catches up
-11. exits when there is no work or no productive progress
+With a custom scaling policy, each cycle polls activity, initializes the
+affected projections, recovers expired claims, and splits available segments
+to reach the requested worker count. It can reserve additional claims and
+activate workers for them while processing its own local assignment.
 
-This is important: the coordinator is not only a scheduler. It is also a worker and always participates in processing.
+Workers read the counters for their segment after claiming it and decrement
+only those observed counters at catch-up. The coordinator checks its 60-second
+lease at the start of each cycle and between local batches. It renews after 30
+seconds have elapsed since it last requested acquisition or renewal. A single
+blocking operation can outlast the lease between checks. A custom clock must be
+shared between the coordinator and its lease repository. The coordinator
+releases the lease when it reaches its cycle limit or a fresh poll yields no
+productive work.
 
 Coordinator liveness uses [CoordinatorLease](../../src/Coordination/Runtime/Lease/CoordinatorLease.php).
 
@@ -473,18 +482,26 @@ The key design choice is:
 
 The [benchmark runner](../../src/Projection/Tests/Benchmark/async.php) uses three asynchronous
 inventory projections with overlapping subscriptions and distinct partition dimensions.
-One accumulates results in PHP, one writes to PostgreSQL for each event, and one groups
-writes in a projection flush. Some events match none of the projections.
+The warehouse projection accumulates results in PHP. The supplier projection groups writes
+in a projection flush. The item projection buffers [MappedTable increments](../stored-state/mapped-table.md#incrementing-integer-columns)
+when the checkout supports them. The `direct` variant writes one PostgreSQL upsert per event
+and is the default on older checkouts. Some events match none of the projections.
 
 | Phase | Timed work |
 | --- | --- |
 | Append | Raw EventStore, then the revision's projection decorator with matching or unmatched events. The decorated cases also run in caller-owned transactions to control for transaction grouping. |
-| Worker | A single worker per projection claims and processes the same seeded event history to catch-up, in batches of 1, 32 or 128 events by default. Each projection has its own result. |
+| Worker | A single worker per projection claims and processes the same seeded event history to catch-up, in batches of 32 or 128 events by default. Each projection has its own result. |
+| Coordinator backlog | One run of the default coordinator catches up all projections after the dataset is appended in batches outside the measurement. |
+| Coordinator sparse | The runner appends one event at a time and immediately runs the default coordinator on each work signal. The measurement covers both appends and catch-up. |
 
 The worker phase uses `ProjectionRunner::runClaimedBatches()` when available and calls
 `runClaimedOnce()` until catch-up on earlier revisions. Each yielded attempt counts as one
 operation. Activation uses the in-memory signal adapter, so queue transport and worker
 contention are outside the benchmark.
+The coordinator uses the same signal adapter and runs all work locally. The sparse case
+runs without sleeps. Its operation count records coordinator invocations, and its event
+count includes events that do not match a projection. The backlog case records one
+coordinator invocation. SQL counts use the same scope as timings for both cases.
 The runner prepares fixtures and validates actual outputs outside the timed interval.
 It records the environment, median, and individual samples as JSON. Run again with
 `--trace` to count SQL executions, transactions, projection state reads and barriers.
@@ -505,13 +522,23 @@ for revision in 0cc3682d 9a8c4dbe; do
     composer dump-autoload --working-dir="$comparison/$revision" --no-scripts
 done
 benchmark=src/Projection/Tests/Benchmark/async.php
-php -d opcache.enable_cli=0 "$benchmark" --checkout="$comparison/0cc3682d"
-php -d opcache.enable_cli=0 "$benchmark" --checkout="$comparison/9a8c4dbe"
-php -d opcache.enable_cli=0 "$benchmark"
+php -d opcache.enable_cli=0 "$benchmark" --item-stock=direct --checkout="$comparison/0cc3682d"
+php -d opcache.enable_cli=0 "$benchmark" --item-stock=direct --checkout="$comparison/9a8c4dbe"
+php -d opcache.enable_cli=0 "$benchmark" --item-stock=direct
 ```
 
-Use `--event-store=hstore` for the HStore implementation. Use `--phase=append` or
-`--phase=worker` to measure one phase, or `--help` for dataset and batch options.
+To compare the item projection's persistence on the same checkout with 128-event batches, run both variants:
+
+```bash
+for item_stock in direct mapped; do
+    php -d opcache.enable_cli=0 "$benchmark" --event-store=hstore --phase=worker --worker-batches=128 --item-stock="$item_stock"
+done
+```
+
+Use `--event-store=hstore` for the HStore implementation. The default `--phase=all`
+runs the append and worker workloads. Select `--phase=coordinator` to run the backlog
+and sparse workloads. Use `--worker-batches=1` to measure single-event batches explicitly,
+or `--help` for the full set of options.
 Reverse the order on a second pass when dispersion is large relative to the difference.
 
 ## Guarantee suites

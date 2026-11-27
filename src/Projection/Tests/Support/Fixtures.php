@@ -398,6 +398,8 @@ final class CountingDirtyKeyTracker implements DirtyKeyTracker
     public int $bumpManyCalls = 0;
     public int $pendingCalls = 0;
     public int $pendingForChannelCalls = 0;
+    /** @var list<?string> */
+    public array $pendingReadChannels = [];
 
     public function __construct(
         private readonly DirtyKeyTracker $inner = new InMemoryDirtyKeyTracker(),
@@ -417,6 +419,7 @@ final class CountingDirtyKeyTracker implements DirtyKeyTracker
     public function pending(int $limit = 256): array
     {
         ++$this->pendingCalls;
+        $this->pendingReadChannels[] = null;
 
         return $this->inner->pending($limit);
     }
@@ -424,6 +427,7 @@ final class CountingDirtyKeyTracker implements DirtyKeyTracker
     public function pendingForChannel(string $channel, int $limit = 256): array
     {
         ++$this->pendingForChannelCalls;
+        $this->pendingReadChannels[] = $channel;
 
         return $this->inner->pendingForChannel($channel, $limit);
     }

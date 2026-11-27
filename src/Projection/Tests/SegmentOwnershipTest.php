@@ -8,6 +8,8 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Ultra\EventStore\BucketHasher;
+use Ultra\EventStore\Checkpoint;
+use Ultra\EventStore\Sequence;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRuntime;
@@ -57,8 +59,10 @@ final class SegmentOwnershipTest extends ProjectionTestCase
     #[DataProvider('claimTransactions')]
     #[Group('slow')]
     #[Group('projection-concurrency')]
-    public function test_competing_claims_wait_for_the_callers_transaction_outcome(bool $commit): void
-    {
+    public function test_competing_claims_wait_for_the_callers_transaction_outcome(
+        bool $commit,
+        bool $claimFullRange,
+    ): void {
         $fixture = $this->fixture('postgres');
         $fixture->segments->ensureInitialized('courses');
         $dsn = getenv('ULTRA_TEST_POSTGRES_DSN');
@@ -73,7 +77,7 @@ final class SegmentOwnershipTest extends ProjectionTestCase
             static::assertSame(1, $fixture->connection->getTransactionNestingLevel());
             static::assertSame('worker-1', $fixture->segments->listSegments('courses')[0]->workerId);
 
-            $worker = $cluster->spawn(static function () use ($dsn, $prefix): ?string {
+            $worker = $cluster->spawn(static function () use ($dsn, $prefix, $claimFullRange): ?string {
                 $connection = PostgresConnectionSupport::connection($dsn);
                 try {
                     $segments = new PostgresProjectionSegmentRepository($connection, $prefix);
@@ -82,7 +86,11 @@ final class SegmentOwnershipTest extends ProjectionTestCase
                         'owner' => $segments->listSegments('courses')[0]->workerId,
                     ]);
 
-                    return $segments->claimSegment('courses', 0, 'worker-2')?->workerId;
+                    $claim = $claimFullRange
+                        ? $segments->claimFullRangeSegment('courses', 'worker-2')
+                        : $segments->claimSegment('courses', 0, 'worker-2');
+
+                    return $claim?->workerId;
                 } finally {
                     $connection->close();
                 }
@@ -135,10 +143,13 @@ final class SegmentOwnershipTest extends ProjectionTestCase
         }
     }
 
+    /** @return iterable<string, array{bool, bool}> */
     public static function claimTransactions(): iterable
     {
-        yield 'commit preserves ownership' => [true];
-        yield 'rollback makes the claim available' => [false];
+        yield 'commit preserves ownership' => [true, false];
+        yield 'rollback makes the claim available' => [false, false];
+        yield 'commit prevents a full-range claim' => [true, true];
+        yield 'rollback allows a full-range claim' => [false, true];
     }
 
     #[DataProvider('backends')]
@@ -154,6 +165,35 @@ final class SegmentOwnershipTest extends ProjectionTestCase
 
         static::assertSame(1, $repository->recoverExpiredClaims('courses'));
         static::assertNotNull($repository->claimSegment('courses', 0, 'worker-2', Duration::seconds(30)));
+    }
+
+    #[DataProvider('backends')]
+    public function test_only_a_free_or_expired_full_range_segment_can_be_claimed(string $backend): void
+    {
+        $clock = new StatickClock(new \DateTimeImmutable('2024-01-01T00:00:00+00:00'));
+        $repository = $this->fixture($backend, $clock)->segments;
+        static::assertNull($repository->claimFullRangeSegment('courses', 'worker-1'));
+        static::assertTrue($repository->ensureInitialized('courses'));
+        $seed = $repository->claimSegment('courses', 0, 'seed');
+        static::assertNotNull($seed);
+        $checkpoint = Checkpoint::at(new Sequence(42));
+        $repository->completeClaimedSegment($seed, $checkpoint, 'seed', caughtUp: true);
+
+        $claimed = $repository->claimFullRangeSegment('courses', 'worker-1', Duration::seconds(30));
+        static::assertNotNull($claimed);
+        static::assertSame([0, 255, 'worker-1'], [$claimed->bucketFrom, $claimed->bucketTo, $claimed->workerId]);
+        $clock->sleep(Duration::seconds(30));
+        static::assertNull($repository->claimFullRangeSegment('courses', 'worker-1'));
+        static::assertNull($repository->claimFullRangeSegment('courses', 'worker-2'));
+        $clock->sleep(Duration::seconds(1));
+
+        $reclaimed = $repository->claimFullRangeSegment('courses', 'worker-2');
+        static::assertNotNull($reclaimed);
+        static::assertSame('worker-2', $reclaimed->workerId);
+        static::assertSame($checkpoint->serialize(), $reclaimed->checkpoint->serialize());
+        $repository->releaseClaimedSegment($reclaimed, 'worker-2');
+        $repository->splitSegment('courses', 0);
+        static::assertNull($repository->claimFullRangeSegment('courses', 'worker-3'));
     }
 
     #[DataProvider('backends')]
