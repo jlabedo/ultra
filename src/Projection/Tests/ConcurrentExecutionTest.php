@@ -230,17 +230,8 @@ final class ConcurrentExecutionTest extends PostgresProjectionTestCase
             self::assertSame(1, $followerResult->processedEvents);
             self::assertGreaterThanOrEqual(1, $followerResult->acknowledgedBuckets);
 
-            $rows = $connection->fetchAllAssociative(sprintf(
-                'SELECT course_id, name FROM %s ORDER BY course_id ASC',
-                $tableName,
-            ));
-            self::assertSame(
-                [
-                    ['course_id' => $leftCourseId, 'name' => 'Math 101'],
-                    ['course_id' => $rightCourseId, 'name' => 'Physics 201'],
-                ],
-                $rows,
-            );
+            $courseNames = $connection->fetchAllKeyValue(sprintf('SELECT course_id, name FROM %s', $tableName));
+            self::assertEquals([$leftCourseId => 'Math 101', $rightCourseId => 'Physics 201'], $courseNames);
             self::assertSame([], $activity->pendingInSegment('course_names', 0, 255));
             self::assertFalse($leases->hasLiveCoordinator(ProjectionCoordinator::COORDINATOR_KEY));
         });

@@ -250,8 +250,8 @@ final class PostgresEventStoreHStore implements EventStore
             $identifierTypes = array_fill(0, count($domainIdsParams), ParameterType::STRING);
 
             if (null !== $branch->bucketRange) {
-                // Match BucketHasher's first MD5 byte; a missing dimension produces NULL and is excluded.
-                $identifierPredicate .= " AND get_byte(decode(md5(e.domain_ids -> ?), 'hex'), 0) BETWEEN ? AND ?";
+                // Match BucketHasher on UTF-8 bytes. A missing dimension produces NULL and is excluded.
+                $identifierPredicate .= " AND (crc32(convert_to(e.domain_ids -> ?, 'UTF8')) & 255) BETWEEN ? AND ?";
                 array_push(
                     $domainIdsParams,
                     $branch->bucketRange['dimension'],

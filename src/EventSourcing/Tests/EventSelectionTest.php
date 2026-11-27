@@ -29,12 +29,12 @@ final class EventSelectionTest extends StorageTestCase
     ): void {
         $store = $this->fixture($backend)->store;
         $store->append([
-            self::event('created', ['course' => 'course-484'], ['slot' => 0]),
-            self::event('created', ['course' => 'course-262'], ['slot' => 127]),
-            self::event('created', ['course' => 'course-161'], ['slot' => 128]),
-            self::event('created', ['course' => 'course-1198'], ['slot' => 255]),
-            self::event('created', ['student' => 'course-484'], ['slot' => 'missing']),
-            self::event('renamed', ['course' => 'course-484'], ['slot' => 'other type']),
+            self::event('created', ['course' => 'course-54'], ['slot' => 0]),
+            self::event('created', ['course' => 'course-128'], ['slot' => 127]),
+            self::event('created', ['course' => 'course-327'], ['slot' => 128]),
+            self::event('created', ['course' => 'course-252'], ['slot' => 255]),
+            self::event('created', ['student' => 'course-54'], ['slot' => 'missing']),
+            self::event('renamed', ['course' => 'course-54'], ['slot' => 'other type']),
         ]);
 
         $result = $store->load(StreamQuery::forSegment('course', $from, $to, 'created'));
@@ -60,11 +60,11 @@ final class EventSelectionTest extends StorageTestCase
     {
         $store = $this->fixture($backend)->store;
         $store->append([
-            self::event('created', ['course' => 'course-484', 'tenant' => 'one'], ['slot' => 1]),
-            self::event('created', ['course' => 'course-484', 'tenant' => 'two'], ['slot' => 2]),
-            self::event('created', ['course' => 'course-1198', 'tenant' => 'one'], ['slot' => 3]),
-            self::event('renamed', ['course' => 'course-484', 'tenant' => 'one'], ['slot' => 4]),
-            self::event('renamed', ['course' => 'course-1198', 'tenant' => 'two'], ['slot' => 5]),
+            self::event('created', ['course' => 'course-54', 'tenant' => 'one'], ['slot' => 1]),
+            self::event('created', ['course' => 'course-54', 'tenant' => 'two'], ['slot' => 2]),
+            self::event('created', ['course' => 'course-252', 'tenant' => 'one'], ['slot' => 3]),
+            self::event('renamed', ['course' => 'course-54', 'tenant' => 'one'], ['slot' => 4]),
+            self::event('renamed', ['course' => 'course-252', 'tenant' => 'two'], ['slot' => 5]),
         ]);
         $query = StreamQuery::anyOf(
             new StreamQuery([
@@ -83,11 +83,12 @@ final class EventSelectionTest extends StorageTestCase
         );
     }
 
-    #[DataProvider('backends')]
-    public function test_segment_hashing_preserves_empty_and_escaped_utf8_identifiers(string $backend): void
-    {
+    #[DataProvider('segmentIdentifierDimensions')]
+    public function test_segment_hashing_preserves_empty_and_escaped_utf8_identifiers(
+        string $backend,
+        string $dimension,
+    ): void {
         $store = $this->fixture($backend)->store;
-        $dimension = "coursé'\\";
         $values = ['', "été'\\", '000123'];
         $store->append(array_map(static fn(string $value) => self::event(domainIds: [$dimension => $value], payload: [
             'id' => $value,
@@ -99,6 +100,15 @@ final class EventSelectionTest extends StorageTestCase
             $result = $store->load(StreamQuery::forSegment($dimension, $bucket, $bucket));
 
             static::assertSame([$value], array_column(array_column($result->events, 'payload'), 'id'));
+        }
+    }
+
+    /** @return iterable<string, array{string, string}> */
+    public static function segmentIdentifierDimensions(): iterable
+    {
+        foreach (self::backends() as $backend => [$implementation]) {
+            yield $backend . ' escaped UTF-8 dimension' => [$implementation, "coursé'\\"];
+            yield $backend . ' numeric dimension' => [$implementation, '0'];
         }
     }
 

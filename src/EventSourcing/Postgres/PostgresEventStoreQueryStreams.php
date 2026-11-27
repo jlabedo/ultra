@@ -9,7 +9,6 @@ use Doctrine\DBAL\ParameterType;
 use Psr\Log\LoggerInterface;
 use Psr\Log\NullLogger;
 use Ultra\EventStore\AppendCondition;
-use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Checkpoint;
 use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
@@ -82,17 +81,7 @@ final class PostgresEventStoreQueryStreams implements EventStore
                 }
             }
 
-            $sequences = $this->insertEvents($events);
-
-            $domainIdentifierRows = [];
-            foreach ($events as $index => $event) {
-                $sequence = $sequences[$index];
-                foreach ($event->domainIds as $name => $value) {
-                    $domainIdentifierRows[] = [$sequence, $name, $value];
-                }
-            }
-
-            $this->insertEventDomainIdentifiers($domainIdentifierRows);
+            $this->insertEvents($events);
 
             if ($ownsTransaction) {
                 $this->connection->commit();
@@ -206,15 +195,9 @@ final class PostgresEventStoreQueryStreams implements EventStore
 
     /**
      * @param list<Event> $events
-     *
-     * @return list<int>
      */
-    private function insertEvents(array $events): array
+    private function insertEvents(array $events): void
     {
-        if ([] === $events) {
-            return [];
-        }
-
         $placeholders = implode(', ', array_fill(0, count($events), '(?, ?::jsonb, ?::jsonb, ?::jsonb)'));
         $params = [];
         $types = [];
@@ -225,66 +208,23 @@ final class PostgresEventStoreQueryStreams implements EventStore
             $types[] = ParameterType::STRING;
             $params[] = json_encode($event->metadata, JSON_THROW_ON_ERROR);
             $types[] = ParameterType::STRING;
-            $params[] = json_encode($event->domainIds, JSON_THROW_ON_ERROR);
+            // PHP can turn numeric dimension names into array indexes. The SQL expands a JSON object.
+            $params[] = json_encode((object) $event->domainIds, JSON_THROW_ON_ERROR);
             $types[] = ParameterType::STRING;
         }
 
-        $sequences = $this->connection
-            ->executeQuery(
-                sprintf(
-                    'INSERT INTO %1$s (event_type, payload, metadata, domain_ids) VALUES %2$s RETURNING sequence',
-                    $this->eventsTable(),
-                    $placeholders,
-                ),
-                $params,
-                $types,
+        // Hash the UTF-8 bytes of each identifier, as BucketHasher does in PHP.
+        $this->connection->executeStatement(sprintf(<<<'SQL'
+            WITH inserted_events AS (
+                INSERT INTO %s (event_type, payload, metadata, domain_ids)
+                VALUES %s
+                RETURNING sequence, domain_ids
             )
-            ->fetchFirstColumn();
-
-        return array_map(static fn(mixed $sequence): int => (int) $sequence, $sequences);
-    }
-
-    /**
-     * @param list<array{0: int, 1: string, 2: string}> $rows
-     */
-    private function insertEventDomainIdentifiers(array $rows): void
-    {
-        if ([] === $rows) {
-            return;
-        }
-
-        $placeholders = implode(', ', array_fill(0, count($rows), '(?, ?, ?, ?)'));
-        $params = [];
-        $types = [];
-        foreach ($rows as [$sequence, $name, $value]) {
-            $params[] = $sequence;
-            $types[] = ParameterType::INTEGER;
-            $params[] = $name;
-            $types[] = ParameterType::STRING;
-            $params[] = $value;
-            $types[] = ParameterType::STRING;
-            $params[] = $this->computeBucket($value);
-            $types[] = ParameterType::INTEGER;
-        }
-
-        $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (sequence, identifier_name, identifier_value, bucket) VALUES %s',
-                $this->eventDomainIdsTable(),
-                $placeholders,
-            ),
-            $params,
-            $types,
-        );
-    }
-
-    /**
-     * Maps an identifier value to a bucket [0-255] using the first byte of its MD5 hash.
-     * MD5 is used for stability across PHP and PostgreSQL versions.
-     */
-    private function computeBucket(string $value): int
-    {
-        return BucketHasher::bucketFor($value);
+            INSERT INTO %s (sequence, identifier_name, identifier_value, bucket)
+            SELECT e.sequence, id.key, id.value, crc32(convert_to(id.value, 'UTF8')) & 255
+            FROM inserted_events e
+            CROSS JOIN LATERAL jsonb_each_text(e.domain_ids) AS id
+            SQL, $this->eventsTable(), $placeholders, $this->eventDomainIdsTable()), $params, $types);
     }
 
     private function eventsTable(): string

@@ -47,15 +47,18 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
             }
         });
 
+        $firstCourse = self::courseIdInBucketRange(0, 63);
+        $secondCourse = self::courseIdInBucketRange(64, 127);
+        $thirdCourse = self::courseIdInBucketRange(128, 255);
         $eventStore->append([
-            self::courseEvent('alpha', 'Math'),
-            self::courseEvent('delta', 'Science'),
-            self::courseEvent('beta', 'Physics'),
+            self::courseEvent($firstCourse, 'Math'),
+            self::courseEvent($secondCourse, 'Science'),
+            self::courseEvent($thirdCourse, 'Physics'),
         ]);
 
-        $activity->bump('coordinator_projection', BucketHasher::bucketFor('alpha'));
-        $activity->bump('coordinator_projection', BucketHasher::bucketFor('delta'));
-        $activity->bump('coordinator_projection', BucketHasher::bucketFor('beta'));
+        $activity->bump('coordinator_projection', BucketHasher::bucketFor($firstCourse));
+        $activity->bump('coordinator_projection', BucketHasher::bucketFor($secondCourse));
+        $activity->bump('coordinator_projection', BucketHasher::bucketFor($thirdCourse));
 
         $result = $coordinator->run('coordinator-1');
 
@@ -63,7 +66,7 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         static::assertSame(1, $result->processedEvents);
         static::assertSame(1, $result->acknowledgedBuckets);
         static::assertSame(2, $result->requestedWorkerActivations);
-        static::assertSame(['alpha' => 'Math'], $projection->names);
+        static::assertSame([$firstCourse => 'Math'], $projection->names);
         static::assertCount(3, $segments->listSegments('coordinator_projection'));
         static::assertCount(2, $activator->workerClaims());
         static::assertFalse($leases->hasLiveCoordinator(self::KEY));
@@ -110,17 +113,16 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         $segments->ensureInitialized('coordinator_projection');
         $segments->splitSegment('coordinator_projection', 0);
 
-        $leftBucket = BucketHasher::bucketFor('alpha');
-        $rightBucket = BucketHasher::bucketFor('beta');
-
-        static::assertLessThan(128, $leftBucket);
-        static::assertGreaterThanOrEqual(128, $rightBucket);
+        $leftCourse = self::courseIdInBucketRange(0, 127);
+        $rightCourse = self::courseIdInBucketRange(128, 255);
+        $leftBucket = BucketHasher::bucketFor($leftCourse);
+        $rightBucket = BucketHasher::bucketFor($rightCourse);
 
         static::assertNotNull($segments->claimSegment('coordinator_projection', 0, 'other-worker'));
 
         $eventStore->append([
-            self::courseEvent('alpha', 'Ignored'),
-            self::courseEvent('beta', 'Physics'),
+            self::courseEvent($leftCourse, 'Ignored'),
+            self::courseEvent($rightCourse, 'Physics'),
         ]);
 
         $activity->bump('coordinator_projection', $leftBucket);
@@ -131,7 +133,7 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         static::assertTrue($result->acquiredLease);
         static::assertSame(1, $result->processedEvents);
         static::assertSame(1, $result->acknowledgedBuckets);
-        static::assertSame(['beta' => 'Physics'], $projection->names);
+        static::assertSame([$rightCourse => 'Physics'], $projection->names);
 
         $remaining = $activity->pendingInSegment('coordinator_projection', 0, 255);
 
