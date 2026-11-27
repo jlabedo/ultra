@@ -76,7 +76,11 @@ final class GenerateMigrationCommand extends Command
         $output->writeln(
             null === $migration
                 ? 'No schema changes.'
-                : sprintf('Generated %s/%s/migration.sql and snapshot.json.', $history, $migration),
+                : sprintf(
+                    'Generated %s/%s/migration.sql and migration.json, and updated the root snapshot.',
+                    $history,
+                    $migration,
+                ),
             OutputInterface::OUTPUT_RAW,
         );
 

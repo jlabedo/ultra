@@ -131,9 +131,15 @@ final class SymfonySchemaDiscoveryTest extends TestCase
             self::assertStringContainsString('ALTER TABLE "items_v2" ENABLE ROW LEVEL SECURITY', $sql);
             self::assertStringNotContainsString('SET DEFAULT', $sql);
             self::assertStringContainsString(
-                '"previous": "000000-baseline"',
-                file_get_contents($path . '/snapshot.json'),
+                '"previous": "000000-baseline:',
+                file_get_contents($path . '/migration.json'),
             );
+            self::assertStringContainsString(
+                '"revision": "000001-rename-items:',
+                file_get_contents($history . '/snapshot.json'),
+            );
+            self::assertSame(0, $tester->run(['command' => 'ultra:schema:validate']), $tester->getDisplay());
+            self::assertStringContainsString('Migration history is valid.', $tester->getDisplay());
             self::assertSame(0, $tester->run($arguments), $tester->getDisplay());
             self::assertStringContainsString('No schema changes.', $tester->getDisplay());
             self::assertSame(1, MigrationTargetSchema::$calls);

@@ -42,26 +42,41 @@ database, first pass a definition that describes its current Ultra-managed table
 vendor/bin/ultra-schema init config/schema.php migrations/schema
 ```
 
-`init` records `000000-baseline/snapshot.json` in an empty history. Verify the baseline against the database
-before generating further changes.
+`init` records `000000-baseline/snapshot.json` and initializes the root `snapshot.json` in an empty
+history. Verify the baseline against the database before generating further changes. Keep the baseline
+snapshot intact as the root snapshot advances.
 
-### Review and deploy
+### Review and validate
 
-Each generation compares the target with the latest versioned snapshot, including when the corresponding
-SQL is still pending deployment. It writes `migration.sql` and a versioned JSON `snapshot.json` together in a
-numbered subdirectory such as `000001-create-tables`. Use lowercase letters and digits separated by hyphens
-for the migration name. The snapshot records the predecessor and retains the table, column and index identities
-used to recognize renames. A diff with no operations creates no entry.
+Each generation compares the target with the root `snapshot.json`, including when migrations are still
+pending deployment. It updates that snapshot and creates a numbered directory such as
+`000001-create-tables` with `migration.sql` and `migration.json`. Use lowercase letters and digits
+separated by hyphens for the migration name. The root snapshot retains stable table, column and index
+identities for renames. Each `migration.json` records the predecessor and resulting revision.
+A diff with no operations creates no entry.
 
 For table or column drops, the command lists the affected objects and exits before writing an entry.
 Review the target definition and rerun with `--allow-destructive` to generate the SQL if the drops are intended.
 
-Review and commit both files together. If review changes the resulting structure of a declared table,
-keep the snapshot and target definition aligned with the revised SQL. Apply the forward SQL in numbered
-order with the Symfony migration commands or through deployment tooling that tracks applied migrations.
-An incomplete entry or divergent history stops generation. If branches generated migrations from the
-same predecessor, choose an order and regenerate the later migration from the new history, carrying
-over any reviewed SQL edits.
+Review and commit the migration directory and root snapshot together. If review changes the resulting
+structure of a declared table, update the target definition and regenerate the pending entry before
+adding back any manual SQL. Apply the forward SQL in numbered order with the Symfony migration commands
+or through deployment tooling that tracks applied migrations.
+
+The root snapshot puts the migration ID and a fingerprint of the resulting definition on one
+`revision` line. Git can detect a merge conflict on this line even when the branches changed different
+tables. Resolve a divergent history by taking the root snapshot from the updated base branch and
+regenerating your unapplied migrations in order. Carry over any reviewed SQL edits.
+
+Run the history check locally or in CI on the result of a merge:
+
+```bash
+bin/console ultra:schema:validate
+vendor/bin/ultra-schema validate migrations/schema
+```
+
+Both commands check numbering, predecessor revisions, required files and the root snapshot against
+the last entry. Validation works offline and leaves the history files untouched.
 
 ### Apply from Symfony
 
@@ -87,7 +102,7 @@ bin/console ultra:schema:migrate
 `status` reports applied and pending entries without creating the journal. `migrate` takes a
 PostgreSQL advisory lock for the journal and records each entry in the same transaction as its SQL.
 A retry resumes at the first pending entry. The journal records the entry ID, execution time,
-and SHA-256 checksums of the SQL and snapshot. Applied entries must form an unchanged prefix of the
+and a SHA-256 checksum of each applied SQL file or of the baseline snapshot. Applied entries must form an unchanged prefix of the
 versioned history. Keep these files intact and commit corrections as a later migration.
 
 Scripts must run within one PostgreSQL transaction. Leave transaction control to the runner.
@@ -109,7 +124,7 @@ in a hand-written migration and account for their dependencies when ordering dep
 Schema marks managed tables, columns and indexes with `managed-by:ultra`.
 
 To transfer an existing Doctrine table, declare its current structure in Schema and generate a
-dedicated adoption entry. Keep the verified snapshot and replace the table-creation SQL with a
+dedicated adoption entry. Keep the verified root snapshot and migration metadata, and replace the table-creation SQL with a
 `COMMENT ON TABLE ... IS 'managed-by:ultra'` statement. Apply the adoption entry before the next
 Doctrine diff so a filter based on `managed-by:doctrine` excludes the table.
 
@@ -119,10 +134,11 @@ The caller supplies current and target SchemaDefinition values. Stable table and
 
 A column takes a SQL type declaration. Schema resolves it to an immutable `SqlType` for PostgreSQL.
 Equivalent spellings of built-in types resolve to the same identity. A change to a SQL modifier, such as
-timestamp precision or a varchar length, generates an `ALTER COLUMN TYPE`. Snapshots in format 2 record the
+timestamp precision or a varchar length, generates an `ALTER COLUMN TYPE`. Snapshots record the
 SQL identity. Fragments that declare the same column must agree on its SQL definition.
-For an existing database with a format 1 history, start a format 2 history in a new directory with an
-initial definition matching the deployed database.
+The root snapshot layout uses format 3. To move a previously provisioned database to this layout,
+start a new history from a baseline that matches the deployed database. If the previous history was
+already journaled, configure a separate metadata table for the new history.
 
 See [SchemaReconciler](../../src/Schema/Runtime/SchemaReconciler.php) and [PostgresSqlGenerator](../../src/Schema/Runtime/PostgresSqlGenerator.php).
 
@@ -197,7 +213,7 @@ and `WITH CHECK` to validate new rows. For `ALL` and `UPDATE` policies, PostgreS
 write check when `WITH CHECK` is omitted. Enabling RLS before a policy grants access denies access by default
 to roles subject to RLS. Create roles and grant table privileges through your deployment tooling.
 
-Snapshots record both the mode and the policies. Older format 2 snapshots without these fields are read as
+Snapshots record both the mode and the policies. Snapshots without these fields are read as
 RLS disabled with an empty policy list. The reconciler drops removed or changed policies before structural
 changes, creates new and replacement policies after tables and functions, and applies the RLS mode last.
 Apply migrations that change RLS or policies in a single transaction so sessions see the complete change.
@@ -259,7 +275,7 @@ The tests live together under [src/Schema/Tests](../../src/Schema/Tests), organi
 | PostgreSQL functions are replaceable at the same signature, with signature changes and removals delegated to explicit migrations | [PostgresFunctionMigrationTest](../../src/Schema/Tests/PostgresFunctionMigrationTest.php) |
 | Policies can be deployed before activation, enforce reads and writes for application roles, and can be replaced around structural changes. Forced RLS applies to the owner and disabling RLS preserves policies | [PostgresPolicyMigrationTest](../../src/Schema/Tests/PostgresPolicyMigrationTest.php) |
 | Invalid operations fail before a script is returned; caller-provided index SQL retains its clauses and is terminated | [MigrationInspectionTest](../../src/Schema/Tests/MigrationInspectionTest.php) |
-| CLI generation uses the versioned history, requires approval for table and column drops, and rejects incomplete or divergent histories | [MigrationCommandTest](../../src/Schema/Tests/MigrationCommandTest.php) |
+| CLI generation requires approval for table and column drops. A shared revision line makes divergent branches conflict in Git, and offline validation rejects incomplete or divergent histories | [MigrationCommandTest](../../src/Schema/Tests/MigrationCommandTest.php) |
 | Symfony applies SQL and journals it atomically, verifies applied file checksums, and records a baseline independently of Doctrine | [PostgresMigrationCommandTest](../../src/Schema/Tests/PostgresMigrationCommandTest.php) |
 
 Operation payloads are inspectable before execution. SQL cases execute the generated statements against PostgreSQL and inspect data and catalog metadata. Whitespace and the layout of generated SQL are not frozen. The raw-index inspection case checks the supplied statement after surrounding whitespace and statement termination are normalized.

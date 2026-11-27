@@ -17,63 +17,47 @@ final readonly class MigrationHistory
         private string $directory,
     ) {}
 
-    /** @return ?array{id: string, schema: SchemaDefinition} */
-    public function head(): ?array
+    public function head(): ?SchemaSnapshot
     {
-        $head = null;
-        foreach ($this->snapshots() as $id => $entry) {
-            $head = ['id' => $id, 'schema' => $entry['schema']];
-        }
-
-        return $head;
+        return $this->read()['head'];
     }
 
-    /** @return list<array{id: string, snapshotHash: string, sql: ?string, sqlHash: ?string}> */
+    /** @return list<array{id: string, snapshotHash: ?string, sql: ?string, sqlHash: ?string}> */
     public function migrations(): array
     {
-        $migrations = [];
-        foreach ($this->snapshots() as $id => $entry) {
-            $sql = null;
-            if (null !== $entry['sqlPath']) {
-                $path = $entry['sqlPath'];
-                $sql = self::filesystem(static fn(): string|false => file_get_contents($path));
-                if (false === $sql || '' === trim($sql)) {
-                    throw new \UnexpectedValueException(sprintf('Cannot read a migration script from "%s".', $path));
-                }
-            }
-            $migrations[] = [
-                'id' => $id,
-                'snapshotHash' => $entry['snapshotHash'],
-                'sql' => $sql,
-                'sqlHash' => null === $sql ? null : hash('sha256', $sql),
-            ];
-        }
-
-        return $migrations;
+        return $this->read()['migrations'];
     }
 
-    /** @return \Generator<string, array{schema: SchemaDefinition, snapshotHash: string, sqlPath: ?string}> */
-    private function snapshots(): \Generator
+    /** @return array{head: ?SchemaSnapshot, migrations: list<array{id: string, snapshotHash: ?string, sql: ?string, sqlHash: ?string}>} */
+    private function read(): array
     {
         clearstatcache();
         if (!file_exists($this->directory) && !is_link($this->directory)) {
-            return;
+            return ['head' => null, 'migrations' => []];
         }
 
+        return $this->locked(LOCK_SH, $this->readLocked(...));
+    }
+
+    /** @return array{head: ?SchemaSnapshot, migrations: list<array{id: string, snapshotHash: ?string, sql: ?string, sqlHash: ?string}>} */
+    private function readLocked(): array
+    {
         $entries = self::filesystem(fn(): array|false => scandir($this->directory));
         if (false === $entries) {
             throw new \RuntimeException(sprintf('Cannot read migration history "%s".', $this->directory));
         }
 
+        $migrations = [];
         $previous = null;
+        $number = 1;
         foreach ($entries as $id) {
-            if (str_starts_with($id, '.')) {
+            if (str_starts_with($id, '.') || 'snapshot.json' === $id) {
                 continue;
             }
 
             $path = $this->directory . '/' . $id;
             $baseline = self::BASELINE === $id;
-            $expectedNumber = sprintf('%06d', self::nextNumber($previous));
+            $expectedNumber = sprintf('%06d', $number);
             if (
                 !is_dir($path)
                 || $baseline && null !== $previous
@@ -86,70 +70,126 @@ final readonly class MigrationHistory
                 ));
             }
 
+            $sqlPath = $path . '/migration.sql';
             $snapshotPath = $path . '/snapshot.json';
-            if (!is_file($snapshotPath) || $baseline === is_file($path . '/migration.sql')) {
+            $metadataPath = $path . '/migration.json';
+            if ($baseline) {
+                if (!is_file($snapshotPath) || file_exists($sqlPath) || file_exists($metadataPath)) {
+                    throw new \UnexpectedValueException(sprintf('Incomplete or invalid migration entry "%s".', $path));
+                }
+                $json = self::readFile($snapshotPath);
+                $previous = self::snapshot($json, $snapshotPath)->revision;
+                self::validateRevision($previous, $id);
+                $migrations[] = [
+                    'id' => $id,
+                    'snapshotHash' => hash('sha256', $json),
+                    'sql' => null,
+                    'sqlHash' => null,
+                ];
+
+                continue;
+            }
+
+            if (!is_file($sqlPath) || !is_file($metadataPath) || file_exists($snapshotPath)) {
                 throw new \UnexpectedValueException(sprintf('Incomplete or invalid migration entry "%s".', $path));
             }
-
-            try {
-                $json = self::filesystem(static fn(): string|false => file_get_contents($snapshotPath));
-                if (false === $json) {
-                    throw new \UnexpectedValueException('Cannot read snapshot file.');
-                }
-                $snapshot = SchemaSnapshot::fromJson($json);
-            } catch (\JsonException|\LogicException|\RuntimeException $exception) {
-                throw new \UnexpectedValueException(
-                    sprintf('Invalid snapshot in "%s": %s', $path, $exception->getMessage()),
-                    previous: $exception,
-                );
+            $metadata = json_decode(self::readFile($metadataPath), flags: JSON_THROW_ON_ERROR);
+            if (!$metadata instanceof \stdClass || !property_exists($metadata, 'previous')) {
+                throw new \UnexpectedValueException(sprintf('Invalid migration metadata in "%s".', $metadataPath));
             }
-
-            if ($snapshot->previous !== $previous) {
+            $predecessor = $metadata->previous;
+            if ($predecessor !== $previous) {
                 throw new \UnexpectedValueException(sprintf(
                     'Divergent migration history at "%s". Expected predecessor "%s", found "%s".',
                     $path,
                     $previous ?? '(none)',
-                    $snapshot->previous ?? '(none)',
+                    is_string($predecessor) ? $predecessor : '(none)',
                 ));
             }
-            $previous = $id;
-            yield $id => [
-                'schema' => $snapshot->schema,
-                'snapshotHash' => hash('sha256', $json),
-                'sqlPath' => $baseline ? null : $path . '/migration.sql',
-            ];
+            $revision = self::validateRevision($metadata->revision ?? null, $id);
+            $sql = self::readFile($sqlPath);
+            if ('' === trim($sql)) {
+                throw new \UnexpectedValueException(sprintf('Empty migration script "%s".', $sqlPath));
+            }
+            $previous = $revision;
+            ++$number;
+            $migrations[] = ['id' => $id, 'snapshotHash' => null, 'sql' => $sql, 'sqlHash' => hash('sha256', $sql)];
+        }
+
+        $snapshotPath = $this->directory . '/snapshot.json';
+        $head = file_exists($snapshotPath) || is_link($snapshotPath)
+            ? self::snapshot(self::readFile($snapshotPath), $snapshotPath)
+            : null;
+        if ($previous !== $head?->revision) {
+            throw new \UnexpectedValueException(sprintf(
+                'The root snapshot does not match the migration history. Expected revision "%s", found "%s".',
+                $previous ?? '(none)',
+                $head->revision ?? '(none)',
+            ));
+        }
+
+        return ['head' => $head, 'migrations' => $migrations];
+    }
+
+    private static function validateRevision(mixed $revision, string $id): string
+    {
+        if (!is_string($revision) || !preg_match('/\A' . $id . ':[a-f0-9]{64}\z/', $revision)) {
+            throw new \UnexpectedValueException(sprintf('Invalid revision for migration "%s".', $id));
+        }
+
+        return $revision;
+    }
+
+    private static function snapshot(string $json, string $path): SchemaSnapshot
+    {
+        try {
+            return SchemaSnapshot::fromJson($json);
+        } catch (\JsonException|\LogicException|\RuntimeException $exception) {
+            throw new \UnexpectedValueException(
+                sprintf('Invalid snapshot in "%s": %s', $path, $exception->getMessage()),
+                previous: $exception,
+            );
         }
     }
 
-    /** Publish the entire entry together, after checking that the history still has the expected head. */
-    public function append(SchemaSnapshot $snapshot, ?string $name, ?string $sql): string
+    public function append(?string $previous, SchemaDefinition $schema, ?string $name, ?string $sql): string
     {
-        $json = $snapshot->toJson();
         $this->createDirectory();
 
+        return $this->locked(LOCK_EX, function () use ($previous, $schema, $name, $sql): string {
+            $current = $this->readLocked()['head'];
+            if ($previous !== $current?->revision) {
+                throw new \RuntimeException('Migration history changed during generation. Run the command again.');
+            }
+            $number = (int) substr($previous ?? '', 0, 6) + 1;
+            if ($number > 999_999) {
+                throw new \RuntimeException('Migration history has exhausted its sequence numbers.');
+            }
+            $id = null === $name ? self::BASELINE : sprintf('%06d-%s', $number, $name);
+            $snapshot = new SchemaSnapshot($id, $schema);
+            $this->publish($id, $snapshot, $previous, $sql);
+
+            return $id;
+        });
+    }
+
+    /**
+     * @template T
+     * @param \Closure(): T $operation
+     * @return T
+     */
+    private function locked(int $mode, \Closure $operation): mixed
+    {
         $lock = self::filesystem(fn() => fopen($this->directory, 'r'));
         if (false === $lock) {
             throw new \RuntimeException(sprintf('Cannot open migration history "%s".', $this->directory));
         }
-
         try {
-            if (!flock($lock, LOCK_EX)) {
+            if (!flock($lock, $mode)) {
                 throw new \RuntimeException(sprintf('Cannot lock migration history "%s".', $this->directory));
             }
 
-            $current = $this->head();
-            if ($snapshot->previous !== ($current['id'] ?? null)) {
-                throw new \RuntimeException('Migration history changed during generation. Run the command again.');
-            }
-
-            $number = self::nextNumber($snapshot->previous);
-            if ($number > 999_999) {
-                throw new \RuntimeException('Migration history has exhausted its sequence numbers.');
-            }
-
-            $id = null === $name ? self::BASELINE : sprintf('%06d-%s', $number, $name);
-
-            return $this->publish($id, $json, $sql);
+            return $operation();
         } finally {
             fclose($lock);
         }
@@ -171,51 +211,78 @@ final readonly class MigrationHistory
         }
     }
 
-    private function publish(string $id, string $json, ?string $sql): string
+    private function publish(string $id, SchemaSnapshot $snapshot, ?string $previous, ?string $sql): void
     {
+        $json = $snapshot->toJson();
         $destination = $this->directory . '/' . $id;
         $staging = $this->directory . '/.pending-' . bin2hex(random_bytes(8));
         if (!self::filesystem(static fn(): bool => mkdir($staging))) {
             throw new \RuntimeException(sprintf('Cannot create staging directory "%s".', $staging));
         }
 
-        try {
-            self::write($staging . '/snapshot.json', $json);
-            if (null !== $sql) {
-                self::write($staging . '/migration.sql', $sql);
-            }
+        $entry = $staging . '/entry';
+        $files = null === $sql
+            ? ['snapshot.json' => $json]
+            : [
+                'migration.sql' => $sql,
+                'migration.json' =>
+                    json_encode([
+                        'previous' => $previous,
+                        'revision' => $snapshot->revision,
+                    ], JSON_THROW_ON_ERROR | JSON_PRETTY_PRINT) . "\n",
+            ];
 
-            if (
-                file_exists($destination)
-                || is_link($destination)
-                || !self::filesystem(static fn(): bool => rename($staging, $destination))
-            ) {
-                throw new \RuntimeException(sprintf('Cannot publish migration entry "%s".', $destination));
+        try {
+            self::filesystem(static fn(): bool => mkdir($entry));
+            foreach ($files as $file => $contents) {
+                self::write($entry . '/' . $file, $contents);
+            }
+            self::write($staging . '/snapshot.json', $json);
+            if (file_exists($destination) || is_link($destination)) {
+                throw new \RuntimeException(sprintf('Migration entry "%s" already exists.', $destination));
+            }
+            self::move($entry, $destination);
+            try {
+                self::move($staging . '/snapshot.json', $this->directory . '/snapshot.json');
+            } catch (\Throwable $exception) {
+                self::move($destination, $entry);
+
+                throw $exception;
             }
         } finally {
-            if (is_dir($staging)) {
-                foreach (['snapshot.json', 'migration.sql'] as $file) {
-                    $path = $staging . '/' . $file;
-                    if (is_file($path)) {
-                        self::filesystem(static fn(): bool => unlink($path));
-                    }
+            if (is_dir($entry)) {
+                foreach (array_keys($files) as $file) {
+                    self::removeFileIfPresent($entry . '/' . $file);
                 }
-                self::filesystem(static fn(): bool => rmdir($staging));
+                self::filesystem(static fn(): bool => rmdir($entry));
             }
+            self::removeFileIfPresent($staging . '/snapshot.json');
+            self::filesystem(static fn(): bool => rmdir($staging));
         }
-
-        return $id;
     }
 
-    private static function nextNumber(?string $previous): int
+    private static function removeFileIfPresent(string $path): void
     {
-        if (null === $previous) {
-            return 1;
+        if (is_file($path)) {
+            self::filesystem(static fn(): bool => unlink($path));
+        }
+    }
+
+    private static function move(string $source, string $destination): void
+    {
+        if (!self::filesystem(static fn(): bool => rename($source, $destination))) {
+            throw new \RuntimeException(sprintf('Cannot publish "%s".', $destination));
+        }
+    }
+
+    private static function readFile(string $path): string
+    {
+        $contents = self::filesystem(static fn(): string|false => file_get_contents($path));
+        if (false === $contents) {
+            throw new \RuntimeException(sprintf('Cannot read "%s".', $path));
         }
 
-        $number = (int) strstr($previous, '-', before_needle: true);
-
-        return $number + 1;
+        return $contents;
     }
 
     private static function write(string $path, string $contents): void

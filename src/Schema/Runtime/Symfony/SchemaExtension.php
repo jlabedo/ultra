@@ -11,11 +11,13 @@ use Ultra\Container\ContainerExtension;
 use Ultra\Schema\Attribute\DefineSchema;
 use Ultra\Schema\Migration\GenerateMigrationCommand;
 use Ultra\Schema\Migration\SchemaDefinitionData;
+use Ultra\Schema\Migration\ValidateMigrationCommand;
 use Ultra\Schema\SchemaDefinition;
 
 final class SchemaExtension implements ContainerExtension
 {
     private const string GENERATE_COMMAND = 'ultra:schema:generate';
+    private const string VALIDATE_COMMAND = 'ultra:schema:validate';
 
     /** @internal Removed before Symfony optimizes and dumps the container. */
     public const string COMPILED_SCHEMA = 'ultra.schema.compiling.schema';
@@ -36,6 +38,11 @@ final class SchemaExtension implements ContainerExtension
             ->setArguments([self::GENERATE_COMMAND, null, null])
             ->addTag('console.command', ['command' => self::GENERATE_COMMAND]);
 
+        $container
+            ->register(ValidateMigrationCommand::class)
+            ->setArguments([self::VALIDATE_COMMAND, null])
+            ->addTag('console.command', ['command' => self::VALIDATE_COMMAND]);
+
         $container->addCompilerPass(new SchemaCompilerPass());
         $container->addCompilerPass(
             new class implements CompilerPassInterface {
@@ -53,6 +60,7 @@ final class SchemaExtension implements ContainerExtension
                         ->getDefinition(GenerateMigrationCommand::class)
                         ->setArgument(1, $json)
                         ->setArgument(2, $historyDirectory);
+                    $container->getDefinition(ValidateMigrationCommand::class)->setArgument(1, $historyDirectory);
                     $container->getParameterBag()->remove(SchemaExtension::COMPILED_SCHEMA);
                 }
             },

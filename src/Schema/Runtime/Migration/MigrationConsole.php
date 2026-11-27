@@ -33,14 +33,21 @@ final class MigrationConsole
                 $baseline = new MigrationGenerator($history)->initialize($schema);
 
                 $output->writeln(
-                    sprintf('Recorded schema baseline %s/%s/snapshot.json.', $history, $baseline),
+                    sprintf(
+                        'Recorded schema baseline %s/%s/snapshot.json and updated the root snapshot.',
+                        $history,
+                        $baseline,
+                    ),
                     OutputInterface::OUTPUT_RAW,
                 );
 
                 return Command::SUCCESS;
             });
 
-        $application->addCommands([new GenerateMigrationCommand('generate')]);
+        $application->addCommands([
+            new GenerateMigrationCommand('generate'),
+            new ValidateMigrationCommand('validate'),
+        ]);
 
         return $application;
     }

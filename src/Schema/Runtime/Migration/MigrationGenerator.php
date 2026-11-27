@@ -27,7 +27,7 @@ final readonly class MigrationGenerator
         }
         $schema->validateForeignKeys();
 
-        return $this->history->append(new SchemaSnapshot(null, $schema), null, null);
+        return $this->history->append(null, $schema, null, null);
     }
 
     /** Return the new migration ID, or null when the current and target definitions produce no operations. */
@@ -40,7 +40,7 @@ final readonly class MigrationGenerator
         }
 
         $head = $this->history->head();
-        $operations = new SchemaReconciler()->reconcile($head['schema'] ?? new SchemaDefinition([]), $target);
+        $operations = new SchemaReconciler()->reconcile($head->schema ?? new SchemaDefinition([]), $target);
         if ([] === $operations) {
             return null;
         }
@@ -64,6 +64,6 @@ final readonly class MigrationGenerator
 
         $sql = implode("\n", new PostgresSqlGenerator()->generate($operations)) . "\n";
 
-        return $this->history->append(new SchemaSnapshot($head['id'] ?? null, $target), $name, $sql);
+        return $this->history->append($head?->revision, $target, $name, $sql);
     }
 }

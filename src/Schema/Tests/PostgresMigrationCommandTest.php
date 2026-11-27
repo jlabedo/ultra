@@ -158,7 +158,7 @@ final class PostgresMigrationCommandTest extends TestCase
             expectedExit: 1,
         ));
         new Filesystem()->remove(dirname($path));
-        self::assertStringContainsString('does not match the versioned', $this->runCommand('status', expectedExit: 1));
+        self::assertStringContainsString('root snapshot does not match', $this->runCommand('status', expectedExit: 1));
     }
 
     private function runCommand(string $name, int $expectedExit = 0): string

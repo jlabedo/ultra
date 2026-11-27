@@ -9,7 +9,7 @@ use Doctrine\DBAL\Platforms\PostgreSQLPlatform;
 
 /**
  * @internal
- * @phpstan-type Migration array{id: string, snapshotHash: string, sql: ?string, sqlHash: ?string}
+ * @phpstan-type Migration array{id: string, snapshotHash: ?string, sql: ?string, sqlHash: ?string}
  */
 final readonly class PostgresMigrationRunner
 {
@@ -161,7 +161,7 @@ final readonly class PostgresMigrationRunner
             if (!$this->journalExists()) {
                 $connection->executeStatement(sprintf('CREATE TABLE %s (
                         id text PRIMARY KEY,
-                        snapshot_sha256 text NOT NULL,
+                        snapshot_sha256 text,
                         sql_sha256 text,
                         executed_at timestamptz NOT NULL DEFAULT clock_timestamp()
                     )', $this->journal));
