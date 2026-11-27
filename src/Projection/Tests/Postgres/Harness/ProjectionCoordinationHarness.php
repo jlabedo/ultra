@@ -367,7 +367,7 @@ final class BackfillProjectionCommand extends Command
 
         $this->runner->ensureInitialized($runtime);
         $this->runner->recoverExpiredClaims($projectionId);
-        $this->splitUntilSegmentCount($projectionId, $workers);
+        $this->splitUntilSegmentCount($runtime, $workers);
 
         $this->activator->configureRun($batchSize, $maxCycles, backfill: true);
         foreach (array_slice($this->runner->availableSegments($projectionId), 0, $workers) as $segment) {
@@ -381,8 +381,9 @@ final class BackfillProjectionCommand extends Command
         return $this->activator->wait($output) ? Command::SUCCESS : Command::FAILURE;
     }
 
-    private function splitUntilSegmentCount(string $projectionId, int $targetSegmentCount): void
+    private function splitUntilSegmentCount(ProjectionRuntime $runtime, int $targetSegmentCount): void
     {
+        $projectionId = $runtime->projectionId();
         while (count($this->runner->listSegments($projectionId)) < $targetSegmentCount) {
             $candidate = null;
             foreach ($this->runner->listSegments($projectionId) as $segment) {
@@ -402,7 +403,7 @@ final class BackfillProjectionCommand extends Command
                 return;
             }
 
-            $this->runner->splitSegment($projectionId, $candidate->bucketFrom);
+            $this->runner->splitSegment($runtime, $candidate->bucketFrom);
         }
     }
 }

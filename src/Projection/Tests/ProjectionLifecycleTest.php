@@ -27,7 +27,7 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
         $fixture->runner->ensureInitialized($runtime);
         static::assertSame(1, $projection->initialized);
         static::assertCount(1, $fixture->segments->listSegments('tracking_projection'));
-        $fixture->runner->splitSegment('tracking_projection', 0);
+        $fixture->runner->splitSegment($runtime, 0);
         $projection->names = ['course-1' => 'Math'];
 
         $fixture->runner->deleteProjection($runtime);
@@ -54,7 +54,7 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         if ('reset' === $stage) {
             $fixture->runner->ensureInitialized($runtime);
-            $fixture->runner->splitSegment('durable_projection', 0);
+            $fixture->runner->splitSegment($runtime, 0);
         }
         $projection->failAt = $stage;
 
@@ -95,7 +95,7 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
         $projection = $fixture->bufferedProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
         $fixture->runner->ensureInitialized($runtime);
-        $fixture->runner->splitSegment('buffered_projection', 0);
+        $fixture->runner->splitSegment($runtime, 0);
         $projection->failAt = $stage;
         try {
             $fixture->runner->deleteProjection($runtime);

@@ -10,6 +10,7 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
+use Ultra\Projection\Coordination\ProjectionCoordinator;
 use Ultra\Projection\InMemory\InMemoryProjectionActivator;
 use Ultra\Projection\ProjectingEventStore;
 use Ultra\Projection\ProjectionCatalog;
@@ -228,6 +229,39 @@ final class ActivationConcurrencyTest extends PostgresProjectionTestCase
             PostgresConnectionSupport::resetSharedConnection($connection);
             PostgresConnectionSupport::resetSharedConnection($peer);
             $peer->executeStatement('RESET lock_timeout');
+        }
+    }
+
+    public function test_async_coordination_processes_multiple_batches_while_managed_state_is_locked(): void
+    {
+        $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Asynchronous, true);
+        $f->store->append([self::courseCreatedEvent('c', 'first'), self::courseCreatedEvent('c', 'second')]);
+        $coordinator = new ProjectionCoordinator(
+            $f->catalog,
+            $f->runner,
+            $f->fixture->activity,
+            $f->fixture->leases,
+            $f->fixture->activator,
+        );
+        $connection = $f->fixture->connection;
+        $peer = PostgresConnectionSupport::sharedConnection($this->postgresDsn(), 'projection-locked-managed-state');
+        $peer->beginTransaction();
+        try {
+            $states = new PostgresProjectionImplementation($peer, $f->fixture->prefix)->createStateRepository();
+            $states->lockRegistrationExclusive();
+            $peer->executeStatement('LOCK TABLE ' . $f->fixture->prefix . 'states IN ACCESS EXCLUSIVE MODE');
+            $connection->executeStatement("SET lock_timeout = '20ms'");
+
+            $result = $coordinator->run('async-worker', batchSize: 1, maxCycles: 1);
+
+            static::assertSame(2, $result->processedEvents);
+            static::assertSame(1, $result->acknowledgedBuckets);
+            static::assertSame(['first', 'second'], $f->projection->names());
+            static::assertSame([], $f->fixture->activity->affected());
+        } finally {
+            PostgresConnectionSupport::resetSharedConnection($connection);
+            PostgresConnectionSupport::resetSharedConnection($peer);
+            $connection->executeStatement('RESET lock_timeout');
         }
     }
 

@@ -23,11 +23,15 @@ final readonly class ProjectionRunner
         return $this->segmentRepository->recoverExpiredClaims($projectionId);
     }
 
-    public function splitSegment(string $projectionId, int $bucketFrom): void
+    public function splitSegment(ProjectionRuntime $runtime, int $bucketFrom): void
     {
-        $this->transactionManager->transactional(function () use ($projectionId, $bucketFrom): void {
+        $projectionId = $runtime->projectionId();
+        $this->transactionManager->transactional(function () use ($runtime, $projectionId, $bucketFrom): void {
             $this->states->lockExclusive($projectionId);
-            if (ProjectionPhase::Live === $this->states->find($projectionId)?->phase) {
+            if (
+                ProjectionMode::Synchronous === $runtime->definition()->mode
+                && ProjectionPhase::Live === $this->states->find($projectionId)?->phase
+            ) {
                 throw new \LogicException('Cannot split a live synchronous projection.');
             }
             $this->segmentRepository->splitSegment($projectionId, $bucketFrom);
@@ -48,17 +52,22 @@ final readonly class ProjectionRunner
             $ownerId,
             $limit,
         ): void {
-            $this->states->lockRegistrationShared();
-            $this->states->lockExclusive($runtime->projectionId());
-            $this->assertWorkerDefinition($runtime);
-            if (!$this->isReplayable($runtime)) {
-                throw new \LogicException('Cannot merge a live synchronous projection.');
+            $managed = ProjectionMode::Synchronous === $runtime->definition()->mode;
+            if ($managed) {
+                $this->states->lockRegistrationShared();
             }
-            $this->mergeSegmentsUnderBarrier($runtime, $bucketFrom, $bucketTo, $ownerId, $limit);
+            $this->states->lockExclusive($runtime->projectionId());
+            if ($managed) {
+                $this->assertWorkerDefinition($runtime);
+                if (!$this->isReplayable($runtime)) {
+                    throw new \LogicException('Cannot merge a live synchronous projection.');
+                }
+            }
+            $this->mergeSegmentsInTransaction($runtime, $bucketFrom, $bucketTo, $ownerId, $limit);
         });
     }
 
-    private function mergeSegmentsUnderBarrier(
+    private function mergeSegmentsInTransaction(
         ProjectionRuntime $runtime,
         int $bucketFrom,
         int $bucketTo,
@@ -88,7 +97,9 @@ final readonly class ProjectionRunner
             while ($checkpoint->serialize() !== $targetCheckpoint->serialize()) {
                 $result = $this->eventStore->load($query, $checkpoint, $targetCheckpoint, $limit);
                 $this->transactionManager->transactional(function () use ($runtime, $result): void {
-                    $this->assertWorkerDefinition($runtime);
+                    if (ProjectionMode::Synchronous === $runtime->definition()->mode) {
+                        $this->assertWorkerDefinition($runtime);
+                    }
                     $runtime->applyBatch($result->events);
                 });
 
@@ -127,9 +138,10 @@ final readonly class ProjectionRunner
         return $this->segmentRepository->availableSegments($projectionId);
     }
 
-    public function claimSegment(string $projectionId, int $bucketFrom, string $workerId): ?ProjectionSegment
+    public function claimSegment(ProjectionRuntime $runtime, int $bucketFrom, string $workerId): ?ProjectionSegment
     {
-        if (null === $this->states->find($projectionId)) {
+        $projectionId = $runtime->projectionId();
+        if (ProjectionMode::Asynchronous === $runtime->definition()->mode) {
             return $this->segmentRepository->claimSegment($projectionId, $bucketFrom, $workerId);
         }
 
@@ -150,11 +162,13 @@ final readonly class ProjectionRunner
     public function ensureInitialized(ProjectionRuntime $runtime): void
     {
         $definition = $runtime->definition();
-        $existing = $this->states->find($definition->projectionId);
-        if (null !== $existing) {
-            $this->assertCompatibleState($runtime, $existing);
+        if (ProjectionMode::Synchronous === $definition->mode) {
+            $existing = $this->states->find($definition->projectionId);
+            if (null !== $existing) {
+                $this->assertCompatibleState($runtime, $existing);
 
-            return;
+                return;
+            }
         }
         $this->transactionManager->transactional(function () use ($definition, $runtime): void {
             if (ProjectionMode::Synchronous === $definition->mode) {
@@ -175,9 +189,6 @@ final readonly class ProjectionRunner
                     ),
                 );
             }
-            if (ProjectionMode::Asynchronous === $definition->mode) {
-                $this->assertWorkerDefinition($runtime);
-            }
             $created = $this->segmentRepository->ensureInitialized($definition->projectionId);
             if ($created) {
                 $runtime->initialize();
@@ -189,9 +200,6 @@ final readonly class ProjectionRunner
     {
         $definition = $runtime->definition();
         $this->transactionManager->transactional(function () use ($definition, $runtime): void {
-            if (ProjectionMode::Asynchronous === $definition->mode) {
-                $this->assertWorkerDefinition($runtime);
-            }
             if (ProjectionMode::Synchronous === $definition->mode) {
                 if (null === $this->states->find($definition->projectionId)) {
                     $this->states->lockRegistrationExclusive();
@@ -240,10 +248,7 @@ final readonly class ProjectionRunner
 
     private function assertCompatibleState(ProjectionRuntime $runtime, ProjectionState $state): void
     {
-        if (
-            ProjectionMode::Synchronous !== $runtime->definition()->mode
-            || $runtime->definition()->fingerprint !== $state->fingerprint
-        ) {
+        if ($runtime->definition()->fingerprint !== $state->fingerprint) {
             throw new \LogicException('Projection definition changed; explicitly reset the projection before replay.');
         }
     }
@@ -370,7 +375,9 @@ final readonly class ProjectionRunner
                 $caughtUp,
                 $seenCounters,
             ): void {
-                $this->assertWorkerDefinition($runtime);
+                if (ProjectionMode::Synchronous === $runtime->definition()->mode) {
+                    $this->assertWorkerDefinition($runtime);
+                }
                 $runtime->applyBatch($result->events);
                 $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
 
@@ -513,7 +520,9 @@ final readonly class ProjectionRunner
                 $workerId,
                 $caughtUp,
             ): void {
-                $this->assertWorkerDefinition($runtime);
+                if (ProjectionMode::Synchronous === $runtime->definition()->mode) {
+                    $this->assertWorkerDefinition($runtime);
+                }
                 $runtime->applyBatch($result->events);
                 $this->segmentRepository->completeClaimedSegment($segment, $result->checkpoint, $workerId, $caughtUp);
             });

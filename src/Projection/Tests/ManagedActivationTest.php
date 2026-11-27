@@ -15,7 +15,6 @@ use Ultra\Projection\ProjectionMode;
 use Ultra\Projection\ProjectionPhase;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionState;
-use Ultra\Projection\Tests\Support\AsyncModeProjection;
 use Ultra\Projection\Tests\Support\ProjectionModeFixture;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 
@@ -136,28 +135,17 @@ final class ManagedActivationTest extends ProjectionTestCase
     {
         $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous, true);
         $f->runner->ensureInitialized($f->runtime);
-        $f->runner->splitSegment('mode_projection', 0);
+        $f->runner->splitSegment($f->runtime, 0);
         $left = self::courseIdInBucketRange(0, 127);
         $right = self::courseIdInBucketRange(128, 255);
         $f->store->append([self::courseCreatedEvent($left, 'left'), self::courseCreatedEvent($right, 'right')]);
-        $f->runner->claimSegment('mode_projection', 0, 'queued');
+        $f->runner->claimSegment($f->runtime, 0, 'queued');
         static::assertSame(2, $f->rebuilder->activate($f->runtime, 1));
         static::assertSame(['left', 'right'], $f->projection->names());
         foreach ($f->fixture->segments->listSegments('mode_projection') as $segment) {
             static::assertNull($segment->workerId);
         }
         static::assertFalse($f->runner->runClaimedOnce($f->runtime, 'mode_projection', 0, 'queued')->claimedSegment);
-    }
-
-    public function test_a_writer_uses_its_local_async_mode_when_recording_activity(): void
-    {
-        $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous);
-        $f->rebuilder->activate($f->runtime);
-        $f->catalog->add(new ProjectionRuntime(new AsyncModeProjection(), new UltraNormalizer()));
-        $f->store->append([self::courseCreatedEvent('c', 'written')]);
-        static::assertCount(1, $f->fixture->store->load(StreamQuery::all())->events);
-        static::assertSame([], $f->projection->names());
-        static::assertNotEmpty($f->fixture->activity->affected());
     }
 
     public function test_writer_checks_a_stored_fingerprint_only_when_its_projection_handles_the_event(): void
@@ -243,64 +231,5 @@ final class ManagedActivationTest extends ProjectionTestCase
         $projection->failAt = null;
         $f->runner->ensureInitialized($runtime);
         static::assertSame(['initialize'], $projection->names());
-    }
-
-    public function test_an_async_worker_rechecks_its_definition_if_activation_happens_during_loading(): void
-    {
-        $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous, true);
-        $f->store->append([self::courseCreatedEvent('c', 'history')]);
-        $obsolete = new ProjectionRuntime(
-            new \Ultra\Projection\Tests\Support\AsyncBufferedModeProjection(
-                $f->fixture->connection,
-                $f->projection->table,
-            ),
-            new UltraNormalizer(),
-        );
-        $store = new \Ultra\Projection\Tests\Support\CallbackEventStore($f->fixture->store, function () use ($f): void {
-            $f->rebuilder->activate($f->runtime);
-        });
-        $runner = new \Ultra\Projection\ProjectionRunner(
-            $store,
-            $f->fixture->segments,
-            $f->fixture->transactions,
-            $f->fixture->activity,
-            $f->states,
-        );
-        try {
-            $runner->backfillClaimedOnce($obsolete, 'mode_projection', 0, 'old-worker');
-            static::fail('The loaded batch must not be applied after activation.');
-        } catch (\LogicException $e) {
-            static::assertStringContainsString('Projection definition changed', $e->getMessage());
-        }
-        static::assertSame(['history'], $f->projection->names());
-        static::assertSame(ProjectionPhase::Live, $f->states->find('mode_projection')->phase);
-    }
-
-    public function test_an_obsolete_async_worker_cannot_replay_or_reset_a_managed_projection(): void
-    {
-        $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous, true);
-        $f->rebuilder->activate($f->runtime);
-        $f->store->append([self::courseCreatedEvent('c', 'live')]);
-        $obsolete = new ProjectionRuntime(
-            new \Ultra\Projection\Tests\Support\AsyncBufferedModeProjection(
-                $f->fixture->connection,
-                $f->projection->table,
-            ),
-            new UltraNormalizer(),
-        );
-        foreach (['backfill', 'reset'] as $operation) {
-            try {
-                if ('backfill' === $operation) {
-                    $f->runner->backfillClaimedOnce($obsolete, 'mode_projection', 0, 'old-worker');
-                } else {
-                    $f->runner->deleteProjection($obsolete);
-                }
-                static::fail('An obsolete worker must be fenced.');
-            } catch (\LogicException $e) {
-                static::assertStringContainsString('Projection definition changed', $e->getMessage());
-            }
-        }
-        static::assertSame(['live'], $f->projection->names());
-        static::assertSame(ProjectionPhase::Live, $f->states->find('mode_projection')->phase);
     }
 }

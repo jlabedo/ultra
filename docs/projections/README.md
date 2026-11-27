@@ -37,6 +37,12 @@ final class AccountBalanceProjection
 | `Asynchronous` (default) | Workers apply persisted batches | Segment checkpoints track progress |
 | `Synchronous` | Append transactions apply events once the projection is live | Reconstruct in `building`, then explicitly activate |
 
+The execution mode is fixed for a projection identifier and its read model. To replace an
+asynchronous projection with a synchronous one, give the new projection its own identifier
+and read model, then reconstruct and activate it. Changing the mode in place is outside
+the contract and goes undetected by asynchronous execution. Deployments are responsible
+for enforcing this rule.
+
 `partitionBy` is required in both modes. Managed synchronous appends reject
 handled events missing that identifier. Historical events must also carry it
 to participate in partitioned reconstruction.
@@ -162,11 +168,12 @@ rereads segment checkpoints, drains the remaining history, and persists `live` i
 same transaction. A rollback restores both model contents and building progress.
 Call it after reducing the backlog because the final drain temporarily blocks writers.
 
-Workers hold a shared barrier before claiming/loading/applying a managed batch and
-until the transaction ends. They read current phase and definition under the barrier;
-queued work after activation does not replay events. Ordinary writers use compatible
-shared barriers, so they remain concurrent. Live synchronous appends never advance
-segment checkpoints. Remaining activity after activation is discarded as obsolete.
+Workers hold a shared barrier before claiming, loading and applying a managed batch
+and until the transaction ends. They check the current phase and definition under
+that barrier and replay only while the projection is building. Ordinary writers use
+compatible shared barriers, so they remain concurrent. Live synchronous appends
+leave segment checkpoints alone. The coordinator discards remaining activity after
+activation.
 
 `ProjectionRunner::deleteProjection()` resets a managed projection under the exclusive
 barrier, increments its generation, and initializes new building segments. Readers may
@@ -183,8 +190,7 @@ Use `--activate` to drain and activate, `--reset` to start a new generation, and
 fingerprint. The fingerprint covers the partition dimension and handled event types.
 PostgreSQL uses `READ COMMITTED`, transaction-scoped advisory barriers,
 and the `states` table, included in `PostgresProjectionSegmentSchema::createStatements()`.
-Apply the schema update before using the new append integration, even in an app containing
-only asynchronous projections.
+Apply the managed state schema before deploying synchronous definitions to writers or workers.
 
 Declare PostgreSQL projection storage in `config/packages/ultra.yaml`:
 
@@ -217,11 +223,9 @@ applies the live matches in the same order.
 Before activating a projection, deploy compatible definitions to every writer and drain
 older writers. Keep those definitions aligned while the projection is live. A writer
 that omits the projection, declares it asynchronous or no longer handles the event can
-commit the event without updating the read model. Workers recheck their definition inside
-application transactions, including after asynchronous prefetch, so obsolete asynchronous
-workers cannot replay or reset a managed projection.
-The fingerprint does not detect handler-body changes: coordinate code deployments and
-explicitly rebuild when semantics change. Managed definitions are not silently unregistered.
+commit the event without updating the read model. Coordinate code deployments and
+explicitly rebuild when handler semantics change. Handler changes can leave the
+fingerprint unchanged. Managed definitions remain registered.
 
 The in-memory state repository and no-op transaction manager provide single-process
 test/local composition, not database rollback or cross-process concurrency guarantees.
@@ -312,10 +316,14 @@ Its job is:
 8. release the segment with the new checkpoint
 9. commit the projection transaction
 10. abandon the segment if the transaction fails
-Split and merge are separate explicit operations on segment ranges.
+Split and merge are separate explicit operations on segment ranges. They take an
+exclusive lock per projection to serialize topology changes in both modes.
 
 The runner uses [event-store pagination](../event-sourcing/event-store.md#eventstore-interface) to determine catch-up:
 `hasMore = false` completes the claim and permits acknowledgement of observed activity, including for a full final page.
+
+Asynchronous initialization, claiming, replay and reset use segment storage directly.
+Asynchronous operations skip managed state lookups and the registration barrier.
 
 `runClaimedBatches()` checks initialization once and yields one result per attempted batch until the segment
 catches up or a claim fails. After the first batch, the sequence renews its existing claim. The coordinator

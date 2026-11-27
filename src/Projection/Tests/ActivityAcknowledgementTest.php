@@ -126,7 +126,7 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         static::assertSame(1, $other->acknowledgedBuckets);
         static::assertSame([], $fixture->activity->pendingInSegment($projectionId, 0, 255));
 
-        static::assertNotNull($fixture->runner->claimSegment($projectionId, 0, 'worker-1'));
+        static::assertNotNull($fixture->runner->claimSegment($runtime, 0, 'worker-1'));
         $fixture->activity->bump($projectionId, $bucket);
         $batches->next();
         $resumed = $batches->current();
@@ -168,7 +168,7 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
             activityRepository: $activity,
         );
         $runner->ensureInitialized($runtime);
-        static::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
+        static::assertNotNull($runner->claimSegment($runtime, 0, 'worker-1'));
 
         $result = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 10);
         $pending = $activity->pendingInSegment('tracking_projection', 0, 255);
@@ -196,7 +196,7 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         $activity->bump('failing_tracking_projection', $bucket);
 
         $runner->ensureInitialized($runtime);
-        static::assertNotNull($runner->claimSegment('failing_tracking_projection', 0, 'worker-1'));
+        static::assertNotNull($runner->claimSegment($runtime, 0, 'worker-1'));
 
         try {
             $runner->runClaimedOnce($runtime, 'failing_tracking_projection', 0, 'worker-1', limit: 10);

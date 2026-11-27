@@ -60,7 +60,7 @@ final class ActivationDeliveryTest extends ProjectionTestCase
         ]);
 
         $runner->ensureInitialized($runtime);
-        static::assertNotNull($runner->claimSegment($runtime->projectionId(), 0, 'worker-1'));
+        static::assertNotNull($runner->claimSegment($runtime, 0, 'worker-1'));
 
         $message = new RunProjectionSegment($runtime->projectionId(), 0, 'worker-1');
         $handler->handleRunProjectionSegment($message);

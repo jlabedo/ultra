@@ -128,8 +128,8 @@ final class SegmentTopologyTest extends ProjectionTestCase
         ]);
 
         $runner->ensureInitialized($runtime);
-        $runner->splitSegment('tracking_projection', 0);
-        static::assertNotNull($runner->claimSegment('tracking_projection', 128, 'worker-right'));
+        $runner->splitSegment($runtime, 0);
+        static::assertNotNull($runner->claimSegment($runtime, 128, 'worker-right'));
 
         $runner->runClaimedOnce($runtime, 'tracking_projection', 128, 'worker-right', limit: 10);
 
@@ -145,7 +145,7 @@ final class SegmentTopologyTest extends ProjectionTestCase
             $projection->names,
         );
 
-        $merged = $runner->claimSegment('tracking_projection', 0, 'worker-merged');
+        $merged = $runner->claimSegment($runtime, 0, 'worker-merged');
         static::assertNotNull($merged);
         static::assertSame(2, $merged->checkpoint->gapFloor->value);
     }
@@ -163,7 +163,7 @@ final class SegmentTopologyTest extends ProjectionTestCase
         ]);
         $runner = $fixture->runner;
         $runner->ensureInitialized($runtime);
-        $runner->splitSegment('buffered_projection', 0);
+        $runner->splitSegment($runtime, 0);
         $runner->backfillClaimedOnce($runtime, 'buffered_projection', 128, 'worker-right');
 
         $runner->mergeSegments($runtime, 0, 255, 'coordinator', limit: 1);
@@ -185,9 +185,9 @@ final class SegmentTopologyTest extends ProjectionTestCase
         $runner = $fixture->runner;
 
         $runner->ensureInitialized($runtime);
-        $runner->splitSegment('tracking_projection', 0);
-        $left = $runner->claimSegment('tracking_projection', 0, 'worker-left');
-        $right = $runner->claimSegment('tracking_projection', 128, 'worker-right');
+        $runner->splitSegment($runtime, 0);
+        $left = $runner->claimSegment($runtime, 0, 'worker-left');
+        $right = $runner->claimSegment($runtime, 128, 'worker-right');
         static::assertNotNull($left);
         static::assertNotNull($right);
 
@@ -200,7 +200,7 @@ final class SegmentTopologyTest extends ProjectionTestCase
 
         $runner->mergeSegments($runtime, 0, 255, 'coordinator-1');
 
-        $merged = $runner->claimSegment('tracking_projection', 0, 'worker-merged');
+        $merged = $runner->claimSegment($runtime, 0, 'worker-merged');
         static::assertNotNull($merged);
         static::assertSame(10, $merged->checkpoint->gapFloor->value);
         static::assertSame([12, 13], $merged->checkpoint->gapSeqNoValues());

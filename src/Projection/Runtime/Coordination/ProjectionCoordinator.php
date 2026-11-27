@@ -8,6 +8,7 @@ use Ultra\Coordination\Lease\CoordinatorLease;
 use Ultra\Coordination\Tracking\PendingKey;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionSegment;
 
 final readonly class ProjectionCoordinator
@@ -65,7 +66,7 @@ final readonly class ProjectionCoordinator
 
                     $this->runner->ensureInitialized($runtime);
                     $this->runner->recoverExpiredClaims($projectionId);
-                    $this->splitUntilSegmentCount($projectionId, $additionalWorkers + 1);
+                    $this->splitUntilSegmentCount($runtime, $additionalWorkers + 1);
 
                     foreach ($this->runner->availableSegments($projectionId) as $segment) {
                         $pending = $this->activity->pendingInSegment(
@@ -84,11 +85,7 @@ final readonly class ProjectionCoordinator
                             ? $workerId
                             : $this->workerIdFor($workerId, $projectionId, $segment->bucketFrom);
 
-                        $claimedSegment = $this->runner->claimSegment(
-                            $projectionId,
-                            $segment->bucketFrom,
-                            $claimWorkerId,
-                        );
+                        $claimedSegment = $this->runner->claimSegment($runtime, $segment->bucketFrom, $claimWorkerId);
                         if (null === $claimedSegment) {
                             continue;
                         }
@@ -152,15 +149,16 @@ final readonly class ProjectionCoordinator
         return $grouped;
     }
 
-    private function splitUntilSegmentCount(string $projectionId, int $targetSegmentCount): void
+    private function splitUntilSegmentCount(ProjectionRuntime $runtime, int $targetSegmentCount): void
     {
+        $projectionId = $runtime->projectionId();
         while (count($this->runner->listSegments($projectionId)) < $targetSegmentCount) {
             $candidate = $this->largestSplittableSegment($projectionId);
             if (null === $candidate) {
                 return;
             }
 
-            $this->runner->splitSegment($projectionId, $candidate->bucketFrom);
+            $this->runner->splitSegment($runtime, $candidate->bucketFrom);
         }
     }
 

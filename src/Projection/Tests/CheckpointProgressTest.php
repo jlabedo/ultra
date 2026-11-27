@@ -158,7 +158,7 @@ final class CheckpointProgressTest extends ProjectionTestCase
             self::courseCreatedEvent($left, 'Second'),
         ]);
         $fixture->runner->ensureInitialized($runtime);
-        $fixture->runner->splitSegment('tracking_projection', 0);
+        $fixture->runner->splitSegment($runtime, 0);
 
         $result = $fixture->runner->backfillClaimedOnce($runtime, 'tracking_projection', 0, 'left-worker');
 

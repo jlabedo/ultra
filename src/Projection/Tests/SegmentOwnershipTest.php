@@ -165,7 +165,7 @@ final class SegmentOwnershipTest extends ProjectionTestCase
         $runner = $fixture->runner;
 
         $runner->ensureInitialized($runtime);
-        static::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
+        static::assertNotNull($runner->claimSegment($runtime, 0, 'worker-1'));
 
         $batches = $runner->runClaimedBatches($runtime, 'tracking_projection', 0, 'worker-2');
         $result = $batches->current();
