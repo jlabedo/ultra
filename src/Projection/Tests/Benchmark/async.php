@@ -6,13 +6,18 @@ namespace Ultra\Projection\Tests\Benchmark;
 
 use Composer\InstalledVersions;
 use Symfony\Component\Process\Process;
+use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MappedTable\MappedRowHandle;
+use Ultra\Projection\Coordination\ProjectionCoordinator;
+use Ultra\Projection\Coordination\ProjectionCoordinatorResult;
 use Ultra\Projection\ProjectionCatalog;
+use Ultra\Projection\ProjectionDefinition;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection_Postgres\PostgresProjectionImplementation;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\SqlTrace;
 
@@ -34,10 +39,10 @@ if (isset($options['help'])) {
           --checkout=PATH          Revision checkout with Composer dependencies installed
           --event-store=NAME       query-streams (default) or hstore
           --item-stock=MODE        mapped when supported by the checkout (default), or direct
-          --phase=PHASE            all (default), append or worker
+          --phase=PHASE            append, worker, all (default, append and worker), or coordinator
           --events=N               Events per workload (default 240, minimum 4)
           --append-batch=N         Events per append (default 16)
-          --worker-batches=LIST    Comma-separated worker batch sizes (default 1,32,128)
+          --worker-batches=LIST    Worker and coordinator batch sizes (default 32,128)
           --samples=N              Measured samples per workload after one warmup (default 5)
           --trace                  Count SQL executions and transactions in one untimed sample
 
@@ -64,9 +69,11 @@ $implementation = $options['event-store'] ?? 'query-streams';
 $phase = $options['phase'] ?? 'all';
 if (
     !in_array($implementation, ['query-streams', 'hstore'], true)
-    || !in_array($phase, ['all', 'append', 'worker'], true)
+    || !in_array($phase, ['all', 'append', 'worker', 'coordinator'], true)
 ) {
-    throw new \InvalidArgumentException('Choose query-streams or hstore and an all, append or worker phase.');
+    throw new \InvalidArgumentException(
+        'Choose query-streams or hstore and an all, append, worker or coordinator phase.',
+    );
 }
 $supportsMappedStock = method_exists(MappedRowHandle::class, 'incrementColumn');
 $itemStock = $options['item-stock'] ?? ($supportsMappedStock ? 'mapped' : 'direct');
@@ -80,7 +87,7 @@ $eventCount = positiveInteger($options['events'] ?? 240, 'events', 4);
 $appendBatch = positiveInteger($options['append-batch'] ?? 16, 'append-batch');
 $workerBatches = array_unique(array_map(
     static fn(string $size): int => positiveInteger($size, 'worker-batches'),
-    explode(',', $options['worker-batches'] ?? '1,32,128'),
+    explode(',', $options['worker-batches'] ?? '32,128'),
 ));
 $samples = positiveInteger($options['samples'] ?? 5, 'samples');
 $trace = isset($options['trace']) ? new SqlTrace() : null;
@@ -105,7 +112,7 @@ try {
 }
 
 $cases = [];
-if ('worker' !== $phase) {
+if ('all' === $phase || 'append' === $phase) {
     foreach ([
         'append-raw' => [false, true, false],
         'append-matched' => [true, true, false],
@@ -127,12 +134,22 @@ if ('worker' !== $phase) {
         ];
     }
 }
-if ('append' !== $phase) {
+if ('all' === $phase || 'worker' === $phase) {
     foreach ($workerBatches as $limit) {
         $cases['worker-' . $limit] = static fn(
             AsyncProjectionEnvironment $env,
             AsyncProjectionWorkload $workload,
         ): array => measureWorkers($env, $workload, $eventCount, $appendBatch, $limit, $trace);
+    }
+}
+if ('coordinator' === $phase) {
+    foreach ($workerBatches as $limit) {
+        foreach (['backlog' => false, 'sparse' => true] as $mode => $sparse) {
+            $label = "coordinator-{$mode}-{$limit}";
+            $cases[$label] = static fn(AsyncProjectionEnvironment $env, AsyncProjectionWorkload $workload): array => [
+                $label => measureCoordinator($env, $workload, $eventCount, $appendBatch, $limit, $sparse, $trace),
+            ];
+        }
     }
 }
 
@@ -206,7 +223,7 @@ function measureAppends(
     return ['events' => $eventCount, 'operations' => count($batches), 'elapsed_ms' => $elapsed, 'sql' => $sql];
 }
 
-/** @param list<list<\Ultra\EventStore\Event>> $batches */
+/** @param list<list<Event>> $batches */
 function appendBatches(
     AsyncProjectionEnvironment $env,
     EventStore $store,
@@ -292,6 +309,73 @@ function workerBatches(
         $result = $runner->runClaimedOnce($runtime, $projectionId, 0, 'benchmark-worker', $limit);
         yield $result;
     } while ($result->claimedSegment && !$result->caughtUp);
+}
+
+function measureCoordinator(
+    AsyncProjectionEnvironment $env,
+    AsyncProjectionWorkload $workload,
+    int $eventCount,
+    int $appendBatch,
+    int $limit,
+    bool $sparse,
+    ?SqlTrace $trace,
+): array {
+    $catalog = new ProjectionCatalog(...$workload->runtimes);
+    $leases = new PostgresProjectionImplementation(
+        $env->connection,
+        $env->projectionTablePrefix,
+    )->createCoordinatorLease();
+    $coordinator = new ProjectionCoordinator($catalog, $env->runner, $env->activity, $leases, $env->activator);
+    $store = $env->appendStore($catalog);
+    $events = $workload->events($eventCount);
+    if (!$sparse) {
+        appendBatches($env, $store, array_chunk($events, $appendBatch));
+        $workload->assertUntouched();
+        assertActivity($env, $workload->runtimes);
+    }
+
+    $results = [];
+    $trace?->clear();
+    $started = hrtime(true);
+    if ($sparse) {
+        foreach ($events as $event) {
+            $signals = $env->activator->workSignals();
+            $store->append([$event]);
+            if ($env->activator->workSignals() > $signals) {
+                $results[] = $coordinator->run('benchmark-coordinator', $limit);
+            }
+        }
+    } else {
+        $results[] = $coordinator->run('benchmark-coordinator', $limit);
+    }
+    $elapsed = (hrtime(true) - $started) / 1_000_000;
+    $sql = sqlCounts($trace);
+
+    if ($sparse) {
+        $definitions = $catalog->definitions();
+        $expectedSignals = count(array_filter($events, static fn(Event $event): bool => array_any($definitions, static fn(ProjectionDefinition $definition): bool => $definition->handles(
+            $event,
+        ))));
+        if ($expectedSignals !== count($results) || $expectedSignals !== $env->activator->workSignals()) {
+            throw new \RuntimeException('The sparse workload must run the coordinator once per matching event.');
+        }
+    }
+    if (array_any(
+        $results,
+        static fn(ProjectionCoordinatorResult $result): bool => (
+            !$result->acquiredLease
+            || 0 === $result->processedEvents
+            || 0 !== $result->requestedWorkerActivations
+        ),
+    )) {
+        throw new \RuntimeException(
+            'The coordinator did not acquire its lease and process the pending events locally.',
+        );
+    }
+    $workload->assertReadModels($eventCount);
+    assertActivity($env, []);
+
+    return ['events' => $eventCount, 'operations' => count($results), 'elapsed_ms' => $elapsed, 'sql' => $sql];
 }
 
 /** @param list<ProjectionRuntime> $runtimes */

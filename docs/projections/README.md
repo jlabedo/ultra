@@ -484,12 +484,18 @@ and is the default on older checkouts. Some events match none of the projections
 | Phase | Timed work |
 | --- | --- |
 | Append | Raw EventStore, then the revision's projection decorator with matching or unmatched events. The decorated cases also run in caller-owned transactions to control for transaction grouping. |
-| Worker | A single worker per projection claims and processes the same seeded event history to catch-up, in batches of 1, 32 or 128 events by default. Each projection has its own result. |
+| Worker | A single worker per projection claims and processes the same seeded event history to catch-up, in batches of 32 or 128 events by default. Each projection has its own result. |
+| Coordinator backlog | One run of the default coordinator catches up all projections after the dataset is appended in batches outside the measurement. |
+| Coordinator sparse | The runner appends one event at a time and immediately runs the default coordinator on each work signal. The measurement covers both appends and catch-up. |
 
 The worker phase uses `ProjectionRunner::runClaimedBatches()` when available and calls
 `runClaimedOnce()` until catch-up on earlier revisions. Each yielded attempt counts as one
 operation. Activation uses the in-memory signal adapter, so queue transport and worker
 contention are outside the benchmark.
+The coordinator uses the same signal adapter and runs all work locally. The sparse case
+runs without sleeps. Its operation count records coordinator invocations, and its event
+count includes events that do not match a projection. The backlog case records one
+coordinator invocation. SQL counts use the same scope as timings for both cases.
 The runner prepares fixtures and validates actual outputs outside the timed interval.
 It records the environment, median, and individual samples as JSON. Run again with
 `--trace` to count SQL executions, transactions, projection state reads and barriers.
@@ -523,8 +529,10 @@ for item_stock in direct mapped; do
 done
 ```
 
-Use `--event-store=hstore` for the HStore implementation. Use `--phase=append` or
-`--phase=worker` to measure one phase, or `--help` for dataset and batch options.
+Use `--event-store=hstore` for the HStore implementation. The default `--phase=all`
+runs the append and worker workloads. Select `--phase=coordinator` to run the backlog
+and sparse workloads. Use `--worker-batches=1` to measure single-event batches explicitly,
+or `--help` for the full set of options.
 Reverse the order on a second pass when dispersion is large relative to the difference.
 
 ## Guarantee suites
