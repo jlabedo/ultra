@@ -109,62 +109,36 @@ final readonly class PostgresCoordinatorLease implements CoordinatorLease
 
     public function markWakeEnqueued(string $coordinatorKey, Duration $ttl = new Duration(seconds: 30)): bool
     {
-        $this->connection->beginTransaction();
+        $now = $this->clock->now();
 
-        try {
-            $row = $this->lockRow($coordinatorKey);
-            $now = $this->clock->now();
-
-            if (null !== $row && null !== $row['worker_id'] && null !== $row['lease_expires_at']) {
-                $leaseExpiresAt = new DatePoint($row['lease_expires_at']);
-                if ($leaseExpiresAt >= $now) {
-                    $this->connection->commit();
-
-                    return false;
-                }
-            }
-
-            if (null !== $row && null !== $row['wake_enqueued_until']) {
-                $wakeEnqueuedUntil = new DatePoint($row['wake_enqueued_until']);
-                if ($wakeEnqueuedUntil >= $now) {
-                    $this->connection->commit();
-
-                    return false;
-                }
-            }
-
-            $this->connection->executeStatement(
-                sprintf('UPDATE %s
-                     SET wake_enqueued_until = CAST(? AS TIMESTAMPTZ), updated_at = CAST(? AS TIMESTAMPTZ)
-                     WHERE coordinator_key = ?', $this->table),
-                [$now->add($ttl), $now, $coordinatorKey],
-                [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
-            );
-
-            $this->connection->commit();
-
-            return true;
-        } catch (\Throwable $e) {
-            if ($this->connection->isTransactionActive()) {
-                $this->connection->rollBack();
-            }
-
-            throw $e;
-        }
+        return $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %s AS lease (coordinator_key, wake_enqueued_until, updated_at)
+                 VALUES (?, CAST(? AS TIMESTAMPTZ), CAST(? AS TIMESTAMPTZ))
+                 ON CONFLICT (coordinator_key) DO UPDATE
+                 SET wake_enqueued_until = EXCLUDED.wake_enqueued_until, updated_at = EXCLUDED.updated_at
+                 WHERE (lease.worker_id IS NULL OR lease.lease_expires_at IS NULL
+                        OR lease.lease_expires_at < EXCLUDED.updated_at)
+                   AND (lease.wake_enqueued_until IS NULL OR lease.wake_enqueued_until < EXCLUDED.updated_at)',
+                $this->table,
+            ),
+            [$coordinatorKey, $now->add($ttl), $now],
+            [ParameterType::STRING, ParameterType::STRING, ParameterType::STRING],
+        ) > 0;
     }
 
-    /** @return null|array{worker_id: null|string, lease_expires_at: null|string, wake_enqueued_until: null|string} */
+    /** @return null|array{worker_id: null|string, lease_expires_at: null|string} */
     private function lockRow(string $coordinatorKey): ?array
     {
         // A competing insert can wait on the unique key. Read the row only
         // after that wait so the decision includes the committed reservation.
         $this->upsertRow($coordinatorKey, $this->clock->now());
 
-        /** @var array{worker_id: ?string, lease_expires_at: ?string, wake_enqueued_until: ?string}|false $row */
+        /** @var array{worker_id: ?string, lease_expires_at: ?string}|false $row */
         $row = $this->connection
             ->executeQuery(
                 sprintf(
-                    'SELECT worker_id, lease_expires_at, wake_enqueued_until FROM %s WHERE coordinator_key = ? FOR UPDATE',
+                    'SELECT worker_id, lease_expires_at FROM %s WHERE coordinator_key = ? FOR UPDATE',
                     $this->table,
                 ),
                 [$coordinatorKey],

@@ -11,6 +11,7 @@ use Ultra\Coordination\Tests\Support\CoordinationTestCase;
 use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLease;
 use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\PostgresConnectionSupport;
+use Ultra\Time\Duration;
 use Ultra\Time\StatickClock;
 
 /** @internal */
@@ -97,5 +98,27 @@ final class LeasePersistenceTest extends CoordinationTestCase
         static::assertTrue($lease->acquire('a', 'w3'));
         $connection->rollBack();
         static::assertFalse($lease->hasLiveCoordinator('a'));
+    }
+
+    public function test_rollback_discards_wake_reservations_for_new_and_existing_keys(): void
+    {
+        [$connection, $table] = $this->postgresTable('leases');
+        $clock = new StatickClock(new \DateTimeImmutable('2026-01-01T00:00:00Z'));
+        $lease = new PostgresCoordinatorLease($connection, $table, $clock);
+        static::assertTrue($lease->markWakeEnqueued('existing'));
+        $clock->sleep(new Duration(seconds: 31));
+
+        $connection->beginTransaction();
+        try {
+            static::assertTrue($lease->markWakeEnqueued('new'));
+            static::assertTrue($lease->markWakeEnqueued('existing'));
+            static::assertFalse($lease->markWakeEnqueued('new'));
+            static::assertFalse($lease->markWakeEnqueued('existing'));
+        } finally {
+            $connection->rollBack();
+        }
+
+        static::assertTrue($lease->markWakeEnqueued('new'));
+        static::assertTrue($lease->markWakeEnqueued('existing'));
     }
 }
