@@ -216,9 +216,10 @@ creation helpers.
 An append with no locally declared synchronous projection handling the batch skips all
 projection barriers and state reads. Event persistence and asynchronous activity recording
 still share the transaction. When there are matches, the writer takes the shared
-registration barrier, acquires a shared projection barrier for each match in ID order,
-then reads their states together. It checks each registered match's fingerprint and
-applies the live matches in the same order.
+registration barrier, then acquires a shared projection barrier for each match in ID order.
+PostgreSQL acquires these barriers in one statement and reads the states together in a
+subsequent statement, which sees changes committed while the writer waited under `READ COMMITTED`.
+The writer checks each registered match's fingerprint and applies the live matches in the same order.
 
 Before activating a projection, deploy compatible definitions to every writer and drain
 older writers. Keep those definitions aligned while the projection is live. A writer

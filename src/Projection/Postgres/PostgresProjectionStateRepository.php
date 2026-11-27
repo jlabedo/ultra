@@ -6,6 +6,7 @@ namespace Ultra\Projection_Postgres;
 
 use Doctrine\DBAL\ArrayParameterType;
 use Doctrine\DBAL\Connection;
+use Doctrine\DBAL\TransactionIsolationLevel;
 use Ultra\Projection\ProjectionPhase;
 use Ultra\Projection\ProjectionState;
 use Ultra\Projection\ProjectionStateRepository;
@@ -16,6 +17,26 @@ final readonly class PostgresProjectionStateRepository implements ProjectionStat
         private Connection $connection,
         private string $tablePrefix = 'projection_',
     ) {}
+
+    public function lockForAppend(array $projectionIds): void
+    {
+        $this->requireBarrierTransaction();
+        $keys = [$this->barrierKey('registry')];
+        foreach ($projectionIds as $projectionId) {
+            $keys[] = $this->barrierKey('projection:' . $projectionId);
+        }
+
+        $this->connection
+            ->executeQuery(
+                <<<'SQL'
+                    SELECT pg_advisory_xact_lock_shared(hashtextextended(lock_key, 0))
+                    FROM jsonb_array_elements_text(CAST(? AS jsonb)) WITH ORDINALITY AS locks(lock_key, position)
+                    ORDER BY position
+                    SQL,
+                [json_encode($keys, JSON_THROW_ON_ERROR)],
+            )
+            ->free();
+    }
 
     public function lockRegistrationShared(): void
     {
@@ -93,19 +114,27 @@ final readonly class PostgresProjectionStateRepository implements ProjectionStat
         );
     }
 
-    private function lock(string $projectionId, string $function): void
+    private function lock(string $name, string $function): void
+    {
+        $this->requireBarrierTransaction();
+        $this->connection
+            ->executeQuery('SELECT ' . $function . '(hashtextextended(?, 0))', [$this->barrierKey($name)])
+            ->free();
+    }
+
+    private function barrierKey(string $name): string
+    {
+        return 'ultra.projection:' . $this->tablePrefix . ':' . $name;
+    }
+
+    private function requireBarrierTransaction(): void
     {
         if (!$this->connection->isTransactionActive()) {
             throw new \LogicException('Projection barriers require an active transaction.');
         }
-        if (\Doctrine\DBAL\TransactionIsolationLevel::READ_COMMITTED !== $this->connection->getTransactionIsolation()) {
+        if (TransactionIsolationLevel::READ_COMMITTED !== $this->connection->getTransactionIsolation()) {
             throw new \LogicException('Managed projections require READ COMMITTED isolation.');
         }
-        $this->connection
-            ->executeQuery('SELECT ' . $function . '(hashtextextended(?, 0))', [
-                'ultra.projection:' . $this->tablePrefix . ':' . $projectionId,
-            ])
-            ->free();
     }
 
     /** @param array<string, mixed> $row */

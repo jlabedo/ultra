@@ -136,6 +136,9 @@ final class ManagedModeProjection extends ModeProjection {}
 #[Projection(name: 'mode_projection', partitionBy: 'courseId', mode: ProjectionMode::Synchronous)]
 final class ManagedBufferedModeProjection extends BufferedModeProjection {}
 
+#[Projection(name: 'earlier_projection', partitionBy: 'courseId', mode: ProjectionMode::Synchronous)]
+final class EarlierManagedModeProjection extends ModeProjection {}
+
 #[Projection(name: 'mode_projection', partitionBy: 'courseId')]
 final class AsyncModeProjection extends ModeProjection {}
 
