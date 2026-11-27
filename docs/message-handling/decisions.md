@@ -10,7 +10,7 @@ See the [shared concepts and consistency responsibilities](stateful.md). The eve
 - **States are event-sourced entities**: State classes come from `ultra/event-sourced-state` and use `#[EventSourcedEntity]` plus public `#[EventSourcingHandler]` methods (one typed event parameter) to fold the events selected by their loader. No aggregate root is required.
 - **Consistency by signature**: Parameters of the decision handler are either **state** (hydrated from the event store by stream) or **services** (resolved from the container). The aspect infers which is which and loads only the streams needed for that command.
 - **Identity by convention**: For every tag declared by `#[EventSourcedEntity(tags: ['course', 'student'])]`, the engine accepts the command’s `{tag}Id` property, its `{tag}` property, or its public instance `{tag}Id()` method. Exactly one candidate must exist; multiple candidates are a compile-time error; `#[BindTo]` chooses explicitly.
-- **Events are DTOs**: Events are plain classes with `#[Event('type.name')]` and `#[DomainIdentifier]` on properties. Stream routing is derived from those attributes when appending.
+- **Events are DTOs**: Events are plain classes with `#[Event('type.name')]`. For persisted events, stream routing uses the properties marked `#[DomainIdentifier]`.
 
 Event-sourced state bindings accept `string|\Stringable` identifiers from properties or methods,
 including dependent methods. Values are converted before loading under the
@@ -25,8 +25,8 @@ Other value types fail with `LogicException` identifying the state parameter and
 | `#[SelfHandler]` | Method | Mediator self-handler marker for commands that handle themselves. |
 | `#[EventSourcedEntity(tags: ['course', 'student'])]` | Class | Marks a decision state and declares its identity tags. Decision handlers require at least one tag and bind one value per tag. Aliases reuse their target tag’s value; see [state matching and aliases](../event-sourcing/states.md). |
 | `#[EventSourcingHandler]` | Method | Marks a public event replay handler on a state / entity. |
-| `#[Event('type.name')]` | Class | Event type name for storage and routing. |
-| `#[DomainIdentifier('name')]` | Property | Marks an event DTO identifier used for routing and query matching. |
+| `#[Event('type.name')]` | Class | Registers an event type by name. |
+| `#[DomainIdentifier('name')]` | Property | Declares an identifier for event storage and query matching. See [decision effects](stateful.md#event-publication-and-commit). |
 | `#[BindTo('property.path')]` | Parameter | Override convention: use this message property path for the state’s id. |
 | `#[BindTo(method: 'name')]` | Parameter | Override convention: call this public message method for the state’s id. Its parameters are other states of the same handler, matched by name (see [Dependent states](#dependent-states)). |
 | `#[BindTo('property.path', tag: 'course')]` / `#[BindTo(method: 'name', tag: 'student')]` | Parameter | Override one event-sourced identity tag. Repeat for different tags; tags without overrides keep their convention. |
@@ -71,8 +71,8 @@ final class CreateCourseCommand
 2. Load each dependency round in a single query and hydrate each state by replaying its `#[EventSourcingHandler]` methods over the shared batch.
 3. Always pass a state object, even when the stream has no events yet.
 4. Resolve service parameters from the container.
-5. Call the decision handler and route returned events to `Event`.
-6. Append with an append condition (optimistic concurrency).
+5. Call the decision handler and classify returned effects.
+6. Append events with domain identifiers under the loading rounds' append conditions, then publish all registered returned events on the bus.
 
 ### Multi-tag states
 
@@ -192,7 +192,7 @@ The [course commands](../../src/MessageHandling/Tests/Stateful/Example/Command) 
 
 ## Symfony
 
-When using Symfony, register `Ultra\EventSourcedState\EventSourcedStateExtension` for entity loader compilation and `Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension` for the decision aspect.
+When using Symfony, register `Ultra\StatefulMessageHandling\StatefulMessageHandlingExtension` for the decision aspect and `Ultra\Events\EventsExtension` to recognize returned events. Register `Ultra\EventSourcedState\EventSourcedStateExtension` when the handler injects event-sourced states.
 
 ## Notes
 

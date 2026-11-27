@@ -43,6 +43,23 @@ final class DecisionEventBus implements EventBusInterface
     }
 }
 
+#[Event('decision.notification')]
+final readonly class DecisionNotification
+{
+    public function __construct(
+        public string $text,
+    ) {}
+}
+
+#[Event('decision.recorded')]
+final readonly class DecisionRecorded
+{
+    public function __construct(
+        #[DomainIdentifierAttribute('order')]
+        public ?string $orderId,
+    ) {}
+}
+
 #[Event('alias_decision.desk_booked')]
 final readonly class AliasDeskBooked
 {
@@ -881,6 +898,20 @@ final class DecisionService
     public function called(): void
     {
         ++$this->calls;
+    }
+}
+
+final readonly class InspectDecisionWithoutState
+{
+    public function __construct(
+        public mixed $result,
+    ) {}
+
+    #[SelfHandler]
+    #[DecisionHandler]
+    public function decide(): mixed
+    {
+        return $this->result;
     }
 }
 

@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling;
 
 use Ultra\Events\EventRegistryInterface;
+use Ultra\EventStore\Event;
+use Ultra\EventStore\EventStore;
+use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\Around;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 use Ultra\MessageHandling\Attribute\MatchResult;
@@ -23,6 +26,8 @@ final readonly class DecisionAspect
         private ?EventRegistryInterface $eventRegistry,
         private MessageContextPropagatorInterface $contextPropagator,
         private ?EventBusInterface $eventBus,
+        private ?EventStore $eventStore,
+        private ?UltraNormalizer $normalizer,
     ) {}
 
     /**
@@ -36,9 +41,6 @@ final readonly class DecisionAspect
 
         $eventSourced = EventSourcedDecisionStates::bindings($ctx);
         $stored = StoredDecisionStates::bindings($ctx);
-        if (null === $eventSourced && null === $stored) {
-            return null;
-        }
 
         return MatchResult::apply(config: ['eventSourced' => $eventSourced, 'stored' => $stored], provides: [
             ...array_column($eventSourced['bindings'] ?? [], 'index'),
@@ -49,8 +51,6 @@ final readonly class DecisionAspect
     {
         $states = [];
         $appendConditions = [];
-        $stored = null;
-        $eventSourced = null;
         if (null !== $config['eventSourced']) {
             $eventSourced = $this->eventSourcedStates ?? throw new \LogicException(
                 'Event-sourced decisions require an event store.',
@@ -67,34 +67,68 @@ final readonly class DecisionAspect
         }
 
         $result = $proceed(provided: $states);
-        $events = [];
+        $returnedObjects = [];
+        $storedEvents = [];
+        $publications = [];
+        $registry = $this->eventRegistry;
         foreach (is_array($result->value) ? $result->value : [$result->value] as $effect) {
             if (!is_object($effect)) {
                 continue;
             }
 
-            $stored?->saveIfMapped($effect);
-            $name = $this->eventRegistry?->getName($effect::class);
-            if (null === $name) {
+            $returnedObjects[] = $effect;
+            if (null === $registry || null === ($name = $registry->getName($effect::class))) {
                 continue;
             }
 
-            $events[] = [
-                'event' => $effect,
-                'name' => $name,
-                'context' => $this->contextPropagator->createChildContext($result->context),
-            ];
+            $context = $this->contextPropagator->createChildContext($result->context);
+            $domainIds = $registry->getDomainIdentifiers($effect);
+            if ([] !== $domainIds) {
+                $storedEvents[] = $this->toStoredEvent($effect, $name, $domainIds, $context);
+            }
+            $publications[] = [$effect, $context];
         }
 
-        if ([] === $events) {
-            return $result;
+        if ([] !== $storedEvents && null === $this->eventStore) {
+            throw new \LogicException('Persisting returned events requires an event store.');
+        }
+        if ([] !== $publications && null === $this->eventBus) {
+            throw new \LogicException('Publishing returned events requires an event bus.');
         }
 
-        $eventSourced?->append($events, $appendConditions);
-        foreach ($events as $record) {
-            $this->eventBus?->publish($record['event'], $record['context']);
+        foreach ($returnedObjects as $effect) {
+            $this->storedStates?->saveIfMapped($effect);
+        }
+        if ([] !== $storedEvents) {
+            $this->eventStore?->append($storedEvents, ...$appendConditions);
+        }
+        foreach ($publications as [$event, $context]) {
+            $this->eventBus?->publish($event, $context);
         }
 
         return $result;
+    }
+
+    /** @param non-empty-array<string, string> $domainIds */
+    private function toStoredEvent(object $event, string $name, array $domainIds, MessageContext $context): Event
+    {
+        $normalizer = $this->normalizer ?? throw new \LogicException(
+            'Persisting returned events requires a normalizer.',
+        );
+        $payload = $normalizer->toScalar($event);
+        if (!is_array($payload)) {
+            throw new \LogicException(sprintf(
+                'Event %s normalized payload must be an array, got %s.',
+                $event::class,
+                get_debug_type($payload),
+            ));
+        }
+
+        return new Event(
+            eventType: $name,
+            payload: $payload,
+            domainIds: $domainIds,
+            metadata: $context->propagated()->all(),
+        );
     }
 }

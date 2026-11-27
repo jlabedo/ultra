@@ -7,6 +7,7 @@ namespace Ultra\StatefulMessageHandling\Tests;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\Events\EventsExtension;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
+use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
 use Ultra\MessageHandling\Attribute\Around;
@@ -20,12 +21,82 @@ use Ultra\StateStore\StateStore;
 
 final class EventPublicationTest extends DecisionTestCase
 {
+    public function test_decision_without_state_publishes_an_event_without_identifiers_or_stores(): void
+    {
+        $bus = new DecisionEventBus();
+        $container = $this
+            ->application([InspectDecisionWithoutState::class])
+            ->withBundle(new EventsExtension())
+            ->withClass(DecisionNotification::class)
+            ->withService($bus, EventBusInterface::class)
+            ->boot();
+        $event = new DecisionNotification('Order paid');
+
+        static::assertSame($event, $container->get('test.mediator')->send(new InspectDecisionWithoutState($event)));
+        static::assertSame([$event], $bus->events);
+    }
+
+    public function test_missing_event_store_rejects_persistence_before_publication(): void
+    {
+        $bus = new DecisionEventBus();
+        $container = $this
+            ->application([InspectDecisionWithoutState::class])
+            ->withBundle(new EventsExtension())
+            ->withClass(DecisionNotification::class, CourseCreated::class)
+            ->withService($bus, EventBusInterface::class)
+            ->boot();
+        $command = new InspectDecisionWithoutState([
+            new DecisionNotification('Course created'),
+            new CourseCreated('course', 'Math', 12),
+        ]);
+
+        try {
+            $container->get('test.mediator')->send($command);
+            static::fail('An event with an identifier requires an event store.');
+        } catch (\LogicException $exception) {
+            static::assertSame('Persisting returned events requires an event store.', $exception->getMessage());
+            static::assertSame([], $bus->events);
+        }
+    }
+
+    public function test_an_invalid_declared_identifier_rejects_the_batch_before_publication(): void
+    {
+        $store = new InMemoryEventStore();
+        $bus = new DecisionEventBus();
+        $container = $this
+            ->application([InspectDecisionWithoutState::class])
+            ->withBundle(new EventsExtension())
+            ->withClass(DecisionNotification::class, DecisionRecorded::class)
+            ->withService($store, EventStore::class)
+            ->withService($bus, EventBusInterface::class)
+            ->boot();
+        $command = new InspectDecisionWithoutState([
+            new DecisionNotification('Order paid'),
+            new DecisionRecorded('order'),
+            new DecisionRecorded(null),
+        ]);
+
+        try {
+            $container->get('test.mediator')->send($command);
+            static::fail('A declared domain identifier must have a valid value.');
+        } catch (\LogicException $exception) {
+            static::assertSame(
+                'Domain identifier property '
+                . DecisionRecorded::class
+                . '::$orderId must be string or Stringable, got null.',
+                $exception->getMessage(),
+            );
+            static::assertSame([], $store->load(StreamQuery::all())->events);
+            static::assertSame([], $bus->events);
+        }
+    }
+
     #[DataProvider('storedDecisions')]
     public function test_each_event_is_published_once_after_all_returned_state_is_visible(bool $mixed): void
     {
         $app = $this->inspectedApplication($mixed ? 'mixed' : 'stored');
         if (!$mixed) {
-            $app = $app->withBundle(new EventsExtension())->withClass(CourseCreated::class);
+            $app = $app->withBundle(new EventsExtension())->withClass(DecisionNotification::class);
         }
         $bus = new class implements EventBusInterface {
             public StateStore $states;
@@ -38,7 +109,7 @@ final class EventPublicationTest extends DecisionTestCase
         };
         $container = $app->withService($bus, EventBusInterface::class)->boot();
         $bus->states = $container->get('test.state_store');
-        $event = new CourseCreated('course', 'Math', 12);
+        $event = $mixed ? new CourseCreated('course', 'Math', 12) : new DecisionNotification('Order paid');
         $state = new DecisionOrderState('order', 'paid');
         $effects = [$event, new \stdClass(), $state];
         $command = $mixed
