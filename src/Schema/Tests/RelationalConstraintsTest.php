@@ -8,10 +8,13 @@ use Doctrine\DBAL\Exception\DriverException;
 use Doctrine\DBAL\Exception\ForeignKeyConstraintViolationException;
 use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use PHPUnit\Framework\Attributes\CoversNamespace;
+use Symfony\Component\Filesystem\Filesystem;
 use Ultra\Schema\ColumnDefinition;
 use Ultra\Schema\ColumnType;
+use Ultra\Schema\ForeignKeyAction;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\ForeignKeyTiming;
+use Ultra\Schema\Migration\MigrationGenerator;
 use Ultra\Schema\SchemaDefinition;
 use Ultra\Schema\SchemaReconciler;
 use Ultra\Schema\TableDefinition;
@@ -85,6 +88,67 @@ final class RelationalConstraintsTest extends MigrationTestCase
         $this->connection->insert('parents', ['id' => 2]);
         $this->connection->executeStatement('SET CONSTRAINTS parent_reference IMMEDIATE');
         self::assertSame(2, $this->connection->fetchOne('SELECT parent_id FROM children WHERE id = 1'));
+    }
+
+    public function test_changing_the_delete_action_cascades_deletion_to_referencing_rows(): void
+    {
+        $schema = static fn(ForeignKeyDefinition $foreignKey): SchemaDefinition => new SchemaDefinition([
+            new TableDefinition(
+                'parents',
+                columns: [
+                    new ColumnDefinition('id', type: ColumnType::Int32),
+                ],
+                primaryKey: ['id'],
+            ),
+            new TableDefinition(
+                'children',
+                columns: [
+                    new ColumnDefinition('id', type: ColumnType::Int32),
+                    new ColumnDefinition('parent_id', type: ColumnType::Int32),
+                ],
+                primaryKey: ['id'],
+                foreignKeys: ['parent_reference' => $foreignKey],
+            ),
+        ]);
+        $columns = ['parent_id' => 'id'];
+        $current = $schema(new ForeignKeyDefinition('parents', $columns, ForeignKeyTiming::InitiallyImmediate));
+        $target = $schema(
+            new ForeignKeyDefinition(
+                'parents',
+                $columns,
+                ForeignKeyTiming::InitiallyImmediate,
+                onDelete: ForeignKeyAction::Cascade,
+            ),
+        );
+
+        $this->execute(new SchemaReconciler()->reconcile(new SchemaDefinition([]), $current));
+        $db = $this->connection;
+        $db->executeStatement('INSERT INTO parents VALUES (1), (2)');
+        $db->executeStatement('INSERT INTO children VALUES (1, 1), (2, 1), (3, 2)');
+        try {
+            $db->transactional(static fn() => $db->delete('parents', ['id' => 1]));
+            self::fail('The default delete action must prevent deleting a referenced parent.');
+        } catch (ForeignKeyConstraintViolationException $exception) {
+            self::assertSame('23503', $exception->getSQLState());
+        }
+
+        $history = sys_get_temp_dir() . '/ultra_schema_cascade_' . bin2hex(random_bytes(8));
+        $generator = new MigrationGenerator($history);
+        try {
+            $generator->initialize($current);
+            $migration = $generator->generate($target, 'cascade-parent-delete');
+            self::assertNotNull($migration);
+            $sql = file_get_contents($history . '/' . $migration . '/migration.sql');
+            self::assertIsString($sql);
+            $db->executeStatement($sql);
+            self::assertNull($generator->generate($target, 'unchanged'));
+        } finally {
+            new Filesystem()->remove($history);
+        }
+
+        self::assertSame(1, $db->delete('parents', ['id' => 1]));
+        self::assertSame([2], $db->fetchFirstColumn('SELECT id FROM parents ORDER BY id'));
+        self::assertSame([3], $db->fetchFirstColumn('SELECT id FROM children ORDER BY id'));
     }
 
     public function test_composite_keys_resolve_declared_ids_to_physical_names_and_enforce_references(): void

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Ultra\Schema\Migration;
 
 use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ForeignKeyAction;
 use Ultra\Schema\ForeignKeyDefinition;
 use Ultra\Schema\ForeignKeyTiming;
 use Ultra\Schema\IndexDefinition;
@@ -95,6 +96,7 @@ final class SchemaDefinitionData
                 'table' => $foreignKey->table,
                 'columns' => (object) $foreignKey->columns,
                 'timing' => $foreignKey->timing->name,
+                'onDelete' => $foreignKey->onDelete->name,
             ], $table->foreignKeys),
             'checks' => (object) $table->checks,
             'rowLevelSecurity' => $table->rowLevelSecurity?->name,
@@ -113,11 +115,12 @@ final class SchemaDefinitionData
         $table = self::record($value, 'table') + ['rowLevelSecurity' => null, 'policies' => new \stdClass()];
         $foreignKeys = [];
         foreach (self::record($table['foreignKeys'] ?? null, 'foreignKeys') as $name => $value) {
-            $foreignKey = self::record($value, 'foreign key');
+            $foreignKey = self::record($value, 'foreign key') + ['onDelete' => ForeignKeyAction::NoAction->name];
             $foreignKeys[(string) $name] = new ForeignKeyDefinition(
                 table: self::string($foreignKey, 'table'),
                 columns: self::stringMap($foreignKey, 'columns'),
                 timing: self::enumCase(ForeignKeyTiming::cases(), self::string($foreignKey, 'timing')),
+                onDelete: self::enumCase(ForeignKeyAction::cases(), self::string($foreignKey, 'onDelete')),
             );
         }
 

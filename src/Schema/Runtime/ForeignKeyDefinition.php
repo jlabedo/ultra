@@ -11,6 +11,7 @@ final readonly class ForeignKeyDefinition
         public string $table,
         public array $columns,
         public ForeignKeyTiming $timing = ForeignKeyTiming::NotDeferrable,
+        public ForeignKeyAction $onDelete = ForeignKeyAction::NoAction,
     ) {}
 
     /** @internal */
@@ -21,6 +22,7 @@ final readonly class ForeignKeyDefinition
             && $this->table === $other->table
             && $this->columns === $other->columns
             && $this->timing === $other->timing
+            && $this->onDelete === $other->onDelete
         );
     }
 

@@ -103,6 +103,9 @@ final class MigrationCommandTest extends TestCase
             foreach ($table->indexes as $index) {
                 unset($index->method);
             }
+            foreach ($table->foreignKeys as $foreignKey) {
+                unset($foreignKey->onDelete);
+            }
         }
         file_put_contents(
             $this->directory . '/' . $first . '/snapshot.json',

@@ -59,12 +59,15 @@ final class PostgresSqlGenerator
                 ),
                 $operation instanceof AddColumn => $this->addColumn($operation),
                 $operation instanceof AddForeignKey => sprintf(
-                    'ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)%s;',
+                    'ALTER TABLE %s ADD CONSTRAINT %s FOREIGN KEY (%s) REFERENCES %s (%s)%s%s;',
                     $this->quoteIdentifier($operation->tableName),
                     $this->quoteIdentifier($operation->name),
                     $this->quoteIdentifiers(array_keys($operation->columns)),
                     $this->quoteIdentifier($operation->referencedTableName),
                     $this->quoteIdentifiers(array_values($operation->columns)),
+                    ForeignKeyAction::NoAction === $operation->onDelete
+                        ? ''
+                        : ' ON DELETE ' . $operation->onDelete->value,
                     match ($operation->timing) {
                         ForeignKeyTiming::NotDeferrable => '',
                         ForeignKeyTiming::InitiallyImmediate => ' DEFERRABLE INITIALLY IMMEDIATE',

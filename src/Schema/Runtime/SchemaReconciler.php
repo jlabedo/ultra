@@ -122,6 +122,7 @@ final class SchemaReconciler
                     $referenced->name,
                     $foreignKey->physicalColumns($targetTable, $referenced),
                     $foreignKey->timing,
+                    $foreignKey->onDelete,
                 );
             }
         }
