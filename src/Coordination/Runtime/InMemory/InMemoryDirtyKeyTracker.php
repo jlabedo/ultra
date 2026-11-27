@@ -17,6 +17,18 @@ final class InMemoryDirtyKeyTracker implements DirtyKeyTracker
         $this->rows[$channel][$key] = ($this->rows[$channel][$key] ?? 0) + 1;
     }
 
+    public function bumpMany(array $keys): void
+    {
+        $seen = [];
+        foreach ($keys as ['channel' => $channel, 'key' => $key]) {
+            if (isset($seen[$channel][$key])) {
+                continue;
+            }
+            $this->bump($channel, $key);
+            $seen[$channel][$key] = true;
+        }
+    }
+
     public function pending(int $limit = 256): array
     {
         $all = [];

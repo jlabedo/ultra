@@ -61,19 +61,16 @@ final readonly class ProjectionActivityRecorder
     /** @param array<array-key, non-empty-array<int, true>> $touchedBuckets */
     public function recordBuckets(array $touchedBuckets): void
     {
-        foreach ($touchedBuckets as $projectionId => $buckets) {
-            foreach (array_keys($buckets) as $bucket) {
-                $this->activity->bump((string) $projectionId, $bucket);
-            }
+        if ([] === $touchedBuckets) {
+            return;
         }
 
-        if (
-            [] !== $touchedBuckets
-            && $this->leaseRepository->markWakeEnqueued(
-                ProjectionCoordinator::COORDINATOR_KEY,
-                $this->wakeDebounceSeconds,
-            )
-        ) {
+        $this->activity->bumpBuckets($touchedBuckets);
+
+        if ($this->leaseRepository->markWakeEnqueued(
+            ProjectionCoordinator::COORDINATOR_KEY,
+            $this->wakeDebounceSeconds,
+        )) {
             $this->activator->signalWorkAvailable();
         }
     }

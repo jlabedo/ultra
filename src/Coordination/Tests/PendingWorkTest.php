@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\Coordination\Tests\Support\CoordinationTestCase;
 use Ultra\Coordination\Tracking\PendingKey;
+use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTracker;
 
 /** @internal */
 #[CoversNamespace('Ultra\Coordination')]
@@ -50,6 +51,72 @@ final class PendingWorkTest extends CoordinationTestCase
 
         static::assertEquals([new PendingKey('42', 'key', 1)], $tracker->pending());
         static::assertEquals([new PendingKey('42', 'key', 1)], $tracker->pendingForChannel('42'));
+    }
+
+    #[DataProvider('backends')]
+    public function test_batched_bumps_increment_each_distinct_pair_once_per_call(string $backend): void
+    {
+        $tracker = $this->tracker($backend);
+        $special = "clé,avec'quote\"et\\slash";
+        $tracker->bump('42', '7');
+        $seen = $tracker->pendingForChannel('42')[0];
+
+        $pairs = [
+            ['channel' => '42', 'key' => '7'],
+            ['channel' => '42', 'key' => $special],
+            ['channel' => '042', 'key' => '7'],
+            ['channel' => '42', 'key' => '7'],
+            ['channel' => '42', 'key' => $special],
+            ['channel' => '42', 'key' => '7'],
+        ];
+        $tracker->bumpMany($pairs);
+        $tracker->bumpMany([]);
+
+        static::assertEquals(
+            [
+                new PendingKey('42', '7', 2),
+                new PendingKey('42', $special, 1),
+            ],
+            $tracker->pendingForChannel('42'),
+        );
+        static::assertEquals([new PendingKey('042', '7', 1)], $tracker->pendingForChannel('042'));
+
+        $tracker->bumpMany($pairs);
+        static::assertSame(1, $tracker->drainSeen($seen->channel, [$seen->key => $seen->counter]));
+        static::assertEqualsCanonicalizing(
+            [
+                new PendingKey('42', '7', 2),
+                new PendingKey('42', $special, 2),
+            ],
+            $tracker->pendingForChannel('42'),
+        );
+        static::assertEquals([new PendingKey('042', '7', 2)], $tracker->pendingForChannel('042'));
+    }
+
+    public function test_postgres_batched_bumps_roll_back_with_the_caller_transaction(): void
+    {
+        [$connection, $table] = $this->postgresTable('dirty_keys');
+        $tracker = new PostgresDirtyKeyTracker($connection, $table);
+        $tracker->bump('orders', 'existing');
+
+        $connection->beginTransaction();
+        try {
+            $tracker->bumpMany([
+                ['channel' => 'orders', 'key' => 'existing'],
+                ['channel' => 'audit', 'key' => 'new'],
+            ]);
+            static::assertEquals(
+                [
+                    new PendingKey('orders', 'existing', 2),
+                    new PendingKey('audit', 'new', 1),
+                ],
+                $tracker->pending(),
+            );
+        } finally {
+            $connection->rollBack();
+        }
+
+        static::assertEquals([new PendingKey('orders', 'existing', 1)], $tracker->pending());
     }
 
     #[DataProvider('backends')]

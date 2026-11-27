@@ -30,6 +30,33 @@ final readonly class PostgresDirtyKeyTracker implements DirtyKeyTracker
         );
     }
 
+    public function bumpMany(array $keys): void
+    {
+        if ([] === $keys) {
+            return;
+        }
+        if (1 === count($keys)) {
+            $this->bump($keys[0]['channel'], $keys[0]['key']);
+
+            return;
+        }
+
+        // Acquire row locks in the same order across overlapping batches.
+        $this->connection->executeStatement(
+            sprintf(
+                'INSERT INTO %1$s (channel, key, counter)
+                 SELECT DISTINCT channel, key, 1
+                 FROM jsonb_to_recordset(CAST(? AS JSONB)) AS dirty(channel TEXT, key TEXT)
+                 ORDER BY channel, key
+                 ON CONFLICT (channel, key)
+                 DO UPDATE SET counter = %1$s.counter + 1, updated_at = statement_timestamp()',
+                $this->table,
+            ),
+            [json_encode($keys, JSON_THROW_ON_ERROR)],
+            [ParameterType::STRING],
+        );
+    }
+
     public function pending(int $limit = 256): array
     {
         $rows = $this->connection

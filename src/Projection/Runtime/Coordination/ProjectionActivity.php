@@ -31,6 +31,19 @@ final readonly class ProjectionActivity
         $this->tracker->bump($projectionId, (string) $bucket);
     }
 
+    /** @param array<array-key, non-empty-array<int, true>> $bucketsByProjection */
+    public function bumpBuckets(array $bucketsByProjection): void
+    {
+        $keys = [];
+        foreach ($bucketsByProjection as $projectionId => $buckets) {
+            foreach (array_keys($buckets) as $bucket) {
+                $keys[] = ['channel' => (string) $projectionId, 'key' => (string) $bucket];
+            }
+        }
+
+        $this->tracker->bumpMany($keys);
+    }
+
     /**
      * Pending buckets across all projections, ordered for the coordinator
      * (projection id asc, counter desc, bucket asc), capped at `$limit`.

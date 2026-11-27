@@ -16,6 +16,8 @@ exactly the counters it observed.
 
 - `channel` is the coarse partition that selects *how* work is processed; `key`
   is the fine-grained dirty unit within it.
+- `bumpMany()` increments the counter once per distinct `(channel, key)` pair in the batch.
+  PostgreSQL records a non-empty batch in one statement.
 - The counter is the basis of the lost-update-safe drain: `drainSeen()` subtracts
   only the observed value, so markers bumped concurrently during processing
   survive to the next cycle. Re-processing a key is therefore harmless.

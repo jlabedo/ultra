@@ -9,6 +9,7 @@ use PHPUnit\Framework\TestCase;
 use Ultra\Coordination\InMemory\InMemoryCoordinatorLease;
 use Ultra\Coordination\InMemory\InMemoryDirtyKeyTracker;
 use Ultra\Coordination\Lease\CoordinatorLease;
+use Ultra\Coordination\Tracking\DirtyKeyTracker;
 use Ultra\Coordination_Postgres\Lease\PostgresCoordinatorLeaseSchema;
 use Ultra\Coordination_Postgres\Tracking\PostgresDirtyKeyTrackerSchema;
 use Ultra\EventStore\EventStore;
@@ -37,6 +38,7 @@ final class ProjectionFixture
     public readonly EventStore $store;
     public readonly ProjectionSegmentRepositoryInterface $segments;
     public readonly ProjectionActivity $activity;
+    public readonly DirtyKeyTracker $tracker;
     public readonly CoordinatorLease $leases;
     public readonly InMemoryProjectionActivator $activator;
     public readonly ProjectionTransactionManagerInterface $transactions;
@@ -58,7 +60,7 @@ final class ProjectionFixture
             $this->connection = null;
             $this->store = new InMemoryEventStore();
             $this->segments = new InMemoryProjectionSegmentRepository($clock);
-            $this->activity = new ProjectionActivity(new InMemoryDirtyKeyTracker());
+            $this->tracker = new InMemoryDirtyKeyTracker();
             $this->leases = new InMemoryCoordinatorLease($clock);
             $this->transactions = new NoOpProjectionTransactionManager();
         } else {
@@ -87,10 +89,11 @@ final class ProjectionFixture
                 $eventStoreImplementation,
             );
             $this->segments = $implementation->createSegmentRepository();
-            $this->activity = new ProjectionActivity($implementation->createDirtyKeyTracker());
+            $this->tracker = $implementation->createDirtyKeyTracker();
             $this->leases = $implementation->createCoordinatorLease();
             $this->transactions = $implementation->createTransactionManager();
         }
+        $this->activity = new ProjectionActivity($this->tracker);
         $this->runner = new ProjectionRunner($this->store, $this->segments, $this->transactions, $this->activity);
     }
 

@@ -9,11 +9,13 @@ use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
 use Ultra\Mapper\UltraNormalizer;
+use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Tests\Support\CallbackEventStore;
+use Ultra\Projection\Tests\Support\CountingDirtyKeyTracker;
 use Ultra\Projection\Tests\Support\FailingTrackingProjection;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Projection\Tests\Support\RuntimeProjection;
@@ -155,7 +157,8 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         $fixture = $this->fixture($backend);
         $runtime = new ProjectionRuntime(new RuntimeProjection(), new UltraNormalizer());
         $secondaryRuntime = new ProjectionRuntime(new SecondaryRuntimeProjection(), new UltraNormalizer());
-        $activity = $fixture->activity;
+        $tracker = new CountingDirtyKeyTracker($fixture->tracker);
+        $activity = new ProjectionActivity($tracker);
         $leases = $fixture->leases;
         $activator = $fixture->activator;
         $recorder = new ProjectionActivityRecorder(
@@ -179,6 +182,7 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         $primaryPending = $activity->pendingInSegment('runtime_projection', 0, 255);
         $secondaryPending = $activity->pendingInSegment('secondary_runtime_projection', 0, 255);
 
+        static::assertSame(1, $tracker->bumpManyCalls);
         static::assertCount(1, $primaryPending);
         static::assertSame(1, $primaryPending[0]->counter);
         static::assertCount(1, $secondaryPending);

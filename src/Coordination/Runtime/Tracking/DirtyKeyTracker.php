@@ -30,6 +30,13 @@ interface DirtyKeyTracker
     public function bump(string $channel, string $key): void;
 
     /**
+     * Increment the counter once per distinct pair in the batch. An empty batch has no effect.
+     *
+     * @param list<array{channel: string, key: string}> $keys
+     */
+    public function bumpMany(array $keys): void;
+
+    /**
      * The busiest pending keys across all channels (counter descending),
      * capped at `$limit`. Used to decide where work is waiting.
      *

@@ -392,12 +392,10 @@ final class CountingLeaseRepository implements CoordinatorLease
     }
 }
 
-/**
- * Spies on the generic tracker calls a ProjectionActivity makes: `pending()`
- * backs `affected()`, `pendingForChannel()` backs `pendingInSegment()`.
- */
+/** Spies on the generic tracker calls made through ProjectionActivity. */
 final class CountingDirtyKeyTracker implements DirtyKeyTracker
 {
+    public int $bumpManyCalls = 0;
     public int $pendingCalls = 0;
     public int $pendingForChannelCalls = 0;
 
@@ -408,6 +406,12 @@ final class CountingDirtyKeyTracker implements DirtyKeyTracker
     public function bump(string $channel, string $key): void
     {
         $this->inner->bump($channel, $key);
+    }
+
+    public function bumpMany(array $keys): void
+    {
+        ++$this->bumpManyCalls;
+        $this->inner->bumpMany($keys);
     }
 
     public function pending(int $limit = 256): array

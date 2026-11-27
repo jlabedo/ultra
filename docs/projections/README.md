@@ -352,7 +352,7 @@ It:
 1. scans all projection definitions
 2. finds which projections handle each appended event
 3. computes the touched bucket for each `(projection, event)` pair
-4. bumps the activity counter for each distinct `(projectionId, bucket)` pair
+4. bumps the activity counters for all distinct `(projectionId, bucket)` pairs in one batch
 5. signals work availability through the activator when the coordinator lease allows a debounced wake-up
 
 Append, activity recording and durable wake-up writes must participate in the appropriate shared transaction to stay aligned with commit. Recording after append does not by itself mean the transaction has committed.
