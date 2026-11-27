@@ -31,8 +31,6 @@ final class StatefulMessageHandlingExtension implements ContainerExtension
                     $eventSourced = new Definition(EventSourcedDecisionStates::class, [
                         new Reference(EventSourcedStateStore::class),
                         new Reference(EventStore::class),
-                        new Reference(EventRegistryInterface::class),
-                        new Reference(UltraNormalizer::class),
                     ]);
                 }
 
@@ -51,10 +49,6 @@ final class StatefulMessageHandlingExtension implements ContainerExtension
                     );
                 }
 
-                if (null === $eventSourced && null === $stored) {
-                    return;
-                }
-
                 $container->setDefinition(
                     DecisionAspect::class,
                     new Definition(DecisionAspect::class, [
@@ -63,6 +57,8 @@ final class StatefulMessageHandlingExtension implements ContainerExtension
                         new Reference(EventRegistryInterface::class, ContainerBuilder::NULL_ON_INVALID_REFERENCE),
                         new Reference(MessageContextPropagatorInterface::class),
                         new Reference(EventBusInterface::class, ContainerBuilder::NULL_ON_INVALID_REFERENCE),
+                        new Reference(EventStore::class, ContainerBuilder::NULL_ON_INVALID_REFERENCE),
+                        new Reference(UltraNormalizer::class, ContainerBuilder::NULL_ON_INVALID_REFERENCE),
                     ])->addTag(MessageHandlingTagNames::ASPECT),
                 );
             }

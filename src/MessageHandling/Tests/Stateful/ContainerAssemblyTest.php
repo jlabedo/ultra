@@ -100,14 +100,17 @@ final class ContainerAssemblyTest extends DecisionTestCase
                 $foreignState,
                 $container->get('test.mediator')->send(new InspectDecisionCourse('course', $foreignState)),
             );
-            static::assertNull($container->get('test.state_store')->load(DecisionOrderState::class, 'foreign'));
+            static::assertEquals($foreignState, $container->get('test.state_store')->load(
+                DecisionOrderState::class,
+                'foreign',
+            ));
             $foreignEvent = new CourseCreated('foreign', 'Published', 1);
             static::assertSame(
                 $foreignEvent,
                 $container->get('test.mediator')->send(new InspectDecisionOrder('order', $foreignEvent)),
             );
             static::assertSame([$event, $foreignEvent], $bus->events);
-            static::assertCount(1, $container->get(InMemoryEventStore::class)->load(StreamQuery::all())->events);
+            static::assertCount(2, $container->get(InMemoryEventStore::class)->load(StreamQuery::all())->events);
         }
     }
 

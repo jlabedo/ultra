@@ -4,15 +4,12 @@ declare(strict_types=1);
 
 namespace Ultra\StatefulMessageHandling;
 
-use Ultra\Events\EventRegistryInterface;
 use Ultra\EventSourcedState\Attribute\EventSourcedEntity;
 use Ultra\EventSourcedState\EventSourcedStateStore;
 use Ultra\EventStore\AppendCondition;
 use Ultra\EventStore\DomainIdentifier;
-use Ultra\EventStore\Event;
 use Ultra\EventStore\EventStore;
 use Ultra\EventStore\StreamQuery;
-use Ultra\Mapper\UltraNormalizer;
 use Ultra\MessageHandling\Attribute\HandlerMatchContext;
 
 /** @phpstan-import-type Plan from StateBindings */
@@ -21,8 +18,6 @@ final readonly class EventSourcedDecisionStates
     public function __construct(
         private EventSourcedStateStore $stateStore,
         private EventStore $eventStore,
-        private EventRegistryInterface $eventClassRegistry,
-        private UltraNormalizer $normalizer,
     ) {}
 
     /** @return Plan|null */
@@ -82,45 +77,6 @@ final readonly class EventSourcedDecisionStates
         });
 
         return [$states, $appendConditions];
-    }
-
-    /**
-     * @param list<array{event: object, name: string, context: \Ultra\MessageHandling\MessageContext}> $events
-     * @param list<AppendCondition> $appendConditions
-     */
-    public function append(array $events, array $appendConditions): void
-    {
-        $stored = [];
-        foreach ($events as $record) {
-            $stored[] = $this->toEvent($record['event'], $record['name'], $record['context']->propagated()->all());
-        }
-
-        $this->eventStore->append($stored, ...$appendConditions);
-    }
-
-    /**
-     * @param array<array-key, mixed> $metadata
-     */
-    private function toEvent(object $event, string $eventType, array $metadata): Event
-    {
-        $domainIds = $this->eventClassRegistry->getDomainIdentifiers($event);
-        if ([] === $domainIds) {
-            throw new \LogicException(sprintf(
-                'Event class %s has no properties with #[DomainIdentifier].',
-                $event::class,
-            ));
-        }
-
-        $payload = $this->normalizer->toScalar($event);
-        if (!is_array($payload)) {
-            throw new \LogicException(sprintf(
-                'Event %s normalized payload must be an array, got %s.',
-                $event::class,
-                get_debug_type($payload),
-            ));
-        }
-
-        return new Event(eventType: $eventType, payload: $payload, domainIds: $domainIds, metadata: $metadata);
     }
 
     private static function isStateClass(string $class): bool

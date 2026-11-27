@@ -5,13 +5,56 @@ declare(strict_types=1);
 namespace Ultra\StatefulMessageHandling\Tests;
 
 use PHPUnit\Framework\Attributes\DataProvider;
+use Ultra\Events\EventsExtension;
 use Ultra\EventSourcedState\Tests\Example\Event\CourseCreated;
+use Ultra\EventStore\EventStore;
 use Ultra\EventStore\InMemoryEventStore;
 use Ultra\EventStore\StreamQuery;
+use Ultra\EventStore\Tests\Support\RecordingEventStore;
+use Ultra\MessageHandling\EventBusInterface;
+use Ultra\StatefulMessageHandling\DecisionMode;
 use Ultra\StatefulMessageHandling\Tests\Support\DecisionTestCase;
 
 final class DecisionEffectsTest extends DecisionTestCase
 {
+    public function test_decision_without_state_saves_mapped_state_and_appends_only_events_with_identifiers(): void
+    {
+        $store = new RecordingEventStore(new InMemoryEventStore());
+        $bus = new DecisionEventBus();
+        $container = $this
+            ->storedApplication(InspectDecisionWithoutState::class)
+            ->withBundle(new EventsExtension())
+            ->withClass(CourseCreated::class, DecisionNotification::class, DecisionRecorded::class)
+            ->withService($store, EventStore::class)
+            ->withService($bus, EventBusInterface::class)
+            ->boot();
+        $state = new DecisionOrderState('order', 'paid');
+        $notification = new DecisionNotification('Order paid');
+        $event = new CourseCreated('course', 'Math', 12);
+        $record = new DecisionRecorded('order');
+        $effects = [$notification, $event, $record, $state];
+        $command = new InspectDecisionWithoutState($effects);
+        $mediator = $container->get('test.mediator');
+
+        static::assertSame([], $mediator->send($command, [DecisionMode::CONTEXT_KEY => DecisionMode::CHECK]));
+        static::assertNull($container->get('test.state_store')->load(DecisionOrderState::class, 'order'));
+        static::assertSame([], $store->appendCalls);
+        static::assertSame([], $bus->events);
+
+        static::assertSame($effects, $mediator->send($command));
+        static::assertEquals($state, $container->get('test.state_store')->load(DecisionOrderState::class, 'order'));
+        static::assertCount(1, $store->appendCalls);
+        static::assertSame([], $store->appendCalls[0]['appendConditions']);
+        static::assertSame(
+            ['course.created', 'decision.recorded'],
+            array_map(
+                static fn(\Ultra\EventStore\Event $event): string => $event->eventType,
+                $store->load(StreamQuery::all())->events,
+            ),
+        );
+        static::assertSame([$notification, $event, $record], $bus->events);
+    }
+
     #[DataProvider('returnedEffects')]
     public function test_only_registered_returned_objects_become_effects_while_the_handler_result_is_preserved(
         string $family,

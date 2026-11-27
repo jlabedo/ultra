@@ -10,11 +10,11 @@ on a separate handler marked with #[Handles]. Both organizations are supported;
 
 Event-sourced state and stored state are peer approaches. Neither requires a state to represent a complete domain entity or an aggregate root. See the [glossary](../../GLOSSARY.md) and the [architectural rationale](../adr/0001-decision-specific-states.md).
 
-Event-sourced decisions reconstruct their states from relevant events and append recognized returned events. Stored-state decisions load current values and prepare saves for recognized returned states. An event-sourced state is hydrated even when no events match; a missing stored state is represented by null when the parameter allows it, or causes a StateNotFoundException otherwise.
+The signature can declare event-sourced states, stored states, or neither. An event-sourced state is reconstructed from relevant events, even when no events match. A missing stored state is represented by null when the parameter allows it, or causes a `StateNotFoundException` otherwise. The aspect applies returned effects independently of which states it loads.
 
 ## Consistency responsibilities
 
-For `#[DecisionHandler]`, the signature identifies injected states whose reads receive automatic optimistic concurrency protection. Event-sourced decisions retain append conditions from all loading rounds. Stored-state decisions register expectations for loaded or missing states, including states that are not subsequently saved.
+For `#[DecisionHandler]`, the signature identifies injected states whose reads receive automatic optimistic concurrency protection. The event batch, when there is one to append, is guarded by the append conditions from all event-sourced loading rounds. Stored-state decisions register expectations for loaded or missing states, including states that are not subsequently saved.
 
 `#[StateReader]` resolves bindings and loads stored states without registering the decision handler's optimistic expectations. Enroll those dependencies explicitly when a reader participates in a decision.
 
@@ -28,8 +28,7 @@ The decision aspect loads states and executes the handler and its services. CHEC
 
 ## Event publication and commit
 
-A decision can return one object or an array containing both mapped states and registered events.
-A stored-state decision can express a change of company plan in one return value.
+A decision can return one object or an array containing both mapped states and registered events. For example, a decision can update a company and emit an event together.
 
 ```php
 return [
@@ -38,15 +37,21 @@ return [
 ];
 ```
 
-With a stored-state binding, the aspect buffers all returned mapped states. With an event-sourced
-binding, it also appends the registered events as a batch under the decision's append conditions.
-It then publishes each registered event once, in return order, to the configured event bus.
-A mixed decision follows the same sequence. The stored event metadata and bus delivery share
-the child context created for that event.
+The event registry (provided by `ultra/events`) recognizes returned events and uses the identifiers
+compiled from `#[DomainIdentifier]` properties. Events with at least one such property are appended
+to the event store and published on the bus. Events without any are published on the bus only.
+An invalid declared identifier value fails the decision before append or publication. See the
+[domain identifier contract](../event-sourcing/event-store.md#domain-identifier-values).
 
-Stored-state publication requires the event registry (provided by `ultra/events`) and the event bus.
-Only decisions with an event-sourced binding append events. Synchronous subscribers can read
-the buffered changes in the same unit of work before its flush and commit.
+The aspect buffers returned mapped states through the configured state store, appends the events
+with domain identifiers in a single batch, and then publishes all registered returned events.
+Append and publication each follow return order. The stored metadata and bus delivery share the
+same child context. Synchronous subscribers can read buffered changes in the same unit of work
+before flush and commit.
+
+Append requires an event store and a normalizer. Publication requires an event bus. A missing
+required service causes a `LogicException`. Without event-sourced state reads, the batch is appended
+without automatic append conditions. Those conditions are checked only when there is a batch to append.
 
 For handlers producing external effects, follow the [asynchronous delivery and outbox contract](async.md#outbox-and-external-effects).
 
@@ -84,9 +89,9 @@ The guarantee suites live in `src/MessageHandling/Tests/Stateful`; persistence p
 | Ambiguous, missing, cyclic or incompatible bindings fail during compilation | [BindingDeclarationTest](../../src/MessageHandling/Tests/Stateful/BindingDeclarationTest.php) |
 | Loaded dependencies guard append or flush, even when they produce no returned save and during CHECK | [ReadConsistencyTest](../../src/MessageHandling/Tests/Stateful/ReadConsistencyTest.php) |
 | CHECK executes the decision and services, preserves violations, propagates other exceptions and bypasses returned effects | [CheckModeTest](../../src/MessageHandling/Tests/Stateful/CheckModeTest.php) |
-| Only registered returned objects are appended or saved; the original result is preserved, including mixed decisions | [DecisionEffectsTest](../../src/MessageHandling/Tests/Stateful/DecisionEffectsTest.php) |
-| Stored and mixed decisions publish each event once after preparing states and any append, using the child context recorded in event metadata | [EventPublicationTest](../../src/MessageHandling/Tests/Stateful/EventPublicationTest.php) |
-| Dumped Symfony containers assemble each available persistence family and select returned effects from the handler’s state parameters | [ContainerAssemblyTest](../../src/MessageHandling/Tests/Stateful/ContainerAssemblyTest.php) |
+| Returned mapped states are saved and events with domain identifiers are appended, including decisions without injected state. The original result is preserved | [DecisionEffectsTest](../../src/MessageHandling/Tests/Stateful/DecisionEffectsTest.php) |
+| Decisions publish registered events once after preparing states and any append, and share the child context with stored metadata where applicable | [EventPublicationTest](../../src/MessageHandling/Tests/Stateful/EventPublicationTest.php) |
+| Dumped Symfony containers assemble each available persistence family and apply effects independently of the handler's state parameters | [ContainerAssemblyTest](../../src/MessageHandling/Tests/Stateful/ContainerAssemblyTest.php) |
 
 Providers express alternative persistence families, binding forms or result shapes. Shared support assembles
 real extensions and cleans generated files; assertions remain in the suites. Cases run in PHPUnit's main
