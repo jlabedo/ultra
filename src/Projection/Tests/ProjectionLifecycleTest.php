@@ -7,7 +7,9 @@ namespace Ultra\Projection\Tests;
 use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\Mapper\UltraNormalizer;
+use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\ProjectionTransactionManagerInterface;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Projection\Tests\Support\TrackingProjection;
 
@@ -23,10 +25,21 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
         $projection = new TrackingProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
 
-        $fixture->runner->ensureInitialized($runtime);
-        $fixture->runner->ensureInitialized($runtime);
+        $first = $fixture->runner->runFullRangeBatches($runtime, 'worker-1')->current();
+        static::assertTrue($first->claimedSegment);
         static::assertSame(1, $projection->initialized);
         static::assertCount(1, $fixture->segments->listSegments('tracking_projection'));
+
+        $transactions = $this->createMock(ProjectionTransactionManagerInterface::class);
+        $transactions
+            ->expects(static::once())
+            ->method('transactional')
+            ->willReturnCallback($fixture->transactions->transactional(...));
+        $runner = new ProjectionRunner($fixture->store, $fixture->segments, $transactions, $fixture->activity);
+        $next = $runner->runFullRangeBatches($runtime, 'worker-2')->current();
+        static::assertTrue($next->claimedSegment);
+        static::assertSame(1, $projection->initialized);
+
         $fixture->runner->splitSegment($runtime, 0);
         $projection->names = ['course-1' => 'Math'];
 
@@ -35,7 +48,8 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
         static::assertSame(1, $projection->resets);
         static::assertSame([], $projection->names);
         static::assertSame([], $fixture->segments->listSegments('tracking_projection'));
-        $fixture->runner->ensureInitialized($runtime);
+        $afterReset = $fixture->runner->runFullRangeBatches($runtime, 'worker-3')->current();
+        static::assertTrue($afterReset->claimedSegment);
         static::assertSame(2, $projection->initialized);
         $segment = $fixture->segments->listSegments('tracking_projection')[0];
         static::assertSame([0, 255, 0, null], [
@@ -60,7 +74,7 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
 
         try {
             if ('initialize' === $stage) {
-                $fixture->runner->ensureInitialized($runtime);
+                $fixture->runner->runFullRangeBatches($runtime, 'worker-1')->current();
             } else {
                 $fixture->runner->deleteProjection($runtime);
             }
@@ -80,8 +94,10 @@ final class ProjectionLifecycleTest extends ProjectionTestCase
 
         $projection->failAt = null;
         if ('initialize' === $stage) {
-            $fixture->runner->ensureInitialized($runtime);
+            $retry = $fixture->runner->runFullRangeBatches($runtime, 'worker-2')->current();
+            static::assertTrue($retry->claimedSegment);
             static::assertCount(1, $fixture->segments->listSegments('durable_projection'));
+            static::assertSame(['initialize', 'flush'], array_column($projection->rows(), 'action'));
         } else {
             $fixture->runner->deleteProjection($runtime);
             static::assertSame([], $fixture->segments->listSegments('durable_projection'));

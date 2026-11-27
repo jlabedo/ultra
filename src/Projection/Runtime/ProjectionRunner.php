@@ -295,7 +295,9 @@ final readonly class ProjectionRunner
      */
     private function runBatches(ProjectionRuntime $runtime, ?int $bucketFrom, string $workerId, int $limit): \Generator
     {
-        $this->ensureInitialized($runtime);
+        if (null !== $bucketFrom || ProjectionMode::Synchronous === $runtime->definition()->mode) {
+            $this->ensureInitialized($runtime);
+        }
         $projectionId = $runtime->projectionId();
         $observation = null;
         do {
@@ -347,15 +349,21 @@ final readonly class ProjectionRunner
         ?array &$observation,
     ): ProjectionRunResult {
         // The observation belongs to the first claim. Subsequent batches can only renew it.
-        $segment =
-            null === $bucketFrom && null === $observation
-                ? $this->segmentRepository->claimFullRangeSegment($projectionId, $workerId)
-                : $this->segmentRepository->claimSegment(
-                    $projectionId,
-                    $bucketFrom ?? 0,
-                    $workerId,
-                    requireOwned: null !== $observation,
-                );
+        if (null === $bucketFrom && null === $observation) {
+            $segment = $this->segmentRepository->claimFullRangeSegment($projectionId, $workerId);
+            if (null === $segment && ProjectionMode::Asynchronous === $runtime->definition()->mode) {
+                // A successful claim already proves that the segment has been initialized.
+                $this->ensureInitialized($runtime);
+                $segment = $this->segmentRepository->claimFullRangeSegment($projectionId, $workerId);
+            }
+        } else {
+            $segment = $this->segmentRepository->claimSegment(
+                $projectionId,
+                $bucketFrom ?? 0,
+                $workerId,
+                requireOwned: null !== $observation,
+            );
+        }
         if (null === $segment) {
             return new ProjectionRunResult(0, false, null);
         }

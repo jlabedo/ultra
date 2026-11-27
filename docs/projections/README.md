@@ -327,8 +327,10 @@ Asynchronous initialization, claiming, replay and reset use segment storage dire
 Asynchronous operations skip managed state lookups and the registration barrier.
 
 `runClaimedBatches()` checks initialization once and yields one result per attempted batch until the segment
-catches up or a claim fails. After the first batch, the sequence renews its existing claim. The coordinator
-consumes the sequence for its local segment. The segment message handler stops at its configured cycle limit.
+catches up or a claim fails. For an asynchronous full-range assignment, `runFullRangeBatches()` tries the
+claim first and checks initialization only if that attempt fails. After the first batch, either sequence
+renews its existing claim. The coordinator consumes the sequence for its local segment. The segment message
+handler stops at its configured cycle limit.
 
 The segment repository owns runtime state such as:
 
