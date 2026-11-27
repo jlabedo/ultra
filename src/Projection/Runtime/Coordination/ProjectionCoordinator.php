@@ -8,6 +8,7 @@ use Ultra\Coordination\Lease\CoordinatorLease;
 use Ultra\Coordination\Tracking\PendingKey;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionSegment;
 
@@ -37,10 +38,30 @@ final readonly class ProjectionCoordinator
         $processedEvents = 0;
         $acknowledgedBuckets = 0;
         $requestedWorkerActivations = 0;
+        $localPlan = [];
 
         try {
             for ($cycle = 0; $cycle < $maxCycles; ++$cycle) {
                 $this->leaseRepository->renew(self::COORDINATOR_KEY, $workerId);
+
+                if ($this->scalingPolicy instanceof DefaultProjectionScalingPolicy) {
+                    $freshPlan = [] === $localPlan;
+                    if ($freshPlan) {
+                        $localPlan = $this->groupByProjection($this->activity->affected());
+                    }
+
+                    $claimed = false;
+                    foreach ($this->runLocalAssignment($localPlan, $workerId, $batchSize) as $result) {
+                        $claimed = true;
+                        $processedEvents += $result->processedEvents;
+                        $acknowledgedBuckets += $result->acknowledgedBuckets;
+                    }
+                    if (!$claimed && $freshPlan) {
+                        break;
+                    }
+
+                    continue;
+                }
 
                 $affectedBuckets = $this->activity->affected();
                 if ([] === $affectedBuckets) {
@@ -52,14 +73,10 @@ final readonly class ProjectionCoordinator
                 $remoteAssignments = 0;
                 $claimedAny = false;
 
-                foreach ($this->groupByProjection($affectedBuckets) as $projectionId => $_projectionBuckets) {
+                foreach ($this->groupByProjection($affectedBuckets) as $projectionId => $projectionBuckets) {
                     $runtime = $this->catalog->runtime($projectionId);
                     if (!$this->runner->isReplayable($runtime)) {
-                        $seen = [];
-                        foreach ($_projectionBuckets as $activity) {
-                            $seen[(int) $activity->key] = $activity->counter;
-                        }
-                        $this->activity->drainSeen($projectionId, $seen);
+                        $this->drainObsoleteActivity($projectionId, $projectionBuckets);
 
                         continue;
                     }
@@ -131,6 +148,82 @@ final readonly class ProjectionCoordinator
             $acknowledgedBuckets,
             $requestedWorkerActivations,
         );
+    }
+
+    /**
+     * Consume candidates from the same poll across local assignments. Claim only when ready to run.
+     *
+     * @param array<string, list<PendingKey>> $plan
+     *
+     * @return \Generator<int, ProjectionRunResult, void, void>
+     */
+    private function runLocalAssignment(array &$plan, string $workerId, int $batchSize): \Generator
+    {
+        foreach ($plan as $projectionId => $projectionBuckets) {
+            unset($plan[$projectionId]);
+            $runtime = $this->catalog->runtime($projectionId);
+            if (!$this->runner->isReplayable($runtime)) {
+                $this->drainObsoleteActivity($projectionId, $projectionBuckets);
+
+                continue;
+            }
+
+            foreach ($this->localBucketStarts($projectionId) as $bucketFrom) {
+                $claimed = false;
+                foreach ($this->runner->runClaimedBatches(
+                    $runtime,
+                    $projectionId,
+                    $bucketFrom,
+                    $workerId,
+                    $batchSize,
+                ) as $result) {
+                    if (!$result->claimedSegment) {
+                        break;
+                    }
+                    $claimed = true;
+
+                    yield $result;
+                }
+                if ($claimed) {
+                    return;
+                }
+            }
+        }
+    }
+
+    /** @return \Generator<int, int, void, void> */
+    private function localBucketStarts(string $projectionId): \Generator
+    {
+        $this->runner->recoverExpiredClaims($projectionId);
+        $segments = $this->runner->listSegments($projectionId);
+        if ([] === $segments) {
+            yield 0;
+
+            return;
+        }
+
+        foreach ($segments as $segment) {
+            if (null !== $segment->workerId) {
+                continue;
+            }
+            // For the full range, the global poll already found work for this segment.
+            if (
+                0 === $segment->bucketFrom && 255 === $segment->bucketTo
+                || [] !== $this->activity->pendingInSegment($projectionId, $segment->bucketFrom, $segment->bucketTo)
+            ) {
+                yield $segment->bucketFrom;
+            }
+        }
+    }
+
+    /** @param list<PendingKey> $projectionBuckets */
+    private function drainObsoleteActivity(string $projectionId, array $projectionBuckets): void
+    {
+        $seen = [];
+        foreach ($projectionBuckets as $activity) {
+            $seen[(int) $activity->key] = $activity->counter;
+        }
+        $this->activity->drainSeen($projectionId, $seen);
     }
 
     /**

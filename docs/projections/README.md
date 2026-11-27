@@ -393,21 +393,24 @@ requiring activity hints.
 
 [ProjectionCoordinator.php](../../src/Projection/Runtime/Coordination/ProjectionCoordinator.php) is a single leader worker for the whole app.
 
-It does not wake per projection. Instead it:
+The coordinator acquires the global lease and polls pending buckets across all
+projections. With the default scaling policy, it plans local assignments for
+the affected projections from that poll and refreshes the plan once it runs
+out of candidates. Each cycle renews the lease and runs at most one local
+assignment through `ProjectionRunner`. The coordinator recovers expired
+claims when it visits a candidate. For a projection with a single segment
+covering the full bucket range, the global poll is sufficient to identify
+eligible work. For a projection with split segments, the coordinator checks
+which available segments have pending buckets.
 
-1. acquires the global coordinator lease
-2. reads all affected buckets across all projections
-3. decides the target worker/segment count through a scaling policy
-4. recovers expired segment leases for the touched projections
-5. ensures each touched projection is initialized
-6. splits available segments until the projection has enough segments for the requested workers plus itself
-7. maps pending bucket activity to affected segments
-8. durably claims affected segments for itself or activated workers
-9. processes one local claim itself through `ProjectionRunner`
-10. workers decrement the bucket counters they observed only after their claimed segment catches up
-11. exits when there is no work or no productive progress
+With a custom scaling policy, each cycle polls activity, initializes the
+affected projections, recovers expired claims, and splits available segments
+to reach the requested worker count. It can reserve additional claims and
+activate workers for them while processing its own local assignment.
 
-This is important: the coordinator is not only a scheduler. It is also a worker and always participates in processing.
+Workers read the counters for their segment after claiming it and decrement
+only those observed counters at catch-up. The coordinator releases its lease
+when it reaches its cycle limit or a fresh poll yields no productive work.
 
 Coordinator liveness uses [CoordinatorLease](../../src/Coordination/Runtime/Lease/CoordinatorLease.php).
 
