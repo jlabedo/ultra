@@ -93,6 +93,11 @@ Foreign keys default to `ForeignKeyTiming::NotDeferrable`. Use `InitiallyImmedia
 transaction can defer explicitly, or `InitiallyDeferred` for one checked at commit by default. Changing the
 timing of an existing foreign key replaces that constraint during reconciliation.
 
+Foreign keys default to `ForeignKeyAction::NoAction` for `ON DELETE`. Set
+`onDelete: ForeignKeyAction::Cascade` in `ForeignKeyDefinition` to delete referencing rows when a referenced
+row is deleted. Changing the action replaces the constraint during reconciliation. Snapshots with no
+recorded delete action are read as `NoAction`.
+
 Declare named table-level `CHECK` constraints in `TableDefinition::checks`. Values are SQL expressions that
 can refer to multiple columns. Fragments can contribute different check names and must agree on the expression
 for a shared name. PostgreSQL generation emits the checks at table creation. Changes to checks on existing
@@ -207,7 +212,7 @@ The tests live together under [src/Schema/Tests](../../src/Schema/Tests), organi
 | Fragments combine by identity, preserve explicit names and reject conflicting or duplicate definitions | [DefinitionCompositionTest](../../src/Schema/Tests/DefinitionCompositionTest.php) |
 | Comparison preserves index identities and rejects unsupported constraint changes | [SchemaComparisonTest](../../src/Schema/Tests/SchemaComparisonTest.php) |
 | Column changes have minimal inspectable payloads; renames preserve stored rows; dependent operations address resolved names; generated SQL applies types, defaults, constraints, indexes and management comments | [ExecutableMigrationTest](../../src/Schema/Tests/ExecutableMigrationTest.php) |
-| Composite keys resolve column IDs to physical names, foreign keys enforce references with the declared timing and named table checks enforce rules across columns | [RelationalConstraintsTest](../../src/Schema/Tests/RelationalConstraintsTest.php) |
+| Composite keys resolve column IDs to physical names, foreign keys enforce the declared timing and delete action, and named table checks enforce rules across columns | [RelationalConstraintsTest](../../src/Schema/Tests/RelationalConstraintsTest.php) |
 | Static fragments compose at compilation and tagged service methods contribute to the migration target when the Symfony command runs | [SymfonySchemaDiscoveryTest](../../src/Schema/Tests/SymfonySchemaDiscoveryTest.php) |
 | PostgreSQL functions are replaceable at the same signature, with signature changes and removals delegated to explicit migrations | [PostgresFunctionMigrationTest](../../src/Schema/Tests/PostgresFunctionMigrationTest.php) |
 | Policies can be deployed before activation, enforce reads and writes for application roles, and can be replaced around structural changes. Forced RLS applies to the owner and disabling RLS preserves policies | [PostgresPolicyMigrationTest](../../src/Schema/Tests/PostgresPolicyMigrationTest.php) |

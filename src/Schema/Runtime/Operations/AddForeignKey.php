@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\Schema\Operations;
 
+use Ultra\Schema\ForeignKeyAction;
 use Ultra\Schema\ForeignKeyTiming;
 
 final readonly class AddForeignKey implements SchemaOperation
@@ -15,6 +16,7 @@ final readonly class AddForeignKey implements SchemaOperation
         public string $referencedTableName,
         public array $columns,
         public ForeignKeyTiming $timing = ForeignKeyTiming::NotDeferrable,
+        public ForeignKeyAction $onDelete = ForeignKeyAction::NoAction,
     ) {
         if ([] === $columns) {
             throw new \InvalidArgumentException('A foreign key needs at least one column.');
