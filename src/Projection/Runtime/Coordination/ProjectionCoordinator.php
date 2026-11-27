@@ -11,6 +11,10 @@ use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\ProjectionSegment;
+use Ultra\Time\ClockInterface;
+use Ultra\Time\DatePoint;
+use Ultra\Time\Duration;
+use Ultra\Time\SystemClock;
 
 final readonly class ProjectionCoordinator
 {
@@ -19,6 +23,9 @@ final readonly class ProjectionCoordinator
      */
     public const string COORDINATOR_KEY = 'projection-coordinator';
 
+    private const int LEASE_SECONDS = 60;
+    private const int RENEW_AFTER_SECONDS = 30;
+
     public function __construct(
         private ProjectionCatalog $catalog,
         private ProjectionRunner $runner,
@@ -26,11 +33,17 @@ final readonly class ProjectionCoordinator
         private CoordinatorLease $leaseRepository,
         private ProjectionActivatorInterface $activator,
         private ProjectionScalingPolicyInterface $scalingPolicy = new DefaultProjectionScalingPolicy(),
+        private ClockInterface $clock = new SystemClock(),
     ) {}
 
     public function run(string $workerId, int $batchSize = 100, int $maxCycles = 32): ProjectionCoordinatorResult
     {
-        $acquiredLease = $this->leaseRepository->acquire(self::COORDINATOR_KEY, $workerId);
+        $renewAt = $this->clock->now()->add(Duration::seconds(self::RENEW_AFTER_SECONDS));
+        $acquiredLease = $this->leaseRepository->acquire(
+            self::COORDINATOR_KEY,
+            $workerId,
+            Duration::seconds(self::LEASE_SECONDS),
+        );
         if (!$acquiredLease) {
             return new ProjectionCoordinatorResult(false, 0, 0, 0);
         }
@@ -42,7 +55,7 @@ final readonly class ProjectionCoordinator
 
         try {
             for ($cycle = 0; $cycle < $maxCycles; ++$cycle) {
-                $this->leaseRepository->renew(self::COORDINATOR_KEY, $workerId);
+                $this->renewIfDue($workerId, $renewAt);
 
                 if ($this->scalingPolicy instanceof DefaultProjectionScalingPolicy) {
                     $freshPlan = [] === $localPlan;
@@ -55,6 +68,9 @@ final readonly class ProjectionCoordinator
                         $claimed = true;
                         $processedEvents += $result->processedEvents;
                         $acknowledgedBuckets += $result->acknowledgedBuckets;
+                        if (!$result->caughtUp) {
+                            $this->renewIfDue($workerId, $renewAt);
+                        }
                     }
                     if (!$claimed && $freshPlan) {
                         break;
@@ -131,6 +147,9 @@ final readonly class ProjectionCoordinator
                     ) as $result) {
                         $processedEvents += $result->processedEvents;
                         $acknowledgedBuckets += $result->acknowledgedBuckets;
+                        if (!$result->caughtUp) {
+                            $this->renewIfDue($workerId, $renewAt);
+                        }
                     }
                 }
 
@@ -148,6 +167,15 @@ final readonly class ProjectionCoordinator
             $acknowledgedBuckets,
             $requestedWorkerActivations,
         );
+    }
+
+    private function renewIfDue(string $workerId, DatePoint &$renewAt): void
+    {
+        $now = $this->clock->now();
+        if ($now >= $renewAt) {
+            $this->leaseRepository->renew(self::COORDINATOR_KEY, $workerId, Duration::seconds(self::LEASE_SECONDS));
+            $renewAt = $now->add(Duration::seconds(self::RENEW_AFTER_SECONDS));
+        }
     }
 
     /**

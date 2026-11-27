@@ -45,6 +45,7 @@ final class ProjectionFixture
     public readonly ProjectionRunner $runner;
     public readonly ?Connection $connection;
     public readonly string $prefix;
+    private readonly ClockInterface $clock;
     /** @var list<object{createStatements(): list<string>, dropStatements(): list<string>}> */
     private array $schemas = [];
     /** @var list<string> */
@@ -53,6 +54,7 @@ final class ProjectionFixture
     public function __construct(string $backend, ?ClockInterface $clock = null)
     {
         $clock ??= new SystemClock();
+        $this->clock = $clock;
         $this->activator = new InMemoryProjectionActivator();
         $this->prefix = 'projection_guarantees_' . bin2hex(random_bytes(4)) . '_';
 
@@ -108,6 +110,7 @@ final class ProjectionFixture
             $this->leases,
             $this->activator,
             $scaling ?? new DefaultProjectionScalingPolicy(),
+            clock: $this->clock,
         );
     }
 

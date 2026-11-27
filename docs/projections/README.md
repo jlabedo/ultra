@@ -396,9 +396,9 @@ requiring activity hints.
 The coordinator acquires the global lease and polls pending buckets across all
 projections. With the default scaling policy, it plans local assignments for
 the affected projections from that poll and refreshes the plan once it runs
-out of candidates. Each cycle renews the lease and runs at most one local
-assignment through `ProjectionRunner`. The runner first tries to claim a free
-or expired segment covering the full range. The global poll already identified
+out of candidates. Each cycle runs at most one local assignment through
+`ProjectionRunner`. The runner first tries to claim a free or expired segment
+covering the full range. The global poll already identified
 work for that range, and the claim checks lease expiry and the range atomically.
 If the claim fails, the coordinator recovers expired claims and checks the
 available segments for pending buckets, including when a projection has split
@@ -410,8 +410,13 @@ to reach the requested worker count. It can reserve additional claims and
 activate workers for them while processing its own local assignment.
 
 Workers read the counters for their segment after claiming it and decrement
-only those observed counters at catch-up. The coordinator releases its lease
-when it reaches its cycle limit or a fresh poll yields no productive work.
+only those observed counters at catch-up. The coordinator checks its 60-second
+lease at the start of each cycle and between local batches. It renews after 30
+seconds have elapsed since it last requested acquisition or renewal. A single
+blocking operation can outlast the lease between checks. A custom clock must be
+shared between the coordinator and its lease repository. The coordinator
+releases the lease when it reaches its cycle limit or a fresh poll yields no
+productive work.
 
 Coordinator liveness uses [CoordinatorLease](../../src/Coordination/Runtime/Lease/CoordinatorLease.php).
 

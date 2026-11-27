@@ -8,9 +8,12 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\TestWith;
 use Symfony\Component\DependencyInjection\ContainerBuilder;
 use Ultra\Container\ContainerExtension;
+use Ultra\Coordination\Lease\CoordinatorLease;
 use Ultra\Coordination\Tracking\PendingKey;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
+use Ultra\EventStore\EventStore;
+use Ultra\EventStore\LoadResult;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Bundle\ProjectionExtension;
 use Ultra\Projection\Coordination\DefaultProjectionScalingPolicy;
@@ -37,6 +40,7 @@ use Ultra\Time\StatickClock;
 final class CoordinationSchedulingTest extends ProjectionTestCase
 {
     private const string KEY = ProjectionCoordinator::COORDINATOR_KEY;
+    private const string CLOCK_START = '2024-01-01T00:00:00+00:00';
 
     public function test_scaling_claims_remote_work_while_the_leader_processes_its_own_segment(): void
     {
@@ -107,7 +111,7 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
 
     public function test_the_leader_respects_a_live_initial_segment_claim_and_takes_it_over_after_expiry(): void
     {
-        $clock = new StatickClock(new \DateTimeImmutable('2024-01-01T00:00:00+00:00'));
+        $clock = new StatickClock(new \DateTimeImmutable(self::CLOCK_START));
         $fixture = $this->fixture('memory', $clock);
         $projection = new CoordinatorProjection();
         $runtime = new ProjectionRuntime($projection, new UltraNormalizer());
@@ -221,7 +225,14 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         $activity = new ProjectionActivity($tracker);
         $activator = $fixture->activator;
         $runner = new ProjectionRunner($fixture->store, $fixture->segments, activityRepository: $activity);
-        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
+        $coordinator = new ProjectionCoordinator(
+            $catalog,
+            $runner,
+            $activity,
+            $leases,
+            $activator,
+            clock: new StatickClock(new \DateTimeImmutable(self::CLOCK_START)),
+        );
 
         $result = $coordinator->run('coordinator-1', maxCycles: 3);
 
@@ -230,7 +241,7 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         static::assertSame(0, $result->acknowledgedBuckets);
         static::assertSame(0, $result->requestedWorkerActivations);
         static::assertSame(1, $leases->acquireCalls);
-        static::assertSame(1, $leases->renewCalls);
+        static::assertSame(0, $leases->renewCalls);
         static::assertSame(1, $leases->releaseCalls);
         static::assertSame(1, $tracker->pendingCalls);
         static::assertSame(0, $tracker->pendingForChannelCalls);
@@ -254,7 +265,14 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         $leases = new CountingLeaseRepository();
         $activator = $fixture->activator;
         $runner = new ProjectionRunner($fixture->store, $segments, activityRepository: $activity);
-        $coordinator = new ProjectionCoordinator($catalog, $runner, $activity, $leases, $activator);
+        $coordinator = new ProjectionCoordinator(
+            $catalog,
+            $runner,
+            $activity,
+            $leases,
+            $activator,
+            clock: new StatickClock(new \DateTimeImmutable(self::CLOCK_START)),
+        );
 
         $result = $coordinator->run('coordinator-1', maxCycles: 3);
 
@@ -263,9 +281,73 @@ final class CoordinationSchedulingTest extends ProjectionTestCase
         static::assertSame(0, $result->acknowledgedBuckets);
         static::assertSame(0, $result->requestedWorkerActivations);
         static::assertSame(1, $tracker->pendingCalls);
-        static::assertSame(1, $leases->renewCalls);
+        static::assertSame(0, $leases->renewCalls);
         static::assertSame(1, $leases->releaseCalls);
         static::assertSame(0, $tracker->pendingForChannelCalls);
+    }
+
+    public function test_the_leader_renews_its_lease_between_batches_and_cycles_when_due(): void
+    {
+        $clock = new StatickClock(new \DateTimeImmutable(self::CLOCK_START));
+        $fixture = $this->fixture('memory', $clock);
+        $runtime = new ProjectionRuntime(new CoordinatorProjection(), new UltraNormalizer());
+        $nextRuntime = new ProjectionRuntime(new RuntimeProjection(), new UltraNormalizer());
+        $renewals = 0;
+        $leases = $this->createStub(CoordinatorLease::class);
+        $leases
+            ->method('acquire')
+            ->willReturnCallback(static function () use ($clock): bool {
+                $clock->sleep(Duration::seconds(10));
+
+                return true;
+            });
+        $leases
+            ->method('renew')
+            ->willReturnCallback(static function () use ($clock, &$renewals): void {
+                ++$renewals;
+                $clock->sleep(Duration::seconds(10));
+            });
+
+        // The first four loads reach 29 s and 30 s into the first two lease windows.
+        // The fifth finishes the first projection at the next renewal threshold.
+        $elapsedPerLoad = [19, 1, 19, 1, 20, 0];
+        $renewalsBeforeLoads = [];
+        $eventStore = $this->createStub(EventStore::class);
+        $eventStore
+            ->method('load')
+            ->willReturnCallback(static function (mixed ...$arguments) use (
+                $fixture,
+                $clock,
+                $elapsedPerLoad,
+                &$renewals,
+                &$renewalsBeforeLoads,
+            ): LoadResult {
+                $clock->sleep(Duration::seconds($elapsedPerLoad[count($renewalsBeforeLoads)]));
+                $renewalsBeforeLoads[] = $renewals;
+
+                return $fixture->store->load(...$arguments);
+            });
+        $fixture->store->append([
+            ...array_fill(0, 5, self::courseEvent('alpha', 'Math')),
+            new Event('course.created', ['courseId' => 'beta', 'name' => 'Physics'], ['courseId' => 'beta']),
+        ]);
+        $fixture->activity->bump($runtime->projectionId(), BucketHasher::bucketFor('alpha'));
+        $fixture->activity->bump($nextRuntime->projectionId(), BucketHasher::bucketFor('beta'));
+        $runner = new ProjectionRunner($eventStore, $fixture->segments, activityRepository: $fixture->activity);
+        $coordinator = new ProjectionCoordinator(
+            new ProjectionCatalog($runtime, $nextRuntime),
+            $runner,
+            $fixture->activity,
+            $leases,
+            $fixture->activator,
+            clock: $clock,
+        );
+
+        $result = $coordinator->run('coordinator-1', batchSize: 1, maxCycles: 2);
+
+        static::assertSame(6, $result->processedEvents);
+        static::assertSame([0, 0, 1, 1, 2, 3], $renewalsBeforeLoads);
+        static::assertSame(3, $renewals);
     }
 
     /** @param list<?string> $expectedActivityReads */
