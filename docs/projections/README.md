@@ -317,6 +317,10 @@ Split and merge are separate explicit operations on segment ranges.
 The runner uses [event-store pagination](../event-sourcing/event-store.md#eventstore-interface) to determine catch-up:
 `hasMore = false` completes the claim and permits acknowledgement of observed activity, including for a full final page.
 
+`runClaimedBatches()` checks initialization once and yields one result per attempted batch until the segment
+catches up or a claim fails. The coordinator consumes the sequence for its local segment. The segment message
+handler stops at its configured cycle limit.
+
 The segment repository owns runtime state such as:
 
 - current bucket range

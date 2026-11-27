@@ -8,11 +8,13 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use Ultra\EventStore\BucketHasher;
 use Ultra\EventStore\Event;
+use Ultra\EventStore\Sequence;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
 use Ultra\Projection\ProjectionCatalog;
 use Ultra\Projection\ProjectionRunner;
+use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Tests\Support\CallbackEventStore;
 use Ultra\Projection\Tests\Support\CountingDirtyKeyTracker;
@@ -45,25 +47,42 @@ final class ActivityAcknowledgementTest extends ProjectionTestCase
         ]);
         $activity->bump('tracking_projection', $bucket);
 
-        $runner->ensureInitialized($runtime);
-        static::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
+        $batches = $runner->runClaimedBatches($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
+        $firstResult = $batches->current();
 
-        $firstResult = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
-
+        static::assertInstanceOf(ProjectionRunResult::class, $firstResult);
+        static::assertTrue($firstResult->claimedSegment);
         static::assertSame(1, $firstResult->processedEvents);
         static::assertFalse($firstResult->caughtUp);
         static::assertSame(0, $firstResult->acknowledgedBuckets);
-        static::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
+        static::assertSame(1, $projection->initialized);
+        static::assertSame(['Math'], $projection->applied);
+        static::assertSame(1, $projection->flushes);
+        static::assertFalse($fixture->connection?->isTransactionActive() ?? false);
+        $segment = $segments->listSegments('tracking_projection')[0];
+        static::assertSame('worker-1', $segment->workerId);
+        static::assertTrue($segment->checkpoint->contains(new Sequence(1)));
+        static::assertFalse($segment->checkpoint->contains(new Sequence(2)));
         static::assertCount(1, $activity->pendingInSegment('tracking_projection', 0, 255));
 
-        $secondResult = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-1', limit: 1);
+        $batches->next();
+        $secondResult = $batches->current();
 
+        static::assertInstanceOf(ProjectionRunResult::class, $secondResult);
+        static::assertTrue($secondResult->claimedSegment);
         static::assertSame(1, $secondResult->processedEvents);
         static::assertTrue($secondResult->caughtUp);
         static::assertSame(1, $secondResult->acknowledgedBuckets);
-        static::assertNull($segments->listSegments('tracking_projection')[0]->workerId);
+        $segment = $segments->listSegments('tracking_projection')[0];
+        static::assertNull($segment->workerId);
+        static::assertTrue($segment->checkpoint->contains(new Sequence(2)));
         static::assertSame([], $activity->pendingInSegment('tracking_projection', 0, 255));
+        static::assertSame(1, $projection->initialized);
+        static::assertSame(2, $projection->flushes);
         static::assertSame(['course-1' => 'Advanced Math'], $projection->names);
+
+        $batches->next();
+        static::assertFalse($batches->valid());
     }
 
     #[DataProvider('backends')]

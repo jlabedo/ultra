@@ -32,16 +32,18 @@ final readonly class ProjectionMessageHandler
     public function handleRunProjectionSegment(RunProjectionSegment $message): void
     {
         $runtime = $this->catalog->runtime($message->projectionId);
+        if ($this->maxCycles < 1) {
+            return;
+        }
 
-        for ($cycle = 0; $cycle < $this->maxCycles; ++$cycle) {
-            $result = $this->runner->runClaimedOnce(
-                $runtime,
-                $message->projectionId,
-                $message->bucketFrom,
-                $message->workerId,
-                $this->batchSize,
-            );
-            if (!$result->claimedSegment || $result->caughtUp) {
+        foreach ($this->runner->runClaimedBatches(
+            $runtime,
+            $message->projectionId,
+            $message->bucketFrom,
+            $message->workerId,
+            $this->batchSize,
+        ) as $cycle => $_result) {
+            if (($cycle + 1) === $this->maxCycles) {
                 return;
             }
         }

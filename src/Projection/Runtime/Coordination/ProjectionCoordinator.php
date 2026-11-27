@@ -108,21 +108,16 @@ final readonly class ProjectionCoordinator
 
                 if (null !== $localAssignment) {
                     [$runtime, $projectionId, $bucketFrom, $claimWorkerId] = $localAssignment;
-                    do {
-                        $result = $this->runner->runClaimedOnce(
-                            $runtime,
-                            $projectionId,
-                            $bucketFrom,
-                            $claimWorkerId,
-                            $batchSize,
-                        );
-                        if (!$result->claimedSegment) {
-                            break;
-                        }
-
+                    foreach ($this->runner->runClaimedBatches(
+                        $runtime,
+                        $projectionId,
+                        $bucketFrom,
+                        $claimWorkerId,
+                        $batchSize,
+                    ) as $result) {
                         $processedEvents += $result->processedEvents;
                         $acknowledgedBuckets += $result->acknowledgedBuckets;
-                    } while (!$result->caughtUp);
+                    }
                 }
 
                 if (!$claimedAny && null === $localAssignment) {

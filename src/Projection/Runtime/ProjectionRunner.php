@@ -255,10 +255,38 @@ final readonly class ProjectionRunner
         string $workerId,
         int $limit = 100,
     ): ProjectionRunResult {
+        return $this->runClaimedBatches($runtime, $projectionId, $bucketFrom, $workerId, $limit)->current();
+    }
+
+    /**
+     * Initialize once and yield each batch result until catch-up or loss of the claim.
+     *
+     * @return \Generator<int, ProjectionRunResult, void, void>
+     */
+    public function runClaimedBatches(
+        ProjectionRuntime $runtime,
+        string $projectionId,
+        int $bucketFrom,
+        string $workerId,
+        int $limit = 100,
+    ): \Generator {
         if ($projectionId !== $runtime->projectionId()) {
             throw new \InvalidArgumentException('Runtime and claimed projection must match.');
         }
         $this->ensureInitialized($runtime);
+        do {
+            $result = $this->runInitializedBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit);
+            yield $result;
+        } while ($result->claimedSegment && !$result->caughtUp);
+    }
+
+    private function runInitializedBatch(
+        ProjectionRuntime $runtime,
+        string $projectionId,
+        int $bucketFrom,
+        string $workerId,
+        int $limit,
+    ): ProjectionRunResult {
         if (ProjectionMode::Asynchronous === $runtime->definition()->mode) {
             return $this->runClaimedOnceBatch($runtime, $projectionId, $bucketFrom, $workerId, $limit);
         }

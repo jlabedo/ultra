@@ -8,6 +8,7 @@ use PHPUnit\Framework\Attributes\CoversNamespace;
 use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\Attributes\Group;
 use Ultra\Mapper\UltraNormalizer;
+use Ultra\Projection\ProjectionRunResult;
 use Ultra\Projection\ProjectionRuntime;
 use Ultra\Projection\Tests\Support\ProjectionTestCase;
 use Ultra\Projection\Tests\Support\TrackingProjection;
@@ -160,15 +161,20 @@ final class SegmentOwnershipTest extends ProjectionTestCase
         $runtime = new ProjectionRuntime(new TrackingProjection(), new UltraNormalizer());
         $fixture = $this->fixture($backend);
         $segments = $fixture->segments;
-        $activity = $fixture->activity;
         $runner = $fixture->runner;
 
         $runner->ensureInitialized($runtime);
         static::assertNotNull($runner->claimSegment('tracking_projection', 0, 'worker-1'));
 
-        $result = $runner->runClaimedOnce($runtime, 'tracking_projection', 0, 'worker-2');
+        $batches = $runner->runClaimedBatches($runtime, 'tracking_projection', 0, 'worker-2');
+        $result = $batches->current();
 
+        static::assertInstanceOf(ProjectionRunResult::class, $result);
         static::assertFalse($result->claimedSegment);
+        static::assertSame(0, $result->processedEvents);
         static::assertSame('worker-1', $segments->listSegments('tracking_projection')[0]->workerId);
+
+        $batches->next();
+        static::assertFalse($batches->valid());
     }
 }

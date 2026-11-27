@@ -34,7 +34,7 @@ final class ActivationDeliveryTest extends ProjectionTestCase
         static::assertEquals(new RunProjectionSegment('projection-1', 42, 'worker-1'), $mediator->messages[1]);
     }
 
-    public function test_a_delivered_segment_message_catches_up_and_acknowledges_its_claim(): void
+    public function test_delivered_segment_messages_respect_the_batch_budget_and_acknowledge_after_catch_up(): void
     {
         $projection = new MessageHandlingTrackingProjection();
         $container = $this
@@ -51,19 +51,32 @@ final class ActivationDeliveryTest extends ProjectionTestCase
             $runner,
             $container->projectionCoordinator(),
             batchSize: 1,
-            maxCycles: 3,
+            maxCycles: 1,
         );
 
-        $event = self::messageEvent('course-1', 'Intro to Projections');
-        $eventStore->append([$event]);
+        $eventStore->append([
+            self::messageEvent('course-1', 'Intro to Projections'),
+            self::messageEvent('course-2', 'Worker Scheduling'),
+        ]);
 
         $runner->ensureInitialized($runtime);
         static::assertNotNull($runner->claimSegment($runtime->projectionId(), 0, 'worker-1'));
 
-        $handler->handleRunProjectionSegment(new RunProjectionSegment($runtime->projectionId(), 0, 'worker-1'));
+        $message = new RunProjectionSegment($runtime->projectionId(), 0, 'worker-1');
+        $handler->handleRunProjectionSegment($message);
 
         static::assertSame(['course-1' => 'Intro to Projections'], $projection->names);
+        static::assertNotEmpty($activity->pendingInSegment($runtime->projectionId(), 0, 255));
+        static::assertSame('worker-1', $runner->listSegments($runtime->projectionId())[0]->workerId);
+
+        $handler->handleRunProjectionSegment($message);
+
+        static::assertSame(
+            ['course-1' => 'Intro to Projections', 'course-2' => 'Worker Scheduling'],
+            $projection->names,
+        );
         static::assertSame([], $activity->pendingInSegment($runtime->projectionId(), 0, 255));
+        static::assertNull($runner->listSegments($runtime->projectionId())[0]->workerId);
     }
 
     private static function messageEvent(string $courseId, string $name): Event
