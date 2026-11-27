@@ -26,6 +26,7 @@ final readonly class RowUpdatePlan
     /**
      * @param array<string, mixed> $expectedColumns
      * @param array<string, mixed> $setColumns
+     * @param array<string, int> $increments
      */
     public function __construct(
         public MappedKey $key,
@@ -33,6 +34,7 @@ final readonly class RowUpdatePlan
         public string $mode,
         public array $expectedColumns,
         public array $setColumns,
+        public array $increments = [],
     ) {}
 
     public function writes(): bool

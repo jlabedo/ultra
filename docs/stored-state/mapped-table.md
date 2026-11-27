@@ -190,6 +190,40 @@ Omit `$columns` or pass `null` to return all mapped non-key columns. Pass `[]` f
 with empty `columns` maps. A non-empty projection can explicitly include key columns. The rows reflect
 buffered changes, omit unknown values, and preserve known nulls.
 
+## Incrementing integer columns
+
+```php
+$stock->withKey($itemId)
+    ->upsert()
+    ->incrementColumn('units', $delta)
+    ->incrementColumn('event_count', 1);
+```
+
+`incrementColumn()` accepts signed integer deltas for non-null, non-key columns mapped with
+`IntegerCodec`. Schema supplies this codec for integer and bigint columns. A direct definition
+must supply the codec and declare nullability with `nullable`, listing any nullable columns.
+
+The buffer accumulates deltas for each row and column without reading storage. A plain increment
+requires an existing row at flush, like a plain column update. With `upsert()`, the accumulated delta
+is the initial value for an absent row and is added atomically to the current value on conflict.
+Explicit inserts and replacements also initialize incremented columns from zero. A later
+`setColumn()` replaces earlier deltas for that column. An increment after an assignment adds to
+the assigned value. Deletion discards pending deltas. Reconciliation keeps deltas for unspecified
+columns of retained rows and discards them for excluded rows.
+
+`get()` and owner reads show the incremented value when the base is known. When no stored row
+exists, an upsert shows the initial value and a plain increment leaves the value unknown.
+`observe()` and `observeMany()` protect the stored value used to compute an observed result.
+An observation of a delta initialized by an upsert on an absent row checks absence by requiring
+insertion. An explicit `expectColumnValue()` after a relative increment on an existing row checks
+the corresponding base value. Expectations recorded earlier survive subsequent writes.
+
+PostgreSQL groups consecutive writes of the same shape in flush order. Its upsert checks
+the insertion candidate against the applicable table constraints, even when a conflicting row
+exists and the updated row would pass those constraints. For example, a negative delta for a
+column with `CHECK (units >= 0)` can be applied with a plain increment when the resulting value
+satisfies the check.
+
 ## Manual assembly and whole-table membership
 
 Pass a complete mapping to the shared adapter when assembling row sets manually. Use one adapter and
@@ -269,6 +303,7 @@ an independent snapshot for its optimistic expectation.
 The immutable types under `Ultra\MappedTable\Plan` describe the sorted row operations and membership entries. Each membership entry carries
 its owner key (or `null` for the whole table), the expected and ignored keys, and the final retained keys
 when reconciliation was requested. An empty retained set removes all rows covered by the entry.
+Row plans carry relative deltas in `increments` and absolute assignments in `setColumns`.
 
 `flush()` consumes applied row plans, checked expectations and membership reconciliation after success, following
 the [unit-of-work contract](../transactions/README.md#core-contract). Later reads use storage without the consumed

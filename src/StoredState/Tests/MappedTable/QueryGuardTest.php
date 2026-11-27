@@ -33,6 +33,48 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 #[CoversNamespace('Ultra\MappedTable')]
 final class QueryGuardTest extends RowSetTestCase
 {
+    public function test_increments_request_guards_for_watched_columns_and_both_values_of_a_move(): void
+    {
+        $storage = new InMemoryRowDatabase();
+        $trace = new \ArrayObject();
+        $adapter = new RecordingGuardMappedTableAdapter($storage, static function (
+            string $namespace,
+            string $key,
+            GuardLockMode $mode,
+        ) use ($trace): void {
+            $trace[] = [$namespace, $key, $mode];
+        });
+        $fixture = $this->fixture(storage: $storage, adapter: $adapter, columnTypes: [
+            'units' => new ColumnDefinition('units', type: ColumnType::Int32),
+        ]);
+        $rows = $fixture->rows;
+        $unit = new MappedTableUnitOfWork(['stock' => $rows], $adapter, queryGuards: [
+            new QueryGuardDefinition('by_item', [new QueryGuardDependency('stock', 'id', ['units'])]),
+            new QueryGuardDefinition('by_units', [new QueryGuardDependency('stock', 'units', [])]),
+        ]);
+        $fixture->seed(['id' => 'item', 'units' => 10]);
+        $row = $rows->withKey('item')->incrementColumn('units', -3);
+        static::assertSame(['units' => 7], $row->observe(['units']));
+
+        try {
+            $unit->queryGuard('by_units')->observe(7, static fn(): never => static::fail('Query must not run.'));
+            static::fail('The pending increment affects the observed guard value.');
+        } catch (PendingQueryChangesException $exception) {
+            static::assertSame(7, $exception->guardValue);
+        }
+        $fixture->flush($unit);
+
+        static::assertSame(
+            [
+                ['ultra:query_guard:by_item',  'item', GuardLockMode::EXCLUSIVE],
+                ['ultra:query_guard:by_units', '10',   GuardLockMode::EXCLUSIVE],
+                ['ultra:query_guard:by_units', '7',    GuardLockMode::EXCLUSIVE],
+            ],
+            $trace->getArrayCopy(),
+        );
+        static::assertSame(['units' => 7], $fixture->stored('item', ['units']));
+    }
+
     public function test_direct_writers_and_owner_cleanup_consolidate_guards_before_query_replay(): void
     {
         $storage = new InMemoryRowDatabase();

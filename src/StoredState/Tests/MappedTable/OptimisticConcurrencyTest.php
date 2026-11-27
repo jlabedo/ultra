@@ -17,6 +17,47 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 final class OptimisticConcurrencyTest extends RowSetTestCase
 {
     #[DataProvider('backends')]
+    public function test_observing_an_increment_guards_the_stored_base_after_an_assignment(string $backend): void
+    {
+        $fixture = $this->stock($backend);
+        $fixture->seed(['id' => 'row', 'units' => 10, 'event_count' => 1]);
+        $row = $fixture->rows->withKey('row')->upsert()->incrementColumn('units', 6);
+        static::assertSame(['units' => 16], $row->observe(['units']));
+        $row->setColumn('units', 17);
+        $fixture->seed(['id' => 'row', 'units' => 16, 'event_count' => 1]);
+
+        $this->expectException(ConcurrencyException::class);
+        $fixture->flush();
+    }
+
+    #[DataProvider('backends')]
+    public function test_observing_a_new_counter_guards_the_absence_that_supplied_its_base(string $backend): void
+    {
+        $fixture = $this->stock($backend);
+        $fixture->rows->withKey('new')->upsert()->incrementColumn('units', 6)->incrementColumn('event_count', 1);
+        static::assertSame([['units' => 6]], $fixture->rows->observeMany(['new'], ['units']));
+        $fixture->seed(['id' => 'new', 'units' => 10, 'event_count' => 1]);
+
+        $this->expectException(ConcurrencyException::class);
+        $fixture->flush();
+    }
+
+    #[DataProvider('backends')]
+    public function test_expecting_an_incremented_value_checks_its_base(string $backend): void
+    {
+        $fixture = $this->stock($backend);
+        $fixture->seed(['id' => 'row', 'units' => 10, 'event_count' => 1]);
+        $fixture
+            ->rows
+            ->withKey('row')
+            ->incrementColumn('units', -2)
+            ->expectColumnValue('units', 8)
+            ->incrementColumn('units', 1);
+        $fixture->flush();
+        static::assertSame(['units' => 9], $fixture->stored('row', ['units']));
+    }
+
+    #[DataProvider('backends')]
     public function test_grouped_observation_preserves_order_and_the_buffered_view(string $backend): void
     {
         [$fixture, $rows] = $this->ownedRows($backend);

@@ -158,25 +158,46 @@ final readonly class InMemoryRowSetStorage implements RowSetStorage
             throw $this->concurrency('Insert failed because the row already exists', $update);
         }
 
-        $this->database->writeRowByKey($this->mapping->table, $update->key, $update->setColumns);
+        $this->writeValues($update, []);
     }
 
     private function applyReplace(RowUpdatePlan $update): void
     {
         $this->requireMatchingRow($update, 'Conditional replace failed');
-        $this->database->writeRowByKey($this->mapping->table, $update->key, $update->setColumns);
+        $this->writeValues($update, []);
     }
 
     private function applyUpsert(RowUpdatePlan $update): void
     {
         $row = $this->database->rowByKey($this->mapping->table, $update->key);
-        $row = false === $row ? [] : $row;
-        $this->database->writeRowByKey($this->mapping->table, $update->key, [...$row, ...$update->setColumns]);
+        if (false === $row) {
+            $this->writeValues($update, []);
+
+            return;
+        }
+
+        // The insert candidate must also fit the declared integer range on conflict.
+        foreach ($update->increments as $column => $delta) {
+            $this->mapping->column($column)->increment(0, $delta);
+        }
+        $this->writeValues($update, $row, startsAtZero: false);
     }
 
     private function applyUpdate(RowUpdatePlan $update): void
     {
         $row = $this->requireMatchingRow($update, 'Conditional update failed');
+        $this->writeValues($update, $row, startsAtZero: false);
+    }
+
+    /** @param array<string, mixed> $row */
+    private function writeValues(RowUpdatePlan $update, array $row, bool $startsAtZero = true): void
+    {
+        foreach ($update->increments as $column => $delta) {
+            $row[$column] = $this->mapping->column($column)->increment(
+                $startsAtZero ? 0 : $row[$column] ?? null,
+                $delta,
+            );
+        }
         $this->database->writeRowByKey($this->mapping->table, $update->key, [...$row, ...$update->setColumns]);
     }
 

@@ -12,6 +12,8 @@ use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
 use Ultra\MappedTable\Tests\Support\RowSetTestCase;
+use Ultra\Schema\ColumnDefinition;
+use Ultra\Schema\ColumnType;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\UnitOfWork\Exception\ConcurrencyException;
 
@@ -19,6 +21,49 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 #[CoversNamespace('Ultra\MappedTable')]
 final class PersistenceLockingTest extends RowSetTestCase
 {
+    public function test_competing_postgres_upserts_add_their_deltas_to_the_row_created_by_another_writer(): void
+    {
+        $fixture = $this->fixture(
+            'postgres',
+            columnTypes: [
+                'units' => new ColumnDefinition('units', type: ColumnType::Int64),
+            ],
+            allowAbsentObservations: false,
+        );
+        $connection = $fixture->connection();
+        $other = PostgresConnectionSupport::connection((string) getenv('ULTRA_TEST_POSTGRES_DSN'));
+        $adapter = new PostgresMappedTableAdapter($other, tablePolicies: [
+            $fixture->tableName => new MappedTablePolicy(allowAbsentObservations: false),
+        ]);
+        $competing = $fixture->newRows($adapter);
+        $writer = new MappedTableUnitOfWork([$fixture->tableName => $competing], $adapter);
+        $fixture->rows->withKey('row')->upsert()->incrementColumn('units', 10);
+        $competing->withKey('row')->upsert()->incrementColumn('units', -3);
+        $connection->beginTransaction();
+        try {
+            $fixture->unit()->flush();
+            $other->beginTransaction();
+            $other->executeStatement("SET LOCAL lock_timeout = '10ms'");
+            try {
+                $writer->flush();
+                static::fail('The competing upsert must wait for the insertion.');
+            } catch (DriverException $exception) {
+                static::assertSame('55P03', $exception->getSQLState());
+            } finally {
+                $other->rollBack();
+            }
+            $connection->commit();
+            $other->transactional($writer->flush(...));
+
+            static::assertSame(['units' => 7], $fixture->stored('row', ['units']));
+        } finally {
+            if ($connection->isTransactionActive()) {
+                $connection->rollBack();
+            }
+            $other->close();
+        }
+    }
+
     /** @return iterable<string, array{string, string, bool}> */
     public static function competingWrites(): iterable
     {

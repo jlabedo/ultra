@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable\Buffer;
 
+use Ultra\MappedTable\Codec\IntegerCodec;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\MappedRowSetMetadata;
 use Ultra\MappedTable\Plan\RowUpdatePlan;
@@ -25,6 +26,9 @@ final class BufferedRowUpdate
 
     /** @var array<string, mixed> */
     private array $setColumns = [];
+
+    /** @var array<string, int> */
+    private array $increments = [];
 
     public function __construct(
         public readonly MappedKey $key,
@@ -53,16 +57,28 @@ final class BufferedRowUpdate
         return RowUpdatePlan::MODE_INSERT === $this->mode || RowUpdatePlan::MODE_REPLACE === $this->mode;
     }
 
+    public function initializesIncrements(): bool
+    {
+        return $this->replacesStoredRow() || RowUpdatePlan::MODE_UPSERT === $this->mode;
+    }
+
     /** @return array<string, mixed> */
     public function writtenColumns(): array
     {
         return $this->mapping->copyValues($this->setColumns);
     }
 
+    /** @return array<string, int> */
+    public function increments(): array
+    {
+        return $this->increments;
+    }
+
     public function excludeFromReconciliation(): void
     {
         $this->mode = null;
         $this->setColumns = [];
+        $this->increments = [];
         $this->locallyAbsent = true;
     }
 
@@ -71,8 +87,9 @@ final class BufferedRowUpdate
      *
      * @param array<string, mixed>|null $storedValues
      * @param array<string, true>|null $observedColumns
+     * @param array<string, true> $initializedColumns Relative values visible because no stored row exists.
      */
-    public function applyObservation(?array $storedValues, ?array $observedColumns): void
+    public function applyObservation(?array $storedValues, ?array $observedColumns, array $initializedColumns): void
     {
         if (null === $storedValues) {
             $this->expectAbsent();
@@ -80,9 +97,24 @@ final class BufferedRowUpdate
             return;
         }
 
+        if (
+            []
+            !== (
+                null === $observedColumns
+                    ? $initializedColumns
+                    : array_intersect_key($initializedColumns, $observedColumns)
+            )
+        ) {
+            $this->insert();
+
+            return;
+        }
+
         $this->expectPresent();
         $values = null === $observedColumns ? $storedValues : array_intersect_key($storedValues, $observedColumns);
-        $this->expectColumnValues($values);
+        foreach ($values as $column => $value) {
+            $this->expectStoredColumnValue($column, $this->mapping->normalizeValue($column, $value));
+        }
     }
 
     /** @param array<string, mixed> $values */
@@ -201,6 +233,7 @@ final class BufferedRowUpdate
             $this->locallyAbsent = true;
             $this->expectedColumns = [];
             $this->setColumns = [];
+            $this->increments = [];
 
             return;
         }
@@ -208,6 +241,7 @@ final class BufferedRowUpdate
         $this->expectedPresence ??= RowUpdatePlan::EXPECTED_PRESENT;
         $this->mode = RowUpdatePlan::MODE_DELETE;
         $this->setColumns = [];
+        $this->increments = [];
     }
 
     public function expectColumnValue(string $column, mixed $value): void
@@ -233,8 +267,8 @@ final class BufferedRowUpdate
         }
 
         if (array_key_exists($column, $this->setColumns) || $this->replacesStoredRow()) {
-            // Inserted and replaced rows are entirely written by this unit of work: unset columns are null.
-            if (!$type->equivalent($this->setColumns[$column] ?? null, $value)) {
+            $written = $this->setColumns[$column] ?? $this->increments[$column] ?? null;
+            if (!$type->equivalent($written, $value)) {
                 throw new ConcurrencyException(sprintf(
                     'Expected value for table "%s", row "%s", column "%s" differs from the value written in this unit of work.',
                     $this->mapping->table,
@@ -246,6 +280,23 @@ final class BufferedRowUpdate
             return;
         }
 
+        $delta = $this->increments[$column] ?? null;
+        if (null !== $delta) {
+            if (
+                !is_int($value)
+                || $delta > 0 && $value < (PHP_INT_MIN + $delta)
+                || $delta < 0 && $value > (PHP_INT_MAX + $delta)
+            ) {
+                throw new ConcurrencyException('The expected incremented value has no integer base value.');
+            }
+            $value = $this->mapping->normalizeValue($column, $value - $delta);
+        }
+
+        $this->expectStoredColumnValue($column, $value);
+    }
+
+    private function expectStoredColumnValue(string $column, mixed $value): void
+    {
         if (RowUpdatePlan::EXPECTED_ABSENT === $this->expectedPresence) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register expected column values for table "%s", row "%s" because it is already expected to be absent.',
@@ -261,7 +312,7 @@ final class BufferedRowUpdate
 
         if (
             array_key_exists($column, $this->expectedColumns)
-            && !$type->equivalent($this->expectedColumns[$column], $value)
+            && !$this->mapping->column($column)->equivalent($this->expectedColumns[$column], $value)
         ) {
             throw new ConcurrencyException(sprintf(
                 'Conflicting expected values were registered for table "%s", row "%s", column "%s".',
@@ -277,6 +328,34 @@ final class BufferedRowUpdate
     public function setColumn(string $column, mixed $value): void
     {
         $value = $this->mapping->normalizeWritableValue($column, $value);
+        $this->prepareColumnWrite();
+        $this->setColumns[$column] = $value;
+        unset($this->increments[$column]);
+    }
+
+    public function incrementColumn(string $column, int $delta): void
+    {
+        $type = $this->mapping->column($column);
+        if ($this->key->contains($column) || false !== $type->nullable || !$type->codec instanceof IntegerCodec) {
+            throw new \InvalidArgumentException(sprintf(
+                'Increment requires a non-null mapped integer column outside the key, got "%s.%s".',
+                $this->mapping->table,
+                $column,
+            ));
+        }
+        if (isset($this->setColumns[$column])) {
+            $this->setColumn($column, $type->increment($this->setColumns[$column], $delta));
+
+            return;
+        }
+
+        $sum = IntegerCodec::add($this->increments[$column] ?? 0, $delta);
+        $this->prepareColumnWrite();
+        $this->increments[$column] = $sum;
+    }
+
+    private function prepareColumnWrite(): void
+    {
         if ($this->isDeleted()) {
             throw new ConcurrencyException(sprintf(
                 'Cannot register column updates for table "%s", row "%s" because it is already marked for delete.',
@@ -290,8 +369,6 @@ final class BufferedRowUpdate
                 ? RowUpdatePlan::MODE_INSERT
                 : RowUpdatePlan::MODE_UPDATE;
         }
-
-        $this->setColumns[$column] = $value;
     }
 
     /** @param array<string, mixed> $values */
@@ -315,18 +392,32 @@ final class BufferedRowUpdate
             return null;
         }
 
+        $expected = $this->mapping->copyValues($this->expectedColumns);
+        $values = null === $mode ? [] : $this->writtenColumns();
+        $increments = $this->increments;
+        if ([] !== $increments) {
+            ksort($expected, SORT_STRING);
+            ksort($values, SORT_STRING);
+            ksort($increments, SORT_STRING);
+        }
+
         return new RowUpdatePlan(
             key: $this->key,
             expectedPresence: $this->expectedPresence,
             mode: $mode ?? RowUpdatePlan::MODE_EXPECT,
-            expectedColumns: $this->mapping->copyValues($this->expectedColumns),
-            setColumns: null === $mode ? [] : $this->writtenColumns(),
+            expectedColumns: $expected,
+            setColumns: $values,
+            increments: $increments,
         );
     }
 
     private function writeMode(): ?string
     {
-        if (RowUpdatePlan::MODE_UPDATE === $this->mode && $this->updatesOnlyExpectedValues()) {
+        if (
+            RowUpdatePlan::MODE_UPDATE === $this->mode
+            && [] === $this->increments
+            && $this->updatesOnlyExpectedValues()
+        ) {
             return null;
         }
 

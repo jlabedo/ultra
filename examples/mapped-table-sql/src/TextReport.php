@@ -27,6 +27,9 @@ final class TextReport
                 );
                 $lines[] = '    Expect: ' . self::value($row->expectedColumns);
                 $lines[] = '    Set: ' . self::value($row->setColumns);
+                if ([] !== $row->increments) {
+                    $lines[] = '    Increment: ' . self::value($row->increments);
+                }
             }
             $keys = static fn(array $values): array => array_map(
                 static fn(MappedKey $key): array => $key->values,

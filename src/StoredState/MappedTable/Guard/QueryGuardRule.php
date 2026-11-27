@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable\Guard;
 
+use Ultra\MappedTable\Codec\IntegerCodec;
 use Ultra\MappedTable\MappedKey;
 use Ultra\MappedTable\Plan\RowSetUpdatePlan;
 use Ultra\MappedTable\Plan\RowUpdatePlan;
@@ -64,7 +65,7 @@ final readonly class QueryGuardRule
             }
         }
 
-        return false;
+        return [] !== array_intersect_key($row->increments, $watched);
     }
 
     /** @return iterable<string> */
@@ -92,10 +93,10 @@ final readonly class QueryGuardRule
         }
 
         if (RowUpdatePlan::MODE_DELETE !== $row->mode) {
-            $after = match ($row->mode) {
-                RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_REPLACE => $row->setColumns[$column] ?? null,
-                default => $row->setColumns[$column] ?? $before,
-            };
+            $createsRow = RowUpdatePlan::MODE_INSERT === $row->mode || RowUpdatePlan::MODE_REPLACE === $row->mode;
+            $after = isset($row->increments[$column])
+                ? IntegerCodec::add($createsRow ? 0 : $before, $row->increments[$column])
+                : $row->setColumns[$column] ?? ($createsRow ? null : $before);
             if (null === $before || $before !== $after) {
                 yield $this->lockValue($after);
             }

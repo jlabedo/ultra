@@ -16,6 +16,7 @@ use PHPUnit\Framework\Attributes\Group;
 use PHPUnit\Framework\TestCase;
 use Symfony\Component\Process\Process;
 use Ultra\MappedTable\MappedRowSet;
+use Ultra\MappedTable\MappedTablePolicy;
 use Ultra\MappedTable\MappedTableUnitOfWork;
 use Ultra\MappedTable\Plan\RowUpdatePlan;
 use Ultra\MappedTable\PostgresMappedTableAdapter;
@@ -58,6 +59,63 @@ final class SqlInspectionTest extends TestCase
         if (isset($this->connection)) {
             $this->connection->close();
         }
+    }
+
+    public function test_increment_writes_batch_by_shape_without_reading_rows(): void
+    {
+        $this->connection->executeStatement('CREATE TEMP TABLE stock (id TEXT PRIMARY KEY, units INTEGER NOT NULL,
+                event_count BIGINT NOT NULL, tags TEXT[], payload JSONB)');
+        $this->connection->executeStatement("INSERT INTO stock VALUES ('a', 20, 1), ('c', 30, 2), ('d', 40, 3)");
+        $adapter = new PostgresMappedTableAdapter($this->connection, tablePolicies: [
+            'stock' => new MappedTablePolicy(allowAbsentObservations: false),
+        ]);
+        $schema = new SchemaDefinition([
+            new TableDefinition(
+                'stock',
+                columns: [
+                    new ColumnDefinition('id', type: ColumnType::Text),
+                    new ColumnDefinition('units', type: ColumnType::Int32),
+                    new ColumnDefinition('event_count', type: ColumnType::Int64),
+                    new ColumnDefinition('tags', type: 'text[]', nullable: true),
+                    new ColumnDefinition('payload', type: ColumnType::Jsonb, nullable: true),
+                ],
+                primaryKey: ['id'],
+            ),
+        ]);
+        $rows = $adapter->compileRowSet(SchemaRowSet::fromTable($schema, 'stock'))();
+        $unit = new MappedTableUnitOfWork(['stock' => $rows], $adapter);
+        $this->trace->clear();
+
+        $rows->withKey('a')->upsert()->incrementColumn('units', -2)->incrementColumn('event_count', 1);
+        $rows->withKey('a')->incrementColumn('units', -1);
+        $rows->withKey('b')->upsert()->incrementColumn('event_count', 1)->incrementColumn('units', 2);
+        $rows
+            ->withKey('c')
+            ->expectColumnValue('payload', null)
+            ->setColumn('tags', ['one'])
+            ->incrementColumn('units', 3);
+        $rows
+            ->withKey('d')
+            ->expectColumnValue('payload', null)
+            ->incrementColumn('units', -4)
+            ->setColumn('tags', ['two', 'three']);
+        $this->connection->transactional($unit->flush(...));
+
+        $sql = array_values(array_filter(array_column($this->trace->entries(), 'sql')));
+        static::assertCount(2, $sql);
+        static::assertStringStartsWith('INSERT', $sql[0]);
+        static::assertStringContainsString('VALUES (?, ?, ?), (?, ?, ?)', $sql[0]);
+        static::assertStringStartsWith('UPDATE', $sql[1]);
+        static::assertStringContainsString('(TRUE, ?, ?, ?, ?), (TRUE, ?, ?, ?, ?)', $sql[1]);
+        static::assertSame(
+            [
+                ['id' => 'a', 'units' => 17, 'event_count' => 2, 'tags' => null],
+                ['id' => 'b', 'units' => 2, 'event_count' => 1, 'tags' => null],
+                ['id' => 'c', 'units' => 33, 'event_count' => 2, 'tags' => '{one}'],
+                ['id' => 'd', 'units' => 36, 'event_count' => 3, 'tags' => '{two,three}'],
+            ],
+            $this->connection->fetchAllAssociative('SELECT id, units, event_count, tags FROM stock ORDER BY id'),
+        );
     }
 
     public function test_plan_explains_merged_changes_and_trace_exposes_actual_batches_and_cleanup(): void

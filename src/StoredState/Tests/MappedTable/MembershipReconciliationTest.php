@@ -16,6 +16,25 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 final class MembershipReconciliationTest extends RowSetTestCase
 {
     #[DataProvider('backends')]
+    public function test_reconciliation_keeps_increments_only_for_unspecified_columns_of_retained_rows(string $backend): void
+    {
+        $fixture = $this->stock($backend);
+        $rows = $fixture->rows;
+        $fixture->seed(['id' => 'kept', 'units' => 10, 'event_count' => 1]);
+        $fixture->seed(['id' => 'removed', 'units' => 20, 'event_count' => 2]);
+        $rows->withKey('kept')->incrementColumn('units', 3)->incrementColumn('event_count', 2);
+        $rows->withKey('removed')->incrementColumn('units', 50);
+        $rows->reconcileRows([new MappedRow(['id' => 'kept'], ['units' => 4])]);
+        static::assertSame(['units' => 4, 'event_count' => 3], $rows->withKey('kept')->get(['units', 'event_count']));
+        static::assertNull($rows->withKey('removed')->get(['units']));
+
+        $fixture->flush();
+
+        static::assertSame(['units' => 4, 'event_count' => 3], $fixture->stored('kept', ['units', 'event_count']));
+        static::assertFalse($fixture->stored('removed', ['units']));
+    }
+
+    #[DataProvider('backends')]
     public function test_saved_membership_preserves_other_owners_and_unspecified_columns_and_removes_late_rows(string $backend): void
     {
         [$fixture, $rows] = $this->ownedRows($backend);

@@ -86,6 +86,14 @@ abstract class RowSetTestCase extends TestCase
         return [$fixture, $rows];
     }
 
+    protected function stock(string $backend): RowSetFixture
+    {
+        return $this->fixture($backend, columnTypes: [
+            'units' => new ColumnDefinition('units', type: ColumnType::Int32),
+            'event_count' => new ColumnDefinition('event_count', type: ColumnType::Int64),
+        ]);
+    }
+
     protected function tearDown(): void
     {
         try {

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Ultra\MappedTable;
 
+use Ultra\MappedTable\Codec\IntegerCodec;
 use Ultra\MappedTable\Codec\ScalarCodec;
 
 /** @internal Column metadata and value semantics for a compiled row set. */
@@ -55,6 +56,16 @@ final readonly class MappedColumn
     public function equivalent(mixed $left, mixed $right): bool
     {
         return null === $left || null === $right ? $left === $right : $this->boundCodec()->equivalent($left, $right);
+    }
+
+    public function increment(mixed $value, int $delta): int
+    {
+        $codec = $this->codec;
+        if (!$codec instanceof IntegerCodec) {
+            throw new \LogicException('An increment requires the built-in integer codec.');
+        }
+
+        return $codec->normalize(IntegerCodec::add($value, $delta));
     }
 
     public function encode(mixed $value): int|string|float|bool|null

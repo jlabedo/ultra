@@ -59,6 +59,10 @@ a row always participates. A move acquires both the old and new guard values. An
 non-key value column needs an explicit previous-value expectation for an existing row. A blind upsert with
 such a value is rejected. An explicit insert must supply the value.
 
+A relative increment participates when its column is watched. When it changes the guard value,
+the previous-value expectation also determines the new guard value. An observation of the
+[incremented column](mapped-table.md#incrementing-integer-columns) can supply the previous value.
+
 Reconciliation, including a request to retain zero items, participates even when it has zero row mutations.
 The owner key must provide the guard value for every dependency affected by that reconciliation. A column
 outside the owner key is usable for direct row writes. A guarded row set rejects whole-table reconciliation

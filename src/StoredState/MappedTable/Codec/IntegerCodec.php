@@ -22,6 +22,19 @@ final class IntegerCodec extends ColumnCodec
         return true;
     }
 
+    /** @internal Check the range before PHP promotes overflowing arithmetic to float. */
+    public static function add(mixed $value, int $delta): int
+    {
+        if (!is_int($value)) {
+            throw new \InvalidArgumentException('An increment requires an integer base value.');
+        }
+        if ($delta > 0 && $value > (PHP_INT_MAX - $delta) || $delta < 0 && $value < (PHP_INT_MIN - $delta)) {
+            throw new \OverflowException('Mapped integer increment is outside the PHP integer range.');
+        }
+
+        return $value + $delta;
+    }
+
     public function normalize(mixed $value): int
     {
         if (!is_int($value)) {

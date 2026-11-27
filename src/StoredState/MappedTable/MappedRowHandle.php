@@ -136,6 +136,14 @@ final readonly class MappedRowHandle
         return $this;
     }
 
+    /** Adds a signed delta to a non-null mapped integer column outside the key. */
+    public function incrementColumn(string $column, int $delta): self
+    {
+        $this->update()->incrementColumn($column, $delta);
+
+        return $this;
+    }
+
     /**
      * @param array<string, mixed> $values
      */

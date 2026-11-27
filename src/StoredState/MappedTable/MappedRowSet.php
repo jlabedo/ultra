@@ -124,6 +124,7 @@ final class MappedRowSet
                 $pending,
                 $row['storedValues'] ?? null,
                 $observedColumns,
+                $row['initializedColumns'] ?? [],
             );
             $results[$fingerprint] = $row['values'] ?? null;
         }
@@ -137,15 +138,17 @@ final class MappedRowSet
     /**
      * @param array<string, mixed>|null $storedValues
      * @param array<string, true>|null $observedColumns
+     * @param array<string, true> $initializedColumns
      */
     private function observedUpdate(
         MappedKey $key,
         ?BufferedRowUpdate $pending,
         ?array $storedValues,
         ?array $observedColumns,
+        array $initializedColumns,
     ): BufferedRowUpdate {
         $candidate = null === $pending ? $this->newUpdate($key) : clone $pending;
-        $candidate->applyObservation($storedValues, $observedColumns);
+        $candidate->applyObservation($storedValues, $observedColumns, $initializedColumns);
 
         return $candidate;
     }
@@ -261,6 +264,7 @@ final class MappedRowSet
                 $update,
                 $row['storedValues'] ?? null,
                 $observedColumns,
+                $row['initializedColumns'] ?? [],
             );
         }
 
@@ -340,7 +344,7 @@ final class MappedRowSet
     /**
      * @param array<string, mixed>|false $stored False indicates no stored row.
      * @param list<string> $projection
-     * @return array{values: array<string, mixed>, storedValues: array<string, mixed>}|null
+     * @return array{values: array<string, mixed>, storedValues: array<string, mixed>, initializedColumns: array<string, true>}|null
      */
     private function overlayRow(
         MappedKey $key,
@@ -354,10 +358,14 @@ final class MappedRowSet
             return null;
         }
 
-        $stored = false === $stored || true === $update?->replacesStoredRow() ? [] : $stored;
+        $replacesStored = true === $update?->replacesStoredRow();
+        $initializesIncrements = true === $update?->initializesIncrements() && (false === $stored || $replacesStored);
+        $stored = false === $stored || $replacesStored ? [] : $stored;
         $written = $writes ? $update->writtenColumns() : [];
+        $increments = $update?->increments() ?? [];
         $values = [];
         $storedValues = [];
+        $initializedColumns = [];
         foreach ($projection as $column) {
             if ($key->contains($column)) {
                 $values[$column] = $key->value($column);
@@ -366,14 +374,21 @@ final class MappedRowSet
             if (array_key_exists($column, $written)) {
                 $values[$column] = $written[$column];
             } elseif (array_key_exists($column, $stored)) {
-                $values[$column] = $stored[$column];
+                $values[$column] = isset($increments[$column])
+                    ? $this->mapping->column($column)->increment($stored[$column], $increments[$column])
+                    : $stored[$column];
                 if ($trackStorage) {
                     $storedValues[$column] = $stored[$column];
+                }
+            } elseif ($initializesIncrements && isset($increments[$column])) {
+                $values[$column] = $this->mapping->column($column)->increment(0, $increments[$column]);
+                if ($trackStorage && !$replacesStored) {
+                    $initializedColumns[$column] = true;
                 }
             }
         }
 
-        return ['values' => $values, 'storedValues' => $storedValues];
+        return ['values' => $values, 'storedValues' => $storedValues, 'initializedColumns' => $initializedColumns];
     }
 
     /** @param list<int|string|MappedKey|\Stringable|array<string, int|string|\Stringable>> $keys */

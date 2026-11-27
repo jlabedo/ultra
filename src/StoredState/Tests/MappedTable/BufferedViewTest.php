@@ -15,6 +15,33 @@ use Ultra\MappedTable\Tests\Support\RowSetTestCase;
 final class BufferedViewTest extends RowSetTestCase
 {
     #[DataProvider('backends')]
+    public function test_increment_view_respects_assignment_order_and_creation(string $backend): void
+    {
+        $fixture = $this->stock($backend);
+        $fixture->seed(['id' => 'row', 'units' => 20, 'event_count' => 8]);
+        $row = $fixture->rows->withKey('row')->incrementColumn('units', -4)->incrementColumn('event_count', 1);
+        static::assertSame(['units' => 16, 'event_count' => 9], $row->get(['units', 'event_count']));
+
+        $row->setColumns(['units' => 10, 'event_count' => 2])->incrementColumn('event_count', -1);
+        static::assertSame(['units' => 10, 'event_count' => 1], $row->observe(['units', 'event_count']));
+        $new = $fixture
+            ->rows
+            ->withKey('new')
+            ->upsert()
+            ->incrementColumn('units', -1)
+            ->incrementColumn('event_count', 1);
+        static::assertSame(['units' => -1, 'event_count' => 1], $new->get(['units', 'event_count']));
+        static::assertFalse($fixture->stored('new', ['units']));
+        $fixture->seed(['id' => 'row', 'units' => 25, 'event_count' => 9]);
+        $fixture->seed(['id' => 'new', 'units' => 7, 'event_count' => 4]);
+
+        $fixture->flush();
+
+        static::assertSame(['units' => 10, 'event_count' => 1], $fixture->stored('row', ['units', 'event_count']));
+        static::assertSame(['units' => 6, 'event_count' => 5], $fixture->stored('new', ['units', 'event_count']));
+    }
+
+    #[DataProvider('backends')]
     public function test_reads_project_committed_values_without_registering_work(string $backend): void
     {
         [$fixture, $rows] = $this->ownedRows($backend);

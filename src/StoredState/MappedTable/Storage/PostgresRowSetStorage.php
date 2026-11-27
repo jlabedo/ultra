@@ -17,6 +17,8 @@ use Ultra\UnitOfWork\Exception\ConcurrencyException;
 /** @internal */
 final readonly class PostgresRowSetStorage implements RowSetStorage
 {
+    private const int MAX_PARAMETERS = 65_535;
+
     /** @param list<string> $keyColumns Validated and ordered by the mapping. */
     public function __construct(
         private Connection $connection,
@@ -144,7 +146,8 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
                 RowUpdatePlan::MODE_DELETE => $this->flushBatchDelete($batch),
                 RowUpdatePlan::MODE_INSERT => $this->flushBatchInsert($batch),
                 RowUpdatePlan::MODE_REPLACE => $this->flushBatchReplace($batch),
-                RowUpdatePlan::MODE_UPSERT => $this->flushBatchUpsert($batch),
+                RowUpdatePlan::MODE_UPSERT => $this->flushUpsert($batch),
+                RowUpdatePlan::MODE_UPDATE => $this->flushBatchIncrement($batch),
                 default => array_map($this->flushOne(...), $batch),
             };
         }
@@ -188,7 +191,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
             RowUpdatePlan::MODE_DELETE => $this->flushDelete($update),
             RowUpdatePlan::MODE_INSERT => $this->flushInsert($update),
             RowUpdatePlan::MODE_REPLACE => $this->flushReplace($update),
-            RowUpdatePlan::MODE_UPSERT => $this->flushUpsert($update),
+            RowUpdatePlan::MODE_UPSERT => $this->flushUpsert([$update]),
             RowUpdatePlan::MODE_UPDATE => $this->flushUpdate($update),
             default => throw new \LogicException(sprintf('Unsupported row update mode "%s".', $update->mode)),
         };
@@ -203,25 +206,46 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         $groups = [];
         $currentKey = null;
         $current = [];
+        $limit = PHP_INT_MAX;
         foreach ($updates as $update) {
-            $key = match ($update->mode) {
-                RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_UPSERT => $update->mode
-                    . ':'
-                    . implode(',', array_keys($update->setColumns)),
-                RowUpdatePlan::MODE_DELETE => [] === $update->expectedColumns
-                    ? 'delete'
-                    : 'delete:' . $update->key->fingerprint(),
-                RowUpdatePlan::MODE_REPLACE => [] === $update->expectedColumns
-                    ? 'replace:' . implode(',', array_keys($update->setColumns))
-                    : 'replace:' . $update->key->fingerprint(),
-                default => $update->mode . ':' . $update->key->fingerprint(),
-            };
-            if ($key !== $currentKey) {
+            $increments = [] !== $update->increments;
+            $key = $increments
+                ? serialize([
+                    $update->mode,
+                    array_keys($update->setColumns),
+                    array_keys($update->increments),
+                    array_keys($update->expectedColumns),
+                    // A conditional replacement must enforce its own optimistic predicates.
+                    RowUpdatePlan::MODE_REPLACE === $update->mode && [] !== $update->expectedColumns
+                        ? $update->key->fingerprint()
+                        : null,
+                ]) : match ($update->mode) {
+                    RowUpdatePlan::MODE_INSERT, RowUpdatePlan::MODE_UPSERT => $update->mode
+                        . ':'
+                        . implode(',', array_keys($update->setColumns)),
+                    RowUpdatePlan::MODE_DELETE => [] === $update->expectedColumns
+                        ? 'delete'
+                        : 'delete:' . $update->key->fingerprint(),
+                    RowUpdatePlan::MODE_REPLACE => [] === $update->expectedColumns
+                        ? 'replace:' . implode(',', array_keys($update->setColumns))
+                        : 'replace:' . $update->key->fingerprint(),
+                    default => $update->mode . ':' . $update->key->fingerprint(),
+                };
+            if ($key !== $currentKey || count($current) >= $limit) {
                 if ([] !== $current) {
                     $groups[] = $current;
                 }
                 $currentKey = $key;
                 $current = [];
+                $limit = $increments
+                    ? intdiv(
+                        self::MAX_PARAMETERS,
+                        count($this->keyColumns)
+                        + count($update->setColumns)
+                        + count($update->increments)
+                        + count($update->expectedColumns),
+                    )
+                    : PHP_INT_MAX;
             }
             $current[] = $update;
         }
@@ -292,25 +316,25 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
     }
 
     /** @param list<RowUpdatePlan> $updates */
-    private function flushBatchUpsert(array $updates): void
+    private function flushUpsert(array $updates): void
     {
-        [$columns] = $this->insertValues($updates[0]);
+        $first = $updates[0];
+        [$columns, $params] = $this->insertValues($first);
         $rowPlaceholder = '(' . implode(', ', array_fill(0, count($columns), '?')) . ')';
-        $params = [];
-        foreach ($updates as $update) {
+        foreach (array_slice($updates, 1) as $update) {
             [, $rowParams] = $this->insertValues($update);
             array_push($params, ...$rowParams);
         }
-        $action = 'DO NOTHING';
-        if ([] !== $updates[0]->setColumns) {
-            $action =
-                'DO UPDATE SET '
-                . implode(', ', array_map($this->conflictAssignment(...), array_keys($updates[0]->setColumns)));
+        $assignments = array_map($this->conflictAssignment(...), array_keys($first->setColumns));
+        foreach ($first->increments as $column => $_) {
+            $name = $this->quoteColumn($column);
+            $assignments[] = $name . ' = mapped_target.' . $name . ' + EXCLUDED.' . $name;
         }
+        $action = [] === $assignments ? 'DO NOTHING' : 'DO UPDATE SET ' . implode(', ', $assignments);
         $this->connection->executeStatement(
             sprintf(
                 'INSERT INTO %s (%s) VALUES %s ON CONFLICT (%s) %s',
-                $this->sql->table,
+                $this->sql->table . ([] === $first->increments ? '' : ' AS mapped_target'),
                 implode(', ', array_map($this->quoteColumn(...), $columns)),
                 implode(', ', array_fill(0, count($updates), $rowPlaceholder)),
                 $this->sql->keyList,
@@ -318,6 +342,78 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
             ),
             $params,
         );
+    }
+
+    /** @param list<RowUpdatePlan> $updates */
+    private function flushBatchIncrement(array $updates): void
+    {
+        $first = $updates[0];
+        $keyColumns = $this->keyColumns();
+        $setColumns = array_keys($first->setColumns);
+        $increments = array_keys($first->increments);
+        $expectedColumns = array_keys($first->expectedColumns);
+        $aliases = ['active'];
+        $types = ['FALSE'];
+        $where = ['incoming.active'];
+        $set = [];
+        foreach ($keyColumns as $index => $column) {
+            $name = $this->quoteColumn($column);
+            $aliases[] = 'key_' . $index;
+            $types[] = '(NULL::' . $this->sql->table . ').' . $name;
+            $where[] = 'mapped_target.' . $name . ' = incoming.key_' . $index;
+        }
+        foreach ($setColumns as $index => $column) {
+            $name = $this->quoteColumn($column);
+            $aliases[] = 'value_' . $index;
+            $types[] = '(NULL::' . $this->sql->table . ').' . $name;
+            $set[] = $name . ' = incoming.value_' . $index;
+        }
+        foreach ($increments as $index => $column) {
+            $name = $this->quoteColumn($column);
+            $aliases[] = 'delta_' . $index;
+            $types[] = 'NULL::bigint';
+            $set[] = $name . ' = mapped_target.' . $name . ' + incoming.delta_' . $index;
+        }
+        foreach ($expectedColumns as $index => $column) {
+            $name = $this->quoteColumn($column);
+            $aliases[] = 'expected_' . $index;
+            $types[] = '(NULL::' . $this->sql->table . ').' . $name;
+            $where[] = 'mapped_target.' . $name . ' IS NOT DISTINCT FROM incoming.expected_' . $index;
+        }
+
+        // The inactive tuple supplies the SQL types for the parameters without reading the table.
+        $placeholder = '(TRUE, ' . implode(', ', array_fill(0, count($aliases) - 1, '?')) . ')';
+        $tuples = ['(' . implode(', ', $types) . ')', ...array_fill(0, count($updates), $placeholder)];
+        $params = [];
+        foreach ($updates as $update) {
+            array_push($params, ...$this->encodedKeyValues($update->key));
+            foreach ($update->setColumns as $column => $value) {
+                $params[] = $this->encodeColumnValue($column, $value);
+            }
+            array_push($params, ...array_values($update->increments));
+            foreach ($update->expectedColumns as $column => $value) {
+                $params[] = $this->encodeColumnValue($column, $value);
+            }
+        }
+        $affected = $this->connection->executeStatement(
+            sprintf(
+                'UPDATE %s AS mapped_target SET %s FROM (VALUES %s) AS incoming (%s) WHERE %s',
+                $this->sql->table,
+                implode(', ', $set),
+                implode(', ', $tuples),
+                implode(', ', $aliases),
+                implode(' AND ', $where),
+            ),
+            $params,
+        );
+        if ($affected !== count($updates)) {
+            throw new ConcurrencyException(sprintf(
+                'Batch conditional update failed for table "%s": expected %d updates, got %d.',
+                $this->tableName,
+                count($updates),
+                $affected,
+            ));
+        }
     }
 
     /**
@@ -483,31 +579,6 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         $this->flushInsert($update);
     }
 
-    private function flushUpsert(RowUpdatePlan $update): void
-    {
-        [$columns, $params] = $this->insertValues($update);
-        $quotedColumns = implode(', ', array_map($this->quoteColumn(...), $columns));
-        $placeholders = implode(', ', array_fill(0, count($columns), '?'));
-
-        $action = 'DO NOTHING';
-        if ([] !== $update->setColumns) {
-            $assignments = array_map($this->conflictAssignment(...), array_keys($update->setColumns));
-            $action = 'DO UPDATE SET ' . implode(', ', $assignments);
-        }
-
-        $this->connection->executeStatement(
-            sprintf(
-                'INSERT INTO %s (%s) VALUES (%s) ON CONFLICT (%s) %s',
-                $this->sql->table,
-                $quotedColumns,
-                $placeholders,
-                $this->sql->keyList,
-                $action,
-            ),
-            $params,
-        );
-    }
-
     private function flushUpdate(RowUpdatePlan $update): void
     {
         $set = [];
@@ -515,6 +586,11 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
         foreach ($update->setColumns as $column => $value) {
             $set[] = $this->assignment($column);
             $params[] = $this->encodeColumnValue($column, $value);
+        }
+        foreach ($update->increments as $column => $delta) {
+            $name = $this->quoteColumn($column);
+            $set[] = $name . ' = ' . $name . ' + ?::bigint';
+            $params[] = $delta;
         }
         [$where, $whereParams] = $this->conditionalWhere($update);
         array_push($params, ...$whereParams);
@@ -547,7 +623,7 @@ final readonly class PostgresRowSetStorage implements RowSetStorage
     {
         $columns = $this->keyColumns();
         $params = $this->encodedKeyValues($update->key);
-        foreach ($update->setColumns as $column => $value) {
+        foreach ([...$update->setColumns, ...$update->increments] as $column => $value) {
             $columns[] = $column;
             $params[] = $this->encodeColumnValue($column, $value);
         }
