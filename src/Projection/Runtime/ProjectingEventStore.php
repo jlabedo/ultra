@@ -59,7 +59,6 @@ final readonly class ProjectingEventStore implements EventStore
         }
 
         $this->transactions->transactional(function () use ($events, $appendConditions, $candidates): void {
-            $this->states->lockRegistrationShared();
             $projectionIds = [];
             foreach ($candidates as [$runtime, $matching]) {
                 $definition = $runtime->definition();
@@ -70,10 +69,10 @@ final readonly class ProjectingEventStore implements EventStore
                         );
                     }
                 }
-                // Lock uninitialized matches too so registration cannot race this append.
-                $this->states->lockShared($definition->projectionId);
                 $projectionIds[] = $definition->projectionId;
             }
+            $this->states->lockForAppend($projectionIds);
+            // Read after the barriers are held so READ COMMITTED sees changes committed during the wait.
             $states = $this->states->findMany($projectionIds);
             $live = [];
             foreach ($candidates as [$runtime, $matching]) {

@@ -4,9 +4,11 @@ declare(strict_types=1);
 
 namespace Ultra\Projection\Tests;
 
+use Doctrine\DBAL\Configuration;
 use Doctrine\DBAL\Connection;
 use Doctrine\DBAL\Exception\DriverException;
 use PHPUnit\Framework\Attributes\CoversNamespace;
+use PHPUnit\Framework\Attributes\Group;
 use Ultra\Mapper\UltraNormalizer;
 use Ultra\Projection\Coordination\ProjectionActivity;
 use Ultra\Projection\Coordination\ProjectionActivityRecorder;
@@ -19,12 +21,16 @@ use Ultra\Projection\ProjectionPhase;
 use Ultra\Projection\ProjectionRebuilder;
 use Ultra\Projection\ProjectionRunner;
 use Ultra\Projection\ProjectionRuntime;
+use Ultra\Projection\Tests\Support\EarlierManagedModeProjection;
 use Ultra\Projection\Tests\Support\ManagedBufferedModeProjection;
 use Ultra\Projection\Tests\Support\PostgresProjectionTestCase;
 use Ultra\Projection\Tests\Support\ProjectionModeFixture;
 use Ultra\Projection_Postgres\PostgresProjectionImplementation;
+use Ultra\Testing\Concurrent\Cluster;
 use Ultra\Testing\PostgresConnectionSupport;
 use Ultra\Testing\PostgresTestSupport;
+use Ultra\Testing\SqlTrace;
+use Ultra\Testing\SqlTraceMiddleware;
 
 require_once __DIR__ . '/Support/ProjectionModes.php';
 
@@ -93,6 +99,84 @@ final class ActivationConcurrencyTest extends PostgresProjectionTestCase
             PostgresConnectionSupport::resetSharedConnection($connection);
             PostgresConnectionSupport::resetSharedConnection($peer);
             $peer->executeStatement('RESET lock_timeout');
+        }
+    }
+
+    #[Group('slow')]
+    #[Group('projection-concurrency')]
+    public function test_append_waiting_on_its_second_projection_applies_the_event_after_activation_commits(): void
+    {
+        $f = new ProjectionModeFixture($this->fixture('postgres'), ProjectionMode::Synchronous, true);
+        $f->runner->ensureInitialized($f->runtime);
+        $connection = $f->fixture->connection;
+        $activatorPid = (int) $connection->fetchOne('SELECT pg_backend_pid()');
+        $dsn = $this->postgresDsn();
+        $prefix = $f->fixture->prefix;
+        $table = $f->projection->table;
+        $worker = null;
+
+        $connection->beginTransaction();
+        try {
+            $f->rebuilder->activate($f->runtime);
+            $cluster = new Cluster(timeout: 5.0);
+            $worker = $cluster->spawn(static function () use ($dsn, $prefix, $table): int {
+                require_once __DIR__ . '/Support/ProjectionModes.php';
+                $trace = new SqlTrace();
+                $configuration = new Configuration();
+                $configuration->setMiddlewares([new SqlTraceMiddleware($trace)]);
+                $writer = PostgresConnectionSupport::connection($dsn, $configuration);
+                try {
+                    $normalizer = new UltraNormalizer();
+                    [$store] = self::createActor(
+                        $writer,
+                        $prefix,
+                        new ProjectionRuntime(new ManagedBufferedModeProjection($writer, $table), $normalizer),
+                        new ProjectionRuntime(new EarlierManagedModeProjection(), $normalizer),
+                    );
+                    checkpoint('ready', (int) $writer->fetchOne('SELECT pg_backend_pid()'));
+                    $store->append([self::courseCreatedEvent('c', 'after-activation')]);
+
+                    return count(array_filter($trace->entries(), static fn($entry): bool => str_contains(
+                        $entry->sql ?? '',
+                        'pg_advisory_xact_lock_shared(',
+                    )));
+                } finally {
+                    $writer->close();
+                }
+            });
+            $writerPid = $worker->awaitCheckpoint('ready')->payload;
+            $worker->release('ready');
+
+            $deadline = microtime(true) + 5.0;
+            do {
+                $outcome = $worker->outcome();
+                $blocked =
+                    (int) $connection->fetchOne('SELECT count(*) FROM unnest(pg_blocking_pids(CAST(? AS INTEGER))) AS blocker(pid) WHERE pid = ?', [
+                        $writerPid,
+                        $activatorPid,
+                    ]);
+                if (1 === $blocked || null !== $outcome) {
+                    break;
+                }
+                usleep(1_000);
+            } while (microtime(true) < $deadline);
+            static::assertSame(1, $blocked, 'The append must wait for activation. ' . $outcome?->exceptionMessage());
+            static::assertSame(
+                2,
+                (int) $connection->fetchOne("SELECT count(*) FROM pg_locks WHERE pid = ? AND locktype = 'advisory' AND mode = 'ShareLock' AND granted", [
+                    $writerPid,
+                ]),
+                'The writer must already hold the registry and first projection barriers.',
+            );
+
+            $connection->commit();
+            $outcome = $worker->join();
+            static::assertTrue($outcome->isSuccess(), $outcome->exceptionMessage());
+            static::assertSame(['after-activation'], $f->projection->names());
+            static::assertSame(1, $outcome->value(), 'The append acquires its shared barriers in one statement.');
+        } finally {
+            $worker?->stop();
+            PostgresConnectionSupport::resetSharedConnection($connection);
         }
     }
 
@@ -276,14 +360,15 @@ final class ActivationConcurrencyTest extends PostgresProjectionTestCase
     /** @return array{ProjectingEventStore, ProjectionRebuilder} */
     private function actor(ProjectionModeFixture $f, Connection $connection): array
     {
-        $implementation = new PostgresProjectionImplementation($connection, $f->fixture->prefix);
-        $store = PostgresTestSupport::storeForImplementation(
-            $connection,
-            $f->fixture->prefix . 'event_',
-            'query-streams',
-        );
-        $runtime = $this->peerRuntime($f, $connection);
-        $catalog = new ProjectionCatalog($runtime);
+        return self::createActor($connection, $f->fixture->prefix, $this->peerRuntime($f, $connection));
+    }
+
+    /** @return array{ProjectingEventStore, ProjectionRebuilder} */
+    private static function createActor(Connection $connection, string $prefix, ProjectionRuntime ...$runtimes): array
+    {
+        $implementation = new PostgresProjectionImplementation($connection, $prefix);
+        $store = PostgresTestSupport::storeForImplementation($connection, $prefix . 'event_', 'query-streams');
+        $catalog = new ProjectionCatalog(...$runtimes);
         $states = $implementation->createStateRepository();
         $transactions = $implementation->createTransactionManager();
         $segments = $implementation->createSegmentRepository();

@@ -7,6 +7,13 @@ namespace Ultra\Projection;
 /** State reads follow barrier acquisition in a READ COMMITTED transaction. */
 interface ProjectionStateRepository
 {
+    /**
+     * Hold the shared registration barrier, then a shared barrier for every match in the supplied order.
+     *
+     * @param non-empty-list<string> $projectionIds Matching IDs, including unregistered projections, sorted by ID.
+     */
+    public function lockForAppend(array $projectionIds): void;
+
     /** Coordinate managed projection registration with workers and appends handling synchronous projections. */
     public function lockRegistrationShared(): void;
 

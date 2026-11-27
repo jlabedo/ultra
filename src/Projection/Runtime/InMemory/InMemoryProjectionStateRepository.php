@@ -13,6 +13,8 @@ final class InMemoryProjectionStateRepository implements ProjectionStateReposito
     /** @var array<string, ProjectionState> */
     private array $states = [];
 
+    public function lockForAppend(array $projectionIds): void {}
+
     public function lockRegistrationShared(): void {}
 
     public function lockRegistrationExclusive(): void {}
