@@ -132,7 +132,7 @@ final class SymfonySchemaDiscoveryTest extends TestCase
             self::assertStringNotContainsString('SET DEFAULT', $sql);
             self::assertStringContainsString(
                 '"previous": "000000-baseline:',
-                file_get_contents($path . '/migration.json'),
+                file_get_contents($path . '/migration.lock'),
             );
             self::assertStringContainsString(
                 '"revision": "000001-rename-items:',

@@ -77,7 +77,7 @@ final class GenerateMigrationCommand extends Command
             null === $migration
                 ? 'No schema changes.'
                 : sprintf(
-                    'Generated %s/%s/migration.sql and migration.json, and updated the root snapshot.',
+                    'Generated %s/%s/migration.sql and migration.lock, and updated the root snapshot.',
                     $history,
                     $migration,
                 ),

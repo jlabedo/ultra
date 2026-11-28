@@ -54,9 +54,10 @@ contents. This preserves the recorded baseline checksum.
 
 Each generation compares the target with the root `snapshot.lock`, including when migrations are still
 pending deployment. It updates that snapshot and creates a numbered directory such as
-`000001-create-tables` with `migration.sql` and `migration.json`. Use lowercase letters and digits
+`000001-create-tables` with `migration.sql` and `migration.lock`. Use lowercase letters and digits
 separated by hyphens for the migration name. The root snapshot retains stable table, column and index
-identities for renames. Each `migration.json` records the predecessor and resulting revision.
+identities for renames. Each `migration.lock` records the predecessor and resulting revision in JSON.
+For an existing history in this layout, rename each `migration.json` to `migration.lock`.
 A diff with no operations creates no entry.
 
 For table or column drops, the command lists the affected objects and exits before writing an entry.

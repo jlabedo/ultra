@@ -72,7 +72,7 @@ final readonly class MigrationHistory
 
             $sqlPath = $path . '/migration.sql';
             $snapshotPath = $path . '/snapshot.lock';
-            $metadataPath = $path . '/migration.json';
+            $metadataPath = $path . '/migration.lock';
             if ($baseline) {
                 if (!is_file($snapshotPath) || file_exists($sqlPath) || file_exists($metadataPath)) {
                     throw new \UnexpectedValueException(sprintf('Incomplete or invalid migration entry "%s".', $path));
@@ -225,7 +225,7 @@ final readonly class MigrationHistory
             ? ['snapshot.lock' => $json]
             : [
                 'migration.sql' => $sql,
-                'migration.json' =>
+                'migration.lock' =>
                     json_encode([
                         'previous' => $previous,
                         'revision' => $snapshot->revision,

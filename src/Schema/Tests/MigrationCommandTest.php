@@ -303,7 +303,7 @@ final class MigrationCommandTest extends TestCase
     /** @return array<string, mixed> */
     private function metadata(string $entry): array
     {
-        return json_decode($this->read($entry . '/migration.json'), associative: true, flags: JSON_THROW_ON_ERROR);
+        return json_decode($this->read($entry . '/migration.lock'), associative: true, flags: JSON_THROW_ON_ERROR);
     }
 
     private function read(string $path): string
