@@ -35,8 +35,9 @@ vendor/bin/ultra-schema generate config/schema.php migrations/schema create-tabl
 ```
 
 The command uses Symfony Console 7.4 or 8.x. Run `vendor/bin/ultra-schema generate --help` to see the
-arguments and options. Generation starts from an empty schema when the history is empty. For an existing
-database, first pass a definition that describes its current Ultra-managed tables:
+arguments and options. Generation starts from an empty schema when the history is empty. To use the
+same history for existing and fresh databases, [generate an initial SQL migration](#adopt-an-existing-database).
+For a snapshot-only baseline of an existing database, pass a definition of its current Ultra-managed tables:
 
 ```bash
 vendor/bin/ultra-schema init config/schema.php migrations/schema
@@ -119,6 +120,28 @@ and run `bin/console ultra:schema:baseline` before `migrate`. This records the b
 journal without writing to the application tables. An existing baseline describes an already
 provisioned database. For a fresh database, use a history that starts with a creation migration.
 
+### Adopt an existing database
+
+To use one history for an existing database and fresh environments, declare the existing schema
+that Ultra will manage, then generate and commit the first migration from an empty history:
+
+```bash
+bin/console ultra:schema:generate initial-schema
+```
+
+On each existing database, verify that it already matches the initial migration's result. Then
+register the exact migration ID before applying later migrations:
+
+```bash
+bin/console ultra:schema:adopt 000001-initial-schema
+bin/console ultra:schema:migrate
+```
+
+`adopt` accepts only the first SQL migration of a history with an empty journal. It records the
+migration ID and SQL checksum as applied without executing the SQL or inspecting the application
+schema. On an empty test database, run `ultra:schema:migrate` directly to execute the initial
+script and all later migrations.
+
 ### Coexist with Doctrine
 
 Schema reconciles the objects declared in its snapshots and supplied definition. An application can keep
@@ -132,6 +155,9 @@ To transfer an existing Doctrine table, declare its current structure in Schema 
 dedicated adoption entry. Keep the verified root snapshot and migration metadata, and replace the table-creation SQL with a
 `COMMENT ON TABLE ... IS 'managed-by:ultra'` statement. Apply the adoption entry before the next
 Doctrine diff so a filter based on `managed-by:doctrine` excludes the table.
+
+When adopting an initial SQL migration for an entire existing database, put the ownership changes
+for transferred tables in a later SQL migration so they also run on the existing database.
 
 ## Current reconciliation contract
 
@@ -281,7 +307,7 @@ The tests live together under [src/Schema/Tests](../../src/Schema/Tests), organi
 | Policies can be deployed before activation, enforce reads and writes for application roles, and can be replaced around structural changes. Forced RLS applies to the owner and disabling RLS preserves policies | [PostgresPolicyMigrationTest](../../src/Schema/Tests/PostgresPolicyMigrationTest.php) |
 | Invalid operations fail before a script is returned; caller-provided index SQL retains its clauses and is terminated | [MigrationInspectionTest](../../src/Schema/Tests/MigrationInspectionTest.php) |
 | CLI generation requires approval for table and column drops. A shared revision line makes divergent branches conflict in Git, and offline validation rejects incomplete or divergent histories | [MigrationCommandTest](../../src/Schema/Tests/MigrationCommandTest.php) |
-| Symfony applies SQL and journals it atomically, verifies applied file checksums, and records a baseline independently of Doctrine | [PostgresMigrationCommandTest](../../src/Schema/Tests/PostgresMigrationCommandTest.php) |
+| Symfony applies SQL and journals it atomically, verifies applied file checksums, and supports adopting the initial migration on an existing database while replaying it on a fresh database | [PostgresMigrationCommandTest](../../src/Schema/Tests/PostgresMigrationCommandTest.php) |
 
 Operation payloads are inspectable before execution. SQL cases execute the generated statements against PostgreSQL and inspect data and catalog metadata. Whitespace and the layout of generated SQL are not frozen. The raw-index inspection case checks the supplied statement after surrounding whitespace and statement termination are normalized.
 

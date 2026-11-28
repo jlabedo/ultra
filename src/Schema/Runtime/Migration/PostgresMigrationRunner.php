@@ -109,6 +109,25 @@ final readonly class PostgresMigrationRunner
         });
     }
 
+    public function adopt(string $id): void
+    {
+        $this->locked(function () use ($id): void {
+            $migrations = $this->history->migrations();
+            $initial = $migrations[0] ?? null;
+            if (null === $initial || null === $initial['sql']) {
+                throw new \LogicException('Adoption requires a history starting with a SQL migration.');
+            }
+            if ($id !== $initial['id']) {
+                throw new \LogicException(sprintf('Only the first migration "%s" can be adopted.', $initial['id']));
+            }
+            if ([] !== $this->verifiedJournal($migrations)) {
+                throw new \LogicException('Adoption requires an empty migration journal.');
+            }
+
+            $this->apply($initial, executeSql: false);
+        });
+    }
+
     /**
      * @param list<Migration> $migrations
      * @return list<string> Applied timestamps in history order.
@@ -155,9 +174,9 @@ final readonly class PostgresMigrationRunner
     }
 
     /** @param Migration $migration */
-    private function apply(array $migration): void
+    private function apply(array $migration, bool $executeSql = true): void
     {
-        $this->connection->transactional(function (Connection $connection) use ($migration): void {
+        $this->connection->transactional(function (Connection $connection) use ($migration, $executeSql): void {
             if (!$this->journalExists()) {
                 $connection->executeStatement(sprintf('CREATE TABLE %s (
                         id text PRIMARY KEY,
@@ -167,7 +186,7 @@ final readonly class PostgresMigrationRunner
                     )', $this->journal));
                 $connection->executeStatement(sprintf("COMMENT ON TABLE %s IS 'managed-by:ultra'", $this->journal));
             }
-            if (null !== $migration['sql']) {
+            if ($executeSql && null !== $migration['sql']) {
                 $connection->executeStatement(self::transactionalScript($migration['sql']));
             }
             $connection->executeStatement(

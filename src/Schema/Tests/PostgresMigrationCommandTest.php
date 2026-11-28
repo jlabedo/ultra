@@ -40,7 +40,11 @@ final class PostgresMigrationCommandTest extends TestCase
         $this->connection = PostgresConnectionSupport::connection($dsn);
         $this->connection->executeStatement('CREATE SCHEMA ' . $this->schema);
         $this->connection->executeStatement('SET search_path TO ' . $this->schema);
+        $this->console = $this->createConsole($this->connection, $this->schema);
+    }
 
+    private function createConsole(Connection $connection, string $schema): ApplicationTester
+    {
         $container = new ContainerBuilder();
         $bundle = new UltraBundle([new SchemaExtension()]);
         $bundle->build($container);
@@ -50,7 +54,7 @@ final class PostgresMigrationCommandTest extends TestCase
         $container->setAlias('database_connection', 'test.connection');
         $container->setParameter('kernel.project_dir', $this->directory);
         $container->loadFromExtension('ultra', ['schema' => [
-            'metadata_table' => $this->schema . '.migration_journal',
+            'metadata_table' => $schema . '.migration_journal',
         ]]);
         $container->compile();
         $loader = $container->get('console.command_loader');
@@ -58,9 +62,11 @@ final class PostgresMigrationCommandTest extends TestCase
         $application = new Application();
         $application->setAutoExit(false);
         $application->setCommandLoader($loader);
-        $this->console = new ApplicationTester($application);
-        self::assertSame(0, $this->console->run(['command' => 'ultra:schema:migrate', '--help' => true]));
-        $container->set('test.connection', $this->connection);
+        $tester = new ApplicationTester($application);
+        self::assertSame(0, $tester->run(['command' => 'ultra:schema:migrate', '--help' => true]));
+        $container->set('test.connection', $connection);
+
+        return $tester;
     }
 
     protected function tearDown(): void
@@ -95,6 +101,11 @@ final class PostgresMigrationCommandTest extends TestCase
         file_put_contents($this->file($id, 'migration.sql'), "COMMENT ON TABLE orders IS 'managed-by:ultra';\n");
 
         self::assertStringContainsString('000000-baseline  Baseline required', $this->runCommand('status'));
+        self::assertStringContainsString('starting with a SQL migration', $this->runCommand(
+            'adopt',
+            expectedExit: 1,
+            arguments: ['migration' => $id],
+        ));
         self::assertNull($connection->fetchOne("SELECT to_regclass('migration_journal')"));
         self::assertStringContainsString('with ultra:schema:baseline', $this->runCommand('migrate', expectedExit: 1));
         self::assertStringContainsString('Recorded 000000-baseline.', $this->runCommand('baseline'));
@@ -112,6 +123,75 @@ final class PostgresMigrationCommandTest extends TestCase
 
         file_put_contents($this->file('000000-baseline', 'snapshot.lock'), "\n", FILE_APPEND);
         self::assertStringContainsString('000000-baseline" has been modified', $this->runCommand(
+            'status',
+            expectedExit: 1,
+        ));
+    }
+
+    public function test_adopts_only_the_initial_migration_on_existing_databases_and_applies_it_on_fresh_databases(): void
+    {
+        $connection = $this->connection;
+        self::assertInstanceOf(Connection::class, $connection);
+        $generator = new MigrationGenerator($this->directory . '/migrations/schema');
+        $orders = self::table('orders');
+        $initial = $generator->generate(new SchemaDefinition([$orders]), 'initial-schema');
+        $next = $generator->generate(new SchemaDefinition([$orders, self::table('invoices')]), 'add-invoices');
+        self::assertSame('000001-initial-schema', $initial);
+        self::assertSame('000002-add-invoices', $next);
+        $initialSql = $this->file($initial, 'migration.sql');
+        file_put_contents(
+            $this->file($next, 'migration.sql'),
+            "COMMENT ON TABLE orders IS 'managed-by:ultra';\n",
+            FILE_APPEND,
+        );
+
+        $connection->executeStatement('CREATE TABLE orders (id text PRIMARY KEY)');
+        $connection->executeStatement("INSERT INTO orders VALUES ('existing')");
+        $connection->executeStatement("COMMENT ON TABLE orders IS 'managed-by:doctrine'");
+
+        self::assertStringContainsString('Only the first migration', $this->runCommand(
+            'adopt',
+            expectedExit: 1,
+            arguments: ['migration' => $next],
+        ));
+        self::assertNull($connection->fetchOne("SELECT to_regclass('migration_journal')"));
+        self::assertStringContainsString('Adopted 000001-initial-schema', $this->runCommand('adopt', arguments: [
+            'migration' => $initial,
+        ]));
+        self::assertSame('managed-by:doctrine', $connection->fetchOne("SELECT obj_description('orders'::regclass)"));
+        self::assertSame(
+            hash_file('sha256', $initialSql),
+            $connection->fetchOne('SELECT sql_sha256 FROM migration_journal'),
+        );
+        self::assertStringContainsString('requires an empty migration journal', $this->runCommand(
+            'adopt',
+            expectedExit: 1,
+            arguments: ['migration' => $initial],
+        ));
+        self::assertStringContainsString('Applied 000002-add-invoices.', $this->runCommand('migrate'));
+        self::assertSame('existing', $connection->fetchOne('SELECT id FROM orders'));
+        self::assertSame('managed-by:ultra', $connection->fetchOne("SELECT obj_description('orders'::regclass)"));
+        self::assertSame('invoices', $connection->fetchOne("SELECT to_regclass('invoices')::text"));
+
+        $fresh = $this->schema . '_fresh';
+        $existingConsole = $this->console;
+        $connection->executeStatement('CREATE SCHEMA ' . $fresh);
+        try {
+            $connection->executeStatement('SET search_path TO ' . $fresh);
+            $this->console = $this->createConsole($connection, $fresh);
+            $output = $this->runCommand('migrate');
+            self::assertStringContainsString('Applied 000001-initial-schema.', $output);
+            self::assertStringContainsString('Applied 000002-add-invoices.', $output);
+            self::assertSame('orders', $connection->fetchOne("SELECT to_regclass('orders')::text"));
+            self::assertSame('invoices', $connection->fetchOne("SELECT to_regclass('invoices')::text"));
+        } finally {
+            $this->console = $existingConsole;
+            $connection->executeStatement('DROP SCHEMA ' . $fresh . ' CASCADE');
+            $connection->executeStatement('SET search_path TO ' . $this->schema);
+        }
+
+        file_put_contents($initialSql, "\n", FILE_APPEND);
+        self::assertStringContainsString('000001-initial-schema" has been modified', $this->runCommand(
             'status',
             expectedExit: 1,
         ));
@@ -161,9 +241,10 @@ final class PostgresMigrationCommandTest extends TestCase
         self::assertStringContainsString('root snapshot does not match', $this->runCommand('status', expectedExit: 1));
     }
 
-    private function runCommand(string $name, int $expectedExit = 0): string
+    /** @param array<string, string> $arguments */
+    private function runCommand(string $name, int $expectedExit = 0, array $arguments = []): string
     {
-        $result = $this->console->run(['command' => 'ultra:schema:' . $name]);
+        $result = $this->console->run(['command' => 'ultra:schema:' . $name] + $arguments);
         $output = $this->console->getDisplay();
         self::assertSame($expectedExit, $result, $output);
 

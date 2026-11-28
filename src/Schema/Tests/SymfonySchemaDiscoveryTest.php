@@ -110,7 +110,7 @@ final class SymfonySchemaDiscoveryTest extends TestCase
 
             $tester = $this->console($builder, $directory, $suffix);
             self::assertSame(0, $tester->run(['command' => 'list', 'namespace' => 'ultra:schema']));
-            foreach (['migrate', 'status', 'baseline'] as $command) {
+            foreach (['migrate', 'status', 'baseline', 'adopt'] as $command) {
                 $name = 'ultra:schema:' . $command;
                 self::assertStringContainsString($name, $tester->getDisplay());
             }

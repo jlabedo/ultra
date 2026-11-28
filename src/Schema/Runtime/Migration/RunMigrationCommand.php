@@ -7,6 +7,7 @@ namespace Ultra\Schema\Migration;
 use Doctrine\DBAL\Connection;
 use Psr\Container\ContainerInterface;
 use Symfony\Component\Console\Command\Command;
+use Symfony\Component\Console\Input\InputArgument;
 use Symfony\Component\Console\Input\InputInterface;
 use Symfony\Component\Console\Output\OutputInterface;
 
@@ -17,6 +18,7 @@ final class RunMigrationCommand extends Command
         'ultra:schema:migrate' => 'Apply pending PostgreSQL migrations',
         'ultra:schema:status' => 'Show the PostgreSQL migration journal and pending migrations',
         'ultra:schema:baseline' => 'Record the verified baseline for an existing PostgreSQL schema',
+        'ultra:schema:adopt' => 'Record the initial migration for a verified existing PostgreSQL schema',
     ];
 
     public function __construct(
@@ -28,6 +30,9 @@ final class RunMigrationCommand extends Command
     ) {
         parent::__construct($name);
         $this->setDescription(self::DESCRIPTIONS[$name]);
+        if ('ultra:schema:adopt' === $name) {
+            $this->addArgument('migration', InputArgument::REQUIRED, 'ID of the first migration in the history');
+        }
     }
 
     protected function execute(InputInterface $input, OutputInterface $output): int
@@ -45,6 +50,10 @@ final class RunMigrationCommand extends Command
 
         if ('ultra:schema:baseline' === $this->getName()) {
             $output->writeln($runner->baseline() ? 'Recorded 000000-baseline.' : '000000-baseline already recorded.');
+        } elseif ('ultra:schema:adopt' === $this->getName()) {
+            $id = (string) $input->getArgument('migration');
+            $runner->adopt($id);
+            $output->writeln(sprintf('Adopted %s without executing its SQL.', $id), OutputInterface::OUTPUT_RAW);
         } elseif ('ultra:schema:status' === $this->getName()) {
             $status = $runner->status();
             if ([] === $status) {
