@@ -42,13 +42,17 @@ database, first pass a definition that describes its current Ultra-managed table
 vendor/bin/ultra-schema init config/schema.php migrations/schema
 ```
 
-`init` records `000000-baseline/snapshot.json` and initializes the root `snapshot.json` in an empty
+`init` records `000000-baseline/snapshot.lock` and initializes the root `snapshot.lock` in an empty
 history. Verify the baseline against the database before generating further changes. Keep the baseline
 snapshot intact as the root snapshot advances.
 
+Both `snapshot.lock` files contain JSON. For an existing history in this layout, rename any
+`snapshot.json` at the root and in the baseline directory to `snapshot.lock` without changing its
+contents. This preserves the recorded baseline checksum.
+
 ### Review and validate
 
-Each generation compares the target with the root `snapshot.json`, including when migrations are still
+Each generation compares the target with the root `snapshot.lock`, including when migrations are still
 pending deployment. It updates that snapshot and creates a numbered directory such as
 `000001-create-tables` with `migration.sql` and `migration.json`. Use lowercase letters and digits
 separated by hyphens for the migration name. The root snapshot retains stable table, column and index

@@ -89,7 +89,7 @@ final class MigrationCommandTest extends TestCase
         self::assertStringContainsString('CREATE TABLE "accounts"', $this->read($first . '/migration.sql'));
         self::assertStringContainsString('DEFERRABLE INITIALLY DEFERRED', $this->read($first . '/migration.sql'));
 
-        self::assertFileDoesNotExist($this->directory . '/' . $first . '/snapshot.json');
+        self::assertFileDoesNotExist($this->directory . '/' . $first . '/snapshot.lock');
         $snapshot = $this->snapshot('migrations');
         self::assertSame(3, $snapshot['format']);
         $firstRevision = $snapshot['revision'];
@@ -99,7 +99,7 @@ final class MigrationCommandTest extends TestCase
         self::assertFalse($snapshot['tables'][1]['hasExplicitName']);
 
         // Optional schema fields can be omitted from a snapshot.
-        $snapshot = json_decode($this->read('migrations/snapshot.json'), flags: JSON_THROW_ON_ERROR);
+        $snapshot = json_decode($this->read('migrations/snapshot.lock'), flags: JSON_THROW_ON_ERROR);
         unset($snapshot->requiredExtensions, $snapshot->functions);
         foreach ($snapshot->tables as $table) {
             unset($table->rowLevelSecurity, $table->policies);
@@ -110,7 +110,7 @@ final class MigrationCommandTest extends TestCase
                 unset($foreignKey->onDelete);
             }
         }
-        file_put_contents($this->directory . '/migrations/snapshot.json', json_encode($snapshot, JSON_THROW_ON_ERROR));
+        file_put_contents($this->directory . '/migrations/snapshot.lock', json_encode($snapshot, JSON_THROW_ON_ERROR));
 
         $this->writeDefinition([
             "'account', 'accounts'" => "'account', 'members'",
@@ -124,7 +124,7 @@ final class MigrationCommandTest extends TestCase
         self::assertStringNotContainsString('DROP ', $sql);
         self::assertSame($firstRevision, $this->metadata($second)['previous']);
         self::assertSame($this->metadata($second)['revision'], $this->snapshot('migrations')['revision']);
-        self::assertFileDoesNotExist($this->directory . '/' . $second . '/snapshot.json');
+        self::assertFileDoesNotExist($this->directory . '/' . $second . '/snapshot.lock');
 
         $unchanged = $this->command('generate', 'schema.php', 'migrations', 'unchanged')->mustRun();
         self::assertStringContainsString('No schema changes.', $unchanged->getOutput());
@@ -164,8 +164,8 @@ final class MigrationCommandTest extends TestCase
     {
         $this->command('init', 'schema.php', 'migrations')->mustRun();
         $baseline = 'migrations/000000-baseline';
-        $baselineSnapshot = $this->read($baseline . '/snapshot.json');
-        self::assertSame($baselineSnapshot, $this->read('migrations/snapshot.json'));
+        $baselineSnapshot = $this->read($baseline . '/snapshot.lock');
+        self::assertSame($baselineSnapshot, $this->read('migrations/snapshot.lock'));
         self::assertFileDoesNotExist($this->directory . '/' . $baseline . '/migration.sql');
         self::assertSame(1, $this->command('init', 'schema.php', 'migrations')->run());
 
@@ -176,7 +176,7 @@ final class MigrationCommandTest extends TestCase
         self::assertSame(1, $refused->run());
         self::assertStringContainsString('Drop column "accounts"."email"', $refused->getErrorOutput());
         self::assertStringContainsString('Drop table "receipt"', $refused->getErrorOutput());
-        self::assertSame(['.', '..', '000000-baseline', 'snapshot.json'], scandir($this->directory . '/migrations'));
+        self::assertSame(['.', '..', '000000-baseline', 'snapshot.lock'], scandir($this->directory . '/migrations'));
 
         $this->command('generate', '--allow-destructive', 'schema.php', 'migrations', 'drop-obsolete')->mustRun();
         $migration = 'migrations/000001-drop-obsolete';
@@ -184,14 +184,14 @@ final class MigrationCommandTest extends TestCase
         self::assertStringContainsString('DROP TABLE "receipt";', $sql);
         self::assertStringContainsString('ALTER TABLE "accounts" DROP COLUMN "email";', $sql);
         self::assertSame($this->snapshot($baseline)['revision'], $this->metadata($migration)['previous']);
-        self::assertSame($baselineSnapshot, $this->read($baseline . '/snapshot.json'));
+        self::assertSame($baselineSnapshot, $this->read($baseline . '/snapshot.lock'));
     }
 
     public function test_refuses_two_migrations_generated_from_the_same_predecessor(): void
     {
         $this->command('generate', 'schema.php', 'migrations', 'create-tables')->mustRun();
         $filesystem = new Filesystem();
-        $filesystem->copy($this->directory . '/migrations/snapshot.json', $this->directory . '/base.json');
+        $filesystem->copy($this->directory . '/migrations/snapshot.lock', $this->directory . '/base.json');
         $filesystem->mirror($this->directory . '/migrations', $this->directory . '/branch');
 
         $this->writeDefinition(["'account', 'accounts'" => "'account', 'members'"]);
@@ -203,9 +203,9 @@ final class MigrationCommandTest extends TestCase
             'git',
             'merge-file',
             '-p',
-            'migrations/snapshot.json',
+            'migrations/snapshot.lock',
             'base.json',
-            'branch/snapshot.json',
+            'branch/snapshot.lock',
         ], $this->directory);
         self::assertSame(1, $merge->run(), $merge->getErrorOutput());
         self::assertMatchesRegularExpression('/^<<<<<<<[^\n]*\n    "revision":/m', $merge->getOutput());
@@ -241,7 +241,7 @@ final class MigrationCommandTest extends TestCase
         file_put_contents($this->directory . '/' . $path . '/migration.sql', $sql);
         $snapshot = $this->snapshot('migrations');
         $snapshot['format']++;
-        file_put_contents($this->directory . '/migrations/snapshot.json', json_encode($snapshot, JSON_THROW_ON_ERROR));
+        file_put_contents($this->directory . '/migrations/snapshot.lock', json_encode($snapshot, JSON_THROW_ON_ERROR));
         self::assertSame(1, $refused->run());
         self::assertStringContainsString('Unsupported schema snapshot format', $refused->getErrorOutput());
         self::assertDirectoryDoesNotExist($this->directory . '/migrations/000002-continue');
@@ -253,11 +253,11 @@ final class MigrationCommandTest extends TestCase
         self::assertStringContainsString('Migration history is valid.', $validate->mustRun()->getOutput());
         self::assertDirectoryDoesNotExist($this->directory . '/migrations');
         $this->command('generate', 'schema.php', 'migrations', 'create-tables')->mustRun();
-        $path = $this->directory . '/migrations/snapshot.json';
-        $first = $this->read('migrations/snapshot.json');
+        $path = $this->directory . '/migrations/snapshot.lock';
+        $first = $this->read('migrations/snapshot.lock');
         $this->writeDefinition(["'account', 'accounts'" => "'account', 'members'"]);
         $this->command('generate', 'schema.php', 'migrations', 'rename-tables')->mustRun();
-        $second = $this->read('migrations/snapshot.json');
+        $second = $this->read('migrations/snapshot.lock');
 
         unlink($path);
         self::assertSame(1, $validate->run());
@@ -267,13 +267,13 @@ final class MigrationCommandTest extends TestCase
         file_put_contents($path, $first);
         self::assertSame(1, $validate->run());
         self::assertStringContainsString('root snapshot does not match', $validate->getErrorOutput());
-        self::assertSame($first, $this->read('migrations/snapshot.json'));
+        self::assertSame($first, $this->read('migrations/snapshot.lock'));
 
         $edited = str_replace('"members"', '"altered"', $second);
         file_put_contents($path, $edited);
         self::assertSame(1, $validate->run());
         self::assertStringContainsString('revision does not match its contents', $validate->getErrorOutput());
-        self::assertSame($edited, $this->read('migrations/snapshot.json'));
+        self::assertSame($edited, $this->read('migrations/snapshot.lock'));
 
         file_put_contents($path, $second);
         $validate->mustRun();
@@ -297,7 +297,7 @@ final class MigrationCommandTest extends TestCase
     /** @return array<string, mixed> */
     private function snapshot(string $entry): array
     {
-        return json_decode($this->read($entry . '/snapshot.json'), associative: true, flags: JSON_THROW_ON_ERROR);
+        return json_decode($this->read($entry . '/snapshot.lock'), associative: true, flags: JSON_THROW_ON_ERROR);
     }
 
     /** @return array<string, mixed> */

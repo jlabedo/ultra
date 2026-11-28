@@ -34,7 +34,7 @@ final class MigrationConsole
 
                 $output->writeln(
                     sprintf(
-                        'Recorded schema baseline %s/%s/snapshot.json and updated the root snapshot.',
+                        'Recorded schema baseline %s/%s/snapshot.lock and updated the root snapshot.',
                         $history,
                         $baseline,
                     ),

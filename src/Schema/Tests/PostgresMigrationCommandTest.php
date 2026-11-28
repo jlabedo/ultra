@@ -110,7 +110,7 @@ final class PostgresMigrationCommandTest extends TestCase
             "SELECT sql_sha256 FROM migration_journal WHERE id = '000000-baseline'",
         ));
 
-        file_put_contents($this->file('000000-baseline', 'snapshot.json'), "\n", FILE_APPEND);
+        file_put_contents($this->file('000000-baseline', 'snapshot.lock'), "\n", FILE_APPEND);
         self::assertStringContainsString('000000-baseline" has been modified', $this->runCommand(
             'status',
             expectedExit: 1,

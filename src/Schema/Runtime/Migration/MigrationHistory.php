@@ -51,7 +51,7 @@ final readonly class MigrationHistory
         $previous = null;
         $number = 1;
         foreach ($entries as $id) {
-            if (str_starts_with($id, '.') || 'snapshot.json' === $id) {
+            if (str_starts_with($id, '.') || 'snapshot.lock' === $id) {
                 continue;
             }
 
@@ -71,7 +71,7 @@ final readonly class MigrationHistory
             }
 
             $sqlPath = $path . '/migration.sql';
-            $snapshotPath = $path . '/snapshot.json';
+            $snapshotPath = $path . '/snapshot.lock';
             $metadataPath = $path . '/migration.json';
             if ($baseline) {
                 if (!is_file($snapshotPath) || file_exists($sqlPath) || file_exists($metadataPath)) {
@@ -116,7 +116,7 @@ final readonly class MigrationHistory
             $migrations[] = ['id' => $id, 'snapshotHash' => null, 'sql' => $sql, 'sqlHash' => hash('sha256', $sql)];
         }
 
-        $snapshotPath = $this->directory . '/snapshot.json';
+        $snapshotPath = $this->directory . '/snapshot.lock';
         $head = file_exists($snapshotPath) || is_link($snapshotPath)
             ? self::snapshot(self::readFile($snapshotPath), $snapshotPath)
             : null;
@@ -222,7 +222,7 @@ final readonly class MigrationHistory
 
         $entry = $staging . '/entry';
         $files = null === $sql
-            ? ['snapshot.json' => $json]
+            ? ['snapshot.lock' => $json]
             : [
                 'migration.sql' => $sql,
                 'migration.json' =>
@@ -237,13 +237,13 @@ final readonly class MigrationHistory
             foreach ($files as $file => $contents) {
                 self::write($entry . '/' . $file, $contents);
             }
-            self::write($staging . '/snapshot.json', $json);
+            self::write($staging . '/snapshot.lock', $json);
             if (file_exists($destination) || is_link($destination)) {
                 throw new \RuntimeException(sprintf('Migration entry "%s" already exists.', $destination));
             }
             self::move($entry, $destination);
             try {
-                self::move($staging . '/snapshot.json', $this->directory . '/snapshot.json');
+                self::move($staging . '/snapshot.lock', $this->directory . '/snapshot.lock');
             } catch (\Throwable $exception) {
                 self::move($destination, $entry);
 
@@ -256,7 +256,7 @@ final readonly class MigrationHistory
                 }
                 self::filesystem(static fn(): bool => rmdir($entry));
             }
-            self::removeFileIfPresent($staging . '/snapshot.json');
+            self::removeFileIfPresent($staging . '/snapshot.lock');
             self::filesystem(static fn(): bool => rmdir($staging));
         }
     }

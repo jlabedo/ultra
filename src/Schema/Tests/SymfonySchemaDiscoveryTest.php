@@ -136,7 +136,7 @@ final class SymfonySchemaDiscoveryTest extends TestCase
             );
             self::assertStringContainsString(
                 '"revision": "000001-rename-items:',
-                file_get_contents($history . '/snapshot.json'),
+                file_get_contents($history . '/snapshot.lock'),
             );
             self::assertSame(0, $tester->run(['command' => 'ultra:schema:validate']), $tester->getDisplay());
             self::assertStringContainsString('Migration history is valid.', $tester->getDisplay());
